@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      # Inside the compose network the local DynamoDB is reachable by service name.
+      DYNAMODB_ENDPOINT_URL: http://dynamodb-local:8000
+    depends_on:
+      - dynamodb-local
+    restart: unless-stopped
+
+  dynamodb-local:
+    image: amazon/dynamodb-local
+    ports:
+      - "8001:8000"
+    restart: unless-stopped

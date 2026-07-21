@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env
+.env.local
+.env.*.local
+coverage
+*.log
+.DS_Store
+docs
+tests
+scripts/mock-llm.ts

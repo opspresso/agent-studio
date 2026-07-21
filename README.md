@@ -85,7 +85,19 @@ pnpm build          # production build
 
 ## Deployment
 
-AWS Amplify picks up `amplify.yml` (pnpm via corepack, Next.js SSR build). Configure the
-environment variables from `.env.example` in the Amplify console. DynamoDB access uses the
-Amplify service role; the table and GSIs (`GSI1`, `GSI2`) must exist (see
-`scripts/init-local-table.ts` for the schema).
+The production target is a container (ECS Fargate or any Docker host).
+
+```bash
+docker build -t agent-studio .        # multi-stage, Next standalone output
+docker compose up --build             # local container + DynamoDB Local
+```
+
+- `/api/health` is the LB/orchestrator health check (unauthenticated, dependency-free).
+- node runs as PID 1 (exec-form CMD) so SIGTERM drains in-flight SSE streams on
+  rolling deploys; pair with a generous `stopTimeout` (ECS: 120s).
+- ECS assets live in [deploy/ecs/](deploy/ecs/): Fargate task definition
+  template (SSM-backed secrets, awslogs) and setup runbook. The `Deploy`
+  GitHub Actions workflow builds, pushes to ECR via OIDC, and rolls the service.
+- AWS credentials come from the task role / instance role — never bake keys
+  into the image.
+- `amplify.yml` remains for the alternative AWS Amplify hosting path.
