@@ -55,6 +55,23 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 pnpm tsx --env-file=.env.local scripts/integration-check.ts
 ```
 
+### Multiple LLM providers
+
+All traffic speaks the OpenAI Chat Completions protocol. By default every model
+id goes to `LLM_BASE_URL` (a router such as OpenRouter or LiteLLM). To call
+providers directly, register per-provider channels — model ids `provider/model`
+then route to the matching channel with the prefix stripped:
+
+```bash
+LLM_PROVIDER_OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_PROVIDER_OPENAI_API_KEY=...
+LLM_PROVIDER_GOOGLE_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+LLM_PROVIDER_GOOGLE_API_KEY=...
+```
+
+Set `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX=true` when the channel is itself a
+router that expects full `provider/model` ids.
+
 ## Development
 
 ```bash

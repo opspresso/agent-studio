@@ -1,12 +1,16 @@
 /**
- * Single OpenAI-compatible LLM channel. All text
- * generation goes through one client pointed at `config.llmBaseUrl`; there are
- * no per-provider clients. Maps the `openai` SDK shapes onto the domain port so
- * the engine stays SDK-agnostic.
+ * OpenAI-compatible LLM channel with per-provider dispatch. Model ids in
+ * `provider/model` form route to provider channels registered via
+ * `LLM_PROVIDER_<PROVIDER>_BASE_URL` / `_API_KEY`; everything else goes to the
+ * default channel (`LLM_BASE_URL`). The wire protocol is always OpenAI Chat
+ * Completions — the SDK shapes are mapped onto the domain port so the engine
+ * stays SDK-agnostic.
  */
 
 import OpenAI from "openai";
 import { config } from "@/lib/config";
+import { parseProviderConfigs, resolveProviderTarget } from "./providers";
+import type { ProviderChannelConfig, ResolvedTarget } from "./providers";
 import type {
   ChannelChunk,
   ChannelCompletion,
@@ -16,11 +20,23 @@ import type {
   LlmChannel,
 } from "@/domain/llm/channel";
 
-let client: OpenAI | undefined;
+let providerConfigs: ProviderChannelConfig[] | undefined;
+const clients = new Map<string, OpenAI>();
 
-function getClient(): OpenAI {
+function resolveTarget(modelId: string): ResolvedTarget {
+  providerConfigs ??= parseProviderConfigs(process.env);
+  return resolveProviderTarget(modelId, providerConfigs, {
+    baseUrl: config.llmBaseUrl,
+    apiKey: config.llmApiKey,
+  });
+}
+
+function getClient(target: ResolvedTarget): OpenAI {
+  const key = target.providerName ?? "__default__";
+  let client = clients.get(key);
   if (!client) {
-    client = new OpenAI({ baseURL: config.llmBaseUrl, apiKey: config.llmApiKey });
+    client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
+    clients.set(key, client);
   }
   return client;
 }
@@ -89,8 +105,9 @@ function toChannelToolCalls(toolCalls: unknown): ChannelToolCall[] | undefined {
 
 export const channel: LlmChannel = {
   async chatCompletion(params: ChannelParams): Promise<ChannelCompletion> {
-    const response = (await getClient().chat.completions.create({
-      ...(toRequestBody(params) as { model: string; messages: [] }),
+    const target = resolveTarget(params.model);
+    const response = (await getClient(target).chat.completions.create({
+      ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
       stream: false,
     })) as unknown as {
       model?: string;
@@ -122,8 +139,9 @@ export const channel: LlmChannel = {
   },
 
   async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
-    const stream = (await getClient().chat.completions.create({
-      ...(toRequestBody(params) as { model: string; messages: [] }),
+    const target = resolveTarget(params.model);
+    const stream = (await getClient(target).chat.completions.create({
+      ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
       stream: true,
       stream_options: { include_usage: true },
     })) as unknown as AsyncIterable<{
