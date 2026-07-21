@@ -54,6 +54,16 @@ export const config = {
   get slackDefaultProject(): string | undefined {
     return process.env.SLACK_DEFAULT_PROJECT || undefined;
   },
+  /** GitHub skills source repo, e.g. "opspresso/agent-skills". */
+  get skillsRepo(): string | undefined {
+    return process.env.SKILLS_REPO || undefined;
+  },
+  get skillsRepoBranch(): string {
+    return process.env.SKILLS_REPO_BRANCH || "main";
+  },
+  get githubToken(): string | undefined {
+    return process.env.GITHUB_TOKEN || undefined;
+  },
   get googleClientId(): string {
     return required("GOOGLE_CLIENT_ID");
   },

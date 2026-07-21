@@ -2,6 +2,7 @@ import { skillRepository } from "@/infrastructure/db/repositories/skillRepositor
 import { createSkillUseCases } from "./skillUseCases";
 
 export * from "./skillUseCases";
+export { skillRepository };
 
 /**
  * Composition point for the skill slice: wires the DynamoDB repository to the

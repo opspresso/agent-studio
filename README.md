@@ -83,6 +83,16 @@ pnpm test           # Vitest unit tests
 pnpm build          # production build
 ```
 
+## Skills Repository
+
+Skills can sync from a GitHub repository (`SKILLS_REPO=owner/repo`,
+`GITHUB_TOKEN` with contents read access, optional `SKILLS_REPO_BRANCH`).
+The repo layout is `skills/<name>/SKILL.md` with optional YAML frontmatter
+(`description:`); the parent directory name is the skill slug. `POST
+/api/skills/sync` (or the Sync button on /skills) upserts every SKILL.md —
+the repo is the source of truth for synced skills, while locally-created
+skills with other names are untouched.
+
 ## Slack Integration
 
 Two modes that can coexist:
