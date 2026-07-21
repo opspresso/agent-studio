@@ -1,0 +1,282 @@
+/**
+ * MCP tool manager. Talks the MCP streamable-HTTP JSON-RPC protocol
+ * (`initialize` -> `tools/list` -> `tools/call`) over plain `fetch` — no SDK
+ * dependency. Ported behaviours from Prompt Studio's `ToolManager`:
+ *   - tool-name collision aliasing (`name_1`, `name_2`) with a reverse mapping,
+ *   - builtin reserved names are seeded so only MCP tools get suffixed,
+ *   - results capped at 100,000 chars; multi-block results JSON-stringified.
+ */
+
+import type { ChannelToolDef } from "@/domain/llm/channel";
+
+const MAX_TOOL_RESULT_LENGTH = 100_000;
+const PROTOCOL_VERSION = "2025-06-18";
+
+export interface McpServerConfig {
+  name: string;
+  url: string;
+  /** Already-decrypted outbound headers. */
+  headers: Record<string, string>;
+}
+
+interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+interface JsonRpcResponse {
+  jsonrpc: string;
+  id?: number | string;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+/** One streamable-HTTP session against a single MCP server. */
+class McpSession {
+  private sessionId: string | undefined;
+  private nextId = 1;
+  private initialized = false;
+
+  constructor(
+    private readonly url: string,
+    private readonly headers: Record<string, string>,
+  ) {}
+
+  private baseHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      ...this.headers,
+    };
+    if (this.sessionId) {
+      headers["Mcp-Session-Id"] = this.sessionId;
+    }
+    return headers;
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: this.baseHeaders(),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: this.nextId++,
+        method: "initialize",
+        params: {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: "agent-studio", version: "0.1.0" },
+        },
+      }),
+    });
+    const sessionId = response.headers.get("Mcp-Session-Id");
+    if (sessionId) {
+      this.sessionId = sessionId;
+    }
+    await parseJsonRpc(response);
+
+    // Notify the server that initialization completed.
+    await fetch(this.url, {
+      method: "POST",
+      headers: this.baseHeaders(),
+      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+    });
+    this.initialized = true;
+  }
+
+  private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
+    await this.ensureInitialized();
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: this.baseHeaders(),
+      body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),
+    });
+    const message = await parseJsonRpc(response);
+    if (message?.error) {
+      throw new Error(`MCP error (${message.error.code}): ${message.error.message}`);
+    }
+    return message?.result;
+  }
+
+  async listTools(): Promise<McpTool[]> {
+    const result = (await this.request("tools/list", {})) as { tools?: McpTool[] } | undefined;
+    return result?.tools ?? [];
+  }
+
+  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    return this.request("tools/call", { name, arguments: args });
+  }
+}
+
+/** Read a JSON-RPC response body, handling both JSON and SSE framing. */
+async function parseJsonRpc(response: Response): Promise<JsonRpcResponse | undefined> {
+  const text = await response.text();
+  if (!text) {
+    return undefined;
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("text/event-stream") || text.includes("data:")) {
+    let last: JsonRpcResponse | undefined;
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("data:")) {
+        const payload = trimmed.slice("data:".length).trim();
+        if (payload && payload !== "[DONE]") {
+          try {
+            last = JSON.parse(payload) as JsonRpcResponse;
+          } catch {
+            // ignore keep-alive / non-JSON frames
+          }
+        }
+      }
+    }
+    return last;
+  }
+  return JSON.parse(text) as JsonRpcResponse;
+}
+
+export class ToolManager {
+  private readonly servers: McpServerConfig[];
+  private readonly reservedToolNames: Set<string>;
+  private readonly sessionByToolName = new Map<string, McpSession>();
+  private readonly originalNameByAlias = new Map<string, string>();
+  private _tools: ChannelToolDef[] = [];
+
+  constructor(servers: McpServerConfig[], reservedToolNames?: Iterable<string>) {
+    this.servers = servers;
+    this.reservedToolNames = new Set(reservedToolNames ?? []);
+  }
+
+  get tools(): ChannelToolDef[] {
+    return this._tools;
+  }
+
+  async init(): Promise<void> {
+    if (this.servers.length === 0) {
+      return;
+    }
+    const usedNames = new Set<string>(this.reservedToolNames);
+    const aliasIndexByName = new Map<string, number>();
+    const tools: ChannelToolDef[] = [];
+
+    for (const server of this.servers) {
+      const session = new McpSession(server.url, server.headers);
+      let serverTools: McpTool[];
+      try {
+        serverTools = await session.listTools();
+      } catch {
+        // A single broken MCP must not abort the whole tool set.
+        continue;
+      }
+      for (const tool of serverTools) {
+        const alias = allocateToolName(tool.name, usedNames, aliasIndexByName);
+        tools.push({
+          type: "function",
+          function: {
+            name: alias,
+            description: tool.description,
+            parameters: tool.inputSchema ?? { type: "object", properties: {} },
+          },
+        });
+        this.sessionByToolName.set(alias, session);
+        this.originalNameByAlias.set(alias, tool.name);
+      }
+    }
+    this._tools = tools;
+  }
+
+  async callTool(aliasName: string, args: Record<string, unknown>): Promise<string> {
+    const session = this.sessionByToolName.get(aliasName);
+    const originalName = this.originalNameByAlias.get(aliasName);
+    if (!session || !originalName) {
+      return `Tool call failed: MCP for tool ${aliasName} not found`;
+    }
+    try {
+      const result = (await session.callTool(originalName, args)) as
+        | { content?: unknown[]; isError?: boolean }
+        | undefined;
+      if (!result || !Array.isArray(result.content)) {
+        return `Tool call failed: No content from MCP for tool ${originalName}`;
+      }
+      return formatToolResult(result.content);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `Tool call failed with error. ${message}`;
+    }
+  }
+}
+
+/** Return a unique alias; suffix `{name}_{n}` on collision (n from 1). */
+function allocateToolName(
+  originalName: string,
+  usedNames: Set<string>,
+  aliasIndexByName: Map<string, number>,
+): string {
+  if (!usedNames.has(originalName)) {
+    usedNames.add(originalName);
+    return originalName;
+  }
+  let index = aliasIndexByName.get(originalName) ?? 1;
+  let alias = `${originalName}_${index}`;
+  while (usedNames.has(alias)) {
+    index += 1;
+    alias = `${originalName}_${index}`;
+  }
+  aliasIndexByName.set(originalName, index + 1);
+  usedNames.add(alias);
+  return alias;
+}
+
+function extractBlock(block: unknown): string {
+  if (!block || typeof block !== "object") {
+    return "Invalid content";
+  }
+  const b = block as {
+    type?: string;
+    text?: string;
+    resource?: { text?: string; blob?: string; mimeType?: string };
+  };
+  if (b.type === "text") {
+    return b.text || "No result";
+  }
+  if (b.type === "image") {
+    return "[image result omitted]";
+  }
+  if (b.type === "resource" && b.resource) {
+    if (b.resource.text != null) {
+      return b.resource.text || "No result";
+    }
+    if (b.resource.blob != null) {
+      const mime = b.resource.mimeType ?? "application/octet-stream";
+      if (mime.startsWith("image/")) {
+        return "[image result omitted]";
+      }
+      try {
+        return Buffer.from(b.resource.blob, "base64").toString("utf-8");
+      } catch {
+        return `Unsupported binary resource (mimeType: ${mime})`;
+      }
+    }
+    return "Invalid resource content: missing text and blob";
+  }
+  return `Invalid content type: ${b.type}`;
+}
+
+function formatToolResult(content: unknown[]): string {
+  const data = content.map(extractBlock);
+  const first = data[0];
+  let output: string;
+  if (data.length === 1 && first !== undefined) {
+    output = first;
+  } else {
+    output = JSON.stringify(data);
+  }
+  if (output.length > MAX_TOOL_RESULT_LENGTH) {
+    output = `${output.slice(0, MAX_TOOL_RESULT_LENGTH)}...(truncated after 100KB)`;
+  }
+  return output;
+}
