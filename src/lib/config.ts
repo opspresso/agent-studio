@@ -34,6 +34,16 @@ export const config = {
   get aesEncryptionKey(): string {
     return required("AES_ENCRYPTION_KEY");
   },
+  /**
+   * Email domains allowed to sign in (ALLOWED_EMAIL_DOMAINS, comma-separated).
+   * Empty means no restriction.
+   */
+  get allowedEmailDomains(): string[] {
+    return (process.env.ALLOWED_EMAIL_DOMAINS ?? "")
+      .split(",")
+      .map((domain) => domain.trim().toLowerCase())
+      .filter(Boolean);
+  },
   get googleClientId(): string {
     return required("GOOGLE_CLIENT_ID");
   },

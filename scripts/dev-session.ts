@@ -20,7 +20,8 @@ async function main() {
   const { createHmac } = await import("node:crypto");
 
   const ctx = await auth.$context;
-  const email = "dev@example.com";
+  const { config } = await import("@/lib/config");
+  const email = `dev@${config.allowedEmailDomains[0] ?? "example.com"}`;
 
   let user = await ctx.internalAdapter.findUserByEmail(email).then((r) => r?.user ?? null);
   if (!user) {
