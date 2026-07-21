@@ -37,6 +37,22 @@ export default function SkillsPage() {
         </div>
         <button
           type="button"
+          onClick={async () => {
+            const res = await fetch("/api/skills/sync", { method: "POST" });
+            const data = (await res.json()) as { synced?: string[]; unchanged?: number; error?: string };
+            if (!res.ok) {
+              window.alert(data.error ?? "Sync failed");
+            } else {
+              window.alert(`Synced ${data.synced?.length ?? 0} skill(s), ${data.unchanged ?? 0} unchanged`);
+              window.location.reload();
+            }
+          }}
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        >
+          Sync from GitHub
+        </button>
+        <button
+          type="button"
           onClick={() => setShowModal(true)}
           className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong"
         >
