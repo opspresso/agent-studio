@@ -17,6 +17,9 @@ import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import { channel as defaultChannel } from "@/infrastructure/llm/channel";
+import { imageChannel as defaultImageChannel } from "@/infrastructure/llm/imageChannel";
+import type { ImageChannel } from "@/domain/llm/imageChannel";
+import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { decryptHeadersForOutbound } from "@/lib/secret-encryption";
 import { recordUsage } from "@/application/usage/recordUsage";
@@ -31,6 +34,8 @@ export interface ExecutionDeps {
   usage: UsageRepository;
   /** Injectable channel; defaults to the real OpenAI-compatible client. */
   channel?: LlmChannel;
+  /** Injectable image channel; defaults to the real Images API client. */
+  imageChannel?: ImageChannel;
 }
 
 export interface ExecuteVersionInput {
@@ -149,7 +154,7 @@ export async function* executeAgent(
 async function buildAgentDeps(
   deps: ExecutionDeps,
   version: Version,
-  _projectName: string,
+  projectName: string,
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel ?? defaultChannel;
   return {
@@ -157,6 +162,37 @@ async function buildAgentDeps(
     recordUsage: bindUsage(deps),
     loadSkillContent: buildSkillLoader(deps),
     runSubagent: buildSubagentRunner(deps, version.subagentList),
+    generateImage: buildImageGenerator(deps, projectName),
+  };
+}
+
+/** Default image model: the first registry entry with the imageGeneration capability. */
+const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
+
+function buildImageGenerator(
+  deps: ExecutionDeps,
+  projectName: string,
+): engine.AgentDeps["generateImage"] {
+  if (!DEFAULT_IMAGE_MODEL || !getModelConfig(DEFAULT_IMAGE_MODEL)) {
+    return undefined;
+  }
+  const model = DEFAULT_IMAGE_MODEL;
+  const imageChannel = deps.imageChannel ?? defaultImageChannel;
+  return async (prompt, size, quality) => {
+    const result = await imageChannel.generateImage({ model, prompt, size, quality });
+    const costUsd = calculateImageCost(model, result.usage);
+    await deps.usage
+      .record({
+        projectName,
+        date: new Date().toISOString().slice(0, 10),
+        model,
+        calls: 1,
+        inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
+        outputTokens: result.usage.imageOutputTokens,
+        costUsd,
+      })
+      .catch(() => {});
+    return { b64: result.b64, mimeType: result.mimeType };
   };
 }
 

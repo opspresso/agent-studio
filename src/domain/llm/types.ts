@@ -32,6 +32,8 @@ export interface EngineChunk {
     reasoningContent?: string;
     toolCalls?: unknown[];
   };
+  /** Emitted when the builtin GenerateImage tool produced an image. */
+  image?: { b64: string; mimeType: string; prompt?: string };
   /** Emitted after a tool (MCP / Skill) finished executing. */
   toolResult?: {
     toolCallId: string;

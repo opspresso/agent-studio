@@ -32,6 +32,7 @@ import { renderTemplate } from "./template";
 
 export const SKILL_TOOL_NAME = "Skill";
 export const TRANSFER_TOOL_NAME = "transfer_to_agent";
+export const IMAGE_TOOL_NAME = "GenerateImage";
 const DEFAULT_MAX_TURN = 50;
 
 export type RecordUsageFn = (record: {
@@ -73,6 +74,12 @@ export interface AgentDeps extends EngineDeps {
     turn: number,
     maxTurn: number,
   ) => AsyncGenerator<EngineChunk, string>;
+  /** Generate an image for the builtin GenerateImage tool. */
+  generateImage?: (
+    prompt: string,
+    size?: string,
+    quality?: string,
+  ) => Promise<{ b64: string; mimeType: string }>;
 }
 
 export interface RunPromptInput {
@@ -474,10 +481,40 @@ function buildAgentSystemPrompt(
   return parts.join("\n\n");
 }
 
+const IMAGE_TOOL_DEF: ChannelToolDef = {
+  type: "function",
+  function: {
+    name: IMAGE_TOOL_NAME,
+    description:
+      "Generate an image from a detailed English prompt. Use when the user asks to draw, create, or generate a picture. The image is delivered to the user automatically — do not describe it as unavailable.",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Detailed English image prompt (subject, style, composition, lighting).",
+        },
+        size: {
+          type: "string",
+          enum: ["1024x1024", "1536x1024", "1024x1536"],
+          description: "Image dimensions; default 1024x1024.",
+        },
+        quality: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description: "Rendering quality; default medium.",
+        },
+      },
+      required: ["prompt"],
+    },
+  },
+};
+
 function buildAgentTools(
   mcpTools: ChannelToolDef[] | undefined,
   skills: SkillInfo[],
   subagents: SubagentInfo[],
+  withImageTool: boolean,
 ): ChannelToolDef[] {
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
   if (skills.length > 0) {
@@ -485,6 +522,9 @@ function buildAgentTools(
   }
   if (subagents.length > 0) {
     tools.push(transferToolDef(subagents));
+  }
+  if (withImageTool) {
+    tools.push(IMAGE_TOOL_DEF);
   }
   return tools;
 }
@@ -519,7 +559,7 @@ export async function* runAgent(
   const author = hasSubagents ? input.projectName : undefined;
 
   const systemPrompt = buildAgentSystemPrompt(input.systemPrompt, skills, subagents);
-  const tools = buildAgentTools(input.mcpTools, skills, subagents);
+  const tools = buildAgentTools(input.mcpTools, skills, subagents, Boolean(deps.generateImage));
 
   const messages: ChannelMessage[] = [];
   if (systemPrompt) {
@@ -623,6 +663,28 @@ export async function* runAgent(
           content: subagentContextMessage(agentName, childText),
         });
         nextTurn = Math.max(nextTurn, turn + 2);
+        continue;
+      }
+
+      if (call.name === IMAGE_TOOL_NAME && deps.generateImage) {
+        const prompt = typeof args.prompt === "string" ? args.prompt : "";
+        const size = typeof args.size === "string" ? args.size : undefined;
+        const quality = typeof args.quality === "string" ? args.quality : undefined;
+        let resultText: string;
+        if (!prompt.trim()) {
+          resultText = "Error: GenerateImage requires a prompt.";
+        } else {
+          try {
+            const image = await deps.generateImage(prompt, size, quality);
+            yield { author, image: { ...image, prompt } };
+            resultText =
+              "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
+          } catch (error) {
+            resultText = `Error: image generation failed. ${errorMessage(error)}`;
+          }
+        }
+        yield { author, toolResult: { toolCallId: call.id, name: call.name, content: resultText } };
+        toolMessages.push({ role: "tool", tool_call_id: call.id, content: resultText });
         continue;
       }
 

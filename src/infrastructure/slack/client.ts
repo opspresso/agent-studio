@@ -28,6 +28,40 @@ async function slackApi<T>(
 }
 
 export const slackClient = {
+  /**
+   * Upload an image via the external upload flow:
+   * files.getUploadURLExternal (form) → POST bytes → files.completeUploadExternal.
+   */
+  async uploadImage(
+    token: string,
+    args: { channel: string; threadTs?: string; filename: string; data: Buffer; title?: string },
+  ): Promise<void> {
+    const params = new URLSearchParams({
+      filename: args.filename,
+      length: String(args.data.byteLength),
+    });
+    const urlRes = await fetch(`https://slack.com/api/files.getUploadURLExternal?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const urlData = (await urlRes.json()) as {
+      ok: boolean;
+      error?: string;
+      upload_url?: string;
+      file_id?: string;
+    };
+    if (!urlData.ok || !urlData.upload_url || !urlData.file_id) {
+      throw new Error(`Slack getUploadURLExternal failed: ${urlData.error ?? urlRes.status}`);
+    }
+    const putRes = await fetch(urlData.upload_url, { method: "POST", body: args.data as never });
+    if (!putRes.ok) {
+      throw new Error(`Slack file upload failed: ${putRes.status}`);
+    }
+    await slackApi(token, "files.completeUploadExternal", {
+      files: [{ id: urlData.file_id, title: args.title ?? args.filename }],
+      channel_id: args.channel,
+      ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+    });
+  },
   authTest(token: string): Promise<{ team?: string; user?: string; bot_id?: string }> {
     return slackApi(token, "auth.test", {});
   },
