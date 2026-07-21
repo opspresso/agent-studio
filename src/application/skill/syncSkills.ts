@@ -18,11 +18,24 @@ export function parseSkillDoc(raw: string): ParsedSkillDoc {
     return { description: firstHeadingOrLine(raw), body: raw.trim() };
   }
   const fields: Record<string, string> = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z_-]+):\s*(.*)$/.exec(line.trim());
-    if (kv?.[1] && kv[2] !== undefined) {
-      fields[kv[1].toLowerCase()] = kv[2].replace(/^["']|["']$/g, "");
+  const lines = match[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const kv = /^([A-Za-z_-]+):\s*(.*)$/.exec((lines[i] ?? "").trim());
+    if (!kv?.[1] || kv[2] === undefined) {
+      continue;
     }
+    let value = kv[2].replace(/^["']|["']$/g, "");
+    // YAML folded/literal scalars (`key: >` or `key: |`): consume the
+    // following indented lines and join them with spaces.
+    if (value === ">" || value === "|" || value === ">-" || value === "|-") {
+      const folded: string[] = [];
+      while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1] ?? "")) {
+        folded.push((lines[i + 1] ?? "").trim());
+        i += 1;
+      }
+      value = folded.join(" ");
+    }
+    fields[kv[1].toLowerCase()] = value;
   }
   const body = raw.slice(match[0].length).trim();
   return { description: fields.description ?? firstHeadingOrLine(body), body };
@@ -54,7 +67,12 @@ export async function syncSkillsFromSnapshot(
   for (const file of snapshot.files) {
     const { description, body } = parseSkillDoc(file.content);
     const existing = await repo.get(file.name);
-    if (existing && existing.description === description && existing.content === body) {
+    if (
+      existing &&
+      existing.description === description &&
+      existing.content === body &&
+      existing.source === source
+    ) {
       unchanged += 1;
       continue;
     }
