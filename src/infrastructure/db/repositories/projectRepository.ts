@@ -43,6 +43,7 @@ function fromItem(item: Record<string, unknown>): Project {
     ownerEmail: item.ownerEmail as string,
     departmentCode: item.departmentCode as string | undefined,
     publishedVersion: item.publishedVersion as string | undefined,
+    slack: item.slack as Project["slack"] | undefined,
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };

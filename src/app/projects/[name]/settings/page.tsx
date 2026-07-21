@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
+import { SlackSection } from "./SlackSection";
 
 const inputClass =
   "mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700";
@@ -116,6 +117,8 @@ export default function SettingsPage() {
         </div>
       </form>
 
+      <SlackSection projectName={name} />
+
       <div className="rounded-lg border border-red-200 p-4 dark:border-red-900/60">
         <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
         <p className="mt-1 text-sm text-neutral-500">
@@ -133,3 +136,5 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+      

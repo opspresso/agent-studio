@@ -1,5 +1,12 @@
 export type ProjectType = "llm" | "agent" | "image";
 
+/** Per-project Slack bot credentials. Secrets are AES-encrypted at rest. */
+export interface SlackIntegration {
+  botToken: string;
+  signingSecret: string;
+  enabled: boolean;
+}
+
 export interface Project {
   name: string;
   displayName: string;
@@ -8,6 +15,7 @@ export interface Project {
   ownerEmail: string;
   departmentCode?: string;
   publishedVersion?: string;
+  slack?: SlackIntegration;
   createdAt: string;
   updatedAt: string;
 }

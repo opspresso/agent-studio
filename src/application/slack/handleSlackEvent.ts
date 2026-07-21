@@ -42,10 +42,19 @@ export function threadToMessages(replies: SlackMessage[], currentTs: string): Ch
     }));
 }
 
+/** Credentials/binding for a project-dedicated bot; absent → workspace default bot. */
+export interface SlackBotBinding {
+  projectName: string;
+  botToken: string;
+}
+
 /** Process one app_mention / DM event: run the agent project and stream the reply. */
-export async function handleSlackEvent(body: SlackEventBody): Promise<void> {
+export async function handleSlackEvent(
+  body: SlackEventBody,
+  binding?: SlackBotBinding,
+): Promise<void> {
   const event = body.event;
-  const token = config.slackBotToken;
+  const token = binding?.botToken ?? config.slackBotToken;
   if (!token || !event?.channel || !event.ts) {
     return;
   }
@@ -55,7 +64,9 @@ export async function handleSlackEvent(body: SlackEventBody): Promise<void> {
   }
 
   const { projectName: named, message } = parseMentionText(event.text ?? "");
-  const projectName = named ?? config.slackDefaultProject;
+  // A project-dedicated bot is always bound to its project; the selector only
+  // applies to the workspace default bot.
+  const projectName = binding?.projectName ?? named ?? config.slackDefaultProject;
   const threadTs = event.thread_ts ?? event.ts;
 
   if (!projectName) {
