@@ -47,11 +47,19 @@ export const slackClient = {
     token: string,
     args: { channel: string; ts: string; limit?: number },
   ): Promise<SlackMessage[]> {
-    const data = await slackApi<{ messages?: SlackMessage[] }>(token, "conversations.replies", {
+    // Read-family Web API methods reject JSON bodies; use GET with query params.
+    const params = new URLSearchParams({
       channel: args.channel,
       ts: args.ts,
-      limit: args.limit ?? 30,
+      limit: String(args.limit ?? 30),
     });
+    const res = await fetch(`https://slack.com/api/conversations.replies?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = (await res.json()) as { ok: boolean; error?: string; messages?: SlackMessage[] };
+    if (!data.ok) {
+      throw new Error(`Slack conversations.replies failed: ${data.error ?? res.status}`);
+    }
     return data.messages ?? [];
   },
 };

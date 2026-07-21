@@ -101,20 +101,19 @@ export async function handleSlackEvent(
     text: "_thinking…_",
   });
 
-  const history =
-    event.thread_ts !== undefined
-      ? threadToMessages(
-          await slackClient.threadReplies(token, { channel: event.channel, ts: event.thread_ts }),
-          event.ts,
-        )
-      : [];
-  const messages: ChatMessageInput[] = [...history, { role: "user", content: message }];
-
   let text = "";
   let lastUpdate = 0;
   let failed: string | null = null;
   const deadline = Date.now() + RUN_TIMEOUT_MS;
   try {
+    const history =
+      event.thread_ts !== undefined
+        ? threadToMessages(
+            await slackClient.threadReplies(token, { channel: event.channel, ts: event.thread_ts }),
+            event.ts,
+          )
+        : [];
+    const messages: ChatMessageInput[] = [...history, { role: "user", content: message }];
     for await (const chunk of executeAgent(executionDeps, { project, version, messages })) {
       if (Date.now() > deadline) {
         failed = "Agent run timed out";
