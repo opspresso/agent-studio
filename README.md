@@ -111,9 +111,13 @@ docker compose up --build             # local container + DynamoDB Local
 - `/api/health` is the LB/orchestrator health check (unauthenticated, dependency-free).
 - node runs as PID 1 (exec-form CMD) so SIGTERM drains in-flight SSE streams on
   rolling deploys; pair with a generous `stopTimeout` (ECS: 120s).
-- ECS assets live in [deploy/ecs/](deploy/ecs/): Fargate task definition
-  template (SSM-backed secrets, awslogs) and setup runbook. The `Deploy`
-  GitHub Actions workflow builds, pushes to ECR via OIDC, and rolls the service.
+- Two deployment paths, pick one:
+  - **EC2 + EIP + nginx** ([deploy/ec2/](deploy/ec2/)): single instance,
+    SSM-backed env, Let's Encrypt, SSM Run Command redeploys. Cheapest, fits a
+    single-tenant internal tool. Images publish to ghcr via the `Publish` workflow.
+  - **ECS Fargate** ([deploy/ecs/](deploy/ecs/)): task definition template and
+    runbook; the `Deploy` workflow builds, pushes to ECR via OIDC, and rolls
+    the service.
 - AWS credentials come from the task role / instance role — never bake keys
   into the image.
 - `amplify.yml` remains for the alternative AWS Amplify hosting path.
