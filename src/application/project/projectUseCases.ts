@@ -1,0 +1,77 @@
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { Project, ProjectType } from "@/domain/project/types";
+import { ConflictError, NotFoundError } from "./errors";
+
+export interface CreateProjectInput {
+  name: string;
+  displayName: string;
+  description: string;
+  projectType: ProjectType;
+  ownerEmail: string;
+  departmentCode?: string;
+}
+
+export interface UpdateProjectInput {
+  displayName?: string;
+  description?: string;
+  departmentCode?: string;
+}
+
+export function listProjects(repo: ProjectRepository): Promise<Project[]> {
+  return repo.list();
+}
+
+export async function getProject(repo: ProjectRepository, name: string): Promise<Project> {
+  const project = await repo.get(name);
+  if (!project) {
+    throw new NotFoundError(`Project "${name}" not found`);
+  }
+  return project;
+}
+
+export async function createProject(
+  repo: ProjectRepository,
+  input: CreateProjectInput,
+): Promise<Project> {
+  const existing = await repo.get(input.name);
+  if (existing) {
+    throw new ConflictError(`Project "${input.name}" already exists`);
+  }
+
+  const now = new Date().toISOString();
+  const project: Project = {
+    name: input.name,
+    displayName: input.displayName,
+    description: input.description,
+    projectType: input.projectType,
+    ownerEmail: input.ownerEmail,
+    departmentCode: input.departmentCode,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await repo.create(project);
+  return project;
+}
+
+export async function updateProject(
+  repo: ProjectRepository,
+  name: string,
+  input: UpdateProjectInput,
+): Promise<Project> {
+  const existing = await getProject(repo, name);
+  const updated: Project = {
+    ...existing,
+    displayName: input.displayName ?? existing.displayName,
+    description: input.description ?? existing.description,
+    departmentCode: input.departmentCode ?? existing.departmentCode,
+    updatedAt: new Date().toISOString(),
+  };
+  await repo.update(updated);
+  return updated;
+}
+
+/** Delete a project. The repository cascades version and usage cleanup. */
+export async function deleteProject(repo: ProjectRepository, name: string): Promise<void> {
+  await getProject(repo, name);
+  await repo.delete(name);
+}
