@@ -64,3 +64,12 @@ idle timeout that bit the reference platform. `proxy_buffering off` +
 - `user-data.sh` binds the app to `127.0.0.1:3000` from the start; there is no
   window where the plain app port is publicly reachable.
 - Backups: DynamoDB PITR on the table covers data; the instance is disposable.
+
+## Current Deployment
+
+- URL: https://agent-studio.opspresso.com (HTTP redirects to HTTPS)
+- Region `ap-northeast-2`, instance `i-0c77198302d5edd9b` (t4g.small, AL2023 arm64), EIP `13.125.167.92`
+- Image: ECR `396608815058.dkr.ecr.ap-northeast-2.amazonaws.com/agent-studio:latest`
+- Env: SSM `/env/prod/agent-studio`; data: DynamoDB `agent-studio` (TTL on `expiresAt`)
+- TLS: Let's Encrypt via certbot --nginx, auto-renewal timer installed
+- Redeploy: build/push to ECR, then run `redeploy.sh` via SSM Run Command
