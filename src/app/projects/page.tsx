@@ -173,6 +173,7 @@ function CreateProjectModal({
             >
               <option value="llm">llm — single-shot prompt</option>
               <option value="agent">agent — multi-turn tool loop</option>
+              <option value="image">image — image generation</option>
             </select>
           </label>
 
