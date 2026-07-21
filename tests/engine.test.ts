@@ -118,3 +118,40 @@ describe("runAgent tool loop", () => {
     expect(rejection?.toolResult?.content).toContain("max_turn reached");
   });
 });
+
+describe("runAgent GenerateImage builtin", () => {
+  it("generates an image, yields an image chunk, and continues the loop", async () => {
+    const { FakeChannel: FC } = await import("./fakeChannel");
+    const channel = new FC([
+      [toolCallChunk(0, "call_img", "GenerateImage", '{"prompt":"a red fox","size":"1024x1024"}'), usageChunk(10, 5)],
+      [contentChunk("Here is your fox."), usageChunk(8, 4)],
+    ]);
+    const generateImage = vi.fn(async (prompt: string) => {
+      expect(prompt).toBe("a red fox");
+      return { b64: "aW1n", mimeType: "image/png" };
+    });
+    const deps: AgentDeps = { channel, generateImage };
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "artist",
+        model: MODEL,
+        messages: [{ role: "user", content: "draw a fox" }],
+      }),
+    );
+    const imageChunk = chunks.find((c) => c.image);
+    expect(imageChunk?.image).toMatchObject({ b64: "aW1n", mimeType: "image/png", prompt: "a red fox" });
+    const finalText = chunks.map((c) => c.delta?.content ?? "").join("");
+    expect(finalText).toContain("Here is your fox.");
+    // the image tool is offered because generateImage is wired
+    expect(channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage")).toBe(true);
+  });
+
+  it("does not offer the tool when generateImage is absent", async () => {
+    const { FakeChannel: FC } = await import("./fakeChannel");
+    const channel = new FC([[contentChunk("hi"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent({ channel }, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "hi" }] }),
+    );
+    expect(channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false).toBe(false);
+  });
+});

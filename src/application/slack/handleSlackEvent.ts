@@ -104,6 +104,7 @@ export async function handleSlackEvent(
   let text = "";
   let lastUpdate = 0;
   let failed: string | null = null;
+  const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
   const deadline = Date.now() + RUN_TIMEOUT_MS;
   try {
     const history =
@@ -136,6 +137,9 @@ export async function handleSlackEvent(
           })
           .catch(() => {});
       }
+      if (chunk.image) {
+        images.push(chunk.image);
+      }
       const content = chunk.delta?.content;
       if (content && !chunk.author) {
         text += content;
@@ -157,8 +161,23 @@ export async function handleSlackEvent(
   }
 
   console.log(
-    `[slack] run done project=${projectName} chars=${text.length} failed=${failed ?? "no"}`,
+    `[slack] run done project=${projectName} chars=${text.length} images=${images.length} failed=${failed ?? "no"}`,
   );
+  for (const [index, image] of images.entries()) {
+    try {
+      const ext = image.mimeType === "image/png" ? "png" : "jpg";
+      await slackClient.uploadImage(token, {
+        channel: event.channel,
+        threadTs: threadTs,
+        filename: `generated-${Date.now()}-${index + 1}.${ext}`,
+        data: Buffer.from(image.b64, "base64"),
+        title: image.prompt?.slice(0, 80) ?? "Generated image",
+      });
+    } catch (error) {
+      console.error("[slack] image upload failed", error);
+      failed = failed ?? `Image upload failed: ${error instanceof Error ? error.message : "unknown"}`;
+    }
+  }
   try {
     await slackClient.updateMessage(token, {
       channel: placeholder.channel,
