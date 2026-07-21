@@ -99,3 +99,10 @@ describe("syncSkillsFromSnapshot", () => {
     expect(store.get("local-only")).toEqual(local);
   });
 });
+
+describe("parseSkillDoc folded scalars", () => {
+  it("joins description folded with > across indented lines", () => {
+    const doc = "---\nname: img\ndescription: >\n  First part of text.\n  Second part.\n---\nBody";
+    expect(parseSkillDoc(doc).description).toBe("First part of text. Second part.");
+  });
+});

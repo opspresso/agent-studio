@@ -11,6 +11,7 @@ function fromItem(item: Record<string, unknown>): Skill {
     name: item.name as string,
     description: item.description as string,
     content: item.content as string,
+    source: item.source as string | undefined,
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };
@@ -25,6 +26,7 @@ function toItem(skill: Skill): Record<string, unknown> {
     name: skill.name,
     description: skill.description,
     content: skill.content,
+    source: skill.source,
     createdAt: skill.createdAt,
     updatedAt: skill.updatedAt,
   };
