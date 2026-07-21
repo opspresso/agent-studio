@@ -17,8 +17,10 @@ if (!endpoint.includes("localhost") && !endpoint.includes("127.0.0.1")) {
   process.exit(1);
 }
 
+// DynamoDB Local namespaces tables by access key + region unless started with
+// -sharedDb, so this must match the app client (src/infrastructure/db/client.ts).
 const client = new DynamoDBClient({
-  region: "local",
+  region: process.env.AWS_REGION ?? "ap-northeast-2",
   endpoint,
   credentials: { accessKeyId: "local", secretAccessKey: "local" },
 });
