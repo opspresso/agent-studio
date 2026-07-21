@@ -8,7 +8,7 @@ export const createProjectSchema = z.object({
   name: projectNameSchema,
   displayName: z.string().min(1),
   description: z.string().default(""),
-  projectType: z.enum(["llm", "agent"]),
+  projectType: z.enum(["llm", "agent", "image"]),
   departmentCode: z.string().optional(),
 });
 
@@ -66,6 +66,9 @@ export const predictSchema = z.object({
   variables: z.record(z.string(), z.string()).optional(),
   messages: z.array(chatMessageSchema).optional(),
   stream: z.boolean().optional(),
+  prompt: z.string().optional(),
+  size: z.string().optional(),
+  quality: z.string().optional(),
 });
 
 export const chatCompletionsSchema = z.object({

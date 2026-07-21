@@ -7,6 +7,9 @@ export interface ModelPricing {
   inputPer1M: number;
   outputPer1M: number;
   cachedInputPer1M?: number;
+  /** Image-token rates for image-generation models. */
+  imageInputPer1M?: number;
+  imageOutputPer1M?: number;
 }
 
 export interface ModelCapabilities {
@@ -14,6 +17,7 @@ export interface ModelCapabilities {
   structuredOutput: boolean;
   imageInput: boolean;
   reasoning: boolean;
+  imageGeneration?: boolean;
 }
 
 export interface ModelConfig {
@@ -177,6 +181,28 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     contextWindow: GEMINI_CONTEXT,
     maxTokens: GEMINI_MAX_OUTPUT,
   },
+  // Image generation
+  {
+    id: "openai/gpt-image-2",
+    provider: "openai",
+    displayName: "GPT Image 2",
+    pricing: {
+      inputPer1M: 5.0,
+      outputPer1M: 0,
+      cachedInputPer1M: 1.25,
+      imageInputPer1M: 8.0,
+      imageOutputPer1M: 30.0,
+    },
+    capabilities: {
+      tools: false,
+      structuredOutput: false,
+      imageInput: true,
+      reasoning: false,
+      imageGeneration: true,
+    },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+  },
 ];
 
 const MODEL_BY_ID = new Map(MODEL_CONFIGS.map((m) => [m.id, m]));
@@ -210,4 +236,26 @@ export function calculateCost(modelId: string, tokens: CostTokens): number {
   const inputCost = (nonCachedInput * inputPer1M + cached * cachedRate) / 1_000_000;
   const outputCost = (tokens.outputTokens * outputPer1M) / 1_000_000;
   return inputCost + outputCost;
+}
+
+/** Image-token usage of one image generation call. */
+export interface ImageCostTokens {
+  textInputTokens: number;
+  imageInputTokens: number;
+  imageOutputTokens: number;
+}
+
+/** Compute USD cost for one image generation call. Unknown model → 0. */
+export function calculateImageCost(modelId: string, tokens: ImageCostTokens): number {
+  const cfg = getModelConfig(modelId);
+  if (!cfg) {
+    return 0;
+  }
+  const { inputPer1M, imageInputPer1M, imageOutputPer1M } = cfg.pricing;
+  return (
+    (tokens.textInputTokens * inputPer1M +
+      tokens.imageInputTokens * (imageInputPer1M ?? 0) +
+      tokens.imageOutputTokens * (imageOutputPer1M ?? 0)) /
+    1_000_000
+  );
 }

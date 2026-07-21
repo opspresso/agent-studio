@@ -1,4 +1,4 @@
-export type ProjectType = "llm" | "agent";
+export type ProjectType = "llm" | "agent" | "image";
 
 export interface Project {
   name: string;

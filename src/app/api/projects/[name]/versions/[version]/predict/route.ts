@@ -1,6 +1,7 @@
 import { withAuth } from "@/lib/session";
 import { sseResponse } from "@/lib/sse";
-import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
+import { executionDeps, imageDeps, projectRepository, versionRepository } from "@/lib/container";
+import { generateImage } from "@/application/image/generateImage";
 import { executeVersion, executeVersionStream } from "@/application/execution/runProject";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
@@ -18,6 +19,17 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   try {
     const project = await getProject(projectRepository, name);
     const versionEntity = await getVersion(versionRepository, name, version);
+    if (project.projectType === "image") {
+      const image = await generateImage(imageDeps, {
+        project,
+        version: versionEntity,
+        variables: parsed.data.variables,
+        prompt: parsed.data.prompt,
+        size: parsed.data.size,
+        quality: parsed.data.quality,
+      });
+      return Response.json(image);
+    }
     const params = {
       project,
       version: versionEntity,

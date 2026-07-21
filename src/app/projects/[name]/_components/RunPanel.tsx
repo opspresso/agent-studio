@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { EngineChunk, ProjectType } from "../../lib/api";
-import { readSse, streamAgent, streamPredict } from "../../lib/api";
+import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
+import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { inputClass } from "./inputs";
 
 interface ToolResultView {
@@ -66,8 +66,12 @@ export function RunPanel({
   const [author, setAuthor] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [cost, setCost] = useState<number | null>(null);
+  const [image, setImage] = useState<ImageResult | null>(null);
+  const [size, setSize] = useState("1024x1024");
+  const [quality, setQuality] = useState("medium");
 
-  const canRun = versionName !== null && !running && (projectType !== "agent" || message.trim() !== "");
+  const needsMessage = projectType === "agent" || projectType === "image";
+  const canRun = versionName !== null && !running && (!needsMessage || message.trim() !== "");
 
   async function run() {
     if (versionName === null) {
@@ -80,9 +84,20 @@ export function RunPanel({
     setAuthor(undefined);
     setError(null);
     setCost(null);
+    setImage(null);
     let totalCost = 0;
 
     try {
+      if (projectType === "image") {
+        const result = await predictImage(projectName, versionName, {
+          prompt: message,
+          size,
+          quality,
+        });
+        setImage(result);
+        setCost(result.usage.costUsd);
+        return;
+      }
       const res =
         projectType === "agent"
           ? await streamAgent(projectName, versionName, [{ role: "user", content: message }])
@@ -136,14 +151,14 @@ export function RunPanel({
         </p>
       )}
 
-      {projectType === "agent" ? (
+      {needsMessage ? (
         <label className="block">
-          <span className="text-sm font-medium">Message</span>
+          <span className="text-sm font-medium">{projectType === "image" ? "Image prompt" : "Message"}</span>
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             rows={4}
-            placeholder="Ask the agent…"
+            placeholder={projectType === "image" ? "Describe the image to generate…" : "Ask the agent…"}
             className={`${inputClass} mt-1`}
           />
         </label>
@@ -163,6 +178,27 @@ export function RunPanel({
         </div>
       ) : (
         <p className="text-xs text-neutral-400">No template variables detected.</p>
+      )}
+
+      {projectType === "image" && (
+        <div className="flex gap-3">
+          <label className="block">
+            <span className="text-xs text-neutral-500">Size</span>
+            <select value={size} onChange={(e) => setSize(e.target.value)} className={`${inputClass} mt-1`}>
+              <option value="1024x1024">1024×1024</option>
+              <option value="1536x1024">1536×1024</option>
+              <option value="1024x1536">1024×1536</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-neutral-500">Quality</span>
+            <select value={quality} onChange={(e) => setQuality(e.target.value)} className={`${inputClass} mt-1`}>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </label>
+        </div>
       )}
 
       <button
@@ -186,9 +222,26 @@ export function RunPanel({
         </span>
       )}
 
-      <div className="min-h-24 whitespace-pre-wrap rounded-md border border-neutral-200 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
-        {text || <span className="text-neutral-400">Output will stream here.</span>}
-      </div>
+      {projectType === "image" ? (
+        <div className="min-h-24 rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900">
+          {image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`data:${image.mimeType};base64,${image.imageBase64}`}
+              alt="Generated image"
+              className="max-w-full rounded"
+            />
+          ) : (
+            <span className="text-sm text-neutral-400">
+              {running ? "Generating image… this can take a minute." : "Generated image will appear here."}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="min-h-24 whitespace-pre-wrap rounded-md border border-neutral-200 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+          {text || <span className="text-neutral-400">Output will stream here.</span>}
+        </div>
+      )}
 
       {toolCalls.map((call, i) => (
         <details key={`call-${i}`} className="rounded-md border border-neutral-200 dark:border-neutral-800">

@@ -220,3 +220,27 @@ export async function streamAgent(
   await assertOk(res);
   return res;
 }
+
+export interface ImageResult {
+  imageBase64: string;
+  mimeType: string;
+  model: string;
+  usage: { inputTokens: number; outputTokens: number; costUsd: number };
+}
+
+export async function predictImage(
+  name: string,
+  version: string,
+  body: { prompt: string; size?: string; quality?: string },
+): Promise<ImageResult> {
+  const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(data?.error ?? `Image generation failed (${res.status})`);
+  }
+  return (await res.json()) as ImageResult;
+}

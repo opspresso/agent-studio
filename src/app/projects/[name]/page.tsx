@@ -191,7 +191,11 @@ export default function PlaygroundPage() {
 
         <VersionEditor
           projectType={project.projectType}
-          models={models}
+          models={models.filter((m) =>
+            project.projectType === "image"
+              ? m.capabilities.imageGeneration
+              : !m.capabilities.imageGeneration,
+          )}
           value={draft}
           onChange={setDraft}
         />

@@ -11,6 +11,7 @@ import { skillRepository } from "@/infrastructure/db/repositories/skillRepositor
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
+import { imageChannel } from "@/infrastructure/llm/imageChannel";
 
 export { projectRepository, versionRepository };
 
@@ -21,5 +22,11 @@ export const executionDeps = {
   skills: skillRepository,
   mcps: mcpRepository,
   externalAgents: externalAgentRepository,
+  usage: usageRepository,
+};
+
+/** Dependencies for image-generation projects. */
+export const imageDeps = {
+  imageChannel,
   usage: usageRepository,
 };
