@@ -33,9 +33,26 @@ cp .env.example .env
 # 3. Local DynamoDB
 docker run -d -p 8000:8000 amazon/dynamodb-local
 pnpm init-local-table
+# Note: DynamoDB Local namespaces tables by access key + region; the init
+# script uses the same region as the app client (AWS_REGION, default
+# ap-northeast-2), so run both with the same AWS_REGION.
 
 # 4. Run
 pnpm dev            # http://localhost:3000
+```
+
+### Local development without real credentials
+
+```bash
+# Mock OpenAI-compatible LLM server (then set LLM_BASE_URL=http://127.0.0.1:8002/v1)
+pnpm tsx scripts/mock-llm.ts
+
+# Create a dev user + session and print a signed session cookie
+# (bypasses the Google OAuth round-trip; local DynamoDB only)
+pnpm tsx scripts/dev-session.ts
+
+# End-to-end integration check (repositories + engine against local DynamoDB)
+pnpm tsx scripts/integration-check.ts
 ```
 
 ## Development
