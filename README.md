@@ -53,6 +53,9 @@ pnpm tsx --env-file=.env.local scripts/dev-session.ts
 
 # End-to-end integration check (repositories + engine against local DynamoDB)
 pnpm tsx --env-file=.env.local scripts/integration-check.ts
+
+# Seed sample skills (conversation, image-generation)
+pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
 ### Multiple LLM providers
