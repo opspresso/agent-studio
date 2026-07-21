@@ -1,5 +1,5 @@
 /**
- * Single OpenAI-compatible LLM channel (karrot-llm-router style). All text
+ * Single OpenAI-compatible LLM channel. All text
  * generation goes through one client pointed at `config.llmBaseUrl`; there are
  * no per-provider clients. Maps the `openai` SDK shapes onto the domain port so
  * the engine stays SDK-agnostic.

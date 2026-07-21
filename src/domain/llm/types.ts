@@ -1,5 +1,5 @@
 /**
- * LLM engine public contract types (ported from Prompt Studio's PromptEngine).
+ * LLM engine public contract types.
  * These are pure domain shapes with no framework/provider imports.
  */
 

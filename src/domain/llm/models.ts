@@ -1,7 +1,6 @@
 /**
- * Model registry. Pricing and capability flags are ported from Prompt Studio's
- * `backend/config.py` (numbers in USD per 1M tokens). Model ids use the
- * OpenAI-compatible `provider/model` form the LLM channel dispatches on.
+ * Model registry: per-model pricing and capability flags. Model ids use the
+ * OpenAI-compatible `provider/model` form that the LLM channel dispatches on.
  */
 
 export interface ModelPricing {

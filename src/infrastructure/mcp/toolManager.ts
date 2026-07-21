@@ -1,7 +1,7 @@
 /**
  * MCP tool manager. Talks the MCP streamable-HTTP JSON-RPC protocol
  * (`initialize` -> `tools/list` -> `tools/call`) over plain `fetch` — no SDK
- * dependency. Ported behaviours from Prompt Studio's `ToolManager`:
+ * dependency. Behaviours:
  *   - tool-name collision aliasing (`name_1`, `name_2`) with a reverse mapping,
  *   - builtin reserved names are seeded so only MCP tools get suffixed,
  *   - results capped at 100,000 chars; multi-block results JSON-stringified.

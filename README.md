@@ -1,7 +1,6 @@
 # ✨ Agent Studio
 
-LLM platform for prompt, agent, and cost management — a production-level migration of
-Daangn Prompt Studio to a single Next.js full-stack application.
+LLM platform for prompt, agent, and cost management — a production-level single Next.js full-stack application.
 
 Covered domains: **projects/versions, LLM engine, agents (subagents + external registry),
 skills, MCP tools, chats, cost/usage dashboard**.

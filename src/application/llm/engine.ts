@@ -1,5 +1,5 @@
 /**
- * LLM engine. Ports Prompt Studio's `PromptEngine` semantics onto a single
+ * LLM engine. Runs prompt and agent executions over a single
  * OpenAI-compatible channel:
  *   - runPrompt / runPromptStream: single-shot generation with fallback retry.
  *   - runAgent: recursive multi-turn tool loop (Skill + transfer_to_agent

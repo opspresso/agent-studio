@@ -1,6 +1,5 @@
 /**
- * Prompt template rendering. Ported from Prompt Studio's
- * `TemplateEngine.render_simple`: `{{var}}` placeholders are replaced with the
+ * Prompt template rendering: `{{var}}` placeholders are replaced with the
  * matching variable value, and missing variables collapse to an empty string.
  */
 

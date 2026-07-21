@@ -1,10 +1,7 @@
 # Agent Studio Architecture
 
-Agent Studio is a production-level migration of Daangn Prompt Studio (Python/FastAPI + React SPA)
-to a single Next.js 16 full-stack application. It covers the domains: **project, llm, agents
+Agent Studio is a production-level single Next.js 16 full-stack application. It covers the domains: **project, llm, agents
 (subagents + external agent registry), skills, mcp, chat, cost/usage**.
-
-Reference implementation (read-only): `/Users/bruce/workspace/github.com/karrot-emu/prompt-studio`
 
 ## Stack
 
@@ -63,7 +60,7 @@ Conventions:
 - Key builders live in `src/infrastructure/db/keys.ts` — never hand-write key strings elsewhere.
 - Reserved words (`name`, `owner`, `timestamp`) always via `ExpressionAttributeNames`.
 
-## Domain Semantics (ported from Prompt Studio)
+## Domain Semantics
 
 ### Project / Version
 - `Project { name (slug, immutable id), displayName, description, projectType: 'llm' | 'agent',
@@ -121,7 +118,7 @@ Conventions:
 ### Usage / Cost
 - Daily per-project per-model aggregates (see table design). Dashboard reads
   `USAGEDATE#{date}` GSI partitions across a range and regroups client-side by
-  project/provider/model — mirroring Prompt Studio's `/usages/summary`.
+  project/provider/model.
 
 ## API Surface (App Router route handlers)
 

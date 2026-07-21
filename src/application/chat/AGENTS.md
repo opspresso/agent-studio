@@ -30,7 +30,7 @@ into `ChatDeps.runAgent`.
   later, accumulate `delta.toolCalls` onto the persisted assistant message — the mapper
   already pairs them by id.
 - **Subagent chunks** (`author` set) stream to the client but are excluded from the
-  persisted assistant content, matching Prompt Studio's aggregation semantics.
+  persisted assistant content.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return
   a generator; the LLM call only starts when the route's `sseResponse` iterates it.
 - **chatId delivery**: `POST /api/chats` streams SSE, so the route prepends a
