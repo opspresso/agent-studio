@@ -21,6 +21,9 @@ export interface SlackEventBody {
 }
 
 const UPDATE_INTERVAL_MS = 1500;
+/** Hard deadline for one agent run; on expiry the message reports a timeout
+ * instead of showing the placeholder forever. */
+const RUN_TIMEOUT_MS = 3 * 60 * 1000;
 
 /** Strip the bot mention and detect an optional leading `project:<name>` selector. */
 export function parseMentionText(raw: string): { projectName: string | null; message: string } {
@@ -91,6 +94,7 @@ export async function handleSlackEvent(
     return;
   }
 
+  console.log(`[slack] run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
   const placeholder = await slackClient.postMessage(token, {
     channel: event.channel,
     thread_ts: threadTs,
@@ -109,8 +113,13 @@ export async function handleSlackEvent(
   let text = "";
   let lastUpdate = 0;
   let failed: string | null = null;
+  const deadline = Date.now() + RUN_TIMEOUT_MS;
   try {
     for await (const chunk of executeAgent(executionDeps, { project, version, messages })) {
+      if (Date.now() > deadline) {
+        failed = "Agent run timed out";
+        break;
+      }
       if (chunk.error) {
         failed = chunk.error;
         break;
@@ -135,9 +144,16 @@ export async function handleSlackEvent(
     failed = error instanceof Error ? error.message : "agent run failed";
   }
 
-  await slackClient.updateMessage(token, {
-    channel: placeholder.channel,
-    ts: placeholder.ts,
-    text: failed ? `:warning: ${failed}` : text || "(no response)",
-  });
+  console.log(
+    `[slack] run done project=${projectName} chars=${text.length} failed=${failed ?? "no"}`,
+  );
+  try {
+    await slackClient.updateMessage(token, {
+      channel: placeholder.channel,
+      ts: placeholder.ts,
+      text: failed ? `:warning: ${failed}` : text || "(no response)",
+    });
+  } catch (error) {
+    console.error("[slack] final update failed", error);
+  }
 }
