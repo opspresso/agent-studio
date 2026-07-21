@@ -9,6 +9,8 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -35,29 +37,48 @@ export default function SkillsPage() {
             Markdown behavior instructions loaded on demand by the agent engine.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={async () => {
-            const res = await fetch("/api/skills/sync", { method: "POST" });
-            const data = (await res.json()) as { synced?: string[]; unchanged?: number; error?: string };
-            if (!res.ok) {
-              window.alert(data.error ?? "Sync failed");
-            } else {
-              window.alert(`Synced ${data.synced?.length ?? 0} skill(s), ${data.unchanged ?? 0} unchanged`);
-              window.location.reload();
-            }
-          }}
-          className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-        >
-          Sync from GitHub
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong"
-        >
-          New skill
-        </button>
+        <div className="flex items-center gap-3">
+          {syncStatus && <span className="text-xs text-neutral-500">{syncStatus}</span>}
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              setSyncStatus(null);
+              setError(null);
+              try {
+                const res = await fetch("/api/skills/sync", { method: "POST" });
+                const data = (await res.json()) as {
+                  synced?: string[];
+                  unchanged?: number;
+                  error?: string;
+                };
+                if (!res.ok) {
+                  setError(data.error ?? "Sync failed");
+                } else {
+                  setSyncStatus(
+                    `Synced ${data.synced?.length ?? 0} · unchanged ${data.unchanged ?? 0}`,
+                  );
+                  await refresh();
+                }
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Sync failed");
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          >
+            {syncing ? "Syncing…" : "Sync from GitHub"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong"
+          >
+            New skill
+          </button>
+        </div>
       </div>
 
       {error && (
