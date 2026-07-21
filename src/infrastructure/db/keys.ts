@@ -35,6 +35,8 @@ export const keys = {
   }),
   usageDatePartition: (date: string) => `USAGEDATE#${date}`,
 
+  slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
+
   trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),
   traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
 
