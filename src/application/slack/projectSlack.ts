@@ -116,11 +116,28 @@ export function buildProjectSlackManifest(
         messages_tab_read_only_enabled: false,
       },
       bot_user: { display_name: project.displayName.slice(0, 80), always_online: true },
+      agent_view: { suggested_prompts: [] },
     },
     oauth_config: {
       scopes: {
-        bot: ["app_mentions:read", "chat:write", "im:history", "channels:history", "groups:history"],
+        bot: [
+          "emoji:read",
+          "app_mentions:read",
+          "assistant:write",
+          "channels:history",
+          "chat:write",
+          "groups:history",
+          "im:history",
+          "files:read",
+          "files:write",
+          "users.profile:read",
+          "groups:read",
+          "reactions:read",
+          "users:read",
+          "users:read.email",
+        ],
       },
+      pkce_enabled: false,
     },
     settings: {
       event_subscriptions: {
@@ -130,6 +147,7 @@ export function buildProjectSlackManifest(
       org_deploy_enabled: false,
       socket_mode_enabled: false,
       token_rotation_enabled: false,
+      is_mcp_enabled: false,
     },
   };
 }
