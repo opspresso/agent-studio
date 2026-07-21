@@ -54,6 +54,14 @@ export const config = {
   get slackDefaultProject(): string | undefined {
     return process.env.SLACK_DEFAULT_PROJECT || undefined;
   },
+  /**
+   * Public base URL of this deployment (scheme + host). Behind a reverse
+   * proxy the request URL reflects the bind address, so externally visible
+   * URLs (Slack manifests, OAuth callbacks) must come from configuration.
+   */
+  get publicBaseUrl(): string | undefined {
+    return process.env.PUBLIC_BASE_URL || process.env.BETTER_AUTH_URL || undefined;
+  },
   /** GitHub skills source repo, e.g. "opspresso/agent-skills". */
   get skillsRepo(): string | undefined {
     return process.env.SKILLS_REPO || undefined;
