@@ -1,0 +1,42 @@
+/**
+ * Single-table key builders. Never hand-write key strings outside this module.
+ * See docs/ARCHITECTURE.md for the full key map.
+ */
+
+export const keys = {
+  auth: (model: string, id: string) => ({ PK: `AUTH#${model}#${id}`, SK: "ITEM" }),
+  authModelPartition: (model: string) => `AUTH#${model}`,
+  authUniqueLookup: (model: string, field: string, value: string) =>
+    `AUTH#${model}#${field}#${value}`,
+
+  project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
+  projectPartition: (name: string) => `PROJECT#${name}`,
+  version: (projectName: string, versionName: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `VERSION#${versionName}`,
+  }),
+  versionPrefix: () => "VERSION#",
+
+  chat: (chatId: string) => ({ PK: `CHAT#${chatId}`, SK: "META" }),
+  chatMessage: (chatId: string, seq: number) => ({
+    PK: `CHAT#${chatId}`,
+    SK: `MSG#${String(seq).padStart(6, "0")}`,
+  }),
+  chatMessagePrefix: () => "MSG#",
+  chatOwnerPartition: (email: string) => `CHATOWNER#${email}`,
+
+  skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),
+  mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
+  externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
+
+  usage: (projectName: string, date: string) => ({
+    PK: `USAGE#${projectName}`,
+    SK: `DATE#${date}`,
+  }),
+  usageDatePartition: (date: string) => `USAGEDATE#${date}`,
+
+  trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),
+  traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
+
+  typePartition: (entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT") => `TYPE#${entityType}`,
+} as const;

@@ -1,0 +1,218 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import type { EngineChunk, ProjectType } from "../../lib/api";
+import { readSse, streamAgent, streamPredict } from "../../lib/api";
+import { inputClass } from "./inputs";
+
+interface ToolResultView {
+  name: string;
+  content: string;
+  author?: string;
+}
+interface ToolCallView {
+  name: string;
+  args: string;
+  author?: string;
+}
+
+function extractVariables(...sources: string[]): string[] {
+  const set = new Set<string>();
+  const re = /\{\{(\w+)\}\}/g;
+  for (const src of sources) {
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(src)) !== null) {
+      if (match[1]) {
+        set.add(match[1]);
+      }
+    }
+  }
+  return [...set];
+}
+
+function toolCallView(raw: unknown, author?: string): ToolCallView {
+  const record = (raw ?? {}) as { function?: { name?: string; arguments?: string } };
+  return {
+    name: record.function?.name ?? "tool",
+    args: record.function?.arguments ?? "",
+    author,
+  };
+}
+
+export function RunPanel({
+  projectName,
+  versionName,
+  projectType,
+  systemPrompt,
+  userPromptTemplate,
+}: {
+  projectName: string;
+  versionName: string | null;
+  projectType: ProjectType;
+  systemPrompt: string;
+  userPromptTemplate: string;
+}) {
+  const varNames = useMemo(
+    () => extractVariables(systemPrompt, userPromptTemplate),
+    [systemPrompt, userPromptTemplate],
+  );
+  const [variables, setVariables] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("");
+
+  const [running, setRunning] = useState(false);
+  const [text, setText] = useState("");
+  const [toolCalls, setToolCalls] = useState<ToolCallView[]>([]);
+  const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
+  const [author, setAuthor] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [cost, setCost] = useState<number | null>(null);
+
+  const canRun = versionName !== null && !running && (projectType !== "agent" || message.trim() !== "");
+
+  async function run() {
+    if (versionName === null) {
+      return;
+    }
+    setRunning(true);
+    setText("");
+    setToolCalls([]);
+    setToolResults([]);
+    setAuthor(undefined);
+    setError(null);
+    setCost(null);
+    let totalCost = 0;
+
+    try {
+      const res =
+        projectType === "agent"
+          ? await streamAgent(projectName, versionName, [{ role: "user", content: message }])
+          : await streamPredict(projectName, versionName, { variables });
+
+      for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
+        if (chunk.error) {
+          setError(chunk.error);
+          break;
+        }
+        if (chunk.author) {
+          setAuthor(chunk.author);
+        }
+        const content = chunk.delta?.content;
+        if (content && !chunk.author) {
+          setText((prev) => prev + content);
+        }
+        if (chunk.delta?.toolCalls) {
+          const calls = chunk.delta.toolCalls.map((c) => toolCallView(c, chunk.author));
+          setToolCalls((prev) => [...prev, ...calls]);
+        }
+        if (chunk.toolResult) {
+          const result: ToolResultView = {
+            name: chunk.toolResult.name,
+            content: chunk.toolResult.content,
+            author: chunk.author,
+          };
+          setToolResults((prev) => [...prev, result]);
+        }
+        if (chunk.usage) {
+          totalCost += chunk.usage.costUsd;
+          setCost(totalCost);
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Run failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {versionName === null ? (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          Save a version to run it.
+        </p>
+      ) : (
+        <p className="text-xs text-neutral-400">
+          Running version <span className="font-mono">{versionName}</span>
+        </p>
+      )}
+
+      {projectType === "agent" ? (
+        <label className="block">
+          <span className="text-sm font-medium">Message</span>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={4}
+            placeholder="Ask the agent…"
+            className={`${inputClass} mt-1`}
+          />
+        </label>
+      ) : varNames.length > 0 ? (
+        <div className="space-y-2">
+          <span className="text-sm font-medium">Variables</span>
+          {varNames.map((name) => (
+            <label key={name} className="flex items-center gap-2">
+              <span className="w-32 shrink-0 font-mono text-xs text-neutral-500">{name}</span>
+              <input
+                value={variables[name] ?? ""}
+                onChange={(e) => setVariables((prev) => ({ ...prev, [name]: e.target.value }))}
+                className={inputClass}
+              />
+            </label>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-neutral-400">No template variables detected.</p>
+      )}
+
+      <button
+        type="button"
+        onClick={run}
+        disabled={!canRun}
+        className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+      >
+        {running ? "Running…" : "Run"}
+      </button>
+
+      {error && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {author && (
+        <span className="inline-block rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+          author: {author}
+        </span>
+      )}
+
+      <div className="min-h-24 whitespace-pre-wrap rounded-md border border-neutral-200 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+        {text || <span className="text-neutral-400">Output will stream here.</span>}
+      </div>
+
+      {toolCalls.map((call, i) => (
+        <details key={`call-${i}`} className="rounded-md border border-neutral-200 dark:border-neutral-800">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
+            🔧 tool call: {call.name}
+            {call.author && <span className="ml-1 text-neutral-400">({call.author})</span>}
+          </summary>
+          <pre className="overflow-x-auto px-3 pb-2 text-xs">{call.args}</pre>
+        </details>
+      ))}
+
+      {toolResults.map((result, i) => (
+        <details key={`result-${i}`} className="rounded-md border border-neutral-200 dark:border-neutral-800">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
+            ✅ tool result: {result.name}
+            {result.author && <span className="ml-1 text-neutral-400">({result.author})</span>}
+          </summary>
+          <pre className="overflow-x-auto px-3 pb-2 text-xs">{result.content}</pre>
+        </details>
+      ))}
+
+      {cost !== null && (
+        <p className="text-xs text-neutral-400">est. cost: ${cost.toFixed(6)}</p>
+      )}
+    </div>
+  );
+}
