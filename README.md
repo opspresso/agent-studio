@@ -85,7 +85,15 @@ pnpm build          # production build
 
 ## Slack Integration
 
-One bot per workspace, configured by env (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`,
+Two modes that can coexist:
+
+**Per-project bots** — each agent project can have its own dedicated Slack app.
+Project Settings → Slack bot generates a project-specific manifest (events URL
+`/api/slack/events/<project>`), and stores the pasted bot token + signing secret
+AES-encrypted with masked reads. Events on that URL are verified with that
+project's own secret and always run that project — no selector needed.
+
+**Workspace default bot** — one bot per workspace, configured by env (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`,
 optional `SLACK_DEFAULT_PROJECT`). Point the Slack app's Events API request URL at
 `https://<host>/api/slack/events` and subscribe to `app_mention` and `message.im`
 (scopes: `app_mentions:read`, `im:history`, `chat:write`).

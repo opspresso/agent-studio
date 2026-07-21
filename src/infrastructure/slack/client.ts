@@ -28,6 +28,9 @@ async function slackApi<T>(
 }
 
 export const slackClient = {
+  authTest(token: string): Promise<{ team?: string; user?: string; bot_id?: string }> {
+    return slackApi(token, "auth.test", {});
+  },
   postMessage(
     token: string,
     args: { channel: string; text: string; thread_ts?: string },

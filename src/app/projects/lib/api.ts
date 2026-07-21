@@ -244,3 +244,50 @@ export async function predictImage(
   }
   return (await res.json()) as ImageResult;
 }
+
+export interface ProjectSlackView {
+  enabled: boolean;
+  configured: boolean;
+  botToken: string;
+  signingSecret: string;
+  eventsPath: string;
+  manifest?: Record<string, unknown>;
+}
+
+export async function getProjectSlack(name: string): Promise<ProjectSlackView> {
+  const res = await fetch(`/api/projects/${name}/slack`);
+  if (!res.ok) {
+    throw new Error(`Failed to load Slack settings (${res.status})`);
+  }
+  return (await res.json()) as ProjectSlackView;
+}
+
+export async function updateProjectSlack(
+  name: string,
+  update: { botToken?: string; signingSecret?: string; enabled?: boolean },
+): Promise<ProjectSlackView> {
+  const res = await fetch(`/api/projects/${name}/slack`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  const data = (await res.json()) as ProjectSlackView & { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? `Failed to save Slack settings (${res.status})`);
+  }
+  return data;
+}
+
+export async function disconnectProjectSlack(name: string): Promise<void> {
+  const res = await fetch(`/api/projects/${name}/slack`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`Failed to disconnect Slack (${res.status})`);
+  }
+}
+
+export async function testProjectSlack(
+  name: string,
+): Promise<{ ok?: boolean; team?: string; botUser?: string; error?: string }> {
+  const res = await fetch(`/api/projects/${name}/slack/test`, { method: "POST" });
+  return (await res.json()) as { ok?: boolean; team?: string; botUser?: string; error?: string };
+}

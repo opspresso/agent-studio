@@ -2,7 +2,7 @@ import { withAuth } from "@/lib/session";
 import { projectRepository, versionRepository } from "@/lib/container";
 import { publishVersion } from "@/application/project/versionUseCases";
 import { publishSchema } from "@/app/api/projects/_lib/schemas";
-import { apiError, invalidRequest } from "@/app/api/projects/_lib/http";
+import { apiError, invalidRequest, sanitizeProject } from "@/app/api/projects/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -19,7 +19,7 @@ export const POST = withAuth(async (_user, request: Request, ctx: RouteContext) 
       name,
       parsed.data.versionName,
     );
-    return Response.json(project);
+    return Response.json(sanitizeProject(project));
   } catch (error) {
     return apiError(error);
   }
