@@ -83,6 +83,22 @@ pnpm test           # Vitest unit tests
 pnpm build          # production build
 ```
 
+## Slack Integration
+
+One bot per workspace, configured by env (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`,
+optional `SLACK_DEFAULT_PROJECT`). Point the Slack app's Events API request URL at
+`https://<host>/api/slack/events` and subscribe to `app_mention` and `message.im`
+(scopes: `app_mentions:read`, `im:history`, `chat:write`).
+
+- Mention the bot with `project:<name> <message>` to pick an agent project, or rely
+  on `SLACK_DEFAULT_PROJECT`.
+- Replies stream into one message via `chat.update`; thread replies carry the full
+  thread as multi-turn context.
+- Events are verified (signing secret, 5-minute replay window), deduplicated by
+  `event_id` (conditional put, 24h TTL), acked within 3 seconds, and processed in
+  the background — the container is a persistent process, so `after()` work always
+  completes.
+
 ## Deployment
 
 The production target is a container (ECS Fargate or any Docker host).

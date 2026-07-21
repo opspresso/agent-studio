@@ -44,6 +44,16 @@ export const config = {
       .map((domain) => domain.trim().toLowerCase())
       .filter(Boolean);
   },
+  get slackBotToken(): string | undefined {
+    return process.env.SLACK_BOT_TOKEN || undefined;
+  },
+  get slackSigningSecret(): string | undefined {
+    return process.env.SLACK_SIGNING_SECRET || undefined;
+  },
+  /** Fallback agent project when a mention does not name one. */
+  get slackDefaultProject(): string | undefined {
+    return process.env.SLACK_DEFAULT_PROJECT || undefined;
+  },
   get googleClientId(): string {
     return required("GOOGLE_CLIENT_ID");
   },
