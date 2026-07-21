@@ -139,7 +139,8 @@ export async function listModels(): Promise<ModelConfig[]> {
     if (!res.ok) {
       return [];
     }
-    return (await res.json()) as ModelConfig[];
+    const data = (await res.json()) as { models?: ModelConfig[] };
+    return data.models ?? [];
   } catch {
     return [];
   }
