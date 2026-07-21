@@ -26,7 +26,7 @@ corepack enable && corepack prepare pnpm@11.10.0 --activate
 pnpm install
 
 # 2. Environment
-cp .env.example .env
+cp .env.example .env.local
 # Fill in GOOGLE_CLIENT_ID/SECRET, BETTER_AUTH_SECRET, LLM_BASE_URL, LLM_API_KEY,
 # AES_ENCRYPTION_KEY (32-byte base64: `openssl rand -base64 32`)
 
@@ -49,10 +49,10 @@ pnpm tsx scripts/mock-llm.ts
 
 # Create a dev user + session and print a signed session cookie
 # (bypasses the Google OAuth round-trip; local DynamoDB only)
-pnpm tsx scripts/dev-session.ts
+pnpm tsx --env-file=.env.local scripts/dev-session.ts
 
 # End-to-end integration check (repositories + engine against local DynamoDB)
-pnpm tsx scripts/integration-check.ts
+pnpm tsx --env-file=.env.local scripts/integration-check.ts
 ```
 
 ## Development
