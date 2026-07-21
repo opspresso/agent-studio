@@ -20,7 +20,7 @@ export interface SlackEventBody {
   };
 }
 
-const UPDATE_INTERVAL_MS = 1500;
+const UPDATE_INTERVAL_MS = 1000;
 /** Hard deadline for one agent run; on expiry the message reports a timeout
  * instead of showing the placeholder forever. */
 const RUN_TIMEOUT_MS = 3 * 60 * 1000;
@@ -122,6 +122,19 @@ export async function handleSlackEvent(
       if (chunk.error) {
         failed = chunk.error;
         break;
+      }
+      // Stream tool activity so the first (tool-heavy) turn shows progress.
+      const toolCall = chunk.delta?.toolCalls?.[0] as
+        | { function?: { name?: string } }
+        | undefined;
+      if (toolCall?.function?.name && text === "") {
+        await slackClient
+          .updateMessage(token, {
+            channel: placeholder.channel,
+            ts: placeholder.ts,
+            text: `:hammer_and_wrench: _${toolCall.function.name} 사용 중…_`,
+          })
+          .catch(() => {});
       }
       const content = chunk.delta?.content;
       if (content && !chunk.author) {
