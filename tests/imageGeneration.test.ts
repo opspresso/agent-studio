@@ -3,7 +3,8 @@ import { generateImage } from "@/application/image/generateImage";
 import { calculateImageCost } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
-import type { UsageDelta, UsageRepository } from "@/domain/usage/repository";
+import type { UsageRepository } from "@/domain/usage/repository";
+import type { UsageDelta } from "@/domain/usage/types";
 
 const project: Project = {
   name: "img-proj",
