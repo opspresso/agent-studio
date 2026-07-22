@@ -689,16 +689,20 @@ export async function* runAgent(
       }
 
       let content: string;
+      let resultName = call.name;
       if (call.name === SKILL_TOOL_NAME && deps.loadSkillContent) {
         const skillName = typeof args.skill_name === "string" ? args.skill_name : "";
         const filePath = typeof args.file_path === "string" ? args.file_path : undefined;
         content = await loadSkillSafe(deps.loadSkillContent, skills, skillName, filePath);
+        if (skillName) {
+          resultName = `${SKILL_TOOL_NAME}: ${skillName}`;
+        }
       } else if (deps.callMcpTool) {
         content = await deps.callMcpTool(call.name, args);
       } else {
         content = `Error: Tool '${call.name}' cannot be executed in this context.`;
       }
-      yield { author, toolResult: { toolCallId: call.id, name: call.name, content } };
+      yield { author, toolResult: { toolCallId: call.id, name: resultName, content } };
       toolMessages.push({ role: "tool", tool_call_id: call.id, content });
     }
 

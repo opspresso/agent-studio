@@ -60,6 +60,33 @@ describe("runAgent tool loop", () => {
     expect(recorded).toHaveLength(2);
   });
 
+  it("labels a Skill load's toolResult with the loaded skill name", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "Skill", '{"skill_name":"image-generation"}'), usageChunk(10, 5)],
+      [contentChunk("Loaded."), usageChunk(8, 4)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      loadSkillContent: async () => "# skill content",
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: MODEL,
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "draw" }],
+      skills: [{ name: "image-generation", description: "" }],
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    expect(chunks.find((c) => c.toolResult)?.toolResult).toEqual({
+      toolCallId: "call_1",
+      name: "Skill: image-generation",
+      content: "# skill content",
+    });
+  });
+
   it("stops at the turn guard instead of looping forever", async () => {
     // The model keeps asking for a tool; the guard must cap the loop.
     const channel = new FakeChannel([

@@ -37,6 +37,7 @@ export interface EngineChunk {
   /** Emitted after a tool (MCP / Skill) finished executing. */
   toolResult?: {
     toolCallId: string;
+    /** Display name; Skill loads include the loaded skill ("Skill: <name>"). */
     name: string;
     content: string;
   };
