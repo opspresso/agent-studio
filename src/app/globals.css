@@ -65,3 +65,61 @@ body {
     animation: none;
   }
 }
+
+/* Markdown rendering inside chat assistant bubbles. */
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown pre,
+.chat-markdown blockquote,
+.chat-markdown table {
+  @apply my-2;
+}
+.chat-markdown h1,
+.chat-markdown h2 {
+  @apply mb-2 mt-3 text-base font-semibold;
+}
+.chat-markdown h3,
+.chat-markdown h4 {
+  @apply mb-2 mt-3 text-sm font-semibold;
+}
+.chat-markdown ul {
+  @apply list-disc pl-5;
+}
+.chat-markdown ol {
+  @apply list-decimal pl-5;
+}
+.chat-markdown li {
+  @apply my-0.5;
+}
+.chat-markdown a {
+  @apply text-brand underline;
+}
+.chat-markdown code {
+  @apply rounded bg-neutral-100 px-1 py-0.5 font-mono text-[13px] dark:bg-neutral-800;
+}
+.chat-markdown pre {
+  @apply overflow-x-auto rounded-md bg-neutral-100 p-3 dark:bg-neutral-800;
+}
+.chat-markdown pre code {
+  @apply bg-transparent p-0;
+}
+.chat-markdown blockquote {
+  @apply border-l-2 border-neutral-300 pl-3 text-neutral-600 dark:border-neutral-700 dark:text-neutral-400;
+}
+.chat-markdown table {
+  @apply w-full border-collapse text-xs;
+}
+.chat-markdown th,
+.chat-markdown td {
+  @apply border border-neutral-200 px-2 py-1 dark:border-neutral-800;
+}
+.chat-markdown hr {
+  @apply my-3 border-neutral-200 dark:border-neutral-800;
+}

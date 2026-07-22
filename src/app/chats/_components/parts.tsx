@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <div className="chat-markdown break-words">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
+}
 
 export function ToolResultBlock({ content, label }: { content: string; label?: string }) {
   const [open, setOpen] = useState(false);
@@ -80,8 +90,8 @@ export function MessageView({ message }: { message: ChatMessage }) {
           alt={image.prompt ?? "Generated image"}
         />
       ))}
-      <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
-        {message.content}
+      <div className="max-w-[80%] rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
+        <MarkdownContent content={message.content} />
       </div>
     </div>
   );
@@ -112,8 +122,12 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
       ))}
       <div className="max-w-[80%]">
         {turn.author && <AuthorBadge author={turn.author} />}
-        <div className="whitespace-pre-wrap break-words rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
-          {turn.text || <span className="text-neutral-400">Thinking…</span>}
+        <div className="rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
+          {turn.text ? (
+            <MarkdownContent content={turn.text} />
+          ) : (
+            <span className="text-neutral-400">Thinking…</span>
+          )}
         </div>
       </div>
     </div>
