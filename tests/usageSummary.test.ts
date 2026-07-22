@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { UsageRow } from "@/domain/usage/types";
-import { groupUsage, providerOf, totalCalls, totalCost } from "@/app/dashboard/_lib/usage";
+import {
+  buildDailySeries,
+  DAILY_SERIES_LIMIT,
+  groupUsage,
+  OTHERS_KEY,
+  providerOf,
+  totalCalls,
+  totalCost,
+} from "@/app/dashboard/_lib/usage";
 import { inclusiveDays, summaryQuerySchema } from "@/app/api/usages/summary/validation";
 
 const rows: UsageRow[] = [
@@ -59,6 +67,56 @@ describe("groupUsage", () => {
       { key: "openai/gpt-5-mini", cost: 2, calls: 10 },
       { key: "google/gemini-3.1-flash-lite", cost: 0.2, calls: 10 },
     ]);
+  });
+});
+
+describe("buildDailySeries", () => {
+  it("buckets cost per day and groups by project", () => {
+    const series = buildDailySeries(rows, "project", "2026-01-01", "2026-01-02");
+    expect(series.keys).toEqual(["beta", "alpha"]);
+    expect(series.data).toEqual([
+      { date: "2026-01-01", beta: 1.2, alpha: 1 },
+      { date: "2026-01-02", beta: 0, alpha: 0 },
+    ]);
+  });
+
+  it("groups by provider, folding model ids by prefix", () => {
+    const series = buildDailySeries(rows, "provider", "2026-01-01", "2026-01-01");
+    expect(series.keys).toEqual(["openai", "google"]);
+    expect(series.data).toEqual([{ date: "2026-01-01", openai: 2, google: 0.2 }]);
+  });
+
+  it("fills every date in range with zeros when there are no items", () => {
+    const series = buildDailySeries([], "project", "2026-01-01", "2026-01-03");
+    expect(series.keys).toEqual([]);
+    expect(series.data.map((point) => point.date)).toEqual([
+      "2026-01-01",
+      "2026-01-02",
+      "2026-01-03",
+    ]);
+  });
+
+  it("folds series beyond the limit into Others", () => {
+    const many: UsageRow[] = Array.from({ length: DAILY_SERIES_LIMIT + 2 }, (_, i) => ({
+      projectName: `p${i}`,
+      date: "2026-01-01",
+      calls: { "openai/gpt-5-mini": 1 },
+      inputTokens: { "openai/gpt-5-mini": 100 },
+      outputTokens: { "openai/gpt-5-mini": 50 },
+      costUsd: { "openai/gpt-5-mini": i + 1 },
+    }));
+    const series = buildDailySeries(many, "project", "2026-01-01", "2026-01-01");
+    expect(series.keys).toHaveLength(DAILY_SERIES_LIMIT + 1);
+    expect(series.keys[series.keys.length - 1]).toBe(OTHERS_KEY);
+    // Keys keep the highest-cost projects; the two cheapest (1 + 2) fold into Others.
+    expect(series.keys).not.toContain("p0");
+    expect(series.keys).not.toContain("p1");
+    expect(series.data[0]?.[OTHERS_KEY]).toBeCloseTo(3, 6);
+  });
+
+  it("returns empty data for a malformed range", () => {
+    const series = buildDailySeries(rows, "project", "not-a-date", "2026-01-02");
+    expect(series.data).toEqual([]);
   });
 });
 

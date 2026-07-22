@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  buildDailySeries,
   groupUsage,
   presetRange,
   totalCalls,
@@ -9,6 +10,7 @@ import {
   type GroupBy,
   type UsageRow,
 } from "../_lib/usage";
+import { DailyCostChart } from "./DailyCostChart";
 
 const PRESETS = [7, 14, 30] as const;
 const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider"];
@@ -65,6 +67,7 @@ export function Dashboard() {
   }, [from, to]);
 
   const groups = useMemo(() => groupUsage(items, groupBy), [items, groupBy]);
+  const daily = useMemo(() => buildDailySeries(items, groupBy, from, to), [items, groupBy, from, to]);
   const cost = useMemo(() => totalCost(items), [items]);
   const calls = useMemo(() => totalCalls(items), [items]);
   const maxCost = groups[0]?.cost ?? 0;
@@ -150,6 +153,17 @@ export function Dashboard() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <p className="mb-2 text-xs uppercase tracking-wide text-neutral-500">Daily cost</p>
+        {items.length === 0 ? (
+          <p className="py-6 text-sm text-neutral-500">
+            {loading ? "Loading…" : "No usage in this range."}
+          </p>
+        ) : (
+          <DailyCostChart data={daily.data} keys={daily.keys} />
+        )}
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">

@@ -5,6 +5,42 @@
   --color-brand-strong: oklch(0.52 0.21 255);
 }
 
+:root {
+  /* Categorical chart palette — validated for CVD/contrast on the light surface. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-6: #008300;
+  --chart-7: #4a3aa7;
+  --chart-8: #e34948;
+  --chart-others: #898781;
+  --chart-surface: #ffffff;
+  --chart-grid: #e5e5e5;
+  --chart-ink: #737373;
+  --chart-cursor: rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Same hues re-stepped for the dark surface. */
+    --chart-1: #3987e5;
+    --chart-2: #d95926;
+    --chart-3: #199e70;
+    --chart-4: #c98500;
+    --chart-5: #d55181;
+    --chart-6: #008300;
+    --chart-7: #9085e9;
+    --chart-8: #e66767;
+    --chart-others: #898781;
+    --chart-surface: #171717;
+    --chart-grid: #262626;
+    --chart-ink: #a3a3a3;
+    --chart-cursor: rgba(255, 255, 255, 0.08);
+  }
+}
+
 body {
   @apply bg-neutral-50 text-neutral-900 antialiased;
 }

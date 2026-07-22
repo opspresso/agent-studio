@@ -57,6 +57,85 @@ export function groupUsage(items: UsageRow[], by: GroupBy): UsageGroup[] {
     .sort((a, b) => b.cost - a.cost);
 }
 
+/** Max stacked series in the daily chart; the rest fold into `OTHERS_KEY`. */
+export const DAILY_SERIES_LIMIT = 8;
+export const OTHERS_KEY = "Others";
+
+export interface DailySeriesPoint {
+  [key: string]: number | string;
+  date: string;
+}
+
+export interface DailySeries {
+  /** One point per day from `from` to `to` inclusive, ascending, zero-filled. */
+  data: DailySeriesPoint[];
+  /** Series keys sorted by total cost desc; `OTHERS_KEY` last when folded. */
+  keys: string[];
+}
+
+export function buildDailySeries(
+  items: UsageRow[],
+  by: GroupBy,
+  from: string,
+  to: string,
+): DailySeries {
+  const totals = new Map<string, number>();
+  const byDate = new Map<string, Map<string, number>>();
+  const add = (date: string, key: string, cost: number) => {
+    totals.set(key, (totals.get(key) ?? 0) + cost);
+    const bucket = byDate.get(date) ?? new Map<string, number>();
+    bucket.set(key, (bucket.get(key) ?? 0) + cost);
+    byDate.set(date, bucket);
+  };
+
+  for (const row of items) {
+    if (by === "project") {
+      add(row.date, row.projectName, sumRecord(row.costUsd));
+      continue;
+    }
+    for (const model of Object.keys(row.costUsd)) {
+      const key = by === "model" ? model : providerOf(model);
+      add(row.date, key, row.costUsd[model] ?? 0);
+    }
+  }
+
+  const sortedKeys = [...totals.entries()]
+    .filter(([, cost]) => cost > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key]) => key);
+  const keys = sortedKeys.slice(0, DAILY_SERIES_LIMIT);
+  const keySet = new Set(keys);
+  const hasOthers = sortedKeys.length > DAILY_SERIES_LIMIT;
+
+  const data: DailySeriesPoint[] = [];
+  const cursor = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime())) {
+    return { data, keys: hasOthers ? [...keys, OTHERS_KEY] : keys };
+  }
+  while (cursor <= end) {
+    const date = toISODate(cursor);
+    const bucket = byDate.get(date);
+    const point: DailySeriesPoint = { date };
+    for (const key of keys) {
+      point[key] = bucket?.get(key) ?? 0;
+    }
+    if (hasOthers) {
+      let others = 0;
+      for (const [key, cost] of bucket ?? []) {
+        if (!keySet.has(key)) {
+          others += cost;
+        }
+      }
+      point[OTHERS_KEY] = others;
+    }
+    data.push(point);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return { data, keys: hasOthers ? [...keys, OTHERS_KEY] : keys };
+}
+
 export function toISODate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
