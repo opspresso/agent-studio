@@ -48,23 +48,82 @@ export function NumberField({
   );
 }
 
-/** Chip list with free-text add. Used for MCP servers and skills. */
-export function TagInput({
+export interface PickerOption {
+  value: string;
+  description?: string;
+  badge?: string;
+}
+
+function matches(option: PickerOption, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    return true;
+  }
+  return (
+    option.value.toLowerCase().includes(q) ||
+    (option.description ?? "").toLowerCase().includes(q)
+  );
+}
+
+function OptionDropdown<T extends PickerOption>({
+  options,
+  emptyText,
+  onPick,
+}: {
+  options: T[];
+  emptyText: string;
+  onPick: (option: T) => void;
+}) {
+  return (
+    <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      {options.length === 0 ? (
+        <p className="px-3 py-2 text-xs text-neutral-400">{emptyText}</p>
+      ) : (
+        options.map((option) => (
+          <button
+            key={`${option.badge ?? ""}:${option.value}`}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onPick(option)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          >
+            <span className="shrink-0">{option.value}</span>
+            {option.badge && (
+              <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800">
+                {option.badge}
+              </span>
+            )}
+            {option.description && (
+              <span className="min-w-0 truncate text-xs text-neutral-400">{option.description}</span>
+            )}
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** Chip list fed by registered options: type to filter, pick to add. */
+export function SearchSelectInput({
   label,
   values,
   onChange,
+  options,
   placeholder,
 }: {
   label: string;
   values: string[];
   onChange: (values: string[]) => void;
+  options: PickerOption[];
   placeholder?: string;
 }) {
   const [draft, setDraft] = useState("");
+  const [open, setOpen] = useState(false);
 
-  function add() {
-    const value = draft.trim();
-    if (value && !values.includes(value)) {
+  const available = options.filter((o) => !values.includes(o.value) && matches(o, draft));
+
+  function add(value: string) {
+    if (!values.includes(value)) {
       onChange([...values, value]);
     }
     setDraft("");
@@ -90,40 +149,60 @@ export function TagInput({
           </span>
         ))}
       </div>
-      <input
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            add();
-          }
-        }}
-        onBlur={add}
-        placeholder={placeholder}
-        className={`${inputClass} mt-1.5`}
-      />
+      <div className="relative mt-1.5">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (available[0]) {
+                add(available[0].value);
+              }
+            }
+            if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          placeholder={placeholder}
+          className={inputClass}
+        />
+        {open && (
+          <OptionDropdown
+            options={available}
+            emptyText="No matching entries."
+            onPick={(option) => add(option.value)}
+          />
+        )}
+      </div>
     </Field>
   );
 }
 
-/** Subagent list editor: name + local/remote type. */
+/** Subagent picker over registered sources: projects (local) and external agents (remote). */
 export function SubagentInput({
   values,
   onChange,
+  options,
 }: {
   values: SubagentRef[];
   onChange: (values: SubagentRef[]) => void;
+  options: Array<PickerOption & { type: "local" | "remote" }>;
 }) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState<"local" | "remote">("local");
+  const [draft, setDraft] = useState("");
+  const [open, setOpen] = useState(false);
 
-  function add() {
-    const trimmed = name.trim();
-    if (trimmed && !values.some((v) => v.name === trimmed)) {
-      onChange([...values, { name: trimmed, type }]);
+  const available = options.filter(
+    (o) => !values.some((v) => v.name === o.value) && matches(o, draft),
+  );
+
+  function add(option: PickerOption & { type: "local" | "remote" }) {
+    if (!values.some((v) => v.name === option.value)) {
+      onChange([...values, { name: option.value, type: option.type }]);
     }
-    setName("");
+    setDraft("");
   }
 
   return (
@@ -148,34 +227,29 @@ export function SubagentInput({
           </div>
         ))}
       </div>
-      <div className="mt-1.5 flex gap-1.5">
+      <div className="relative mt-1.5">
         <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              add();
+              if (available[0]) {
+                add(available[0]);
+              }
+            }
+            if (e.key === "Escape") {
+              setOpen(false);
             }
           }}
-          placeholder="agent name"
+          placeholder="Search projects and external agents"
           className={inputClass}
         />
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value as "local" | "remote")}
-          className="rounded-md border border-neutral-300 bg-transparent px-2 text-sm dark:border-neutral-700"
-        >
-          <option value="local">local</option>
-          <option value="remote">remote</option>
-        </select>
-        <button
-          type="button"
-          onClick={add}
-          className="rounded-md border border-neutral-300 px-3 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-        >
-          Add
-        </button>
+        {open && (
+          <OptionDropdown options={available} emptyText="No matching agents." onPick={add} />
+        )}
       </div>
     </Field>
   );
