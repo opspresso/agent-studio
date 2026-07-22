@@ -13,7 +13,7 @@ export function apiError(error: unknown): Response {
   if (status !== null) {
     return Response.json({ error: (error as Error).message }, { status });
   }
-  console.error("[projects] unhandled error", error);
+  console.error("[api] unhandled error", error);
   return Response.json({ error: "Internal server error" }, { status: 500 });
 }
 

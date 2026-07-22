@@ -1,11 +1,9 @@
+import { AppError } from "@/application/errors";
+
 /** Application-level chat errors carrying the HTTP status the route should surface. */
-export class ChatError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = new.target.name;
+export class ChatError extends AppError {
+  constructor(message: string, status: number) {
+    super(message, status);
   }
 }
 

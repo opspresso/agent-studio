@@ -6,7 +6,7 @@ import { apiError, invalidRequest, sanitizeProject } from "@/app/api/projects/_l
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-export const POST = withAuth(async (_user, request: Request, ctx: RouteContext) => {
+export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const parsed = publishSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
@@ -18,6 +18,7 @@ export const POST = withAuth(async (_user, request: Request, ctx: RouteContext) 
       versionRepository,
       name,
       parsed.data.versionName,
+      user.email,
     );
     return Response.json(sanitizeProject(project));
   } catch (error) {

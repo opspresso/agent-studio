@@ -138,15 +138,20 @@ GET  /api/usages/summary?from&to
 GET  /api/models
 ```
 
-All routes require a Better Auth session except none (single-tenant internal tool posture;
-service-to-service auth is a later phase). SSE responses use `text/event-stream` with
-`data: {json}\n\n` framing and a terminal `data: [DONE]`.
+All routes require a Better Auth session except the unauthenticated webhooks
+(`/api/health`, `/api/slack/events/*` verified by signing secret, `/api/a2a/*` gated by
+`A2A_API_KEY`). Projects are a shared catalog: any signed-in user may read and run any
+project, but mutations (update/delete/publish, version create/update, Slack config) are
+owner-only — `assertProjectOwner` returns 403 for non-owners. MCP/agent/skill registries
+are shared admin resources with no per-owner restriction. SSE responses use
+`text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.
 
 ## Auth
 
 Better Auth 1.6, Google OAuth only, custom DynamoDB adapter over the single table
-(`src/lib/auth-adapter.ts`). Session read helper `getSession()` in `src/lib/session.ts`;
-route handlers use `requireSession()` which throws a 401 `Response`.
+(`src/lib/auth-adapter.ts`). Session read helper `getSessionUser()` in `src/lib/session.ts`;
+route handlers wrap themselves in `withAuth(...)`, which returns a 401 `Response` when
+there is no session and otherwise passes the `SessionUser` as the handler's first argument.
 
 ## UI Pages
 

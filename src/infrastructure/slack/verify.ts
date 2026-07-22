@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
 
 const VERSION = "v0";
 const MAX_SKEW_SECONDS = 60 * 5;
@@ -26,7 +27,5 @@ export function verifySlackSignature(input: {
   const expected = `${VERSION}=${createHmac("sha256", signingSecret)
     .update(`${VERSION}:${timestamp}:${body}`)
     .digest("hex")}`;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signature);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return timingSafeEqualString(expected, signature);
 }

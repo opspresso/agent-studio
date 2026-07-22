@@ -8,22 +8,55 @@ import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import { config } from "@/lib/config";
 import { sseResponseRaw } from "@/lib/sse";
+import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
 /**
  * Task stores survive across requests so `tasks/get` works after
  * `message/send`; the container is a persistent process (same assumption as
- * the Slack integration). Stores are in-memory and reset on redeploy.
+ * the Slack integration). Stores are in-memory and reset on redeploy — this
+ * assumes a single instance; horizontal scaling would need a shared store.
+ *
+ * To bound memory, idle project stores are evicted after a TTL and the total
+ * count is capped (LRU eviction).
  */
-const taskStores = new Map<string, InMemoryTaskStore>();
+const TASK_STORE_TTL_MS = 60 * 60 * 1000;
+const MAX_TASK_STORES = 100;
+
+const taskStores = new Map<string, { store: InMemoryTaskStore; lastAccess: number }>();
 
 function taskStoreFor(projectName: string): InMemoryTaskStore {
-  let store = taskStores.get(projectName);
-  if (!store) {
-    store = new InMemoryTaskStore();
-    taskStores.set(projectName, store);
+  const now = Date.now();
+
+  for (const [name, entry] of taskStores) {
+    if (now - entry.lastAccess > TASK_STORE_TTL_MS) {
+      taskStores.delete(name);
+    }
   }
+
+  const existing = taskStores.get(projectName);
+  if (existing) {
+    existing.lastAccess = now;
+    return existing.store;
+  }
+
+  if (taskStores.size >= MAX_TASK_STORES) {
+    let oldestName: string | undefined;
+    let oldestAccess = Infinity;
+    for (const [name, entry] of taskStores) {
+      if (entry.lastAccess < oldestAccess) {
+        oldestAccess = entry.lastAccess;
+        oldestName = name;
+      }
+    }
+    if (oldestName !== undefined) {
+      taskStores.delete(oldestName);
+    }
+  }
+
+  const store = new InMemoryTaskStore();
+  taskStores.set(projectName, { store, lastAccess: now });
   return store;
 }
 
@@ -41,7 +74,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   if (!apiKey) {
     return Response.json({ error: "A2A is not configured" }, { status: 503 });
   }
-  if (request.headers.get("x-a2a-key") !== apiKey) {
+  if (!timingSafeEqualString(request.headers.get("x-a2a-key") ?? "", apiKey)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

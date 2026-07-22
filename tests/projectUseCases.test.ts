@@ -3,8 +3,11 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { VersionInput } from "@/application/project/versionUseCases";
 import { createVersion, publishVersion } from "@/application/project/versionUseCases";
-import { deleteProject } from "@/application/project/projectUseCases";
-import { ConflictError, NotFoundError } from "@/application/project/errors";
+import { deleteProject, updateProject } from "@/application/project/projectUseCases";
+import { ConflictError, ForbiddenError, NotFoundError } from "@/application/project/errors";
+
+const OWNER = "owner@x.com";
+const OTHER = "intruder@x.com";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 
 // --- Fake single-table store, injected in place of the real DynamoDB client ---
@@ -164,6 +167,7 @@ describe("createVersion naming", () => {
       makeProjectRepo([projectFixture("p")]),
       "p",
       versionInput(),
+      OWNER,
     );
     expect(created.versionName).toBe("1");
   });
@@ -178,6 +182,7 @@ describe("createVersion naming", () => {
       makeProjectRepo([projectFixture("p")]),
       "p",
       versionInput(),
+      OWNER,
     );
     expect(created.versionName).toBe("3");
   });
@@ -188,6 +193,7 @@ describe("createVersion naming", () => {
       makeProjectRepo([projectFixture("p")]),
       "p",
       { ...versionInput(), versionName: "beta" },
+      OWNER,
     );
     expect(created.versionName).toBe("beta");
   });
@@ -199,14 +205,27 @@ describe("createVersion naming", () => {
         makeProjectRepo([projectFixture("p")]),
         "p",
         { ...versionInput(), versionName: "1" },
+        OWNER,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("rejects creation for a missing project with NotFoundError", async () => {
     await expect(
-      createVersion(makeVersionRepo(), makeProjectRepo(), "nope", versionInput()),
+      createVersion(makeVersionRepo(), makeProjectRepo(), "nope", versionInput(), OWNER),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("rejects creation by a non-owner with ForbiddenError", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        versionInput(),
+        OTHER,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
@@ -217,6 +236,7 @@ describe("publishVersion", () => {
       makeVersionRepo([versionFixture("p", "1")]),
       "p",
       "1",
+      OWNER,
     );
     expect(updated.publishedVersion).toBe("1");
   });
@@ -228,20 +248,59 @@ describe("publishVersion", () => {
         makeVersionRepo(),
         "p",
         "99",
+        OWNER,
       ),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("rejects publishing on a missing project with NotFoundError (404)", async () => {
     await expect(
-      publishVersion(makeProjectRepo(), makeVersionRepo([versionFixture("p", "1")]), "nope", "1"),
+      publishVersion(makeProjectRepo(), makeVersionRepo([versionFixture("p", "1")]), "nope", "1", OWNER),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("rejects publishing by a non-owner with ForbiddenError (403)", async () => {
+    await expect(
+      publishVersion(
+        makeProjectRepo([projectFixture("p")]),
+        makeVersionRepo([versionFixture("p", "1")]),
+        "p",
+        "1",
+        OTHER,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
 describe("deleteProject", () => {
   it("rejects a missing project with NotFoundError (404)", async () => {
-    await expect(deleteProject(makeProjectRepo(), "nope")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(deleteProject(makeProjectRepo(), "nope", OWNER)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it("rejects deletion by a non-owner with ForbiddenError (403)", async () => {
+    await expect(
+      deleteProject(makeProjectRepo([projectFixture("p")]), "p", OTHER),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("updateProject ownership", () => {
+  it("lets the owner update", async () => {
+    const updated = await updateProject(
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      { displayName: "Renamed" },
+      OWNER,
+    );
+    expect(updated.displayName).toBe("Renamed");
+  });
+
+  it("rejects a non-owner with ForbiddenError (403)", async () => {
+    await expect(
+      updateProject(makeProjectRepo([projectFixture("p")]), "p", { displayName: "X" }, OTHER),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 

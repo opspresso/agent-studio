@@ -17,6 +17,9 @@ export function sseResponseRaw(generator: AsyncGenerator<unknown>): Response {
         for await (const chunk of generator) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
         }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "stream error";
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`));
       } finally {
         controller.close();
       }
