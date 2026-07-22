@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { formatDateTime } from "@/lib/date";
 import {
   deleteVersion,
   getProject,
@@ -103,7 +104,7 @@ export default function VersionsPage() {
                     )}
                   </div>
                   <div className="mt-0.5 text-xs text-neutral-500">
-                    {version.model} · {new Date(version.createdAt).toLocaleString()}
+                    {version.model} · {formatDateTime(version.createdAt)}
                   </div>
                 </div>
                 {ownerEmail !== null && session?.user.email === ownerEmail && (
