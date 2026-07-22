@@ -54,6 +54,10 @@ export const config = {
   get slackDefaultProject(): string | undefined {
     return process.env.SLACK_DEFAULT_PROJECT || undefined;
   },
+  /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
+  get a2aApiKey(): string | undefined {
+    return process.env.A2A_API_KEY || undefined;
+  },
   /**
    * Public base URL of this deployment (scheme + host). Behind a reverse
    * proxy the request URL reflects the bind address, so externally visible

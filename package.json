@@ -16,6 +16,7 @@
     "init-local-table": "tsx scripts/init-local-table.ts"
   },
   "dependencies": {
+    "@a2a-js/sdk": "^0.3.14",
     "@aws-sdk/client-dynamodb": "^3.1090.0",
     "@aws-sdk/lib-dynamodb": "^3.1090.0",
     "better-auth": "^1.6.23",

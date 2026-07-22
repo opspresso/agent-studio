@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { createAgent, listAgents, type ExternalAgent } from "./api";
+import { createAgent, listAgents, type AgentProtocol, type ExternalAgent } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "./HeaderRows";
 
 export default function AgentsPage() {
@@ -63,7 +63,12 @@ export default function AgentsPage() {
                 href={`/agents/${agent.name}`}
                 className="block h-full rounded-lg border border-neutral-200 bg-white p-4 transition hover:border-brand hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
               >
-                <div className="font-medium">{agent.name}</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{agent.name}</span>
+                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                    {agent.protocol === "a2a" ? "A2A" : "OpenAI"}
+                  </span>
+                </div>
                 <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{agent.description}</p>
                 <p className="mt-2 truncate text-xs text-neutral-400">{agent.url}</p>
               </Link>
@@ -94,6 +99,7 @@ function RegisterAgentModal({
 }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [protocol, setProtocol] = useState<AgentProtocol>("openai");
   const [description, setDescription] = useState("");
   const [rows, setRows] = useState<HeaderRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -104,7 +110,7 @@ function RegisterAgentModal({
     setSubmitting(true);
     setError(null);
     try {
-      await createAgent({ name, url, description, headers: rowsToRecord(rows) });
+      await createAgent({ name, url, protocol, description, headers: rowsToRecord(rows) });
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to register agent");
@@ -132,11 +138,26 @@ function RegisterAgentModal({
             </span>
           </label>
           <label className="block">
-            <span className="text-sm font-medium">URL</span>
+            <span className="text-sm font-medium">Protocol</span>
+            <select
+              value={protocol}
+              onChange={(e) => setProtocol(e.target.value as AgentProtocol)}
+              className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+            >
+              <option value="openai">OpenAI-compatible</option>
+              <option value="a2a">A2A</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium">{protocol === "a2a" ? "Agent Card URL" : "URL"}</span>
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com/v1/chat/completions"
+              placeholder={
+                protocol === "a2a"
+                  ? "https://example.com/.well-known/agent-card.json"
+                  : "https://example.com/v1/chat/completions"
+              }
               type="url"
               required
               className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"

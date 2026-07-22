@@ -1,6 +1,6 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
-import type { ExternalAgent } from "@/domain/agent/types";
+import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
 import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
 
@@ -10,6 +10,7 @@ function fromItem(item: Record<string, unknown>): ExternalAgent {
   return {
     name: item.name as string,
     url: item.url as string,
+    protocol: (item.protocol as AgentProtocol | undefined) ?? undefined,
     description: item.description as string,
     headers: (item.headers as Record<string, string> | undefined) ?? {},
     createdAt: item.createdAt as string,
@@ -25,6 +26,7 @@ function toItem(agent: ExternalAgent): Record<string, unknown> {
     entityType: ENTITY_TYPE,
     name: agent.name,
     url: agent.url,
+    ...(agent.protocol ? { protocol: agent.protocol } : {}),
     description: agent.description,
     headers: agent.headers,
     createdAt: agent.createdAt,

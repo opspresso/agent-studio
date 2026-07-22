@@ -21,6 +21,7 @@ import { imageChannel as defaultImageChannel } from "@/infrastructure/llm/imageC
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
+import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { decryptHeadersForOutbound } from "@/lib/secret-encryption";
 import { recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
@@ -360,6 +361,15 @@ async function* runRemoteSubagent(
     return "";
   }
   const headers = decryptHeadersForOutbound(agent.headers);
+  if (agent.protocol === "a2a") {
+    const result = await sendA2aMessage(agent.url, headers, message);
+    if (!result.ok) {
+      yield { author: agentName, error: result.error };
+      return "";
+    }
+    yield { author: agentName, delta: { content: result.text } };
+    return result.text;
+  }
   let text = "";
   try {
     const response = await fetch(agent.url, {

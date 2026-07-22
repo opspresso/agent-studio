@@ -1,5 +1,6 @@
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
-import type { ExternalAgent } from "@/domain/agent/types";
+import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
+import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import {
   decryptHeadersForOutbound,
   encryptHeaders,
@@ -11,12 +12,14 @@ import { sendAgentMessage, type SendMessageResult } from "./agentClient";
 export interface CreateAgentInput {
   name: string;
   url: string;
+  protocol?: AgentProtocol;
   description: string;
   headers: Record<string, string>;
 }
 
 export interface UpdateAgentInput {
   url?: string;
+  protocol?: AgentProtocol;
   description?: string;
   headers?: Record<string, string>;
 }
@@ -42,12 +45,16 @@ function masked(agent: ExternalAgent): ExternalAgent {
 export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCases {
   async function resolveForDispatch(
     name: string,
-  ): Promise<{ url: string; headers: Record<string, string> } | null> {
+  ): Promise<{ url: string; protocol: AgentProtocol; headers: Record<string, string> } | null> {
     const existing = await repo.get(name);
     if (!existing) {
       return null;
     }
-    return { url: existing.url, headers: decryptHeadersForOutbound(existing.headers) };
+    return {
+      url: existing.url,
+      protocol: existing.protocol ?? "openai",
+      headers: decryptHeadersForOutbound(existing.headers),
+    };
   }
 
   return {
@@ -69,6 +76,7 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
       const agent: ExternalAgent = {
         name: input.name,
         url: input.url,
+        ...(input.protocol ? { protocol: input.protocol } : {}),
         description: input.description,
         headers: encryptHeaders(input.headers),
         createdAt: now,
@@ -90,6 +98,7 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
       const updated: ExternalAgent = {
         ...existing,
         url: patch.url ?? existing.url,
+        protocol: patch.protocol ?? existing.protocol,
         description: patch.description ?? existing.description,
         headers,
         updatedAt: new Date().toISOString(),
@@ -111,6 +120,9 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
       const config = await resolveForDispatch(name);
       if (!config) {
         return null;
+      }
+      if (config.protocol === "a2a") {
+        return sendA2aMessage(config.url, config.headers, message);
       }
       return sendAgentMessage(config.url, config.headers, message);
     },
