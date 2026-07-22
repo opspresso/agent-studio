@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { toSlug } from "@/lib/slug";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
 
 function TypeBadge({ type }: { type: ProjectType }) {
@@ -138,6 +139,7 @@ function CreateProjectModal({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onBlur={() => setName(toSlug(name))}
               placeholder="my-project"
               required
               className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
