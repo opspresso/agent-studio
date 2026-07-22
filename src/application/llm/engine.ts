@@ -54,6 +54,13 @@ export interface SubagentInfo {
   type: "local" | "remote";
 }
 
+/** Connected MCP server overview; tool names are the aliased names the model sees. */
+export interface McpServerInfo {
+  name: string;
+  description: string;
+  toolNames: string[];
+}
+
 export interface EngineDeps {
   channel: LlmChannel;
   recordUsage?: RecordUsageFn;
@@ -107,6 +114,8 @@ export interface RunAgentInput {
   subagents?: SubagentInfo[];
   /** MCP tool definitions, already aliased for name collisions. */
   mcpTools?: ChannelToolDef[];
+  /** Per-server grouping of the MCP tools, for the system prompt overview. */
+  mcpServers?: McpServerInfo[];
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +397,21 @@ function skillSystemPromptAddition(skills: SkillInfo[]): string {
   ].join("\n");
 }
 
+function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
+  const rows = servers
+    .map((s) => `| ${s.name} | ${s.description} | ${s.toolNames.join(", ")} |`)
+    .join("\n");
+  return [
+    "## Connected MCP Servers",
+    "",
+    "The tools listed below come from external MCP servers. Use a server's description to decide when its tools are relevant.",
+    "",
+    "| Server | Description | Tools |",
+    "|--------|-------------|-------|",
+    rows,
+  ].join("\n");
+}
+
 function subagentSystemPromptAddition(subagents: SubagentInfo[]): string {
   const blocks = subagents
     .map((a) => `Agent name: ${a.name}\nAgent description: ${a.description || "No description"}`)
@@ -467,6 +491,7 @@ function buildAgentSystemPrompt(
   base: string | undefined,
   skills: SkillInfo[],
   subagents: SubagentInfo[],
+  mcpServers: McpServerInfo[],
 ): string {
   const parts: string[] = [];
   if (base) {
@@ -474,6 +499,9 @@ function buildAgentSystemPrompt(
   }
   if (skills.length > 0) {
     parts.push(skillSystemPromptAddition(skills));
+  }
+  if (mcpServers.length > 0) {
+    parts.push(mcpSystemPromptAddition(mcpServers));
   }
   if (subagents.length > 0) {
     parts.push(subagentSystemPromptAddition(subagents));
@@ -558,7 +586,12 @@ export async function* runAgent(
   // OpenAI chunk shape is preserved otherwise.
   const author = hasSubagents ? input.projectName : undefined;
 
-  const systemPrompt = buildAgentSystemPrompt(input.systemPrompt, skills, subagents);
+  const systemPrompt = buildAgentSystemPrompt(
+    input.systemPrompt,
+    skills,
+    subagents,
+    input.mcpServers ?? [],
+  );
   const tools = buildAgentTools(input.mcpTools, skills, subagents, Boolean(deps.generateImage));
 
   const messages: ChannelMessage[] = [];

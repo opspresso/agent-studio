@@ -121,6 +121,9 @@ Conventions:
 - Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). Tool name
   collisions get `_1/_2` suffix aliases with reverse mapping. Tool results capped at
   100,000 chars.
+- Agent runs append a "Connected MCP Servers" table (server name, description, aliased
+  tool names) to the system prompt so the model knows which server a tool group belongs
+  to; servers that are unreachable or expose no tools are omitted.
 
 ### External Agents (registry, A2A-lite)
 - `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), protocol ('openai' |

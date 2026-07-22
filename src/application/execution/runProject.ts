@@ -153,6 +153,7 @@ export async function* executeAgent(
       skills,
       subagents,
       mcpTools: mcp.mcpTools,
+      mcpServers: mcp.mcpServers,
     });
   } finally {
     await usage.flush();
@@ -253,13 +254,15 @@ async function buildMcpTools(
   version: Version,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
+  mcpServers: engine.McpServerInfo[];
   callMcpTool?: (name: string, args: Record<string, unknown>) => Promise<string>;
 }> {
   const mcpList = version.mcpList ?? [];
   if (mcpList.length === 0) {
-    return { mcpTools: [] };
+    return { mcpTools: [], mcpServers: [] };
   }
   const servers = [];
+  const descriptionByName = new Map<string, string>();
   for (const name of mcpList) {
     const mcp = await deps.mcps.get(name);
     if (!mcp) {
@@ -270,6 +273,7 @@ async function buildMcpTools(
       url: mcp.url,
       headers: decryptHeadersForOutbound(mcp.headers),
     });
+    descriptionByName.set(mcp.name, mcp.description ?? "");
   }
 
   const reserved = new Set<string>();
@@ -282,8 +286,19 @@ async function buildMcpTools(
 
   const toolManager = new ToolManager(servers, reserved);
   await toolManager.init();
+  const mcpServers: engine.McpServerInfo[] = [];
+  for (const [serverName, toolNames] of toolManager.toolNamesByServer) {
+    if (toolNames.length > 0) {
+      mcpServers.push({
+        name: serverName,
+        description: descriptionByName.get(serverName) ?? "",
+        toolNames,
+      });
+    }
+  }
   return {
     mcpTools: toolManager.tools,
+    mcpServers,
     callMcpTool: (name, args) => toolManager.callTool(name, args),
   };
 }
@@ -348,6 +363,7 @@ async function* runLocalSubagent(
     skills,
     subagents,
     mcpTools: mcp.mcpTools,
+    mcpServers: mcp.mcpServers,
   })) {
     if (chunk.delta?.content) {
       text += chunk.delta.content;

@@ -145,6 +145,7 @@ export class ToolManager {
   private readonly sessionByToolName = new Map<string, McpSession>();
   private readonly originalNameByAlias = new Map<string, string>();
   private _tools: ChannelToolDef[] = [];
+  private _toolNamesByServer = new Map<string, string[]>();
 
   constructor(servers: McpServerConfig[], reservedToolNames?: Iterable<string>) {
     this.servers = servers;
@@ -153,6 +154,11 @@ export class ToolManager {
 
   get tools(): ChannelToolDef[] {
     return this._tools;
+  }
+
+  /** Aliased tool names grouped by server name; unreachable servers are absent. */
+  get toolNamesByServer(): Map<string, string[]> {
+    return this._toolNamesByServer;
   }
 
   async init(): Promise<void> {
@@ -172,6 +178,7 @@ export class ToolManager {
         // A single broken MCP must not abort the whole tool set.
         continue;
       }
+      const aliases: string[] = [];
       for (const tool of serverTools) {
         const alias = allocateToolName(tool.name, usedNames, aliasIndexByName);
         tools.push({
@@ -184,7 +191,9 @@ export class ToolManager {
         });
         this.sessionByToolName.set(alias, session);
         this.originalNameByAlias.set(alias, tool.name);
+        aliases.push(alias);
       }
+      this._toolNamesByServer.set(server.name, aliases);
     }
     this._tools = tools;
   }

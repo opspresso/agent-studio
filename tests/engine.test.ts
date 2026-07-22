@@ -182,3 +182,50 @@ describe("runAgent GenerateImage builtin", () => {
     expect(channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false).toBe(false);
   });
 });
+
+describe("runAgent MCP server system prompt", () => {
+  it("appends a Connected MCP Servers table when mcpServers are provided", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel },
+        {
+          projectName: "p",
+          model: MODEL,
+          systemPrompt: "base prompt",
+          messages: [{ role: "user", content: "hi" }],
+          mcpTools: [{ type: "function", function: { name: "search_repos", parameters: {} } }],
+          mcpServers: [
+            { name: "github", description: "Internal GitHub access", toolNames: ["search_repos", "get_pr"] },
+            { name: "docs", description: "", toolNames: ["search_docs"] },
+          ],
+        },
+      ),
+    );
+    const system = channel.seenParams[0]?.messages[0];
+    expect(system?.role).toBe("system");
+    const content = String(system?.content);
+    expect(content).toContain("base prompt");
+    expect(content).toContain("## Connected MCP Servers");
+    expect(content).toContain("| github | Internal GitHub access | search_repos, get_pr |");
+    expect(content).toContain("| docs |  | search_docs |");
+  });
+
+  it("adds no MCP section when mcpServers is absent", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel },
+        {
+          projectName: "p",
+          model: MODEL,
+          systemPrompt: "base prompt",
+          messages: [{ role: "user", content: "hi" }],
+          mcpTools: [{ type: "function", function: { name: "search_repos", parameters: {} } }],
+        },
+      ),
+    );
+    const content = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(content).not.toContain("Connected MCP Servers");
+  });
+});

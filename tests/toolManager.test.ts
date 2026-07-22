@@ -262,3 +262,25 @@ describe("ToolManager per-server error isolation", () => {
     expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
   });
 });
+
+describe("ToolManager toolNamesByServer", () => {
+  it("groups aliased tool names by server and omits unreachable servers", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }, { name: "fetch" }] },
+      "https://b.test/mcp": { listTools: [{ name: "search" }] },
+      "https://down.test/mcp": { networkError: true },
+    });
+    const manager = new ToolManager([
+      server("a", "https://a.test/mcp"),
+      server("b", "https://b.test/mcp"),
+      server("down", "https://down.test/mcp"),
+    ]);
+
+    await manager.init();
+
+    expect(manager.toolNamesByServer.get("a")).toEqual(["search", "fetch"]);
+    // server b's colliding tool is grouped under its aliased name
+    expect(manager.toolNamesByServer.get("b")).toEqual(["search_1"]);
+    expect(manager.toolNamesByServer.has("down")).toBe(false);
+  });
+});
