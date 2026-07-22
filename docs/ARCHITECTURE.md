@@ -10,7 +10,6 @@ Agent Studio is a production-level single Next.js 16 full-stack application. It 
 - Tailwind CSS v4 (CSS-first config via `@import "tailwindcss"` — no tailwind.config file)
 - Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)
 - AWS DynamoDB Single Table Design
-- AWS Amplify hosting (`amplify.yml`)
 
 ## Clean Architecture Layers
 
