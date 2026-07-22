@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "@/lib/auth-client";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
 import { A2aSection } from "./A2aSection";
 import { SlackSection } from "./SlackSection";
@@ -14,8 +15,10 @@ export default function SettingsPage() {
   const name = params.name;
   const router = useRouter();
 
+  const { data: session, isPending: sessionPending } = useSession();
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -30,6 +33,7 @@ export default function SettingsPage() {
         if (!cancelled) {
           setDisplayName(project.displayName);
           setDescription(project.description);
+          setOwnerEmail(project.ownerEmail);
         }
       } catch (e) {
         if (!cancelled) {
@@ -77,8 +81,17 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading) {
+  if (loading || sessionPending) {
     return <p className="text-sm text-neutral-500">Loading…</p>;
+  }
+
+  const isOwner = ownerEmail !== null && session?.user.email === ownerEmail;
+  if (!isOwner) {
+    return (
+      <div className="max-w-xl rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+        Only the project owner ({ownerEmail ?? "unknown"}) can change these settings.
+      </div>
+    );
   }
 
   return (

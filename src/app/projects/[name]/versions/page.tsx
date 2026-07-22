@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { useSession } from "@/lib/auth-client";
 import {
   deleteVersion,
   getProject,
@@ -14,7 +15,9 @@ export default function VersionsPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
 
+  const { data: session } = useSession();
   const [versions, setVersions] = useState<Version[]>([]);
+  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
   const [published, setPublished] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +29,7 @@ export default function VersionsPage() {
     try {
       const [project, vers] = await Promise.all([getProject(name), listVersions(name)]);
       setPublished(project.publishedVersion);
+      setOwnerEmail(project.ownerEmail);
       setVersions([...vers].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load versions");
@@ -102,24 +106,26 @@ export default function VersionsPage() {
                     {version.model} · {new Date(version.createdAt).toLocaleString()}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => publish(version.versionName)}
-                    disabled={busy !== null || isPublished}
-                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
-                  >
-                    {isPublished ? "Published" : "Publish"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(version.versionName)}
-                    disabled={busy !== null}
-                    className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
-                  >
-                    Delete
-                  </button>
-                </div>
+                {ownerEmail !== null && session?.user.email === ownerEmail && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => publish(version.versionName)}
+                      disabled={busy !== null || isPublished}
+                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    >
+                      {isPublished ? "Published" : "Publish"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => remove(version.versionName)}
+                      disabled={busy !== null}
+                      className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </li>
             );
           })}
