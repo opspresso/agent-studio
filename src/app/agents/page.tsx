@@ -2,11 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { createAgent, listAgents, type AgentProtocol, type ExternalAgent } from "./api";
+import {
+  createAgent,
+  listA2aProjects,
+  listAgents,
+  type A2aProjectListView,
+  type AgentProtocol,
+  type ExternalAgent,
+} from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "./HeaderRows";
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
+  const [a2aProjects, setA2aProjects] = useState<A2aProjectListView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -15,7 +23,9 @@ export default function AgentsPage() {
     setLoading(true);
     setError(null);
     try {
-      setAgents(await listAgents());
+      const [agentList, projectList] = await Promise.all([listAgents(), listA2aProjects()]);
+      setAgents(agentList);
+      setA2aProjects(projectList);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load agents");
     } finally {
@@ -75,6 +85,54 @@ export default function AgentsPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {!loading && a2aProjects && a2aProjects.projects.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold">Studio projects (A2A)</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              {a2aProjects.enabled
+                ? "Published projects, exposed as A2A agents — share the Agent Card URL, no registration needed."
+                : "Published projects. Set A2A_API_KEY on the server to expose them as A2A agents."}
+            </p>
+          </div>
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {a2aProjects.projects.map((project) => (
+              <li
+                key={project.name}
+                className="flex h-full flex-col rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
+              >
+                <div className="flex items-center gap-2">
+                  <Link href={`/projects/${project.name}`} className="font-medium hover:text-brand">
+                    {project.displayName || project.name}
+                  </Link>
+                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                    A2A
+                  </span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{project.description}</p>
+                {a2aProjects.enabled && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <code
+                      className="min-w-0 flex-1 truncate rounded bg-neutral-50 px-2 py-1 font-mono text-xs text-neutral-400 dark:bg-neutral-950"
+                      title={project.cardUrl}
+                    >
+                      {project.cardUrl}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(project.cardUrl)}
+                      className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {showModal && (

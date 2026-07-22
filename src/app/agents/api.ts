@@ -66,6 +66,23 @@ export async function deleteAgent(name: string): Promise<void> {
   }
 }
 
+export interface A2aProjectListItem {
+  name: string;
+  displayName: string;
+  description: string;
+  cardUrl: string;
+}
+
+export interface A2aProjectListView {
+  enabled: boolean;
+  projects: A2aProjectListItem[];
+}
+
+/** Published studio projects exposed over A2A (derived, not registered). */
+export function listA2aProjects(): Promise<A2aProjectListView> {
+  return fetch("/api/a2a").then((r) => readJson<A2aProjectListView>(r));
+}
+
 export function sendAgentMessage(name: string, message: string): Promise<string> {
   return fetch(`/api/agents/${name}/message`, {
     method: "POST",
