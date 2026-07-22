@@ -1,16 +1,17 @@
 /**
  * OpenAI-compatible LLM channel with per-provider dispatch. Model ids in
- * `provider/model` form route to provider channels registered via
- * `LLM_PROVIDER_<PROVIDER>_BASE_URL` / `_API_KEY`; everything else goes to the
- * default channel (`LLM_BASE_URL`). The wire protocol is always OpenAI Chat
+ * `provider/model` form route to provider channels resolved from runtime
+ * settings (DB override, else `LLM_PROVIDER_<PROVIDER>_BASE_URL` / `_API_KEY`
+ * env); everything else goes to the default channel. The wire protocol is
+ * always OpenAI Chat
  * Completions — the SDK shapes are mapped onto the domain port so the engine
  * stays SDK-agnostic.
  */
 
 import OpenAI from "openai";
-import { config } from "@/lib/config";
-import { parseProviderConfigs, resolveProviderTarget } from "./providers";
-import type { ProviderChannelConfig, ResolvedTarget } from "./providers";
+import { getLlmChannelConfig, getLlmProviderConfigs } from "@/lib/runtime-settings";
+import { resolveProviderTarget } from "./providers";
+import type { ResolvedTarget } from "./providers";
 import type {
   ChannelChunk,
   ChannelCompletion,
@@ -20,19 +21,19 @@ import type {
   LlmChannel,
 } from "@/domain/llm/channel";
 
-let providerConfigs: ProviderChannelConfig[] | undefined;
 const clients = new Map<string, OpenAI>();
 
-function resolveTarget(modelId: string): ResolvedTarget {
-  providerConfigs ??= parseProviderConfigs(process.env);
-  return resolveProviderTarget(modelId, providerConfigs, {
-    baseUrl: config.llmBaseUrl,
-    apiKey: config.llmApiKey,
-  });
+async function resolveTarget(modelId: string): Promise<ResolvedTarget> {
+  const [providers, defaultChannel] = await Promise.all([
+    getLlmProviderConfigs(),
+    getLlmChannelConfig(),
+  ]);
+  return resolveProviderTarget(modelId, providers, defaultChannel);
 }
 
+/** Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client. */
 function getClient(target: ResolvedTarget): OpenAI {
-  const key = target.providerName ?? "__default__";
+  const key = `${target.baseUrl}|${target.apiKey}`;
   let client = clients.get(key);
   if (!client) {
     client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
@@ -105,7 +106,7 @@ function toChannelToolCalls(toolCalls: unknown): ChannelToolCall[] | undefined {
 
 export const channel: LlmChannel = {
   async chatCompletion(params: ChannelParams): Promise<ChannelCompletion> {
-    const target = resolveTarget(params.model);
+    const target = await resolveTarget(params.model);
     const response = (await getClient(target).chat.completions.create({
       ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
       stream: false,
@@ -139,7 +140,7 @@ export const channel: LlmChannel = {
   },
 
   async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
-    const target = resolveTarget(params.model);
+    const target = await resolveTarget(params.model);
     const stream = (await getClient(target).chat.completions.create({
       ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
       stream: true,

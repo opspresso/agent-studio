@@ -1,6 +1,6 @@
 import { buildAgentCard } from "@/infrastructure/a2a/cards";
 import { projectRepository, versionRepository } from "@/lib/container";
-import { config } from "@/lib/config";
+import { getA2aApiKey } from "@/lib/runtime-settings";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -10,7 +10,7 @@ type RouteContext = { params: Promise<{ name: string }> };
  * endpoint is what the shared key protects.
  */
 export async function GET(_request: Request, ctx: RouteContext): Promise<Response> {
-  if (!config.a2aApiKey) {
+  if (!(await getA2aApiKey())) {
     return Response.json({ error: "A2A is not configured" }, { status: 503 });
   }
   const { name } = await ctx.params;
@@ -22,5 +22,5 @@ export async function GET(_request: Request, ctx: RouteContext): Promise<Respons
   if (!version) {
     return Response.json({ error: "Published version not found" }, { status: 404 });
   }
-  return Response.json(buildAgentCard(project, version));
+  return Response.json(await buildAgentCard(project, version));
 }

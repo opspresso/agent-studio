@@ -6,7 +6,7 @@ import {
 import { buildAgentCard } from "@/infrastructure/a2a/cards";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
-import { config } from "@/lib/config";
+import { getA2aApiKey } from "@/lib/runtime-settings";
 import { sseResponseRaw } from "@/lib/sse";
 import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
 
@@ -70,7 +70,7 @@ function isAsyncGenerator(value: unknown): value is AsyncGenerator<unknown> {
 
 /** A2A JSON-RPC endpoint (message/send, message/stream, tasks/get, tasks/cancel). */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
-  const apiKey = config.a2aApiKey;
+  const apiKey = await getA2aApiKey();
   if (!apiKey) {
     return Response.json({ error: "A2A is not configured" }, { status: 503 });
   }
@@ -89,7 +89,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   }
 
   const requestHandler = new DefaultRequestHandler(
-    buildAgentCard(project, version),
+    await buildAgentCard(project, version),
     taskStoreFor(project.name),
     new ProjectA2aExecutor(executionDeps, project, version),
   );

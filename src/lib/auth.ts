@@ -2,10 +2,10 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { dynamodbAdapter } from "./auth-adapter";
-import { config } from "./config";
+import { getAllowedEmailDomains } from "./runtime-settings";
 
-function assertAllowedEmailDomain(email: string): void {
-  const allowed = config.allowedEmailDomains;
+async function assertAllowedEmailDomain(email: string): Promise<void> {
+  const allowed = await getAllowedEmailDomains();
   if (allowed.length === 0) {
     return;
   }
@@ -29,7 +29,7 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
-          assertAllowedEmailDomain(user.email);
+          await assertAllowedEmailDomain(user.email);
           return { data: user };
         },
       },

@@ -1,19 +1,21 @@
 import { withAdminAuth, withAuth } from "@/lib/session";
-import { config } from "@/lib/config";
+import { getSkillsRepoConfig } from "@/lib/runtime-settings";
 import { skillRepository } from "@/application/skill";
 import { fetchSkillsRepoSnapshot } from "@/infrastructure/github/skillsRepoClient";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
 
 export const GET = withAuth(async () => {
+  const { repo, branch, token } = await getSkillsRepoConfig();
   return Response.json({
-    configured: Boolean(config.skillsRepo && config.githubToken),
-    repo: config.skillsRepo ?? null,
-    branch: config.skillsRepoBranch,
+    configured: Boolean(repo && token),
+    repo: repo ?? null,
+    branch,
   });
 });
 
 export const POST = withAdminAuth(async () => {
-  if (!config.skillsRepo || !config.githubToken) {
+  const { repo, token } = await getSkillsRepoConfig();
+  if (!repo || !token) {
     return Response.json(
       { error: "SKILLS_REPO and GITHUB_TOKEN are not configured" },
       { status: 503 },

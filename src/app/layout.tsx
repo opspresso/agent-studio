@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/tools", label: "Tools" },
   { href: "/agents", label: "Agents" },
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/settings", label: "Settings" },
 ] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

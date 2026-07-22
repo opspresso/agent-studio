@@ -1,0 +1,50 @@
+import { z } from "zod";
+import { settingsUseCases } from "@/application/settings";
+import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { apiError } from "@/app/api/projects/_lib/http";
+import { invalidateSettingsCache } from "@/lib/runtime-settings";
+import { withAdminAuth } from "@/lib/session";
+
+const updateSchema = z.object({
+  adminEmails: z.string().max(4000).optional(),
+  allowedEmailDomains: z.string().max(4000).optional(),
+  llmBaseUrl: z.string().max(4000).optional(),
+  llmApiKey: z.string().max(4000).optional(),
+  llmProviders: z
+    .array(
+      z.object({
+        name: z.enum(SUPPORTED_PROVIDERS),
+        baseUrl: z.string().max(4000),
+        apiKey: z.string().max(4000),
+        keepModelPrefix: z.boolean().optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
+  slackDefaultProject: z.string().max(4000).optional(),
+  slackBotToken: z.string().max(4000).optional(),
+  slackSigningSecret: z.string().max(4000).optional(),
+  skillsRepo: z.string().max(4000).optional(),
+  skillsRepoBranch: z.string().max(4000).optional(),
+  githubToken: z.string().max(4000).optional(),
+  a2aApiKey: z.string().max(4000).optional(),
+  publicBaseUrl: z.string().max(4000).optional(),
+});
+
+export const GET = withAdminAuth(async () => {
+  return Response.json(await settingsUseCases.getView());
+});
+
+export const PUT = withAdminAuth(async (user, request: Request) => {
+  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });
+  }
+  try {
+    const view = await settingsUseCases.update(parsed.data, user.email);
+    invalidateSettingsCache();
+    return Response.json(view);
+  } catch (error) {
+    return apiError(error);
+  }
+});

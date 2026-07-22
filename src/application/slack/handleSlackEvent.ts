@@ -1,4 +1,4 @@
-import { config } from "@/lib/config";
+import { getSlackBotToken, getSlackDefaultProject } from "@/lib/runtime-settings";
 import { slackClient } from "@/infrastructure/slack/client";
 import type { SlackMessage } from "@/infrastructure/slack/client";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
@@ -57,7 +57,7 @@ export async function handleSlackEvent(
   binding?: SlackBotBinding,
 ): Promise<void> {
   const event = body.event;
-  const token = binding?.botToken ?? config.slackBotToken;
+  const token = binding?.botToken ?? (await getSlackBotToken());
   if (!token || !event?.channel || !event.ts) {
     return;
   }
@@ -69,7 +69,7 @@ export async function handleSlackEvent(
   const { projectName: named, message } = parseMentionText(event.text ?? "");
   // A project-dedicated bot is always bound to its project; the selector only
   // applies to the workspace default bot.
-  const projectName = binding?.projectName ?? named ?? config.slackDefaultProject;
+  const projectName = binding?.projectName ?? named ?? (await getSlackDefaultProject());
   const threadTs = event.thread_ts ?? event.ts;
 
   if (!projectName) {

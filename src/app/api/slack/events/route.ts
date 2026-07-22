@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { config } from "@/lib/config";
+import { getSlackSigningSecret } from "@/lib/runtime-settings";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
@@ -12,7 +12,7 @@ import type { SlackEventBody } from "@/application/slack/handleSlackEvent";
  * so background work survives the response).
  */
 export async function POST(request: Request): Promise<Response> {
-  const signingSecret = config.slackSigningSecret;
+  const signingSecret = await getSlackSigningSecret();
   if (!signingSecret) {
     return Response.json({ error: "Slack is not configured" }, { status: 503 });
   }

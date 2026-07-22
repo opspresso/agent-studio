@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Card builders resolve the public base URL via runtime settings; stub the
+// repository so tests never touch DynamoDB.
+vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
+  settingsRepository: { get: async () => null, put: async () => {} },
+}));
 import type { Message, Task } from "@a2a-js/sdk";
 import type { AgentExecutionEvent, ExecutionEventBus } from "@a2a-js/sdk/server";
 import { RequestContext } from "@a2a-js/sdk/server";
@@ -82,12 +88,12 @@ class CollectingBus implements ExecutionEventBus {
 // --- cards ------------------------------------------------------------------
 
 describe("buildAgentCard", () => {
-  it("builds a JSONRPC card from project and published version", () => {
-    const card = buildAgentCard(projectFixture(), versionFixture());
+  it("builds a JSONRPC card from project and published version", async () => {
+    const card = await buildAgentCard(projectFixture(), versionFixture());
     expect(card.name).toBe("Helper");
     expect(card.version).toBe("v1");
     expect(card.capabilities.streaming).toBe(true);
-    expect(card.url).toBe(buildProjectA2aRpcUrl("helper"));
+    expect(card.url).toBe(await buildProjectA2aRpcUrl("helper"));
     expect(card.skills).toHaveLength(1);
     expect(card.skills[0]?.id).toBe("helper");
   });

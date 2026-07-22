@@ -63,6 +63,27 @@ Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider
 structuredOutput?, jsonSchema? }`, `mcpList[]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`.
 
+## App settings
+
+```
+GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
+                          llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix } ] },
+                          updatedAt? }
+PUT /api/settings → 200 {…same shape…} | 400
+```
+
+- Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
+  `llmApiKey`, `slackDefaultProject`, `slackBotToken`, `slackSigningSecret`, `skillsRepo`,
+  `skillsRepoBranch`, `githubToken`, `a2aApiKey`, `publicBaseUrl`.
+- `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
+  array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
+  currently effective key for that provider name. Provider `name` must be one of
+  `openai | google | anthropic | xai`.
+- `source` is `override` (DB) | `env` | `default` | `unset`. Secret values are always masked
+  (length-preserving asterisks); a masked value on PUT keeps the stored secret, an empty
+  string removes the override (env fallback). Setting `adminEmails` to a list that excludes
+  the caller is rejected with `400`.
+
 ## Execution
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
@@ -108,7 +129,9 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 ## Models
 
 `GET /api/models` → `{ "models": [ { id, provider, displayName, pricing, capabilities, … } ] }`
-(the registry from `src/domain/llm/models.ts`, hidden entries excluded).
+(the registry from `src/domain/llm/models.ts`, hidden entries excluded). When per-provider
+LLM channels are configured (settings override or `LLM_PROVIDER_*` env), only those
+providers' models are listed; with none configured every model is listed.
 
 ## A2A (inbound)
 

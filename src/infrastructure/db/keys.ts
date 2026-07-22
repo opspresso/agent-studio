@@ -25,6 +25,8 @@ export const keys = {
   chatMessagePrefix: () => "MSG#",
   chatOwnerPartition: (email: string) => `CHATOWNER#${email}`,
 
+  settings: () => ({ PK: "SETTINGS#app", SK: "META" }),
+
   skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
   externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),

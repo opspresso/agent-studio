@@ -5,28 +5,28 @@
  */
 
 import OpenAI from "openai";
-import { config } from "@/lib/config";
-import { parseProviderConfigs, resolveProviderTarget } from "./providers";
-import type { ProviderChannelConfig, ResolvedTarget } from "./providers";
+import { getLlmChannelConfig, getLlmProviderConfigs } from "@/lib/runtime-settings";
+import { resolveProviderTarget } from "./providers";
+import type { ResolvedTarget } from "./providers";
 import type {
   ImageChannel,
   ImageGenerationParams,
   ImageGenerationResult,
 } from "@/domain/llm/imageChannel";
 
-let providerConfigs: ProviderChannelConfig[] | undefined;
 const clients = new Map<string, OpenAI>();
 
-function resolveTarget(modelId: string): ResolvedTarget {
-  providerConfigs ??= parseProviderConfigs(process.env);
-  return resolveProviderTarget(modelId, providerConfigs, {
-    baseUrl: config.llmBaseUrl,
-    apiKey: config.llmApiKey,
-  });
+async function resolveTarget(modelId: string): Promise<ResolvedTarget> {
+  const [providers, defaultChannel] = await Promise.all([
+    getLlmProviderConfigs(),
+    getLlmChannelConfig(),
+  ]);
+  return resolveProviderTarget(modelId, providers, defaultChannel);
 }
 
+/** Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client. */
 function getClient(target: ResolvedTarget): OpenAI {
-  const key = target.providerName ?? "__default__";
+  const key = `${target.baseUrl}|${target.apiKey}`;
   let client = clients.get(key);
   if (!client) {
     client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
@@ -37,7 +37,7 @@ function getClient(target: ResolvedTarget): OpenAI {
 
 export const imageChannel: ImageChannel = {
   async generateImage(params: ImageGenerationParams): Promise<ImageGenerationResult> {
-    const target = resolveTarget(params.model);
+    const target = await resolveTarget(params.model);
     const response = (await getClient(target).images.generate({
       model: target.model,
       prompt: params.prompt,

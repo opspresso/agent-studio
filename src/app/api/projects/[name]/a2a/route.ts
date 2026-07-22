@@ -1,6 +1,6 @@
 import { buildProjectAgentCardUrl } from "@/infrastructure/a2a/cards";
 import { projectRepository } from "@/lib/container";
-import { config } from "@/lib/config";
+import { getA2aApiKey } from "@/lib/runtime-settings";
 import { withAuth } from "@/lib/session";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -18,11 +18,11 @@ export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) 
   if (!project) {
     return Response.json({ error: "Project not found" }, { status: 404 });
   }
-  const enabled = !!config.a2aApiKey;
+  const enabled = !!(await getA2aApiKey());
   const published = !!project.publishedVersion;
   return Response.json({
     enabled,
     published,
-    cardUrl: enabled && published ? buildProjectAgentCardUrl(project.name) : null,
+    cardUrl: enabled && published ? await buildProjectAgentCardUrl(project.name) : null,
   } satisfies ProjectA2aView);
 });

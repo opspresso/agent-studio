@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { auth } from "./auth";
-import { config } from "./config";
+import { getAdminEmails } from "./runtime-settings";
 
 export interface SessionUser {
   id: string;
@@ -34,9 +34,9 @@ export function withAuth<T extends unknown[]>(
   };
 }
 
-/** True when ADMIN_EMAILS lists this user, or when ADMIN_EMAILS is unset (no restriction). */
-export function isAdmin(user: SessionUser): boolean {
-  const admins = config.adminEmails;
+/** True when the effective admin list contains this user, or is empty (no restriction). */
+export async function isAdmin(user: SessionUser): Promise<boolean> {
+  const admins = await getAdminEmails();
   return admins.length === 0 || admins.includes(user.email.toLowerCase());
 }
 
@@ -48,7 +48,7 @@ export function withAdminAuth<T extends unknown[]>(
   handler: (user: SessionUser, ...args: T) => Promise<Response>,
 ): (...args: T) => Promise<Response> {
   return withAuth(async (user, ...args: T) => {
-    if (!isAdmin(user)) {
+    if (!(await isAdmin(user))) {
       return Response.json(
         { error: "Only admins can modify this resource" },
         { status: 403 },

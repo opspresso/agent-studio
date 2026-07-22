@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { config } from "@/lib/config";
+import { getPublicBaseUrl } from "@/lib/runtime-settings";
 import { withAuth } from "@/lib/session";
 import { projectRepository } from "@/lib/container";
 import { getProject } from "@/application/project/projectUseCases";
@@ -24,7 +24,7 @@ export const GET = withAuth(async (_user, request: Request, ctx: RouteContext) =
   try {
     const project = await getProject(projectRepository, name);
     const view = await getProjectSlack(projectRepository, name);
-    const baseUrl = config.publicBaseUrl ?? new URL(request.url).origin;
+    const baseUrl = (await getPublicBaseUrl()) ?? new URL(request.url).origin;
     return Response.json({
       ...view,
       manifest: buildProjectSlackManifest(project, baseUrl),

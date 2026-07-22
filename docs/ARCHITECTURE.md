@@ -50,6 +50,7 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}` |
+| App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
 
 Conventions:
 - Published version is a pointer attribute `publishedVersion` on the project `META` item, not a copy.
@@ -152,8 +153,17 @@ All routes require a Better Auth session except the unauthenticated webhooks
 project, but mutations (update/delete/publish, version create/update, Slack config) are
 owner-only — `assertProjectOwner` returns 403 for non-owners. MCP/agent/skill registries
 are shared: reads are open to any signed-in user, while mutations go through
-`withAdminAuth` and are restricted to `ADMIN_EMAILS` when set (unset allows any
-signed-in user). SSE responses use
+`withAdminAuth` and are restricted to the effective admin list when set (unset allows any
+signed-in user).
+
+Runtime settings: the admin-only `/settings` page stores overrides for selected env vars
+(admin/allowed-domain lists, default LLM channel, per-provider LLM channels, Slack workspace
+bot, skills repo, A2A key, public base URL) in the `SETTINGS#app` item.
+`src/lib/runtime-settings.ts` resolves effective values — DB override → env fallback —
+through an in-memory cache (30s TTL, invalidated on write; single-instance assumption).
+Secret overrides are AES-encrypted at rest and decrypted only at dispatch; a stored provider
+list replaces the whole `LLM_PROVIDER_*` env set. Bootstrap env (`AES_ENCRYPTION_KEY`,
+Better Auth, Google OAuth, DynamoDB, `STAGE`) stays env-only. SSE responses use
 `text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.
 
 ## Auth

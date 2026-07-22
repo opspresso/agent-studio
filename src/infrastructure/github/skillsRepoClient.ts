@@ -4,7 +4,7 @@
  * directory name is the skill slug.
  */
 
-import { config } from "@/lib/config";
+import { getSkillsRepoConfig } from "@/lib/runtime-settings";
 
 export interface RepoSkillFile {
   /** Skill slug — the SKILL.md parent directory name. */
@@ -37,12 +37,10 @@ async function githubApi<T>(path: string, token: string): Promise<T> {
 }
 
 export async function fetchSkillsRepoSnapshot(): Promise<SkillsRepoSnapshot> {
-  const repo = config.skillsRepo;
-  const token = config.githubToken;
+  const { repo, branch, token } = await getSkillsRepoConfig();
   if (!repo || !token) {
     throw new Error("SKILLS_REPO and GITHUB_TOKEN must be configured");
   }
-  const branch = config.skillsRepoBranch;
 
   const ref = await githubApi<{ object: { sha: string } }>(
     `/repos/${repo}/git/ref/heads/${branch}`,

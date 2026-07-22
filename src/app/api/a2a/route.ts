@@ -1,6 +1,6 @@
 import { buildProjectAgentCardUrl } from "@/infrastructure/a2a/cards";
 import { projectRepository } from "@/lib/container";
-import { config } from "@/lib/config";
+import { getA2aApiKey } from "@/lib/runtime-settings";
 import { withAuth } from "@/lib/session";
 
 export interface A2aProjectListItem {
@@ -19,14 +19,16 @@ export interface A2aProjectListView {
 
 /** Published projects exposed over A2A (derived — no registration involved). */
 export const GET = withAuth(async () => {
-  const enabled = !!config.a2aApiKey;
-  const projects = (await projectRepository.list())
-    .filter((project) => project.publishedVersion)
-    .map((project) => ({
-      name: project.name,
-      displayName: project.displayName,
-      description: project.description,
-      cardUrl: buildProjectAgentCardUrl(project.name),
-    }));
+  const enabled = !!(await getA2aApiKey());
+  const projects = await Promise.all(
+    (await projectRepository.list())
+      .filter((project) => project.publishedVersion)
+      .map(async (project) => ({
+        name: project.name,
+        displayName: project.displayName,
+        description: project.description,
+        cardUrl: await buildProjectAgentCardUrl(project.name),
+      })),
+  );
   return Response.json({ enabled, projects } satisfies A2aProjectListView);
 });
