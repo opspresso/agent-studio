@@ -3,6 +3,10 @@
  * OpenAI-compatible `provider/model` form that the LLM channel dispatches on.
  */
 
+/** Providers selectable for per-provider LLM channels; model ids are prefixed by these. */
+export const SUPPORTED_PROVIDERS = ["openai", "anthropic", "google", "xai"] as const;
+export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
 export interface ModelPricing {
   inputPer1M: number;
   outputPer1M: number;
@@ -10,6 +14,8 @@ export interface ModelPricing {
   /** Image-token rates for image-generation models. */
   imageInputPer1M?: number;
   imageOutputPer1M?: number;
+  /** Flat per-image price for models billed per image (informational only). */
+  perImage?: number;
 }
 
 export interface ModelCapabilities {
@@ -41,6 +47,72 @@ const GEMINI_CONTEXT = 1_048_576;
 const GEMINI_MAX_OUTPUT = 65_536;
 
 export const MODEL_CONFIGS: ModelConfig[] = [
+  // OpenAI
+  {
+    id: "openai/gpt-5.6-sol",
+    provider: "openai",
+    displayName: "GPT-5.6 Sol",
+    pricing: { inputPer1M: 5.0, outputPer1M: 30.0, cachedInputPer1M: 0.5 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+  },
+  {
+    id: "openai/gpt-5.6-terra",
+    provider: "openai",
+    displayName: "GPT-5.6 Terra",
+    pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+  },
+  {
+    id: "openai/gpt-5.6-luna",
+    provider: "openai",
+    displayName: "GPT-5.6 Luna",
+    pricing: { inputPer1M: 1.0, outputPer1M: 6.0, cachedInputPer1M: 0.1 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+  },
+  {
+    id: "openai/gpt-5.4",
+    provider: "openai",
+    displayName: "GPT-5.4",
+    pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+  },
+  {
+    id: "openai/gpt-5.4-mini",
+    provider: "openai",
+    displayName: "GPT 5.4 Mini",
+    pricing: { inputPer1M: 0.75, outputPer1M: 4.5, cachedInputPer1M: 0.075 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+  },
+  {
+    id: "openai/gpt-5.1",
+    provider: "openai",
+    displayName: "GPT-5.1",
+    pricing: { inputPer1M: 1.25, outputPer1M: 10.0, cachedInputPer1M: 0.125 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+    hidden: true,
+  },
+  {
+    id: "openai/gpt-5-mini",
+    provider: "openai",
+    displayName: "GPT 5 Mini",
+    pricing: { inputPer1M: 0.25, outputPer1M: 2.0, cachedInputPer1M: 0.025 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: OPENAI_CONTEXT,
+    maxTokens: OPENAI_MAX_OUTPUT,
+    hidden: true,
+  },
   // Anthropic
   {
     id: "anthropic/claude-fable-5",
@@ -57,8 +129,8 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     displayName: "Sonnet 5",
     pricing: { inputPer1M: 2.0, outputPer1M: 10.0, cachedInputPer1M: 0.2 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
+    contextWindow: 1_000_000,
+    maxTokens: 128_000,
   },
   {
     id: "anthropic/claude-opus-4.8",
@@ -66,7 +138,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     displayName: "Opus 4.8",
     pricing: { inputPer1M: 5.0, outputPer1M: 25.0, cachedInputPer1M: 0.5 },
     capabilities: { tools: true, structuredOutput: false, imageInput: true, reasoning: true },
-    contextWindow: ANTHROPIC_CONTEXT,
+    contextWindow: 1_000_000,
     maxTokens: ANTHROPIC_MAX_OUTPUT,
   },
   {
@@ -97,44 +169,25 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     contextWindow: ANTHROPIC_CONTEXT,
     maxTokens: ANTHROPIC_MAX_OUTPUT,
   },
-  // OpenAI
-  {
-    id: "openai/gpt-5.4",
-    provider: "openai",
-    displayName: "GPT-5.4",
-    pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  {
-    id: "openai/gpt-5.4-mini",
-    provider: "openai",
-    displayName: "GPT 5.4 Mini",
-    pricing: { inputPer1M: 0.75, outputPer1M: 4.5, cachedInputPer1M: 0.075 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  {
-    id: "openai/gpt-5.1",
-    provider: "openai",
-    displayName: "GPT-5.1",
-    pricing: { inputPer1M: 1.25, outputPer1M: 10.0, cachedInputPer1M: 0.125 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
-  {
-    id: "openai/gpt-5-mini",
-    provider: "openai",
-    displayName: "GPT 5 Mini",
-    pricing: { inputPer1M: 0.25, outputPer1M: 2.0, cachedInputPer1M: 0.025 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: OPENAI_CONTEXT,
-    maxTokens: OPENAI_MAX_OUTPUT,
-  },
   // Google
+  {
+    id: "google/gemini-3.1-pro",
+    provider: "google",
+    displayName: "Gemini 3.1 Pro",
+    pricing: { inputPer1M: 2.0, outputPer1M: 12.0, cachedInputPer1M: 0.2 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
+  {
+    id: "google/gemini-3.6-flash",
+    provider: "google",
+    displayName: "Gemini 3.6 Flash",
+    pricing: { inputPer1M: 1.5, outputPer1M: 7.5, cachedInputPer1M: 0.15 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
   {
     id: "google/gemini-3.1-flash-lite",
     provider: "google",
@@ -181,6 +234,43 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     contextWindow: GEMINI_CONTEXT,
     maxTokens: GEMINI_MAX_OUTPUT,
   },
+  // xAI
+  {
+    id: "xai/grok-4.5",
+    provider: "xai",
+    displayName: "Grok 4.5",
+    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.5 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: 500_000,
+    maxTokens: 64_000,
+  },
+  {
+    id: "xai/grok-4.3",
+    provider: "xai",
+    displayName: "Grok 4.3",
+    pricing: { inputPer1M: 1.25, outputPer1M: 2.5, cachedInputPer1M: 0.2 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: 1_000_000,
+    maxTokens: 64_000,
+  },
+  {
+    id: "xai/grok-4.1-fast",
+    provider: "xai",
+    displayName: "Grok 4.1 Fast",
+    pricing: { inputPer1M: 0.2, outputPer1M: 0.5, cachedInputPer1M: 0.05 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: 2_000_000,
+    maxTokens: 64_000,
+  },
+  {
+    id: "xai/grok-code-fast-1",
+    provider: "xai",
+    displayName: "Grok Code Fast 1",
+    pricing: { inputPer1M: 0.2, outputPer1M: 1.5, cachedInputPer1M: 0.02 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
+    contextWindow: 256_000,
+    maxTokens: 64_000,
+  },
   // Image generation
   {
     id: "openai/gpt-image-2",
@@ -189,7 +279,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     pricing: {
       inputPer1M: 5.0,
       outputPer1M: 0,
-      cachedInputPer1M: 1.25,
+      cachedInputPer1M: 2.0,
       imageInputPer1M: 8.0,
       imageOutputPer1M: 30.0,
     },
@@ -202,6 +292,76 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     },
     contextWindow: OPENAI_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
+  },
+  {
+    id: "google/gemini-3-pro-image",
+    provider: "google",
+    displayName: "Nano Banana Pro (Gemini 3 Pro Image)",
+    pricing: {
+      inputPer1M: 2.0,
+      outputPer1M: 12.0,
+      imageOutputPer1M: 120.0,
+      perImage: 0.134,
+    },
+    capabilities: {
+      tools: false,
+      structuredOutput: false,
+      imageInput: true,
+      reasoning: true,
+      imageGeneration: true,
+    },
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
+  {
+    id: "google/gemini-3.1-flash-image",
+    provider: "google",
+    displayName: "Nano Banana 2 (Gemini 3.1 Flash Image)",
+    pricing: {
+      inputPer1M: 0.5,
+      outputPer1M: 3.0,
+      imageOutputPer1M: 60.0,
+      perImage: 0.067,
+    },
+    capabilities: {
+      tools: false,
+      structuredOutput: false,
+      imageInput: true,
+      reasoning: false,
+      imageGeneration: true,
+    },
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
+  {
+    id: "xai/grok-imagine-image",
+    provider: "xai",
+    displayName: "Grok Imagine",
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.02 },
+    capabilities: {
+      tools: false,
+      structuredOutput: false,
+      imageInput: false,
+      reasoning: false,
+      imageGeneration: true,
+    },
+    contextWindow: 32_768,
+    maxTokens: 4_096,
+  },
+  {
+    id: "xai/grok-imagine-image-quality",
+    provider: "xai",
+    displayName: "Grok Imagine Quality",
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.05 },
+    capabilities: {
+      tools: false,
+      structuredOutput: false,
+      imageInput: true,
+      reasoning: false,
+      imageGeneration: true,
+    },
+    contextWindow: 32_768,
+    maxTokens: 4_096,
   },
 ];
 
