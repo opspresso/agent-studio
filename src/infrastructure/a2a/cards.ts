@@ -16,6 +16,10 @@ export function buildProjectA2aRpcUrl(projectName: string): string {
   return `${base}/api/a2a/${encodeURIComponent(projectName)}`;
 }
 
+export function buildProjectAgentCardUrl(projectName: string): string {
+  return `${buildProjectA2aRpcUrl(projectName)}/.well-known/agent-card.json`;
+}
+
 export function buildAgentCard(project: Project, version: Version): AgentCard {
   const rpcUrl = buildProjectA2aRpcUrl(project.name);
   return {

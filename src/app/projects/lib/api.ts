@@ -291,3 +291,17 @@ export async function testProjectSlack(
   const res = await fetch(`/api/projects/${name}/slack/test`, { method: "POST" });
   return (await res.json()) as { ok?: boolean; team?: string; botUser?: string; error?: string };
 }
+
+export interface ProjectA2aView {
+  enabled: boolean;
+  published: boolean;
+  cardUrl: string | null;
+}
+
+export async function getProjectA2a(name: string): Promise<ProjectA2aView> {
+  const res = await fetch(`/api/projects/${name}/a2a`);
+  if (!res.ok) {
+    throw new Error(`Failed to load A2A settings (${res.status})`);
+  }
+  return (await res.json()) as ProjectA2aView;
+}

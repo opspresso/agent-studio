@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
+import { A2aSection } from "./A2aSection";
 import { SlackSection } from "./SlackSection";
 
 const inputClass =
@@ -118,6 +119,8 @@ export default function SettingsPage() {
       </form>
 
       <SlackSection projectName={name} />
+
+      <A2aSection projectName={name} />
 
       <div className="rounded-lg border border-red-200 p-4 dark:border-red-900/60">
         <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
