@@ -6,6 +6,7 @@ import {
   maskHeaders,
   mergeHeaderUpdate,
 } from "@/lib/secret-encryption";
+import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { listMcpTools, type ListToolsResult } from "./mcpClient";
 
 export interface CreateMcpInput {
@@ -61,6 +62,7 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
     },
 
     async create(input) {
+      await assertPublicUrl(input.url);
       const existing = await repo.get(input.name);
       if (existing) {
         return null;
@@ -82,6 +84,9 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
       const existing = await repo.get(name);
       if (!existing) {
         return null;
+      }
+      if (patch.url !== undefined) {
+        await assertPublicUrl(patch.url);
       }
       const headers =
         patch.headers !== undefined
@@ -111,6 +116,11 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
       const config = await resolveForDispatch(name);
       if (!config) {
         return null;
+      }
+      try {
+        await assertPublicUrl(config.url);
+      } catch (error) {
+        return { ok: false, error: error instanceof SsrfError ? error.message : "Blocked URL" };
       }
       return listMcpTools(config.url, config.headers);
     },

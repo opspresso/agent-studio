@@ -1,6 +1,6 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectType } from "@/domain/project/types";
-import { ConflictError, NotFoundError } from "./errors";
+import { ConflictError, ForbiddenError, NotFoundError } from "./errors";
 
 export interface CreateProjectInput {
   name: string;
@@ -25,6 +25,23 @@ export async function getProject(repo: ProjectRepository, name: string): Promise
   const project = await repo.get(name);
   if (!project) {
     throw new NotFoundError(`Project "${name}" not found`);
+  }
+  return project;
+}
+
+/**
+ * Load a project and assert `userEmail` owns it. Projects are a shared catalog —
+ * any signed-in user may read and run them, but only the owner may mutate.
+ * Mutation use cases call this before writing.
+ */
+export async function assertProjectOwner(
+  repo: ProjectRepository,
+  name: string,
+  userEmail: string,
+): Promise<Project> {
+  const project = await getProject(repo, name);
+  if (project.ownerEmail !== userEmail) {
+    throw new ForbiddenError(`You do not have permission to modify project "${name}"`);
   }
   return project;
 }
@@ -57,8 +74,9 @@ export async function updateProject(
   repo: ProjectRepository,
   name: string,
   input: UpdateProjectInput,
+  userEmail: string,
 ): Promise<Project> {
-  const existing = await getProject(repo, name);
+  const existing = await assertProjectOwner(repo, name, userEmail);
   const updated: Project = {
     ...existing,
     displayName: input.displayName ?? existing.displayName,
@@ -71,7 +89,11 @@ export async function updateProject(
 }
 
 /** Delete a project. The repository cascades version and usage cleanup. */
-export async function deleteProject(repo: ProjectRepository, name: string): Promise<void> {
-  await getProject(repo, name);
+export async function deleteProject(
+  repo: ProjectRepository,
+  name: string,
+  userEmail: string,
+): Promise<void> {
+  await assertProjectOwner(repo, name, userEmail);
   await repo.delete(name);
 }

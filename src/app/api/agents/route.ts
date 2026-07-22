@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { agentUseCases } from "@/application/agent";
 import { withAuth } from "@/lib/session";
+import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 
 const createSchema = z.object({
   name: z.string().regex(/^[a-z0-9-]+$/, "name must be a slug (lowercase letters, digits, hyphens)"),
@@ -19,7 +20,15 @@ export const POST = withAuth(async (_user, request: Request) => {
   if (!parsed.success) {
     return Response.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });
   }
-  const agent = await agentUseCases.create(parsed.data);
+  let agent;
+  try {
+    agent = await agentUseCases.create(parsed.data);
+  } catch (error) {
+    if (error instanceof SsrfError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
   if (!agent) {
     return Response.json({ error: "An agent with that name already exists" }, { status: 409 });
   }

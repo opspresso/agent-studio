@@ -22,8 +22,9 @@ import type { ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
+import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { decryptHeadersForOutbound } from "@/lib/secret-encryption";
-import { recordUsage } from "@/application/usage/recordUsage";
+import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 
 export interface ExecutionDeps {
@@ -129,7 +130,10 @@ export async function* executeAgent(
   deps: ExecutionDeps,
   input: ExecuteAgentInput,
 ): AsyncGenerator<EngineChunk> {
-  const agentDeps = await buildAgentDeps(deps, input.version, input.project.name);
+  // A multi-turn agent run makes many LLM calls; accumulate their usage and
+  // flush once (per project/date/model) when the run ends, even on error.
+  const usage = createUsageAggregator(deps.usage);
+  const agentDeps = await buildAgentDeps(deps, input.version, input.project.name, usage.record);
   const [skills, subagents, mcp] = await Promise.all([
     resolveSkills(deps, input.version.skillList),
     resolveSubagents(deps, input.version.subagentList),
@@ -137,18 +141,22 @@ export async function* executeAgent(
   ]);
   agentDeps.callMcpTool = mcp.callMcpTool;
 
-  yield* engine.runAgent(agentDeps, {
-    projectName: input.project.name,
-    model: input.version.model,
-    fallbackModel: input.version.fallbackModel,
-    systemPrompt: input.version.systemPrompt,
-    messages: input.messages as ChatMessageInput[],
-    parameters: toEngineParameters(input.version),
-    maxTurn: input.version.maxTurn,
-    skills,
-    subagents,
-    mcpTools: mcp.mcpTools,
-  });
+  try {
+    yield* engine.runAgent(agentDeps, {
+      projectName: input.project.name,
+      model: input.version.model,
+      fallbackModel: input.version.fallbackModel,
+      systemPrompt: input.version.systemPrompt,
+      messages: input.messages as ChatMessageInput[],
+      parameters: toEngineParameters(input.version),
+      maxTurn: input.version.maxTurn,
+      skills,
+      subagents,
+      mcpTools: mcp.mcpTools,
+    });
+  } finally {
+    await usage.flush();
+  }
 }
 
 /** Assemble the injected engine dependencies for an agent run. */
@@ -156,14 +164,15 @@ async function buildAgentDeps(
   deps: ExecutionDeps,
   version: Version,
   projectName: string,
+  recordUsageFn: engine.RecordUsageFn,
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel ?? defaultChannel;
   return {
     channel,
-    recordUsage: bindUsage(deps),
+    recordUsage: recordUsageFn,
     loadSkillContent: buildSkillLoader(deps),
-    runSubagent: buildSubagentRunner(deps, version.subagentList),
-    generateImage: buildImageGenerator(deps, projectName),
+    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn),
+    generateImage: buildImageGenerator(deps, projectName, recordUsageFn),
   };
 }
 
@@ -173,6 +182,7 @@ const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGenera
 function buildImageGenerator(
   deps: ExecutionDeps,
   projectName: string,
+  recordUsageFn: engine.RecordUsageFn,
 ): engine.AgentDeps["generateImage"] {
   if (!DEFAULT_IMAGE_MODEL || !getModelConfig(DEFAULT_IMAGE_MODEL)) {
     return undefined;
@@ -182,17 +192,13 @@ function buildImageGenerator(
   return async (prompt, size, quality) => {
     const result = await imageChannel.generateImage({ model, prompt, size, quality });
     const costUsd = calculateImageCost(model, result.usage);
-    await deps.usage
-      .record({
-        projectName,
-        date: new Date().toISOString().slice(0, 10),
-        model,
-        calls: 1,
-        inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
-        outputTokens: result.usage.imageOutputTokens,
-        costUsd,
-      })
-      .catch(() => {});
+    await recordUsageFn({
+      projectName,
+      model,
+      inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
+      outputTokens: result.usage.imageOutputTokens,
+      costUsd,
+    });
     return { b64: result.b64, mimeType: result.mimeType };
   };
 }
@@ -285,6 +291,7 @@ async function buildMcpTools(
 function buildSubagentRunner(
   deps: ExecutionDeps,
   subagentList: SubagentRef[] | undefined,
+  recordUsageFn: engine.RecordUsageFn,
 ): NonNullable<engine.AgentDeps["runSubagent"]> {
   const refByName = new Map((subagentList ?? []).map((ref) => [ref.name, ref]));
   return async function* runSubagent(agentName, message, turn, maxTurn) {
@@ -296,7 +303,7 @@ function buildSubagentRunner(
     if (ref.type === "remote") {
       return yield* runRemoteSubagent(deps, agentName, message);
     }
-    return yield* runLocalSubagent(deps, agentName, message, turn, maxTurn);
+    return yield* runLocalSubagent(deps, agentName, message, turn, maxTurn, recordUsageFn);
   };
 }
 
@@ -306,6 +313,7 @@ async function* runLocalSubagent(
   message: string,
   turn: number,
   maxTurn: number,
+  recordUsageFn: engine.RecordUsageFn,
 ): AsyncGenerator<EngineChunk, string> {
   const project = await deps.projects.get(agentName);
   if (!project) {
@@ -323,7 +331,7 @@ async function* runLocalSubagent(
     resolveSkills(deps, version.skillList),
     resolveSubagents(deps, version.subagentList),
     buildMcpTools(deps, version),
-    buildAgentDeps(deps, version, project.name),
+    buildAgentDeps(deps, version, project.name, recordUsageFn),
   ]);
   childDeps.callMcpTool = mcp.callMcpTool;
 
@@ -350,6 +358,8 @@ async function* runLocalSubagent(
   return text;
 }
 
+const REMOTE_SUBAGENT_TIMEOUT_MS = 120_000;
+
 async function* runRemoteSubagent(
   deps: ExecutionDeps,
   agentName: string,
@@ -358,6 +368,15 @@ async function* runRemoteSubagent(
   const agent = await deps.externalAgents.get(agentName);
   if (!agent) {
     yield { author: agentName, error: `Remote agent '${agentName}' not found.` };
+    return "";
+  }
+  try {
+    await assertPublicUrl(agent.url);
+  } catch (error) {
+    yield {
+      author: agentName,
+      error: error instanceof SsrfError ? error.message : "Blocked remote agent URL",
+    };
     return "";
   }
   const headers = decryptHeadersForOutbound(agent.headers);
@@ -376,6 +395,7 @@ async function* runRemoteSubagent(
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify({ messages: [{ role: "user", content: message }], stream: false }),
+      signal: AbortSignal.timeout(REMOTE_SUBAGENT_TIMEOUT_MS),
     });
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;

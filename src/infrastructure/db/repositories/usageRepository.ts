@@ -10,8 +10,9 @@
  * `ExpressionAttributeNames`.
  */
 
-import { QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
+import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { UsageDelta, UsageRow } from "@/domain/usage/types";
@@ -90,37 +91,31 @@ export class DynamoUsageRepository implements UsageRepository {
   }
 
   async listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]> {
-    const doc = getDocumentClient();
     const fromKey = keys.usage(projectName, from);
     const toKey = keys.usage(projectName, to);
-    const result = await doc.send(
-      new QueryCommand({
-        TableName: getTableName(),
-        KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
-        ExpressionAttributeValues: {
-          ":pk": fromKey.PK,
-          ":from": fromKey.SK,
-          ":to": toKey.SK,
-        },
-      }),
-    );
-    return (result.Items ?? []).map(toUsageRow);
+    const items = await queryAll({
+      TableName: getTableName(),
+      KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
+      ExpressionAttributeValues: {
+        ":pk": fromKey.PK,
+        ":from": fromKey.SK,
+        ":to": toKey.SK,
+      },
+    });
+    return items.map(toUsageRow);
   }
 
   async listByDateRange(from: string, to: string): Promise<UsageRow[]> {
-    const doc = getDocumentClient();
     const table = getTableName();
     const rows: UsageRow[] = [];
     for (const date of eachDate(from, to)) {
-      const result = await doc.send(
-        new QueryCommand({
-          TableName: table,
-          IndexName: "GSI1",
-          KeyConditionExpression: "GSI1PK = :pk",
-          ExpressionAttributeValues: { ":pk": keys.usageDatePartition(date) },
-        }),
-      );
-      for (const item of result.Items ?? []) {
+      const items = await queryAll({
+        TableName: table,
+        IndexName: "GSI1",
+        KeyConditionExpression: "GSI1PK = :pk",
+        ExpressionAttributeValues: { ":pk": keys.usageDatePartition(date) },
+      });
+      for (const item of items) {
         rows.push(toUsageRow(item));
       }
     }

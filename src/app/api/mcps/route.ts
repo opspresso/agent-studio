@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { mcpUseCases } from "@/application/mcp";
 import { withAuth } from "@/lib/session";
+import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 
 const createSchema = z.object({
   name: z.string().regex(/^[a-z0-9-]+$/, "name must be a slug (lowercase letters, digits, hyphens)"),
@@ -18,7 +19,15 @@ export const POST = withAuth(async (_user, request: Request) => {
   if (!parsed.success) {
     return Response.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });
   }
-  const server = await mcpUseCases.create(parsed.data);
+  let server;
+  try {
+    server = await mcpUseCases.create(parsed.data);
+  } catch (error) {
+    if (error instanceof SsrfError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
   if (!server) {
     return Response.json({ error: "An MCP server with that name already exists" }, { status: 409 });
   }
