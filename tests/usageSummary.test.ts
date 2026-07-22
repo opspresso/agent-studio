@@ -8,7 +8,7 @@ import {
   providerOf,
   totalCalls,
   totalCost,
-} from "@/app/dashboard/_lib/usage";
+} from "@/app/_lib/usage";
 import { inclusiveDays, summaryQuerySchema } from "@/app/api/usages/summary/validation";
 
 const rows: UsageRow[] = [

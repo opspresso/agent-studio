@@ -15,7 +15,6 @@ const NAV_ITEMS = [
   { href: "/skills", label: "Skills" },
   { href: "/tools", label: "Tools" },
   { href: "/agents", label: "Agents" },
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/settings", label: "Settings" },
 ] as const;
 
@@ -25,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
           <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
-            <Link href="/projects" className="flex items-center gap-2 text-lg font-semibold">
+            <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
               <Image src="/logo.png" alt="Agent Studio" width={28} height={28} />
               Agent Studio
             </Link>

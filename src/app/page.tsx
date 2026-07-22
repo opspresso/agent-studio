@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
 import { SignInButton } from "@/components/SignInButton";
 import { getSessionUser } from "@/lib/session";
+import { Dashboard } from "./_components/Dashboard";
 
 const DOMAINS = [
   {
@@ -48,7 +48,7 @@ const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: stri
 export default async function Home() {
   const user = await getSessionUser();
   if (user) {
-    redirect("/projects");
+    return <Dashboard />;
   }
 
   return (
