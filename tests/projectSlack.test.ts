@@ -5,8 +5,12 @@ import {
   updateProjectSlack,
 } from "@/application/slack/projectSlack";
 import { MASKED_SECRET, decryptSecret } from "@/lib/secret-encryption";
+import { ForbiddenError } from "@/application/project/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
+
+const OWNER = "t@example.com";
+const OTHER = "intruder@example.com";
 
 beforeAll(() => {
   process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
@@ -48,11 +52,12 @@ function fakeRepo(initial: Project): { repo: ProjectRepository; current: () => P
 describe("updateProjectSlack", () => {
   it("encrypts new secrets and masks the response", async () => {
     const { repo, current } = fakeRepo(makeProject());
-    const view = await updateProjectSlack(repo, "bot-proj", {
-      botToken: "xoxb-secret",
-      signingSecret: "shhh",
-      enabled: true,
-    });
+    const view = await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { botToken: "xoxb-secret", signingSecret: "shhh", enabled: true },
+      OWNER,
+    );
     expect(view.botToken).toBe(MASKED_SECRET);
     expect(view.signingSecret).toBe(MASKED_SECRET);
     expect(view.enabled).toBe(true);
@@ -63,17 +68,19 @@ describe("updateProjectSlack", () => {
 
   it("keeps stored secrets when a masked value is echoed back", async () => {
     const { repo, current } = fakeRepo(makeProject());
-    await updateProjectSlack(repo, "bot-proj", {
-      botToken: "xoxb-original",
-      signingSecret: "sig-original",
-      enabled: true,
-    });
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { botToken: "xoxb-original", signingSecret: "sig-original", enabled: true },
+      OWNER,
+    );
     const before = current().slack?.botToken;
-    await updateProjectSlack(repo, "bot-proj", {
-      botToken: MASKED_SECRET,
-      signingSecret: "",
-      enabled: true,
-    });
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { botToken: MASKED_SECRET, signingSecret: "", enabled: true },
+      OWNER,
+    );
     expect(current().slack?.botToken).toBe(before);
     expect(decryptSecret(current().slack?.signingSecret ?? "")).toBe("sig-original");
   });
@@ -81,31 +88,39 @@ describe("updateProjectSlack", () => {
   it("rejects enabling without credentials", async () => {
     const { repo } = fakeRepo(makeProject());
     await expect(
-      updateProjectSlack(repo, "bot-proj", { enabled: true }),
+      updateProjectSlack(repo, "bot-proj", { enabled: true }, OWNER),
     ).rejects.toThrow(/required to enable/);
   });
 
   it("rejects non-agent projects", async () => {
     const { repo } = fakeRepo(makeProject({ projectType: "llm" }));
     await expect(
-      updateProjectSlack(repo, "bot-proj", { botToken: "x", signingSecret: "y" }),
+      updateProjectSlack(repo, "bot-proj", { botToken: "x", signingSecret: "y" }, OWNER),
     ).rejects.toThrow(/agent projects/);
+  });
+
+  it("rejects a non-owner with ForbiddenError (403)", async () => {
+    const { repo } = fakeRepo(makeProject());
+    await expect(
+      updateProjectSlack(repo, "bot-proj", { botToken: "x", signingSecret: "y" }, OTHER),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
 describe("resolveProjectSlackRuntime", () => {
   it("returns decrypted credentials only when enabled and configured", async () => {
     const { repo, current } = fakeRepo(makeProject());
-    await updateProjectSlack(repo, "bot-proj", {
-      botToken: "xoxb-live",
-      signingSecret: "sig-live",
-      enabled: true,
-    });
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { botToken: "xoxb-live", signingSecret: "sig-live", enabled: true },
+      OWNER,
+    );
     expect(resolveProjectSlackRuntime(current())).toEqual({
       botToken: "xoxb-live",
       signingSecret: "sig-live",
     });
-    await updateProjectSlack(repo, "bot-proj", { enabled: false });
+    await updateProjectSlack(repo, "bot-proj", { enabled: false }, OWNER);
     expect(resolveProjectSlackRuntime(current())).toBeNull();
     expect(resolveProjectSlackRuntime(makeProject())).toBeNull();
   });

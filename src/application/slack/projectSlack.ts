@@ -1,5 +1,5 @@
 import { ValidationError } from "@/application/project/errors";
-import { getProject } from "@/application/project/projectUseCases";
+import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import {
   MASKED_SECRET,
   decryptSecret,
@@ -56,8 +56,9 @@ export async function updateProjectSlack(
   repo: ProjectRepository,
   name: string,
   update: ProjectSlackUpdate,
+  userEmail: string,
 ): Promise<ProjectSlackView> {
-  const project = await getProject(repo, name);
+  const project = await assertProjectOwner(repo, name, userEmail);
   if (project.projectType !== "agent") {
     throw new ValidationError("Slack bots can only be attached to agent projects");
   }
@@ -77,8 +78,9 @@ export async function updateProjectSlack(
 export async function disconnectProjectSlack(
   repo: ProjectRepository,
   name: string,
+  userEmail: string,
 ): Promise<ProjectSlackView> {
-  const project = await getProject(repo, name);
+  const project = await assertProjectOwner(repo, name, userEmail);
   const updated: Project = { ...project, slack: undefined, updatedAt: new Date().toISOString() };
   await repo.update(updated);
   return maskedView(updated);

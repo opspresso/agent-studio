@@ -1,7 +1,7 @@
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, SubagentRef, Version, VersionParameters } from "@/domain/project/types";
 import { ConflictError, NotFoundError } from "./errors";
-import { getProject } from "./projectUseCases";
+import { assertProjectOwner } from "./projectUseCases";
 
 export interface VersionInput {
   systemPrompt: string;
@@ -51,8 +51,9 @@ export async function createVersion(
   projects: ProjectRepository,
   projectName: string,
   input: CreateVersionInput,
+  userEmail: string,
 ): Promise<Version> {
-  await getProject(projects, projectName);
+  await assertProjectOwner(projects, projectName, userEmail);
   const existing = await versions.list(projectName);
 
   const versionName = input.versionName ?? nextVersionName(existing);
@@ -80,10 +81,13 @@ export async function createVersion(
 
 export async function updateVersion(
   versions: VersionRepository,
+  projects: ProjectRepository,
   projectName: string,
   versionName: string,
   input: UpdateVersionInput,
+  userEmail: string,
 ): Promise<Version> {
+  await assertProjectOwner(projects, projectName, userEmail);
   const existing = await getVersion(versions, projectName, versionName);
   const updated: Version = {
     ...existing,
@@ -103,9 +107,12 @@ export async function updateVersion(
 
 export async function deleteVersion(
   versions: VersionRepository,
+  projects: ProjectRepository,
   projectName: string,
   versionName: string,
+  userEmail: string,
 ): Promise<void> {
+  await assertProjectOwner(projects, projectName, userEmail);
   await getVersion(versions, projectName, versionName);
   await versions.delete(projectName, versionName);
 }
@@ -116,8 +123,9 @@ export async function publishVersion(
   versions: VersionRepository,
   projectName: string,
   versionName: string,
+  userEmail: string,
 ): Promise<Project> {
-  const project = await getProject(projects, projectName);
+  const project = await assertProjectOwner(projects, projectName, userEmail);
   await getVersion(versions, projectName, versionName);
 
   const updated: Project = {

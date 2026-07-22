@@ -1,6 +1,7 @@
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
+import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import {
   decryptHeadersForOutbound,
   encryptHeaders,
@@ -68,6 +69,7 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
     },
 
     async create(input) {
+      await assertPublicUrl(input.url);
       const existing = await repo.get(input.name);
       if (existing) {
         return null;
@@ -90,6 +92,9 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
       const existing = await repo.get(name);
       if (!existing) {
         return null;
+      }
+      if (patch.url !== undefined) {
+        await assertPublicUrl(patch.url);
       }
       const headers =
         patch.headers !== undefined
@@ -120,6 +125,11 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
       const config = await resolveForDispatch(name);
       if (!config) {
         return null;
+      }
+      try {
+        await assertPublicUrl(config.url);
+      } catch (error) {
+        return { ok: false, error: error instanceof SsrfError ? error.message : "Blocked URL" };
       }
       if (config.protocol === "a2a") {
         return sendA2aMessage(config.url, config.headers, message);

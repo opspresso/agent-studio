@@ -6,6 +6,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
+import { runAndPersist } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { sendMessage } from "@/application/chat/sendMessage";
@@ -146,6 +147,35 @@ describe("toEngineMessages", () => {
       { role: "user", content: "hi" },
       { role: "assistant", content: "", tool_calls: [{ id: "call_1" }] },
       { role: "tool", content: "42", tool_call_id: "call_1" },
+    ]);
+  });
+});
+
+describe("runAndPersist -> toEngineMessages round-trip", () => {
+  it("persists tool results for display but does not replay them into engine context", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { toolResult: { toolCallId: "call_1", name: "lookup", content: "42" } };
+      yield { delta: { content: "The answer is 42." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source(), 1)) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    // The tool result IS persisted (for UI), alongside the final assistant text.
+    expect(stored.some((m) => m.role === "tool" && m.content === "42")).toBe(true);
+    expect(stored.some((m) => m.role === "assistant" && m.content === "The answer is 42.")).toBe(
+      true,
+    );
+
+    // On reload the engine sees only the conversation text — the orphan tool row
+    // is dropped because the stored assistant message carries no tool_calls.
+    expect(toEngineMessages(stored)).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "The answer is 42." },
     ]);
   });
 });

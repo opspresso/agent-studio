@@ -13,10 +13,10 @@ skills, MCP tools, chats, cost/usage dashboard**.
 - Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`)
 - AWS DynamoDB Single Table Design
-- AWS Amplify hosting (`amplify.yml`)
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layer rules, single-table key map,
-domain semantics, and API surface.
+domain semantics, and API surface, and [docs/API.md](docs/API.md) for API request/response
+examples and error cases.
 
 ## Quick Start
 
@@ -136,28 +136,24 @@ resets on redeploy.
 protocol `A2A` and its Agent Card URL; custom headers are sent on card
 resolution and RPC calls (stored AES-encrypted). The agent is then usable as a
 `type: "remote"` subagent and via the test-message endpoint, same as
-OpenAI-compatible agents. Note: outbound URLs are operator-provided and not
-domain-restricted — register only trusted agents.
+OpenAI-compatible agents. Note: outbound URLs are operator-provided; they are
+SSRF-guarded (private, loopback, link-local and cloud-metadata addresses are
+rejected at registration and dispatch), but any public URL is allowed — register
+only trusted agents.
 
 ## Deployment
 
-The production target is a container (ECS Fargate or any Docker host).
+The build artifact is a container image. This repo only builds and publishes the
+image; rolling it out is handled by a separate system.
 
 ```bash
 docker build -t agent-studio .        # multi-stage, Next standalone output
 docker compose up --build             # local container + DynamoDB Local
 ```
 
+- The `Release` workflow builds the image and pushes it to ECR on version tags
+  (`v*`), authenticating via GitHub OIDC.
 - `/api/health` is the LB/orchestrator health check (unauthenticated, dependency-free).
 - node runs as PID 1 (exec-form CMD) so SIGTERM drains in-flight SSE streams on
-  rolling deploys; pair with a generous `stopTimeout` (ECS: 120s).
-- Two deployment paths, pick one:
-  - **EC2 + EIP + nginx** ([deploy/ec2/](deploy/ec2/)): single instance,
-    SSM-backed env, Let's Encrypt, SSM Run Command redeploys. Cheapest, fits a
-    single-tenant internal tool. Images publish to ghcr via the `Publish` workflow.
-  - **ECS Fargate** ([deploy/ecs/](deploy/ecs/)): task definition template and
-    runbook; the `Deploy` workflow builds, pushes to ECR via OIDC, and rolls
-    the service.
-- AWS credentials come from the task role / instance role — never bake keys
-  into the image.
-- `amplify.yml` remains for the alternative AWS Amplify hosting path.
+  rolling deploys; pair with a generous container `stopTimeout` (e.g. 120s).
+- AWS credentials come from the task/instance role — never bake keys into the image.

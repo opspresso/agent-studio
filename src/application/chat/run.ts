@@ -25,6 +25,12 @@ export async function resolveVersion(
  *
  * Only non-subagent chunks (`author` absent) contribute to the persisted assistant
  * message; subagent chunks still reach the client for live rendering.
+ *
+ * Tool messages are persisted for UI/audit display only. They are intentionally
+ * NOT replayed into engine context on the next turn: the assistant message is
+ * stored without `tool_calls`, so `toEngineMessages` drops the orphaned tool rows
+ * and the conversation continues from the final assistant text alone. Keep both
+ * sides of this contract in sync (see the round-trip test in tests/chat.test.ts).
  */
 export async function* runAndPersist(
   deps: ChatDeps,

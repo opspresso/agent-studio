@@ -7,6 +7,7 @@ import {
   type BatchWriteCommandOutput,
 } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
+import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project } from "@/domain/project/types";
@@ -49,29 +50,10 @@ function fromItem(item: Record<string, unknown>): Project {
   };
 }
 
-/** Collect all PK/SK pairs under a partition, then batch-delete them. */
-async function deletePartition(pk: string): Promise<void> {
+/** Batch-delete the given PK/SK pairs, retrying unprocessed items. */
+async function batchDelete(deleteKeys: { PK: string; SK: string }[]): Promise<void> {
   const client = getDocumentClient();
   const table = getTableName();
-  const deleteKeys: { PK: string; SK: string }[] = [];
-
-  let lastKey: Record<string, unknown> | undefined;
-  do {
-    const page = await client.send(
-      new QueryCommand({
-        TableName: table,
-        KeyConditionExpression: "PK = :pk",
-        ExpressionAttributeValues: { ":pk": pk },
-        ProjectionExpression: "PK, SK",
-        ExclusiveStartKey: lastKey,
-      }),
-    );
-    for (const item of page.Items ?? []) {
-      deleteKeys.push({ PK: item.PK as string, SK: item.SK as string });
-    }
-    lastKey = page.LastEvaluatedKey;
-  } while (lastKey);
-
   for (let i = 0; i < deleteKeys.length; i += BATCH_SIZE) {
     const chunk = deleteKeys.slice(i, i + BATCH_SIZE);
     let request: BatchWriteCommandInput["RequestItems"] = {
@@ -85,6 +67,35 @@ async function deletePartition(pk: string): Promise<void> {
       request = result.UnprocessedItems;
     }
   }
+}
+
+const toDeleteKey = (item: Record<string, unknown>) => ({
+  PK: item.PK as string,
+  SK: item.SK as string,
+});
+
+/** Collect all PK/SK pairs under a partition, then batch-delete them. */
+async function deletePartition(pk: string): Promise<void> {
+  const items = await queryAll({
+    TableName: getTableName(),
+    KeyConditionExpression: "PK = :pk",
+    ExpressionAttributeValues: { ":pk": pk },
+    ProjectionExpression: "PK, SK",
+  });
+  await batchDelete(items.map(toDeleteKey));
+}
+
+/** Delete every trace row for a project (traces live in their own partitions,
+ * found via the GSI1 project index). */
+async function deleteTracesForProject(projectName: string): Promise<void> {
+  const items = await queryAll({
+    TableName: getTableName(),
+    IndexName: "GSI1",
+    KeyConditionExpression: "GSI1PK = :pk",
+    ExpressionAttributeValues: { ":pk": keys.traceProjectPartition(projectName) },
+    ProjectionExpression: "PK, SK",
+  });
+  await batchDelete(items.map(toDeleteKey));
 }
 
 export const projectRepository: ProjectRepository = {
@@ -136,9 +147,14 @@ export const projectRepository: ProjectRepository = {
     );
   },
 
-  /** Cascade delete: project META, all its versions (same partition), and all usage rows. */
+  /**
+   * Cascade delete: project META, all its versions (same partition), all usage
+   * rows, and all trace rows. Chats are owned by users, not the project, so they
+   * are intentionally left intact.
+   */
   async delete(name: string): Promise<void> {
     await deletePartition(keys.projectPartition(name));
     await deletePartition(keys.usage(name, "").PK);
+    await deleteTracesForProject(name);
   },
 };

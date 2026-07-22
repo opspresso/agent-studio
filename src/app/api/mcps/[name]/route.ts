@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { mcpUseCases } from "@/application/mcp";
 import { withAuth } from "@/lib/session";
+import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -32,7 +33,15 @@ export const PUT = withAuth(async (_user, request: Request, ctx: RouteContext) =
   if (!parsed.success) {
     return Response.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });
   }
-  const server = await mcpUseCases.update(name, parsed.data);
+  let server;
+  try {
+    server = await mcpUseCases.update(name, parsed.data);
+  } catch (error) {
+    if (error instanceof SsrfError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
   if (!server) {
     return Response.json({ error: "MCP server not found" }, { status: 404 });
   }

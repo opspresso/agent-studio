@@ -10,7 +10,6 @@ Agent Studio is a production-level single Next.js 16 full-stack application. It 
 - Tailwind CSS v4 (CSS-first config via `@import "tailwindcss"` — no tailwind.config file)
 - Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)
 - AWS DynamoDB Single Table Design
-- AWS Amplify hosting (`amplify.yml`)
 
 ## Clean Architecture Layers
 
@@ -59,12 +58,16 @@ Conventions:
   `UpdateExpression` `ADD #calls.#model :one`).
 - Key builders live in `src/infrastructure/db/keys.ts` — never hand-write key strings elsewhere.
 - Reserved words (`name`, `owner`, `timestamp`) always via `ExpressionAttributeNames`.
+- List queries paginate through `queryAll()` (`src/infrastructure/db/query.ts`); a Query page
+  caps at 1MB, so an unpaginated list silently truncates. `traceRepository` is the one
+  intentional exception (bounded top-N by `Limit`).
 
 ## Domain Semantics
 
 ### Project / Version
-- `Project { name (slug, immutable id), displayName, description, projectType: 'llm' | 'agent',
-  ownerEmail, departmentCode?, publishedVersion?, createdAt, updatedAt }`
+- `Project { name (slug, immutable id), displayName, description,
+  projectType: 'llm' | 'agent' | 'image', ownerEmail, departmentCode?,
+  publishedVersion?, createdAt, updatedAt }`
 - `Version { versionName, systemPrompt, userPromptTemplate, model, fallbackModel?, parameters
   (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema),
   mcpList: string[], skillList: string[], subagentList: {name, type:'local'|'remote'}[],
@@ -102,13 +105,16 @@ Conventions:
 ### MCP
 - `McpServer { name, url, description?, headers: Record<string,string> (values encrypted
   at rest AES-256-GCM `enc:v1:` prefix, masked `********` on read), createdAt, updatedAt }`
+- `url` is SSRF-guarded (`src/infrastructure/net/ssrfGuard.ts`) at registration and dispatch:
+  non-http(s) schemes and private/loopback/link-local/metadata addresses are rejected.
 - Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). Tool name
   collisions get `_1/_2` suffix aliases with reverse mapping. Tool results capped at
   100,000 chars.
 
 ### External Agents (registry, A2A-lite)
-- `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), description,
-  headers (encrypted like MCP), createdAt }` — usable as `type:'remote'` subagents.
+- `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), protocol ('openai' |
+  'a2a'), description, headers (encrypted like MCP), createdAt }` — usable as `type:'remote'`
+  subagents. `url` is SSRF-guarded like MCP.
 
 ### Chat
 - `Chat { chatId, title, ownerEmail, projectName?, createdAt, updatedAt }`,
@@ -121,6 +127,8 @@ Conventions:
   project/provider/model.
 
 ## API Surface (App Router route handlers)
+
+Request/response shapes, auth, and error cases: see [API.md](API.md).
 
 ```
 POST /api/projects                          create
@@ -138,15 +146,20 @@ GET  /api/usages/summary?from&to
 GET  /api/models
 ```
 
-All routes require a Better Auth session except none (single-tenant internal tool posture;
-service-to-service auth is a later phase). SSE responses use `text/event-stream` with
-`data: {json}\n\n` framing and a terminal `data: [DONE]`.
+All routes require a Better Auth session except the unauthenticated webhooks
+(`/api/health`, `/api/slack/events/*` verified by signing secret, `/api/a2a/*` gated by
+`A2A_API_KEY`). Projects are a shared catalog: any signed-in user may read and run any
+project, but mutations (update/delete/publish, version create/update, Slack config) are
+owner-only — `assertProjectOwner` returns 403 for non-owners. MCP/agent/skill registries
+are shared admin resources with no per-owner restriction. SSE responses use
+`text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.
 
 ## Auth
 
 Better Auth 1.6, Google OAuth only, custom DynamoDB adapter over the single table
-(`src/lib/auth-adapter.ts`). Session read helper `getSession()` in `src/lib/session.ts`;
-route handlers use `requireSession()` which throws a 401 `Response`.
+(`src/lib/auth-adapter.ts`). Session read helper `getSessionUser()` in `src/lib/session.ts`;
+route handlers wrap themselves in `withAuth(...)`, which returns a 401 `Response` when
+there is no session and otherwise passes the `SessionUser` as the handler's first argument.
 
 ## UI Pages
 

@@ -1,7 +1,8 @@
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
 import { getDocumentClient, getTableName } from "../client";
+import { queryAll } from "../query";
 import { keys } from "../keys";
 
 const ENTITY_TYPE = "MCP" as const;
@@ -41,15 +42,13 @@ export const mcpRepository: McpRepository = {
   },
 
   async list() {
-    const res = await getDocumentClient().send(
-      new QueryCommand({
-        TableName: getTableName(),
-        IndexName: "GSI1",
-        KeyConditionExpression: "GSI1PK = :pk",
-        ExpressionAttributeValues: { ":pk": keys.typePartition(ENTITY_TYPE) },
-      }),
-    );
-    return (res.Items ?? []).map(fromItem);
+    const items = await queryAll({
+      TableName: getTableName(),
+      IndexName: "GSI1",
+      KeyConditionExpression: "GSI1PK = :pk",
+      ExpressionAttributeValues: { ":pk": keys.typePartition(ENTITY_TYPE) },
+    });
+    return items.map(fromItem);
   },
 
   async put(server) {

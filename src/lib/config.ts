@@ -8,6 +8,22 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Environment variables required for any real operation (LLM dispatch + secret
+ * encryption). Validated once at boot (see instrumentation.ts) so a misconfig
+ * fails fast instead of surfacing as a 500 on the first request that needs it.
+ * Google OAuth creds are intentionally excluded — the local dev-session flow
+ * bypasses OAuth.
+ */
+const BOOT_REQUIRED_ENV = ["LLM_BASE_URL", "LLM_API_KEY", "AES_ENCRYPTION_KEY"] as const;
+
+export function assertRequiredConfig(): void {
+  const missing = BOOT_REQUIRED_ENV.filter((name) => !process.env[name]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  }
+}
+
 export const config = {
   get stage(): Stage {
     const stage = process.env.STAGE ?? "local";
