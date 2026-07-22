@@ -67,6 +67,9 @@ export function RunPanel({
   const [error, setError] = useState<string | null>(null);
   const [cost, setCost] = useState<number | null>(null);
   const [image, setImage] = useState<ImageResult | null>(null);
+  const [agentImages, setAgentImages] = useState<
+    Array<{ b64: string; mimeType: string; prompt?: string }>
+  >([]);
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("medium");
 
@@ -85,6 +88,7 @@ export function RunPanel({
     setError(null);
     setCost(null);
     setImage(null);
+    setAgentImages([]);
     let totalCost = 0;
 
     try {
@@ -126,6 +130,10 @@ export function RunPanel({
             author: chunk.author,
           };
           setToolResults((prev) => [...prev, result]);
+        }
+        if (chunk.image) {
+          const generated = chunk.image;
+          setAgentImages((prev) => [...prev, generated]);
         }
         if (chunk.usage) {
           totalCost += chunk.usage.costUsd;
@@ -242,6 +250,16 @@ export function RunPanel({
           {text || <span className="text-neutral-400">Output will stream here.</span>}
         </div>
       )}
+
+      {agentImages.map((img, i) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={`image-${i}`}
+          src={`data:${img.mimeType};base64,${img.b64}`}
+          alt={img.prompt ?? "Generated image"}
+          className="max-w-full rounded-md border border-neutral-200 dark:border-neutral-800"
+        />
+      ))}
 
       {toolCalls.map((call, i) => (
         <details key={`call-${i}`} className="rounded-md border border-neutral-200 dark:border-neutral-800">
