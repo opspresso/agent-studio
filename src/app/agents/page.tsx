@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { toSlug } from "@/lib/slug";
 import {
   createAgent,
   listA2aProjects,
@@ -187,6 +188,7 @@ function RegisterAgentModal({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onBlur={() => setName(toSlug(name))}
               placeholder="my-agent"
               required
               className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
