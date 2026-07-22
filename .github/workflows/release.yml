@@ -51,12 +51,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trigger for GitOps 🚀
-        uses: opspresso/action-builder@master
-        with:
-          args: --dispatch
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITOPS_REPO: "opspresso/argocd-env-demo"
-          PROJECT: ${{ github.event.repository.name }}
-          VERSION: ${{ github.ref_name }}
+      # - name: Trigger for GitOps 🚀
+      #   uses: opspresso/action-builder@master
+      #   with:
+      #     args: --dispatch
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     GITOPS_REPO: "opspresso/argocd-env-demo"
+      #     PROJECT: ${{ github.event.repository.name }}
+      #     VERSION: ${{ github.ref_name }}
