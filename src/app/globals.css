@@ -105,7 +105,7 @@ body {
   @apply rounded bg-neutral-100 px-1 py-0.5 font-mono text-[13px] dark:bg-neutral-800;
 }
 .chat-markdown pre {
-  @apply overflow-x-auto rounded-md bg-neutral-100 p-3 dark:bg-neutral-800;
+  @apply whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 dark:bg-neutral-800;
 }
 .chat-markdown pre code {
   @apply bg-transparent p-0;
