@@ -5,6 +5,33 @@
 
 const encoder = new TextEncoder();
 
+/**
+ * SSE response without the OpenAI-style `[DONE]` terminator, for protocols
+ * (e.g. A2A JSON-RPC streaming) whose clients treat every `data:` frame as
+ * JSON and end on stream close.
+ */
+export function sseResponseRaw(generator: AsyncGenerator<unknown>): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const chunk of generator) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 export function sseResponse(generator: AsyncGenerator<unknown>): Response {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

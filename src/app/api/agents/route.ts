@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/session";
 const createSchema = z.object({
   name: z.string().regex(/^[a-z0-9-]+$/, "name must be a slug (lowercase letters, digits, hyphens)"),
   url: z.url(),
+  protocol: z.enum(["openai", "a2a"]).default("openai"),
   description: z.string().min(1),
   headers: z.record(z.string(), z.string()).default({}),
 });

@@ -8,6 +8,7 @@ import {
   getAgent,
   sendAgentMessage,
   updateAgent,
+  type AgentProtocol,
   type ExternalAgent,
 } from "../api";
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "../HeaderRows";
@@ -78,7 +79,12 @@ export default function AgentDetailPage() {
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">{agent.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">{agent.name}</h1>
+            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+              {agent.protocol === "a2a" ? "A2A" : "OpenAI"}
+            </span>
+          </div>
           <p className="mt-1 text-sm text-neutral-500">{agent.description}</p>
           <p className="mt-1 text-xs text-neutral-400">{agent.url}</p>
         </div>
@@ -222,6 +228,7 @@ function EditAgentForm({
   onSaved: () => void;
 }) {
   const [url, setUrl] = useState(agent.url);
+  const [protocol, setProtocol] = useState<AgentProtocol>(agent.protocol ?? "openai");
   const [description, setDescription] = useState(agent.description);
   const [rows, setRows] = useState<HeaderRow[]>(recordToRows(agent.headers));
   const [submitting, setSubmitting] = useState(false);
@@ -232,7 +239,7 @@ function EditAgentForm({
     setSubmitting(true);
     setError(null);
     try {
-      await updateAgent(agent.name, { url, description, headers: rowsToRecord(rows) });
+      await updateAgent(agent.name, { url, protocol, description, headers: rowsToRecord(rows) });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -244,7 +251,18 @@ function EditAgentForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <label className="block">
-        <span className="text-sm font-medium">URL</span>
+        <span className="text-sm font-medium">Protocol</span>
+        <select
+          value={protocol}
+          onChange={(e) => setProtocol(e.target.value as AgentProtocol)}
+          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+        >
+          <option value="openai">OpenAI-compatible</option>
+          <option value="a2a">A2A</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-sm font-medium">{protocol === "a2a" ? "Agent Card URL" : "URL"}</span>
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}

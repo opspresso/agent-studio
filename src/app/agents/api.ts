@@ -1,6 +1,9 @@
+export type AgentProtocol = "openai" | "a2a";
+
 export interface ExternalAgent {
   name: string;
   url: string;
+  protocol?: AgentProtocol;
   description: string;
   /** Masked (`********`) header values — never plaintext or ciphertext. */
   headers: Record<string, string>;
@@ -11,12 +14,14 @@ export interface ExternalAgent {
 export interface CreateAgentInput {
   name: string;
   url: string;
+  protocol?: AgentProtocol;
   description: string;
   headers: Record<string, string>;
 }
 
 export interface UpdateAgentInput {
   url?: string;
+  protocol?: AgentProtocol;
   description?: string;
   headers?: Record<string, string>;
 }

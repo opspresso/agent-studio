@@ -117,6 +117,28 @@ optional `SLACK_DEFAULT_PROJECT`). Point the Slack app's Events API request URL 
   the background — the container is a persistent process, so `after()` work always
   completes.
 
+## A2A (Agent2Agent)
+
+Both directions of the [A2A protocol](https://a2a-protocol.org) are supported.
+
+**Inbound — expose a project as an A2A agent.** Set `A2A_API_KEY` (unset
+disables the endpoints). Every project with a published version then serves:
+
+- `GET /api/a2a/<project>/.well-known/agent-card.json` — public Agent Card
+- `POST /api/a2a/<project>` — JSON-RPC (`message/send`, `message/stream`,
+  `tasks/get`, `tasks/cancel`), authenticated with an `X-A2A-Key` header
+  matching `A2A_API_KEY`
+
+Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state is in-memory and
+resets on redeploy.
+
+**Outbound — call external A2A agents.** Register an agent on /agents with
+protocol `A2A` and its Agent Card URL; custom headers are sent on card
+resolution and RPC calls (stored AES-encrypted). The agent is then usable as a
+`type: "remote"` subagent and via the test-message endpoint, same as
+OpenAI-compatible agents. Note: outbound URLs are operator-provided and not
+domain-restricted — register only trusted agents.
+
 ## Deployment
 
 The production target is a container (ECS Fargate or any Docker host).
