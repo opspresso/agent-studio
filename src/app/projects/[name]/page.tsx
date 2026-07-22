@@ -190,6 +190,7 @@ export default function PlaygroundPage() {
         {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
 
         <VersionEditor
+          projectName={project.name}
           projectType={project.projectType}
           models={models.filter((m) =>
             project.projectType === "image"

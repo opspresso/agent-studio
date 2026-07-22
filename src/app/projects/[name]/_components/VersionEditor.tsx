@@ -1,20 +1,77 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listAgents } from "@/app/agents/api";
+import { listSkills } from "@/app/skills/api";
+import { listMcps } from "@/app/tools/api";
+import { listProjects } from "../../lib/api";
 import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
-import { Field, NumberField, SubagentInput, TagInput, inputClass } from "./inputs";
+import { Field, NumberField, SearchSelectInput, SubagentInput, inputClass } from "./inputs";
+import type { PickerOption } from "./inputs";
+
+type SubagentOption = PickerOption & { type: "local" | "remote" };
 
 export function VersionEditor({
+  projectName,
   projectType,
   models,
   value,
   onChange,
 }: {
+  projectName: string;
   projectType: ProjectType;
   models: ModelConfig[];
   value: VersionInput;
   onChange: (value: VersionInput) => void;
 }) {
+  const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
+  const [skillOptions, setSkillOptions] = useState<PickerOption[]>([]);
+  const [subagentOptions, setSubagentOptions] = useState<SubagentOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.allSettled([listMcps(), listSkills(), listProjects(), listAgents()]).then(
+      ([mcps, skills, projects, agents]) => {
+        if (cancelled) {
+          return;
+        }
+        if (mcps.status === "fulfilled") {
+          setMcpOptions(
+            mcps.value.map((m) => ({ value: m.name, description: m.description })),
+          );
+        }
+        if (skills.status === "fulfilled") {
+          setSkillOptions(
+            skills.value.map((s) => ({ value: s.name, description: s.description })),
+          );
+        }
+        const locals: SubagentOption[] =
+          projects.status === "fulfilled"
+            ? projects.value
+                .filter((p) => p.publishedVersion && p.name !== projectName)
+                .map((p) => ({
+                  value: p.name,
+                  description: p.description,
+                  badge: "local",
+                  type: "local" as const,
+                }))
+            : [];
+        const remotes: SubagentOption[] =
+          agents.status === "fulfilled"
+            ? agents.value.map((a) => ({
+                value: a.name,
+                description: a.description,
+                badge: "remote",
+                type: "remote" as const,
+              }))
+            : [];
+        setSubagentOptions([...locals, ...remotes]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectName]);
   const [schemaText, setSchemaText] = useState(() =>
     value.parameters.jsonSchema ? JSON.stringify(value.parameters.jsonSchema, null, 2) : "",
   );
@@ -203,19 +260,25 @@ export function VersionEditor({
         </div>
       )}
 
-      <TagInput
+      <SearchSelectInput
         label="MCP servers"
         values={value.mcpList}
         onChange={(mcpList) => patch({ mcpList })}
-        placeholder="Add MCP server name and press Enter"
+        options={mcpOptions}
+        placeholder="Search registered MCP servers"
       />
-      <TagInput
+      <SearchSelectInput
         label="Skills"
         values={value.skillList}
         onChange={(skillList) => patch({ skillList })}
-        placeholder="Add skill name and press Enter"
+        options={skillOptions}
+        placeholder="Search registered skills"
       />
-      <SubagentInput values={value.subagentList} onChange={(subagentList) => patch({ subagentList })} />
+      <SubagentInput
+        values={value.subagentList}
+        onChange={(subagentList) => patch({ subagentList })}
+        options={subagentOptions}
+      />
     </div>
   );
 }
