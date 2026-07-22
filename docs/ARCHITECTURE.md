@@ -16,12 +16,13 @@ Agent Studio is a production-level single Next.js 16 full-stack application. It 
 ```
 src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
-    project/  llm/  chat/  skill/  mcp/  agent/  usage/
+    project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/
   application/      # Use cases. Depends on domain ports only.
-  infrastructure/   # Adapters: DynamoDB repositories, LLM provider client, MCP client.
+  infrastructure/   # Adapters (app-facing code reaches them via the composition root).
     db/             # Single-table client, key builders, repositories
-    llm/            # OpenAI-compatible provider channel, streaming
+    llm/            # OpenAI-compatible provider channels, streaming
     mcp/            # MCP HTTP client
+    a2a/  slack/  github/  storage/  net/  crypto/   # A2A client, Slack, skills-repo sync, S3 image store, SSRF guard, AES
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
   components/       # Shared React components
@@ -49,26 +50,27 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | MCP server | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
+| Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}` |
 | App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
 
 Conventions:
 - Published version is a pointer attribute `publishedVersion` on the project `META` item, not a copy.
 - Usage rows are updated with atomic `ADD` per model: `calls.{model}`, `inputTokens.{model}`,
-  `outputTokens.{model}`, `costUsd.{model}` (DynamoDB map with ADD on nested number attrs — use
-  `UpdateExpression` `ADD #calls.#model :one`).
+  `outputTokens.{model}`, `costUsd.{model}` — two-step update: `SET … if_not_exists` to
+  materialise the maps, then `ADD calls.#model :calls, …` on the nested number attrs.
 - Key builders live in `src/infrastructure/db/keys.ts` — never hand-write key strings elsewhere.
-- Reserved words (`name`, `owner`, `timestamp`) always via `ExpressionAttributeNames`.
-- List queries paginate through `queryAll()` (`src/infrastructure/db/query.ts`); a Query page
-  caps at 1MB, so an unpaginated list silently truncates. `traceRepository` is the one
-  intentional exception (bounded top-N by `Limit`).
+- List queries paginate: most through `queryAll()` (`src/infrastructure/db/query.ts`) — a Query
+  page caps at 1MB, so an unpaginated list silently truncates. `chatRepository` runs its own
+  `LastEvaluatedKey` loops; `traceRepository` is intentionally bounded top-N via `Limit`.
 
 ## Domain Semantics
 
 ### Project / Version
 - `Project { name (slug, immutable id), displayName, description,
   projectType: 'llm' | 'agent' | 'image', ownerEmail, departmentCode?,
-  publishedVersion?, createdAt, updatedAt }`
+  publishedVersion?, slack? (per-project Slack bot credentials, AES-encrypted),
+  createdAt, updatedAt }`
 - `Version { versionName, systemPrompt, userPromptTemplate, model, fallbackModel?, parameters
   (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema),
   mcpList: string[], skillList: string[], subagentList: {name, type:'local'|'remote'}[],
@@ -76,9 +78,11 @@ Conventions:
 - Template variables `{{var}}` rendered server-side before dispatch.
 
 ### LLM Engine (`src/application/llm/engine.ts` — public contract)
-- All text generation goes through a single OpenAI-compatible channel
-  (`openai` SDK pointed at `LLM_BASE_URL`; model ids like `openai/gpt-5-mini`,
-  `google/gemini-3.1-flash-lite`, `anthropic/claude-sonnet-4.6`). No per-provider clients.
+- All text generation speaks the OpenAI Chat Completions protocol; model ids are
+  `provider/model` (e.g. `openai/gpt-5-mini`, `google/gemini-3.1-flash-lite`). By default
+  every id goes to the `LLM_BASE_URL` channel; per-provider channels (runtime-settings
+  override, else `LLM_PROVIDER_<PROVIDER>_*` env) route by the id's provider prefix
+  (`src/infrastructure/llm/channel.ts`).
 - `runPrompt(input): Promise<RunResult>` — single-shot; supports streaming via
   `runPromptStream(input): AsyncGenerator<EngineChunk>`.
 - `runAgent(input): AsyncGenerator<EngineChunk>` — recursive multi-turn tool loop:
@@ -87,21 +91,27 @@ Conventions:
     append, then recurse with `turn + 1`
   - builtin tools intercepted before MCP dispatch: `Skill` (progressive skill loading),
     `transfer_to_agent` (subagent transfer — local recursion or remote agent HTTP call;
-    budget guard `turn + 2 >= maxTurn` rejects transfer)
+    budget guard `turn + 2 >= maxTurn` rejects transfer), `GenerateImage` (image
+    generation via the injected `generateImage` dep; results persist to S3 when configured)
   - subagent transfer passes ONLY the model-written `message` (no parent history);
     child's final text returns as a "For context: ..." user message
   - stream chunks carry optional top-level `author` when subagents are wired
-- Fallback: on 429/5xx from primary model, retry once with `fallbackModel`.
-- Cost: after each call, `recordUsage` computes cost from the model registry pricing and
-  atomically ADDs into the usage row; multi-turn agent runs accumulate.
+- Fallback: on 429/5xx from the primary model **before the first chunk**, retry once with
+  `fallbackModel`; a mid-stream failure yields an `{error}` chunk and does not retry.
+- Cost: `recordUsage` computes cost from the model registry pricing and atomically ADDs
+  into the daily usage row. Single-shot runs record per call; agent runs buffer per-turn
+  usage in `createUsageAggregator` and flush once at run end.
 - Model registry `src/domain/llm/models.ts`: `ModelConfig { id, provider, displayName,
-  pricing { inputPer1M, outputPer1M, cachedInputPer1M? }, capabilities { tools,
-  structuredOutput, imageInput, reasoning }, contextWindow, maxTokens, hidden? }`.
+  pricing { inputPer1M, outputPer1M, cachedInputPer1M?, imageInputPer1M?,
+  imageOutputPer1M?, perImage? }, capabilities { tools, structuredOutput, imageInput,
+  reasoning, imageGeneration? }, contextWindow, maxTokens, hidden? }`.
 
 ### Skills
 - Skill = markdown behavior instructions (progressive disclosure): system prompt lists
   name+description table only; model calls builtin `Skill` tool to load full content.
-- Stored in table: `Skill { name, description, content (markdown), createdAt, updatedAt }`.
+- Stored in table: `Skill { name, description, content (markdown), source?, createdAt,
+  updatedAt }` — `source` marks skills synced from the skills repo
+  (e.g. `github:owner/repo`).
 
 ### MCP
 - `McpServer { name, url, description?, headers: Record<string,string> (values encrypted
@@ -136,20 +146,32 @@ POST /api/projects                          create
 GET  /api/projects                          list
 GET|PUT|DELETE /api/projects/[name]
 GET|POST /api/projects/[name]/versions
-GET|PUT  /api/projects/[name]/versions/[version]
+GET|PUT|DELETE /api/projects/[name]/versions/[version]
 POST /api/projects/[name]/publish           set publishedVersion
 POST /api/projects/[name]/versions/[version]/predict        (version = name | 'published')
 POST /api/projects/[name]/versions/[version]/chat/completions   OpenAI-compatible
 POST /api/projects/[name]/versions/[version]/agent          SSE stream
+GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot (+ POST …/slack/test)
+GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
-GET|POST /api/chats, GET|POST /api/chats/[chatId]/messages  (POST streams SSE)
+GET|POST /api/skills/sync                   skills-repo sync status / run
+POST /api/mcps/[name]/tools                 MCP connection test
+POST /api/agents/[name]/message             external-agent test message
+GET|POST /api/chats, GET|DELETE /api/chats/[chatId]
+POST /api/chats/[chatId]/messages           streams SSE
+GET|PUT /api/settings                       admin runtime overrides
 GET  /api/usages/summary?from&to
 GET  /api/models
+GET  /api/a2a                               A2A-published project list
+GET  /api/a2a/[name]/.well-known/agent-card.json   public Agent Card
+POST /api/a2a/[name]                        JSON-RPC, gated by X-A2A-Key
+POST /api/slack/events, /api/slack/events/[project]   Slack webhooks
+GET  /api/health
 ```
 
-All routes require a Better Auth session except the unauthenticated webhooks
-(`/api/health`, `/api/slack/events/*` verified by signing secret, `/api/a2a/*` gated by
-`A2A_API_KEY`). Projects are a shared catalog: any signed-in user may read and run any
+All routes require a Better Auth session except the unauthenticated endpoints:
+`/api/health`, `/api/slack/events/*` (verified by signing secret), `POST /api/a2a/[name]`
+(gated by `A2A_API_KEY`), and the public Agent Card GET. Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) are
 owner-only — `assertProjectOwner` returns 403 for non-owners. MCP/agent/skill registries
 are shared: reads are open to any signed-in user, while mutations go through
@@ -176,13 +198,14 @@ there is no session and otherwise passes the `SessionUser` as the handler's firs
 ## UI Pages
 
 ```
-/                     redirect → /projects
+/                     dashboard when signed in, landing page otherwise
 /projects             project catalog (cards)
 /projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
 /projects/[name]/versions | settings | usage
 /chats  /chats/[chatId]
 /skills  /tools (MCP)  /agents
 /dashboard            cost dashboard (range picker, group by project/provider/model)
+/settings             admin-only runtime env-var overrides
 ```
 
 UI text in English. Tailwind v4 utilities only — no inline styles.
@@ -196,5 +219,5 @@ table + GSIs.
 ## Verification
 
 - `pnpm typecheck` (tsc --noEmit, strict) and `pnpm build` must pass.
-- `pnpm test` runs Vitest unit tests for domain/application layers (engine loop, cost calc,
-  key builders, template rendering).
+- `pnpm test` runs Vitest unit tests (engine loop & fallback, cost calc, template rendering,
+  Slack verification/dedup, SSRF guard, settings, and more — see `tests/`).

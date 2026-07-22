@@ -21,7 +21,7 @@ pnpm exec vitest run -t "streamWithFallback"
 ```
 
 There is **no lint step** (no ESLint config); `typecheck` + `test` are the checks.
-Node 22, pnpm 11 (both pinned). CI (`.github/workflows/ci.yml`) runs typecheck → test → build.
+Node 22 (`engines >=22`), pnpm 11 (pinned via `packageManager`). CI (`.github/workflows/ci.yml`) runs typecheck → test → build.
 
 ### Local development
 
@@ -59,7 +59,7 @@ Read `docs/ARCHITECTURE.md` for the full single-table key map, domain semantics,
 ### LLM engine (the core)
 
 `src/application/llm/engine.ts` is pure logic with **everything injected** (channel,
-recordUsage, callMcpTool, loadSkill, runSubagent, generateImage) — so it is tested with no
+recordUsage, callMcpTool, loadSkillContent, runSubagent, generateImage) — so it is tested with no
 network/DB via `tests/fakeChannel.ts`. `src/application/execution/runProject.ts` is the
 composition point that resolves a version's skills/MCP tools/subagents and assembles those
 deps. Key behaviors:

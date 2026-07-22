@@ -98,7 +98,8 @@ Single-shot run. `{version}` may be `published`.
   "usage": { "inputTokens": 12, "outputTokens": 34, … } }
 ```
 
-For an `image` project, send `{ "prompt", "size?", "quality?" }` → `{ b64, mimeType }`.
+For an `image` project, send `{ "prompt", "size?", "quality?" }` → `{ imageBase64, mimeType,
+model, usage }`.
 With `"stream": true`, the response is SSE.
 
 ### `POST /api/projects/{name}/versions/{version}/chat/completions`
@@ -109,7 +110,9 @@ single completion.
 ```json
 // request
 { "model": "ignored-routes-by-version", "messages": [ { "role": "user", "content": "hi" } ],
-  "variables": {}?, "stream": false, "temperature": 0.7?, "max_tokens": 512? }
+  "variables": {}?, "stream": false }
+// `temperature`/`max_tokens` are accepted but ignored — sampling comes from the
+// version's stored `parameters`.
 // response: an OpenAI chat.completion object (or chat.completion.chunk SSE when stream=true)
 ```
 
@@ -123,6 +126,7 @@ Agent SSE stream. Body `{ "messages": [ … ] }`. Emits `EngineChunk` frames
 ```
 GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 → 200 { "items": [ { projectName, date, calls, inputTokens, outputTokens, costUsd }, … ] }
+      (calls/inputTokens/outputTokens/costUsd are per-model maps: { "provider/model": number })
 → 400 { "error": "…" }   (bad/oversized range: max 184 days, from ≤ to)
 ```
 

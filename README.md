@@ -83,6 +83,22 @@ pnpm test           # Vitest unit tests
 pnpm build          # production build
 ```
 
+## Access Control & Runtime Settings
+
+- Login is Google OAuth, restricted to `ALLOWED_EMAIL_DOMAINS` (comma-separated;
+  unset allows any domain).
+- `ADMIN_EMAILS` (comma-separated) restricts mutations of the shared skill/MCP/agent
+  registries and access to the `/settings` page; unset allows any signed-in user.
+- The admin `/settings` page stores runtime overrides for selected env vars
+  (admin/allowed-domain lists, LLM channels, Slack workspace bot, skills repo,
+  A2A key, public base URL) in DynamoDB — a stored override wins over the env value.
+
+## Image Generation
+
+`image` projects generate images directly, and agent runs can generate them via the
+builtin `GenerateImage` tool. Generated images are uploaded to a public-read S3
+bucket when `S3_BUCKET_NAME` is set; unset disables persistence.
+
 ## Skills Repository
 
 Skills can sync from a GitHub repository (`SKILLS_REPO=owner/repo`,
@@ -143,8 +159,7 @@ only trusted agents.
 
 ## Deployment
 
-The build artifact is a container image. This repo only builds and publishes the
-image; rolling it out is handled by a separate system.
+The build artifact is a container image.
 
 ```bash
 docker build -t agent-studio .        # multi-stage, Next standalone output
@@ -153,6 +168,9 @@ docker compose up --build             # local container + DynamoDB Local
 
 - The `Release` workflow builds the image and pushes it to ECR on version tags
   (`v*`), authenticating via GitHub OIDC.
+- The `Deploy` workflow (manual `workflow_dispatch`) runs typecheck + tests, builds
+  and pushes the image to ECR, then forces a new ECS service deployment and waits
+  for it to stabilize.
 - `/api/health` is the LB/orchestrator health check (unauthenticated, dependency-free).
 - node runs as PID 1 (exec-form CMD) so SIGTERM drains in-flight SSE streams on
   rolling deploys; pair with a generous container `stopTimeout` (e.g. 120s).
