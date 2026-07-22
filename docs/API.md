@@ -16,7 +16,8 @@ auth, and error cases for the non-obvious endpoints.
   project. Only the owner may mutate one (update/delete/publish, version create/update, Slack
   config), otherwise `403 { "error": "You do not have permission to modify project \"…\"" }`.
   Chats are per-owner private (non-owner reads return 404). MCP/agent/skill registries are
-  shared.
+  shared for reads; mutations require membership in `ADMIN_EMAILS` when set (unset allows
+  any signed-in user), otherwise `403 { "error": "Only admins can modify this resource" }`.
 - **Errors**: `{ "error": string }`, with an extra `issues` array on schema-validation
   failures. Status codes: `400` (bad input), `401` (no session), `403` (not owner), `404`
   (missing), `409` (name conflict), `500` (unhandled).

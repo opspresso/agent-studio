@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentUseCases } from "@/application/agent";
-import { withAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 
 const createSchema = z.object({
@@ -15,7 +15,7 @@ export const GET = withAuth(async () => {
   return Response.json(await agentUseCases.list());
 });
 
-export const POST = withAuth(async (_user, request: Request) => {
+export const POST = withAdminAuth(async (_user, request: Request) => {
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });

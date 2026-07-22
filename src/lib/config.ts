@@ -60,6 +60,16 @@ export const config = {
       .map((domain) => domain.trim().toLowerCase())
       .filter(Boolean);
   },
+  /**
+   * Emails allowed to mutate shared registries (ADMIN_EMAILS, comma-separated).
+   * Empty means no restriction — any signed-in user may mutate.
+   */
+  get adminEmails(): string[] {
+    return (process.env.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+  },
   get slackBotToken(): string | undefined {
     return process.env.SLACK_BOT_TOKEN || undefined;
   },

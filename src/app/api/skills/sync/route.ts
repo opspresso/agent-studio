@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 import { config } from "@/lib/config";
 import { skillRepository } from "@/application/skill";
 import { fetchSkillsRepoSnapshot } from "@/infrastructure/github/skillsRepoClient";
@@ -12,7 +12,7 @@ export const GET = withAuth(async () => {
   });
 });
 
-export const POST = withAuth(async () => {
+export const POST = withAdminAuth(async () => {
   if (!config.skillsRepo || !config.githubToken) {
     return Response.json(
       { error: "SKILLS_REPO and GITHUB_TOKEN are not configured" },

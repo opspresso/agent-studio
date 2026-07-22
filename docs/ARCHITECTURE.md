@@ -151,7 +151,9 @@ All routes require a Better Auth session except the unauthenticated webhooks
 `A2A_API_KEY`). Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) are
 owner-only — `assertProjectOwner` returns 403 for non-owners. MCP/agent/skill registries
-are shared admin resources with no per-owner restriction. SSE responses use
+are shared: reads are open to any signed-in user, while mutations go through
+`withAdminAuth` and are restricted to `ADMIN_EMAILS` when set (unset allows any
+signed-in user). SSE responses use
 `text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.
 
 ## Auth

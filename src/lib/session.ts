@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { auth } from "./auth";
+import { config } from "./config";
 
 export interface SessionUser {
   id: string;
@@ -31,4 +32,28 @@ export function withAuth<T extends unknown[]>(
     }
     return handler(user, ...args);
   };
+}
+
+/** True when ADMIN_EMAILS lists this user, or when ADMIN_EMAILS is unset (no restriction). */
+export function isAdmin(user: SessionUser): boolean {
+  const admins = config.adminEmails;
+  return admins.length === 0 || admins.includes(user.email.toLowerCase());
+}
+
+/**
+ * Like {@link withAuth}, but additionally 403s non-admins. Used for mutations
+ * on shared registries (MCP servers, external agents, skills).
+ */
+export function withAdminAuth<T extends unknown[]>(
+  handler: (user: SessionUser, ...args: T) => Promise<Response>,
+): (...args: T) => Promise<Response> {
+  return withAuth(async (user, ...args: T) => {
+    if (!isAdmin(user)) {
+      return Response.json(
+        { error: "Only admins can modify this resource" },
+        { status: 403 },
+      );
+    }
+    return handler(user, ...args);
+  });
 }

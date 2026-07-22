@@ -91,7 +91,8 @@ restricted to `ALLOWED_EMAIL_DOMAINS`. Route handlers wrap in `withAuth(...)`
 Authorization model: **projects are a shared catalog** — any signed-in user may read and run
 any project, but mutations (update/delete/publish, version create/update, Slack config) are
 owner-only via `assertProjectOwner` (→ 403). Chats are per-owner private. MCP/agent/skill
-registries are shared admin resources with no per-owner restriction.
+registries are shared: reads are open to any signed-in user; mutations go through
+`withAdminAuth`, restricted to `ADMIN_EMAILS` when set (unset = any signed-in user).
 
 ### Other subsystems
 

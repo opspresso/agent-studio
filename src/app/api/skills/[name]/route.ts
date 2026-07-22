@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { skillUseCases } from "@/application/skill";
-import { withAuth } from "@/lib/session";
+import { withAdminAuth, withAuth } from "@/lib/session";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -22,7 +22,7 @@ export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) 
   return Response.json(skill);
 });
 
-export const PUT = withAuth(async (_user, request: Request, ctx: RouteContext) => {
+export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   if (!nameSchema.safeParse(name).success) {
     return Response.json({ error: "Invalid name" }, { status: 400 });
@@ -38,7 +38,7 @@ export const PUT = withAuth(async (_user, request: Request, ctx: RouteContext) =
   return Response.json(skill);
 });
 
-export const DELETE = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   if (!nameSchema.safeParse(name).success) {
     return Response.json({ error: "Invalid name" }, { status: 400 });
