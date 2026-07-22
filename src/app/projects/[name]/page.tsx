@@ -110,9 +110,8 @@ export default function PlaygroundPage() {
 
   function selectVersion(versionName: string) {
     if (versionName === "") {
-      const input = emptyInput(models);
+      // New versions start as a copy of whatever is currently in the editor.
       setSelectedName("");
-      setDraft(input);
       setSnapshot("");
       return;
     }
