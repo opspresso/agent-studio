@@ -3,7 +3,16 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { formatShortDateTime } from "@/lib/date";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
+
+function MessageTimestamp({ createdAt }: { createdAt: string }) {
+  const formatted = formatShortDateTime(createdAt);
+  if (!formatted) {
+    return null;
+  }
+  return <time className="mt-0.5 block text-[11px] text-neutral-400">{formatted}</time>;
+}
 
 function MarkdownContent({ content }: { content: string }) {
   return (
@@ -60,10 +69,11 @@ export function AuthorBadge({ author }: { author: string }) {
 export function MessageView({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end">
         <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-brand px-4 py-2 text-sm text-white">
           {message.content}
         </div>
+        <MessageTimestamp createdAt={message.createdAt} />
       </div>
     );
   }
@@ -93,6 +103,7 @@ export function MessageView({ message }: { message: ChatMessage }) {
       <div className="max-w-[80%] rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
         <MarkdownContent content={message.content} />
       </div>
+      <MessageTimestamp createdAt={message.createdAt} />
     </div>
   );
 }

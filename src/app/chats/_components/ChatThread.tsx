@@ -3,11 +3,12 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
-import { EMPTY_TURN, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
+import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
 import { Composer, GeneratedImage, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 
 export function ChatThread({ chatId }: { chatId: string }) {
+  const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [live, setLive] = useState<LiveTurn | null>(null);
@@ -26,7 +27,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
       return null;
     }
     if (res.ok) {
-      const data = (await res.json()) as { messages?: ChatMessage[] };
+      const data = (await res.json()) as { chat?: Chat; messages?: ChatMessage[] };
+      setChat(data.chat ?? null);
       setMessages(data.messages ?? []);
       setStatus("ready");
       return data.messages ?? [];
@@ -95,6 +97,13 @@ export function ChatThread({ chatId }: { chatId: string }) {
 
   return (
     <div className="flex h-full flex-col">
+      {chat?.projectName && (
+        <div className="mb-3 flex items-center gap-2 border-b border-neutral-200 pb-2 text-xs text-neutral-500 dark:border-neutral-800">
+          <span className="rounded-full bg-brand/10 px-2 py-0.5 font-medium text-brand">
+            {chat.projectName}
+          </span>
+        </div>
+      )}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
         {status === "loading" && (
           <p className="text-sm text-neutral-500">Loading…</p>
