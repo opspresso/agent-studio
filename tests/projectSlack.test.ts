@@ -4,7 +4,7 @@ import {
   resolveProjectSlackRuntime,
   updateProjectSlack,
 } from "@/application/slack/projectSlack";
-import { MASKED_SECRET, decryptSecret } from "@/lib/secret-encryption";
+import { decryptSecret } from "@/lib/secret-encryption";
 import { ForbiddenError } from "@/application/project/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -58,8 +58,8 @@ describe("updateProjectSlack", () => {
       { botToken: "xoxb-secret", signingSecret: "shhh", enabled: true },
       OWNER,
     );
-    expect(view.botToken).toBe(MASKED_SECRET);
-    expect(view.signingSecret).toBe(MASKED_SECRET);
+    expect(view.botToken).toBe("*".repeat("xoxb-secret".length));
+    expect(view.signingSecret).toBe("*".repeat("shhh".length));
     expect(view.enabled).toBe(true);
     const stored = current().slack;
     expect(stored?.botToken.startsWith("enc:v1:")).toBe(true);
@@ -78,7 +78,7 @@ describe("updateProjectSlack", () => {
     await updateProjectSlack(
       repo,
       "bot-proj",
-      { botToken: MASKED_SECRET, signingSecret: "", enabled: true },
+      { botToken: "*".repeat("xoxb-original".length), signingSecret: "", enabled: true },
       OWNER,
     );
     expect(current().slack?.botToken).toBe(before);

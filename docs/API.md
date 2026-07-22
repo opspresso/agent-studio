@@ -39,7 +39,7 @@ DELETE /api/skills/{name}     → 204                     | 404
 ```
 
 - Names are slugs (`^[a-z0-9-]+$`).
-- `mcps`/`agents` store `headers` AES-encrypted and return them masked (`********`); a masked
+- `mcps`/`agents` store `headers` AES-encrypted and return them masked (length-preserving asterisks); a masked
   or empty value on update preserves the stored secret. Their `url` is SSRF-guarded — a
   private/loopback/link-local/metadata target (or non-http(s) scheme) is rejected with `400`.
 - `projects` mutations are owner-gated (403). `POST /api/projects` body:

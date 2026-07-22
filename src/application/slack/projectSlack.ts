@@ -1,9 +1,10 @@
 import { ValidationError } from "@/application/project/errors";
 import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import {
-  MASKED_SECRET,
   decryptSecret,
   encryptSecret,
+  isMasked,
+  maskSecret,
 } from "@/lib/secret-encryption";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -31,8 +32,8 @@ function maskedView(project: Project): ProjectSlackView {
   return {
     enabled: slack?.enabled ?? false,
     configured: Boolean(slack?.botToken && slack.signingSecret),
-    botToken: slack?.botToken ? MASKED_SECRET : "",
-    signingSecret: slack?.signingSecret ? MASKED_SECRET : "",
+    botToken: slack?.botToken ? maskSecret(slack.botToken) : "",
+    signingSecret: slack?.signingSecret ? maskSecret(slack.signingSecret) : "",
     eventsPath: eventsPathFor(project.name),
   };
 }
@@ -46,7 +47,7 @@ export async function getProjectSlack(
 
 /** Merge semantics: masked/empty input keeps the stored secret; plaintext replaces it. */
 function mergeSecret(stored: string | undefined, input: string | undefined): string {
-  if (input === undefined || input === MASKED_SECRET || input === "") {
+  if (input === undefined || isMasked(input) || input === "") {
     return stored ?? "";
   }
   return encryptSecret(input);

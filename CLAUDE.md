@@ -96,7 +96,7 @@ registries are shared admin resources with no per-owner restriction.
 ### Other subsystems
 
 - **Secrets**: stored headers/tokens are AES-256-GCM encrypted (`enc:v1:` prefix), masked
-  (`********`) on read, decrypted only at dispatch (`src/lib/secret-encryption.ts`). A masked
+  (length-preserving asterisks) on read, decrypted only at dispatch (`src/lib/secret-encryption.ts`). A masked
   or empty value on update preserves the stored secret.
 - **SSRF guard**: operator-registered MCP/agent URLs are validated by
   `src/infrastructure/net/ssrfGuard.ts` (reject non-http(s) and private/loopback/link-local/

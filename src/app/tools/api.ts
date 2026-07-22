@@ -2,7 +2,7 @@ export interface McpServer {
   name: string;
   url: string;
   description?: string;
-  /** Masked (`********`) header values — never plaintext or ciphertext. */
+  /** Masked (length-preserving asterisks) header values — never plaintext or ciphertext. */
   headers: Record<string, string>;
   createdAt: string;
   updatedAt: string;

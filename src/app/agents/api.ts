@@ -5,7 +5,7 @@ export interface ExternalAgent {
   url: string;
   protocol?: AgentProtocol;
   description: string;
-  /** Masked (`********`) header values — never plaintext or ciphertext. */
+  /** Masked (length-preserving asterisks) header values — never plaintext or ciphertext. */
   headers: Record<string, string>;
   createdAt: string;
   updatedAt: string;

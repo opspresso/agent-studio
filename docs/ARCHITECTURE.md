@@ -104,7 +104,7 @@ Conventions:
 
 ### MCP
 - `McpServer { name, url, description?, headers: Record<string,string> (values encrypted
-  at rest AES-256-GCM `enc:v1:` prefix, masked `********` on read), createdAt, updatedAt }`
+  at rest AES-256-GCM `enc:v1:` prefix, masked with length-preserving asterisks on read), createdAt, updatedAt }`
 - `url` is SSRF-guarded (`src/infrastructure/net/ssrfGuard.ts`) at registration and dispatch:
   non-http(s) schemes and private/loopback/link-local/metadata addresses are rejected.
 - Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). Tool name

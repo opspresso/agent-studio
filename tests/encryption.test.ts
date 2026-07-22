@@ -4,8 +4,11 @@ process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef")
 import { describe, expect, it } from "vitest";
 import {
   decryptHeadersForOutbound,
+  decryptSecret,
   encryptHeaders,
   isEncrypted,
+  maskHeaders,
+  mergeHeaderUpdate,
 } from "@/lib/secret-encryption";
 
 describe("header encryption round-trip", () => {
@@ -19,5 +22,35 @@ describe("header encryption round-trip", () => {
 
     const decrypted = decryptHeadersForOutbound(encrypted);
     expect(decrypted).toEqual(headers);
+  });
+});
+
+describe("length-preserving masking", () => {
+  it("masks encrypted headers with asterisks matching the plaintext length", () => {
+    const headers = { Authorization: "Bearer secret-token", "X-Api-Key": "abc123" };
+    const masked = maskHeaders(encryptHeaders(headers));
+
+    expect(masked.Authorization).toBe("*".repeat("Bearer secret-token".length));
+    expect(masked["X-Api-Key"]).toBe("*".repeat("abc123".length));
+  });
+
+  it("masks legacy plaintext headers by their own length", () => {
+    const masked = maskHeaders({ "X-Api-Key": "abc123" });
+    expect(masked["X-Api-Key"]).toBe("******");
+  });
+
+  it("keeps the stored secret when an all-asterisk mask of any length is echoed back", () => {
+    const stored = encryptHeaders({ Authorization: "Bearer secret-token" });
+    const merged = mergeHeaderUpdate(stored, {
+      Authorization: "*".repeat("Bearer secret-token".length),
+    });
+    expect(merged.Authorization).toBe(stored.Authorization);
+  });
+
+  it("replaces the stored secret when a new plaintext value is submitted", () => {
+    const stored = encryptHeaders({ Authorization: "Bearer old" });
+    const merged = mergeHeaderUpdate(stored, { Authorization: "Bearer new" });
+    expect(merged.Authorization).not.toBe(stored.Authorization);
+    expect(decryptSecret(merged.Authorization!)).toBe("Bearer new");
   });
 });

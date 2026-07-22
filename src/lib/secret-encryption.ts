@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { config } from "./config";
 
 const PREFIX = "enc:v1:";
-export const MASKED_SECRET = "********";
+// Stored layout after the prefix: base64(iv(12) + tag(16) + ciphertext).
+const IV_AND_TAG_LENGTH = 28;
 
 function getKey(): Buffer {
   const key = Buffer.from(config.aesEncryptionKey, "base64");
@@ -40,6 +41,24 @@ export function decryptSecret(value: string): string {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
+/** True when `value` is an all-asterisk mask produced by {@link maskSecret}. */
+export function isMasked(value: string): boolean {
+  return value.length > 0 && /^\*+$/.test(value);
+}
+
+/**
+ * Mask a secret with asterisks matching the plaintext's UTF-8 byte length.
+ * For encrypted values the length is derived from the ciphertext (AES-GCM
+ * preserves plaintext length) without decrypting.
+ */
+export function maskSecret(value: string): string {
+  if (!isEncrypted(value)) {
+    return "*".repeat(Buffer.byteLength(value, "utf8"));
+  }
+  const raw = Buffer.from(value.slice(PREFIX.length), "base64");
+  return "*".repeat(Math.max(raw.length - IV_AND_TAG_LENGTH, 0));
+}
+
 /** Encrypt all header values for storage. */
 export function encryptHeaders(headers: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
@@ -49,7 +68,9 @@ export function encryptHeaders(headers: Record<string, string>): Record<string, 
 
 /** Mask all header values for client reads. */
 export function maskHeaders(headers: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.keys(headers).map((k) => [k, MASKED_SECRET]));
+  return Object.fromEntries(
+    Object.entries(headers).map(([k, v]) => [k, maskSecret(v)]),
+  );
 }
 
 /**
@@ -62,7 +83,7 @@ export function mergeHeaderUpdate(
 ): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const [key, value] of Object.entries(update)) {
-    if ((value === MASKED_SECRET || value === "") && stored[key] !== undefined) {
+    if ((isMasked(value) || value === "") && stored[key] !== undefined) {
       merged[key] = stored[key];
     } else {
       merged[key] = encryptSecret(value);
