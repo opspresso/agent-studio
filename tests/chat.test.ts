@@ -83,12 +83,13 @@ const emptyVersions: VersionRepository = {
 
 async function* emptyAgent(): AsyncGenerator<EngineChunk> {}
 
-function makeDeps(repo: ChatRepository): ChatDeps {
+function makeDeps(repo: ChatRepository, overrides: Partial<ChatDeps> = {}): ChatDeps {
   return {
     chats: repo,
     projects: emptyProjects,
     versions: emptyVersions,
     runAgent: () => emptyAgent(),
+    ...overrides,
   };
 }
 
@@ -166,7 +167,9 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
 
     const stored = await repo.listMessages("c1");
     // The tool result IS persisted (for UI), alongside the final assistant text.
-    expect(stored.some((m) => m.role === "tool" && m.content === "42")).toBe(true);
+    expect(
+      stored.some((m) => m.role === "tool" && m.content === "42" && m.toolName === "lookup"),
+    ).toBe(true);
     expect(stored.some((m) => m.role === "assistant" && m.content === "The answer is 42.")).toBe(
       true,
     );
@@ -177,6 +180,66 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       { role: "user", content: "hi" },
       { role: "assistant", content: "The answer is 42." },
     ]);
+  });
+});
+
+describe("runAndPersist image persistence", () => {
+  async function* imageSource(): AsyncGenerator<EngineChunk> {
+    yield { image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } };
+    yield { delta: { content: "Here is your cat." } };
+  }
+
+  it("uploads images via storeImage and persists their URLs on the assistant message", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const uploaded: string[] = [];
+    const deps = makeDeps(repo, {
+      storeImage: async (image) => {
+        uploaded.push(image.mimeType);
+        return "https://bucket.s3.example.com/images/x.png";
+      },
+    });
+    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource(), 0)) {
+      // drain the stream
+    }
+
+    expect(uploaded).toEqual(["image/png"]);
+    const stored = await repo.listMessages("c1");
+    const assistant = stored.find((m) => m.role === "assistant");
+    expect(assistant?.images).toEqual([
+      { url: "https://bucket.s3.example.com/images/x.png", prompt: "a cat" },
+    ]);
+  });
+
+  it("drops the image but keeps the message when the upload fails", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const deps = makeDeps(repo, {
+      storeImage: async () => {
+        throw new Error("upload failed");
+      },
+    });
+    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource(), 0)) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    const assistant = stored.find((m) => m.role === "assistant");
+    expect(assistant?.content).toBe("Here is your cat.");
+    expect(assistant?.images).toBeUndefined();
+  });
+
+  it("persists no images when storeImage is not wired", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    for await (const _ of runAndPersist(
+      makeDeps(repo),
+      chatFixture("owner@x.com"),
+      imageSource(),
+      0,
+    )) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.find((m) => m.role === "assistant")?.images).toBeUndefined();
   });
 });
 

@@ -9,7 +9,7 @@ import {
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import type { ChatRepository } from "@/domain/chat/repository";
-import type { Chat, ChatMessage, ChatRole } from "@/domain/chat/types";
+import type { Chat, ChatMessage, ChatMessageImage, ChatRole } from "@/domain/chat/types";
 
 const CHAT_ENTITY = "Chat";
 const MESSAGE_ENTITY = "ChatMessage";
@@ -54,6 +54,8 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
     content: item.content as string,
     toolCalls: item.toolCalls as unknown[] | undefined,
     toolCallId: item.toolCallId as string | undefined,
+    toolName: item.toolName as string | undefined,
+    images: item.images as ChatMessageImage[] | undefined,
     createdAt: item.createdAt as string,
   };
 }

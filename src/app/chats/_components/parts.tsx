@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ChatMessage, LiveTurn } from "../_lib/types";
+import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
 
 export function ToolResultBlock({ content, label }: { content: string; label?: string }) {
   const [open, setOpen] = useState(false);
@@ -22,6 +22,21 @@ export function ToolResultBlock({ content, label }: { content: string; label?: s
       )}
     </div>
   );
+}
+
+export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className="max-w-[80%] rounded-md border border-neutral-200 dark:border-neutral-800"
+    />
+  );
+}
+
+export function liveImageSrc(image: LiveImage): string {
+  return `data:${image.mimeType};base64,${image.b64}`;
 }
 
 export function AuthorBadge({ author }: { author: string }) {
@@ -47,14 +62,24 @@ export function MessageView({ message }: { message: ChatMessage }) {
     return (
       <div className="flex justify-start">
         <div className="w-full max-w-[80%]">
-          <ToolResultBlock content={message.content} />
+          <ToolResultBlock
+            content={message.content}
+            label={message.toolName ? `✅ tool result: ${message.toolName}` : undefined}
+          />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex justify-start">
+    <div className="flex flex-col items-start gap-1">
+      {(message.images ?? []).map((image, index) => (
+        <GeneratedImage
+          key={`image-${index}`}
+          src={image.url}
+          alt={image.prompt ?? "Generated image"}
+        />
+      ))}
       <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
         {message.content}
       </div>
@@ -65,10 +90,25 @@ export function MessageView({ message }: { message: ChatMessage }) {
 export function LiveAssistant({ turn }: { turn: LiveTurn }) {
   return (
     <div className="flex flex-col items-start gap-1">
-      {turn.tools.map((tool, index) => (
-        <div key={index} className="w-full max-w-[80%]">
-          <ToolResultBlock content={tool} />
+      {turn.toolCalls.map((call, index) => (
+        <div key={`call-${index}`} className="w-full max-w-[80%]">
+          <ToolResultBlock content={call.args} label={`🔧 tool call: ${call.name}`} />
         </div>
+      ))}
+      {turn.tools.map((tool, index) => (
+        <div key={`result-${index}`} className="w-full max-w-[80%]">
+          <ToolResultBlock
+            content={tool.content}
+            label={tool.name ? `✅ tool result: ${tool.name}` : undefined}
+          />
+        </div>
+      ))}
+      {turn.images.map((image, index) => (
+        <GeneratedImage
+          key={`image-${index}`}
+          src={liveImageSrc(image)}
+          alt={image.prompt ?? "Generated image"}
+        />
       ))}
       <div className="max-w-[80%]">
         {turn.author && <AuthorBadge author={turn.author} />}

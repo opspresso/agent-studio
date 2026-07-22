@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
+import { parseWireToolCall } from "@/app/_lib/toolCalls";
 import { inputClass } from "./inputs";
 
 interface ToolResultView {
@@ -31,12 +32,7 @@ function extractVariables(...sources: string[]): string[] {
 }
 
 function toolCallView(raw: unknown, author?: string): ToolCallView {
-  const record = (raw ?? {}) as { function?: { name?: string; arguments?: string } };
-  return {
-    name: record.function?.name ?? "tool",
-    args: record.function?.arguments ?? "",
-    author,
-  };
+  return { ...parseWireToolCall(raw), author };
 }
 
 export function RunPanel({

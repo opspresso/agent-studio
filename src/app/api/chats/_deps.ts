@@ -3,6 +3,7 @@ import { executionDeps } from "@/lib/container";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
+import { isImageStoreConfigured, storeImage } from "@/infrastructure/storage/s3ImageStore";
 import type { ChatDeps } from "@/application/chat/deps";
 
 /**
@@ -14,4 +15,5 @@ export const chatDeps: ChatDeps = {
   projects: projectRepository,
   versions: versionRepository,
   runAgent: (params) => executeAgent(executionDeps, params),
+  ...(isImageStoreConfigured() ? { storeImage } : {}),
 };

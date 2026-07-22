@@ -41,6 +41,10 @@ export const config = {
   get awsRegion(): string {
     return process.env.AWS_REGION ?? "ap-northeast-2";
   },
+  /** Public-read S3 bucket for generated images. Unset disables image persistence. */
+  get imageBucketName(): string | undefined {
+    return process.env.S3_BUCKET_NAME || undefined;
+  },
   get llmBaseUrl(): string {
     return required("LLM_BASE_URL");
   },
