@@ -1,0 +1,52 @@
+name: Release (ecr)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# One build per tag.
+concurrency:
+  group: "release-${{ github.ref_name }}"
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ap-northeast-2
+  IMAGE: 396608815058.dkr.ecr.ap-northeast-2.amazonaws.com/agent-studio
+
+# amd64 only: the sole deployment target (eks-demo) runs amd64 nodes, and the
+# free arm64 hosted runners are not available on private repositories.
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::396608815058:role/github--agent-studio-ecr
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

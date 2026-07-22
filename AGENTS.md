@@ -15,16 +15,29 @@ operational knowledge that is not obvious from the code.
 
 ## Deploy Routine ("배포해")
 
-1. `docker build --platform linux/arm64 -t <ECR>/agent-studio:latest .`
-2. `docker push` — **then confirm the ECR digest actually changed**; a mangled
-   tag once silently redeployed the old image.
-3. `git push origin main`
-4. SSM Run Command on the instance: `/home/ec2-user/agent-studio/redeploy.sh
-   <ECR>/agent-studio latest` (refreshes env from SSM, 120s drain, health gate)
-5. `curl https://agent-studio.opspresso.com/api/health`
+Production runs on EKS (`eks-demo`, opspresso account 396608815058) via the
+GitOps repo `../argocd-env-demo` (chart `charts/agent-studio`, ArgoCD app
+`agent-studio-eks-demo`, manual sync). The old EC2 deployment was removed
+(2026-07-22); `agent-studio.opspresso.com` no longer resolves — the service
+URL is `https://agent-studio.demo.opspresso.com`.
 
-Runtime env lives in SSM `/env/prod/agent-studio` (SecureString, KEY=VALUE
-lines). Changing env only → run redeploy.sh without rebuilding.
+1. Bump `package.json` version, commit, `git push origin main`, then push a
+   `vX.Y.Z` tag — the `Release (ecr)` workflow (OIDC role
+   `github--agent-studio-ecr`) builds linux/amd64 and pushes
+   `<ECR>/agent-studio:vX.Y.Z` + `:latest`. amd64 only: eks-demo nodes are
+   amd64 and the private repo has no free arm runners. Verify the new tag
+   appears in ECR (`aws ecr describe-images`) — a mangled tag once silently
+   redeployed the old image.
+2. In argocd-env-demo: bump `app.image.tag` in
+   `charts/agent-studio/values.yaml`, commit, push, then sync the
+   `agent-studio-eks-demo` Application (ArgoCD UI or kubectl). If the tag is
+   `latest`, delete the pod instead to force a re-pull.
+3. `curl https://agent-studio.demo.opspresso.com/api/health`
+
+Runtime env: non-secret config lives in the chart's
+`demo/values-eks-demo.yaml` configmap block; secrets come from Parameter
+Store `/k8s/common/agent-studio/*` via External Secrets (refreshes hourly;
+delete the pod to pick up changes sooner).
 
 ## Verifying Authenticated Prod APIs
 
