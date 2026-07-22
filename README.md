@@ -15,7 +15,8 @@ skills, MCP tools, chats, cost/usage dashboard**.
 - AWS DynamoDB Single Table Design
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layer rules, single-table key map,
-domain semantics, and API surface.
+domain semantics, and API surface, and [docs/API.md](docs/API.md) for API request/response
+examples and error cases.
 
 ## Quick Start
 

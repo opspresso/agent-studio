@@ -58,12 +58,16 @@ Conventions:
   `UpdateExpression` `ADD #calls.#model :one`).
 - Key builders live in `src/infrastructure/db/keys.ts` — never hand-write key strings elsewhere.
 - Reserved words (`name`, `owner`, `timestamp`) always via `ExpressionAttributeNames`.
+- List queries paginate through `queryAll()` (`src/infrastructure/db/query.ts`); a Query page
+  caps at 1MB, so an unpaginated list silently truncates. `traceRepository` is the one
+  intentional exception (bounded top-N by `Limit`).
 
 ## Domain Semantics
 
 ### Project / Version
-- `Project { name (slug, immutable id), displayName, description, projectType: 'llm' | 'agent',
-  ownerEmail, departmentCode?, publishedVersion?, createdAt, updatedAt }`
+- `Project { name (slug, immutable id), displayName, description,
+  projectType: 'llm' | 'agent' | 'image', ownerEmail, departmentCode?,
+  publishedVersion?, createdAt, updatedAt }`
 - `Version { versionName, systemPrompt, userPromptTemplate, model, fallbackModel?, parameters
   (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema),
   mcpList: string[], skillList: string[], subagentList: {name, type:'local'|'remote'}[],
@@ -101,13 +105,16 @@ Conventions:
 ### MCP
 - `McpServer { name, url, description?, headers: Record<string,string> (values encrypted
   at rest AES-256-GCM `enc:v1:` prefix, masked `********` on read), createdAt, updatedAt }`
+- `url` is SSRF-guarded (`src/infrastructure/net/ssrfGuard.ts`) at registration and dispatch:
+  non-http(s) schemes and private/loopback/link-local/metadata addresses are rejected.
 - Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). Tool name
   collisions get `_1/_2` suffix aliases with reverse mapping. Tool results capped at
   100,000 chars.
 
 ### External Agents (registry, A2A-lite)
-- `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), description,
-  headers (encrypted like MCP), createdAt }` — usable as `type:'remote'` subagents.
+- `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), protocol ('openai' |
+  'a2a'), description, headers (encrypted like MCP), createdAt }` — usable as `type:'remote'`
+  subagents. `url` is SSRF-guarded like MCP.
 
 ### Chat
 - `Chat { chatId, title, ownerEmail, projectName?, createdAt, updatedAt }`,
@@ -120,6 +127,8 @@ Conventions:
   project/provider/model.
 
 ## API Surface (App Router route handlers)
+
+Request/response shapes, auth, and error cases: see [API.md](API.md).
 
 ```
 POST /api/projects                          create
