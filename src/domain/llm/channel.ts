@@ -14,14 +14,13 @@ export interface ChannelToolCall {
   };
 }
 
-export interface ChannelMessage {
-  role: string;
-  content?: string | null;
-  name?: string;
-  tool_calls?: ChannelToolCall[];
-  tool_call_id?: string;
-  reasoning_content?: string | null;
-}
+import type { ChatMessageInput } from "./types";
+
+/**
+ * The wire message is the same OpenAI-compatible shape the engine accepts —
+ * one domain message type, no translation layer between engine and channel.
+ */
+export type ChannelMessage = ChatMessageInput;
 
 export interface ChannelToolDef {
   type: "function";

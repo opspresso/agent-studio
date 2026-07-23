@@ -23,7 +23,7 @@ import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
-import { decryptHeadersForOutbound } from "@/lib/secret-encryption";
+import { decryptHeadersForOutbound } from "@/infrastructure/crypto/secretEncryption";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 
@@ -45,15 +45,15 @@ export interface ExecuteVersionInput {
   version: Version;
   variables?: Record<string, string>;
   /** Prior OpenAI-shaped messages; `messages` is the route-layer alias. */
-  extraMessages?: unknown[];
-  messages?: unknown[];
+  extraMessages?: ChatMessageInput[];
+  messages?: ChatMessageInput[];
 }
 
 export interface ExecuteAgentInput {
   project: Project;
   version: Version;
   /** OpenAI-shaped message history from the route/chat boundary. */
-  messages: unknown[];
+  messages: ChatMessageInput[];
   userEmail?: string;
 }
 
@@ -99,7 +99,7 @@ export async function executeVersion(
       systemPrompt: input.version.systemPrompt,
       userPromptTemplate: input.version.userPromptTemplate,
       variables: input.variables,
-      extraMessages: (input.extraMessages ?? input.messages) as ChatMessageInput[] | undefined,
+      extraMessages: input.extraMessages ?? input.messages,
       parameters: toEngineParameters(input.version),
     },
   );
@@ -119,10 +119,46 @@ export async function* executeVersionStream(
       systemPrompt: input.version.systemPrompt,
       userPromptTemplate: input.version.userPromptTemplate,
       variables: input.variables,
-      extraMessages: (input.extraMessages ?? input.messages) as ChatMessageInput[] | undefined,
+      extraMessages: input.extraMessages ?? input.messages,
       parameters: toEngineParameters(input.version),
     },
   );
+}
+
+// --- Project-level dispatch --------------------------------------------------
+
+export interface ExecuteProjectInput {
+  project: Project;
+  version: Version;
+  variables?: Record<string, string>;
+  messages: ChatMessageInput[];
+  userEmail?: string;
+}
+
+/**
+ * Single streaming dispatch point: how a projectType runs is decided here, not
+ * in each entry point. `agent` projects run the multi-turn tool loop; anything
+ * else streams a single-shot completion. (`image` projects generate through
+ * the dedicated generateImage use case, not a chunk stream.)
+ */
+export function executeProjectStream(
+  deps: ExecutionDeps,
+  input: ExecuteProjectInput,
+): AsyncGenerator<EngineChunk> {
+  if (input.project.projectType === "agent") {
+    return executeAgent(deps, {
+      project: input.project,
+      version: input.version,
+      messages: input.messages,
+      userEmail: input.userEmail,
+    });
+  }
+  return executeVersionStream(deps, {
+    project: input.project,
+    version: input.version,
+    variables: input.variables,
+    messages: input.messages,
+  });
 }
 
 // --- Agent execution --------------------------------------------------------
@@ -148,7 +184,7 @@ export async function* executeAgent(
       model: input.version.model,
       fallbackModel: input.version.fallbackModel,
       systemPrompt: input.version.systemPrompt,
-      messages: input.messages as ChatMessageInput[],
+      messages: input.messages,
       parameters: toEngineParameters(input.version),
       maxTurn: input.version.maxTurn,
       skills,
@@ -230,31 +266,27 @@ async function resolveSkills(
   deps: ExecutionDeps,
   skillList: string[] | undefined,
 ): Promise<engine.SkillInfo[]> {
-  const result: engine.SkillInfo[] = [];
-  for (const name of skillList ?? []) {
-    const skill = await deps.skills.get(name);
-    result.push({ name, description: skill?.description ?? "" });
-  }
-  return result;
+  return Promise.all(
+    (skillList ?? []).map(async (name) => {
+      const skill = await deps.skills.get(name);
+      return { name, description: skill?.description ?? "" };
+    }),
+  );
 }
 
 async function resolveSubagents(
   deps: ExecutionDeps,
   subagentList: SubagentRef[] | undefined,
 ): Promise<engine.SubagentInfo[]> {
-  const result: engine.SubagentInfo[] = [];
-  for (const ref of subagentList ?? []) {
-    let description = "";
-    if (ref.type === "remote") {
-      const agent = await deps.externalAgents.get(ref.name);
-      description = agent?.description ?? "";
-    } else {
-      const project = await deps.projects.get(ref.name);
-      description = project?.description ?? "";
-    }
-    result.push({ name: ref.name, description, type: ref.type });
-  }
-  return result;
+  return Promise.all(
+    (subagentList ?? []).map(async (ref) => {
+      const description =
+        ref.type === "remote"
+          ? ((await deps.externalAgents.get(ref.name))?.description ?? "")
+          : ((await deps.projects.get(ref.name))?.description ?? "");
+      return { name: ref.name, description, type: ref.type };
+    }),
+  );
 }
 
 function buildSkillLoader(
@@ -283,21 +315,29 @@ async function buildMcpTools(
   if (mcpList.length === 0) {
     return { mcpTools: [], mcpServers: [] };
   }
-  const servers = [];
   const descriptionByName = new Map<string, string>();
-  for (const name of mcpList) {
-    const mcp = await deps.mcps.get(name);
+  const resolved = await Promise.all(
+    mcpList.map(async (name) => {
+      const mcp = await deps.mcps.get(name);
+      if (!mcp) {
+        return null;
+      }
+      try {
+        // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
+        // window; a blocked server is skipped, not fatal to the run.
+        await assertPublicUrl(mcp.url);
+      } catch (error) {
+        console.warn(
+          `Skipping MCP server '${mcp.name}': ${error instanceof SsrfError ? error.message : String(error)}`,
+        );
+        return null;
+      }
+      return mcp;
+    }),
+  );
+  const servers = [];
+  for (const mcp of resolved) {
     if (!mcp) {
-      continue;
-    }
-    try {
-      // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
-      // window; a blocked server is skipped, not fatal to the run.
-      await assertPublicUrl(mcp.url);
-    } catch (error) {
-      console.warn(
-        `Skipping MCP server '${mcp.name}': ${error instanceof SsrfError ? error.message : String(error)}`,
-      );
       continue;
     }
     servers.push({

@@ -7,12 +7,8 @@
 import type { Message, Task, TaskState } from "@a2a-js/sdk";
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
-import type { EngineChunk } from "@/domain/llm/types";
-import {
-  executeAgent,
-  executeVersionStream,
-  type ExecutionDeps,
-} from "@/application/execution/runProject";
+import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
 
 const RESULT_ARTIFACT_ID = "result";
 
@@ -46,11 +42,14 @@ export class ProjectA2aExecutor implements AgentExecutor {
     }
     this.publishStatus(eventBus, taskId, contextId, "working", false);
 
-    const messages = [{ role: "user", content: userMessageText(userMessage) }];
-    const source =
-      this.project.projectType === "agent"
-        ? executeAgent(this.deps, { project: this.project, version: this.version, messages })
-        : executeVersionStream(this.deps, { project: this.project, version: this.version, messages });
+    const messages: ChatMessageInput[] = [
+      { role: "user", content: userMessageText(userMessage) },
+    ];
+    const source = executeProjectStream(this.deps, {
+      project: this.project,
+      version: this.version,
+      messages,
+    });
 
     try {
       let isFirstChunk = true;

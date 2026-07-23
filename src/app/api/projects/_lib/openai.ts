@@ -1,12 +1,8 @@
+import { isTopLevelChunk } from "@/domain/llm/types";
 import type { EngineChunk, RunResult, UsageInfo } from "@/domain/llm/types";
 
 function newChatId(): string {
   return `chatcmpl-${crypto.randomUUID().replace(/-/g, "")}`;
-}
-
-/** True for chunks authored by the top-level run (not a nested subagent). */
-function isTopLevel(chunk: EngineChunk, topAuthor: string): boolean {
-  return chunk.author === undefined || chunk.author === topAuthor;
 }
 
 /** Wrap a single-shot result as an OpenAI ChatCompletion object. */
@@ -35,7 +31,6 @@ export function toChatCompletion(result: RunResult): Record<string, unknown> {
 export async function* toChatCompletionChunks(
   source: AsyncGenerator<EngineChunk>,
   model: string,
-  topAuthor: string,
 ): AsyncGenerator<Record<string, unknown>> {
   const base = { id: newChatId(), object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model };
   let sentRole = false;
@@ -43,7 +38,7 @@ export async function* toChatCompletionChunks(
     if (chunk.error) {
       throw new Error(chunk.error);
     }
-    if (!isTopLevel(chunk, topAuthor)) {
+    if (!isTopLevelChunk(chunk)) {
       continue;
     }
     const content = chunk.delta?.content;
@@ -62,7 +57,6 @@ export async function* toChatCompletionChunks(
 export async function collectRun(
   source: AsyncGenerator<EngineChunk>,
   model: string,
-  topAuthor: string,
 ): Promise<RunResult> {
   let content = "";
   const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -70,12 +64,11 @@ export async function collectRun(
     if (chunk.error) {
       throw new Error(chunk.error);
     }
-    if (!isTopLevel(chunk, topAuthor)) {
-      continue;
-    }
-    if (chunk.delta?.content) {
+    if (isTopLevelChunk(chunk) && chunk.delta?.content) {
       content += chunk.delta.content;
     }
+    // Usage counts every chunk, subagent turns included, so the reported
+    // usage matches what the run actually billed.
     if (chunk.usage) {
       usage.inputTokens += chunk.usage.inputTokens;
       usage.outputTokens += chunk.usage.outputTokens;

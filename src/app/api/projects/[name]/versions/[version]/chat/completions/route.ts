@@ -3,8 +3,8 @@ import { sseResponse } from "@/lib/sse";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import {
   executeAgent,
+  executeProjectStream,
   executeVersion,
-  executeVersionStream,
 } from "@/application/execution/runProject";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
@@ -39,14 +39,12 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     };
 
     if (parsed.data.stream) {
-      const source = isAgent
-        ? executeAgent(executionDeps, agentParams)
-        : executeVersionStream(executionDeps, versionParams);
-      return sseResponse(toChatCompletionChunks(source, versionEntity.model, project.name));
+      const source = executeProjectStream(executionDeps, versionParams);
+      return sseResponse(toChatCompletionChunks(source, versionEntity.model));
     }
 
     const result = isAgent
-      ? await collectRun(executeAgent(executionDeps, agentParams), versionEntity.model, project.name)
+      ? await collectRun(executeAgent(executionDeps, agentParams), versionEntity.model)
       : await executeVersion(executionDeps, versionParams);
     return Response.json(toChatCompletion(result));
   } catch (error) {
