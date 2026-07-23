@@ -289,60 +289,68 @@ async function* runSubagentWithPii(
   const contentRestorer = filter.createStreamRestorer();
   const reasoningRestorer = filter.createStreamRestorer();
   let author: string | undefined;
+  let completed = false;
 
-  while (true) {
-    const step = await source.next();
-    if (step.done) {
-      const content = contentRestorer.flush();
-      if (content) {
-        yield { author, delta: { content } };
+  try {
+    while (true) {
+      const step = await source.next();
+      if (step.done) {
+        completed = true;
+        const content = contentRestorer.flush();
+        if (content) {
+          yield { author, delta: { content } };
+        }
+        const reasoningContent = reasoningRestorer.flush();
+        if (reasoningContent) {
+          yield { author, delta: { reasoningContent } };
+        }
+        return step.value;
       }
-      const reasoningContent = reasoningRestorer.flush();
-      if (reasoningContent) {
-        yield { author, delta: { reasoningContent } };
-      }
-      return step.value;
-    }
 
-    const chunk = step.value;
-    author = chunk.author ?? author;
-    if (chunk.error) {
-      const content = contentRestorer.flush();
-      if (content) {
-        yield { author, delta: { content } };
+      const chunk = step.value;
+      author = chunk.author ?? author;
+      if (chunk.error) {
+        const content = contentRestorer.flush();
+        if (content) {
+          yield { author, delta: { content } };
+        }
+        const reasoningContent = reasoningRestorer.flush();
+        if (reasoningContent) {
+          yield { author, delta: { reasoningContent } };
+        }
       }
-      const reasoningContent = reasoningRestorer.flush();
-      if (reasoningContent) {
-        yield { author, delta: { reasoningContent } };
-      }
-    }
 
-    const restored = restoreValues(filter, chunk) as EngineChunk;
-    if (chunk.delta?.content) {
-      const content = contentRestorer.push(chunk.delta.content);
-      restored.delta = { ...restored.delta, content };
+      const restored = restoreValues(filter, chunk) as EngineChunk;
+      if (chunk.delta?.content) {
+        const content = contentRestorer.push(chunk.delta.content);
+        restored.delta = { ...restored.delta, content };
+      }
+      if (chunk.delta?.reasoningContent) {
+        const reasoningContent = reasoningRestorer.push(chunk.delta.reasoningContent);
+        restored.delta = { ...restored.delta, reasoningContent };
+      }
+      if (
+        restored.delta &&
+        !restored.delta.content &&
+        !restored.delta.reasoningContent &&
+        !restored.delta.toolCalls
+      ) {
+        delete restored.delta;
+      }
+      if (
+        restored.delta ||
+        restored.image ||
+        restored.toolResult ||
+        restored.usage ||
+        restored.error ||
+        restored.done
+      ) {
+        yield restored;
+      }
     }
-    if (chunk.delta?.reasoningContent) {
-      const reasoningContent = reasoningRestorer.push(chunk.delta.reasoningContent);
-      restored.delta = { ...restored.delta, reasoningContent };
-    }
-    if (
-      restored.delta &&
-      !restored.delta.content &&
-      !restored.delta.reasoningContent &&
-      !restored.delta.toolCalls
-    ) {
-      delete restored.delta;
-    }
-    if (
-      restored.delta ||
-      restored.image ||
-      restored.toolResult ||
-      restored.usage ||
-      restored.error ||
-      restored.done
-    ) {
-      yield restored;
+  } finally {
+    if (!completed) {
+      await source.return("");
     }
   }
 }
@@ -883,24 +891,33 @@ export async function* runAgent(
       }
 
       if (call.name === IMAGE_TOOL_NAME && deps.generateImage) {
-        const prompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
+        const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
+        const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
         const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
         const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
         let resultText: string;
-        if (!prompt.trim()) {
+        if (!maskedPrompt.trim()) {
           resultText = "Error: GenerateImage requires a prompt.";
         } else {
           try {
-            const image = await deps.generateImage(prompt, size, quality);
-            yield { author, image: { ...image, prompt } };
+            const image = await deps.generateImage(maskedPrompt, size, quality);
+            yield { author, image: { ...image, prompt: displayPrompt } };
             resultText =
               "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
           } catch (error) {
             resultText = `Error: image generation failed. ${errorMessage(error)}`;
           }
         }
-        yield { author, toolResult: { toolCallId: call.id, name: call.name, content: resultText } };
-        toolMessages.push({ role: "tool", tool_call_id: call.id, content: resultText });
+        const maskedResultText = filter?.mask(resultText) ?? resultText;
+        yield {
+          author,
+          toolResult: {
+            toolCallId: call.id,
+            name: call.name,
+            content: filter?.restore(maskedResultText) ?? resultText,
+          },
+        };
+        toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedResultText });
         continue;
       }
 

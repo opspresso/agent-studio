@@ -87,6 +87,42 @@ class TransferChannel implements LlmChannel {
   }
 }
 
+class ImageToolChannel implements LlmChannel {
+  readonly seenParams: ChannelParams[] = [];
+
+  async chatCompletion(): Promise<ChannelCompletion> {
+    throw new Error("not used");
+  }
+
+  async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
+    this.seenParams.push(params);
+    if (this.seenParams.length === 1) {
+      const prompt = String(params.messages.at(-1)?.content);
+      yield {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "GenerateImage",
+                    arguments: JSON.stringify({ prompt }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+      return;
+    }
+    yield { choices: [{ delta: { content: "Done." } }] };
+  }
+}
+
 async function collectText(source: AsyncGenerator<EngineChunk>): Promise<string> {
   let text = "";
   for await (const chunk of source) {
@@ -104,9 +140,23 @@ describe("PiiFilter", () => {
 
     expect(masked).not.toContain("user.12@example.com");
     expect(masked).not.toContain("+82 10-1234-5678");
-    expect(masked).toMatch(/^[a-z]{4}\.\d{2}@[a-z]{7}\.[a-z]{3} \/ \+\d{2} \d{2}-\d{4}-\d{4}$/);
+    expect(masked).toMatch(
+      /^\[\[PII:[a-z]{4}\.\d{2}@[a-z]{7}\.[a-z]{3}\]\] \/ \[\[PII:\+\d{2} \d{2}-\d{4}-\d{4}\]\]$/,
+    );
     expect(filter.restore(masked)).toBe(original);
     expect(filter.mask(original)).toBe(masked);
+  });
+
+  it("distinguishes a real value from the contents of an existing placeholder", () => {
+    const filter = new PiiFilter();
+    const firstMasked = filter.mask("111-111-1111");
+    const collidingOriginal = /^\[\[PII:(.*)\]\]$/.exec(firstMasked)?.[1];
+    expect(collidingOriginal).toBeDefined();
+
+    const secondMasked = filter.mask(collidingOriginal ?? "");
+
+    expect(secondMasked).not.toBe(collidingOriginal);
+    expect(filter.restore(secondMasked)).toBe(collidingOriginal);
   });
 
   it("masks the prompt before a non-streaming call and restores the response", async () => {
@@ -198,6 +248,101 @@ describe("PiiFilter", () => {
     expect(childMessage).not.toContain("010-1234-5678");
     expect(result).toContain(input);
     expect(result).toContain("Done.");
+  });
+
+  it("closes the child generator when the parent stream is cancelled", async () => {
+    const channel = new TransferChannel();
+    let childClosed = false;
+    const runSubagent = async function* () {
+      try {
+        yield { author: "child", delta: { content: "child output" } };
+        await new Promise(() => {});
+      } finally {
+        childClosed = true;
+      }
+      return "";
+    };
+    const source = runAgent(
+      { channel, runSubagent },
+      {
+        projectName: "parent",
+        model: "test/model",
+        messages: [{ role: "user", content: "email@example.com" }],
+        parameters: { piiFiltering: true },
+        subagents: [{ name: "child", description: "", type: "remote" }],
+        maxTurn: 3,
+      },
+    );
+
+    while (true) {
+      const step = await source.next();
+      if (step.done || step.value.delta?.content === "child output") {
+        break;
+      }
+    }
+    await source.return(undefined);
+
+    expect(childClosed).toBe(true);
+  });
+
+  it("keeps PII masked for image generation while restoring the displayed prompt", async () => {
+    const channel = new ImageToolChannel();
+    const input = "Draw email@example.com and 010-1234-5678";
+    let generatedPrompt = "";
+    const chunks: EngineChunk[] = [];
+
+    for await (const chunk of runAgent(
+      {
+        channel,
+        generateImage: async (prompt) => {
+          generatedPrompt = prompt;
+          return { b64: "aW1n", mimeType: "image/png" };
+        },
+      },
+      {
+        projectName: "image-agent",
+        model: "test/model",
+        messages: [{ role: "user", content: input }],
+        parameters: { piiFiltering: true },
+        maxTurn: 2,
+      },
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(generatedPrompt).not.toContain("email@example.com");
+    expect(generatedPrompt).not.toContain("010-1234-5678");
+    expect(chunks.find((chunk) => chunk.image)?.image?.prompt).toBe(input);
+  });
+
+  it("masks PII from image errors before the next model turn", async () => {
+    const channel = new ImageToolChannel();
+    const input = "Draw email@example.com";
+    const chunks: EngineChunk[] = [];
+
+    for await (const chunk of runAgent(
+      {
+        channel,
+        generateImage: async () => {
+          throw new Error("provider rejected email@example.com");
+        },
+      },
+      {
+        projectName: "image-agent",
+        model: "test/model",
+        messages: [{ role: "user", content: input }],
+        parameters: { piiFiltering: true },
+        maxTurn: 2,
+      },
+    )) {
+      chunks.push(chunk);
+    }
+
+    const toolMessage = channel.seenParams[1]?.messages.find((message) => message.role === "tool");
+    expect(toolMessage?.content).not.toContain("email@example.com");
+    expect(chunks.find((chunk) => chunk.toolResult)?.toolResult?.content).toContain(
+      "email@example.com",
+    );
   });
 
   it("flushes buffered text before reporting a streaming error", async () => {
