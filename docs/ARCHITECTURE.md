@@ -44,12 +44,17 @@ must never import it. Application code receives its dependencies — it must not
 composition root (`container.ts`) itself.
 
 Composition is distributed across a few deliberate wiring sites: `src/lib/container.ts`
-(repositories + `executionDeps`/`imageDeps`), `src/application/{agent,mcp,skill,settings}/index.ts`
-(each registry slice instantiates its `createXUseCases(repo)` singleton), and
-`src/app/api/chats/_deps.ts` (the `ChatDeps` bag). Three DI styles are in use on purpose:
-factory `createXUseCases(repo)` for registry slices, free functions taking the repo as the
-first argument for the project slice, and deps-bag interfaces (`ChatDeps`, `ExecutionDeps`,
-`SlackEventDeps`) for execution paths. New slices should prefer factory or deps-bag.
+(repositories + `executionDeps`/`imageDeps` — including the required LLM/image channels, so
+a missing injection is a type error rather than a silent network call),
+`src/application/{agent,mcp,skill,settings}/index.ts` (each registry slice instantiates its
+`createXUseCases(repo)` singleton), `src/app/api/chats/_deps.ts` (the `ChatDeps` bag), and
+`src/app/api/slack/events/_lib/` (the `SlackEventDeps` bag: bound `runAgent` + the
+`SlackClientPort`, mirroring `ChatDeps`). Three DI styles are in use on purpose: factory
+`createXUseCases(repo)` for registry slices (their shared CRUD core lives in
+`src/application/registry/registryUseCases.ts`), free functions taking the repo as the
+first argument for the project slice, and deps-bag interfaces (`ChatDeps`,
+`ExecutionDeps`, `SlackEventDeps`) for execution paths. New slices should prefer factory
+or deps-bag.
 
 ## DynamoDB Single Table Design
 
@@ -157,9 +162,12 @@ Two deliberate strategies coexist:
 - **HTTP path (before a stream starts)**: use cases throw `AppError` subclasses
   (`src/application/errors.ts` — Validation/NotFound/Forbidden/Conflict; chat adds `Chat*`
   subclasses extending the same base). Route handlers map any thrown error through
-  `apiError` (`src/app/api/projects/_lib/http.ts`): `AppError` → its status, anything else
-  → generic 500. The registry slices (skill/mcp/agent) instead return `null`/`false`
-  sentinels their routes translate to 404/409.
+  `apiError` (`src/app/api/_lib/http.ts`); `parseName` validates `[name]` params as slugs
+  by throwing `ValidationError`. The registry slices share this contract via
+  `createRegistryUseCases` (`src/application/registry/registryUseCases.ts`): missing →
+  `NotFoundError`, duplicate create → `ConflictError`, SSRF-blocked URL at the write
+  boundary → `ValidationError` (`assertAllowedUrl` wraps the infrastructure `SsrfError`,
+  which stays layer-local).
 - **In-stream path (after the first chunk)**: failures are values, not exceptions — the
   engine yields an `{error}` chunk (no retry mid-stream), subagent failures yield an
   authored error chunk, and dispatch guards degrade instead of failing the run (an
@@ -178,6 +186,14 @@ Two deliberate strategies coexist:
   imageGeneration?/imageModel?), mcpList: string[], skillList: string[],
   subagentList: {name, type:'local'|'remote'}[], maxTurn?, createdAt }`
 - Template variables `{{var}}` rendered server-side before dispatch.
+- Version writes validate capability fit for catalog models (agent projects require
+  `capabilities.tools`; `structuredOutput` requires the capability); unknown/custom model
+  ids stay allowed with a warning ($0 cost until added to the catalog).
+- Which version a run executes is owned by `resolveRunnableVersion`
+  (`src/application/project/resolveRunnableVersion.ts`): the published pointer always
+  wins; only interactive surfaces (chat) opt into falling back to the newest draft;
+  external surfaces (Slack, A2A, subagent transfers) are published-only so drafts never
+  leak.
 
 ### LLM Engine (`src/application/llm/engine.ts` — public contract)
 - All text generation speaks the OpenAI Chat Completions protocol; model ids are
@@ -247,6 +263,9 @@ Two deliberate strategies coexist:
 - `Chat { chatId, title, ownerEmail, projectName?, createdAt, updatedAt }`,
   messages append-only with `seq`. Chat execution uses the agent engine directly
   (no HTTP self-call), streams SSE to the client.
+- `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`) —
+  a tool row always carries `toolCallId`, an assistant row may carry
+  `toolCalls`/`images`, and illegal combinations are unrepresentable.
 
 ### Usage / Cost
 - Daily per-project per-model aggregates (see table design). Dashboard reads
@@ -325,6 +344,22 @@ there is no session and otherwise passes the `SessionUser` as the handler's firs
 ```
 
 UI text in English. Tailwind v4 utilities only — no inline styles.
+
+## Glossary
+
+The word "agent" is overloaded; these are the distinct concepts:
+
+- **agent project** (`projectType: 'agent'`) — a studio project that runs the multi-turn
+  tool loop.
+- **subagent** (`SubagentRef` on a version) — another project (local) or registry agent
+  (remote) a run can transfer to via the `transfer_to_agent` builtin.
+- **external agent** (`ExternalAgent`) — a registry entry for an outside endpoint
+  (OpenAI-compatible or A2A), usable as a remote subagent.
+- **MCP server** (`McpServer`, the `/tools` UI page) — a registered MCP endpoint whose
+  tools the engine can call; "tools" alone refers to the OpenAI tool-calling mechanism.
+- Invocation verbs: routes say **predict**, the facade says **execute**
+  (`executeVersion`/`executeAgent`/`executeProjectStream`), the engine says **run**
+  (`runPrompt`/`runAgent`). Same pipeline, three altitude levels.
 
 ## Environment
 
