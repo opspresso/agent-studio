@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/auth-client";
+import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getProject } from "../lib/api";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
@@ -40,14 +41,11 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         </Link>
         <span className="font-mono text-sm font-medium">{name}</span>
         {ownerEmail && (
-          <span className="flex items-center gap-1.5 text-xs text-neutral-400">
-            owner: {ownerEmail}
-            {session?.user.email === ownerEmail && (
-              <span className="rounded bg-neutral-100 px-1 py-0.5 font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                you
-              </span>
-            )}
-          </span>
+          <OwnerLine
+            ownerEmail={ownerEmail}
+            isMine={session?.user.email === ownerEmail}
+            prefix="owner: "
+          />
         )}
       </div>
       <nav className="flex gap-1 border-b border-neutral-200 dark:border-neutral-800">

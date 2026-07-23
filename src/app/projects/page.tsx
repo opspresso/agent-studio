@@ -4,20 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/auth-client";
 import { toSlug } from "@/lib/slug";
+import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
-
-function OwnerLine({ ownerEmail, isMine }: { ownerEmail: string; isMine: boolean }) {
-  return (
-    <div className="mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
-      <span className="truncate">{ownerEmail}</span>
-      {isMine && (
-        <span className="rounded bg-neutral-100 px-1 py-0.5 font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-          you
-        </span>
-      )}
-    </div>
-  );
-}
 
 function TypeBadge({ type }: { type: ProjectType }) {
   const styles =
@@ -94,6 +82,7 @@ export default function ProjectsPage() {
                 <OwnerLine
                   ownerEmail={project.ownerEmail}
                   isMine={session?.user.email === project.ownerEmail}
+                  className="mt-1"
                 />
                 <p className="mt-2 line-clamp-3 text-sm text-neutral-500">{project.description}</p>
                 {project.publishedVersion && (
