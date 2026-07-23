@@ -1,11 +1,15 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-brand: oklch(0.62 0.19 255);
-  --color-brand-strong: oklch(0.52 0.21 255);
+  --color-brand: oklch(0.59 0.2 259);
+  --color-brand-strong: oklch(0.51 0.22 263);
 }
 
 :root {
+  color-scheme: light;
+  --page-glow: color-mix(in oklab, var(--color-brand) 8%, transparent);
   /* Categorical chart palette — validated for CVD/contrast on the light surface. */
   --chart-1: #2a78d6;
   --chart-2: #eb6834;
@@ -22,33 +26,63 @@
   --chart-cursor: rgba(0, 0, 0, 0.06);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Same hues re-stepped for the dark surface. */
-    --chart-1: #3987e5;
-    --chart-2: #d95926;
-    --chart-3: #199e70;
-    --chart-4: #c98500;
-    --chart-5: #d55181;
-    --chart-6: #008300;
-    --chart-7: #9085e9;
-    --chart-8: #e66767;
-    --chart-others: #898781;
-    --chart-surface: #171717;
-    --chart-grid: #262626;
-    --chart-ink: #a3a3a3;
-    --chart-cursor: rgba(255, 255, 255, 0.08);
-  }
+.dark {
+  color-scheme: dark;
+  --page-glow: color-mix(in oklab, var(--color-brand) 11%, transparent);
+  /* Same hues re-stepped for the dark surface. */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #008300;
+  --chart-7: #9085e9;
+  --chart-8: #e66767;
+  --chart-others: #898781;
+  --chart-surface: #171717;
+  --chart-grid: #262626;
+  --chart-ink: #a3a3a3;
+  --chart-cursor: rgba(255, 255, 255, 0.08);
 }
 
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased;
+  @apply bg-neutral-50 text-neutral-900 antialiased selection:bg-brand/20;
+  background-image: radial-gradient(circle at 50% -15rem, var(--page-glow), transparent 38rem);
+  background-repeat: no-repeat;
+  min-width: 320px;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    @apply bg-neutral-950 text-neutral-100;
-  }
+.dark body {
+  @apply bg-neutral-950 text-neutral-100;
+}
+
+button,
+a,
+input,
+textarea,
+select,
+summary {
+  @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+}
+
+button:not(:disabled),
+select:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  @apply transition-colors;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes trace-blink {

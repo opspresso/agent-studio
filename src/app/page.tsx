@@ -54,7 +54,7 @@ export default async function Home() {
   return (
     <div className="py-10">
       <section className="grid items-center gap-10 lg:grid-cols-2">
-        <div>
+        <div className="min-w-0">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-brand">
             prompt → publish → call
           </p>
@@ -66,7 +66,7 @@ export default async function Home() {
             agent with tools, and every call lands in a cost report. Built for teams that run
             LLM workloads in production.
           </p>
-          <div className="mt-8 flex items-center gap-4">
+          <div className="mt-8 flex flex-wrap items-center gap-4">
             <SignInButton />
             <span className="text-sm text-neutral-500 dark:text-neutral-400">
               Sign-in required for every workspace.
@@ -76,7 +76,7 @@ export default async function Home() {
 
         <figure
           aria-label="Example agent run stream"
-          className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
+          className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
         >
           <figcaption className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
             <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
