@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/lib/slug";
 import { createMcp, listMcps, type McpServer } from "./api";
-import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "./HeaderRows";
+import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 
 export default function ToolsPage() {
   const [servers, setServers] = useState<McpServer[]>([]);

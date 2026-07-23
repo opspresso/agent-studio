@@ -71,6 +71,11 @@ export default function SkillDetailPage() {
         <div>
           <h1 className="text-2xl font-semibold">{skill.name}</h1>
           <p className="mt-1 text-sm text-neutral-500">{skill.description}</p>
+          {skill.source && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Synced from {skill.source} — local edits are overwritten on the next sync.
+            </p>
+          )}
         </div>
         {!editing && (
           <div className="flex shrink-0 gap-2">

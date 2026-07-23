@@ -11,7 +11,7 @@ import {
   type McpServer,
   type McpTool,
 } from "../api";
-import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "../HeaderRows";
+import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 
 export default function McpDetailPage() {
   const params = useParams<{ name: string }>();

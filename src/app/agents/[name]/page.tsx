@@ -11,7 +11,7 @@ import {
   type AgentProtocol,
   type ExternalAgent,
 } from "../api";
-import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "../HeaderRows";
+import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 
 export default function AgentDetailPage() {
   const params = useParams<{ name: string }>();
@@ -281,7 +281,7 @@ function EditAgentForm({
         />
       </label>
 
-      <HeaderRowsEditor rows={rows} onChange={setRows} />
+      <HeaderRowsEditor rows={rows} onChange={setRows} emptyHint="No headers. Add one if the endpoint needs auth." />
       <p className="text-xs text-neutral-400">
         Masked values (all asterisks) keep the stored secret. Type a new value to replace it.
       </p>

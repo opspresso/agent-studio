@@ -8,26 +8,11 @@ import type {
 import type { ModelConfig } from "@/domain/llm/models";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { UsageRow } from "@/domain/usage/types";
+import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
+import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { Project, ProjectType, SubagentRef, Version, VersionParameters };
 export type { ModelConfig, EngineChunk, UsageRow };
-
-async function readJson<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
-  return res.json() as Promise<T>;
-}
-
-async function assertOk(res: Response): Promise<void> {
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
-}
-
-const jsonHeaders = { "Content-Type": "application/json" } as const;
 
 // --- Projects -------------------------------------------------------------
 
@@ -159,38 +144,9 @@ export function usageSummary(
 
 // --- Execution (SSE) ------------------------------------------------------
 
-/** Parse an SSE response body into engine chunks. Frames are `data: {json}\n\n`, terminated by `[DONE]`. */
-export async function* readSse(response: Response): AsyncGenerator<EngineChunk> {
-  const reader = response.body?.getReader();
-  if (!reader) {
-    return;
-  }
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const frame = buffer.slice(0, boundary).trim();
-      buffer = buffer.slice(boundary + 2);
-      if (frame.startsWith("data:")) {
-        const data = frame.slice(5).trim();
-        if (data === "[DONE]") {
-          return;
-        }
-        try {
-          yield JSON.parse(data) as EngineChunk;
-        } catch {
-          // Ignore malformed frames.
-        }
-      }
-      boundary = buffer.indexOf("\n\n");
-    }
-  }
+/** Engine-typed view over the shared SSE frame reader. */
+export function readSse(response: Response): AsyncGenerator<EngineChunk> {
+  return readSseFrames<EngineChunk>(response);
 }
 
 export async function streamPredict(

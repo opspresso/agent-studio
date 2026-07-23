@@ -1,15 +1,9 @@
-export type AgentProtocol = "openai" | "a2a";
+import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
+import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
-export interface ExternalAgent {
-  name: string;
-  url: string;
-  protocol?: AgentProtocol;
-  description: string;
-  /** Masked (length-preserving asterisks) header values — never plaintext or ciphertext. */
-  headers: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
-}
+// Server responses carry masked (length-preserving asterisks) header values —
+// never plaintext or ciphertext.
+export type { AgentProtocol, ExternalAgent };
 
 export interface CreateAgentInput {
   name: string;
@@ -26,14 +20,6 @@ export interface UpdateAgentInput {
   headers?: Record<string, string>;
 }
 
-async function readJson<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
-  return res.json() as Promise<T>;
-}
-
 export function listAgents(): Promise<ExternalAgent[]> {
   return fetch("/api/agents").then((r) => readJson<ExternalAgent[]>(r));
 }
@@ -45,7 +31,7 @@ export function getAgent(name: string): Promise<ExternalAgent> {
 export function createAgent(input: CreateAgentInput): Promise<ExternalAgent> {
   return fetch("/api/agents", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify(input),
   }).then((r) => readJson<ExternalAgent>(r));
 }
@@ -53,17 +39,13 @@ export function createAgent(input: CreateAgentInput): Promise<ExternalAgent> {
 export function updateAgent(name: string, patch: UpdateAgentInput): Promise<ExternalAgent> {
   return fetch(`/api/agents/${name}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify(patch),
   }).then((r) => readJson<ExternalAgent>(r));
 }
 
 export async function deleteAgent(name: string): Promise<void> {
-  const res = await fetch(`/api/agents/${name}`, { method: "DELETE" });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
+  await assertOk(await fetch(`/api/agents/${name}`, { method: "DELETE" }));
 }
 
 export interface A2aProjectListItem {
@@ -86,7 +68,7 @@ export function listA2aProjects(): Promise<A2aProjectListView> {
 export function sendAgentMessage(name: string, message: string): Promise<string> {
   return fetch(`/api/agents/${name}/message`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify({ message }),
   })
     .then((r) => readJson<{ text: string }>(r))

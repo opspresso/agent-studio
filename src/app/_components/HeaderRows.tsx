@@ -29,9 +29,11 @@ export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
 export function HeaderRowsEditor({
   rows,
   onChange,
+  emptyHint = "No headers. Add one if the server needs auth.",
 }: {
   rows: HeaderRow[];
   onChange: (rows: HeaderRow[]) => void;
+  emptyHint?: string;
 }) {
   function update(index: number, patch: Partial<HeaderRow>) {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -46,9 +48,7 @@ export function HeaderRowsEditor({
   return (
     <div className="space-y-2">
       <span className="text-sm font-medium">Headers</span>
-      {rows.length === 0 && (
-        <p className="text-xs text-neutral-400">No headers. Add one if the server needs auth.</p>
-      )}
+      {rows.length === 0 && <p className="text-xs text-neutral-400">{emptyHint}</p>}
       {rows.map((row, index) => (
         <div key={index} className="flex items-center gap-2">
           <input

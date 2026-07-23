@@ -1,10 +1,7 @@
-export interface Skill {
-  name: string;
-  description: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { Skill } from "@/domain/skill/types";
+import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
+
+export type { Skill };
 
 export interface CreateSkillInput {
   name: string;
@@ -15,14 +12,6 @@ export interface CreateSkillInput {
 export interface UpdateSkillInput {
   description?: string;
   content?: string;
-}
-
-async function readJson<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
-  return res.json() as Promise<T>;
 }
 
 export function listSkills(): Promise<Skill[]> {
@@ -36,7 +25,7 @@ export function getSkill(name: string): Promise<Skill> {
 export function createSkill(input: CreateSkillInput): Promise<Skill> {
   return fetch("/api/skills", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify(input),
   }).then((r) => readJson<Skill>(r));
 }
@@ -44,15 +33,11 @@ export function createSkill(input: CreateSkillInput): Promise<Skill> {
 export function updateSkill(name: string, patch: UpdateSkillInput): Promise<Skill> {
   return fetch(`/api/skills/${name}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify(patch),
   }).then((r) => readJson<Skill>(r));
 }
 
 export async function deleteSkill(name: string): Promise<void> {
-  const res = await fetch(`/api/skills/${name}`, { method: "DELETE" });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
+  await assertOk(await fetch(`/api/skills/${name}`, { method: "DELETE" }));
 }

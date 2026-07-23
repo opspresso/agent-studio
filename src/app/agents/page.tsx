@@ -12,7 +12,7 @@ import {
   type AgentProtocol,
   type ExternalAgent,
 } from "./api";
-import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "./HeaderRows";
+import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
@@ -222,7 +222,7 @@ function RegisterAgentModal({
             />
           </label>
 
-          <HeaderRowsEditor rows={rows} onChange={setRows} />
+          <HeaderRowsEditor rows={rows} onChange={setRows} emptyHint="No headers. Add one if the endpoint needs auth." />
 
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
