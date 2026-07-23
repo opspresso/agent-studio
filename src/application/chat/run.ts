@@ -1,5 +1,6 @@
 import type { Project, Version } from "@/domain/project/types";
 import type { Chat, ChatMessageImage } from "@/domain/chat/types";
+import { isTopLevelChunk } from "@/domain/llm/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "./deps";
 
@@ -44,7 +45,7 @@ export async function* runAndPersist(
 
   for await (const chunk of source) {
     const delta = chunk.delta?.content;
-    if (typeof delta === "string" && !chunk.author) {
+    if (typeof delta === "string" && isTopLevelChunk(chunk)) {
       content += delta;
     }
     if (chunk.toolResult) {

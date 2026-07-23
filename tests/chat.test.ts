@@ -181,6 +181,24 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       { role: "assistant", content: "The answer is 42." },
     ]);
   });
+
+  it("persists the top-level answer of a subagent-wired run, dropping authored chunks", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "Top " } };
+      yield { author: "child", delta: { content: "nested subagent text" } };
+      yield { delta: { content: "answer." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source(), 1)) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.some((m) => m.role === "assistant" && m.content === "Top answer.")).toBe(true);
+    expect(stored.some((m) => m.content.includes("nested"))).toBe(false);
+  });
 });
 
 describe("runAndPersist image persistence", () => {

@@ -725,9 +725,10 @@ export async function* runAgent(
   const skills = input.skills ?? [];
   const subagents = input.subagents ?? [];
   const hasSubagents = subagents.length > 0;
-  // Only tag chunks with an author when subagents are wired, so the plain
-  // OpenAI chunk shape is preserved otherwise.
-  const author = hasSubagents ? input.projectName : undefined;
+  // Top-level chunks stay unauthored: "no author" is the contract every
+  // consumer uses to pick out the visible answer. Subagent chunks are the only
+  // authored ones — the runSubagent wrapper stamps the subagent's name.
+  const author = undefined;
 
   const systemPrompt = buildAgentSystemPrompt(
     input.systemPrompt,
@@ -746,9 +747,7 @@ export async function* runAgent(
     });
   }
   messages.push(
-    ...(filter
-      ? (input.messages as ChannelMessage[]).map((message) => maskMessage(filter, message))
-      : (input.messages as ChannelMessage[])),
+    ...(filter ? input.messages.map((message) => maskMessage(filter, message)) : input.messages),
   );
 
   let turn = input.startTurn ?? 0;

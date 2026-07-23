@@ -25,7 +25,7 @@ export interface ChatMessageInput {
 
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
-  /** Project/agent that authored this chunk; set only when subagents are wired. */
+  /** Subagent that authored this chunk; top-level chunks carry no author. */
   author?: string;
   delta?: {
     content?: string;
@@ -44,6 +44,15 @@ export interface EngineChunk {
   usage?: UsageInfo;
   error?: string;
   done?: boolean;
+}
+
+/**
+ * True for chunks belonging to the top-level run's visible answer stream.
+ * The single owned predicate — every stream consumer must use this instead of
+ * re-deriving author semantics.
+ */
+export function isTopLevelChunk(chunk: EngineChunk): boolean {
+  return chunk.author === undefined;
 }
 
 /** Result of a single-shot (non-agent) run. */

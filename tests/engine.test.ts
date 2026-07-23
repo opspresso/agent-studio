@@ -144,6 +144,41 @@ describe("runAgent tool loop", () => {
     const rejection = chunks.find((c) => c.toolResult?.name === "transfer_to_agent");
     expect(rejection?.toolResult?.content).toContain("max_turn reached");
   });
+
+  it("keeps top-level chunks unauthored when subagents are wired", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"hi"}'), usageChunk(1, 1)],
+      [contentChunk("parent answer"), usageChunk(1, 1)],
+    ]);
+    const runSubagent = vi.fn(async function* (): AsyncGenerator<EngineChunk, string> {
+      yield { author: "child", delta: { content: "child says hi" } };
+      return "child says hi";
+    });
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      runSubagent,
+    };
+    const input: RunAgentInput = {
+      projectName: "parent",
+      model: MODEL,
+      messages: [{ role: "user", content: "delegate" }],
+      subagents: [{ name: "child", description: "a child agent", type: "local" }],
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    // Only subagent chunks carry an author; the parent's own chunks never do,
+    // so `!chunk.author` is the universal top-level predicate.
+    const authored = chunks.filter((c) => c.author !== undefined);
+    expect(authored.length).toBeGreaterThan(0);
+    expect(authored.every((c) => c.author === "child")).toBe(true);
+    const topContent = chunks
+      .filter((c) => c.author === undefined && c.delta?.content)
+      .map((c) => c.delta?.content)
+      .join("");
+    expect(topContent).toContain("parent answer");
+  });
 });
 
 describe("runAgent GenerateImage builtin", () => {
