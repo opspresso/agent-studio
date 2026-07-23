@@ -11,55 +11,30 @@ Agent Studio는 이미 핵심 실행 계층(엔진 도구 루프, 점진적 스�
 높이고 견고하게 만드는 소규모 수정이고, M3–M6은 이미 존재하는 데이터와 스키마를
 활용하며, M7–M10은 플랫폼을 완성한다. 백로그 항목은 실제 수요가 확인된 후 투자한다.
 
-## M1 — 비용 원장 무결성
+## M1 — 비용 원장 무결성 ✅ 완료
 
-**이유**: 비용 파이프라인이 실제보다 적은 금액을 아무런 경고 없이 기록한다.
-`calculateCost`/`calculateImageCost`는 카탈로그에 없는 모델 ID에 대해 아무런 신호
-없이 `$0`을 반환하고, `Version.model`은 제약 없는 문자열이다. 따라서 오타가 있거나
-새 모델을 사용하면 비용이 무료로 계산된다. `ModelPricing.perImage`는 이미지 모델
-4개에 설정되어 있지만 어디에서도 읽히지 않는다. `xai/grok-imagine-image`/
-`-quality`에서는 이 값이 *유일한* 가격 정보이고 토큰 요율은 0이므로, 모든 생성
-비용이 `$0`으로 기록된다. 비용 관리 제품의 원장은 거짓 정보를 담아서는 안 된다.
+`calculateImageCost`는 토큰 기반 이미지 출력 요율(`imageOutputPer1M`)이 없는 모델을
+`perImage` 단가로 과금한다(호출당 이미지 1장) — `xai/grok-imagine-*` 생성 비용이
+0보다 크게 기록된다. 토큰 요율이 있는 모델(gemini 계열)은 토큰 기반이 우선이고
+`perImage`는 참고 정보다. 알 수 없는 모델 ID는 비용 계산 시 프로세스당 한 번
+경고를 남기고, 사용량 행은 원본 모델 ID로 계속 기록된다. 버전 저장 시
+`Version.model`을 카탈로그와 대조해 없는 ID면 서버 로그 경고 + 편집기 경고를
+표시한다(커스텀 모델은 차단하지 않는다). `tests/cost.test.ts`가 검증한다.
 
-**범위**
+## M2 — 계약 및 보안 테스트 강화 ✅ 완료
 
-- `calculateImageCost`에서 이미지 단위로 과금되는 모델에 생성 이미지 수 ×
-  `perImage`를 적용한다.
-- 비용 계산 시 알 수 없는 모델 ID가 들어오면 경고를 기록하고, 대시보드에서 `$0`으로
-  사라지지 않도록 원본 모델 ID로 사용량 행을 기록한다.
-- 버전을 저장할 때 `Version.model`을 카탈로그와 대조한다. 커스텀 모델은 계속 허용해야
-  하므로 카탈로그에 없는 ID는 편집기에서 차단하지 않고 경고만 표시한다.
-
-**완료 조건**: `xai/grok-imagine-*` 생성의 비용이 0보다 크게 기록되고, 알 수 없는
-모델 ID에 대해 로그 경고와 확인 가능한 사용량 행이 생성되며, 두 경우 모두 테스트로
-검증된다.
-
-## M2 — 계약 및 보안 테스트 강화
-
-**이유**: 시크릿 보호 계약은 `agentUseCases`/`mcpUseCases`에서 구성된다(읽을 때
-마스킹, 마스킹된 값으로 업데이트할 때 기존 시크릿 보존, 디스패치 시 SSRF 재검사).
-하지만 테스트가 전혀 없어 한 줄짜리 회귀만으로도 저장된 시크릿이 로그인한 모든
-사용자에게 노출될 수 있다. Repository 항목 매핑은 CI에서 테스트되지 않으므로 속성
-변경으로 시크릿이 조용히 누락될 수 있다(`headers ?? {}`). `resolveVersion`의
-published→latest 폴백은 의도하지 않은 버전을 조용히 실행할 수 있다. `versionName`은
-slug 검증이 없는 유일한 이름이며 `published` 센티널과 충돌한다.
-
-**범위**
-
-- Use case 테스트: list/get/create/update에서 `enc:v1:` 암호문이 노출되지 않고,
-  마스킹된 헤더로 업데이트해도 저장된 시크릿이 유지되며, SSRF 검사에서 거부된 URL로
-  디스패치하면 `{ ok: false }`를 반환하는지 검증한다.
-- 기존 fake doc-client 패턴을 사용한 Repository 왕복 테스트: externalAgent/mcp
-  `headers`, 채팅 메시지 도구 필드, `toUsageRow` + 2단계 ADD.
-- `resolveVersion` 폴백 순서, `sendMessage` 검증 분기,
-  `updateVersion`/`deleteVersion`의 비소유자 403 및 미존재 404를 테스트한다(이미
-  테스트된 유사 기능에는 두 경우가 모두 있다).
-- `projectRepository.create`의 `ConditionalCheckFailedException`을 `ConflictError`로
-  매핑한다(현재 생성 경합 시 409가 아니라 일반 500을 반환한다).
-- `versionName`에 `/^[a-z0-9-]+$/`를 적용하고 예약어 `published`를 거부한다.
-
-**완료 조건**: 위 시나리오가 CI에서 실행되고, 두 검증 수정 사항이 경계에서 잘못된
-입력을 거부한다.
+시크릿 보호 계약이 CI에서 검증된다(`tests/registrySecrets.test.ts`):
+agent/mcp use case의 list/get/create/update는 `enc:v1:` 암호문을 노출하지 않고,
+마스킹된 헤더 업데이트는 저장된 시크릿을 유지하며, SSRF 검사에서 거부된 URL로의
+디스패치(`testConnection`/`sendMessage`)는 `{ ok: false }`를 반환한다.
+Repository 왕복은 fake doc-client로 검증된다(`tests/repositoryRoundTrip.test.ts`):
+externalAgent/mcp `headers`(부재 시 `{}` 기본값), 채팅 메시지 도구 필드,
+`toUsageRow` + 2단계 ADD. `resolveVersion` 폴백 순서
+(`tests/resolveVersion.test.ts`), `updateVersion`/`deleteVersion`의 비소유자 403·
+미존재 404, 생성 경합의 `ConflictError`(409) 매핑도 테스트된다
+(`tests/projectUseCases.test.ts` — 경합 매핑은 계층 규칙에 따라 repository가 아닌
+`createProject` use case에서 오류 이름으로 판별한다). `versionName`은
+`/^[a-z0-9-]+$/` slug 검증과 예약어 `published` 거부를 적용한다.
 
 ## M3 — PII 필터링 ✅ 완료
 
