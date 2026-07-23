@@ -92,6 +92,8 @@ pnpm build          # production build
 - The admin `/settings` page stores runtime overrides for selected env vars
   (admin/allowed-domain lists, LLM channels, Slack workspace bot, skills repo,
   A2A key, public base URL) in DynamoDB — a stored override wins over the env value.
+- The header theme control cycles through system, light, and dark appearances. The
+  selection is stored in the browser; system mode follows operating-system changes.
 
 ## Image Generation
 

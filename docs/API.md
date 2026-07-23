@@ -85,6 +85,62 @@ PUT /api/settings → 200 {…same shape…} | 400
   string removes the override (env fallback). Setting `adminEmails` to a list that excludes
   the caller is rejected with `400`.
 
+## Chats
+
+Chats are private to their owner and run only against agent projects.
+
+```
+GET    /api/chats                         → { chats }
+POST   /api/chats                         { projectName, firstMessage } → SSE
+GET    /api/chats/{chatId}                → { chat, messages }
+DELETE /api/chats/{chatId}                → 204
+POST   /api/chats/{chatId}/messages       { content } → SSE
+```
+
+The create stream starts with `{ "chat": {…} }` so clients learn the new `chatId` before
+assistant deltas. Message streams use the standard SSE framing and persist user, assistant,
+tool, and generated-image display data. A project with neither a published version nor a
+runnable draft is rejected with `400`.
+
+## Registry and integration operations
+
+These endpoints support the console's operational actions in addition to resource CRUD:
+
+```
+GET  /api/skills/sync
+→ { configured, repo, branch }
+
+POST /api/skills/sync
+→ { repo, commitSha, synced, unchanged } | 503 (not configured)
+
+POST /api/mcps/{name}/tools
+→ { tools } | 502 (connection failure)
+
+POST /api/agents/{name}/message   { "message": "hello" }
+→ { text } | 502 (remote failure)
+
+GET /api/projects/{name}/a2a
+→ { enabled, published, cardUrl }
+```
+
+`GET /api/skills/sync` requires a session; its `POST` requires admin access. Registry test
+operations require a session and apply the same SSRF guard used during registration and
+dispatch.
+
+Per-project Slack configuration uses these endpoints:
+
+```
+GET    /api/projects/{name}/slack
+PUT    /api/projects/{name}/slack   { botToken?, signingSecret?, enabled? }
+DELETE /api/projects/{name}/slack
+POST   /api/projects/{name}/slack/test
+```
+
+Slack reads return masked credential state plus `eventsUrl` and a generated app manifest.
+Any signed-in user may read that masked view; update, disconnect, and connection testing are
+owner-only. Masked or omitted secrets are preserved on update. The test endpoint returns
+`{ ok: true, team, botUser }` or `502` for a Slack API failure.
+
 ## Execution
 
 ### `POST /api/projects/{name}/versions/{version}/predict`

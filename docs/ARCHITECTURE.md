@@ -351,7 +351,10 @@ there is no session and otherwise passes the `SessionUser` as the handler's firs
 /settings             admin-only runtime env-var overrides
 ```
 
-UI text in English. Tailwind v4 utilities only — no inline styles.
+UI text is in English. Tailwind v4 utilities provide the structural styling. The header
+offers system/light/dark themes backed by a root class and browser-local preference;
+system mode follows `prefers-color-scheme`. Inline styles are limited to runtime-derived
+chart colors and bar widths.
 
 ## Glossary
 
