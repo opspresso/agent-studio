@@ -39,7 +39,7 @@ export const auth = betterAuth({
         before: async (session, ctx) => {
           const user = await ctx?.context.internalAdapter.findUserById(session.userId);
           if (user) {
-            assertAllowedEmailDomain(user.email);
+            await assertAllowedEmailDomain(user.email);
           }
           return { data: session };
         },
