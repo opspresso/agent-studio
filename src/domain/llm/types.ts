@@ -10,13 +10,24 @@ export interface UsageInfo {
   costUsd: number;
 }
 
+/** One OpenAI-shaped tool call as it appears on assistant messages and deltas. */
+export interface ChannelToolCall {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
 /** OpenAI-compatible chat message shape accepted by the engine. */
 export interface ChatMessageInput {
   role: "system" | "user" | "assistant" | "tool";
   content?: string | null;
   name?: string;
   /** Present on assistant messages that requested tool calls. */
-  tool_calls?: unknown[];
+  tool_calls?: ChannelToolCall[];
   /** Present on tool messages. */
   tool_call_id?: string;
   /** Anthropic-style reasoning carried on assistant turns. */
@@ -30,7 +41,7 @@ export interface EngineChunk {
   delta?: {
     content?: string;
     reasoningContent?: string;
-    toolCalls?: unknown[];
+    toolCalls?: ChannelToolCall[];
   };
   /** Emitted when the builtin GenerateImage tool produced an image. */
   image?: { b64: string; mimeType: string; prompt?: string };
@@ -61,7 +72,7 @@ export interface RunResult {
   /** The model actually used (may be the fallback model). */
   model: string;
   usage: UsageInfo;
-  toolCalls?: unknown[];
+  toolCalls?: ChannelToolCall[];
 }
 
 /** Sampling / generation parameters resolved from a version. */

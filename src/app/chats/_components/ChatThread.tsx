@@ -79,7 +79,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
       setSending(false);
       const fresh = await load();
       const lastMessage = fresh?.[fresh.length - 1];
-      const persisted = (lastMessage?.images?.length ?? 0) > 0;
+      const persisted =
+        lastMessage?.role === "assistant" && (lastMessage.images?.length ?? 0) > 0;
       if (streamedImages.length > 0 && lastMessage !== undefined && !persisted) {
         setImagesBySeq((prev) => ({ ...prev, [lastMessage.seq]: streamedImages }));
       }

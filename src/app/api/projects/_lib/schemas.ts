@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ChannelToolCall } from "@/domain/llm/types";
 
 export const projectNameSchema = z
   .string()
@@ -66,7 +67,7 @@ export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant", "tool"]),
   content: z.string().nullable().optional(),
   name: z.string().optional(),
-  tool_calls: z.array(z.unknown()).optional(),
+  tool_calls: z.array(z.custom<ChannelToolCall>()).optional(),
   tool_call_id: z.string().optional(),
   reasoning_content: z.string().optional(),
 });

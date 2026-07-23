@@ -387,7 +387,7 @@ export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promis
   const result: RunResult = { content, model: modelUsed, usage };
   if (choice?.message.tool_calls && choice.message.tool_calls.length > 0) {
     result.toolCalls = filter
-      ? (restoreValues(filter, choice.message.tool_calls) as unknown[])
+      ? (restoreValues(filter, choice.message.tool_calls) as ChannelToolCall[])
       : choice.message.tool_calls;
   }
   return result;

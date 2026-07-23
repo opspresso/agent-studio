@@ -25,8 +25,20 @@ function chatFixture(ownerEmail: string): Chat {
   };
 }
 
-function message(partial: Partial<ChatMessage> & Pick<ChatMessage, "seq" | "role">): ChatMessage {
-  return { chatId: "c1", content: "", createdAt: "2026-01-01T00:00:00.000Z", ...partial };
+function message(partial: {
+  seq: number;
+  role: ChatMessage["role"];
+  content?: string;
+  toolCallId?: string;
+  toolName?: string;
+  toolCalls?: import("@/domain/llm/types").ChannelToolCall[];
+}): ChatMessage {
+  return {
+    chatId: "c1",
+    content: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...partial,
+  } as ChatMessage;
 }
 
 function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {

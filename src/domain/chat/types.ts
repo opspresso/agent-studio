@@ -1,3 +1,5 @@
+import type { ChannelToolCall } from "../llm/types";
+
 export interface Chat {
   chatId: string;
   title: string;
@@ -15,18 +17,35 @@ export interface ChatMessageImage {
   prompt?: string;
 }
 
-export interface ChatMessage {
+interface ChatMessageBase {
   chatId: string;
   seq: number;
-  role: ChatRole;
   content: string;
-  /** Present on assistant messages that requested tool calls. */
-  toolCalls?: unknown[];
-  /** Present on tool messages. */
-  toolCallId?: string;
-  /** Present on tool messages: the tool that produced the result, for display. */
-  toolName?: string;
-  /** Present on assistant messages whose run generated images. */
-  images?: ChatMessageImage[];
   createdAt: string;
 }
+
+export interface UserChatMessage extends ChatMessageBase {
+  role: "user";
+}
+
+export interface AssistantChatMessage extends ChatMessageBase {
+  role: "assistant";
+  /** Present when the turn requested tool calls (persisted for display only). */
+  toolCalls?: ChannelToolCall[];
+  /** Present when the run generated images. */
+  images?: ChatMessageImage[];
+}
+
+export interface ToolChatMessage extends ChatMessageBase {
+  role: "tool";
+  /** Ties the result to an assistant tool call; unmatched rows are display-only. */
+  toolCallId: string;
+  /** The tool that produced the result, for display. */
+  toolName?: string;
+}
+
+/**
+ * Discriminated on `role` so illegal states (a tool row without a call id, an
+ * assistant with one) are unrepresentable.
+ */
+export type ChatMessage = UserChatMessage | AssistantChatMessage | ToolChatMessage;

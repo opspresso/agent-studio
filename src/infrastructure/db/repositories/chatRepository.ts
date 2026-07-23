@@ -10,6 +10,7 @@ import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { Chat, ChatMessage, ChatMessageImage, ChatRole } from "@/domain/chat/types";
+import type { ChannelToolCall } from "@/domain/llm/types";
 
 const CHAT_ENTITY = "Chat";
 const MESSAGE_ENTITY = "ChatMessage";
@@ -47,17 +48,30 @@ function toMessageItem(message: ChatMessage) {
 }
 
 function fromMessageItem(item: DynamoItem): ChatMessage {
-  return {
+  const base = {
     chatId: item.chatId as string,
     seq: item.seq as number,
-    role: item.role as ChatRole,
     content: item.content as string,
-    toolCalls: item.toolCalls as unknown[] | undefined,
-    toolCallId: item.toolCallId as string | undefined,
-    toolName: item.toolName as string | undefined,
-    images: item.images as ChatMessageImage[] | undefined,
     createdAt: item.createdAt as string,
   };
+  const role = item.role as ChatRole;
+  if (role === "tool") {
+    return {
+      ...base,
+      role,
+      toolCallId: item.toolCallId as string,
+      toolName: item.toolName as string | undefined,
+    };
+  }
+  if (role === "assistant") {
+    return {
+      ...base,
+      role,
+      toolCalls: item.toolCalls as ChannelToolCall[] | undefined,
+      images: item.images as ChatMessageImage[] | undefined,
+    };
+  }
+  return { ...base, role: "user" };
 }
 
 export const chatRepository: ChatRepository = {

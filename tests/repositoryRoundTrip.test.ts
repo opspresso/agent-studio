@@ -99,23 +99,32 @@ describe("externalAgentRepository round-trip", () => {
 });
 
 describe("chatRepository message round-trip", () => {
-  it("preserves tool fields and images through appendMessage + listMessages", async () => {
-    const message: ChatMessage = {
+  it("preserves tool and assistant fields through appendMessage + listMessages", async () => {
+    const toolMessage: ChatMessage = {
       chatId: "c1",
       seq: 3,
       role: "tool",
       content: "result text",
-      toolCalls: [{ id: "call_1", function: { name: "search", arguments: "{}" } }],
       toolCallId: "call_1",
       toolName: "search",
+      createdAt: NOW,
+    };
+    const assistantMessage: ChatMessage = {
+      chatId: "c1",
+      seq: 4,
+      role: "assistant",
+      content: "The answer.",
+      toolCalls: [{ id: "call_1", function: { name: "search", arguments: "{}" } }],
       images: [{ url: "https://img.example/1.png", prompt: "a fox" }],
       createdAt: NOW,
     };
-    await chatRepository.appendMessage(message);
+    await chatRepository.appendMessage(toolMessage);
+    await chatRepository.appendMessage(assistantMessage);
 
     const messages = await chatRepository.listMessages("c1");
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toEqual(message);
+    expect(messages).toHaveLength(2);
+    expect(messages.find((m) => m.role === "tool")).toEqual(toolMessage);
+    expect(messages.find((m) => m.role === "assistant")).toEqual(assistantMessage);
   });
 });
 

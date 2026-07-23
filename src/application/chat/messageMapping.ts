@@ -1,14 +1,6 @@
 import type { ChatMessage } from "@/domain/chat/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
 
-function toolCallId(toolCall: unknown): string | undefined {
-  if (toolCall && typeof toolCall === "object" && "id" in toolCall) {
-    const id = (toolCall as { id: unknown }).id;
-    return typeof id === "string" ? id : undefined;
-  }
-  return undefined;
-}
-
 /**
  * Convert stored chat messages to OpenAI-shaped engine messages.
  *
@@ -28,9 +20,8 @@ export function toEngineMessages(messages: ChatMessage[]): ChatMessageInput[] {
       if (message.toolCalls && message.toolCalls.length > 0) {
         mapped.tool_calls = message.toolCalls;
         for (const call of message.toolCalls) {
-          const id = toolCallId(call);
-          if (id) {
-            knownToolCallIds.add(id);
+          if (call.id) {
+            knownToolCallIds.add(call.id);
           }
         }
       }

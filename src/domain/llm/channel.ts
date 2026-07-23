@@ -4,17 +4,9 @@
  * client lives in `src/infrastructure/llm/channel.ts`. Tests inject a fake.
  */
 
-export interface ChannelToolCall {
-  index?: number;
-  id?: string;
-  type?: string;
-  function?: {
-    name?: string;
-    arguments?: string;
-  };
-}
+import type { ChannelToolCall, ChatMessageInput } from "./types";
 
-import type { ChatMessageInput } from "./types";
+export type { ChannelToolCall };
 
 /**
  * The wire message is the same OpenAI-compatible shape the engine accepts —
