@@ -1,217 +1,228 @@
-# Milestones
+# 마일스톤
 
-Feature roadmap derived from a gap analysis against a production-grade internal LLM
-platform with the same domain (prompt/agent/cost management), plus a full domain-layer
-audit of this codebase. Agent Studio already covers the core execution layer (engine tool
-loop, progressive skill loading, subagent transfer, fallback, Slack/A2A/MCP, usage
-aggregation); the milestones below fix correctness gaps the audit surfaced and fill the
-layers that production operation proved essential — observability, cost control,
-evaluation, and deploy history.
+동일한 도메인(프롬프트/에이전트/비용 관리)의 프로덕션급 사내 LLM 플랫폼과 비교한
+갭 분석 및 이 코드베이스의 전체 도메인 계층 감사를 바탕으로 작성한 기능 로드맵이다.
+Agent Studio는 이미 핵심 실행 계층(엔진 도구 루프, 점진적 스킬 로딩, 서브에이전트
+전환, 폴백, Slack/A2A/MCP, 사용량 집계)을 갖추고 있다. 아래 마일스톤은 감사에서
+드러난 정확성 문제를 해결하고, 프로덕션 운영에서 필수로 확인된 관측 가능성, 비용
+통제, 평가, 배포 이력 계층을 보완한다.
 
-Ordering reflects value-per-effort: M1–M2 are small correctness/hardening fixes on the
-money and secret paths, M3–M6 build on data and schemas that already exist, M7–M10 round
-out the platform, and the backlog items need real demand before investing.
+순서는 투입 노력 대비 가치를 반영한다. M1–M2는 비용 및 시크릿 경로의 정확성을
+높이고 견고하게 만드는 소규모 수정이고, M3–M6은 이미 존재하는 데이터와 스키마를
+활용하며, M7–M10은 플랫폼을 완성한다. 백로그 항목은 실제 수요가 확인된 후 투자한다.
 
-## M1 — Cost ledger integrity
+## M1 — 비용 원장 무결성
 
-**Why**: the cost pipeline silently under-records. `calculateCost`/`calculateImageCost`
-return `$0` for any model id missing from the catalog with no signal, and `Version.model`
-is an open string — a typo or a new model bills as free. `ModelPricing.perImage` is set on
-four image models but read nowhere; for `xai/grok-imagine-image`/`-quality` it is the
-*only* price (token rates are 0), so every generation records `$0`. In a cost-management
-product the ledger must not lie.
+**이유**: 비용 파이프라인이 실제보다 적은 금액을 아무런 경고 없이 기록한다.
+`calculateCost`/`calculateImageCost`는 카탈로그에 없는 모델 ID에 대해 아무런 신호
+없이 `$0`을 반환하고, `Version.model`은 제약 없는 문자열이다. 따라서 오타가 있거나
+새 모델을 사용하면 비용이 무료로 계산된다. `ModelPricing.perImage`는 이미지 모델
+4개에 설정되어 있지만 어디에서도 읽히지 않는다. `xai/grok-imagine-image`/
+`-quality`에서는 이 값이 *유일한* 가격 정보이고 토큰 요율은 0이므로, 모든 생성
+비용이 `$0`으로 기록된다. 비용 관리 제품의 원장은 거짓 정보를 담아서는 안 된다.
 
-**Scope**
+**범위**
 
-- Charge per-image-billed models by generated-image count × `perImage` in
-  `calculateImageCost`.
-- On an unknown model id at cost time, log a warning and record the usage row under the
-  raw model id so it stays visible in the dashboard instead of vanishing as `$0`.
-- Validate `Version.model` against the catalog at version save; warn (not block) in the
-  editor for ids outside it, since custom models stay allowed.
+- `calculateImageCost`에서 이미지 단위로 과금되는 모델에 생성 이미지 수 ×
+  `perImage`를 적용한다.
+- 비용 계산 시 알 수 없는 모델 ID가 들어오면 경고를 기록하고, 대시보드에서 `$0`으로
+  사라지지 않도록 원본 모델 ID로 사용량 행을 기록한다.
+- 버전을 저장할 때 `Version.model`을 카탈로그와 대조한다. 커스텀 모델은 계속 허용해야
+  하므로 카탈로그에 없는 ID는 편집기에서 차단하지 않고 경고만 표시한다.
 
-**Done when**: an `xai/grok-imagine-*` generation records a nonzero cost, an unknown model
-id produces a logged warning and a visible usage row, and tests cover both.
+**완료 조건**: `xai/grok-imagine-*` 생성의 비용이 0보다 크게 기록되고, 알 수 없는
+모델 ID에 대해 로그 경고와 확인 가능한 사용량 행이 생성되며, 두 경우 모두 테스트로
+검증된다.
 
-## M2 — Contract & security test hardening
+## M2 — 계약 및 보안 테스트 강화
 
-**Why**: the secret-protection contract is composed in `agentUseCases`/`mcpUseCases`
-(mask on read, masked-update preserves the stored secret, SSRF re-check at dispatch) but
-has zero tests — a one-line regression would expose stored secrets to any signed-in user
-unnoticed. Repository item mapping is CI-untested, so attribute drift silently drops
-secrets (`headers ?? {}`). `resolveVersion`'s published→latest fallback can silently run
-the wrong version. `versionName` is the only name without slug validation and collides
-with the `published` sentinel.
+**이유**: 시크릿 보호 계약은 `agentUseCases`/`mcpUseCases`에서 구성된다(읽을 때
+마스킹, 마스킹된 값으로 업데이트할 때 기존 시크릿 보존, 디스패치 시 SSRF 재검사).
+하지만 테스트가 전혀 없어 한 줄짜리 회귀만으로도 저장된 시크릿이 로그인한 모든
+사용자에게 노출될 수 있다. Repository 항목 매핑은 CI에서 테스트되지 않으므로 속성
+변경으로 시크릿이 조용히 누락될 수 있다(`headers ?? {}`). `resolveVersion`의
+published→latest 폴백은 의도하지 않은 버전을 조용히 실행할 수 있다. `versionName`은
+slug 검증이 없는 유일한 이름이며 `published` 센티널과 충돌한다.
 
-**Scope**
+**범위**
 
-- Use-case tests: list/get/create/update never leak `enc:v1:` ciphertext; update with a
-  masked header preserves the stored secret; dispatch to an SSRF-rejected URL returns
-  `{ ok: false }`.
-- Repository round-trip tests via the existing fake doc-client pattern: externalAgent/mcp
-  `headers`, chat message tool fields, `toUsageRow` + the two-step ADD.
-- `resolveVersion` fallback ordering; `sendMessage` validation branches; non-owner 403 and
-  missing 404 for `updateVersion`/`deleteVersion` (their tested siblings already have both).
-- Map `ConditionalCheckFailedException` in `projectRepository.create` to `ConflictError`
-  (today a create race returns a generic 500 instead of 409).
-- Enforce `/^[a-z0-9-]+$/` on `versionName` and reject the reserved name `published`.
+- Use case 테스트: list/get/create/update에서 `enc:v1:` 암호문이 노출되지 않고,
+  마스킹된 헤더로 업데이트해도 저장된 시크릿이 유지되며, SSRF 검사에서 거부된 URL로
+  디스패치하면 `{ ok: false }`를 반환하는지 검증한다.
+- 기존 fake doc-client 패턴을 사용한 Repository 왕복 테스트: externalAgent/mcp
+  `headers`, 채팅 메시지 도구 필드, `toUsageRow` + 2단계 ADD.
+- `resolveVersion` 폴백 순서, `sendMessage` 검증 분기,
+  `updateVersion`/`deleteVersion`의 비소유자 403 및 미존재 404를 테스트한다(이미
+  테스트된 유사 기능에는 두 경우가 모두 있다).
+- `projectRepository.create`의 `ConditionalCheckFailedException`을 `ConflictError`로
+  매핑한다(현재 생성 경합 시 409가 아니라 일반 500을 반환한다).
+- `versionName`에 `/^[a-z0-9-]+$/`를 적용하고 예약어 `published`를 거부한다.
 
-**Done when**: the scenarios above run in CI and the two validation fixes reject bad input
-at the boundary.
+**완료 조건**: 위 시나리오가 CI에서 실행되고, 두 검증 수정 사항이 경계에서 잘못된
+입력을 거부한다.
 
-## M3 — PII filtering: wire it or remove it
+## M3 — PII 필터링: 연결하거나 제거
 
-**Why**: `piiFiltering` exists in the version schema, UI, and domain type, but
-`toEngineParameters` never maps it — the toggle does nothing while appearing functional.
-Shipping a setting that silently no-ops is worse than not having it.
+**이유**: `piiFiltering`은 버전 스키마, UI, 도메인 타입에 존재하지만
+`toEngineParameters`에서 매핑하지 않는다. 토글이 동작하는 것처럼 보이지만 실제로는
+아무 기능도 하지 않는다. 아무 일도 하지 않는 설정을 제공하는 것은 설정 자체가 없는
+것보다 나쁘다.
 
-**Scope (wire)**
+**범위(연결하는 경우)**
 
-- Regex-based detection for email and phone number (no third-party dependency).
-- Format-preserving random substitution before the LLM call; restore originals in the
-  response (the model never sees real PII).
-- Streaming-safe restore via token-boundary buffering.
+- 이메일과 전화번호를 정규식으로 탐지한다(서드 파티 의존성 없음).
+- LLM 호출 전에 형식을 보존한 임의 값으로 치환하고 응답에서 원래 값으로 복원한다
+  (모델은 실제 PII를 보지 못한다).
+- 토큰 경계 버퍼링으로 스트리밍에서도 안전하게 복원한다.
 
-**Fallback**: if filtering is descoped, delete the dead parameter end-to-end instead.
+**대안**: 필터링을 범위에서 제외한다면 사용되지 않는 파라미터를 전체 계층에서
+삭제한다.
 
-**Done when**: with the toggle on, a prompt containing an email/phone reaches the channel
-masked and the final response shows the original values, in both streaming and
-non-streaming paths; with the toggle off, behavior is byte-identical to today.
+**완료 조건**: 토글을 켜면 이메일/전화번호가 포함된 프롬프트가 마스킹된 상태로
+채널에 도달하고, 스트리밍 및 비스트리밍 경로의 최종 응답에는 원래 값이 표시된다.
+토글을 끄면 현재 동작과 바이트 단위로 동일하다.
 
-## M4 — Wire the trace system
+## M4 — 트레이스 시스템 연결
 
-**Why**: `traceRepository`, the `Trace` entity, `keys.trace`, and its GSI partition are
-already defined but referenced nowhere — agent runs currently leave no execution record,
-making multi-turn debugging guesswork.
+**이유**: `traceRepository`, `Trace` 엔티티, `keys.trace`, 해당 GSI 파티션이 이미
+정의되어 있지만 어디에서도 참조되지 않는다. 현재 에이전트 실행 기록이 남지 않아
+여러 턴에 걸친 디버깅을 추측에 의존해야 한다.
 
-**Scope**
+**범위**
 
-- Record a trace per engine run (spans per turn: model call, tool call, subagent transfer).
-- Link subagent runs to the parent trace (`subagentTraceId` on the parent span).
-- Sampling: agent runs always traced; plain predict/chat at a configurable sample rate.
-- Trace list + detail API and console screens per project.
-- Cap stored span input/output sizes; compact long message arrays instead of hard truncation.
-- Promote the trace port + row types from the infrastructure adapter into
-  `src/domain/trace/` so the repository follows the same dependency rule as the other
-  entities.
+- 엔진 실행마다 트레이스를 기록한다(턴별 span: 모델 호출, 도구 호출, 서브에이전트
+  전환).
+- 서브에이전트 실행을 부모 트레이스에 연결한다(부모 span의 `subagentTraceId`).
+- 샘플링: 에이전트 실행은 항상 추적하고, 일반 predict/chat은 설정 가능한 비율로
+  샘플링한다.
+- 프로젝트별 트레이스 목록 및 상세 API와 콘솔 화면을 제공한다.
+- 저장하는 span 입출력 크기를 제한한다. 긴 메시지 배열은 단순히 잘라내지 않고
+  압축한다.
+- 트레이스 포트와 행 타입을 인프라 어댑터에서 `src/domain/trace/`로 옮겨
+  Repository가 다른 엔티티와 같은 의존성 규칙을 따르게 한다.
 
-**Done when**: running a published agent produces a persisted trace whose spans (including
-a subagent transfer) are viewable in the console; unit tests cover recording and sampling.
+**완료 조건**: 배포된 에이전트를 실행하면 span(서브에이전트 전환 포함)이 담긴
+트레이스가 영속화되고 콘솔에서 확인할 수 있으며, 기록 및 샘플링을 단위 테스트로
+검증한다.
 
-## M5 — Cost threshold alert + block
+## M5 — 비용 임계값 알림 및 차단
 
-**Why**: daily per-project-per-model cost is already aggregated in DynamoDB, but nothing
-acts on it — a runaway loop or bulk caller can spend without bound. The only guard today
-is the engine turn limit. Depends on M1: thresholds are only as trustworthy as the ledger.
+**이유**: 프로젝트별·모델별 일간 비용이 이미 DynamoDB에 집계되지만 이를 사용하는
+기능은 없다. 폭주하는 루프나 대량 호출자가 제한 없이 비용을 발생시킬 수 있다.
+현재 유일한 보호 장치는 엔진 턴 제한이다. 임계값은 원장만큼만 신뢰할 수 있으므로
+M1에 의존한다.
 
-**Scope**
+**범위**
 
-- Per-project settings: `alertThresholdUsd` and `blockThresholdUsd` (both optional).
-- Alert: when daily (UTC) cost crosses the alert threshold, send a Slack notification once
-  per day (conditional-write dedupe).
-- Block: when daily cost crosses the block threshold, reject further runs for that day with
-  a dedicated HTTP status; pre-check at run entry, post-check after usage flush.
-- All guard lookups/writes fail open — a guard failure must never block or break a run.
+- 프로젝트별 설정: `alertThresholdUsd`와 `blockThresholdUsd`(둘 다 선택 사항).
+- 알림: 일간(UTC) 비용이 알림 임계값을 넘으면 하루에 한 번 Slack 알림을 보낸다
+  (조건부 쓰기로 중복 제거).
+- 차단: 일간 비용이 차단 임계값을 넘으면 그날 남은 시간 동안 전용 HTTP 상태 코드로
+  추가 실행을 거부한다. 실행 진입 시 사전 검사하고 사용량 flush 후 사후 검사한다.
+- 모든 보호 장치 조회/쓰기는 장애 시 허용한다. 보호 장치의 실패가 실행을 차단하거나
+  망가뜨려서는 안 된다.
 
-**Done when**: a project over its block threshold gets rejected at every run entry point
-(predict, chat/completions, agent, chat, Slack, A2A) for the rest of the UTC day, the alert
-fires exactly once per day, and tests cover threshold crossing, dedupe, and fail-open.
+**완료 조건**: 차단 임계값을 초과한 프로젝트는 UTC 기준 해당 날짜의 남은 시간 동안
+모든 실행 진입점(predict, chat/completions, agent, chat, Slack, A2A)에서 거부되고,
+알림은 하루에 정확히 한 번 발생하며, 임계값 초과·중복 제거·장애 시 허용을 테스트로
+검증한다.
 
-## M6 — Publish history + version snapshot diff
+## M6 — 배포 이력 및 버전 스냅샷 비교
 
-**Why**: publish only moves a pointer; there is no record of who published what, when, or
-what changed — "why did responses change" is unanswerable.
+**이유**: 배포는 포인터만 이동하며 누가 무엇을 언제 배포했고 무엇이 바뀌었는지
+기록하지 않는다. 따라서 "응답이 왜 바뀌었는가"에 답할 수 없다.
 
-**Scope**
+**범위**
 
-- Append-only publish history row per publish: version snapshot, publisher, timestamp,
-  optional description.
-- History timeline on the project screen with a field-level diff between adjacent
-  snapshots (rule-based per parameter, not raw JSON).
+- 배포할 때마다 버전 스냅샷, 배포자, 타임스탬프, 선택적 설명을 담은 추가 전용 배포
+  이력 행을 기록한다.
+- 프로젝트 화면에 이력 타임라인과 인접한 스냅샷 간 필드 단위 비교를 제공한다
+  (원시 JSON이 아니라 파라미터별 규칙 기반).
 
-**Done when**: publishing twice shows a two-entry timeline whose diff lists exactly the
-changed fields; history rows are immutable.
+**완료 조건**: 두 번 배포하면 항목이 2개인 타임라인이 표시되고, 비교 결과에는
+변경된 필드만 정확히 나열되며, 이력 행은 변경할 수 없다.
 
-## M7 — Evaluation (test sets × version comparison)
+## M7 — 평가(테스트 세트 × 버전 비교)
 
-**Why**: there is no way to check that a prompt change didn't regress — the core
-differentiator of a prompt-management platform.
+**이유**: 프롬프트 변경으로 회귀가 발생하지 않았는지 확인할 방법이 없다. 이는
+프롬프트 관리 플랫폼의 핵심 차별점이다.
 
-**Scope**
+**범위**
 
-- Per-project test sets (variable bindings per case), CSV import/export.
-- Side-by-side run of selected versions over the set; per-cell and per-version rerun.
-- Cache outputs keyed by case identity + version config fingerprint; mark stale cells
-  when config changes instead of silently reusing them.
-- "Add test case" shortcut from the playground's current inputs.
+- 프로젝트별 테스트 세트(케이스별 변수 바인딩), CSV 가져오기/내보내기.
+- 선택한 버전을 테스트 세트 전체에서 나란히 실행하고, 셀별·버전별 재실행을 지원한다.
+- 케이스 ID + 버전 설정 fingerprint를 키로 출력을 캐시한다. 설정이 바뀌면 캐시를
+  조용히 재사용하지 않고 오래된 셀로 표시한다.
+- Playground의 현재 입력에서 바로 "테스트 케이스 추가"를 실행할 수 있게 한다.
 
-**Done when**: two versions can be run over a saved set and compared column-by-column,
-and editing a version marks its cached cells stale.
+**완료 조건**: 저장된 테스트 세트에서 두 버전을 실행해 열 단위로 비교할 수 있고,
+버전을 수정하면 캐시된 셀이 오래된 상태로 표시된다.
 
-## M8 — Retry layer with backoff
+## M8 — 백오프를 적용한 재시도 계층
 
-**Why**: the only resilience today is a single pre-first-chunk fallback. A transient 429
-goes straight to the fallback model (or the user) without a retry.
+**이유**: 현재 유일한 복원력 기능은 첫 chunk 이전에 한 번 수행하는 폴백이다. 일시적인
+429 응답도 재시도 없이 곧바로 폴백 모델(또는 사용자)로 전달된다.
 
-**Scope**
+**범위**
 
-- Channel-level retry (max ~3) with exponential backoff and jitter for retryable errors
-  (408/429/5xx), before fallback engages.
-- Keep the layers distinct: retry handles transient same-model errors; fallback handles
-  model-level failure. Preserve current semantics — no retry/fallback after the first
-  streamed chunk.
-- Audit fallback cost attribution while in this code: usage must record the model that
-  actually served the request, priced with that model's rates.
+- 폴백 전에 재시도 가능한 오류(408/429/5xx)에 대해 지수 백오프와 jitter를 적용한
+  채널 수준 재시도(최대 약 3회)를 수행한다.
+- 계층의 역할을 분리한다. 재시도는 동일 모델의 일시적 오류를 처리하고, 폴백은 모델
+  수준의 실패를 처리한다. 현재 의미 체계를 유지해 첫 스트리밍 chunk 이후에는
+  재시도/폴백을 수행하지 않는다.
+- 이 코드를 수정하는 동안 폴백 비용 귀속도 감사한다. 사용량에는 실제 요청을 처리한
+  모델을 기록하고 해당 모델의 요율로 가격을 계산해야 한다.
 
-**Done when**: a channel that 429s twice then succeeds completes without engaging
-fallback; tests cover backoff classification and the fallback cost attribution path.
+**완료 조건**: 채널이 두 번 429를 반환한 뒤 성공하면 폴백을 사용하지 않고 완료되며,
+백오프 분류와 폴백 비용 귀속 경로를 테스트로 검증한다.
 
-## M9 — Version tags (aliases)
+## M9 — 버전 태그(별칭)
 
-**Why**: `published` is the only symbolic reference; staging/experiment flows need named
-pointers without copying version numbers around.
+**이유**: `published`가 유일한 심볼릭 참조다. staging/experiment 흐름에는 버전
+번호를 복사하지 않고 사용할 수 있는 이름 있는 포인터가 필요하다.
 
-**Scope**
+**범위**
 
-- Project-level tag map (`tag → version`), replaced whole via a single desired-state PUT.
-- Read/run endpoints accept tags wherever a version name is accepted; mutation endpoints
-  accept real version names only (asymmetry is deliberate — prevents editing "whatever
-  the tag points at").
-- Resolve tags at request time; record the resolved real version in usage/traces.
+- 프로젝트 수준 태그 맵(`tag → version`)을 단일 desired-state PUT으로 전체
+  교체한다.
+- 읽기/실행 엔드포인트는 버전 이름을 받는 모든 위치에서 태그도 허용한다. 변경
+  엔드포인트는 실제 버전 이름만 허용한다(이 비대칭은 의도된 것으로, "현재 태그가
+  가리키는 대상"이 변경되는 일을 방지한다).
+- 요청 시점에 태그를 해석하고, 사용량/트레이스에는 해석된 실제 버전을 기록한다.
 
-**Done when**: a run addressed by tag executes the tagged version and its usage/trace rows
-carry the real version name; mutating by tag is rejected.
+**완료 조건**: 태그로 요청한 실행은 태그가 가리키는 버전을 사용하고 사용량/트레이스
+행에는 실제 버전 이름이 기록되며, 태그를 통한 변경은 거부된다.
 
-## M10 — Pseudo-model usage rows for non-token billing
+## M10 — 비토큰 과금용 가상 모델 사용량 행
 
-**Why**: costs that are not LLM tokens (web search, grounding, retrieval — as they get
-added) need a home. Recording them as synthetic model rows (e.g. `search/web_search`)
-reuses the whole aggregation pipeline and dashboard with zero schema change.
+**이유**: LLM 토큰이 아닌 비용(웹 검색, grounding, retrieval 등 추가되는 항목)을
+기록할 곳이 필요하다. 이를 가상 모델 행(예: `search/web_search`)으로 기록하면 스키마
+변경 없이 전체 집계 파이프라인과 대시보드를 재사용할 수 있다.
 
-**Scope**
+**범위**
 
-- Convention: synthetic model id per billing source, `calls` counted per billed unit,
-  cost from a per-unit rate; do not inflate real-model call counts.
-- Distinguish "tool registered" from "tool actually invoked" — record only on use.
+- 과금 소스별 가상 모델 ID를 사용하는 규칙을 정한다. 과금 단위마다 `calls`를
+  집계하고 단위당 요율로 비용을 계산하며, 실제 모델 호출 횟수는 부풀리지 않는다.
+- "도구 등록"과 "도구 실제 호출"을 구분하고, 실제 사용한 경우에만 기록한다.
 
-**Done when**: the first non-token cost source lands as a pseudo-model row and appears in
-the dashboard grouped like any model, covered by a unit test.
+**완료 조건**: 첫 비토큰 비용 소스가 가상 모델 행으로 기록되어 다른 모델처럼
+대시보드에 그룹화되어 표시되고, 단위 테스트로 검증된다.
 
-## Backlog (invest when demand is real)
+## 백로그(실제 수요가 있을 때 투자)
 
-- **Convention convergence** — behavior-preserving refactors, best batched when a slice is
-  already being touched: converge the four DI styles on the factory pattern
-  (`createXUseCases`); collapse the parallel `ChatError` classes onto the shared
-  `AppError` hierarchy (as `project/errors.ts` already does); make UI api modules
-  re-export domain types instead of redefining them (the UI `Skill` type has already
-  drifted — it lacks `source`); derive the settings repository `FIELDS` list from
-  `FIELD_SPECS` so field additions can't silently miss persistence; model `ChatMessage`
-  as a discriminated union on `role`; promote the Slack-event port into `src/domain`.
-- **Scheduled runs** — natural-language schedule → RRULE, CAS-claimed occurrences, Slack
-  delivery. Needs a runner process; heavy for a single Next.js deployment.
-- **Batch processing** — requires the full lease/fencing/heartbeat/checkpoint stack.
-- **AI assistant sidebar** — prompt-improvement suggestions rendered as applyable diffs.
-- **Artifacts gallery** — persist and share chat-generated HTML reports.
-- **RAG / file search** — delegate chunking/indexing to a managed search service.
-- **A2A task store persistence** — the in-memory store assumes a single instance; move to
-  DynamoDB before scaling horizontally.
+- **관례 수렴** — 동작을 보존하는 리팩터링으로, 해당 영역을 수정할 때 묶어서
+  진행하는 것이 가장 좋다. 4가지 DI 스타일을 factory 패턴(`createXUseCases`)으로
+  통일한다. 병렬로 존재하는 `ChatError` 클래스를 공유 `AppError` 계층으로 통합한다
+  (`project/errors.ts`에서 이미 사용 중). UI api 모듈이 도메인 타입을 재정의하지 않고
+  다시 내보내게 한다(UI `Skill` 타입에는 이미 `source`가 누락되어 불일치가 발생했다).
+  설정 Repository의 `FIELDS` 목록을 `FIELD_SPECS`에서 파생해 필드 추가 시 영속화가
+  누락되지 않게 한다. `ChatMessage`를 `role` 기준 discriminated union으로 모델링한다.
+  Slack 이벤트 포트를 `src/domain`으로 옮긴다.
+- **예약 실행** — 자연어 일정 → RRULE, CAS로 실행 시점 선점, Slack 전달. Runner
+  프로세스가 필요하므로 단일 Next.js 배포에는 부담이 크다.
+- **배치 처리** — 전체 lease/fencing/heartbeat/checkpoint 스택이 필요하다.
+- **AI 어시스턴트 사이드바** — 적용 가능한 diff 형태로 프롬프트 개선 제안을 표시한다.
+- **산출물 갤러리** — 채팅에서 생성된 HTML 보고서를 영속화하고 공유한다.
+- **RAG / 파일 검색** — chunking/indexing을 관리형 검색 서비스에 위임한다.
+- **A2A 작업 저장소 영속화** — 인메모리 저장소는 단일 인스턴스를 전제로 한다.
+  수평 확장 전에 DynamoDB로 이전한다.
