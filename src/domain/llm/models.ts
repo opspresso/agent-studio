@@ -411,9 +411,10 @@ export function applyModelConstraints(params: ChannelParams): ChannelParams {
     cfg?.capabilities.reasoningWithTools === false &&
     params.tools !== undefined &&
     params.tools.length > 0 &&
-    params.reasoningEffort !== undefined &&
     params.reasoningEffort !== "none"
   ) {
+    // The provider requires an EXPLICIT "none": omitting the field falls back
+    // to a server-side reasoning default, which still rejects the tools.
     return { ...params, reasoningEffort: "none" };
   }
   return params;

@@ -202,6 +202,24 @@ describe("tools + reasoning_effort provider constraint", () => {
     expect(channel.seenParams[0]?.tools).toHaveLength(1);
   });
 
+  it("sends an explicit 'none' even when no effort is configured", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        mcpTools: [TOOL],
+      }),
+    );
+
+    // Omitting the field falls back to the provider's reasoning default and
+    // still 400s — the constraint must always send an explicit "none".
+    expect(channel.seenParams[0]?.reasoningEffort).toBe("none");
+  });
+
   it("keeps the configured effort for models that accept the combination", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const deps: AgentDeps = { channel, recordUsage: async () => {} };
