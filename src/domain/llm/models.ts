@@ -3,6 +3,8 @@
  * OpenAI-compatible `provider/model` form that the LLM channel dispatches on.
  */
 
+import type { ChannelParams } from "./channel";
+
 /** Providers selectable for per-provider LLM channels; model ids are prefixed by these. */
 export const SUPPORTED_PROVIDERS = ["openai", "anthropic", "google", "xai"] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
@@ -27,6 +29,12 @@ export interface ModelCapabilities {
   imageInput: boolean;
   reasoning: boolean;
   imageGeneration?: boolean;
+  /**
+   * False when the provider rejects `tools` together with `reasoning_effort`
+   * on chat/completions (the provider's remedy is an explicit effort of
+   * "none"). Absent means the combination is allowed.
+   */
+  reasoningWithTools?: boolean;
 }
 
 export interface ModelConfig {
@@ -56,7 +64,13 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     provider: "openai",
     displayName: "GPT-5.6 Sol",
     pricing: { inputPer1M: 5.0, outputPer1M: 30.0, cachedInputPer1M: 0.5 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    capabilities: {
+      tools: true,
+      structuredOutput: true,
+      imageInput: true,
+      reasoning: true,
+      reasoningWithTools: false,
+    },
     contextWindow: OPENAI_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
   },
@@ -384,6 +398,25 @@ export interface CostTokens {
   outputTokens: number;
   /** Cached prompt tokens billed at the cached rate when the model has one. */
   cachedTokens?: number;
+}
+
+/**
+ * Apply provider constraints the catalog knows about: models with
+ * `reasoningWithTools: false` reject `tools` + `reasoning_effort` on
+ * chat/completions, so the effort is forced to the provider's remedy, "none".
+ */
+export function applyModelConstraints(params: ChannelParams): ChannelParams {
+  const cfg = getModelConfig(params.model);
+  if (
+    cfg?.capabilities.reasoningWithTools === false &&
+    params.tools !== undefined &&
+    params.tools.length > 0 &&
+    params.reasoningEffort !== undefined &&
+    params.reasoningEffort !== "none"
+  ) {
+    return { ...params, reasoningEffort: "none" };
+  }
+  return params;
 }
 
 const warnedUnknownModels = new Set<string>();

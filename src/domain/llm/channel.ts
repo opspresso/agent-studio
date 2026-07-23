@@ -29,7 +29,7 @@ export interface ChannelParams {
   tools?: ChannelToolDef[];
   temperature?: number;
   maxTokens?: number;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "low" | "medium" | "high" | "none";
   responseFormat?: Record<string, unknown>;
 }
 

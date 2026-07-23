@@ -20,7 +20,7 @@ import type {
   ChannelUsage,
   LlmChannel,
 } from "@/domain/llm/channel";
-import { calculateCost } from "@/domain/llm/models";
+import { applyModelConstraints, calculateCost } from "@/domain/llm/models";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -173,7 +173,7 @@ function buildChannelParams(
   if (tools && tools.length > 0) {
     params.tools = tools;
   }
-  return params;
+  return applyModelConstraints(params);
 }
 
 async function completionWithFallback(
@@ -186,7 +186,9 @@ async function completionWithFallback(
     return { completion, modelUsed: params.model };
   } catch (error) {
     if (fallbackModel && isRetryableError(error)) {
-      const completion = await channel.chatCompletion({ ...params, model: fallbackModel });
+      const completion = await channel.chatCompletion(
+        applyModelConstraints({ ...params, model: fallbackModel }),
+      );
       return { completion, modelUsed: fallbackModel };
     }
     throw error;
@@ -217,7 +219,9 @@ async function* streamWithFallback(
     }
   }
   state.model = fallbackModel;
-  for await (const chunk of channel.chatCompletionStream({ ...params, model: fallbackModel })) {
+  for await (const chunk of channel.chatCompletionStream(
+    applyModelConstraints({ ...params, model: fallbackModel }),
+  )) {
     yield chunk;
   }
 }

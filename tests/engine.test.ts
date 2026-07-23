@@ -181,6 +181,61 @@ describe("runAgent tool loop", () => {
   });
 });
 
+describe("tools + reasoning_effort provider constraint", () => {
+  const TOOL = { type: "function" as const, function: { name: "lookup", parameters: {} } };
+
+  it("forces reasoning_effort to 'none' for models that reject the combination", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        parameters: { reasoningEffort: "medium" },
+        mcpTools: [TOOL],
+      }),
+    );
+
+    expect(channel.seenParams[0]?.reasoningEffort).toBe("none");
+    expect(channel.seenParams[0]?.tools).toHaveLength(1);
+  });
+
+  it("keeps the configured effort for models that accept the combination", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5.4",
+        messages: [{ role: "user", content: "hi" }],
+        parameters: { reasoningEffort: "medium" },
+        mcpTools: [TOOL],
+      }),
+    );
+
+    expect(channel.seenParams[0]?.reasoningEffort).toBe("medium");
+  });
+
+  it("keeps the configured effort for constrained models when no tools are wired", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5.6-sol",
+        messages: [{ role: "user", content: "hi" }],
+        parameters: { reasoningEffort: "medium" },
+      }),
+    );
+
+    expect(channel.seenParams[0]?.reasoningEffort).toBe("medium");
+  });
+});
+
 describe("runAgent GenerateImage builtin", () => {
   it("generates an image, yields an image chunk, and continues the loop", async () => {
     const { FakeChannel: FC } = await import("./fakeChannel");
