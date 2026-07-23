@@ -247,3 +247,52 @@ describe("executeAgent MCP dispatch SSRF re-check", () => {
     }
   });
 });
+
+describe("executeAgent local subagent projectType dispatch", () => {
+  it("runs an image-project child through image generation, never chat/completions", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a cat"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Here you go."), usageChunk(1, 1)],
+    ]);
+    const { deps, recorded, imageModels } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) =>
+      name === "painter-img"
+        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
+        : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string, versionName: string) =>
+      projectName === "painter-img" && versionName === "published"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "painter-img",
+            model: "google/gemini-3-pro-image",
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "painter-img", type: "local" }],
+        },
+        messages: [{ role: "user", content: "고양이 그려줘" }],
+      }),
+    );
+
+    // The child's image model runs through the image channel only.
+    expect(imageModels).toEqual(["google/gemini-3-pro-image"]);
+    expect(channel.seenParams.every((p) => p.model === "gpt-test")).toBe(true);
+
+    const imageChunk = chunks.find((c) => c.image);
+    expect(imageChunk?.author).toBe("painter-img");
+    expect(imageChunk?.image?.prompt).toBe("a cat");
+    expect(chunks.some((c) => c.error)).toBe(false);
+    // Usage is billed to the child project under its image model.
+    expect(
+      recorded.some((d) => d.projectName === "painter-img" && d.model === "google/gemini-3-pro-image"),
+    ).toBe(true);
+  });
+});

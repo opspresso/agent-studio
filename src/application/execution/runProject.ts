@@ -393,6 +393,47 @@ function buildSubagentRunner(
   };
 }
 
+/** An image-project child generates one image from the transfer message. */
+async function* runImageSubagent(
+  deps: ExecutionDeps,
+  agentName: string,
+  project: Project,
+  version: Version,
+  message: string,
+  recordUsageFn: engine.RecordUsageFn,
+): AsyncGenerator<EngineChunk, string> {
+  const model = version.model;
+  if (!getModelConfig(model)?.capabilities.imageGeneration) {
+    yield {
+      author: agentName,
+      error: `Agent '${agentName}' uses a model without image generation: ${model}`,
+    };
+    return "";
+  }
+  try {
+    const result = await deps.imageChannel.generateImage({ model, prompt: message });
+    const costUsd = calculateImageCost(model, result.usage);
+    await recordUsageFn({
+      projectName: project.name,
+      model,
+      inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
+      outputTokens: result.usage.imageOutputTokens,
+      costUsd,
+    });
+    yield {
+      author: agentName,
+      image: { b64: result.b64, mimeType: result.mimeType, prompt: message },
+    };
+    return `Generated an image for: ${message}`;
+  } catch (error) {
+    yield {
+      author: agentName,
+      error: error instanceof Error ? error.message : "image generation failed",
+    };
+    return "";
+  }
+}
+
 async function* runLocalSubagent(
   deps: ExecutionDeps,
   agentName: string,
@@ -411,6 +452,12 @@ async function* runLocalSubagent(
   if (!version) {
     yield { author: agentName, error: `Agent '${agentName}' has no published version.` };
     return "";
+  }
+
+  // Dispatch on the child's projectType, like the entry points do: an image
+  // project generates an image — its model must never hit chat/completions.
+  if (project.projectType === "image") {
+    return yield* runImageSubagent(deps, agentName, project, version, message, recordUsageFn);
   }
 
   const [skills, subagents, mcp, childDeps] = await Promise.all([
