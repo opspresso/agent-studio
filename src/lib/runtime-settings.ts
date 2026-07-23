@@ -12,7 +12,7 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config } from "./config";
-import { decryptSecret } from "./secret-encryption";
+import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
 const TTL_MS = 30_000;
 

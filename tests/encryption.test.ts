@@ -9,7 +9,7 @@ import {
   isEncrypted,
   maskHeaders,
   mergeHeaderUpdate,
-} from "@/lib/secret-encryption";
+} from "@/infrastructure/crypto/secretEncryption";
 
 describe("header encryption round-trip", () => {
   it("encrypts header values and decrypts them back for outbound calls", () => {

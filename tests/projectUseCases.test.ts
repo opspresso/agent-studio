@@ -15,7 +15,7 @@ import {
   ForbiddenError,
   NotFoundError,
   ValidationError,
-} from "@/application/project/errors";
+} from "@/application/errors";
 
 const OWNER = "owner@x.com";
 const OTHER = "intruder@x.com";

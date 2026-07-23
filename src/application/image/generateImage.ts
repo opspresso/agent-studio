@@ -1,5 +1,5 @@
 import { calculateImageCost, getModelConfig } from "@/domain/llm/models";
-import { ValidationError } from "@/application/project/errors";
+import { ValidationError } from "@/application/errors";
 import { renderTemplate } from "@/application/llm/template";
 import type { ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";

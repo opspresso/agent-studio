@@ -1,11 +1,11 @@
-import { ValidationError } from "@/application/project/errors";
+import { ValidationError } from "@/application/errors";
 import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import {
   decryptSecret,
   encryptSecret,
   isMasked,
   maskSecret,
-} from "@/lib/secret-encryption";
+} from "@/infrastructure/crypto/secretEncryption";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 

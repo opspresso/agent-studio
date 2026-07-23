@@ -1,6 +1,6 @@
 import type { ZodError } from "zod";
 import type { Project } from "@/domain/project/types";
-import { statusForError } from "@/application/project/errors";
+import { statusForError } from "@/application/errors";
 
 /** 400 response for a failed zod parse. */
 export function invalidRequest(error: ZodError): Response {

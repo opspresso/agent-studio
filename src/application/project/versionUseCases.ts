@@ -1,7 +1,7 @@
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, SubagentRef, Version, VersionParameters } from "@/domain/project/types";
 import { getModelConfig } from "@/domain/llm/models";
-import { ConflictError, NotFoundError, ValidationError } from "./errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectOwner } from "./projectUseCases";
 
 export interface VersionInput {

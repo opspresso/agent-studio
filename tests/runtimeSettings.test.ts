@@ -15,7 +15,7 @@ import {
   getSlackBotToken,
   invalidateSettingsCache,
 } from "@/lib/runtime-settings";
-import { encryptSecret } from "@/lib/secret-encryption";
+import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
 const mockGet = vi.mocked(settingsRepository.get);
 

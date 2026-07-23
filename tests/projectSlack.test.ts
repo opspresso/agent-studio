@@ -4,8 +4,8 @@ import {
   resolveProjectSlackRuntime,
   updateProjectSlack,
 } from "@/application/slack/projectSlack";
-import { decryptSecret } from "@/lib/secret-encryption";
-import { ForbiddenError } from "@/application/project/errors";
+import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
+import { ForbiddenError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 

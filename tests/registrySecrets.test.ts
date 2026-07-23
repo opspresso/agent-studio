@@ -31,7 +31,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
-import { isEncrypted } from "@/lib/secret-encryption";
+import { isEncrypted } from "@/infrastructure/crypto/secretEncryption";
 
 const MASK = /^\*+$/;
 const NOW = "2026-01-01T00:00:00.000Z";

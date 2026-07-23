@@ -4,7 +4,7 @@ import type { AppSettings, LlmProviderSetting } from "@/domain/settings/types";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import { config } from "@/lib/config";
-import { encryptSecret, isMasked, maskSecret } from "@/lib/secret-encryption";
+import { encryptSecret, isMasked, maskSecret } from "@/infrastructure/crypto/secretEncryption";
 
 export type SettingKey = Exclude<keyof AppSettings, "updatedAt" | "llmProviders">;
 

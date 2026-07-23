@@ -5,7 +5,7 @@ import {
   encryptHeaders,
   maskHeaders,
   mergeHeaderUpdate,
-} from "@/lib/secret-encryption";
+} from "@/infrastructure/crypto/secretEncryption";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { listMcpTools, type ListToolsResult } from "./mcpClient";
 

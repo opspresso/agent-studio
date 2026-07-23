@@ -1,6 +1,6 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectType } from "@/domain/project/types";
-import { ConflictError, ForbiddenError, NotFoundError } from "./errors";
+import { ConflictError, ForbiddenError, NotFoundError } from "@/application/errors";
 
 export interface CreateProjectInput {
   name: string;

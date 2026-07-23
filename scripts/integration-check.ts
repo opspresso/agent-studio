@@ -29,7 +29,7 @@ async function main() {
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
   const { executionDeps } = await import("@/lib/container");
   const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
-  const { encryptHeaders, decryptHeadersForOutbound } = await import("@/lib/secret-encryption");
+  const { encryptHeaders, decryptHeadersForOutbound } = await import("@/infrastructure/crypto/secretEncryption");
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);

@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { config } from "./config";
+import { config } from "@/lib/config";
 
 const PREFIX = "enc:v1:";
 // Stored layout after the prefix: base64(iv(12) + tag(16) + ciphertext).

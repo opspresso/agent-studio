@@ -7,7 +7,7 @@ import {
   encryptHeaders,
   maskHeaders,
   mergeHeaderUpdate,
-} from "@/lib/secret-encryption";
+} from "@/infrastructure/crypto/secretEncryption";
 import { sendAgentMessage, type SendMessageResult } from "./agentClient";
 
 export interface CreateAgentInput {

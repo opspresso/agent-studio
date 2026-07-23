@@ -5,7 +5,7 @@ import { createSettingsUseCases } from "@/application/settings/settingsUseCases"
 import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
-import { decryptSecret, encryptSecret, isEncrypted } from "@/lib/secret-encryption";
+import { decryptSecret, encryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
 
 const ADMIN = "admin@example.com";
 
