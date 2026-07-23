@@ -25,3 +25,6 @@ coverage/
 # logs
 npm-debug.log*
 pnpm-debug.log*
+
+# prompt files
+*.prompt.md
