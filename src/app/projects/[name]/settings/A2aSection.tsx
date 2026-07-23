@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { getProjectA2a } from "../../lib/api";
 import type { ProjectA2aView } from "../../lib/api";
 
 export function A2aSection({ projectName }: { projectName: string }) {
   const [view, setView] = useState<ProjectA2aView | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -21,14 +21,6 @@ export function A2aSection({ projectName }: { projectName: string }) {
 
   if (!view) {
     return error ? <p className="text-sm text-red-600">{error}</p> : null;
-  }
-
-  async function copyCardUrl() {
-    if (!view?.cardUrl) {
-      return;
-    }
-    await navigator.clipboard.writeText(view.cardUrl);
-    setStatus("Copied");
   }
 
   const ready = view.enabled && view.published;
@@ -63,22 +55,8 @@ export function A2aSection({ projectName }: { projectName: string }) {
         <p className="text-sm text-neutral-500">Publish a version to expose this project over A2A.</p>
       )}
 
-      {view.cardUrl && (
-        <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded bg-neutral-50 px-2 py-1.5 font-mono text-xs dark:bg-neutral-900">
-            {view.cardUrl}
-          </code>
-          <button
-            type="button"
-            onClick={copyCardUrl}
-            className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-          >
-            Copy
-          </button>
-        </div>
-      )}
+      {view.cardUrl && <CopyableUrl url={view.cardUrl} />}
 
-      {status && <p className="text-sm text-emerald-600 dark:text-emerald-400">{status}</p>}
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
     </section>
   );

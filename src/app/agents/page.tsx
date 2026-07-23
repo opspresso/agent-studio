@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { toSlug } from "@/lib/slug";
 import {
   createAgent,
@@ -114,20 +115,8 @@ export default function AgentsPage() {
                 </div>
                 <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{project.description}</p>
                 {a2aProjects.enabled && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <code
-                      className="min-w-0 flex-1 truncate rounded bg-neutral-50 px-2 py-1 font-mono text-xs text-neutral-400 dark:bg-neutral-950"
-                      title={project.cardUrl}
-                    >
-                      {project.cardUrl}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => navigator.clipboard.writeText(project.cardUrl)}
-                      className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-                    >
-                      Copy
-                    </button>
+                  <div className="mt-2">
+                    <CopyableUrl url={project.cardUrl} />
                   </div>
                 )}
               </li>

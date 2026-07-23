@@ -6,14 +6,13 @@
 
 import type { AgentCard } from "@a2a-js/sdk";
 import type { Project, Version } from "@/domain/project/types";
-import { getPublicBaseUrl } from "@/lib/runtime-settings";
+import { buildPublicUrl } from "@/lib/public-url";
 
 /** Spec version implemented by @a2a-js/sdk 0.3.x. */
 const A2A_PROTOCOL_VERSION = "0.3.0";
 
 export async function buildProjectA2aRpcUrl(projectName: string): Promise<string> {
-  const base = ((await getPublicBaseUrl()) ?? "http://localhost:3000").replace(/\/+$/, "");
-  return `${base}/api/a2a/${encodeURIComponent(projectName)}`;
+  return buildPublicUrl(`/api/a2a/${encodeURIComponent(projectName)}`);
 }
 
 export async function buildProjectAgentCardUrl(projectName: string): Promise<string> {
