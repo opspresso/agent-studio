@@ -176,3 +176,21 @@ describe("executeAgent GenerateImage opt-in", () => {
     expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
   });
 });
+
+describe("executeAgent PII filtering", () => {
+  it("passes the version toggle to the engine", async () => {
+    const channel = new FakeChannel([[contentChunk("Contact the masked value."), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: versionFixture({ piiFiltering: true }),
+        messages: [{ role: "user", content: "email@example.com or 010-1234-5678" }],
+      }),
+    );
+
+    const sent = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(sent).not.toContain("email@example.com");
+    expect(sent).not.toContain("010-1234-5678");
+  });
+});

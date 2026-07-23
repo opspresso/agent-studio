@@ -60,6 +60,7 @@ export interface EngineParameters {
   temperature?: number;
   maxTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
+  piiFiltering?: boolean;
   /** JSON schema for structured output; when present, response_format is set. */
   jsonSchema?: Record<string, unknown>;
   structuredOutput?: boolean;

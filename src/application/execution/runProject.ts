@@ -69,6 +69,7 @@ function toEngineParameters(version: Version): EngineParameters {
   if (p.reasoningEffort !== undefined) {
     params.reasoningEffort = p.reasoningEffort;
   }
+  params.piiFiltering = p.piiFiltering;
   if (p.structuredOutput !== undefined) {
     params.structuredOutput = p.structuredOutput;
   }

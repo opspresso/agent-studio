@@ -28,6 +28,7 @@ import type {
   RunResult,
   UsageInfo,
 } from "@/domain/llm/types";
+import { PiiFilter } from "./pii";
 import { renderTemplate } from "./template";
 
 export const SKILL_TOOL_NAME = "Skill";
@@ -242,7 +243,111 @@ async function recordUsageIfPossible(
 // Single-shot generation
 // ---------------------------------------------------------------------------
 
-function buildPromptMessages(input: RunPromptInput): ChannelMessage[] {
+function maskValues(filter: PiiFilter, value: unknown): unknown {
+  if (typeof value === "string") {
+    return filter.mask(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => maskValues(filter, item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, maskValues(filter, item)]),
+    );
+  }
+  return value;
+}
+
+function maskMessage(filter: PiiFilter, message: ChannelMessage): ChannelMessage {
+  return maskValues(filter, message) as ChannelMessage;
+}
+
+function restoreValues(filter: PiiFilter, value: unknown): unknown {
+  if (typeof value === "string") {
+    return filter.restore(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => restoreValues(filter, item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, restoreValues(filter, item)]),
+    );
+  }
+  return value;
+}
+
+async function* runSubagentWithPii(
+  filter: PiiFilter,
+  runSubagent: NonNullable<AgentDeps["runSubagent"]>,
+  agentName: string,
+  message: string,
+  turn: number,
+  maxTurn: number,
+): AsyncGenerator<EngineChunk, string> {
+  const source = runSubagent(agentName, message, turn, maxTurn);
+  const contentRestorer = filter.createStreamRestorer();
+  const reasoningRestorer = filter.createStreamRestorer();
+  let author: string | undefined;
+
+  while (true) {
+    const step = await source.next();
+    if (step.done) {
+      const content = contentRestorer.flush();
+      if (content) {
+        yield { author, delta: { content } };
+      }
+      const reasoningContent = reasoningRestorer.flush();
+      if (reasoningContent) {
+        yield { author, delta: { reasoningContent } };
+      }
+      return step.value;
+    }
+
+    const chunk = step.value;
+    author = chunk.author ?? author;
+    if (chunk.error) {
+      const content = contentRestorer.flush();
+      if (content) {
+        yield { author, delta: { content } };
+      }
+      const reasoningContent = reasoningRestorer.flush();
+      if (reasoningContent) {
+        yield { author, delta: { reasoningContent } };
+      }
+    }
+
+    const restored = restoreValues(filter, chunk) as EngineChunk;
+    if (chunk.delta?.content) {
+      const content = contentRestorer.push(chunk.delta.content);
+      restored.delta = { ...restored.delta, content };
+    }
+    if (chunk.delta?.reasoningContent) {
+      const reasoningContent = reasoningRestorer.push(chunk.delta.reasoningContent);
+      restored.delta = { ...restored.delta, reasoningContent };
+    }
+    if (
+      restored.delta &&
+      !restored.delta.content &&
+      !restored.delta.reasoningContent &&
+      !restored.delta.toolCalls
+    ) {
+      delete restored.delta;
+    }
+    if (
+      restored.delta ||
+      restored.image ||
+      restored.toolResult ||
+      restored.usage ||
+      restored.error ||
+      restored.done
+    ) {
+      yield restored;
+    }
+  }
+}
+
+function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): ChannelMessage[] {
   const messages: ChannelMessage[] = [];
   if (input.systemPrompt) {
     messages.push({ role: "system", content: input.systemPrompt });
@@ -254,11 +359,12 @@ function buildPromptMessages(input: RunPromptInput): ChannelMessage[] {
   if (input.extraMessages && input.extraMessages.length > 0) {
     messages.push(...(input.extraMessages as ChannelMessage[]));
   }
-  return messages;
+  return filter ? messages.map((message) => maskMessage(filter, message)) : messages;
 }
 
 export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promise<RunResult> {
-  const messages = buildPromptMessages(input);
+  const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
+  const messages = buildPromptMessages(input, filter);
   const params = buildChannelParams(input.model, messages, input.parameters);
   const { completion, modelUsed } = await completionWithFallback(
     deps.channel,
@@ -266,13 +372,15 @@ export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promis
     input.fallbackModel,
   );
   const choice = completion.choices[0];
-  const content = choice?.message.content ?? "";
+  const content = filter?.restore(choice?.message.content ?? "") ?? choice?.message.content ?? "";
   const usage = toUsageInfo(modelUsed, completion.usage);
   await recordUsageIfPossible(deps, input.projectName, modelUsed, usage);
 
   const result: RunResult = { content, model: modelUsed, usage };
   if (choice?.message.tool_calls && choice.message.tool_calls.length > 0) {
-    result.toolCalls = choice.message.tool_calls;
+    result.toolCalls = filter
+      ? (restoreValues(filter, choice.message.tool_calls) as unknown[])
+      : choice.message.tool_calls;
   }
   return result;
 }
@@ -281,10 +389,13 @@ export async function* runPromptStream(
   deps: EngineDeps,
   input: RunPromptInput,
 ): AsyncGenerator<EngineChunk> {
-  const messages = buildPromptMessages(input);
+  const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
+  const messages = buildPromptMessages(input, filter);
   const params = buildChannelParams(input.model, messages, input.parameters);
   const state = { model: input.model };
   let usage: ChannelUsage | null = null;
+  const contentRestorer = filter?.createStreamRestorer();
+  const reasoningRestorer = filter?.createStreamRestorer();
 
   try {
     for await (const chunk of streamWithFallback(deps.channel, params, input.fallbackModel, state)) {
@@ -296,14 +407,38 @@ export async function* runPromptStream(
         continue;
       }
       if (delta.content) {
-        yield { delta: { content: delta.content } };
+        const content = contentRestorer?.push(delta.content) ?? delta.content;
+        if (content) {
+          yield { delta: { content } };
+        }
       } else if (delta.reasoning_content) {
-        yield { delta: { reasoningContent: delta.reasoning_content } };
+        const reasoningContent =
+          reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
+        if (reasoningContent) {
+          yield { delta: { reasoningContent } };
+        }
       }
     }
   } catch (error) {
+    const remainingContent = contentRestorer?.flush();
+    if (remainingContent) {
+      yield { delta: { content: remainingContent } };
+    }
+    const remainingReasoning = reasoningRestorer?.flush();
+    if (remainingReasoning) {
+      yield { delta: { reasoningContent: remainingReasoning } };
+    }
     yield { error: errorMessage(error) };
     return;
+  }
+
+  const remainingContent = contentRestorer?.flush();
+  if (remainingContent) {
+    yield { delta: { content: remainingContent } };
+  }
+  const remainingReasoning = reasoningRestorer?.flush();
+  if (remainingReasoning) {
+    yield { delta: { reasoningContent: remainingReasoning } };
   }
 
   const usageInfo = toUsageInfo(state.model, usage);
@@ -593,12 +728,20 @@ export async function* runAgent(
     input.mcpServers ?? [],
   );
   const tools = buildAgentTools(input.mcpTools, skills, subagents, Boolean(deps.generateImage));
+  const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
 
   const messages: ChannelMessage[] = [];
   if (systemPrompt) {
-    messages.push({ role: "system", content: systemPrompt });
+    messages.push({
+      role: "system",
+      content: filter?.mask(systemPrompt) ?? systemPrompt,
+    });
   }
-  messages.push(...(input.messages as ChannelMessage[]));
+  messages.push(
+    ...(filter
+      ? (input.messages as ChannelMessage[]).map((message) => maskMessage(filter, message))
+      : (input.messages as ChannelMessage[])),
+  );
 
   let turn = input.startTurn ?? 0;
   while (true) {
@@ -612,6 +755,8 @@ export async function* runAgent(
     let reasoningText = "";
     let usage: ChannelUsage | null = null;
     const accumulator = new ToolCallAccumulator();
+    const contentRestorer = filter?.createStreamRestorer();
+    const reasoningRestorer = filter?.createStreamRestorer();
 
     try {
       for await (const chunk of streamWithFallback(
@@ -629,10 +774,17 @@ export async function* runAgent(
         }
         if (delta.content) {
           assistantText += delta.content;
-          yield { author, delta: { content: delta.content } };
+          const content = contentRestorer?.push(delta.content) ?? delta.content;
+          if (content) {
+            yield { author, delta: { content } };
+          }
         } else if (delta.reasoning_content) {
           reasoningText += delta.reasoning_content;
-          yield { author, delta: { reasoningContent: delta.reasoning_content } };
+          const reasoningContent =
+            reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
+          if (reasoningContent) {
+            yield { author, delta: { reasoningContent } };
+          }
         } else if (delta.tool_calls) {
           for (const toolCall of delta.tool_calls) {
             accumulator.add(toolCall);
@@ -640,8 +792,25 @@ export async function* runAgent(
         }
       }
     } catch (error) {
+      const remainingContent = contentRestorer?.flush();
+      if (remainingContent) {
+        yield { author, delta: { content: remainingContent } };
+      }
+      const remainingReasoning = reasoningRestorer?.flush();
+      if (remainingReasoning) {
+        yield { author, delta: { reasoningContent: remainingReasoning } };
+      }
       yield { author, error: errorMessage(error) };
       return;
+    }
+
+    const remainingContent = contentRestorer?.flush();
+    if (remainingContent) {
+      yield { author, delta: { content: remainingContent } };
+    }
+    const remainingReasoning = reasoningRestorer?.flush();
+    if (remainingReasoning) {
+      yield { author, delta: { reasoningContent: remainingReasoning } };
     }
 
     const usageInfo = toUsageInfo(state.model, usage);
@@ -664,7 +833,10 @@ export async function* runAgent(
       const args = parseToolArguments(call.arguments);
       const wireItem = toWireToolCall(call.id, call.name, args);
       wireToolCalls.push(wireItem);
-      yield { author, delta: { toolCalls: [wireItem] } };
+      const displayArgs = filter
+        ? (restoreValues(filter, args) as Record<string, unknown>)
+        : args;
+      yield { author, delta: { toolCalls: [toWireToolCall(call.id, call.name, displayArgs)] } };
 
       if (hasSubagents && call.name === TRANSFER_TOOL_NAME) {
         // Child runs at turn+1 and the parent resumes at turn+2, so two turns
@@ -685,7 +857,16 @@ export async function* runAgent(
         }
         // Pass ONLY the model-written message (no parent history). The child's
         // final text returns as a "For context" user message.
-        const childText = yield* deps.runSubagent(agentName, message, turn + 1, maxTurn);
+        const childText = filter
+          ? yield* runSubagentWithPii(
+              filter,
+              deps.runSubagent,
+              agentName,
+              message,
+              turn + 1,
+              maxTurn,
+            )
+          : yield* deps.runSubagent(agentName, message, turn + 1, maxTurn);
         toolMessages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -693,16 +874,18 @@ export async function* runAgent(
         });
         postContextMessages.push({
           role: "user",
-          content: subagentContextMessage(agentName, childText),
+          content:
+            filter?.mask(subagentContextMessage(agentName, childText)) ??
+            subagentContextMessage(agentName, childText),
         });
         nextTurn = Math.max(nextTurn, turn + 2);
         continue;
       }
 
       if (call.name === IMAGE_TOOL_NAME && deps.generateImage) {
-        const prompt = typeof args.prompt === "string" ? args.prompt : "";
-        const size = typeof args.size === "string" ? args.size : undefined;
-        const quality = typeof args.quality === "string" ? args.quality : undefined;
+        const prompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
+        const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
+        const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
         let resultText: string;
         if (!prompt.trim()) {
           resultText = "Error: GenerateImage requires a prompt.";
@@ -724,19 +907,28 @@ export async function* runAgent(
       let content: string;
       let resultName = call.name;
       if (call.name === SKILL_TOOL_NAME && deps.loadSkillContent) {
-        const skillName = typeof args.skill_name === "string" ? args.skill_name : "";
-        const filePath = typeof args.file_path === "string" ? args.file_path : undefined;
+        const skillName = typeof displayArgs.skill_name === "string" ? displayArgs.skill_name : "";
+        const filePath =
+          typeof displayArgs.file_path === "string" ? displayArgs.file_path : undefined;
         content = await loadSkillSafe(deps.loadSkillContent, skills, skillName, filePath);
         if (skillName) {
           resultName = `${SKILL_TOOL_NAME}: ${skillName}`;
         }
       } else if (deps.callMcpTool) {
-        content = await deps.callMcpTool(call.name, args);
+        content = await deps.callMcpTool(call.name, displayArgs);
       } else {
         content = `Error: Tool '${call.name}' cannot be executed in this context.`;
       }
-      yield { author, toolResult: { toolCallId: call.id, name: resultName, content } };
-      toolMessages.push({ role: "tool", tool_call_id: call.id, content });
+      const maskedContent = filter?.mask(content) ?? content;
+      yield {
+        author,
+        toolResult: {
+          toolCallId: call.id,
+          name: resultName,
+          content: filter?.restore(maskedContent) ?? content,
+        },
+      };
+      toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedContent });
     }
 
     const assistantMessage: ChannelMessage = {
