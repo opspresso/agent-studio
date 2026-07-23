@@ -1,8 +1,6 @@
-import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
-import { getDocumentClient, getTableName } from "../client";
-import { queryAll } from "../query";
+import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
 
 const ENTITY_TYPE = "MCP" as const;
@@ -33,33 +31,9 @@ function toItem(server: McpServer): Record<string, unknown> {
   };
 }
 
-export const mcpRepository: McpRepository = {
-  async get(name) {
-    const res = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.mcp(name) }),
-    );
-    return res.Item ? fromItem(res.Item) : null;
-  },
-
-  async list() {
-    const items = await queryAll({
-      TableName: getTableName(),
-      IndexName: "GSI1",
-      KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.typePartition(ENTITY_TYPE) },
-    });
-    return items.map(fromItem);
-  },
-
-  async put(server) {
-    await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toItem(server) }),
-    );
-  },
-
-  async delete(name) {
-    await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.mcp(name) }),
-    );
-  },
-};
+export const mcpRepository: McpRepository = createKeyedRepository<McpServer>({
+  entityType: ENTITY_TYPE,
+  key: keys.mcp,
+  toItem,
+  fromItem,
+});

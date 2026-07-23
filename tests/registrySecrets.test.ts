@@ -17,10 +17,10 @@ vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
 });
 
 const listMcpToolsMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, tools: [] })));
-vi.mock("@/application/mcp/mcpClient", () => ({ listMcpTools: listMcpToolsMock }));
+vi.mock("@/infrastructure/mcp/mcpClient", () => ({ listMcpTools: listMcpToolsMock }));
 
 const sendAgentMessageMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, text: "hi" })));
-vi.mock("@/application/agent/agentClient", () => ({ sendAgentMessage: sendAgentMessageMock }));
+vi.mock("@/infrastructure/agent/agentClient", () => ({ sendAgentMessage: sendAgentMessageMock }));
 
 const sendA2aMessageMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, text: "hi" })));
 vi.mock("@/infrastructure/a2a/client", () => ({ sendA2aMessage: sendA2aMessageMock }));
@@ -31,6 +31,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
+import { NotFoundError } from "@/application/errors";
 import { isEncrypted } from "@/infrastructure/crypto/secretEncryption";
 
 const MASK = /^\*+$/;
@@ -193,8 +194,8 @@ describe("external agent registry secret contract", () => {
     expect(sendA2aMessageMock).not.toHaveBeenCalled();
   });
 
-  it("returns null for a missing agent", async () => {
+  it("rejects a missing agent with NotFoundError (404)", async () => {
     const useCases = createAgentUseCases(makeAgentRepo().repo);
-    expect(await useCases.sendMessage("nope", "hello")).toBeNull();
+    await expect(useCases.sendMessage("nope", "hello")).rejects.toBeInstanceOf(NotFoundError);
   });
 });

@@ -1,8 +1,6 @@
-import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
-import { getDocumentClient, getTableName } from "../client";
-import { queryAll } from "../query";
+import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
 
 const ENTITY_TYPE = "AGENT" as const;
@@ -35,33 +33,9 @@ function toItem(agent: ExternalAgent): Record<string, unknown> {
   };
 }
 
-export const externalAgentRepository: ExternalAgentRepository = {
-  async get(name) {
-    const res = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.externalAgent(name) }),
-    );
-    return res.Item ? fromItem(res.Item) : null;
-  },
-
-  async list() {
-    const items = await queryAll({
-      TableName: getTableName(),
-      IndexName: "GSI1",
-      KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.typePartition(ENTITY_TYPE) },
-    });
-    return items.map(fromItem);
-  },
-
-  async put(agent) {
-    await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toItem(agent) }),
-    );
-  },
-
-  async delete(name) {
-    await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.externalAgent(name) }),
-    );
-  },
-};
+export const externalAgentRepository: ExternalAgentRepository = createKeyedRepository<ExternalAgent>({
+  entityType: ENTITY_TYPE,
+  key: keys.externalAgent,
+  toItem,
+  fromItem,
+});

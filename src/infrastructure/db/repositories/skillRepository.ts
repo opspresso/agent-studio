@@ -1,8 +1,6 @@
-import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { Skill } from "@/domain/skill/types";
-import { getDocumentClient, getTableName } from "../client";
-import { queryAll } from "../query";
+import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
 
 const ENTITY_TYPE = "SKILL" as const;
@@ -33,33 +31,9 @@ function toItem(skill: Skill): Record<string, unknown> {
   };
 }
 
-export const skillRepository: SkillRepository = {
-  async get(name) {
-    const res = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.skill(name) }),
-    );
-    return res.Item ? fromItem(res.Item) : null;
-  },
-
-  async list() {
-    const items = await queryAll({
-      TableName: getTableName(),
-      IndexName: "GSI1",
-      KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.typePartition(ENTITY_TYPE) },
-    });
-    return items.map(fromItem);
-  },
-
-  async put(skill) {
-    await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toItem(skill) }),
-    );
-  },
-
-  async delete(name) {
-    await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.skill(name) }),
-    );
-  },
-};
+export const skillRepository: SkillRepository = createKeyedRepository<Skill>({
+  entityType: ENTITY_TYPE,
+  key: keys.skill,
+  toItem,
+  fromItem,
+});

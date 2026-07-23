@@ -1,5 +1,11 @@
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
+import { NotFoundError } from "@/application/errors";
+import {
+  assertAllowedUrl,
+  createRegistryUseCases,
+  type RegistryUseCases,
+} from "@/application/registry/registryUseCases";
 import {
   decryptHeadersForOutbound,
   encryptHeaders,
@@ -7,7 +13,7 @@ import {
   mergeHeaderUpdate,
 } from "@/infrastructure/crypto/secretEncryption";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
-import { listMcpTools, type ListToolsResult } from "./mcpClient";
+import { listMcpTools, type ListToolsResult } from "@/infrastructure/mcp/mcpClient";
 
 export interface CreateMcpInput {
   name: string;
@@ -22,17 +28,9 @@ export interface UpdateMcpInput {
   headers?: Record<string, string>;
 }
 
-export interface McpUseCases {
-  list(): Promise<McpServer[]>;
-  get(name: string): Promise<McpServer | null>;
-  /** Returns the created server (headers masked), or `null` if the name already exists. */
-  create(input: CreateMcpInput): Promise<McpServer | null>;
-  /** Returns the updated server (headers masked), or `null` if none exists. */
-  update(name: string, patch: UpdateMcpInput): Promise<McpServer | null>;
-  /** Returns `true` when a server was deleted, `false` when none existed. */
-  remove(name: string): Promise<boolean>;
-  /** Connects to the server with decrypted headers. `null` when the server does not exist. */
-  testConnection(name: string): Promise<ListToolsResult | null>;
+export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput> {
+  /** Connects with decrypted headers. Throws {@link NotFoundError} when the server does not exist. */
+  testConnection(name: string): Promise<ListToolsResult>;
 }
 
 /** Client-safe projection: encrypted header values are replaced with a mask. */
@@ -41,34 +39,13 @@ function masked(server: McpServer): McpServer {
 }
 
 export function createMcpUseCases(repo: McpRepository): McpUseCases {
-  async function resolveForDispatch(
-    name: string,
-  ): Promise<{ url: string; headers: Record<string, string> } | null> {
-    const existing = await repo.get(name);
-    if (!existing) {
-      return null;
-    }
-    return { url: existing.url, headers: decryptHeadersForOutbound(existing.headers) };
-  }
-
-  return {
-    async list() {
-      return (await repo.list()).map(masked);
-    },
-
-    async get(name) {
-      const existing = await repo.get(name);
-      return existing ? masked(existing) : null;
-    },
-
-    async create(input) {
-      await assertPublicUrl(input.url);
-      const existing = await repo.get(input.name);
-      if (existing) {
-        return null;
-      }
-      const now = new Date().toISOString();
-      const server: McpServer = {
+  const registry = createRegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput>({
+    label: "MCP server",
+    repo,
+    view: masked,
+    async build(input, now) {
+      await assertAllowedUrl(input.url);
+      return {
         name: input.name,
         url: input.url,
         description: input.description,
@@ -76,53 +53,38 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
         createdAt: now,
         updatedAt: now,
       };
-      await repo.put(server);
-      return masked(server);
     },
-
-    async update(name, patch) {
-      const existing = await repo.get(name);
-      if (!existing) {
-        return null;
-      }
+    async apply(existing, patch, now) {
       if (patch.url !== undefined) {
-        await assertPublicUrl(patch.url);
+        await assertAllowedUrl(patch.url);
       }
-      const headers =
-        patch.headers !== undefined
-          ? mergeHeaderUpdate(existing.headers, patch.headers)
-          : existing.headers;
-      const updated: McpServer = {
+      return {
         ...existing,
         url: patch.url ?? existing.url,
         description: patch.description ?? existing.description,
-        headers,
-        updatedAt: new Date().toISOString(),
+        headers:
+          patch.headers !== undefined
+            ? mergeHeaderUpdate(existing.headers, patch.headers)
+            : existing.headers,
+        updatedAt: now,
       };
-      await repo.put(updated);
-      return masked(updated);
     },
+  });
 
-    async remove(name) {
-      const existing = await repo.get(name);
-      if (!existing) {
-        return false;
-      }
-      await repo.delete(name);
-      return true;
-    },
+  return {
+    ...registry,
 
     async testConnection(name) {
-      const config = await resolveForDispatch(name);
-      if (!config) {
-        return null;
+      const existing = await repo.get(name);
+      if (!existing) {
+        throw new NotFoundError(`MCP server not found: ${name}`);
       }
       try {
-        await assertPublicUrl(config.url);
+        await assertPublicUrl(existing.url);
       } catch (error) {
         return { ok: false, error: error instanceof SsrfError ? error.message : "Blocked URL" };
       }
-      return listMcpTools(config.url, config.headers);
+      return listMcpTools(existing.url, decryptHeadersForOutbound(existing.headers));
     },
   };
 }

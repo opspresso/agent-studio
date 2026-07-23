@@ -2,7 +2,7 @@ import { externalAgentRepository } from "@/infrastructure/db/repositories/extern
 import { createAgentUseCases } from "./agentUseCases";
 
 export * from "./agentUseCases";
-export type { SendMessageResult } from "./agentClient";
+export type { SendMessageResult } from "@/infrastructure/agent/agentClient";
 
 /** Composition point for the external-agent slice. Route handlers import this instance. */
 export const agentUseCases = createAgentUseCases(externalAgentRepository);
