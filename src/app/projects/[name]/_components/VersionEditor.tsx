@@ -173,9 +173,24 @@ export function VersionEditor({
           placeholder="Summarize: {{input}}"
           className={`${inputClass} font-mono`}
         />
-        <span className="mt-1 block text-xs text-neutral-400">
-          Use {"{{variable}}"} placeholders rendered server-side at run time.
-        </span>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span className="text-xs text-neutral-400">
+            Use {"{{variable}}"} placeholders rendered server-side at run time.
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              patch({
+                userPromptTemplate: value.userPromptTemplate
+                  ? `${value.userPromptTemplate}{{input}}`
+                  : "{{input}}",
+              })
+            }
+            className="shrink-0 rounded bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            + {"{{input}}"}
+          </button>
+        </div>
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
