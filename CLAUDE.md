@@ -107,6 +107,10 @@ registries are shared: reads are open to any signed-in user; mutations go throug
 - **Secrets**: stored headers/tokens are AES-256-GCM encrypted (`enc:v1:` prefix), masked
   (length-preserving asterisks) on read, decrypted only at dispatch (`src/lib/secret-encryption.ts`). A masked
   or empty value on update preserves the stored secret.
+- **PII filtering**: opt-in per version (`parameters.piiFiltering`) — emails/phone numbers
+  are regex-masked with reversible format-preserving tokens before every LLM dispatch and
+  restored in responses, including streaming and subagent transfers
+  (`src/application/llm/pii.ts`). Best-effort (regex; emails + phones only).
 - **SSRF guard**: operator-registered MCP/agent URLs are validated by
   `src/infrastructure/net/ssrfGuard.ts` (reject non-http(s) and private/loopback/link-local/
   metadata addresses) at both registration and dispatch.

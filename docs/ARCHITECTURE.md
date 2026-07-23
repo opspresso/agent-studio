@@ -101,6 +101,13 @@ Conventions:
   - stream chunks carry optional top-level `author` when subagents are wired
 - Fallback: on 429/5xx from the primary model **before the first chunk**, retry once with
   `fallbackModel`; a mid-stream failure yields an `{error}` chunk and does not retry.
+- PII filtering: when `parameters.piiFiltering` is true, emails and phone numbers in
+  outbound messages/variables are regex-masked with reversible format-preserving
+  `[[PII:…]]` tokens before dispatch (`src/application/llm/pii.ts`); originals are
+  restored in responses — streaming included (token-boundary buffering) — and the mapping
+  carries across subagent transfers, while tool args/results re-entering engine context
+  stay masked. Best-effort (regex; emails + phones only). Off = byte-identical to the
+  unfiltered path.
 - Cost: `recordUsage` computes cost from the model registry pricing and atomically ADDs
   into the daily usage row. Single-shot runs record per call; agent runs buffer per-turn
   usage in `createUsageAggregator` and flush once at run end.

@@ -99,6 +99,15 @@ pnpm build          # production build
 builtin `GenerateImage` tool. Generated images are uploaded to a public-read S3
 bucket when `S3_BUCKET_NAME` is set; unset disables persistence.
 
+## PII Filtering
+
+Versions can opt in via the `piiFiltering` parameter. When enabled, emails and
+phone numbers in prompts and variables are replaced with format-preserving
+placeholder tokens before any LLM call, and the original values are restored in
+the response (streaming included) — the model never sees the real values.
+Detection is regex-based (emails and phone numbers only), so treat it as
+best-effort masking, not a guarantee.
+
 ## Skills Repository
 
 Skills can sync from a GitHub repository (`SKILLS_REPO=owner/repo`,
