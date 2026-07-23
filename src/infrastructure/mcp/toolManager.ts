@@ -4,12 +4,15 @@
  * dependency. Behaviours:
  *   - tool-name collision aliasing (`name_1`, `name_2`) with a reverse mapping,
  *   - builtin reserved names are seeded so only MCP tools get suffixed,
- *   - results capped at 100,000 chars; multi-block results JSON-stringified.
+ *   - results capped at 100,000 chars; multi-block results JSON-stringified,
+ *   - every request aborts after 120s so a hung server degrades to a tool error
+ *     instead of stalling the whole agent run.
  */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
+const MCP_REQUEST_TIMEOUT_MS = 120_000;
 const PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpServerConfig {
@@ -72,6 +75,7 @@ class McpSession {
           clientInfo: { name: "agent-studio", version: "0.1.0" },
         },
       }),
+      signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
     });
     const sessionId = response.headers.get("Mcp-Session-Id");
     if (sessionId) {
@@ -84,6 +88,7 @@ class McpSession {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+      signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
     });
     this.initialized = true;
   }
@@ -94,6 +99,7 @@ class McpSession {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),
+      signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
     });
     const message = await parseJsonRpc(response);
     if (message?.error) {

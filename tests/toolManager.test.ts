@@ -36,6 +36,7 @@ interface RecordedCall {
   url: string;
   method: string;
   params?: Record<string, unknown>;
+  hasSignal: boolean;
 }
 
 function framedResponse(payload: RpcEnvelope, script: ServerScript): Response {
@@ -68,7 +69,12 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       id?: number;
       params?: Record<string, unknown>;
     };
-    calls.push({ url, method: body.method, params: body.params });
+    calls.push({
+      url,
+      method: body.method,
+      params: body.params,
+      hasSignal: init?.signal instanceof AbortSignal,
+    });
 
     if (body.method === "notifications/initialized") {
       return new Response("", { status: 202 });
@@ -260,6 +266,46 @@ describe("ToolManager per-server error isolation", () => {
     await manager.init();
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
+  });
+});
+
+describe("ToolManager request timeout", () => {
+  it("passes an abort signal on every MCP request", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    await manager.callTool("search", {});
+
+    // initialize, notifications/initialized, tools/list, tools/call
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+    expect(calls.every((c) => c.hasSignal)).toBe(true);
+  });
+
+  it("degrades a timed-out tool call to a tool error message", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
+      if (body.method === "notifications/initialized") {
+        return new Response("", { status: 202 });
+      }
+      if (body.method === "tools/call") {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      }
+      const result =
+        body.method === "tools/list"
+          ? { tools: [{ name: "slow" }] }
+          : { protocolVersion: "2025-06-18", capabilities: {} };
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new ToolManager([server("slow", "https://slow.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("slow", {});
+    expect(result).toBe("Tool call failed with error. The operation was aborted due to timeout");
   });
 });
 
