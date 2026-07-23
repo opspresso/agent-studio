@@ -27,6 +27,8 @@ export interface VersionParameters {
   piiFiltering: boolean;
   structuredOutput?: boolean;
   jsonSchema?: Record<string, unknown>;
+  imageGeneration?: boolean;
+  imageModel?: string;
 }
 
 export interface SubagentRef {

@@ -1,6 +1,7 @@
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, SubagentRef, Version, VersionParameters } from "@/domain/project/types";
-import { ConflictError, NotFoundError } from "./errors";
+import { getModelConfig } from "@/domain/llm/models";
+import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { assertProjectOwner } from "./projectUseCases";
 
 export interface VersionInput {
@@ -21,6 +22,13 @@ export interface CreateVersionInput extends VersionInput {
 }
 
 export type UpdateVersionInput = Partial<VersionInput>;
+
+/** Reject an imageModel that is unknown or lacks the imageGeneration capability. */
+function assertValidImageModel(parameters: VersionParameters): void {
+  if (parameters.imageModel && !getModelConfig(parameters.imageModel)?.capabilities.imageGeneration) {
+    throw new ValidationError(`Model does not support image generation: ${parameters.imageModel}`);
+  }
+}
 
 function nextVersionName(existing: Version[]): string {
   const maxNumeric = existing.reduce((max, version) => {
@@ -54,6 +62,7 @@ export async function createVersion(
   userEmail: string,
 ): Promise<Version> {
   await assertProjectOwner(projects, projectName, userEmail);
+  assertValidImageModel(input.parameters);
   const existing = await versions.list(projectName);
 
   const versionName = input.versionName ?? nextVersionName(existing);
@@ -88,6 +97,9 @@ export async function updateVersion(
   userEmail: string,
 ): Promise<Version> {
   await assertProjectOwner(projects, projectName, userEmail);
+  if (input.parameters) {
+    assertValidImageModel(input.parameters);
+  }
   const existing = await getVersion(versions, projectName, versionName);
   const updated: Version = {
     ...existing,

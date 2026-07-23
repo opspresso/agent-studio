@@ -60,8 +60,9 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 
 Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
-structuredOutput?, jsonSchema? }`, `mcpList[]`, `skillList[]`,
-`subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`.
+structuredOutput?, jsonSchema?, imageGeneration?, imageModel? }`, `mcpList[]`, `skillList[]`,
+`subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
+image-capable registry model is rejected with 400.
 
 ## App settings
 

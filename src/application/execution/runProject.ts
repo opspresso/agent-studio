@@ -173,29 +173,50 @@ async function buildAgentDeps(
     recordUsage: recordUsageFn,
     loadSkillContent: buildSkillLoader(deps),
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn),
-    generateImage: buildImageGenerator(deps, projectName, recordUsageFn),
+    generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn),
   };
 }
 
 /** Default image model: the first registry entry with the imageGeneration capability. */
 const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
 
+/**
+ * The GenerateImage builtin is strictly opt-in per version. A stored imageModel
+ * that has since left the registry falls back to the default instead of
+ * disabling the tool the version opted into.
+ */
 function buildImageGenerator(
   deps: ExecutionDeps,
+  version: Version,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
 ): engine.AgentDeps["generateImage"] {
-  if (!DEFAULT_IMAGE_MODEL || !getModelConfig(DEFAULT_IMAGE_MODEL)) {
+  if (version.parameters.imageGeneration !== true) {
     return undefined;
   }
-  const model = DEFAULT_IMAGE_MODEL;
+  const requested = version.parameters.imageModel;
+  let model: string | undefined;
+  if (requested && getModelConfig(requested)?.capabilities.imageGeneration) {
+    model = requested;
+  } else {
+    if (requested) {
+      console.warn(
+        `[image] version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
+      );
+    }
+    model = DEFAULT_IMAGE_MODEL;
+  }
+  if (!model) {
+    return undefined;
+  }
+  const resolvedModel = model;
   const imageChannel = deps.imageChannel ?? defaultImageChannel;
   return async (prompt, size, quality) => {
-    const result = await imageChannel.generateImage({ model, prompt, size, quality });
-    const costUsd = calculateImageCost(model, result.usage);
+    const result = await imageChannel.generateImage({ model: resolvedModel, prompt, size, quality });
+    const costUsd = calculateImageCost(resolvedModel, result.usage);
     await recordUsageFn({
       projectName,
-      model,
+      model: resolvedModel,
       inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
       outputTokens: result.usage.imageOutputTokens,
       costUsd,

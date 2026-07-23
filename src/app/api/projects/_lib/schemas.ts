@@ -25,6 +25,8 @@ export const versionParametersSchema = z.object({
   piiFiltering: z.boolean().default(false),
   structuredOutput: z.boolean().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).optional(),
+  imageGeneration: z.boolean().optional(),
+  imageModel: z.string().optional(),
 });
 
 export const subagentRefSchema = z.object({

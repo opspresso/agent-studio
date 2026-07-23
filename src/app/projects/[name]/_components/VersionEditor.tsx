@@ -15,12 +15,14 @@ export function VersionEditor({
   projectName,
   projectType,
   models,
+  imageModels,
   value,
   onChange,
 }: {
   projectName: string;
   projectType: ProjectType;
   models: ModelConfig[];
+  imageModels: ModelConfig[];
   value: VersionInput;
   onChange: (value: VersionInput) => void;
 }) {
@@ -256,6 +258,41 @@ export function VersionEditor({
               />
               {schemaError && <p className="mt-1 text-xs text-red-500">{schemaError}</p>}
             </div>
+          )}
+        </div>
+      )}
+
+      {projectType !== "image" && (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={value.parameters.imageGeneration ?? false}
+              onChange={(e) =>
+                patchParams(
+                  e.target.checked
+                    ? { imageGeneration: true }
+                    : { imageGeneration: undefined, imageModel: undefined },
+                )
+              }
+            />
+            Image generation (GenerateImage tool)
+          </label>
+          {value.parameters.imageGeneration && (
+            <Field label="Image model">
+              <select
+                value={value.parameters.imageModel ?? ""}
+                onChange={(e) => patchParams({ imageModel: e.target.value || undefined })}
+                className={inputClass}
+              >
+                <option value="">Default</option>
+                {imageModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.displayName} ({model.id})
+                  </option>
+                ))}
+              </select>
+            </Field>
           )}
         </div>
       )}

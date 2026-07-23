@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { VersionInput } from "@/application/project/versionUseCases";
-import { createVersion, publishVersion } from "@/application/project/versionUseCases";
+import { createVersion, publishVersion, updateVersion } from "@/application/project/versionUseCases";
 import { deleteProject, updateProject } from "@/application/project/projectUseCases";
-import { ConflictError, ForbiddenError, NotFoundError } from "@/application/project/errors";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "@/application/project/errors";
 
 const OWNER = "owner@x.com";
 const OTHER = "intruder@x.com";
@@ -226,6 +231,85 @@ describe("createVersion naming", () => {
         OTHER,
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("imageModel validation", () => {
+  it("createVersion rejects an imageModel without the imageGeneration capability", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        {
+          ...versionInput(),
+          parameters: { piiFiltering: false, imageGeneration: true, imageModel: "openai/gpt-5-mini" },
+        },
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("createVersion rejects an unknown imageModel", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        {
+          ...versionInput(),
+          parameters: { piiFiltering: false, imageGeneration: true, imageModel: "nope/none" },
+        },
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("createVersion accepts an image-capable imageModel", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      {
+        ...versionInput(),
+        parameters: {
+          piiFiltering: false,
+          imageGeneration: true,
+          imageModel: "openai/gpt-image-2",
+        },
+      },
+      OWNER,
+    );
+    expect(created.parameters.imageModel).toBe("openai/gpt-image-2");
+  });
+
+  it("updateVersion rejects parameters carrying an invalid imageModel", async () => {
+    await expect(
+      updateVersion(
+        makeVersionRepo([versionFixture("p", "1")]),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        "1",
+        { parameters: { piiFiltering: false, imageGeneration: true, imageModel: "nope/none" } },
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("updateVersion without parameters succeeds even when the stored imageModel is stale", async () => {
+    const stale = versionFixture("p", "1", {
+      parameters: { piiFiltering: false, imageGeneration: true, imageModel: "removed/model" },
+    });
+    const updated = await updateVersion(
+      makeVersionRepo([stale]),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      "1",
+      { systemPrompt: "updated" },
+      OWNER,
+    );
+    expect(updated.systemPrompt).toBe("updated");
+    expect(updated.parameters.imageModel).toBe("removed/model");
   });
 });
 

@@ -60,7 +60,9 @@ Read `docs/ARCHITECTURE.md` for the full single-table key map, domain semantics,
 
 `src/application/llm/engine.ts` is pure logic with **everything injected** (channel,
 recordUsage, callMcpTool, loadSkillContent, runSubagent, generateImage) — so it is tested with no
-network/DB via `tests/fakeChannel.ts`. `src/application/execution/runProject.ts` is the
+network/DB via `tests/fakeChannel.ts`. `generateImage` (the builtin GenerateImage tool) is
+injected per version — only when `parameters.imageGeneration: true`, model from
+`parameters.imageModel` else the registry default. `src/application/execution/runProject.ts` is the
 composition point that resolves a version's skills/MCP tools/subagents and assembles those
 deps. Key behaviors:
 

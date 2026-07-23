@@ -72,9 +72,9 @@ Conventions:
   publishedVersion?, slack? (per-project Slack bot credentials, AES-encrypted),
   createdAt, updatedAt }`
 - `Version { versionName, systemPrompt, userPromptTemplate, model, fallbackModel?, parameters
-  (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema),
-  mcpList: string[], skillList: string[], subagentList: {name, type:'local'|'remote'}[],
-  maxTurn?, createdAt }`
+  (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema,
+  imageGeneration?/imageModel?), mcpList: string[], skillList: string[],
+  subagentList: {name, type:'local'|'remote'}[], maxTurn?, createdAt }`
 - Template variables `{{var}}` rendered server-side before dispatch.
 
 ### LLM Engine (`src/application/llm/engine.ts` — public contract)
@@ -92,7 +92,10 @@ Conventions:
   - builtin tools intercepted before MCP dispatch: `Skill` (progressive skill loading),
     `transfer_to_agent` (subagent transfer — local recursion or remote agent HTTP call;
     budget guard `turn + 2 >= maxTurn` rejects transfer), `GenerateImage` (image
-    generation via the injected `generateImage` dep; results persist to S3 when configured)
+    generation via the injected `generateImage` dep; results persist to S3 when configured).
+    `generateImage` is injected only when the version opts in via
+    `parameters.imageGeneration: true`; the model is `parameters.imageModel` when set and
+    still image-capable, else the registry's default image model
   - subagent transfer passes ONLY the model-written `message` (no parent history);
     child's final text returns as a "For context: ..." user message
   - stream chunks carry optional top-level `author` when subagents are wired

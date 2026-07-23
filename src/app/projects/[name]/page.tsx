@@ -196,6 +196,7 @@ export default function PlaygroundPage() {
               ? m.capabilities.imageGeneration
               : !m.capabilities.imageGeneration,
           )}
+          imageModels={models.filter((m) => m.capabilities.imageGeneration)}
           value={draft}
           onChange={setDraft}
         />
