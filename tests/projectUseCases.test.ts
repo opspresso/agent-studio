@@ -4,6 +4,7 @@ import type { ProjectRepository, VersionRepository } from "@/domain/project/repo
 import type { VersionInput } from "@/application/project/versionUseCases";
 import { createVersion, publishVersion, updateVersion } from "@/application/project/versionUseCases";
 import { deleteProject, updateProject } from "@/application/project/projectUseCases";
+import { versionNameSchema } from "@/app/api/projects/_lib/schemas";
 import {
   ConflictError,
   ForbiddenError,
@@ -408,5 +409,21 @@ describe("projectRepository.delete cascade", () => {
     expect(store.has("PROJECT#p")).toBe(false);
     expect(store.has("USAGE#p")).toBe(false);
     expect(store.get("PROJECT#other")).toHaveLength(1);
+  });
+});
+
+describe("versionNameSchema", () => {
+  it("accepts slug names", () => {
+    expect(versionNameSchema.safeParse("v1-beta").success).toBe(true);
+    expect(versionNameSchema.safeParse("2").success).toBe(true);
+  });
+
+  it("rejects non-slug names", () => {
+    expect(versionNameSchema.safeParse("My Version").success).toBe(false);
+    expect(versionNameSchema.safeParse("V1.0").success).toBe(false);
+  });
+
+  it("rejects the reserved published-pointer sentinel", () => {
+    expect(versionNameSchema.safeParse("published").success).toBe(false);
   });
 });

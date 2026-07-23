@@ -46,8 +46,15 @@ export const versionInputSchema = z.object({
   maxTurn: z.number().int().positive().optional(),
 });
 
+export const versionNameSchema = z
+  .string()
+  .regex(/^[a-z0-9-]+$/, "versionName must be a slug (lowercase letters, digits, hyphens)")
+  .refine((name) => name !== "published", {
+    message: '"published" is reserved for the published-version pointer',
+  });
+
 export const createVersionSchema = versionInputSchema.extend({
-  versionName: z.string().min(1).optional(),
+  versionName: versionNameSchema.optional(),
 });
 
 export const updateVersionSchema = versionInputSchema.partial();
