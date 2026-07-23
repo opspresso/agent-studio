@@ -67,7 +67,38 @@ automation과 published version이 없는 프로젝트는 실행하지 않는다
 재전달돼도 실행 이력이 중복 생성되지 않으며 성공·실패·중복 제거·인증 실패·동시 실행
 정책을 테스트로 검증한다. 콘솔에서 automation 설정과 최근 실행 결과를 확인할 수 있다.
 
-## M4 — 평가(테스트 세트 × 버전 비교)
+## M4 — Managed local MCP
+
+**이유**: 현재 Tools에는 이미 실행 중인 public streamable-HTTP MCP server만 등록할 수
+있다. 운영자가 승인한 MCP server를 Agent Studio가 현재 실행 환경에 맞는 하위
+workload로 배포하고 수명 주기를 관리하면 별도 MCP 인프라를 수동으로 운영하지 않고
+프로젝트에서 사용할 수 있다.
+
+**범위**
+
+- MCP 유형을 `remote`와 `managed`로 구분하고 기존 원격 등록 동작은 유지.
+- managed MCP에는 승인된 artifact(image 또는 task definition), 실행 설정, resource
+  limit, health check, secret reference를 저장하고 임의 command·image 실행은 허용하지 않음.
+- 명시적 runtime 설정을 우선하고, 설정이 `auto`일 때만 실행 환경을 탐지:
+  - container/EC2: 제한된 container runtime adapter.
+  - ECS: 별도 ECS task 또는 service.
+  - Kubernetes: 별도 Deployment와 ClusterIP Service.
+- desired/observed 상태와 workload identity를 영속화하고 조건부 쓰기·lease 기반
+  reconciler로 여러 Agent Studio 인스턴스의 중복 생성·삭제를 방지.
+- 생성·시작·중지·재시작·삭제와 health/status 조회를 지원하고 실패 원인과 최근 상태
+  변경 시각을 콘솔에 표시.
+- managed endpoint는 provisioner가 반환한 workload identity로만 신뢰하고, 일반 remote
+  MCP의 SSRF 검증을 우회하거나 임의 private URL 등록을 허용하지 않음.
+- 최소 권한 IAM/RBAC와 network policy를 적용하고 application container에 host Docker
+  socket을 직접 노출하지 않음.
+
+**완료 조건**: 지원 환경별 adapter 계약 테스트와 하나 이상의 실제 runtime 통합
+테스트에서 managed MCP를 생성해 `tools/list`와 `tools/call`을 수행하고 삭제할 수 있다.
+두 Agent Studio 인스턴스가 동시에 reconcile해도 workload가 하나만 생성되며, 재시작
+후 기존 workload를 재발견한다. 권한 부족·이미지 pull 실패·health check 실패·중복
+요청·삭제 재시도를 검증하고 remote MCP 동작과 SSRF 보호가 그대로 유지된다.
+
+## M5 — 평가(테스트 세트 × 버전 비교)
 
 **이유**: 프롬프트나 모델 설정 변경으로 회귀가 발생하지 않았는지 확인할 방법이 없다.
 
