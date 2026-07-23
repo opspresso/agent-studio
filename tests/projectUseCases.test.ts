@@ -476,6 +476,53 @@ describe("updateVersion / deleteVersion boundaries", () => {
   });
 });
 
+describe("model capability validation", () => {
+  it("rejects a tools-incapable model on an agent project with ValidationError", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        "p",
+        { ...versionInput(), model: "xai/grok-imagine-image" },
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("rejects structuredOutput on a model without the capability", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        {
+          ...versionInput(),
+          model: "anthropic/claude-fable-5",
+          parameters: { piiFiltering: false, structuredOutput: true },
+        },
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("keeps custom (unknown) models on the warn-only path", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const created = await createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        "p",
+        { ...versionInput(), model: "custom/next-gen" },
+        OWNER,
+      );
+      expect(created.model).toBe("custom/next-gen");
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe("versionNameSchema", () => {
   it("accepts slug names", () => {
     expect(versionNameSchema.safeParse("v1-beta").success).toBe(true);

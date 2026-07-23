@@ -39,6 +39,26 @@ function warnUnknownCatalogModel(projectName: string, model: string): void {
   }
 }
 
+/**
+ * Reject capability mismatches for catalog models. Unknown/custom ids stay on
+ * the warn-only path — a mismatch on a KNOWN model is a misconfiguration, not
+ * a catalog lag.
+ */
+function assertModelSupports(project: Project, model: string, parameters: VersionParameters): void {
+  const cfg = getModelConfig(model);
+  if (!cfg) {
+    return;
+  }
+  if (project.projectType === "agent" && !cfg.capabilities.tools) {
+    throw new ValidationError(
+      `Model does not support tool calling required by agent projects: ${model}`,
+    );
+  }
+  if (parameters.structuredOutput && !cfg.capabilities.structuredOutput) {
+    throw new ValidationError(`Model does not support structured output: ${model}`);
+  }
+}
+
 function nextVersionName(existing: Version[]): string {
   const maxNumeric = existing.reduce((max, version) => {
     const parsed = Number(version.versionName);
@@ -70,8 +90,9 @@ export async function createVersion(
   input: CreateVersionInput,
   userEmail: string,
 ): Promise<Version> {
-  await assertProjectOwner(projects, projectName, userEmail);
+  const project = await assertProjectOwner(projects, projectName, userEmail);
   assertValidImageModel(input.parameters);
+  assertModelSupports(project, input.model, input.parameters);
   warnUnknownCatalogModel(projectName, input.model);
   const existing = await versions.list(projectName);
 
@@ -106,7 +127,7 @@ export async function updateVersion(
   input: UpdateVersionInput,
   userEmail: string,
 ): Promise<Version> {
-  await assertProjectOwner(projects, projectName, userEmail);
+  const project = await assertProjectOwner(projects, projectName, userEmail);
   if (input.parameters) {
     assertValidImageModel(input.parameters);
   }
@@ -126,6 +147,7 @@ export async function updateVersion(
     subagentList: input.subagentList ?? existing.subagentList,
     maxTurn: input.maxTurn ?? existing.maxTurn,
   };
+  assertModelSupports(project, updated.model, updated.parameters);
   await versions.put(updated);
   return updated;
 }
