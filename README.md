@@ -122,21 +122,14 @@ skills with other names are untouched.
 
 ## Slack Integration
 
-Two modes that can coexist:
-
-**Per-project bots** — each agent project can have its own dedicated Slack app.
+Each agent project can have its own dedicated Slack app.
 Project Settings → Slack bot generates a project-specific manifest (events URL
 `/api/slack/events/<project>`), and stores the pasted bot token + signing secret
 AES-encrypted with masked reads. Events on that URL are verified with that
 project's own secret and always run that project — no selector needed.
 
-**Workspace default bot** — one bot per workspace, configured by env (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`,
-optional `SLACK_DEFAULT_PROJECT`). Point the Slack app's Events API request URL at
-`https://<host>/api/slack/events` and subscribe to `app_mention` and `message.im`
-(scopes: `app_mentions:read`, `im:history`, `chat:write`).
-
-- Mention the bot with `project:<name> <message>` to pick an agent project, or rely
-  on `SLACK_DEFAULT_PROJECT`.
+- Subscribe to `app_mention` and `message.im` (scopes: `app_mentions:read`,
+  `im:history`, `chat:write`).
 - Replies stream into one message via `chat.update`; thread replies carry the full
   thread as multi-turn context.
 - Events are verified (signing secret, 5-minute replay window), deduplicated by

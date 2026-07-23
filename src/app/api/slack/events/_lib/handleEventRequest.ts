@@ -27,7 +27,7 @@ const slackEventDeps: SlackEventDeps = {
  */
 export async function handleSlackEventRequest(
   request: Request,
-  opts: { signingSecret: string; binding?: SlackBotBinding; logLabel: string },
+  opts: { signingSecret: string; binding: SlackBotBinding; logLabel: string },
 ): Promise<Response> {
   const body = await request.text();
   const verified = verifySlackSignature({

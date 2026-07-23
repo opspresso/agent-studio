@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
-import { parseMentionText, threadToMessages } from "@/application/slack/handleSlackEvent";
+import { threadToMessages } from "@/application/slack/handleSlackEvent";
 
 function sign(secret: string, timestamp: string, body: string): string {
   return `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${body}`).digest("hex")}`;
@@ -60,22 +60,6 @@ describe("verifySlackSignature", () => {
         signature: null,
       }),
     ).toBe(false);
-  });
-});
-
-describe("parseMentionText", () => {
-  it("strips the mention and detects a project selector", () => {
-    expect(parseMentionText("<@U123ABC> project:support-triage classify this")).toEqual({
-      projectName: "support-triage",
-      message: "classify this",
-    });
-  });
-
-  it("returns null project without a selector", () => {
-    expect(parseMentionText("<@U123ABC> hello there")).toEqual({
-      projectName: null,
-      message: "hello there",
-    });
   });
 });
 

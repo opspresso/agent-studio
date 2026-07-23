@@ -12,7 +12,6 @@ import {
   getAdminEmails,
   getLlmChannelConfig,
   getLlmProviderConfigs,
-  getSlackBotToken,
   invalidateSettingsCache,
 } from "@/lib/runtime-settings";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
@@ -25,7 +24,6 @@ function stub(settings: AppSettings | null): void {
 
 const ENV_KEYS = [
   "ADMIN_EMAILS",
-  "SLACK_BOT_TOKEN",
   "LLM_BASE_URL",
   "LLM_API_KEY",
   "LLM_PROVIDER_OPENAI_BASE_URL",
@@ -55,15 +53,12 @@ afterEach(() => {
 describe("runtime settings precedence", () => {
   it("prefers DB overrides, decrypting secrets at read time", async () => {
     process.env.ADMIN_EMAILS = "env@example.com";
-    process.env.SLACK_BOT_TOKEN = "xoxb-env";
     stub({
       adminEmails: "DB@Example.com, second@example.com",
-      slackBotToken: encryptSecret("xoxb-db"),
       updatedAt: "2026-01-01T00:00:00Z",
     });
 
     expect(await getAdminEmails()).toEqual(["db@example.com", "second@example.com"]);
-    expect(await getSlackBotToken()).toBe("xoxb-db");
   });
 
   it("falls back to env when no override is stored", async () => {

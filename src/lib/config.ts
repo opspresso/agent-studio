@@ -74,16 +74,6 @@ export const config = {
       .map((email) => email.trim().toLowerCase())
       .filter(Boolean);
   },
-  get slackBotToken(): string | undefined {
-    return process.env.SLACK_BOT_TOKEN || undefined;
-  },
-  get slackSigningSecret(): string | undefined {
-    return process.env.SLACK_SIGNING_SECRET || undefined;
-  },
-  /** Fallback agent project when a mention does not name one. */
-  get slackDefaultProject(): string | undefined {
-    return process.env.SLACK_DEFAULT_PROJECT || undefined;
-  },
   /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
   get a2aApiKey(): string | undefined {
     return process.env.A2A_API_KEY || undefined;

@@ -31,9 +31,6 @@ const FIELD_SPECS: FieldSpec[] = [
   },
   { key: "llmBaseUrl", secret: false, env: () => process.env.LLM_BASE_URL || undefined },
   { key: "llmApiKey", secret: true, env: () => process.env.LLM_API_KEY || undefined },
-  { key: "slackDefaultProject", secret: false, env: () => config.slackDefaultProject },
-  { key: "slackBotToken", secret: true, env: () => config.slackBotToken },
-  { key: "slackSigningSecret", secret: true, env: () => config.slackSigningSecret },
   { key: "skillsRepo", secret: false, env: () => config.skillsRepo },
   {
     key: "skillsRepoBranch",

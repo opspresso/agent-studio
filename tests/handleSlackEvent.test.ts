@@ -87,6 +87,37 @@ afterEach(() => {
 });
 
 describe("handleSlackEvent", () => {
+  it("always runs the project bound to the endpoint", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    let requestedProject: string | undefined;
+    let userMessage: string | undefined;
+    deps.projects = {
+      get: async (name: string) => {
+        requestedProject = name;
+        return projectFixture();
+      },
+    } as unknown as ProjectRepository;
+    deps.runAgent = async function* (input) {
+      userMessage = input.messages.at(-1)?.content ?? undefined;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: { ...EVENT.event, text: "<@U0> project:other hello" },
+      },
+      BINDING,
+    );
+
+    expect(requestedProject).toBe("painter");
+    expect(userMessage).toBe("project:other hello");
+  });
+
   it("posts a placeholder and finalizes it with the top-level answer only", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

@@ -1,4 +1,3 @@
-import { getSlackBotToken, getSlackDefaultProject } from "@/lib/runtime-settings";
 import type { SlackMessage } from "@/infrastructure/slack/client";
 import type { ExecuteAgentInput } from "@/application/execution/runProject";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
@@ -55,16 +54,6 @@ const UPDATE_INTERVAL_MS = 1000;
  * instead of showing the placeholder forever. */
 const RUN_TIMEOUT_MS = 3 * 60 * 1000;
 
-/** Strip the bot mention and detect an optional leading `project:<name>` selector. */
-export function parseMentionText(raw: string): { projectName: string | null; message: string } {
-  const withoutMention = raw.replace(/<@[A-Z0-9]+>/g, "").trim();
-  const match = /^project:([a-z0-9-]+)\s+(.*)$/s.exec(withoutMention);
-  if (match?.[1] && match[2] !== undefined) {
-    return { projectName: match[1], message: match[2].trim() };
-  }
-  return { projectName: null, message: withoutMention };
-}
-
 /** Convert thread replies to engine messages: bot turns → assistant, human turns → user. */
 export function threadToMessages(replies: SlackMessage[], currentTs: string): ChatMessageInput[] {
   return replies
@@ -75,7 +64,7 @@ export function threadToMessages(replies: SlackMessage[], currentTs: string): Ch
     }));
 }
 
-/** Credentials/binding for a project-dedicated bot; absent → workspace default bot. */
+/** Credentials and project binding for a project-dedicated bot. */
 export interface SlackBotBinding {
   projectName: string;
   botToken: string;
@@ -85,11 +74,11 @@ export interface SlackBotBinding {
 export async function handleSlackEvent(
   deps: SlackEventDeps,
   body: SlackEventBody,
-  binding?: SlackBotBinding,
+  binding: SlackBotBinding,
 ): Promise<void> {
   const event = body.event;
-  const token = binding?.botToken ?? (await getSlackBotToken());
-  if (!token || !event?.channel || !event.ts) {
+  const token = binding.botToken;
+  if (!event?.channel || !event.ts) {
     return;
   }
   // Ignore our own (and any other bot's) messages to prevent loops.
@@ -97,20 +86,9 @@ export async function handleSlackEvent(
     return;
   }
 
-  const { projectName: named, message } = parseMentionText(event.text ?? "");
-  // A project-dedicated bot is always bound to its project; the selector only
-  // applies to the workspace default bot.
-  const projectName = binding?.projectName ?? named ?? (await getSlackDefaultProject());
+  const message = (event.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim();
+  const projectName = binding.projectName;
   const threadTs = event.thread_ts ?? event.ts;
-
-  if (!projectName) {
-    await deps.slack.postMessage(token, {
-      channel: event.channel,
-      thread_ts: threadTs,
-      text: "No agent project configured. Mention me with `project:<name> <message>` or set SLACK_DEFAULT_PROJECT.",
-    });
-    return;
-  }
 
   const project = await deps.projects.get(projectName);
   // External surface: published-only, drafts never leak (resolveRunnableVersion policy).

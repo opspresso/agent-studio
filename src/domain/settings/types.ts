@@ -22,11 +22,6 @@ export interface AppSettings {
   llmApiKey?: string;
   /** When set, replaces the whole LLM_PROVIDER_* env-derived provider list. */
   llmProviders?: LlmProviderSetting[];
-  slackDefaultProject?: string;
-  /** Secret. */
-  slackBotToken?: string;
-  /** Secret. */
-  slackSigningSecret?: string;
   skillsRepo?: string;
   skillsRepoBranch?: string;
   /** Secret. */

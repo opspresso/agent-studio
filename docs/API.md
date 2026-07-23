@@ -74,8 +74,8 @@ PUT /api/settings → 200 {…same shape…} | 400
 ```
 
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
-  `llmApiKey`, `slackDefaultProject`, `slackBotToken`, `slackSigningSecret`, `skillsRepo`,
-  `skillsRepoBranch`, `githubToken`, `a2aApiKey`, `publicBaseUrl`.
+  `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `githubToken`, `a2aApiKey`,
+  `publicBaseUrl`.
 - `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
   array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
   currently effective key for that provider name. Provider `name` must be one of

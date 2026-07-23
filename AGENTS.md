@@ -108,8 +108,8 @@ registries are shared: reads are open to any signed-in user; mutations go throug
 ### Other subsystems
 
 - **Runtime settings**: the admin-only `/settings` page stores env-var overrides
-  (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, Slack bot,
-  skills repo, A2A key, public base URL) in the `SETTINGS#app` item. Read via
+  (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
+  A2A key, public base URL) in the `SETTINGS#app` item. Read via
   `src/lib/runtime-settings.ts` — DB override → env fallback, cached in memory (30s TTL,
   invalidated on write, single-instance assumption). Never read those env vars directly at
   dispatch; go through runtime-settings.

@@ -50,14 +50,6 @@ const SECTIONS: SectionDef[] = [
     ],
   },
   {
-    title: "Slack",
-    fields: [
-      { key: "slackDefaultProject", label: "SLACK_DEFAULT_PROJECT" },
-      { key: "slackBotToken", label: "SLACK_BOT_TOKEN" },
-      { key: "slackSigningSecret", label: "SLACK_SIGNING_SECRET" },
-    ],
-  },
-  {
     title: "Skills repo",
     fields: [
       { key: "skillsRepo", label: "SKILLS_REPO", placeholder: "opspresso/agent-skills" },

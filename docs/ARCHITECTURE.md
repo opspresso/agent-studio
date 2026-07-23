@@ -113,7 +113,7 @@ records usage. To trace any request, start there.
 | OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream); `executeVersion` / `collectRun(executeAgent)` (non-stream) |
 | Agent SSE | `POST …/agent` | `executeAgent` |
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent` in `app/api/chats/_deps.ts`) |
-| Slack | `/api/slack/events*` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
+| Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
 
 `executeProjectStream` is the canonical projectType → strategy dispatch (`agent` runs the
@@ -308,7 +308,7 @@ GET  /api/models
 GET  /api/a2a                               A2A-published project list
 GET  /api/a2a/[name]/.well-known/agent-card.json   public Agent Card
 POST /api/a2a/[name]                        JSON-RPC, gated by X-A2A-Key
-POST /api/slack/events, /api/slack/events/[project]   Slack webhooks
+POST /api/slack/events/[project]              project Slack webhook
 GET  /api/health
 ```
 
@@ -322,8 +322,8 @@ are shared: reads are open to any signed-in user, while mutations go through
 signed-in user).
 
 Runtime settings: the admin-only `/settings` page stores overrides for selected env vars
-(admin/allowed-domain lists, default LLM channel, per-provider LLM channels, Slack workspace
-bot, skills repo, A2A key, public base URL) in the `SETTINGS#app` item.
+(admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
+A2A key, public base URL) in the `SETTINGS#app` item.
 `src/lib/runtime-settings.ts` resolves effective values — DB override → env fallback —
 through an in-memory cache (30s TTL, invalidated on write; single-instance assumption).
 Secret overrides are AES-encrypted at rest and decrypted only at dispatch; a stored provider

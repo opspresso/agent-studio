@@ -14,9 +14,6 @@ const ENV_KEYS = [
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
   "ALLOWED_EMAIL_DOMAINS",
-  "SLACK_DEFAULT_PROJECT",
-  "SLACK_BOT_TOKEN",
-  "SLACK_SIGNING_SECRET",
   "SKILLS_REPO",
   "SKILLS_REPO_BRANCH",
   "GITHUB_TOKEN",
@@ -62,19 +59,11 @@ function fakeRepo(initial: AppSettings | null = null): {
 
 describe("settingsUseCases.getView", () => {
   it("reports override/env/default/unset sources and masks secrets", async () => {
-    const { repo } = fakeRepo({
-      slackBotToken: encryptSecret("xoxb-stored"),
-      updatedAt: "2026-01-01T00:00:00Z",
-    });
+    const { repo } = fakeRepo({ updatedAt: "2026-01-01T00:00:00Z" });
     process.env.GITHUB_TOKEN = "ghp_env-token";
 
     const view = await createSettingsUseCases(repo).getView();
 
-    expect(view.fields.slackBotToken).toEqual({
-      value: "*".repeat("xoxb-stored".length),
-      source: "override",
-      secret: true,
-    });
     expect(view.fields.githubToken).toEqual({
       value: "*".repeat("ghp_env-token".length),
       source: "env",
@@ -85,7 +74,6 @@ describe("settingsUseCases.getView", () => {
       source: "default",
       secret: false,
     });
-    expect(view.fields.slackDefaultProject).toEqual({ value: "", source: "unset", secret: false });
   });
 });
 

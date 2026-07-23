@@ -21,9 +21,6 @@ const updateSchema = z.object({
     )
     .max(50)
     .optional(),
-  slackDefaultProject: z.string().max(4000).optional(),
-  slackBotToken: z.string().max(4000).optional(),
-  slackSigningSecret: z.string().max(4000).optional(),
   skillsRepo: z.string().max(4000).optional(),
   skillsRepoBranch: z.string().max(4000).optional(),
   githubToken: z.string().max(4000).optional(),

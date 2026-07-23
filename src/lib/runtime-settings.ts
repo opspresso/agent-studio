@@ -68,20 +68,6 @@ export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> 
   return parseProviderConfigs(process.env);
 }
 
-export async function getSlackDefaultProject(): Promise<string | undefined> {
-  return (await loadSettings())?.slackDefaultProject ?? config.slackDefaultProject;
-}
-
-export async function getSlackBotToken(): Promise<string | undefined> {
-  const stored = (await loadSettings())?.slackBotToken;
-  return stored !== undefined ? decryptSecret(stored) : config.slackBotToken;
-}
-
-export async function getSlackSigningSecret(): Promise<string | undefined> {
-  const stored = (await loadSettings())?.slackSigningSecret;
-  return stored !== undefined ? decryptSecret(stored) : config.slackSigningSecret;
-}
-
 export async function getSkillsRepoConfig(): Promise<{
   repo: string | undefined;
   branch: string;
