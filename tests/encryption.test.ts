@@ -53,4 +53,17 @@ describe("length-preserving masking", () => {
     expect(merged.Authorization).not.toBe(stored.Authorization);
     expect(decryptSecret(merged.Authorization!)).toBe("Bearer new");
   });
+
+  it("drops a masked value under a key with no stored counterpart (header rename)", () => {
+    const stored = encryptHeaders({ Authorization: "Bearer secret-token" });
+    const merged = mergeHeaderUpdate(stored, {
+      "X-Renamed": "*".repeat("Bearer secret-token".length),
+    });
+    expect(merged).toEqual({});
+  });
+
+  it("drops an empty value under a key with no stored counterpart", () => {
+    const merged = mergeHeaderUpdate({}, { "X-New": "" });
+    expect(merged).toEqual({});
+  });
 });

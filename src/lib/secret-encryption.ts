@@ -76,6 +76,8 @@ export function maskHeaders(headers: Record<string, string>): Record<string, str
 /**
  * Merge a client-submitted header update against stored (encrypted) headers.
  * Masked or empty values keep the stored ciphertext; new plaintext replaces it.
+ * A masked or empty value under a key with no stored counterpart is dropped —
+ * a mask can only confirm an existing secret, never create one.
  */
 export function mergeHeaderUpdate(
   stored: Record<string, string>,
@@ -83,11 +85,13 @@ export function mergeHeaderUpdate(
 ): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const [key, value] of Object.entries(update)) {
-    if ((isMasked(value) || value === "") && stored[key] !== undefined) {
-      merged[key] = stored[key];
-    } else {
-      merged[key] = encryptSecret(value);
+    if (isMasked(value) || value === "") {
+      if (stored[key] !== undefined) {
+        merged[key] = stored[key];
+      }
+      continue;
     }
+    merged[key] = encryptSecret(value);
   }
   return merged;
 }
