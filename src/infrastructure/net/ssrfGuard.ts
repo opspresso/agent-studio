@@ -97,10 +97,10 @@ function isBlockedAddress(ip: string): boolean {
  * Throw {@link SsrfError} if `rawUrl` is not an http(s) URL whose host resolves
  * exclusively to public addresses.
  */
-export async function assertPublicUrl(
+export async function resolvePublicUrl(
   rawUrl: string,
   dnsLookup: DnsLookup = defaultLookup,
-): Promise<void> {
+): Promise<{ url: URL; addresses: string[] }> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -130,4 +130,12 @@ export async function assertPublicUrl(
       throw new SsrfError(`URL host resolves to a private or reserved address: ${host}`);
     }
   }
+  return { url, addresses };
+}
+
+export async function assertPublicUrl(
+  rawUrl: string,
+  dnsLookup: DnsLookup = defaultLookup,
+): Promise<void> {
+  await resolvePublicUrl(rawUrl, dnsLookup);
 }

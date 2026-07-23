@@ -8,11 +8,12 @@ import type {
 import type { ModelConfig } from "@/domain/llm/models";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { UsageRow } from "@/domain/usage/types";
+import type { Trace } from "@/domain/trace/types";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { Project, ProjectType, SubagentRef, Version, VersionParameters };
-export type { ModelConfig, EngineChunk, UsageRow };
+export type { ModelConfig, EngineChunk, UsageRow, Trace };
 
 // --- Projects -------------------------------------------------------------
 
@@ -56,6 +57,10 @@ export function updateProject(name: string, patch: UpdateProjectInput): Promise<
 
 export function deleteProject(name: string): Promise<void> {
   return fetch(`/api/projects/${name}`, { method: "DELETE" }).then(assertOk);
+}
+
+export function listTraces(name: string): Promise<{ traces: Trace[] }> {
+  return fetch(`/api/projects/${name}/traces`).then((r) => readJson<{ traces: Trace[] }>(r));
 }
 
 // --- Versions -------------------------------------------------------------

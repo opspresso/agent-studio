@@ -54,7 +54,7 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 ```
 GET|POST /api/projects/{name}/versions
-GET|PUT  /api/projects/{name}/versions/{version}     ({version} = a name or "published")
+GET|PUT|DELETE /api/projects/{name}/versions/{version} ({version} = a name or "published")
 POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the published pointer
 ```
 
@@ -130,6 +130,18 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
       (calls/inputTokens/outputTokens/costUsd are per-model maps: { "provider/model": number })
 → 400 { "error": "…" }   (bad/oversized range: max 184 days, from ≤ to)
 ```
+
+## Traces
+
+```
+GET /api/projects/{name}/traces?limit=50
+GET /api/projects/{name}/traces/{traceId}
+```
+
+Agent runs are always traced. Text and image predict runs are sampled according to
+`TRACE_SAMPLE_RATE` (0–1, default `0.1`). Trace spans contain model token/cost summaries,
+tool input/output sizes, and local subagent trace links; raw prompts and tool results are
+not persisted.
 
 ## Models
 

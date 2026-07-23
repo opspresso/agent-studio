@@ -10,6 +10,7 @@
  */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
+import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 const MCP_REQUEST_TIMEOUT_MS = 120_000;
@@ -62,7 +63,7 @@ class McpSession {
     if (this.initialized) {
       return;
     }
-    const response = await fetch(this.url, {
+    const response = await fetchPublicUrl(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({
@@ -84,7 +85,7 @@ class McpSession {
     await parseJsonRpc(response);
 
     // Notify the server that initialization completed.
-    await fetch(this.url, {
+    await fetchPublicUrl(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
@@ -95,7 +96,7 @@ class McpSession {
 
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
     await this.ensureInitialized();
-    const response = await fetch(this.url, {
+    const response = await fetchPublicUrl(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),

@@ -16,15 +16,18 @@ import type { ProjectRepository, VersionRepository } from "@/domain/project/repo
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
+import type { TraceRepository } from "@/domain/trace/repository";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
+import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { decryptHeadersForOutbound } from "@/infrastructure/crypto/secretEncryption";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
+import { TraceRecorder } from "@/application/trace/recorder";
 
 export interface ExecutionDeps {
   versions: VersionRepository;
@@ -37,6 +40,8 @@ export interface ExecutionDeps {
   channel: LlmChannel;
   /** Image channel — wired by the composition root; tests inject a fake. */
   imageChannel: ImageChannel;
+  traces?: TraceRepository;
+  traceSampleRate?: number;
 }
 
 export interface ExecuteVersionInput {
@@ -89,19 +94,28 @@ export async function executeVersion(
   input: ExecuteVersionInput,
 ): Promise<RunResult> {
   const channel = deps.channel;
-  return engine.runPrompt(
-    { channel, recordUsage: bindUsage(deps) },
-    {
-      projectName: input.project.name,
-      model: input.version.model,
-      fallbackModel: input.version.fallbackModel,
-      systemPrompt: input.version.systemPrompt,
-      userPromptTemplate: input.version.userPromptTemplate,
-      variables: input.variables,
-      extraMessages: input.extraMessages ?? input.messages,
-      parameters: toEngineParameters(input.version),
-    },
-  );
+  const recorder = sampledTraceRecorder(deps, input);
+  try {
+    const result = await engine.runPrompt(
+      { channel, recordUsage: bindUsage(deps) },
+      {
+        projectName: input.project.name,
+        model: input.version.model,
+        fallbackModel: input.version.fallbackModel,
+        systemPrompt: input.version.systemPrompt,
+        userPromptTemplate: input.version.userPromptTemplate,
+        variables: input.variables,
+        extraMessages: input.extraMessages ?? input.messages,
+        parameters: toEngineParameters(input.version),
+      },
+    );
+    recorder?.observeResult(result);
+    await finishTrace(recorder);
+    return result;
+  } catch (error) {
+    await finishTrace(recorder, error);
+    throw error;
+  }
 }
 
 export async function* executeVersionStream(
@@ -109,19 +123,33 @@ export async function* executeVersionStream(
   input: ExecuteVersionInput,
 ): AsyncGenerator<EngineChunk> {
   const channel = deps.channel;
-  yield* engine.runPromptStream(
-    { channel, recordUsage: bindUsage(deps) },
-    {
-      projectName: input.project.name,
-      model: input.version.model,
-      fallbackModel: input.version.fallbackModel,
-      systemPrompt: input.version.systemPrompt,
-      userPromptTemplate: input.version.userPromptTemplate,
-      variables: input.variables,
-      extraMessages: input.extraMessages ?? input.messages,
-      parameters: toEngineParameters(input.version),
-    },
-  );
+  const recorder = sampledTraceRecorder(deps, input);
+  let thrown: unknown;
+  let completed = false;
+  try {
+    for await (const chunk of engine.runPromptStream(
+      { channel, recordUsage: bindUsage(deps) },
+      {
+        projectName: input.project.name,
+        model: input.version.model,
+        fallbackModel: input.version.fallbackModel,
+        systemPrompt: input.version.systemPrompt,
+        userPromptTemplate: input.version.userPromptTemplate,
+        variables: input.variables,
+        extraMessages: input.extraMessages ?? input.messages,
+        parameters: toEngineParameters(input.version),
+      },
+    )) {
+      recorder?.observe(chunk);
+      yield chunk;
+    }
+    completed = true;
+  } catch (error) {
+    thrown = error;
+    throw error;
+  } finally {
+    await finishTrace(recorder, thrown, !completed && thrown === undefined);
+  }
 }
 
 // --- Project-level dispatch --------------------------------------------------
@@ -169,16 +197,20 @@ export async function* executeAgent(
   // A multi-turn agent run makes many LLM calls; accumulate their usage and
   // flush once (per project/date/model) when the run ends, even on error.
   const usage = createUsageAggregator(deps.usage);
-  const agentDeps = await buildAgentDeps(deps, input.version, input.project.name, usage.record);
-  const [skills, subagents, mcp] = await Promise.all([
-    resolveSkills(deps, input.version.skillList),
-    resolveSubagents(deps, input.version.subagentList),
-    buildMcpTools(deps, input.version),
-  ]);
-  agentDeps.callMcpTool = mcp.callMcpTool;
-
+  const recorder = deps.traces
+    ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length)
+    : undefined;
+  let thrown: unknown;
+  let completed = false;
   try {
-    yield* engine.runAgent(agentDeps, {
+    const agentDeps = await buildAgentDeps(deps, input.version, input.project.name, usage.record);
+    const [skills, subagents, mcp] = await Promise.all([
+      resolveSkills(deps, input.version.skillList),
+      resolveSubagents(deps, input.version.subagentList),
+      buildMcpTools(deps, input.version),
+    ]);
+    agentDeps.callMcpTool = mcp.callMcpTool;
+    for await (const chunk of engine.runAgent(agentDeps, {
       projectName: input.project.name,
       model: input.version.model,
       fallbackModel: input.version.fallbackModel,
@@ -190,9 +222,62 @@ export async function* executeAgent(
       subagents,
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
-    });
+    })) {
+      recorder?.observe(chunk);
+      yield chunk;
+    }
+    completed = true;
+  } catch (error) {
+    thrown = error;
+    throw error;
   } finally {
     await usage.flush();
+    await finishTrace(recorder, thrown, !completed && thrown === undefined);
+  }
+}
+
+function sampledTraceRecorder(
+  deps: ExecutionDeps,
+  input: ExecuteVersionInput,
+): TraceRecorder | undefined {
+  if (!deps.traces || Math.random() >= (deps.traceSampleRate ?? 0)) {
+    return undefined;
+  }
+  return createTraceRecorder(
+    deps.traces,
+    input.project,
+    input.version,
+    (input.extraMessages ?? input.messages ?? []).length,
+  );
+}
+
+function createTraceRecorder(
+  traces: TraceRepository,
+  project: Project,
+  version: Version,
+  messageCount: number,
+): TraceRecorder {
+  return new TraceRecorder(traces, {
+    projectName: project.name,
+    versionName: version.versionName,
+    projectType: project.projectType,
+    model: version.model,
+    messageCount,
+  });
+}
+
+async function finishTrace(
+  recorder: TraceRecorder | undefined,
+  error?: unknown,
+  cancelled = false,
+): Promise<void> {
+  if (!recorder) {
+    return;
+  }
+  try {
+    await recorder.finish(error, cancelled);
+  } catch (traceError) {
+    console.error("[trace] persistence failed", traceError);
   }
 }
 
@@ -403,11 +488,19 @@ async function* runImageSubagent(
   recordUsageFn: engine.RecordUsageFn,
 ): AsyncGenerator<EngineChunk, string> {
   const model = version.model;
+  const recorder = deps.traces
+    ? createTraceRecorder(deps.traces, project, version, 1)
+    : undefined;
   if (!getModelConfig(model)?.capabilities.imageGeneration) {
     yield {
       author: agentName,
       error: `Agent '${agentName}' uses a model without image generation: ${model}`,
+      ...(recorder ? { traceId: recorder.traceId } : {}),
     };
+    await finishTrace(
+      recorder,
+      new Error(`Agent '${agentName}' uses a model without image generation: ${model}`),
+    );
     return "";
   }
   try {
@@ -420,16 +513,29 @@ async function* runImageSubagent(
       outputTokens: result.usage.imageOutputTokens,
       costUsd,
     });
+    recorder?.observeResult({
+      content: "",
+      model,
+      usage: {
+        inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
+        outputTokens: result.usage.imageOutputTokens,
+        costUsd,
+      },
+    });
     yield {
       author: agentName,
+      ...(recorder ? { traceId: recorder.traceId } : {}),
       image: { b64: result.b64, mimeType: result.mimeType, prompt: message },
     };
+    await finishTrace(recorder);
     return `Generated an image for: ${message}`;
   } catch (error) {
     yield {
       author: agentName,
+      ...(recorder ? { traceId: recorder.traceId } : {}),
       error: error instanceof Error ? error.message : "image generation failed",
     };
+    await finishTrace(recorder, error);
     return "";
   }
 }
@@ -467,27 +573,45 @@ async function* runLocalSubagent(
     buildAgentDeps(deps, version, project.name, recordUsageFn),
   ]);
   childDeps.callMcpTool = mcp.callMcpTool;
+  const recorder = deps.traces
+    ? createTraceRecorder(deps.traces, project, version, 1)
+    : undefined;
 
   let text = "";
-  for await (const chunk of engine.runAgent(childDeps, {
-    projectName: project.name,
-    model: version.model,
-    fallbackModel: version.fallbackModel,
-    systemPrompt: version.systemPrompt,
-    messages: [{ role: "user", content: message }],
-    parameters: toEngineParameters(version),
-    maxTurn: version.maxTurn ?? maxTurn,
-    startTurn: turn,
-    skills,
-    subagents,
-    mcpTools: mcp.mcpTools,
-    mcpServers: mcp.mcpServers,
-  })) {
-    if (chunk.delta?.content) {
-      text += chunk.delta.content;
+  let thrown: unknown;
+  let completed = false;
+  try {
+    for await (const chunk of engine.runAgent(childDeps, {
+      projectName: project.name,
+      model: version.model,
+      fallbackModel: version.fallbackModel,
+      systemPrompt: version.systemPrompt,
+      messages: [{ role: "user", content: message }],
+      parameters: toEngineParameters(version),
+      maxTurn: version.maxTurn ?? maxTurn,
+      startTurn: turn,
+      skills,
+      subagents,
+      mcpTools: mcp.mcpTools,
+      mcpServers: mcp.mcpServers,
+    })) {
+      recorder?.observe(chunk);
+      if (chunk.delta?.content) {
+        text += chunk.delta.content;
+      }
+      // Re-author child chunks with the subagent's name for the preview UI.
+      yield {
+        ...chunk,
+        author: agentName,
+        ...(recorder ? { traceId: recorder.traceId } : {}),
+      };
     }
-    // Re-author child chunks with the subagent's name for the preview UI.
-    yield { ...chunk, author: agentName };
+    completed = true;
+  } catch (error) {
+    thrown = error;
+    throw error;
+  } finally {
+    await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
   return text;
 }
@@ -525,7 +649,7 @@ async function* runRemoteSubagent(
   }
   let text = "";
   try {
-    const response = await fetch(agent.url, {
+    const response = await fetchPublicUrl(agent.url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify({ messages: [{ role: "user", content: message }], stream: false }),

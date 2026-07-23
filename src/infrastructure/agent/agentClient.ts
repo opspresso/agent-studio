@@ -4,6 +4,8 @@
  * `fetch` and returns the assistant text.
  */
 
+import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+
 const TIMEOUT_MS = 60_000;
 
 /**
@@ -26,7 +28,7 @@ export async function sendAgentMessage(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await fetchPublicUrl(url, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({

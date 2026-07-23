@@ -162,13 +162,20 @@ function toProviderSetting(
     }
     storedKey = encryptSecret(apiKey);
   } else {
-    const existing =
-      stored?.find((provider) => provider.name === name)?.apiKey ??
-      parseProviderConfigs(process.env).find((provider) => provider.name === name)?.apiKey;
-    if (existing === undefined) {
+    const existingStoredKey = stored?.find((provider) => provider.name === name)?.apiKey;
+    const envKey = parseProviderConfigs(process.env).find((provider) => provider.name === name)?.apiKey;
+    if (existingStoredKey !== undefined) {
+      return {
+        name,
+        baseUrl,
+        apiKey: existingStoredKey,
+        ...(input.keepModelPrefix ? { keepModelPrefix: true } : {}),
+      };
+    }
+    if (envKey === undefined) {
       throw new ValidationError(`LLM provider "${name}" needs an API key (no stored value to keep)`);
     }
-    storedKey = encryptSecret(existing);
+    storedKey = encryptSecret(envKey);
   }
   return {
     name,

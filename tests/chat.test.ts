@@ -52,7 +52,10 @@ function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
     async listByOwner(ownerEmail) {
       return current && current.ownerEmail === ownerEmail ? [current] : [];
     },
-    async put(chat) {
+    async create(chat) {
+      current = chat;
+    },
+    async update(chat) {
       current = chat;
     },
     async delete() {
@@ -62,6 +65,9 @@ function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
     },
     async listMessages() {
       return msgs;
+    },
+    async reserveMessageSeq() {
+      return msgs.reduce((max, message) => Math.max(max, message.seq), -1) + 1;
     },
     async appendMessage(m) {
       msgs = [...msgs, m];
@@ -89,6 +95,7 @@ const emptyVersions: VersionRepository = {
   async list() {
     return [];
   },
+  async create() {},
   async put() {},
   async delete() {},
 };
@@ -173,7 +180,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       yield { toolResult: { toolCallId: "call_1", name: "lookup", content: "42" } };
       yield { delta: { content: "The answer is 42." } };
     }
-    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source(), 1)) {
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
       // drain the stream
     }
 
@@ -203,7 +210,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       yield { author: "child", delta: { content: "nested subagent text" } };
       yield { delta: { content: "answer." } };
     }
-    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source(), 1)) {
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
       // drain the stream
     }
 
@@ -228,7 +235,7 @@ describe("runAndPersist image persistence", () => {
         return "https://bucket.s3.example.com/images/x.png";
       },
     });
-    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource(), 0)) {
+    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource())) {
       // drain the stream
     }
 
@@ -247,7 +254,7 @@ describe("runAndPersist image persistence", () => {
         throw new Error("upload failed");
       },
     });
-    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource(), 0)) {
+    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource())) {
       // drain the stream
     }
 
@@ -263,7 +270,6 @@ describe("runAndPersist image persistence", () => {
       makeDeps(repo),
       chatFixture("owner@x.com"),
       imageSource(),
-      0,
     )) {
       // drain the stream
     }

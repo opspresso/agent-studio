@@ -12,6 +12,7 @@ export interface VersionRepository {
   /** versionName may be the literal "published", resolved via the project's pointer. */
   get(projectName: string, versionName: string): Promise<Version | null>;
   list(projectName: string): Promise<Version[]>;
+  create(version: Version): Promise<void>;
   put(version: Version): Promise<void>;
   delete(projectName: string, versionName: string): Promise<void>;
 }

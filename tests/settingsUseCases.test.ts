@@ -146,6 +146,28 @@ describe("settingsUseCases.update", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
+  it("keeps an existing encrypted provider key without encrypting it again", async () => {
+    const encrypted = encryptSecret("sk-stored");
+    const { repo, current } = fakeRepo({
+      llmProviders: [
+        { name: "openai", baseUrl: "https://old.example.com", apiKey: encrypted },
+      ],
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    await createSettingsUseCases(repo).update(
+      {
+        llmProviders: [
+          { name: "openai", baseUrl: "https://new.example.com", apiKey: "*********" },
+        ],
+      },
+      ADMIN,
+    );
+
+    expect(current()?.llmProviders?.[0]?.apiKey).toBe(encrypted);
+    expect(decryptSecret(current()?.llmProviders?.[0]?.apiKey ?? "")).toBe("sk-stored");
+  });
+
   it("rejects providers outside the supported set", async () => {
     const { repo } = fakeRepo();
     await expect(

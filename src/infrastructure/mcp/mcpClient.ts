@@ -6,6 +6,8 @@
  * execution lives in the engine, not here.
  */
 
+import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+
 const PROTOCOL_VERSION = "2025-06-18";
 const CLIENT_INFO = { name: "agent-studio", version: "1.0.0" };
 const TIMEOUT_MS = 10_000;
@@ -77,7 +79,7 @@ export async function listMcpTools(
       "MCP-Protocol-Version": PROTOCOL_VERSION,
     };
 
-    const initRes = await fetch(url, {
+    const initRes = await fetchPublicUrl(url, {
       method: "POST",
       headers: baseHeaders,
       body: JSON.stringify({
@@ -102,14 +104,14 @@ export async function listMcpTools(
       : baseHeaders;
 
     // Best-effort completion of the handshake; some servers require it before tools/list.
-    await fetch(url, {
+    await fetchPublicUrl(url, {
       method: "POST",
       headers: sessionHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
       signal: controller.signal,
     }).catch(() => undefined);
 
-    const listRes = await fetch(url, {
+    const listRes = await fetchPublicUrl(url, {
       method: "POST",
       headers: sessionHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),

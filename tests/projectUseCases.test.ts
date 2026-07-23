@@ -25,8 +25,9 @@ import { projectRepository } from "@/infrastructure/db/repositories/projectRepos
 
 type ItemKey = { PK: string; SK: string };
 
-const { store, fakeClient } = vi.hoisted(() => {
+const { store, fakeClient, batchFailuresRemaining } = vi.hoisted(() => {
   const store = new Map<string, ItemKey[]>();
+  const batchFailuresRemaining = { value: 0 };
   const fakeClient = {
     async send(command: { input: Record<string, unknown> }) {
       const input = command.input;
@@ -34,6 +35,10 @@ const { store, fakeClient } = vi.hoisted(() => {
         | Record<string, Array<{ DeleteRequest?: { Key: ItemKey } }>>
         | undefined;
       if (requestItems) {
+        if (batchFailuresRemaining.value > 0) {
+          batchFailuresRemaining.value -= 1;
+          return { UnprocessedItems: requestItems };
+        }
         for (const requests of Object.values(requestItems)) {
           for (const request of requests) {
             const key = request.DeleteRequest?.Key;
@@ -58,10 +63,26 @@ const { store, fakeClient } = vi.hoisted(() => {
         const pk = values[":pk"] ?? "";
         return { Items: [...(store.get(pk) ?? [])], LastEvaluatedKey: undefined };
       }
+      if (input.UpdateExpression) {
+        return {};
+      }
+      if (input.Key) {
+        const key = input.Key as ItemKey;
+        const partition = store.get(key.PK);
+        if (partition) {
+          const next = partition.filter((item) => item.SK !== key.SK);
+          if (next.length === 0) {
+            store.delete(key.PK);
+          } else {
+            store.set(key.PK, next);
+          }
+        }
+        return {};
+      }
       return {};
     },
   };
-  return { store, fakeClient };
+  return { store, fakeClient, batchFailuresRemaining };
 });
 
 // The mock is hoisted above imports by vitest, so projectRepository (imported
@@ -153,6 +174,18 @@ function makeVersionRepo(initial: Version[] = []): VersionRepository {
     async list(projectName) {
       return versions.filter((v) => v.projectName === projectName);
     },
+    async create(version) {
+      if (
+        versions.some(
+          (v) => v.projectName === version.projectName && v.versionName === version.versionName,
+        )
+      ) {
+        const error = new Error("The conditional request failed");
+        error.name = "ConditionalCheckFailedException";
+        throw error;
+      }
+      versions = [...versions, version];
+    },
     async put(version) {
       versions = [
         ...versions.filter(
@@ -216,6 +249,25 @@ describe("createVersion naming", () => {
         makeProjectRepo([projectFixture("p")]),
         "p",
         { ...versionInput(), versionName: "1" },
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("maps a lost conditional-create race to ConflictError", async () => {
+    const versions = makeVersionRepo();
+    versions.create = async () => {
+      const error = new Error("The conditional request failed");
+      error.name = "ConditionalCheckFailedException";
+      throw error;
+    };
+
+    await expect(
+      createVersion(
+        versions,
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        versionInput(),
         OWNER,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
@@ -415,6 +467,18 @@ describe("projectRepository.delete cascade", () => {
     expect(store.has("USAGE#p")).toBe(false);
     expect(store.get("PROJECT#other")).toHaveLength(1);
   });
+
+  it("fails without deleting META when DynamoDB keeps returning unprocessed children", async () => {
+    store.clear();
+    store.set("PROJECT#p", [
+      { PK: "PROJECT#p", SK: "META" },
+      { PK: "PROJECT#p", SK: "VERSION#1" },
+    ]);
+    batchFailuresRemaining.value = 5;
+
+    await expect(projectRepository.delete("p")).rejects.toThrow(/Failed to delete all/);
+    expect(store.get("PROJECT#p")).toContainEqual({ PK: "PROJECT#p", SK: "META" });
+  });
 });
 
 describe("createProject race", () => {
@@ -473,6 +537,18 @@ describe("updateVersion / deleteVersion boundaries", () => {
         OTHER,
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("deleteVersion rejects the currently published version", async () => {
+    await expect(
+      deleteVersion(
+        makeVersionRepo([versionFixture("p", "1")]),
+        makeProjectRepo([projectFixture("p", { publishedVersion: "1" })]),
+        "p",
+        "1",
+        OWNER,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 });
 

@@ -1,9 +1,11 @@
 import {
   BatchWriteCommand,
   type BatchWriteCommandInput,
+  DeleteCommand,
   GetCommand,
-  PutCommand,
   QueryCommand,
+  TransactWriteCommand,
+  UpdateCommand,
   type QueryCommandOutput,
 } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
@@ -19,18 +21,6 @@ type DynamoItem = Record<string, unknown>;
 type LastKey = QueryCommandOutput["LastEvaluatedKey"];
 type WriteRequests = NonNullable<BatchWriteCommandInput["RequestItems"]>[string];
 
-function toChatItem(chat: Chat) {
-  const { PK, SK } = keys.chat(chat.chatId);
-  return {
-    PK,
-    SK,
-    GSI1PK: keys.chatOwnerPartition(chat.ownerEmail),
-    GSI1SK: chat.updatedAt,
-    entityType: CHAT_ENTITY,
-    ...chat,
-  };
-}
-
 function fromChatItem(item: DynamoItem): Chat {
   return {
     chatId: item.chatId as string,
@@ -40,6 +30,31 @@ function fromChatItem(item: DynamoItem): Chat {
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };
+}
+
+function chatUpdate(chat: Chat, condition: string): UpdateCommand {
+  return new UpdateCommand({
+    TableName: getTableName(),
+    Key: keys.chat(chat.chatId),
+    UpdateExpression:
+      "SET GSI1PK = :gsi1pk, GSI1SK = :gsi1sk, entityType = :entityType, " +
+      "chatId = :chatId, title = :title, ownerEmail = :ownerEmail, " +
+      "projectName = :projectName, createdAt = :createdAt, updatedAt = :updatedAt, " +
+      "nextSeq = if_not_exists(nextSeq, :zero)",
+    ExpressionAttributeValues: {
+      ":gsi1pk": keys.chatOwnerPartition(chat.ownerEmail),
+      ":gsi1sk": chat.updatedAt,
+      ":entityType": CHAT_ENTITY,
+      ":chatId": chat.chatId,
+      ":title": chat.title,
+      ":ownerEmail": chat.ownerEmail,
+      ":projectName": chat.projectName ?? null,
+      ":createdAt": chat.createdAt,
+      ":updatedAt": chat.updatedAt,
+      ":zero": 0,
+    },
+    ConditionExpression: condition,
+  });
 }
 
 function toMessageItem(message: ChatMessage) {
@@ -106,15 +121,28 @@ export const chatRepository: ChatRepository = {
     return chats;
   },
 
-  async put(chat) {
+  async create(chat) {
+    await getDocumentClient().send(chatUpdate(chat, "attribute_not_exists(PK)"));
+  },
+
+  async update(chat) {
     await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toChatItem(chat) }),
+      chatUpdate(chat, "attribute_exists(PK) AND attribute_not_exists(deletingAt)"),
     );
   },
 
   async delete(chatId) {
     const client = getDocumentClient();
     const table = getTableName();
+    await client.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: keys.chat(chatId),
+        UpdateExpression: "SET deletingAt = if_not_exists(deletingAt, :now)",
+        ConditionExpression: "attribute_exists(PK)",
+        ExpressionAttributeValues: { ":now": new Date().toISOString() },
+      }),
+    );
     const toRemove: { PK: string; SK: string }[] = [];
     let lastKey: LastKey;
     do {
@@ -125,10 +153,13 @@ export const chatRepository: ChatRepository = {
           ExpressionAttributeValues: { ":pk": keys.chat(chatId).PK },
           ProjectionExpression: "PK, SK",
           ExclusiveStartKey: lastKey,
+          ConsistentRead: true,
         }),
       );
       for (const item of res.Items ?? []) {
-        toRemove.push({ PK: item.PK as string, SK: item.SK as string });
+        if (item.SK !== "META") {
+          toRemove.push({ PK: item.PK as string, SK: item.SK as string });
+        }
       }
       lastKey = res.LastEvaluatedKey;
     } while (lastKey);
@@ -137,13 +168,23 @@ export const chatRepository: ChatRepository = {
       let pending: WriteRequests = toRemove
         .slice(i, i + 25)
         .map((Key) => ({ DeleteRequest: { Key } }));
-      while (pending.length > 0) {
+      for (let attempt = 0; pending.length > 0 && attempt < 5; attempt += 1) {
         const res = await client.send(
           new BatchWriteCommand({ RequestItems: { [table]: pending } }),
         );
         pending = res.UnprocessedItems?.[table] ?? [];
       }
+      if (pending.length > 0) {
+        throw new Error(`Failed to delete all chat messages after 5 attempts (${pending.length} remain)`);
+      }
     }
+    await client.send(
+      new DeleteCommand({
+        TableName: table,
+        Key: keys.chat(chatId),
+        ConditionExpression: "attribute_exists(PK) AND attribute_exists(deletingAt)",
+      }),
+    );
   },
 
   async listMessages(chatId) {
@@ -174,7 +215,87 @@ export const chatRepository: ChatRepository = {
 
   async appendMessage(message) {
     await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toMessageItem(message) }),
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: getTableName(),
+              Key: keys.chat(message.chatId),
+              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+            },
+          },
+          {
+            Put: {
+              TableName: getTableName(),
+              Item: toMessageItem(message),
+              ConditionExpression: "attribute_not_exists(PK)",
+            },
+          },
+        ],
+      }),
     );
+  },
+
+  async reserveMessageSeq(chatId) {
+    const client = getDocumentClient();
+    const table = getTableName();
+    const key = keys.chat(chatId);
+
+    for (;;) {
+      const meta = await client.send(
+        new GetCommand({
+          TableName: table,
+          Key: key,
+          ProjectionExpression: "nextSeq",
+          ConsistentRead: true,
+        }),
+      );
+      if (typeof meta.Item?.nextSeq !== "number") {
+        const latest = await client.send(
+          new QueryCommand({
+            TableName: table,
+            KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+            ExpressionAttributeValues: {
+              ":pk": key.PK,
+              ":sk": keys.chatMessagePrefix(),
+            },
+            ProjectionExpression: "seq",
+            ScanIndexForward: false,
+            Limit: 1,
+            ConsistentRead: true,
+          }),
+        );
+        const initial = Number(latest.Items?.[0]?.seq ?? -1) + 1;
+        try {
+          await client.send(
+            new UpdateCommand({
+              TableName: table,
+              Key: key,
+              UpdateExpression: "SET nextSeq = :initial",
+              ConditionExpression:
+                "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND attribute_not_exists(nextSeq)",
+              ExpressionAttributeValues: { ":initial": initial },
+            }),
+          );
+        } catch (error) {
+          if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      const reserved = await client.send(
+        new UpdateCommand({
+          TableName: table,
+          Key: key,
+          UpdateExpression: "ADD nextSeq :one",
+          ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+          ExpressionAttributeValues: { ":one": 1 },
+          ReturnValues: "UPDATED_OLD",
+        }),
+      );
+      return Number(reserved.Attributes?.nextSeq ?? 0);
+    }
   },
 };

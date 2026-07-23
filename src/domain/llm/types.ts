@@ -36,6 +36,8 @@ export interface ChatMessageInput {
 
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
+  /** Internal correlation id for a traced subagent execution. */
+  traceId?: string;
   /** Subagent that authored this chunk; top-level chunks carry no author. */
   author?: string;
   delta?: {

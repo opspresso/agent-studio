@@ -1,4 +1,9 @@
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DeleteCommand,
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import type { VersionRepository } from "@/domain/project/repository";
@@ -99,7 +104,47 @@ export const versionRepository: VersionRepository = {
 
   async put(version: Version): Promise<void> {
     await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toItem(version) }),
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: getTableName(),
+              Key: keys.project(version.projectName),
+              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+            },
+          },
+          {
+            Put: {
+              TableName: getTableName(),
+              Item: toItem(version),
+              ConditionExpression: "attribute_exists(PK)",
+            },
+          },
+        ],
+      }),
+    );
+  },
+
+  async create(version: Version): Promise<void> {
+    await getDocumentClient().send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: getTableName(),
+              Key: keys.project(version.projectName),
+              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+            },
+          },
+          {
+            Put: {
+              TableName: getTableName(),
+              Item: toItem(version),
+              ConditionExpression: "attribute_not_exists(PK)",
+            },
+          },
+        ],
+      }),
     );
   },
 

@@ -115,7 +115,17 @@ export async function createVersion(
     maxTurn: input.maxTurn,
     createdAt: new Date().toISOString(),
   };
-  await versions.put(version);
+  try {
+    await versions.create(version);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.name === "ConditionalCheckFailedException" || error.name === "TransactionCanceledException")
+    ) {
+      throw new ConflictError(`Version "${versionName}" already exists in project "${projectName}"`);
+    }
+    throw error;
+  }
   return version;
 }
 
@@ -159,8 +169,11 @@ export async function deleteVersion(
   versionName: string,
   userEmail: string,
 ): Promise<void> {
-  await assertProjectOwner(projects, projectName, userEmail);
+  const project = await assertProjectOwner(projects, projectName, userEmail);
   await getVersion(versions, projectName, versionName);
+  if (project.publishedVersion === versionName) {
+    throw new ConflictError(`Published version "${versionName}" cannot be deleted`);
+  }
   await versions.delete(projectName, versionName);
 }
 

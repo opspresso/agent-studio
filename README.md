@@ -139,8 +139,15 @@ optional `SLACK_DEFAULT_PROJECT`). Point the Slack app's Events API request URL 
   thread as multi-turn context.
 - Events are verified (signing secret, 5-minute replay window), deduplicated by
   `event_id` (conditional put, 24h TTL), acked within 3 seconds, and processed in
-  the background — the container is a persistent process, so `after()` work always
-  completes.
+  the background. `after()` requires a persistent process; an abrupt process loss can
+  still interrupt work after the event has been claimed.
+
+## Tracing
+
+Agent executions always persist model/tool/subagent spans. Non-agent and image predict
+executions are sampled with `TRACE_SAMPLE_RATE` (`0`–`1`, default `0.1`). Traces are visible
+on each project's **Traces** tab. Raw prompts and tool results are not stored; spans keep
+only bounded metadata such as character counts, tokens, cost, duration, and subagent trace ids.
 
 ## A2A (Agent2Agent)
 

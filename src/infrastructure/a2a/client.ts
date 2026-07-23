@@ -8,6 +8,7 @@
 
 import type { Message, Part, Task } from "@a2a-js/sdk";
 import { A2AClient } from "@a2a-js/sdk/client";
+import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 
 export type A2aSendResult = { ok: true; text: string } | { ok: false; error: string };
 
@@ -59,7 +60,7 @@ export async function sendA2aMessage(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   const fetchImpl: typeof fetch = (input, init) =>
-    fetch(input, {
+    fetchPublicUrl(input, {
       ...init,
       headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) },
       signal: controller.signal,

@@ -1,8 +1,10 @@
 import {
   BatchWriteCommand,
+  DeleteCommand,
   GetCommand,
   PutCommand,
   QueryCommand,
+  UpdateCommand,
   type BatchWriteCommandInput,
   type BatchWriteCommandOutput,
 } from "@aws-sdk/lib-dynamodb";
@@ -66,6 +68,9 @@ async function batchDelete(deleteKeys: { PK: string; SK: string }[]): Promise<vo
       );
       request = result.UnprocessedItems;
     }
+    if (request && Object.values(request).some((items) => (items?.length ?? 0) > 0)) {
+      throw new Error(`Failed to delete all DynamoDB items after 5 attempts (${chunk.length} requested)`);
+    }
   }
 }
 
@@ -81,6 +86,7 @@ async function deletePartition(pk: string): Promise<void> {
     KeyConditionExpression: "PK = :pk",
     ExpressionAttributeValues: { ":pk": pk },
     ProjectionExpression: "PK, SK",
+    ConsistentRead: true,
   });
   await batchDelete(items.map(toDeleteKey));
 }
@@ -143,7 +149,11 @@ export const projectRepository: ProjectRepository = {
 
   async update(project: Project): Promise<void> {
     await getDocumentClient().send(
-      new PutCommand({ TableName: getTableName(), Item: toItem(project) }),
+      new PutCommand({
+        TableName: getTableName(),
+        Item: toItem(project),
+        ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+      }),
     );
   },
 
@@ -153,8 +163,43 @@ export const projectRepository: ProjectRepository = {
    * are intentionally left intact.
    */
   async delete(name: string): Promise<void> {
-    await deletePartition(keys.projectPartition(name));
+    await getDocumentClient().send(
+      new UpdateCommand({
+        TableName: getTableName(),
+        Key: keys.project(name),
+        UpdateExpression: "SET deletingAt = if_not_exists(deletingAt, :now)",
+        ConditionExpression: "attribute_exists(PK)",
+        ExpressionAttributeValues: { ":now": new Date().toISOString() },
+      }),
+    );
     await deletePartition(keys.usage(name, "").PK);
     await deleteTracesForProject(name);
+    const projectItems = await queryAll({
+      TableName: getTableName(),
+      KeyConditionExpression: "PK = :pk",
+      ExpressionAttributeValues: { ":pk": keys.projectPartition(name) },
+      ProjectionExpression: "PK, SK, tracePK, traceSK",
+      ConsistentRead: true,
+    });
+    const traceTargets = projectItems.flatMap((item) =>
+      typeof item.tracePK === "string" && typeof item.traceSK === "string"
+        ? [{ PK: item.tracePK, SK: item.traceSK }]
+        : [],
+    );
+    await batchDelete(
+      [
+        ...projectItems
+          .filter((item) => item.SK !== "META")
+          .map(toDeleteKey),
+        ...traceTargets,
+      ],
+    );
+    await getDocumentClient().send(
+      new DeleteCommand({
+        TableName: getTableName(),
+        Key: keys.project(name),
+        ConditionExpression: "attribute_exists(PK) AND attribute_exists(deletingAt)",
+      }),
+    );
   },
 };

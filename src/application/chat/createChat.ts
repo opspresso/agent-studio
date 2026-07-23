@@ -47,11 +47,11 @@ export async function createChat(
     createdAt: now,
     updatedAt: now,
   };
-  await deps.chats.put(chat);
+  await deps.chats.create(chat);
 
   const userMessage: ChatMessage = {
     chatId: chat.chatId,
-    seq: 0,
+    seq: await deps.chats.reserveMessageSeq(chat.chatId),
     role: "user",
     content: input.firstMessage,
     createdAt: now,
@@ -65,5 +65,5 @@ export async function createChat(
     userEmail: input.userEmail,
   });
 
-  return { chat, stream: runAndPersist(deps, chat, source, 1) };
+  return { chat, stream: runAndPersist(deps, chat, source) };
 }

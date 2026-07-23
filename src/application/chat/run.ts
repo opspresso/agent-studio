@@ -33,7 +33,6 @@ export async function* runAndPersist(
   deps: ChatDeps,
   chat: Chat,
   source: AsyncGenerator<EngineChunk>,
-  startSeq: number,
 ): AsyncGenerator<EngineChunk> {
   let content = "";
   const toolMessages: { content: string; toolCallId: string; toolName: string }[] = [];
@@ -73,11 +72,10 @@ export async function* runAndPersist(
   }
 
   const now = new Date().toISOString();
-  let seq = startSeq;
   for (const tool of toolMessages) {
     await deps.chats.appendMessage({
       chatId: chat.chatId,
-      seq: seq++,
+      seq: await deps.chats.reserveMessageSeq(chat.chatId),
       role: "tool",
       content: tool.content,
       toolCallId: tool.toolCallId,
@@ -87,11 +85,11 @@ export async function* runAndPersist(
   }
   await deps.chats.appendMessage({
     chatId: chat.chatId,
-    seq: seq++,
+    seq: await deps.chats.reserveMessageSeq(chat.chatId),
     role: "assistant",
     content,
     ...(images.length > 0 ? { images } : {}),
     createdAt: now,
   });
-  await deps.chats.put({ ...chat, updatedAt: now });
+  await deps.chats.update({ ...chat, updatedAt: now });
 }

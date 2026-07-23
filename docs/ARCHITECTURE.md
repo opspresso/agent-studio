@@ -22,7 +22,7 @@ below is the map.
 ```
 src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
-    project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/
+    project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
   application/      # Use cases. Depends on domain ports only.
   infrastructure/   # Adapters (app-facing code reaches them via the composition root).
     db/             # Single-table client, key builders, repositories
@@ -64,7 +64,7 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | Entity | PK | SK | GSI1PK | GSI1SK |
 |---|---|---|---|---|
 | Auth (better-auth model rows) | `AUTH#{model}#{id}` | `ITEM` | `AUTH#{model}` | `{id}` |
-| Auth unique lookup (email, token, ...) | — | — | GSI2: `AUTH#{model}#{field}#{value}` | `ITEM` |
+| Auth unique lock (email, token, ...) | `AUTHUNIQUE#{model}#{field}#{value}` | `LOCK` | — | — |
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
@@ -74,11 +74,17 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
-| Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}` |
+| Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
+| Trace deletion reference | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
 
 Conventions:
 - Published version is a pointer attribute `publishedVersion` on the project `META` item, not a copy.
+- Chat META owns an atomic `nextSeq`; message rows use conditionally-created sequence keys.
+- Auth unique fields are claimed transactionally with a dedicated lock item. GSI2 remains
+  a compatibility lookup for rows created before unique locks were introduced.
+- Trace creation transactionally writes a project-partition deletion reference; project
+  deletion marks the project first, preventing new versions/traces before child cleanup.
 - Usage rows are updated with atomic `ADD` per model: `calls.{model}`, `inputTokens.{model}`,
   `outputTokens.{model}`, `costUsd.{model}` — two-step update: `SET … if_not_exists` to
   materialise the maps, then `ADD calls.#model :calls, …` on the nested number attrs.
@@ -283,6 +289,8 @@ GET|PUT|DELETE /api/projects/[name]
 GET|POST /api/projects/[name]/versions
 GET|PUT|DELETE /api/projects/[name]/versions/[version]
 POST /api/projects/[name]/publish           set publishedVersion
+GET  /api/projects/[name]/traces            trace list
+GET  /api/projects/[name]/traces/[traceId]  trace detail
 POST /api/projects/[name]/versions/[version]/predict        (version = name | 'published')
 POST /api/projects/[name]/versions/[version]/chat/completions   OpenAI-compatible
 POST /api/projects/[name]/versions/[version]/agent          SSE stream

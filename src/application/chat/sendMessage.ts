@@ -39,8 +39,7 @@ export async function sendMessage(
   }
 
   const existing = await deps.chats.listMessages(input.chatId);
-  const lastSeq = existing.length > 0 ? (existing[existing.length - 1]?.seq ?? -1) : -1;
-  const userSeq = lastSeq + 1;
+  const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
   const now = new Date().toISOString();
   const userMessage: ChatMessage = {
     chatId: input.chatId,
@@ -58,5 +57,5 @@ export async function sendMessage(
     userEmail: input.userEmail,
   });
 
-  return runAndPersist(deps, chat, source, userSeq + 1);
+  return runAndPersist(deps, chat, source);
 }

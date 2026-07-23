@@ -13,8 +13,14 @@ import { externalAgentRepository } from "@/infrastructure/db/repositories/extern
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { channel } from "@/infrastructure/llm/channel";
 import { imageChannel } from "@/infrastructure/llm/imageChannel";
+import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 
-export { projectRepository, versionRepository };
+export { projectRepository, versionRepository, traceRepository };
+
+const configuredTraceSampleRate = Number(process.env.TRACE_SAMPLE_RATE ?? "0.1");
+const traceSampleRate = Number.isFinite(configuredTraceSampleRate)
+  ? Math.min(Math.max(configuredTraceSampleRate, 0), 1)
+  : 0.1;
 
 /** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
 export const executionDeps = {
@@ -26,10 +32,14 @@ export const executionDeps = {
   usage: usageRepository,
   channel,
   imageChannel,
+  traces: traceRepository,
+  traceSampleRate,
 };
 
 /** Dependencies for image-generation projects. */
 export const imageDeps = {
   imageChannel,
   usage: usageRepository,
+  traces: traceRepository,
+  traceSampleRate,
 };

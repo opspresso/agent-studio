@@ -13,13 +13,14 @@ vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
   };
 });
 
-import { executeAgent } from "@/application/execution/runProject";
+import { executeAgent, executeVersion } from "@/application/execution/runProject";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { MODEL_CONFIGS } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version, VersionParameters } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
+import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 
 const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
@@ -294,5 +295,65 @@ describe("executeAgent local subagent projectType dispatch", () => {
     expect(
       recorded.some((d) => d.projectName === "painter-img" && d.model === "google/gemini-3-pro-image"),
     ).toBe(true);
+  });
+});
+
+describe("execution tracing policy", () => {
+  function captureTraces(deps: ExecutionDeps): Trace[] {
+    const traces: Trace[] = [];
+    deps.traces = {
+      async put(trace) {
+        traces.push(trace);
+      },
+      async get() {
+        return null;
+      },
+      async listByProject() {
+        return traces;
+      },
+    };
+    return traces;
+  }
+
+  it("always traces agent runs", async () => {
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    deps.traceSampleRate = 0;
+    const traces = captureTraces(deps);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: versionFixture({ piiFiltering: false }),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.spans.some((span) => span.kind === "model")).toBe(true);
+  });
+
+  it("honors the configured sampling rate for non-agent runs", async () => {
+    const skippedChannel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const skippedFixture = executionDepsFixture(skippedChannel);
+    skippedFixture.deps.traceSampleRate = 0;
+    const skipped = captureTraces(skippedFixture.deps);
+    const project = { ...projectFixture(), projectType: "llm" as const };
+
+    await executeVersion(skippedFixture.deps, {
+      project,
+      version: versionFixture({ piiFiltering: false }),
+    });
+    expect(skipped).toHaveLength(0);
+
+    const tracedChannel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const tracedFixture = executionDepsFixture(tracedChannel);
+    tracedFixture.deps.traceSampleRate = 1;
+    const traced = captureTraces(tracedFixture.deps);
+    await executeVersion(tracedFixture.deps, {
+      project,
+      version: versionFixture({ piiFiltering: false }),
+    });
+    expect(traced).toHaveLength(1);
   });
 });

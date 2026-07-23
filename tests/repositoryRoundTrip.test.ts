@@ -9,18 +9,57 @@ const { store, commands, fakeClient } = vi.hoisted(() => {
     async send(command: { input: Record<string, unknown> }) {
       const input = command.input;
       commands.push(input);
+      if (input.TransactItems) {
+        for (const item of input.TransactItems as Array<{
+          Put?: { Item?: Record<string, unknown> };
+          Update?: Record<string, unknown>;
+        }>) {
+          if (item.Put?.Item) {
+            const stored = item.Put.Item as { PK: string; SK: string };
+            store.set(`${stored.PK}|${stored.SK}`, item.Put.Item);
+          }
+          if (item.Update) {
+            commands.push(item.Update);
+          }
+        }
+        return {};
+      }
       if (input.Item) {
         const item = input.Item as { PK: string; SK: string };
         store.set(`${item.PK}|${item.SK}`, input.Item as Record<string, unknown>);
         return {};
       }
       if (input.UpdateExpression) {
+        const expression = String(input.UpdateExpression);
+        if (expression.includes("nextSeq")) {
+          const key = input.Key as { PK: string; SK: string };
+          const storeKey = `${key.PK}|${key.SK}`;
+          const item = store.get(storeKey) ?? { ...key };
+          if (expression === "SET nextSeq = :initial") {
+            item.nextSeq = (input.ExpressionAttributeValues as Record<string, number>)[":initial"];
+            store.set(storeKey, item);
+            return {};
+          }
+          if (expression === "ADD nextSeq :one") {
+            const old = Number(item.nextSeq ?? 0);
+            item.nextSeq = old + 1;
+            store.set(storeKey, item);
+            return { Attributes: { nextSeq: old } };
+          }
+        }
         return {};
       }
       if (input.KeyConditionExpression) {
         const values = (input.ExpressionAttributeValues ?? {}) as Record<string, unknown>;
         const pk = values[":pk"];
-        return { Items: [...store.values()].filter((item) => item.PK === pk) };
+        const prefix = values[":sk"];
+        return {
+          Items: [...store.values()].filter(
+            (item) =>
+              item.PK === pk &&
+              (typeof prefix !== "string" || String(item.SK).startsWith(prefix)),
+          ),
+        };
       }
       if (input.Key) {
         const key = input.Key as { PK: string; SK: string };
@@ -43,6 +82,7 @@ import { chatRepository } from "@/infrastructure/db/repositories/chatRepository"
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
+import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 
@@ -99,7 +139,21 @@ describe("externalAgentRepository round-trip", () => {
 });
 
 describe("chatRepository message round-trip", () => {
+  it("atomically reserves distinct message sequence numbers", async () => {
+    const key = keys.chat("c-seq");
+    store.set(`${key.PK}|${key.SK}`, { ...key, nextSeq: 4 });
+
+    await expect(
+      Promise.all([
+        chatRepository.reserveMessageSeq("c-seq"),
+        chatRepository.reserveMessageSeq("c-seq"),
+      ]),
+    ).resolves.toEqual([4, 5]);
+  });
+
   it("preserves tool and assistant fields through appendMessage + listMessages", async () => {
+    const chatKey = keys.chat("c1");
+    store.set(`${chatKey.PK}|${chatKey.SK}`, { ...chatKey, entityType: "Chat" });
     const toolMessage: ChatMessage = {
       chatId: "c1",
       seq: 3,
@@ -179,5 +233,26 @@ describe("usageRepository.record two-step ADD", () => {
       outputTokens: {},
       costUsd: {},
     });
+  });
+});
+
+describe("traceRepository round-trip", () => {
+  it("persists and loads a typed trace", async () => {
+    const trace = {
+      traceId: "trace-1",
+      projectName: "p",
+      versionName: "2",
+      projectType: "agent",
+      status: "completed" as const,
+      spans: [],
+      startedAt: NOW,
+      endedAt: NOW,
+      durationMs: 10,
+      createdAt: NOW,
+    };
+
+    await traceRepository.put(trace);
+
+    await expect(traceRepository.get(trace.traceId)).resolves.toMatchObject(trace);
   });
 });

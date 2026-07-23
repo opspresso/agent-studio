@@ -8,6 +8,10 @@ export const keys = {
   authModelPartition: (model: string) => `AUTH#${model}`,
   authUniqueLookup: (model: string, field: string, value: string) =>
     `AUTH#${model}#${field}#${value}`,
+  authUnique: (model: string, field: string, value: string) => ({
+    PK: `AUTHUNIQUE#${model}#${field}#${value}`,
+    SK: "LOCK",
+  }),
 
   project: (name: string) => ({ PK: `PROJECT#${name}`, SK: "META" }),
   projectPartition: (name: string) => `PROJECT#${name}`,
@@ -40,6 +44,10 @@ export const keys = {
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
   trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),
+  traceRef: (projectName: string, createdAt: string, traceId: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `TRACE#${createdAt}#${traceId}`,
+  }),
   traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
 
   typePartition: (entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT") => `TYPE#${entityType}`,

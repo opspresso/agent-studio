@@ -185,7 +185,7 @@ async function main() {
 
     // ---------- chat ----------
     const chatId = `it-chat-${suffix}`;
-    await chatRepository.put({
+    await chatRepository.create({
       chatId,
       title: "Integration chat",
       ownerEmail: "it@example.com",

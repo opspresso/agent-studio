@@ -1,4 +1,4 @@
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { createAdapter } from "better-auth/adapters";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
@@ -18,6 +18,26 @@ const UNIQUE_FIELDS: Record<string, string[]> = {
 };
 
 type Item = Record<string, unknown>;
+
+function uniqueFieldFor(model: string, data: Item): string | undefined {
+  return (UNIQUE_FIELDS[model] ?? []).find((field) => data[field] !== undefined);
+}
+
+function uniqueLock(model: string, data: Item): Item | undefined {
+  const field = uniqueFieldFor(model, data);
+  if (!field) {
+    return undefined;
+  }
+  const value = String(data[field]);
+  return {
+    ...keys.authUnique(model, field, value),
+    entityType: "auth:unique",
+    model,
+    field,
+    value,
+    targetId: String(data.id),
+  };
+}
 
 function toRecord(item: Item): Item {
   const { PK, SK, GSI1PK, GSI1SK, GSI2PK, GSI2SK, entityType, ...rest } = item;
@@ -108,6 +128,30 @@ async function findRecords(model: string, where: Where[]): Promise<Item[]> {
       (w.operator ?? "eq") === "eq" &&
       (w.connector ?? "AND") === "AND",
   );
+  if (uniqueClause) {
+    const lock = await client.send(
+      new GetCommand({
+        TableName: getTableName(),
+        Key: keys.authUnique(model, uniqueClause.field, String(uniqueClause.value)),
+        ConsistentRead: true,
+      }),
+    );
+    const targetId = lock.Item?.targetId;
+    if (targetId !== undefined) {
+      const result = await client.send(
+        new GetCommand({
+          TableName: getTableName(),
+          Key: keys.auth(model, String(targetId)),
+          ConsistentRead: true,
+        }),
+      );
+      if (!result.Item) {
+        return [];
+      }
+      const record = toRecord(result.Item as Item);
+      return matchesWhere(record, where) ? [record] : [];
+    }
+  }
   const items = uniqueClause
     ? await queryPartition(
         "GSI2",
@@ -128,12 +172,104 @@ function buildItem(model: string, data: Item): Item {
     GSI1SK: id,
     entityType: `auth:${model}`,
   };
-  const uniqueField = (UNIQUE_FIELDS[model] ?? []).find((f) => data[f] !== undefined);
+  const uniqueField = uniqueFieldFor(model, data);
   if (uniqueField) {
     item.GSI2PK = keys.authUniqueLookup(model, uniqueField, String(data[uniqueField]));
     item.GSI2SK = "ITEM";
   }
   return item;
+}
+
+async function createItem(model: string, data: Item): Promise<void> {
+  const table = getTableName();
+  const item = buildItem(model, data);
+  const lock = uniqueLock(model, data);
+  const transactItems = [
+    {
+      Put: {
+        TableName: table,
+        Item: item,
+        ConditionExpression: "attribute_not_exists(PK)",
+      },
+    },
+    ...(lock
+      ? [
+          {
+            Put: {
+              TableName: table,
+              Item: lock,
+              ConditionExpression: "attribute_not_exists(PK)",
+            },
+          },
+        ]
+      : []),
+  ];
+  await getDocumentClient().send(new TransactWriteCommand({ TransactItems: transactItems }));
+}
+
+async function replaceItem(model: string, existing: Item, next: Item): Promise<void> {
+  const table = getTableName();
+  const oldLock = uniqueLock(model, existing);
+  const newLock = uniqueLock(model, next);
+  const sameLock = oldLock?.PK === newLock?.PK;
+  const transactItems = [
+    {
+      Put: {
+        TableName: table,
+        Item: buildItem(model, next),
+        ConditionExpression: "attribute_exists(PK)",
+      },
+    },
+    ...(newLock
+      ? [
+          {
+            Put: {
+              TableName: table,
+              Item: newLock,
+              ConditionExpression: "attribute_not_exists(PK) OR targetId = :targetId",
+              ExpressionAttributeValues: { ":targetId": String(next.id) },
+            },
+          },
+        ]
+      : []),
+    ...(!sameLock && oldLock
+      ? [
+          {
+            Delete: {
+              TableName: table,
+              Key: { PK: oldLock.PK, SK: oldLock.SK },
+              ConditionExpression: "attribute_not_exists(PK) OR targetId = :targetId",
+              ExpressionAttributeValues: { ":targetId": String(existing.id) },
+            },
+          },
+        ]
+      : []),
+  ];
+  await getDocumentClient().send(new TransactWriteCommand({ TransactItems: transactItems }));
+}
+
+async function deleteItem(model: string, target: Item): Promise<void> {
+  const table = getTableName();
+  const lock = uniqueLock(model, target);
+  await getDocumentClient().send(
+    new TransactWriteCommand({
+      TransactItems: [
+        { Delete: { TableName: table, Key: keys.auth(model, String(target.id)) } },
+        ...(lock
+          ? [
+              {
+                Delete: {
+                  TableName: table,
+                  Key: { PK: lock.PK, SK: lock.SK },
+                  ConditionExpression: "attribute_not_exists(PK) OR targetId = :targetId",
+                  ExpressionAttributeValues: { ":targetId": String(target.id) },
+                },
+              },
+            ]
+          : []),
+      ],
+    }),
+  );
 }
 
 export const dynamodbAdapter = createAdapter({
@@ -148,9 +284,7 @@ export const dynamodbAdapter = createAdapter({
   },
   adapter: () => ({
     async create({ model, data }) {
-      await getDocumentClient().send(
-        new PutCommand({ TableName: getTableName(), Item: buildItem(model, data as Item) }),
-      );
+      await createItem(model, data as Item);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return data as any;
     },
@@ -184,9 +318,7 @@ export const dynamodbAdapter = createAdapter({
       const existing = records[0];
       if (!existing) return null;
       const merged = { ...existing, ...(update as Item) };
-      await getDocumentClient().send(
-        new PutCommand({ TableName: getTableName(), Item: buildItem(model, merged) }),
-      );
+      await replaceItem(model, existing, merged);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return merged as any;
     },
@@ -194,9 +326,7 @@ export const dynamodbAdapter = createAdapter({
       const records = await findRecords(model, where as Where[]);
       for (const existing of records) {
         const merged = { ...existing, ...(update as Item) };
-        await getDocumentClient().send(
-          new PutCommand({ TableName: getTableName(), Item: buildItem(model, merged) }),
-        );
+        await replaceItem(model, existing, merged);
       }
       return records.length;
     },
@@ -204,16 +334,12 @@ export const dynamodbAdapter = createAdapter({
       const records = await findRecords(model, where as Where[]);
       const target = records[0];
       if (!target) return;
-      await getDocumentClient().send(
-        new DeleteCommand({ TableName: getTableName(), Key: keys.auth(model, String(target.id)) }),
-      );
+      await deleteItem(model, target);
     },
     async deleteMany({ model, where }) {
       const records = await findRecords(model, where as Where[]);
       for (const target of records) {
-        await getDocumentClient().send(
-          new DeleteCommand({ TableName: getTableName(), Key: keys.auth(model, String(target.id)) }),
-        );
+        await deleteItem(model, target);
       }
       return records.length;
     },

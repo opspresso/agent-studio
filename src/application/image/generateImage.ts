@@ -4,10 +4,14 @@ import { renderTemplate } from "@/application/llm/template";
 import type { ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
+import type { TraceRepository } from "@/domain/trace/repository";
+import { TraceRecorder } from "@/application/trace/recorder";
 
 export interface ImageGenerationDeps {
   imageChannel: ImageChannel;
   usage: UsageRepository;
+  traces?: TraceRepository;
+  traceSampleRate?: number;
 }
 
 export interface GenerateImageInput {
@@ -27,6 +31,17 @@ export interface GenerateImageOutput {
   usage: { inputTokens: number; outputTokens: number; costUsd: number };
 }
 
+async function finishTrace(recorder: TraceRecorder | undefined, error?: unknown): Promise<void> {
+  if (!recorder) {
+    return;
+  }
+  try {
+    await recorder.finish(error);
+  } catch (traceError) {
+    console.error("[trace] persistence failed", traceError);
+  }
+}
+
 export async function generateImage(
   deps: ImageGenerationDeps,
   input: GenerateImageInput,
@@ -44,30 +59,51 @@ export async function generateImage(
     throw new ValidationError("Image prompt is empty");
   }
 
-  const result: ImageGenerationResult = await deps.imageChannel.generateImage({
-    model,
-    prompt,
-    size: input.size,
-    quality: input.quality,
-  });
+  const recorder =
+    deps.traces && Math.random() < (deps.traceSampleRate ?? 0)
+      ? new TraceRecorder(deps.traces, {
+          projectName: input.project.name,
+          versionName: input.version.versionName,
+          projectType: input.project.projectType,
+          model,
+          messageCount: 1,
+        })
+      : undefined;
+  try {
+    const result: ImageGenerationResult = await deps.imageChannel.generateImage({
+      model,
+      prompt,
+      size: input.size,
+      quality: input.quality,
+    });
 
-  const costUsd = calculateImageCost(model, result.usage);
-  const inputTokens = result.usage.textInputTokens + result.usage.imageInputTokens;
-  const outputTokens = result.usage.imageOutputTokens;
-  await deps.usage.record({
-    projectName: input.project.name,
-    date: new Date().toISOString().slice(0, 10),
-    model,
-    calls: 1,
-    inputTokens,
-    outputTokens,
-    costUsd,
-  });
+    const costUsd = calculateImageCost(model, result.usage);
+    const inputTokens = result.usage.textInputTokens + result.usage.imageInputTokens;
+    const outputTokens = result.usage.imageOutputTokens;
+    await deps.usage.record({
+      projectName: input.project.name,
+      date: new Date().toISOString().slice(0, 10),
+      model,
+      calls: 1,
+      inputTokens,
+      outputTokens,
+      costUsd,
+    });
+    recorder?.observeResult({
+      content: "",
+      model,
+      usage: { inputTokens, outputTokens, costUsd },
+    });
+    await finishTrace(recorder);
 
-  return {
-    imageBase64: result.b64,
-    mimeType: result.mimeType,
-    model,
-    usage: { inputTokens, outputTokens, costUsd },
-  };
+    return {
+      imageBase64: result.b64,
+      mimeType: result.mimeType,
+      model,
+      usage: { inputTokens, outputTokens, costUsd },
+    };
+  } catch (error) {
+    await finishTrace(recorder, error);
+    throw error;
+  }
 }

@@ -10,7 +10,7 @@
  * `ExpressionAttributeNames`.
  */
 
-import { UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
@@ -46,46 +46,72 @@ export class DynamoUsageRepository implements UsageRepository {
 
     // Step 1: materialise the maps + metadata if the row is new.
     await doc.send(
-      new UpdateCommand({
-        TableName: table,
-        Key: key,
-        UpdateExpression:
-          "SET calls = if_not_exists(calls, :empty), " +
-          "inputTokens = if_not_exists(inputTokens, :empty), " +
-          "outputTokens = if_not_exists(outputTokens, :empty), " +
-          "costUsd = if_not_exists(costUsd, :empty), " +
-          "projectName = if_not_exists(projectName, :pn), " +
-          "#date = if_not_exists(#date, :date), " +
-          "entityType = if_not_exists(entityType, :et), " +
-          "GSI1PK = if_not_exists(GSI1PK, :g1pk), " +
-          "GSI1SK = if_not_exists(GSI1SK, :g1sk)",
-        ExpressionAttributeNames: { "#date": "date" },
-        ExpressionAttributeValues: {
-          ":empty": {},
-          ":pn": delta.projectName,
-          ":date": delta.date,
-          ":et": "Usage",
-          ":g1pk": keys.usageDatePartition(delta.date),
-          ":g1sk": delta.projectName,
-        },
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: table,
+              Key: keys.project(delta.projectName),
+              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+            },
+          },
+          {
+            Update: {
+              TableName: table,
+              Key: key,
+              UpdateExpression:
+                "SET calls = if_not_exists(calls, :empty), " +
+                "inputTokens = if_not_exists(inputTokens, :empty), " +
+                "outputTokens = if_not_exists(outputTokens, :empty), " +
+                "costUsd = if_not_exists(costUsd, :empty), " +
+                "projectName = if_not_exists(projectName, :pn), " +
+                "#date = if_not_exists(#date, :date), " +
+                "entityType = if_not_exists(entityType, :et), " +
+                "GSI1PK = if_not_exists(GSI1PK, :g1pk), " +
+                "GSI1SK = if_not_exists(GSI1SK, :g1sk)",
+              ExpressionAttributeNames: { "#date": "date" },
+              ExpressionAttributeValues: {
+                ":empty": {},
+                ":pn": delta.projectName,
+                ":date": delta.date,
+                ":et": "Usage",
+                ":g1pk": keys.usageDatePartition(delta.date),
+                ":g1sk": delta.projectName,
+              },
+            },
+          },
+        ],
       }),
     );
 
     // Step 2: atomic ADD into the now-guaranteed nested maps.
     await doc.send(
-      new UpdateCommand({
-        TableName: table,
-        Key: key,
-        UpdateExpression:
-          "ADD calls.#model :calls, inputTokens.#model :in, " +
-          "outputTokens.#model :out, costUsd.#model :cost",
-        ExpressionAttributeNames: { "#model": delta.model },
-        ExpressionAttributeValues: {
-          ":calls": delta.calls,
-          ":in": delta.inputTokens,
-          ":out": delta.outputTokens,
-          ":cost": delta.costUsd,
-        },
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: table,
+              Key: keys.project(delta.projectName),
+              ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+            },
+          },
+          {
+            Update: {
+              TableName: table,
+              Key: key,
+              UpdateExpression:
+                "ADD calls.#model :calls, inputTokens.#model :in, " +
+                "outputTokens.#model :out, costUsd.#model :cost",
+              ExpressionAttributeNames: { "#model": delta.model },
+              ExpressionAttributeValues: {
+                ":calls": delta.calls,
+                ":in": delta.inputTokens,
+                ":out": delta.outputTokens,
+                ":cost": delta.costUsd,
+              },
+            },
+          },
+        ],
       }),
     );
   }

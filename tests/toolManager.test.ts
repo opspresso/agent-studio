@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
 
+vi.mock("@/infrastructure/net/publicFetch", () => ({
+  fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
+}));
+
 // --- JSON-RPC fetch stub ----------------------------------------------------
 
 interface RpcEnvelope {
