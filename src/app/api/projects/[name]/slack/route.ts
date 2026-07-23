@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getPublicBaseUrl } from "@/lib/runtime-settings";
+import { resolvePublicBaseUrl } from "@/lib/public-url";
 import { withAuth } from "@/lib/session";
 import { projectRepository } from "@/lib/container";
 import { getProject } from "@/application/project/projectUseCases";
@@ -19,14 +19,19 @@ const updateSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+function resolveBaseUrl(request: Request): Promise<string> {
+  return resolvePublicBaseUrl(new URL(request.url).origin);
+}
+
 export const GET = withAuth(async (_user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
     const project = await getProject(projectRepository, name);
     const view = await getProjectSlack(projectRepository, name);
-    const baseUrl = (await getPublicBaseUrl()) ?? new URL(request.url).origin;
+    const baseUrl = await resolveBaseUrl(request);
     return Response.json({
       ...view,
+      eventsUrl: `${baseUrl}${view.eventsPath}`,
       manifest: buildProjectSlackManifest(project, baseUrl),
     });
   } catch (error) {
@@ -41,16 +46,20 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
     return invalidRequest(parsed.error);
   }
   try {
-    return Response.json(await updateProjectSlack(projectRepository, name, parsed.data, user.email));
+    const view = await updateProjectSlack(projectRepository, name, parsed.data, user.email);
+    const baseUrl = await resolveBaseUrl(request);
+    return Response.json({ ...view, eventsUrl: `${baseUrl}${view.eventsPath}` });
   } catch (error) {
     return apiError(error);
   }
 });
 
-export const DELETE = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    return Response.json(await disconnectProjectSlack(projectRepository, name, user.email));
+    const view = await disconnectProjectSlack(projectRepository, name, user.email);
+    const baseUrl = await resolveBaseUrl(request);
+    return Response.json({ ...view, eventsUrl: `${baseUrl}${view.eventsPath}` });
   } catch (error) {
     return apiError(error);
   }

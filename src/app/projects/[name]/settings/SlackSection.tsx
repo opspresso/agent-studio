@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CopyButton } from "@/app/_components/CopyButton";
+import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
   disconnectProjectSlack,
   getProjectSlack,
@@ -122,13 +124,9 @@ export function SlackSection({ projectName }: { projectName: string }) {
           <pre className="max-h-64 overflow-auto rounded bg-neutral-50 p-2 text-[11px] dark:bg-neutral-900">
             {JSON.stringify(view.manifest, null, 2)}
           </pre>
-          <button
-            type="button"
-            onClick={() => navigator.clipboard.writeText(JSON.stringify(view.manifest, null, 2))}
-            className="mt-2 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-          >
-            Copy manifest
-          </button>
+          <div className="mt-2">
+            <CopyButton text={JSON.stringify(view.manifest, null, 2)} label="Copy manifest" />
+          </div>
         </div>
       </details>
 
@@ -150,10 +148,13 @@ export function SlackSection({ projectName }: { projectName: string }) {
           className={inputClass}
         />
       </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Enable event handling at <code className="font-mono text-xs">{view.eventsPath}</code>
-      </label>
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Enable event handling at
+        </label>
+        <CopyableUrl url={view.eventsUrl} />
+      </div>
 
       {status && <p className="text-sm text-emerald-600 dark:text-emerald-400">{status}</p>}
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}

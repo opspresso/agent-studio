@@ -251,6 +251,7 @@ export interface ProjectSlackView {
   botToken: string;
   signingSecret: string;
   eventsPath: string;
+  eventsUrl: string;
   manifest?: Record<string, unknown>;
 }
 
