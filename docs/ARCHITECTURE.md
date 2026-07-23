@@ -3,6 +3,12 @@
 Agent Studio is a production-level single Next.js 16 full-stack application. It covers the domains: **project, llm, agents
 (subagents + external agent registry), skills, mcp, chat, cost/usage**.
 
+**Where to start**: read this file top-to-bottom, then trace one request through the code —
+execution starts at `src/application/execution/runProject.ts` (the facade every entry point
+calls) and descends into `src/application/llm/engine.ts` (the tool loop; see its
+`AGENTS.md` for the loop invariants). The [Request Flow](#request-flow-execution) section
+below is the map.
+
 ## Stack
 
 - Node.js 22, pnpm 11 (`packageManager` pinned)
@@ -26,12 +32,24 @@ src/
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
   components/       # Shared React components
-  lib/              # auth, session helpers, config
+  lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
+                    # config + runtime-settings, SSE helpers
 ```
 
 Dependency rule: `app → application → domain ← infrastructure`. Route handlers and pages must
 not import from `infrastructure/` directly except through the composition root
-(`src/lib/container.ts`), which wires ports to adapters.
+(`src/lib/container.ts`), which wires ports to adapters. `src/lib` is a cross-cutting leaf
+both application and infrastructure may import (config, runtime-settings, session); domain
+must never import it. Application code receives its dependencies — it must not import the
+composition root (`container.ts`) itself.
+
+Composition is distributed across a few deliberate wiring sites: `src/lib/container.ts`
+(repositories + `executionDeps`/`imageDeps`), `src/application/{agent,mcp,skill,settings}/index.ts`
+(each registry slice instantiates its `createXUseCases(repo)` singleton), and
+`src/app/api/chats/_deps.ts` (the `ChatDeps` bag). Three DI styles are in use on purpose:
+factory `createXUseCases(repo)` for registry slices, free functions taking the repo as the
+first argument for the project slice, and deps-bag interfaces (`ChatDeps`, `ExecutionDeps`,
+`SlackEventDeps`) for execution paths. New slices should prefer factory or deps-bag.
 
 ## DynamoDB Single Table Design
 
@@ -63,6 +81,90 @@ Conventions:
 - List queries paginate: most through `queryAll()` (`src/infrastructure/db/query.ts`) — a Query
   page caps at 1MB, so an unpaginated list silently truncates. `chatRepository` runs its own
   `LastEvaluatedKey` loops; `traceRepository` is intentionally bounded top-N via `Limit`.
+
+Why one table and two GSIs: primary-key access covers everything item-scoped (a project and
+its versions share a partition; a chat and its messages share a partition). `GSI1` serves
+the heterogeneous "list by kind" patterns — `TYPE#*` catalog listings (projects, skills,
+MCPs, agents), `CHATOWNER#{email}` (a user's chats ordered by recency), `USAGEDATE#{date}`
+(cross-project daily cost for the dashboard), and `TRACEPROJECT#{name}`. `GSI2` exists
+solely for Better Auth unique-field lookups (email/token → auth row).
+
+## Request Flow (Execution)
+
+Six execution entry points converge on the facade functions in
+`src/application/execution/runProject.ts` — the composition point that resolves a version's
+skills/MCP tools/subagents from repositories, assembles the injected engine deps, and
+records usage. To trace any request, start there.
+
+| Entry point | Caller | Facade used |
+|---|---|---|
+| Predict | `POST …/predict` | `executeVersion` / `executeVersionStream`; image projects → `generateImage` |
+| OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream); `executeVersion` / `collectRun(executeAgent)` (non-stream) |
+| Agent SSE | `POST …/agent` | `executeAgent` |
+| Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent` in `app/api/chats/_deps.ts`) |
+| Slack | `/api/slack/events*` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
+| A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
+
+`executeProjectStream` is the canonical projectType → strategy dispatch (`agent` runs the
+multi-turn tool loop, anything else streams a single-shot completion). New entry points
+should call it instead of re-encoding that decision.
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant R as Route handler (withAuth)
+  participant X as runProject.executeAgent
+  participant E as engine.runAgent
+  participant T as Tools (MCP / Skill / subagent / image)
+  C->>R: POST …/agent (messages)
+  R->>X: executeAgent(executionDeps, {project, version, messages})
+  X->>X: resolve skills / subagents / MCP tools (parallel)
+  X->>E: runAgent(agentDeps, input)
+  loop until no tool_calls or turn guard
+    E->>E: channel stream (fallback: retry once before first chunk)
+    E-->>R: EngineChunk (delta / toolCalls / usage)
+    E->>T: dispatch tool calls (builtins intercepted before MCP)
+    T-->>E: tool results
+  end
+  E-->>R: EngineChunk {done}
+  R-->>C: SSE frames (data: {json}, terminal [DONE])
+  X->>X: usage aggregator flush (finally)
+```
+
+### EngineChunk contract
+
+`EngineChunk` (`src/domain/llm/types.ts`) is the wire unit between the engine and every
+consumer (chat persistence, Slack, OpenAI reshaping, A2A, the browser client). Top-level
+chunks carry **no `author`**; only subagent chunks are authored (stamped by the
+`runSubagent` wrapper with the subagent's name). `isTopLevelChunk()` is the single owned
+predicate — consumers must use it instead of re-deriving author semantics.
+
+| Field | Emitted by | Consumed by |
+|---|---|---|
+| `delta.content` / `delta.reasoningContent` | engine per stream delta (PII-restored) | top-level only: chat persistence, Slack text, OpenAI chunks, A2A artifact, client answer bubble |
+| `delta.toolCalls` | engine when a turn requests tools (display args) | client tool-call rendering; Slack progress indicator |
+| `toolResult` | engine after each tool finishes | chat tool rows (UI-only, not replayed), client tool panel |
+| `image` | GenerateImage builtin | chat image persistence (S3), Slack upload, client gallery |
+| `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
+| `error` | engine on failure (mid-stream — no retry) | every consumer surfaces it and stops |
+| `done` | engine when the loop ends without tool calls | OpenAI `finish_reason`, client finalize |
+| `author` | subagent chunks only | consumers filter via `isTopLevelChunk`; client shows an author badge |
+
+## Error Handling
+
+Two deliberate strategies coexist:
+
+- **HTTP path (before a stream starts)**: use cases throw `AppError` subclasses
+  (`src/application/errors.ts` — Validation/NotFound/Forbidden/Conflict; chat adds `Chat*`
+  subclasses extending the same base). Route handlers map any thrown error through
+  `apiError` (`src/app/api/projects/_lib/http.ts`): `AppError` → its status, anything else
+  → generic 500. The registry slices (skill/mcp/agent) instead return `null`/`false`
+  sentinels their routes translate to 404/409.
+- **In-stream path (after the first chunk)**: failures are values, not exceptions — the
+  engine yields an `{error}` chunk (no retry mid-stream), subagent failures yield an
+  authored error chunk, and dispatch guards degrade instead of failing the run (an
+  SSRF-blocked or unreachable MCP server is skipped with a warning; a hung MCP request
+  aborts after 120s and becomes a tool-error string the model can react to).
 
 ## Domain Semantics
 
@@ -98,7 +200,8 @@ Conventions:
     still image-capable, else the registry's default image model
   - subagent transfer passes ONLY the model-written `message` (no parent history);
     child's final text returns as a "For context: ..." user message
-  - stream chunks carry optional top-level `author` when subagents are wired
+  - top-level chunks are unauthored; subagent chunks carry `author` (see the
+    EngineChunk contract above)
 - Fallback: on 429/5xx from the primary model **before the first chunk**, retry once with
   `fallbackModel`; a mid-stream failure yields an `{error}` chunk and does not retry.
 - PII filtering: when `parameters.piiFiltering` is true, emails and phone numbers in

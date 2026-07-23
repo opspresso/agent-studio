@@ -174,13 +174,13 @@ M1에 의존한다.
 ## 백로그(실제 수요가 있을 때 투자)
 
 - **관례 수렴** — 동작을 보존하는 리팩터링으로, 해당 영역을 수정할 때 묶어서
-  진행하는 것이 가장 좋다. 4가지 DI 스타일을 factory 패턴(`createXUseCases`)으로
-  통일한다. 병렬로 존재하는 `ChatError` 클래스를 공유 `AppError` 계층으로 통합한다
-  (`project/errors.ts`에서 이미 사용 중). UI api 모듈이 도메인 타입을 재정의하지 않고
-  다시 내보내게 한다(UI `Skill` 타입에는 이미 `source`가 누락되어 불일치가 발생했다).
-  설정 Repository의 `FIELDS` 목록을 `FIELD_SPECS`에서 파생해 필드 추가 시 영속화가
-  누락되지 않게 한다. `ChatMessage`를 `role` 기준 discriminated union으로 모델링한다.
-  Slack 이벤트 포트를 `src/domain`으로 옮긴다.
+  진행하는 것이 가장 좋다. `projectUseCases`의 자유 함수 스타일을 factory 패턴
+  (`createXUseCases`) 또는 deps bag으로 수렴한다(다른 슬라이스는 이미 factory/deps bag).
+  UI api 모듈이 도메인 타입을 재정의하지 않고 다시 내보내게 한다(UI `Skill` 타입에는
+  이미 `source`가 누락되어 불일치가 발생했다). 설정 Repository의 `FIELDS` 목록을
+  `FIELD_SPECS`에서 파생해 필드 추가 시 영속화가 누락되지 않게 한다. `ChatMessage`를
+  `role` 기준 discriminated union으로 모델링한다. Slack 이벤트 포트를 `src/domain`으로
+  옮긴다. `EngineChunk`를 discriminated union으로 전환한다.
 - **예약 실행** — 자연어 일정 → RRULE, CAS로 실행 시점 선점, Slack 전달. Runner
   프로세스가 필요하므로 단일 Next.js 배포에는 부담이 크다.
 - **배치 처리** — 전체 lease/fencing/heartbeat/checkpoint 스택이 필요하다.

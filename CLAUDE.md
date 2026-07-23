@@ -47,12 +47,17 @@ Clean Architecture with a strict dependency rule — **`app → application → 
 - `src/application/` — use cases. Depend on domain ports only. Orchestration lives here.
 - `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack, A2A, GitHub, net/crypto helpers.
 - `src/app/` — Next.js App Router pages + API route handlers (presentation).
-- `src/lib/` — auth, session, config, sse, secret-encryption, and the composition root.
+- `src/lib/` — cross-cutting glue: the composition root, auth, session, config,
+  runtime-settings, sse. Application and infrastructure may import it; domain never does.
 
-**Composition root is `src/lib/container.ts`.** Route handlers and pages get repositories
-and `executionDeps` from `container.ts` — do not import `infrastructure/` directly from a
-route/page. Some use cases inject ports via a deps bag (`ChatDeps` in
-`src/application/chat/deps.ts` is the cleanest example).
+**Composition is distributed across a few deliberate wiring sites.** `src/lib/container.ts`
+wires repositories + `executionDeps`; each registry slice
+(`src/application/{agent,mcp,skill,settings}/index.ts`) instantiates its own
+`createXUseCases(repo)` singleton; chats wire `ChatDeps` in `src/app/api/chats/_deps.ts`;
+Slack wires `SlackEventDeps` in `src/app/api/slack/events/_lib/`. Route handlers get
+repositories and `executionDeps` from these wiring sites — do not import `infrastructure/`
+directly from a route/page, and application code must not import `container.ts` (deps are
+injected, never pulled).
 
 Read `docs/ARCHITECTURE.md` for the full single-table key map, domain semantics, and API surface.
 
@@ -74,6 +79,10 @@ deps. Key behaviors:
   stops the loop.
 - Fallback: on a retryable error (429/5xx) **before the first chunk**, retry once with
   `fallbackModel`; a mid-stream failure yields an `{error}` chunk and does not retry.
+- Stream author contract: top-level chunks are unauthored; only subagent chunks carry
+  `author`. Filter with `isTopLevelChunk()` (`src/domain/llm/types.ts`) — never re-derive.
+  See `src/application/llm/AGENTS.md` for the full loop invariants before editing
+  `engine.ts`/`pii.ts`.
 
 ### DynamoDB single-table
 
@@ -105,8 +114,10 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   invalidated on write, single-instance assumption). Never read those env vars directly at
   dispatch; go through runtime-settings.
 - **Secrets**: stored headers/tokens are AES-256-GCM encrypted (`enc:v1:` prefix), masked
-  (length-preserving asterisks) on read, decrypted only at dispatch (`src/lib/secret-encryption.ts`). A masked
-  or empty value on update preserves the stored secret.
+  (length-preserving asterisks) on read, decrypted only at dispatch
+  (`src/infrastructure/crypto/secretEncryption.ts`). A masked or empty value on update
+  preserves the stored secret; a masked value under a key with no stored counterpart is
+  dropped.
 - **PII filtering**: opt-in per version (`parameters.piiFiltering`) — emails/phone numbers
   are regex-masked with reversible format-preserving tokens before every LLM dispatch and
   restored in responses, including streaming and subagent transfers
