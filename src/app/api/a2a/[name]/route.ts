@@ -7,6 +7,7 @@ import { buildAgentCard } from "@/infrastructure/a2a/cards";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import { getA2aApiKey } from "@/lib/runtime-settings";
+import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { sseResponseRaw } from "@/lib/sse";
 import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
 
@@ -80,12 +81,10 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
 
   const { name } = await ctx.params;
   const project = await projectRepository.get(name);
-  if (!project || !project.publishedVersion) {
+  // External surface: published-only (resolveRunnableVersion policy).
+  const version = project ? await resolveRunnableVersion(versionRepository, project) : null;
+  if (!project || !version) {
     return Response.json({ error: "Project not found or has no published version" }, { status: 404 });
-  }
-  const version = await versionRepository.get(project.name, project.publishedVersion);
-  if (!version) {
-    return Response.json({ error: "Published version not found" }, { status: 404 });
   }
 
   const requestHandler = new DefaultRequestHandler(

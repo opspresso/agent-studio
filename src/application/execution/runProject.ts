@@ -16,8 +16,6 @@ import type { ProjectRepository, VersionRepository } from "@/domain/project/repo
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
-import { channel as defaultChannel } from "@/infrastructure/llm/channel";
-import { imageChannel as defaultImageChannel } from "@/infrastructure/llm/imageChannel";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
@@ -25,6 +23,7 @@ import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { decryptHeadersForOutbound } from "@/infrastructure/crypto/secretEncryption";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
+import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
 
 export interface ExecutionDeps {
@@ -34,10 +33,10 @@ export interface ExecutionDeps {
   mcps: McpRepository;
   externalAgents: ExternalAgentRepository;
   usage: UsageRepository;
-  /** Injectable channel; defaults to the real OpenAI-compatible client. */
-  channel?: LlmChannel;
-  /** Injectable image channel; defaults to the real Images API client. */
-  imageChannel?: ImageChannel;
+  /** LLM channel — wired by the composition root; tests inject a fake. */
+  channel: LlmChannel;
+  /** Image channel — wired by the composition root; tests inject a fake. */
+  imageChannel: ImageChannel;
 }
 
 export interface ExecuteVersionInput {
@@ -89,7 +88,7 @@ export async function executeVersion(
   deps: ExecutionDeps,
   input: ExecuteVersionInput,
 ): Promise<RunResult> {
-  const channel = deps.channel ?? defaultChannel;
+  const channel = deps.channel;
   return engine.runPrompt(
     { channel, recordUsage: bindUsage(deps) },
     {
@@ -109,7 +108,7 @@ export async function* executeVersionStream(
   deps: ExecutionDeps,
   input: ExecuteVersionInput,
 ): AsyncGenerator<EngineChunk> {
-  const channel = deps.channel ?? defaultChannel;
+  const channel = deps.channel;
   yield* engine.runPromptStream(
     { channel, recordUsage: bindUsage(deps) },
     {
@@ -204,7 +203,7 @@ async function buildAgentDeps(
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
 ): Promise<engine.AgentDeps> {
-  const channel = deps.channel ?? defaultChannel;
+  const channel = deps.channel;
   return {
     channel,
     recordUsage: recordUsageFn,
@@ -247,7 +246,7 @@ function buildImageGenerator(
     return undefined;
   }
   const resolvedModel = model;
-  const imageChannel = deps.imageChannel ?? defaultImageChannel;
+  const imageChannel = deps.imageChannel;
   return async (prompt, size, quality) => {
     const result = await imageChannel.generateImage({ model: resolvedModel, prompt, size, quality });
     const costUsd = calculateImageCost(resolvedModel, result.usage);
@@ -407,8 +406,8 @@ async function* runLocalSubagent(
     yield { author: agentName, error: `Agent project '${agentName}' not found.` };
     return "";
   }
-  const versionName = project.publishedVersion;
-  const version = versionName ? await deps.versions.get(project.name, versionName) : null;
+  // Subagent transfers run published versions only — drafts never leak.
+  const version = await resolveRunnableVersion(deps.versions, project);
   if (!version) {
     yield { author: agentName, error: `Agent '${agentName}' has no published version.` };
     return "";

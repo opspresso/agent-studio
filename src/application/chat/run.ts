@@ -1,23 +1,19 @@
 import type { Project, Version } from "@/domain/project/types";
+import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type { Chat, ChatMessageImage } from "@/domain/chat/types";
 import { isTopLevelChunk } from "@/domain/llm/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "./deps";
 
-/** Resolve the published version, falling back to the latest version by createdAt. */
+/**
+ * Chat is an interactive surface, so it may fall back to the newest draft
+ * when nothing is published (see resolveRunnableVersion for the policy).
+ */
 export async function resolveVersion(
   deps: ChatDeps,
   project: Project,
 ): Promise<Version | null> {
-  const published = await deps.versions.get(project.name, "published");
-  if (published) {
-    return published;
-  }
-  const all = await deps.versions.list(project.name);
-  if (all.length === 0) {
-    return null;
-  }
-  return [...all].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[all.length - 1] ?? null;
+  return resolveRunnableVersion(deps.versions, project, { allowDraftFallback: true });
 }
 
 /**

@@ -11,11 +11,12 @@ import { skillRepository } from "@/infrastructure/db/repositories/skillRepositor
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
+import { channel } from "@/infrastructure/llm/channel";
 import { imageChannel } from "@/infrastructure/llm/imageChannel";
 
 export { projectRepository, versionRepository };
 
-/** Repository bundle passed to the execution facade (executeVersion/Stream/Agent). */
+/** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
 export const executionDeps = {
   projects: projectRepository,
   versions: versionRepository,
@@ -23,6 +24,8 @@ export const executionDeps = {
   mcps: mcpRepository,
   externalAgents: externalAgentRepository,
   usage: usageRepository,
+  channel,
+  imageChannel,
 };
 
 /** Dependencies for image-generation projects. */

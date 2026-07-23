@@ -1,7 +1,9 @@
 import { after } from "next/server";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
+import { slackClient } from "@/infrastructure/slack/client";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
+import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import type {
   SlackBotBinding,
@@ -10,9 +12,10 @@ import type {
 } from "@/application/slack/handleSlackEvent";
 
 const slackEventDeps: SlackEventDeps = {
-  execution: executionDeps,
+  runAgent: (params) => executeAgent(executionDeps, params),
   projects: projectRepository,
   versions: versionRepository,
+  slack: slackClient,
 };
 
 /**

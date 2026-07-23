@@ -1,16 +1,38 @@
 import { getSlackBotToken, getSlackDefaultProject } from "@/lib/runtime-settings";
-import { slackClient } from "@/infrastructure/slack/client";
 import type { SlackMessage } from "@/infrastructure/slack/client";
-import { executeAgent, type ExecutionDeps } from "@/application/execution/runProject";
+import type { ExecuteAgentInput } from "@/application/execution/runProject";
+import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import { isTopLevelChunk } from "@/domain/llm/types";
-import type { ChatMessageInput } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+
+/** The slice of the Slack Web API the event handler uses; faked in tests. */
+export interface SlackClientPort {
+  postMessage(
+    token: string,
+    args: { channel: string; text: string; thread_ts?: string },
+  ): Promise<{ ts: string; channel: string }>;
+  updateMessage(
+    token: string,
+    args: { channel: string; ts: string; text: string },
+  ): Promise<{ ts: string }>;
+  uploadImage(
+    token: string,
+    args: { channel: string; threadTs?: string; filename: string; data: Buffer; title?: string },
+  ): Promise<void>;
+  threadReplies(
+    token: string,
+    args: { channel: string; ts: string; limit?: number },
+  ): Promise<SlackMessage[]>;
+}
 
 /** Injected dependencies; wired by the route from the composition root. */
 export interface SlackEventDeps {
-  execution: ExecutionDeps;
+  /** Bound wrapper over `executeAgent(executionDeps, params)` (mirrors ChatDeps.runAgent). */
+  runAgent: (params: ExecuteAgentInput) => AsyncGenerator<EngineChunk>;
   projects: ProjectRepository;
   versions: VersionRepository;
+  slack: SlackClientPort;
 }
 
 export interface SlackEventBody {
@@ -82,7 +104,7 @@ export async function handleSlackEvent(
   const threadTs = event.thread_ts ?? event.ts;
 
   if (!projectName) {
-    await slackClient.postMessage(token, {
+    await deps.slack.postMessage(token, {
       channel: event.channel,
       thread_ts: threadTs,
       text: "No agent project configured. Mention me with `project:<name> <message>` or set SLACK_DEFAULT_PROJECT.",
@@ -91,11 +113,10 @@ export async function handleSlackEvent(
   }
 
   const project = await deps.projects.get(projectName);
-  const version = project
-    ? await deps.versions.get(projectName, project.publishedVersion ?? "published")
-    : null;
+  // External surface: published-only, drafts never leak (resolveRunnableVersion policy).
+  const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
   if (!project || project.projectType !== "agent" || !version) {
-    await slackClient.postMessage(token, {
+    await deps.slack.postMessage(token, {
       channel: event.channel,
       thread_ts: threadTs,
       text: `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
@@ -104,7 +125,7 @@ export async function handleSlackEvent(
   }
 
   console.log(`[slack] run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
-  const placeholder = await slackClient.postMessage(token, {
+  const placeholder = await deps.slack.postMessage(token, {
     channel: event.channel,
     thread_ts: threadTs,
     text: "_thinking…_",
@@ -119,12 +140,12 @@ export async function handleSlackEvent(
     const history =
       event.thread_ts !== undefined
         ? threadToMessages(
-            await slackClient.threadReplies(token, { channel: event.channel, ts: event.thread_ts }),
+            await deps.slack.threadReplies(token, { channel: event.channel, ts: event.thread_ts }),
             event.ts,
           )
         : [];
     const messages: ChatMessageInput[] = [...history, { role: "user", content: message }];
-    for await (const chunk of executeAgent(deps.execution, { project, version, messages })) {
+    for await (const chunk of deps.runAgent({ project, version, messages })) {
       if (Date.now() > deadline) {
         failed = "Agent run timed out";
         break;
@@ -138,7 +159,7 @@ export async function handleSlackEvent(
         | { function?: { name?: string } }
         | undefined;
       if (toolCall?.function?.name && text === "") {
-        await slackClient
+        await deps.slack
           .updateMessage(token, {
             channel: placeholder.channel,
             ts: placeholder.ts,
@@ -155,7 +176,7 @@ export async function handleSlackEvent(
         const now = Date.now();
         if (now - lastUpdate > UPDATE_INTERVAL_MS) {
           lastUpdate = now;
-          await slackClient
+          await deps.slack
             .updateMessage(token, {
               channel: placeholder.channel,
               ts: placeholder.ts,
@@ -175,7 +196,7 @@ export async function handleSlackEvent(
   for (const [index, image] of images.entries()) {
     try {
       const ext = image.mimeType === "image/png" ? "png" : "jpg";
-      await slackClient.uploadImage(token, {
+      await deps.slack.uploadImage(token, {
         channel: event.channel,
         threadTs: threadTs,
         filename: `generated-${Date.now()}-${index + 1}.${ext}`,
@@ -188,7 +209,7 @@ export async function handleSlackEvent(
     }
   }
   try {
-    await slackClient.updateMessage(token, {
+    await deps.slack.updateMessage(token, {
       channel: placeholder.channel,
       ts: placeholder.ts,
       text: failed ? `:warning: ${failed}` : text || "(no response)",
