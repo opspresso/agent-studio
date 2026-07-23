@@ -290,6 +290,16 @@ async function buildMcpTools(
     if (!mcp) {
       continue;
     }
+    try {
+      // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
+      // window; a blocked server is skipped, not fatal to the run.
+      await assertPublicUrl(mcp.url);
+    } catch (error) {
+      console.warn(
+        `Skipping MCP server '${mcp.name}': ${error instanceof SsrfError ? error.message : String(error)}`,
+      );
+      continue;
+    }
     servers.push({
       name: mcp.name,
       url: mcp.url,

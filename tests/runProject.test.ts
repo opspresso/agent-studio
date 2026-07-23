@@ -1,4 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
+vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/infrastructure/net/ssrfGuard")>();
+  return {
+    ...actual,
+    assertPublicUrl: async (url: string) => {
+      if (new URL(url).hostname.endsWith(".internal")) {
+        throw new actual.SsrfError(`URL is not allowed: ${url}`);
+      }
+    },
+  };
+});
+
 import { executeAgent } from "@/application/execution/runProject";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { MODEL_CONFIGS } from "@/domain/llm/models";
@@ -192,5 +206,44 @@ describe("executeAgent PII filtering", () => {
     const sent = String(channel.seenParams[0]?.messages[0]?.content);
     expect(sent).not.toContain("email@example.com");
     expect(sent).not.toContain("010-1234-5678");
+  });
+});
+
+describe("executeAgent MCP dispatch SSRF re-check", () => {
+  it("skips an MCP server whose URL fails the dispatch-time SSRF check", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchMock = vi.fn(async () => {
+      throw new Error("fetch must not be called for a blocked MCP server");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+      const { deps } = executionDepsFixture(channel);
+      deps.mcps.get = (async () => ({
+        name: "internal-mcp",
+        url: "http://mcp.internal/mcp",
+        headers: {},
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })) as ExecutionDeps["mcps"]["get"];
+
+      const chunks = await collect(
+        executeAgent(deps, {
+          project: projectFixture(),
+          version: { ...versionFixture({ piiFiltering: false }), mcpList: ["internal-mcp"] },
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      );
+
+      // The blocked server never gets an outbound request and offers no tools,
+      // while the run itself still completes normally.
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(channel.seenParams[0]?.tools ?? []).toEqual([]);
+      expect(warn).toHaveBeenCalled();
+      expect(chunks.some((c) => c.error)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      warn.mockRestore();
+    }
   });
 });
