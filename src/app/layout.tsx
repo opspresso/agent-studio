@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { UserMenu } from "@/components/UserMenu";
+import { version } from "../../package.json";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -41,6 +42,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+        <footer className="mx-auto max-w-7xl px-4 py-6 text-center text-xs text-neutral-400 dark:text-neutral-600">
+          Agent Studio v{version}
+        </footer>
       </body>
     </html>
   );
