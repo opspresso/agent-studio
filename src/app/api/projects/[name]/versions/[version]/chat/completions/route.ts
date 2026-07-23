@@ -9,7 +9,7 @@ import {
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { chatCompletionsSchema } from "@/app/api/projects/_lib/schemas";
-import { apiError, invalidRequest } from "@/app/api/projects/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { collectRun, toChatCompletion, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };

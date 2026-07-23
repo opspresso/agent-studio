@@ -2,7 +2,8 @@ import { withAuth } from "@/lib/session";
 import { projectRepository } from "@/lib/container";
 import { createProject, listProjects } from "@/application/project/projectUseCases";
 import { createProjectSchema } from "@/app/api/projects/_lib/schemas";
-import { apiError, invalidRequest, sanitizeProject } from "@/app/api/projects/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { sanitizeProject } from "@/app/api/projects/_lib/http";
 
 export const GET = withAuth(async () => {
   return Response.json((await listProjects(projectRepository)).map(sanitizeProject));

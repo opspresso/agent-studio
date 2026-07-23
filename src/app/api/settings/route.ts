@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { settingsUseCases } from "@/application/settings";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
-import { apiError } from "@/app/api/projects/_lib/http";
+import { apiError } from "@/app/api/_lib/http";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
 

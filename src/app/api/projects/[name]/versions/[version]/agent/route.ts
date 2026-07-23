@@ -5,7 +5,7 @@ import { executeAgent } from "@/application/execution/runProject";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { agentSchema } from "@/app/api/projects/_lib/schemas";
-import { apiError, invalidRequest } from "@/app/api/projects/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 

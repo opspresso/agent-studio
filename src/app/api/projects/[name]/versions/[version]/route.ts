@@ -2,7 +2,7 @@ import { withAuth } from "@/lib/session";
 import { projectRepository, versionRepository } from "@/lib/container";
 import { deleteVersion, getVersion, updateVersion } from "@/application/project/versionUseCases";
 import { updateVersionSchema } from "@/app/api/projects/_lib/schemas";
-import { apiError, invalidRequest } from "@/app/api/projects/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 

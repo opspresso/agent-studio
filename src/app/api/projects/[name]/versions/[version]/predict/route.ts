@@ -6,7 +6,7 @@ import { executeVersion, executeVersionStream } from "@/application/execution/ru
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
-import { apiError, invalidRequest } from "@/app/api/projects/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 

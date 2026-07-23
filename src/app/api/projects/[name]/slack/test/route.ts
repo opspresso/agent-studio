@@ -3,7 +3,7 @@ import { projectRepository } from "@/lib/container";
 import { assertProjectOwner } from "@/application/project/projectUseCases";
 import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { slackClient } from "@/infrastructure/slack/client";
-import { apiError } from "@/app/api/projects/_lib/http";
+import { apiError } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 

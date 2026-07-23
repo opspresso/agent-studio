@@ -9,7 +9,7 @@ import {
   getProjectSlack,
   updateProjectSlack,
 } from "@/application/slack/projectSlack";
-import { apiError, invalidRequest } from "@/app/api/projects/_lib/http";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
