@@ -1,9 +1,17 @@
 import { getSlackBotToken, getSlackDefaultProject } from "@/lib/runtime-settings";
 import { slackClient } from "@/infrastructure/slack/client";
 import type { SlackMessage } from "@/infrastructure/slack/client";
-import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
-import { executeAgent } from "@/application/execution/runProject";
+import { executeAgent, type ExecutionDeps } from "@/application/execution/runProject";
+import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import { isTopLevelChunk } from "@/domain/llm/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
+
+/** Injected dependencies; wired by the route from the composition root. */
+export interface SlackEventDeps {
+  execution: ExecutionDeps;
+  projects: ProjectRepository;
+  versions: VersionRepository;
+}
 
 export interface SlackEventBody {
   event_id?: string;
@@ -53,6 +61,7 @@ export interface SlackBotBinding {
 
 /** Process one app_mention / DM event: run the agent project and stream the reply. */
 export async function handleSlackEvent(
+  deps: SlackEventDeps,
   body: SlackEventBody,
   binding?: SlackBotBinding,
 ): Promise<void> {
@@ -81,9 +90,9 @@ export async function handleSlackEvent(
     return;
   }
 
-  const project = await projectRepository.get(projectName);
+  const project = await deps.projects.get(projectName);
   const version = project
-    ? await versionRepository.get(projectName, project.publishedVersion ?? "published")
+    ? await deps.versions.get(projectName, project.publishedVersion ?? "published")
     : null;
   if (!project || project.projectType !== "agent" || !version) {
     await slackClient.postMessage(token, {
@@ -115,7 +124,7 @@ export async function handleSlackEvent(
           )
         : [];
     const messages: ChatMessageInput[] = [...history, { role: "user", content: message }];
-    for await (const chunk of executeAgent(executionDeps, { project, version, messages })) {
+    for await (const chunk of executeAgent(deps.execution, { project, version, messages })) {
       if (Date.now() > deadline) {
         failed = "Agent run timed out";
         break;
@@ -141,7 +150,7 @@ export async function handleSlackEvent(
         images.push(chunk.image);
       }
       const content = chunk.delta?.content;
-      if (content && !chunk.author) {
+      if (content && isTopLevelChunk(chunk)) {
         text += content;
         const now = Date.now();
         if (now - lastUpdate > UPDATE_INTERVAL_MS) {
