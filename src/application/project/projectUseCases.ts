@@ -66,7 +66,15 @@ export async function createProject(
     createdAt: now,
     updatedAt: now,
   };
-  await repo.create(project);
+  try {
+    await repo.create(project);
+  } catch (error) {
+    // The repository's conditional put loses a create race the pre-check missed.
+    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+      throw new ConflictError(`Project "${input.name}" already exists`);
+    }
+    throw error;
+  }
   return project;
 }
 

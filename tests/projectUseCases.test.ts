@@ -2,8 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { VersionInput } from "@/application/project/versionUseCases";
-import { createVersion, publishVersion, updateVersion } from "@/application/project/versionUseCases";
-import { deleteProject, updateProject } from "@/application/project/projectUseCases";
+import {
+  createVersion,
+  deleteVersion,
+  publishVersion,
+  updateVersion,
+} from "@/application/project/versionUseCases";
+import { createProject, deleteProject, updateProject } from "@/application/project/projectUseCases";
 import { versionNameSchema } from "@/app/api/projects/_lib/schemas";
 import {
   ConflictError,
@@ -409,6 +414,65 @@ describe("projectRepository.delete cascade", () => {
     expect(store.has("PROJECT#p")).toBe(false);
     expect(store.has("USAGE#p")).toBe(false);
     expect(store.get("PROJECT#other")).toHaveLength(1);
+  });
+});
+
+describe("createProject race", () => {
+  it("maps a lost conditional-put race to ConflictError (409)", async () => {
+    const repo = makeProjectRepo();
+    repo.create = async () => {
+      const error = new Error("The conditional request failed");
+      error.name = "ConditionalCheckFailedException";
+      throw error;
+    };
+    await expect(
+      createProject(repo, {
+        name: "p",
+        displayName: "P",
+        description: "",
+        projectType: "llm",
+        ownerEmail: OWNER,
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+describe("updateVersion / deleteVersion boundaries", () => {
+  it("updateVersion rejects a missing version with NotFoundError (404)", async () => {
+    await expect(
+      updateVersion(makeVersionRepo(), makeProjectRepo([projectFixture("p")]), "p", "99", {}, OWNER),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("updateVersion rejects a non-owner with ForbiddenError (403)", async () => {
+    await expect(
+      updateVersion(
+        makeVersionRepo([versionFixture("p", "1")]),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        "1",
+        {},
+        OTHER,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("deleteVersion rejects a missing version with NotFoundError (404)", async () => {
+    await expect(
+      deleteVersion(makeVersionRepo(), makeProjectRepo([projectFixture("p")]), "p", "99", OWNER),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("deleteVersion rejects a non-owner with ForbiddenError (403)", async () => {
+    await expect(
+      deleteVersion(
+        makeVersionRepo([versionFixture("p", "1")]),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        "1",
+        OTHER,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
