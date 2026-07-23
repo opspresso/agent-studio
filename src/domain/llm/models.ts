@@ -14,7 +14,10 @@ export interface ModelPricing {
   /** Image-token rates for image-generation models. */
   imageInputPer1M?: number;
   imageOutputPer1M?: number;
-  /** Flat per-image price for models billed per image (informational only). */
+  /**
+   * Flat per-image price. Authoritative for models with no token-based image
+   * output rate (`imageOutputPer1M` absent/0); informational otherwise.
+   */
   perImage?: number;
 }
 
@@ -383,10 +386,22 @@ export interface CostTokens {
   cachedTokens?: number;
 }
 
-/** Compute USD cost for one call from registry pricing. Unknown model → 0. */
+const warnedUnknownModels = new Set<string>();
+
+/** Warn once per process for a model id missing from the catalog. */
+function warnUnknownModel(modelId: string): void {
+  if (warnedUnknownModels.has(modelId)) {
+    return;
+  }
+  warnedUnknownModels.add(modelId);
+  console.warn(`[cost] unknown model id "${modelId}": usage is recorded with $0 cost`);
+}
+
+/** Compute USD cost for one call from registry pricing. Unknown model → warn + 0. */
 export function calculateCost(modelId: string, tokens: CostTokens): number {
   const cfg = getModelConfig(modelId);
   if (!cfg) {
+    warnUnknownModel(modelId);
     return 0;
   }
   const { inputPer1M, outputPer1M, cachedInputPer1M } = cfg.pricing;
@@ -405,13 +420,21 @@ export interface ImageCostTokens {
   imageOutputTokens: number;
 }
 
-/** Compute USD cost for one image generation call. Unknown model → 0. */
+/**
+ * Compute USD cost for one image generation call (one image per call).
+ * Models with no token-based image output rate are billed at their flat
+ * `perImage` price. Unknown model → warn + 0.
+ */
 export function calculateImageCost(modelId: string, tokens: ImageCostTokens): number {
   const cfg = getModelConfig(modelId);
   if (!cfg) {
+    warnUnknownModel(modelId);
     return 0;
   }
-  const { inputPer1M, imageInputPer1M, imageOutputPer1M } = cfg.pricing;
+  const { inputPer1M, imageInputPer1M, imageOutputPer1M, perImage } = cfg.pricing;
+  if (!imageOutputPer1M && perImage) {
+    return perImage;
+  }
   return (
     (tokens.textInputTokens * inputPer1M +
       tokens.imageInputTokens * (imageInputPer1M ?? 0) +

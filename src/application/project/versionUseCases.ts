@@ -30,6 +30,15 @@ function assertValidImageModel(parameters: VersionParameters): void {
   }
 }
 
+/** Warn (non-blocking) when a version references a model missing from the catalog. */
+function warnUnknownCatalogModel(projectName: string, model: string): void {
+  if (!getModelConfig(model)) {
+    console.warn(
+      `[version] ${projectName}: model "${model}" is not in the catalog; usage will be recorded with $0 cost`,
+    );
+  }
+}
+
 function nextVersionName(existing: Version[]): string {
   const maxNumeric = existing.reduce((max, version) => {
     const parsed = Number(version.versionName);
@@ -63,6 +72,7 @@ export async function createVersion(
 ): Promise<Version> {
   await assertProjectOwner(projects, projectName, userEmail);
   assertValidImageModel(input.parameters);
+  warnUnknownCatalogModel(projectName, input.model);
   const existing = await versions.list(projectName);
 
   const versionName = input.versionName ?? nextVersionName(existing);
@@ -99,6 +109,9 @@ export async function updateVersion(
   await assertProjectOwner(projects, projectName, userEmail);
   if (input.parameters) {
     assertValidImageModel(input.parameters);
+  }
+  if (input.model !== undefined) {
+    warnUnknownCatalogModel(projectName, input.model);
   }
   const existing = await getVersion(versions, projectName, versionName);
   const updated: Version = {

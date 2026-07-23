@@ -116,6 +116,7 @@ export function VersionEditor({
             className={inputClass}
           >
             <option value="">Select a model…</option>
+            {value.model && !selectedModel && <option value={value.model}>{value.model}</option>}
             {models.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.displayName} ({model.id})
@@ -129,6 +130,11 @@ export function VersionEditor({
             placeholder="openai/gpt-5-mini"
             className={inputClass}
           />
+        )}
+        {value.model && models.length > 0 && !selectedModel && (
+          <p className="mt-1 text-xs text-red-500">
+            Model is not in the catalog; usage will be recorded with $0 cost.
+          </p>
         )}
       </Field>
 
