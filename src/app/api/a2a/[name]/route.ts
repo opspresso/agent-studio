@@ -46,10 +46,11 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     return Response.json({ error: "Project not found or has no published version" }, { status: 404 });
   }
 
+  const store = createA2aTaskStore(project.name);
   const requestHandler = new DefaultRequestHandler(
     await buildAgentCard(project, version),
-    createA2aTaskStore(project.name),
-    new ProjectA2aExecutor(executionDeps, project, version),
+    store,
+    new ProjectA2aExecutor(executionDeps, project, version, store),
   );
   const transport = new JsonRpcTransportHandler(requestHandler);
 
