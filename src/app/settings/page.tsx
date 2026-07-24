@@ -36,6 +36,12 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   {
+    title: "General",
+    fields: [
+      { key: "publicBaseUrl", label: "PUBLIC_BASE_URL", placeholder: "https://studio.example.com" },
+    ],
+  },
+  {
     title: "Access",
     fields: [
       { key: "adminEmails", label: "ADMIN_EMAILS", placeholder: "admin@example.com, ops@example.com" },
@@ -60,12 +66,6 @@ const SECTIONS: SectionDef[] = [
   {
     title: "A2A",
     fields: [{ key: "a2aApiKey", label: "A2A_API_KEY" }],
-  },
-  {
-    title: "General",
-    fields: [
-      { key: "publicBaseUrl", label: "PUBLIC_BASE_URL", placeholder: "https://studio.example.com" },
-    ],
   },
 ];
 
