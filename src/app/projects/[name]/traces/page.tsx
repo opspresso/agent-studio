@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { DateRangePicker } from "@/app/_components/DateRangePicker";
+import { defaultDateRange } from "@/app/_lib/dateRange";
 import { listTraces, type Trace } from "../../lib/api";
 
 export default function TracesPage() {
   const { name } = useParams<{ name: string }>();
+  const [range, setRange] = useState(defaultDateRange);
   const [traces, setTraces] = useState<Trace[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -14,31 +17,31 @@ export default function TracesPage() {
     setLoading(true);
     setError(null);
     try {
-      setTraces((await listTraces(name)).traces);
+      setTraces((await listTraces(name, range)).traces);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load traces");
     } finally {
       setLoading(false);
     }
-  }, [name]);
+  }, [name, range]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  if (loading) {
-    return <p className="text-sm text-neutral-500">Loading…</p>;
-  }
-  if (error) {
-    return <p className="text-sm text-red-600">{error}</p>;
-  }
-  if (traces.length === 0) {
-    return <p className="text-sm text-neutral-500">No traces recorded yet.</p>;
-  }
-
   return (
-    <div className="space-y-3">
-      {traces.map((trace) => (
+    <div className="space-y-4">
+      <DateRangePicker value={range} onChange={setRange} />
+
+      {loading ? (
+        <p className="text-sm text-neutral-500">Loading…</p>
+      ) : error ? (
+        <p className="text-sm text-red-600">{error}</p>
+      ) : traces.length === 0 ? (
+        <p className="text-sm text-neutral-500">No traces recorded in this range.</p>
+      ) : (
+        <div className="space-y-3">
+          {traces.map((trace) => (
         <details
           key={trace.traceId}
           className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
@@ -84,7 +87,9 @@ export default function TracesPage() {
             </table>
           </div>
         </details>
-      ))}
+          ))}
+        </div>
+      )}
     </div>
   );
 }

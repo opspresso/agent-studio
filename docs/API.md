@@ -219,9 +219,11 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 ## Traces
 
 ```
-GET /api/projects/{name}/traces?limit=50
+GET /api/projects/{name}/traces?limit=50[&from=2026-07-01&to=2026-07-31]
 GET /api/projects/{name}/traces/{traceId}
 ```
+
+`from`/`to` (YYYY-MM-DD, inclusive) filter the list by trace date via the GSI1 date key.
 
 Both endpoints are owner-only (403 for non-owners) — traces hold other users' runtime
 inputs/outputs. Agent runs are always traced. Text and image predict runs are sampled

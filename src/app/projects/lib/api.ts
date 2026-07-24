@@ -59,8 +59,21 @@ export function deleteProject(name: string): Promise<void> {
   return fetch(`/api/projects/${name}`, { method: "DELETE" }).then(assertOk);
 }
 
-export function listTraces(name: string): Promise<{ traces: Trace[] }> {
-  return fetch(`/api/projects/${name}/traces`).then((r) => readJson<{ traces: Trace[] }>(r));
+export function listTraces(
+  name: string,
+  range?: { from?: string; to?: string },
+): Promise<{ traces: Trace[] }> {
+  const query = new URLSearchParams();
+  if (range?.from) {
+    query.set("from", range.from);
+  }
+  if (range?.to) {
+    query.set("to", range.to);
+  }
+  const qs = query.toString();
+  return fetch(`/api/projects/${name}/traces${qs ? `?${qs}` : ""}`).then((r) =>
+    readJson<{ traces: Trace[] }>(r),
+  );
 }
 
 // --- Versions -------------------------------------------------------------

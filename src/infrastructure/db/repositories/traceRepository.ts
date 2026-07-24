@@ -1,5 +1,5 @@
 import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
-import type { TraceRepository } from "@/domain/trace/repository";
+import type { ListTracesOptions, TraceRepository } from "@/domain/trace/repository";
 import type { Trace } from "@/domain/trace/types";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
@@ -85,13 +85,29 @@ export class DynamoTraceRepository implements TraceRepository {
     return fromItem(result.Item);
   }
 
-  async listByProject(projectName: string, limit = 50): Promise<Trace[]> {
+  async listByProject(projectName: string, options: ListTracesOptions = {}): Promise<Trace[]> {
+    const { limit = 50, from, to } = options;
+    // GSI1SK is `${createdAt}#${traceId}`; filter on the date prefix. The upper
+    // bound appends ￿ so the whole "to" day (with any time/id suffix) is included.
+    const values: Record<string, unknown> = { ":pk": keys.traceProjectPartition(projectName) };
+    let keyCondition = "GSI1PK = :pk";
+    if (from && to) {
+      keyCondition += " AND GSI1SK BETWEEN :from AND :to";
+      values[":from"] = from;
+      values[":to"] = `${to}￿`;
+    } else if (from) {
+      keyCondition += " AND GSI1SK >= :from";
+      values[":from"] = from;
+    } else if (to) {
+      keyCondition += " AND GSI1SK <= :to";
+      values[":to"] = `${to}￿`;
+    }
     const result = await getDocumentClient().send(
       new QueryCommand({
         TableName: getTableName(),
         IndexName: "GSI1",
-        KeyConditionExpression: "GSI1PK = :pk",
-        ExpressionAttributeValues: { ":pk": keys.traceProjectPartition(projectName) },
+        KeyConditionExpression: keyCondition,
+        ExpressionAttributeValues: values,
         ScanIndexForward: false,
         Limit: Math.min(Math.max(limit, 1), 100),
       }),

@@ -4,15 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import {
   buildDailySeries,
   groupUsage,
-  presetRange,
   totalCalls,
   totalCost,
   type GroupBy,
   type UsageRow,
 } from "../_lib/usage";
+import { presetRange } from "../_lib/dateRange";
+import { DateRangePicker } from "./DateRangePicker";
 import { DailyCostChart } from "./DailyCostChart";
 
-const PRESETS = [7, 14, 30] as const;
 const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider"];
 
 function formatUsd(value: number, fractionDigits = 2): string {
@@ -72,49 +72,18 @@ export function Dashboard() {
   const calls = useMemo(() => totalCalls(items), [items]);
   const maxCost = groups[0]?.cost ?? 0;
 
-  function applyPreset(days: number) {
-    const range = presetRange(days);
-    setFrom(range.from);
-    setTo(range.to);
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-4">
         <h1 className="text-2xl font-semibold">Cost dashboard</h1>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1 text-sm text-neutral-500">
-            From
-            <input
-              type="date"
-              value={from}
-              max={to}
-              onChange={(event) => setFrom(event.target.value)}
-              className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            />
-          </label>
-          <label className="flex items-center gap-1 text-sm text-neutral-500">
-            To
-            <input
-              type="date"
-              value={to}
-              min={from}
-              onChange={(event) => setTo(event.target.value)}
-              className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            />
-          </label>
-          <div className="flex gap-1">
-            {PRESETS.map((days) => (
-              <button
-                key={days}
-                type="button"
-                onClick={() => applyPreset(days)}
-                className="rounded-lg border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-              >
-                {days}d
-              </button>
-            ))}
-          </div>
+        <div className="ml-auto">
+          <DateRangePicker
+            value={{ from, to }}
+            onChange={(range) => {
+              setFrom(range.from);
+              setTo(range.to);
+            }}
+          />
         </div>
       </div>
 

@@ -37,6 +37,26 @@ describe("GET /api/projects/[name]/traces (owner-gated)", () => {
     const res = await GET(req(), ctx("proj"));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ traces: [{ traceId: "t1" }] });
+    expect(traceRepo.listByProject).toHaveBeenCalledWith("proj", {
+      limit: 10,
+      from: undefined,
+      to: undefined,
+    });
+  });
+
+  it("passes the from/to date range through to the repository", async () => {
+    projectRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
+    traceRepo.listByProject.mockResolvedValue([]);
+    const res = await GET(
+      new Request("http://localhost/api/projects/proj/traces?from=2026-07-01&to=2026-07-31"),
+      ctx("proj"),
+    );
+    expect(res.status).toBe(200);
+    expect(traceRepo.listByProject).toHaveBeenCalledWith("proj", {
+      limit: 50,
+      from: "2026-07-01",
+      to: "2026-07-31",
+    });
   });
 
   it("forbids a non-owner with 403 and never reads traces", async () => {
