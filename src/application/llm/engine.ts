@@ -235,7 +235,10 @@ async function recordUsageIfPossible(
   model: string,
   usage: UsageInfo,
 ): Promise<void> {
-  if (deps.recordUsage && projectName) {
+  if (!deps.recordUsage || !projectName) {
+    return;
+  }
+  try {
     await deps.recordUsage({
       projectName,
       model,
@@ -243,6 +246,11 @@ async function recordUsageIfPossible(
       outputTokens: usage.outputTokens,
       costUsd: usage.costUsd,
     });
+  } catch (error) {
+    // Usage recording is telemetry: a write failure must not turn a successful
+    // generation into an error. The agent aggregator already guarantees this;
+    // single-shot runs record inline, so swallow here too.
+    console.error("[engine] usage recording failed", errorMessage(error));
   }
 }
 
