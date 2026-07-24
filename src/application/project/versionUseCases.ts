@@ -22,7 +22,10 @@ export interface CreateVersionInput extends VersionInput {
   versionName?: string;
 }
 
-export type UpdateVersionInput = Partial<VersionInput>;
+export type UpdateVersionInput = Partial<Omit<VersionInput, "fallbackModel" | "maxTurn">> & {
+  fallbackModel?: string | null;
+  maxTurn?: number | null;
+};
 
 /** Reject an imageModel that is unknown or lacks the imageGeneration capability. */
 function assertValidImageModel(parameters: VersionParameters): void {
@@ -151,12 +154,13 @@ export async function updateVersion(
     systemPrompt: input.systemPrompt ?? existing.systemPrompt,
     userPromptTemplate: input.userPromptTemplate ?? existing.userPromptTemplate,
     model: input.model ?? existing.model,
-    fallbackModel: input.fallbackModel ?? existing.fallbackModel,
+    fallbackModel:
+      input.fallbackModel === null ? undefined : input.fallbackModel ?? existing.fallbackModel,
     parameters: input.parameters ?? existing.parameters,
     mcpList: input.mcpList ?? existing.mcpList,
     skillList: input.skillList ?? existing.skillList,
     subagentList: input.subagentList ?? existing.subagentList,
-    maxTurn: input.maxTurn ?? existing.maxTurn,
+    maxTurn: input.maxTurn === null ? undefined : input.maxTurn ?? existing.maxTurn,
   };
   assertModelSupports(project, updated.model, updated.parameters);
   await versions.put(updated);

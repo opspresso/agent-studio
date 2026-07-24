@@ -131,7 +131,11 @@ export default function PlaygroundPage() {
       const saved =
         selectedName === ""
           ? await createVersion(name, draft)
-          : await updateVersion(name, selectedName, draft);
+          : await updateVersion(name, selectedName, {
+              ...draft,
+              fallbackModel: draft.fallbackModel ?? null,
+              maxTurn: draft.maxTurn ?? null,
+            });
       const refreshed = await listVersions(name);
       setVersions(refreshed);
       setSelectedName(saved.versionName);

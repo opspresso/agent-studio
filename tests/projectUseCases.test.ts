@@ -9,7 +9,7 @@ import {
   updateVersion,
 } from "@/application/project/versionUseCases";
 import { createProject, deleteProject, updateProject } from "@/application/project/projectUseCases";
-import { versionNameSchema } from "@/app/api/projects/_lib/schemas";
+import { updateVersionSchema, versionNameSchema } from "@/app/api/projects/_lib/schemas";
 import {
   ConflictError,
   ForbiddenError,
@@ -372,6 +372,24 @@ describe("imageModel validation", () => {
     expect(updated.systemPrompt).toBe("updated");
     expect(updated.parameters.imageModel).toBe("removed/model");
   });
+
+  it("clears nullable optional settings while omitted settings remain unchanged", async () => {
+    const existing = versionFixture("p", "1", {
+      fallbackModel: "openai/gpt-4o-mini",
+      maxTurn: 20,
+    });
+    const updated = await updateVersion(
+      makeVersionRepo([existing]),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      "1",
+      { fallbackModel: null, maxTurn: null },
+      OWNER,
+    );
+
+    expect(updated.fallbackModel).toBeUndefined();
+    expect(updated.maxTurn).toBeUndefined();
+  });
 });
 
 describe("publishVersion", () => {
@@ -651,5 +669,13 @@ describe("versionNameSchema", () => {
 
   it("rejects the reserved published-pointer sentinel", () => {
     expect(versionNameSchema.safeParse("published").success).toBe(false);
+  });
+});
+
+describe("updateVersionSchema", () => {
+  it("accepts null to clear optional version settings", () => {
+    const parsed = updateVersionSchema.safeParse({ fallbackModel: null, maxTurn: null });
+
+    expect(parsed.success).toBe(true);
   });
 });

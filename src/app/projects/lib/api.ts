@@ -77,6 +77,11 @@ export interface VersionInput {
   maxTurn?: number;
 }
 
+export type UpdateVersionInput = Partial<Omit<VersionInput, "fallbackModel" | "maxTurn">> & {
+  fallbackModel?: string | null;
+  maxTurn?: number | null;
+};
+
 export function listVersions(name: string): Promise<Version[]> {
   return fetch(`/api/projects/${name}/versions`).then((r) => readJson<Version[]>(r));
 }
@@ -99,7 +104,7 @@ export function createVersion(
 export function updateVersion(
   name: string,
   version: string,
-  input: Partial<VersionInput>,
+  input: UpdateVersionInput,
 ): Promise<Version> {
   return fetch(`/api/projects/${name}/versions/${version}`, {
     method: "PUT",

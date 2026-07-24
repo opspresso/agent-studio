@@ -58,7 +58,10 @@ export const createVersionSchema = versionInputSchema.extend({
   versionName: versionNameSchema.optional(),
 });
 
-export const updateVersionSchema = versionInputSchema.partial();
+export const updateVersionSchema = versionInputSchema.partial().extend({
+  fallbackModel: z.string().nullable().optional(),
+  maxTurn: z.number().int().positive().nullable().optional(),
+});
 
 export const publishSchema = z.object({ versionName: z.string().min(1) });
 
