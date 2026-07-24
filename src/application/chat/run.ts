@@ -33,63 +33,70 @@ export async function* runAndPersist(
   deps: ChatDeps,
   chat: Chat,
   source: AsyncGenerator<EngineChunk>,
+  runId?: string,
 ): AsyncGenerator<EngineChunk> {
   let content = "";
   const toolMessages: { content: string; toolCallId: string; toolName: string }[] = [];
   const generatedImages: { b64: string; mimeType: string; prompt?: string }[] = [];
 
-  for await (const chunk of source) {
-    const delta = chunk.delta?.content;
-    if (typeof delta === "string" && isTopLevelChunk(chunk)) {
-      content += delta;
+  try {
+    for await (const chunk of source) {
+      const delta = chunk.delta?.content;
+      if (typeof delta === "string" && isTopLevelChunk(chunk)) {
+        content += delta;
+      }
+      if (chunk.toolResult) {
+        toolMessages.push({
+          content: chunk.toolResult.content,
+          toolCallId: chunk.toolResult.toolCallId,
+          toolName: chunk.toolResult.name,
+        });
+      }
+      if (chunk.image) {
+        generatedImages.push(chunk.image);
+      }
+      yield chunk;
     }
-    if (chunk.toolResult) {
-      toolMessages.push({
-        content: chunk.toolResult.content,
-        toolCallId: chunk.toolResult.toolCallId,
-        toolName: chunk.toolResult.name,
-      });
-    }
-    if (chunk.image) {
-      generatedImages.push(chunk.image);
-    }
-    yield chunk;
-  }
 
-  // Upload images to object storage and keep only the URLs — the b64 payloads
-  // are far beyond the DynamoDB item size limit. A failed upload drops that
-  // image but never the message.
-  const images: ChatMessageImage[] = [];
-  if (deps.storeImage) {
-    for (const image of generatedImages) {
-      try {
-        const url = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
-        images.push(image.prompt === undefined ? { url } : { url, prompt: image.prompt });
-      } catch (error) {
-        console.error("[chat] image upload failed", error);
+    // Upload images to object storage and keep only the URLs — the b64 payloads
+    // are far beyond the DynamoDB item size limit. A failed upload drops that
+    // image but never the message.
+    const images: ChatMessageImage[] = [];
+    if (deps.storeImage) {
+      for (const image of generatedImages) {
+        try {
+          const url = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
+          images.push(image.prompt === undefined ? { url } : { url, prompt: image.prompt });
+        } catch (error) {
+          console.error("[chat] image upload failed", error);
+        }
       }
     }
-  }
 
-  const now = new Date().toISOString();
-  for (const tool of toolMessages) {
+    const now = new Date().toISOString();
+    for (const tool of toolMessages) {
+      await deps.chats.appendMessage({
+        chatId: chat.chatId,
+        seq: await deps.chats.reserveMessageSeq(chat.chatId),
+        role: "tool",
+        content: tool.content,
+        toolCallId: tool.toolCallId,
+        toolName: tool.toolName,
+        createdAt: now,
+      });
+    }
     await deps.chats.appendMessage({
       chatId: chat.chatId,
       seq: await deps.chats.reserveMessageSeq(chat.chatId),
-      role: "tool",
-      content: tool.content,
-      toolCallId: tool.toolCallId,
-      toolName: tool.toolName,
+      role: "assistant",
+      content,
+      ...(images.length > 0 ? { images } : {}),
       createdAt: now,
     });
+    await deps.chats.update({ ...chat, updatedAt: now });
+  } finally {
+    if (runId) {
+      await deps.chats.releaseRun(chat.chatId, runId);
+    }
   }
-  await deps.chats.appendMessage({
-    chatId: chat.chatId,
-    seq: await deps.chats.reserveMessageSeq(chat.chatId),
-    role: "assistant",
-    content,
-    ...(images.length > 0 ? { images } : {}),
-    createdAt: now,
-  });
-  await deps.chats.update({ ...chat, updatedAt: now });
 }

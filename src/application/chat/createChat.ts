@@ -5,6 +5,7 @@ import { ChatValidationError } from "./errors";
 import { toEngineMessages } from "./messageMapping";
 import { resolveVersion, runAndPersist } from "./run";
 import { titleFromMessage } from "./title";
+import { claimChatRun } from "./runLease";
 
 export interface CreateChatInput {
   projectName: string;
@@ -49,23 +50,29 @@ export async function createChat(
     updatedAt: now,
   };
   await deps.chats.create(chat);
+  const runId = await claimChatRun(deps.chats, chat.chatId);
 
-  const userMessage: ChatMessage = {
-    chatId: chat.chatId,
-    seq: await deps.chats.reserveMessageSeq(chat.chatId),
-    role: "user",
-    content: input.firstMessage,
-    createdAt: now,
-  };
-  await deps.chats.appendMessage(userMessage);
+  try {
+    const userMessage: ChatMessage = {
+      chatId: chat.chatId,
+      seq: await deps.chats.reserveMessageSeq(chat.chatId),
+      role: "user",
+      content: input.firstMessage,
+      createdAt: now,
+    };
+    await deps.chats.appendMessage(userMessage);
 
-  const source = deps.runAgent({
-    project,
-    version,
-    messages: toEngineMessages([userMessage]),
-    userEmail: input.userEmail,
-    signal: input.signal,
-  });
+    const source = deps.runAgent({
+      project,
+      version,
+      messages: toEngineMessages([userMessage]),
+      userEmail: input.userEmail,
+      signal: input.signal,
+    });
 
-  return { chat, stream: runAndPersist(deps, chat, source) };
+    return { chat, stream: runAndPersist(deps, chat, source, runId) };
+  } catch (error) {
+    await deps.chats.releaseRun(chat.chatId, runId);
+    throw error;
+  }
 }

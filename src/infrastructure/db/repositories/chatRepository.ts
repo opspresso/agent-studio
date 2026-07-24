@@ -236,6 +236,50 @@ export const chatRepository: ChatRepository = {
     );
   },
 
+  async claimRun(chatId, runId, nowSeconds, expiresAtSeconds) {
+    try {
+      await getDocumentClient().send(
+        new UpdateCommand({
+          TableName: getTableName(),
+          Key: keys.chat(chatId),
+          UpdateExpression: "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt",
+          ConditionExpression:
+            "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND " +
+            "(attribute_not_exists(activeRunId) OR activeRunExpiresAt < :now)",
+          ExpressionAttributeValues: {
+            ":runId": runId,
+            ":now": nowSeconds,
+            ":expiresAt": expiresAtSeconds,
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+        return false;
+      }
+      throw error;
+    }
+  },
+
+  async releaseRun(chatId, runId) {
+    try {
+      await getDocumentClient().send(
+        new UpdateCommand({
+          TableName: getTableName(),
+          Key: keys.chat(chatId),
+          UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt",
+          ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
+          ExpressionAttributeValues: { ":runId": runId },
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== "ConditionalCheckFailedException") {
+        throw error;
+      }
+    }
+  },
+
   async reserveMessageSeq(chatId) {
     const client = getDocumentClient();
     const table = getTableName();

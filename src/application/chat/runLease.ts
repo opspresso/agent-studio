@@ -1,0 +1,20 @@
+import { randomUUID } from "node:crypto";
+import type { ChatRepository } from "@/domain/chat/repository";
+import { ChatConflictError } from "./errors";
+
+const CHAT_RUN_LEASE_SECONDS = 60 * 60;
+
+export async function claimChatRun(chats: ChatRepository, chatId: string): Promise<string> {
+  const runId = randomUUID();
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const claimed = await chats.claimRun(
+    chatId,
+    runId,
+    nowSeconds,
+    nowSeconds + CHAT_RUN_LEASE_SECONDS,
+  );
+  if (!claimed) {
+    throw new ChatConflictError();
+  }
+  return runId;
+}

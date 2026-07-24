@@ -3,6 +3,7 @@ import type { ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { toEngineMessages } from "./messageMapping";
 import { resolveVersion, runAndPersist } from "./run";
+import { claimChatRun } from "./runLease";
 
 export interface SendMessageInput {
   chatId: string;
@@ -39,25 +40,31 @@ export async function sendMessage(
     throw new ChatValidationError("project has no runnable version");
   }
 
-  const existing = await deps.chats.listMessages(input.chatId);
-  const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
-  const now = new Date().toISOString();
-  const userMessage: ChatMessage = {
-    chatId: input.chatId,
-    seq: userSeq,
-    role: "user",
-    content: input.content,
-    createdAt: now,
-  };
-  await deps.chats.appendMessage(userMessage);
+  const runId = await claimChatRun(deps.chats, input.chatId);
+  try {
+    const existing = await deps.chats.listMessages(input.chatId);
+    const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
+    const now = new Date().toISOString();
+    const userMessage: ChatMessage = {
+      chatId: input.chatId,
+      seq: userSeq,
+      role: "user",
+      content: input.content,
+      createdAt: now,
+    };
+    await deps.chats.appendMessage(userMessage);
 
-  const source = deps.runAgent({
-    project,
-    version,
-    messages: toEngineMessages([...existing, userMessage]),
-    userEmail: input.userEmail,
-    signal: input.signal,
-  });
+    const source = deps.runAgent({
+      project,
+      version,
+      messages: toEngineMessages([...existing, userMessage]),
+      userEmail: input.userEmail,
+      signal: input.signal,
+    });
 
-  return runAndPersist(deps, chat, source);
+    return runAndPersist(deps, chat, source, runId);
+  } catch (error) {
+    await deps.chats.releaseRun(input.chatId, runId);
+    throw error;
+  }
 }

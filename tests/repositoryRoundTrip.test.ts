@@ -227,6 +227,27 @@ describe("externalAgentRepository round-trip", () => {
 });
 
 describe("chatRepository message round-trip", () => {
+  it("claims and releases a chat run with ownership conditions", async () => {
+    commands.length = 0;
+
+    await expect(chatRepository.claimRun("c-run", "run-1", 100, 200)).resolves.toBe(true);
+    await chatRepository.releaseRun("c-run", "run-1");
+
+    expect(commands[0]).toMatchObject({
+      UpdateExpression: "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt",
+      ExpressionAttributeValues: {
+        ":runId": "run-1",
+        ":now": 100,
+        ":expiresAt": 200,
+      },
+    });
+    expect(commands[1]).toMatchObject({
+      UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt",
+      ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
+      ExpressionAttributeValues: { ":runId": "run-1" },
+    });
+  });
+
   it("atomically reserves distinct message sequence numbers", async () => {
     const key = keys.chat("c-seq");
     store.set(`${key.PK}|${key.SK}`, { ...key, nextSeq: 4 });

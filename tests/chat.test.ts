@@ -10,7 +10,8 @@ import { runAndPersist } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { sendMessage } from "@/application/chat/sendMessage";
-import { ChatForbiddenError, ChatNotFoundError } from "@/application/chat/errors";
+import { ChatConflictError, ChatForbiddenError, ChatNotFoundError } from "@/application/chat/errors";
+import { claimChatRun } from "@/application/chat/runLease";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -42,7 +43,7 @@ function message(partial: {
 }
 
 function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
-  const state = { deleted: false };
+  const state: { deleted: boolean; activeRunId?: string } = { deleted: false };
   let current = initial;
   let msgs = messages;
   const repo: ChatRepository = {
@@ -65,6 +66,18 @@ function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
     },
     async listMessages() {
       return msgs;
+    },
+    async claimRun(_chatId, runId) {
+      if (state.activeRunId) {
+        return false;
+      }
+      state.activeRunId = runId;
+      return true;
+    },
+    async releaseRun(_chatId, runId) {
+      if (state.activeRunId === runId) {
+        state.activeRunId = undefined;
+      }
     },
     async reserveMessageSeq() {
       return msgs.reduce((max, message) => Math.max(max, message.seq), -1) + 1;
@@ -328,5 +341,37 @@ describe("ownership checks", () => {
   it("error statuses map to HTTP codes", () => {
     expect(new ChatNotFoundError().status).toBe(404);
     expect(new ChatForbiddenError().status).toBe(403);
+  });
+});
+
+describe("chat run lease", () => {
+  it("rejects a second concurrent run and allows a run after release", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const firstRunId = await claimChatRun(repo, "c1");
+
+    await expect(claimChatRun(repo, "c1")).rejects.toBeInstanceOf(ChatConflictError);
+
+    await repo.releaseRun("c1", firstRunId);
+    await expect(claimChatRun(repo, "c1")).resolves.toEqual(expect.any(String));
+  });
+
+  it("releases the lease when stream persistence is cancelled", async () => {
+    const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
+    const runId = await claimChatRun(repo, "c1");
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "partial" } };
+      yield { delta: { content: "unread" } };
+    }
+    const stream = runAndPersist(
+      makeDeps(repo),
+      chatFixture("owner@x.com"),
+      source(),
+      runId,
+    );
+
+    await stream.next();
+    await stream.return(undefined);
+
+    expect(state.activeRunId).toBeUndefined();
   });
 });

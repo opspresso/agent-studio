@@ -24,3 +24,9 @@ export class ChatForbiddenError extends ChatError {
     super(message, 403);
   }
 }
+
+export class ChatConflictError extends ChatError {
+  constructor(message = "chat already has a response in progress") {
+    super(message, 409);
+  }
+}
