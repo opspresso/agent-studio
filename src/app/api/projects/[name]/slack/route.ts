@@ -2,7 +2,7 @@ import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
 import { withAuth } from "@/lib/session";
 import { projectRepository } from "@/lib/container";
-import { getProject } from "@/application/project/projectUseCases";
+import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import {
   buildProjectSlackManifest,
   disconnectProjectSlack,
@@ -23,9 +23,12 @@ function resolveBaseUrl(request: Request): Promise<string> {
   return resolvePublicBaseUrl(new URL(request.url).origin);
 }
 
-export const GET = withAuth(async (_user, request: Request, ctx: RouteContext) => {
+export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
+    // The Slack config exposes the masked bot token / signing secret and the app
+    // manifest, so unlike the shared project catalog it is owner-only.
+    await assertProjectOwner(projectRepository, name, user.email);
     const project = await getProject(projectRepository, name);
     const view = await getProjectSlack(projectRepository, name);
     const baseUrl = await resolveBaseUrl(request);
