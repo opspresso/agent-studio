@@ -154,6 +154,27 @@ describe("project/version atomic writes", () => {
 });
 
 describe("mcpRepository round-trip", () => {
+  it("uses conditional writes for the CRUD lifecycle", async () => {
+    const server = {
+      name: "conditional",
+      url: "https://mcp.example/mcp",
+      headers: {},
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+
+    commands.length = 0;
+    await mcpRepository.create(server);
+    await mcpRepository.update(server);
+    await mcpRepository.delete(server.name);
+
+    expect(commands.map((command) => command.ConditionExpression)).toEqual([
+      "attribute_not_exists(PK)",
+      "attribute_exists(PK)",
+      "attribute_exists(PK)",
+    ]);
+  });
+
   it("preserves stored headers through put + get", async () => {
     await mcpRepository.put({
       name: "m",

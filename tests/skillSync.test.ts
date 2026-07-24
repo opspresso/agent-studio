@@ -15,6 +15,12 @@ function fakeRepo(initial: Skill[] = []) {
     async put(skill) {
       store.set(skill.name, skill);
     },
+    async create(skill) {
+      store.set(skill.name, skill);
+    },
+    async update(skill) {
+      store.set(skill.name, skill);
+    },
     async delete(name) {
       store.delete(name);
     },

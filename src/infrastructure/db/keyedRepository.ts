@@ -16,6 +16,8 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
 }): {
   get(name: string): Promise<T | null>;
   list(): Promise<T[]>;
+  create(entity: T): Promise<void>;
+  update(entity: T): Promise<void>;
   put(entity: T): Promise<void>;
   delete(name: string): Promise<void>;
 } {
@@ -43,9 +45,33 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
       );
     },
 
+    async create(entity) {
+      await getDocumentClient().send(
+        new PutCommand({
+          TableName: getTableName(),
+          Item: opts.toItem(entity),
+          ConditionExpression: "attribute_not_exists(PK)",
+        }),
+      );
+    },
+
+    async update(entity) {
+      await getDocumentClient().send(
+        new PutCommand({
+          TableName: getTableName(),
+          Item: opts.toItem(entity),
+          ConditionExpression: "attribute_exists(PK)",
+        }),
+      );
+    },
+
     async delete(name) {
       await getDocumentClient().send(
-        new DeleteCommand({ TableName: getTableName(), Key: opts.key(name) }),
+        new DeleteCommand({
+          TableName: getTableName(),
+          Key: opts.key(name),
+          ConditionExpression: "attribute_exists(PK)",
+        }),
       );
     },
   };

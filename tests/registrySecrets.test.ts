@@ -31,7 +31,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
-import { NotFoundError } from "@/application/errors";
+import { ConflictError, NotFoundError } from "@/application/errors";
 import { isEncrypted } from "@/infrastructure/crypto/secretEncryption";
 
 const MASK = /^\*+$/;
@@ -47,6 +47,12 @@ function makeMcpRepo(initial: McpServer[] = []) {
       return [...store.values()];
     },
     async put(server) {
+      store.set(server.name, server);
+    },
+    async create(server) {
+      store.set(server.name, server);
+    },
+    async update(server) {
       store.set(server.name, server);
     },
     async delete(name) {
@@ -66,6 +72,12 @@ function makeAgentRepo(initial: ExternalAgent[] = []) {
       return [...store.values()];
     },
     async put(agent) {
+      store.set(agent.name, agent);
+    },
+    async create(agent) {
+      store.set(agent.name, agent);
+    },
+    async update(agent) {
       store.set(agent.name, agent);
     },
     async delete(name) {
@@ -133,6 +145,65 @@ describe("MCP registry secret contract", () => {
     const result = await useCases.testConnection("evil");
     expect(result).toMatchObject({ ok: false });
     expect(listMcpToolsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("registry conditional write errors", () => {
+  it("maps a concurrent create to ConflictError", async () => {
+    const { repo } = makeMcpRepo();
+    repo.create = async () => {
+      const error = new Error("conditional check failed");
+      error.name = "ConditionalCheckFailedException";
+      throw error;
+    };
+
+    await expect(
+      createMcpUseCases(repo).create({
+        name: "m",
+        url: "https://mcp.example/mcp",
+        headers: {},
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("maps deletion between read and update to NotFoundError", async () => {
+    const { repo } = makeMcpRepo([
+      {
+        name: "m",
+        url: "https://mcp.example/mcp",
+        headers: {},
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+    repo.update = async () => {
+      const error = new Error("conditional check failed");
+      error.name = "ConditionalCheckFailedException";
+      throw error;
+    };
+
+    await expect(
+      createMcpUseCases(repo).update("m", { description: "updated" }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("maps deletion between read and remove to NotFoundError", async () => {
+    const { repo } = makeMcpRepo([
+      {
+        name: "m",
+        url: "https://mcp.example/mcp",
+        headers: {},
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+    repo.delete = async () => {
+      const error = new Error("conditional check failed");
+      error.name = "ConditionalCheckFailedException";
+      throw error;
+    };
+
+    await expect(createMcpUseCases(repo).remove("m")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

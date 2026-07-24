@@ -13,7 +13,8 @@ import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 export interface RegistryRepository<T> {
   get(name: string): Promise<T | null>;
   list(): Promise<T[]>;
-  put(entity: T): Promise<void>;
+  create(entity: T): Promise<void>;
+  update(entity: T): Promise<void>;
   delete(name: string): Promise<void>;
 }
 
@@ -79,20 +80,41 @@ export function createRegistryUseCases<
         throw new ConflictError(`${opts.label} "${input.name}" already exists`);
       }
       const entity = await opts.build(input, new Date().toISOString());
-      await opts.repo.put(entity);
+      try {
+        await opts.repo.create(entity);
+      } catch (error) {
+        if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+          throw new ConflictError(`${opts.label} "${input.name}" already exists`);
+        }
+        throw error;
+      }
       return view(entity);
     },
 
     async update(name, patch) {
       const existing = await require(name);
       const updated = await opts.apply(existing, patch, new Date().toISOString());
-      await opts.repo.put(updated);
+      try {
+        await opts.repo.update(updated);
+      } catch (error) {
+        if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+          throw new NotFoundError(`${opts.label} not found: ${name}`);
+        }
+        throw error;
+      }
       return view(updated);
     },
 
     async remove(name) {
       await require(name);
-      await opts.repo.delete(name);
+      try {
+        await opts.repo.delete(name);
+      } catch (error) {
+        if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+          throw new NotFoundError(`${opts.label} not found: ${name}`);
+        }
+        throw error;
+      }
     },
   };
 }
