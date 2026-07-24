@@ -165,7 +165,7 @@ export function VersionEditor({
         <textarea
           value={value.systemPrompt}
           onChange={(e) => patch({ systemPrompt: e.target.value })}
-          rows={5}
+          rows={8}
           placeholder="You are a helpful assistant."
           className={`${inputClass} font-mono`}
         />
