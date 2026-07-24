@@ -190,7 +190,14 @@ export async function handleSlackEvent(
     await deps.slack.updateMessage(token, {
       channel: placeholder.channel,
       ts: placeholder.ts,
-      text: failed ? `:warning: ${failed}` : text || "(no response)",
+      // Append the warning rather than replacing a good answer: a late failure
+      // (image upload, timeout, mid-stream error) must not discard text that
+      // was already streamed to the user.
+      text: failed
+        ? text
+          ? `${text}\n\n:warning: ${failed}`
+          : `:warning: ${failed}`
+        : text || "(no response)",
     });
   } catch (error) {
     console.error("[slack] final update failed", error);
