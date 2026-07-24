@@ -112,7 +112,8 @@ GET  /api/skills/sync
 → { configured, repo, branch }
 
 POST /api/skills/sync
-→ { repo, commitSha, synced, unchanged } | 503 (not configured)
+→ { repo, commitSha, synced, unchanged, skipped } | 503 (not configured)
+  skipped: [{ name, path, reason }] — attachment files skipped during collection
 
 POST /api/mcps/{name}/tools
 → { tools } | 502 (connection failure)

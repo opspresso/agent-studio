@@ -55,11 +55,13 @@ describe("syncSkillsFromSnapshot", () => {
     repo: "opspresso/agent-skills",
     branch: "main",
     commitSha: "abc123",
+    skipped: [],
     files: [
       {
         name: "greeting",
         path: "skills/greeting/SKILL.md",
         content: "---\ndescription: Say hello\n---\nBe warm.",
+        files: [],
       },
     ],
   };
@@ -103,6 +105,53 @@ describe("syncSkillsFromSnapshot", () => {
     const { repo, store } = fakeRepo([local]);
     await syncSkillsFromSnapshot(repo, snapshot);
     expect(store.get("local-only")).toEqual(local);
+  });
+
+  const withFiles = (files: { path: string; content: string }[]) => ({
+    ...snapshot,
+    files: [{ ...snapshot.files[0]!, files }],
+  });
+
+  it("stores attachment files on sync", async () => {
+    const { repo, store } = fakeRepo();
+    await syncSkillsFromSnapshot(repo, withFiles([{ path: "references/api.md", content: "# API" }]));
+    expect(store.get("greeting")?.files).toEqual([{ path: "references/api.md", content: "# API" }]);
+  });
+
+  it("reports unchanged when attachment files are identical", async () => {
+    const { repo } = fakeRepo();
+    const snap = withFiles([{ path: "references/api.md", content: "# API" }]);
+    await syncSkillsFromSnapshot(repo, snap);
+    const result = await syncSkillsFromSnapshot(repo, snap);
+    expect(result.synced).toEqual([]);
+    expect(result.unchanged).toBe(1);
+  });
+
+  it("re-syncs when an attachment changes, and drops removed files", async () => {
+    const { repo, store } = fakeRepo();
+    await syncSkillsFromSnapshot(
+      repo,
+      withFiles([
+        { path: "references/api.md", content: "# API" },
+        { path: "references/old.md", content: "stale" },
+      ]),
+    );
+    const result = await syncSkillsFromSnapshot(
+      repo,
+      withFiles([{ path: "references/api.md", content: "# API v2" }]),
+    );
+    expect(result.synced).toEqual(["greeting"]);
+    expect(store.get("greeting")?.files).toEqual([{ path: "references/api.md", content: "# API v2" }]);
+  });
+
+  it("passes skipped attachments through to the result", async () => {
+    const { repo } = fakeRepo();
+    const snap = {
+      ...snapshot,
+      skipped: [{ name: "greeting", path: "big.md", reason: "too-large" as const }],
+    };
+    const result = await syncSkillsFromSnapshot(repo, snap);
+    expect(result.skipped).toEqual([{ name: "greeting", path: "big.md", reason: "too-large" }]);
   });
 });
 

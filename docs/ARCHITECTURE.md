@@ -246,10 +246,16 @@ Two deliberate strategies coexist:
 
 ### Skills
 - Skill = markdown behavior instructions (progressive disclosure): system prompt lists
-  name+description table only; model calls builtin `Skill` tool to load full content.
-- Stored in table: `Skill { name, description, content (markdown), source?, createdAt,
-  updatedAt }` — `source` marks skills synced from the skills repo
-  (e.g. `github:owner/repo`).
+  name+description table only; model calls builtin `Skill` tool to load the SKILL.md body,
+  or a specific attachment via `file_path`.
+- Stored in table: `Skill { name, description, content (markdown), files? ({ path, content }[]),
+  source?, createdAt, updatedAt }` — `source` marks skills synced from the skills repo
+  (e.g. `github:owner/repo`); `files` are attachment files collected under the skill root.
+- Sync collects supported text attachments (`src/domain/skill/files.ts`:
+  `ALLOWED_SKILL_FILE_EXTENSIONS`) under each `SKILL.md` directory, bounded by per-file /
+  per-skill / file-count caps and excluding symlinks; `file_path` is normalized and confined
+  to the skill root (no absolute paths, `..`, or cross-skill access). Replacing the skill
+  item on re-sync drops stale attachments; skipped files are reported with reasons.
 
 ### MCP
 - `McpServer { name, url, description?, headers: Record<string,string> (values encrypted

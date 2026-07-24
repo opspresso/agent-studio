@@ -120,6 +120,12 @@ The repo layout is `skills/<name>/SKILL.md` with optional YAML frontmatter
 the repo is the source of truth for synced skills, while locally-created
 skills with other names are untouched.
 
+Supported text files under a skill's directory (e.g. `references/*.md`,
+templates) are collected as attachments and loaded on demand via the `Skill`
+tool's `file_path`, subject to per-file / per-skill size and count caps;
+symlinks, unsupported types, and oversized files are skipped and reported. A
+call without `file_path` returns the SKILL.md body as before.
+
 ## Slack Integration
 
 Each agent project can have its own dedicated Slack app.

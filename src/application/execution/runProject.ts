@@ -26,6 +26,7 @@ import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { decryptHeadersForOutbound } from "@/infrastructure/crypto/secretEncryption";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
+import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import * as engine from "@/application/llm/engine";
 import { TraceRecorder } from "@/application/trace/recorder";
 
@@ -404,15 +405,8 @@ async function resolveSubagents(
 function buildSkillLoader(
   deps: ExecutionDeps,
 ): (skillName: string, filePath?: string) => Promise<string> {
-  // Skills store their full markdown in `content`; there is no per-file tree,
-  // so filePath is accepted for signature compatibility but not resolved.
-  return async (skillName) => {
-    const skill = await deps.skills.get(skillName);
-    if (!skill) {
-      return `Error: Skill '${skillName}' not found in database.`;
-    }
-    return skill.content ?? "";
-  };
+  return async (skillName, filePath) =>
+    loadSkillFileContent(await deps.skills.get(skillName), skillName, filePath);
 }
 
 async function buildMcpTools(

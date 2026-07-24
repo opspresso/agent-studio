@@ -1,9 +1,17 @@
 /**
  * GitHub client for the skills source repository. Scans the repo tree for
  * `<dir>/SKILL.md` files (conventionally under `skills/`), where the parent
- * directory name is the skill slug.
+ * directory name is the skill slug, and collects supported text attachment
+ * files beneath each skill root.
  */
 
+import type { SkillFile } from "@/domain/skill/types";
+import {
+  selectSkillAttachments,
+  type SkillRoot,
+  type SkillTreeEntry,
+  type SkippedAttachment,
+} from "@/domain/skill/files";
 import { getSkillsRepoConfig } from "@/lib/runtime-settings";
 
 export interface RepoSkillFile {
@@ -11,6 +19,8 @@ export interface RepoSkillFile {
   name: string;
   path: string;
   content: string;
+  /** Supported attachment files under the skill root, by relative path. */
+  files: SkillFile[];
 }
 
 export interface SkillsRepoSnapshot {
@@ -18,6 +28,8 @@ export interface SkillsRepoSnapshot {
   branch: string;
   commitSha: string;
   files: RepoSkillFile[];
+  /** Attachment files skipped during collection, with reasons. */
+  skipped: SkippedAttachment[];
 }
 
 const SLUG = /^[a-z0-9-]+$/;
@@ -36,6 +48,16 @@ async function githubApi<T>(path: string, token: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function fetchBlobText(repo: string, sha: string, token: string): Promise<string> {
+  const blob = await githubApi<{ content: string; encoding: string }>(
+    `/repos/${repo}/git/blobs/${sha}`,
+    token,
+  );
+  return blob.encoding === "base64"
+    ? Buffer.from(blob.content, "base64").toString("utf8")
+    : blob.content;
+}
+
 export async function fetchSkillsRepoSnapshot(): Promise<SkillsRepoSnapshot> {
   const { repo, branch, token } = await getSkillsRepoConfig();
   if (!repo || !token) {
@@ -52,34 +74,49 @@ export async function fetchSkillsRepoSnapshot(): Promise<SkillsRepoSnapshot> {
     token,
   );
   const tree = await githubApi<{
-    tree: Array<{ path: string; type: string; sha: string }>;
+    tree: SkillTreeEntry[];
     truncated: boolean;
   }>(`/repos/${repo}/git/trees/${commit.tree.sha}?recursive=1`, token);
   if (tree.truncated) {
     throw new Error("Skills repo tree is truncated; repository too large to sync");
   }
 
-  const skillFiles = tree.tree.filter(
-    (entry) => entry.type === "blob" && entry.path.endsWith("/SKILL.md"),
-  );
-
-  const files: RepoSkillFile[] = [];
-  for (const entry of skillFiles) {
+  const roots: SkillRoot[] = [];
+  for (const entry of tree.tree) {
+    if (entry.type !== "blob" || !entry.path.endsWith("/SKILL.md")) {
+      continue;
+    }
     const parts = entry.path.split("/");
     const name = parts[parts.length - 2] ?? "";
     if (!SLUG.test(name)) {
       continue;
     }
-    const blob = await githubApi<{ content: string; encoding: string }>(
-      `/repos/${repo}/git/blobs/${entry.sha}`,
-      token,
-    );
-    const content =
-      blob.encoding === "base64"
-        ? Buffer.from(blob.content, "base64").toString("utf8")
-        : blob.content;
-    files.push({ name, path: entry.path, content });
+    roots.push({ name, rootPath: parts.slice(0, -1).join("/"), skillMdPath: entry.path });
   }
 
-  return { repo, branch, commitSha, files };
+  const { selected, skipped } = selectSkillAttachments(tree.tree, roots);
+  const attachmentsByName = new Map<string, SkillFile[]>();
+  for (const attachment of selected) {
+    const content = await fetchBlobText(repo, attachment.sha, token);
+    const list = attachmentsByName.get(attachment.name) ?? [];
+    list.push({ path: attachment.relPath, content });
+    attachmentsByName.set(attachment.name, list);
+  }
+
+  const files: RepoSkillFile[] = [];
+  for (const root of roots) {
+    const skillMd = tree.tree.find((entry) => entry.path === root.skillMdPath);
+    if (!skillMd) {
+      continue;
+    }
+    const content = await fetchBlobText(repo, skillMd.sha, token);
+    files.push({
+      name: root.name,
+      path: root.skillMdPath,
+      content,
+      files: attachmentsByName.get(root.name) ?? [],
+    });
+  }
+
+  return { repo, branch, commitSha, files, skipped };
 }

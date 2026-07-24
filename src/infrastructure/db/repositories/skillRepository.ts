@@ -1,5 +1,5 @@
 import type { SkillRepository } from "@/domain/skill/repository";
-import type { Skill } from "@/domain/skill/types";
+import type { Skill, SkillFile } from "@/domain/skill/types";
 import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
 
@@ -10,6 +10,7 @@ function fromItem(item: Record<string, unknown>): Skill {
     name: item.name as string,
     description: item.description as string,
     content: item.content as string,
+    files: item.files as SkillFile[] | undefined,
     source: item.source as string | undefined,
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
@@ -25,6 +26,7 @@ function toItem(skill: Skill): Record<string, unknown> {
     name: skill.name,
     description: skill.description,
     content: skill.content,
+    files: skill.files,
     source: skill.source,
     createdAt: skill.createdAt,
     updatedAt: skill.updatedAt,
