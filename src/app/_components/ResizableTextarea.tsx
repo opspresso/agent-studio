@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 /**
  * Textarea with a toggle that fits its height to the content and reverts to the
- * default (rows) height. Starts at the default height; the button switches between
+ * default (rows) height. Starts fitted to content; the button switches between
  * "Fit to content" and "Default height".
  */
 export function ResizableTextarea({
@@ -25,7 +25,7 @@ export function ResizableTextarea({
   footerRight?: React.ReactNode;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [fit, setFit] = useState(false);
+  const [fit, setFit] = useState(true);
 
   useEffect(() => {
     if (!fit) {
