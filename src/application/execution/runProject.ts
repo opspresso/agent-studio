@@ -29,6 +29,7 @@ import { resolveRunnableVersion } from "@/application/project/resolveRunnableVer
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import * as engine from "@/application/llm/engine";
 import { TraceRecorder } from "@/application/trace/recorder";
+import { withRunDeadline } from "@/lib/runDeadline";
 
 export interface ExecutionDeps {
   versions: VersionRepository;
@@ -88,19 +89,6 @@ function toEngineParameters(version: Version): EngineParameters {
 
 function bindUsage(deps: ExecutionDeps): engine.RecordUsageFn {
   return (record) => recordUsage(deps.usage, record);
-}
-
-/**
- * Wall-clock backstop for a single run. Composes the caller's abort signal
- * (client disconnect, A2A cancel) with a hard deadline so a hung provider/tool
- * call can never run — or bill — unbounded. Generous by default: only stuck or
- * runaway runs hit it, not legitimately long multi-turn / reasoning runs.
- */
-const MAX_RUN_DURATION_MS = Number(process.env.MAX_RUN_DURATION_MS) || 600_000;
-
-export function withRunDeadline(signal: AbortSignal | undefined): AbortSignal {
-  const deadline = AbortSignal.timeout(MAX_RUN_DURATION_MS);
-  return signal ? AbortSignal.any([signal, deadline]) : deadline;
 }
 
 // --- Single-shot version execution -----------------------------------------

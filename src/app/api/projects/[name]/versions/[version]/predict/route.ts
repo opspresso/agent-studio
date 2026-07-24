@@ -27,6 +27,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
         prompt: parsed.data.prompt,
         size: parsed.data.size,
         quality: parsed.data.quality,
+        signal: request.signal,
       });
       return Response.json(image);
     }
