@@ -13,7 +13,7 @@ import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
 import type { ProjectRepository } from "@/domain/project/repository";
-import type { Project } from "@/domain/project/types";
+import type { Project, ProjectApiToken } from "@/domain/project/types";
 
 const ENTITY_TYPE = "PROJECT";
 const BATCH_SIZE = 25;
@@ -232,6 +232,40 @@ export const projectRepository: ProjectRepository = {
         Key: keys.project(name),
         ConditionExpression: "attribute_exists(PK) AND attribute_exists(deletingAt)",
       }),
+    );
+  },
+
+  async getApiToken(name: string): Promise<ProjectApiToken | null> {
+    const result = await getDocumentClient().send(
+      new GetCommand({ TableName: getTableName(), Key: keys.projectApiToken(name) }),
+    );
+    if (!result.Item) {
+      return null;
+    }
+    return {
+      tokenHash: result.Item.tokenHash as string,
+      createdAt: result.Item.createdAt as string,
+    };
+  },
+
+  async setApiToken(name: string, token: ProjectApiToken): Promise<void> {
+    const key = keys.projectApiToken(name);
+    await getDocumentClient().send(
+      new PutCommand({
+        TableName: getTableName(),
+        Item: {
+          ...key,
+          entityType: "APITOKEN",
+          tokenHash: token.tokenHash,
+          createdAt: token.createdAt,
+        },
+      }),
+    );
+  },
+
+  async deleteApiToken(name: string): Promise<void> {
+    await getDocumentClient().send(
+      new DeleteCommand({ TableName: getTableName(), Key: keys.projectApiToken(name) }),
     );
   },
 };

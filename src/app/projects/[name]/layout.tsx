@@ -31,6 +31,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `${base}/versions`, label: "Versions" },
     { href: `${base}/usage`, label: "Usage" },
     { href: `${base}/traces`, label: "Traces" },
+    { href: `${base}/api-reference`, label: "API Reference" },
     { href: `${base}/settings`, label: "Settings" },
   ];
 

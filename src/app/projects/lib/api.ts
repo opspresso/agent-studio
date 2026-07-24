@@ -259,10 +259,43 @@ export async function testProjectSlack(
   return (await res.json()) as { ok?: boolean; team?: string; botUser?: string; error?: string };
 }
 
+export interface ProjectTokenStatus {
+  configured: boolean;
+  createdAt?: string;
+}
+
+export async function getProjectToken(name: string): Promise<ProjectTokenStatus> {
+  const res = await fetch(`/api/projects/${name}/token`);
+  if (!res.ok) {
+    throw new Error(`Failed to load API token status (${res.status})`);
+  }
+  return (await res.json()) as ProjectTokenStatus;
+}
+
+/** Generate (or regenerate) the project API token. Returns the raw token once. */
+export async function generateProjectToken(
+  name: string,
+): Promise<{ token: string; createdAt: string }> {
+  const res = await fetch(`/api/projects/${name}/token`, { method: "POST" });
+  const data = (await res.json()) as { token?: string; createdAt?: string; error?: string };
+  if (!res.ok || !data.token) {
+    throw new Error(data.error ?? `Failed to generate token (${res.status})`);
+  }
+  return { token: data.token, createdAt: data.createdAt ?? "" };
+}
+
+export async function revokeProjectToken(name: string): Promise<void> {
+  const res = await fetch(`/api/projects/${name}/token`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`Failed to revoke token (${res.status})`);
+  }
+}
+
 export interface ProjectA2aView {
   enabled: boolean;
   published: boolean;
   cardUrl: string | null;
+  card: Record<string, unknown> | null;
 }
 
 export async function getProjectA2a(name: string): Promise<ProjectA2aView> {

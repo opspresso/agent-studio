@@ -11,10 +11,13 @@ auth, and error cases for the non-obvious endpoints.
 - **Auth**: application routes require a Better Auth session cookie (Google OAuth login; for
   local dev, `scripts/dev-session.ts` prints one). Missing/invalid session →
   `401 { "error": "Unauthorized" }`. The login flow itself lives under `/api/auth/*`
-  (Better Auth catch-all). Webhooks are gated differently: `/api/a2a/*` by the
-  `X-A2A-Key` header, `/api/slack/events/*` by the Slack signing secret, and `/api/health`
-  (liveness, static 200) and `/api/ready` (readiness — 200, or 503 when DynamoDB / the LLM
-  channel is unreachable or the instance is draining) are open.
+  (Better Auth catch-all). The three execution endpoints (`predict`, `chat/completions`,
+  `agent`) additionally accept a **per-project API token** via `Authorization: Bearer <token>`
+  instead of a session cookie; the token acts on the project owner's behalf and is scoped to
+  that project (see [Project API token](#project-api-token)). Webhooks are gated differently:
+  `/api/a2a/*` by the `X-A2A-Key` header, `/api/slack/events/*` by the Slack signing secret,
+  and `/api/health` (liveness, static 200) and `/api/ready` (readiness — 200, or 503 when
+  DynamoDB / the LLM channel is unreachable or the instance is draining) are open.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner may mutate one (update/delete/publish, version create/update, Slack
   config), otherwise `403 { "error": "You do not have permission to modify project \"…\"" }`.
@@ -148,7 +151,26 @@ All four endpoints are owner-only (403 for non-owners) — the masked view still
 bot token / signing secret edges. Masked or omitted secrets are preserved on update. The test endpoint returns
 `{ ok: true, team, botUser }` or `502` for a Slack API failure.
 
+## Project API token
+
+A per-project token lets external callers reach the execution endpoints with
+`Authorization: Bearer <token>` instead of a session cookie. Only the SHA-256 hash is
+stored; the raw value is returned once at generation and cannot be retrieved again.
+
+```
+GET    /api/projects/{name}/token   → { configured, createdAt? }
+POST   /api/projects/{name}/token   → { token, createdAt }   (raw token, shown once)
+DELETE /api/projects/{name}/token   → 204
+```
+
+All three are owner-only (403 for non-owners). `POST` generates or regenerates the token —
+regeneration overwrites the previous one, which stops working immediately. The token is
+scoped to its project (validated against the `{name}` in the request path).
+
 ## Execution
+
+The three endpoints below authenticate with either the session cookie or a project API
+token (`Authorization: Bearer <token>`). A token authenticates as the project owner.
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 

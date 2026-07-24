@@ -100,6 +100,11 @@ const emptyProjects: ProjectRepository = {
   async update() {},
   async publish() {},
   async delete() {},
+  async getApiToken() {
+    return null;
+  },
+  async setApiToken() {},
+  async deleteApiToken() {},
 };
 
 const emptyVersions: VersionRepository = {

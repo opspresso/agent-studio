@@ -1,4 +1,3 @@
-import { withAuth } from "@/lib/session";
 import { sseResponse } from "@/lib/sse";
 import { executionDeps, imageDeps, projectRepository, versionRepository } from "@/lib/container";
 import { generateImage } from "@/application/image/generateImage";
@@ -6,12 +5,17 @@ import { executeVersion, executeVersionStream } from "@/application/execution/ru
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
+import { authenticateExecution } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
-export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const POST = async (request: Request, ctx: RouteContext) => {
   const { name, version } = await ctx.params;
+  const principal = await authenticateExecution(request, name);
+  if (principal instanceof Response) {
+    return principal;
+  }
   const parsed = predictSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return invalidRequest(parsed.error);
@@ -36,7 +40,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       version: versionEntity,
       variables: parsed.data.variables,
       messages: parsed.data.messages,
-      userEmail: user.email,
+      userEmail: principal.email,
     };
     if (parsed.data.stream) {
       const abortController = new AbortController();
@@ -50,4 +54,4 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   } catch (error) {
     return apiError(error);
   }
-});
+};

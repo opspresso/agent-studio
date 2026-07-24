@@ -48,6 +48,11 @@ function fakeRepo(initial: Project): { repo: ProjectRepository; current: () => P
       stored = p;
     },
     async delete() {},
+    async getApiToken() {
+      return null;
+    },
+    async setApiToken() {},
+    async deleteApiToken() {},
   };
   return { repo, current: () => stored };
 }
