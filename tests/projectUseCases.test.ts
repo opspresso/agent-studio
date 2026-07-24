@@ -154,6 +154,9 @@ function makeProjectRepo(initial: Project[] = []): ProjectRepository {
     async update(project) {
       projects = projects.map((p) => (p.name === project.name ? project : p));
     },
+    async publish(project) {
+      projects = projects.map((p) => (p.name === project.name ? project : p));
+    },
     async delete(name) {
       projects = projects.filter((p) => p.name !== name);
     },
@@ -412,6 +415,18 @@ describe("publishVersion", () => {
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
+
+  it("maps a concurrent project change to ConflictError", async () => {
+    const projects = makeProjectRepo([projectFixture("p")]);
+    projects.publish = async () => {
+      const error = new Error("transaction cancelled");
+      error.name = "TransactionCanceledException";
+      throw error;
+    };
+    await expect(
+      publishVersion(projects, makeVersionRepo([versionFixture("p", "1")]), "p", "1", OWNER),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
 });
 
 describe("deleteProject", () => {
@@ -443,6 +458,18 @@ describe("updateProject ownership", () => {
     await expect(
       updateProject(makeProjectRepo([projectFixture("p")]), "p", { displayName: "X" }, OTHER),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("maps a stale project snapshot to ConflictError", async () => {
+    const repo = makeProjectRepo([projectFixture("p")]);
+    repo.update = async () => {
+      const error = new Error("conditional check failed");
+      error.name = "ConditionalCheckFailedException";
+      throw error;
+    };
+    await expect(
+      updateProject(repo, "p", { displayName: "Renamed" }, OWNER),
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 });
 
@@ -548,6 +575,18 @@ describe("updateVersion / deleteVersion boundaries", () => {
         "1",
         OWNER,
       ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("maps a publish race during deletion to ConflictError", async () => {
+    const versions = makeVersionRepo([versionFixture("p", "1")]);
+    versions.delete = async () => {
+      const error = new Error("transaction cancelled");
+      error.name = "TransactionCanceledException";
+      throw error;
+    };
+    await expect(
+      deleteVersion(versions, makeProjectRepo([projectFixture("p")]), "p", "1", OWNER),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });

@@ -4,6 +4,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  TransactWriteCommand,
   UpdateCommand,
   type BatchWriteCommandInput,
   type BatchWriteCommandOutput,
@@ -147,12 +148,43 @@ export const projectRepository: ProjectRepository = {
     );
   },
 
-  async update(project: Project): Promise<void> {
+  async update(project: Project, expectedUpdatedAt: string): Promise<void> {
     await getDocumentClient().send(
       new PutCommand({
         TableName: getTableName(),
         Item: toItem(project),
-        ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
+        ConditionExpression:
+          "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND updatedAt = :expectedUpdatedAt",
+        ExpressionAttributeValues: { ":expectedUpdatedAt": expectedUpdatedAt },
+      }),
+    );
+  },
+
+  async publish(
+    project: Project,
+    versionName: string,
+    expectedUpdatedAt: string,
+  ): Promise<void> {
+    await getDocumentClient().send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: getTableName(),
+              Key: keys.version(project.name, versionName),
+              ConditionExpression: "attribute_exists(PK)",
+            },
+          },
+          {
+            Put: {
+              TableName: getTableName(),
+              Item: toItem(project),
+              ConditionExpression:
+                "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND updatedAt = :expectedUpdatedAt",
+              ExpressionAttributeValues: { ":expectedUpdatedAt": expectedUpdatedAt },
+            },
+          },
+        ],
       }),
     );
   },

@@ -1,9 +1,4 @@
-import {
-  DeleteCommand,
-  GetCommand,
-  QueryCommand,
-  TransactWriteCommand,
-} from "@aws-sdk/lib-dynamodb";
+import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import type { VersionRepository } from "@/domain/project/repository";
@@ -148,11 +143,34 @@ export const versionRepository: VersionRepository = {
     );
   },
 
-  async delete(projectName: string, versionName: string): Promise<void> {
+  async delete(
+    projectName: string,
+    versionName: string,
+    expectedProjectUpdatedAt: string,
+  ): Promise<void> {
     await getDocumentClient().send(
-      new DeleteCommand({
-        TableName: getTableName(),
-        Key: keys.version(projectName, versionName),
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            ConditionCheck: {
+              TableName: getTableName(),
+              Key: keys.project(projectName),
+              ConditionExpression:
+                "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND updatedAt = :expectedUpdatedAt AND (attribute_not_exists(publishedVersion) OR publishedVersion <> :versionName)",
+              ExpressionAttributeValues: {
+                ":expectedUpdatedAt": expectedProjectUpdatedAt,
+                ":versionName": versionName,
+              },
+            },
+          },
+          {
+            Delete: {
+              TableName: getTableName(),
+              Key: keys.version(projectName, versionName),
+              ConditionExpression: "attribute_exists(PK)",
+            },
+          },
+        ],
       }),
     );
   },

@@ -1,4 +1,4 @@
-import { ValidationError } from "@/application/errors";
+import { ConflictError, ValidationError } from "@/application/errors";
 import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import {
   decryptSecret,
@@ -8,6 +8,7 @@ import {
 } from "@/infrastructure/crypto/secretEncryption";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
+import { nextUpdatedAt } from "@/application/project/timestamps";
 
 export interface ProjectSlackView {
   enabled: boolean;
@@ -53,6 +54,21 @@ function mergeSecret(stored: string | undefined, input: string | undefined): str
   return encryptSecret(input);
 }
 
+async function updateProject(
+  repo: ProjectRepository,
+  updated: Project,
+  expectedUpdatedAt: string,
+): Promise<void> {
+  try {
+    await repo.update(updated, expectedUpdatedAt);
+  } catch (error) {
+    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+      throw new ConflictError(`Project "${updated.name}" was modified by another request`);
+    }
+    throw error;
+  }
+}
+
 export async function updateProjectSlack(
   repo: ProjectRepository,
   name: string,
@@ -71,8 +87,8 @@ export async function updateProjectSlack(
   if (slack.enabled && (!slack.botToken || !slack.signingSecret)) {
     throw new ValidationError("Bot token and signing secret are required to enable Slack");
   }
-  const updated: Project = { ...project, slack, updatedAt: new Date().toISOString() };
-  await repo.update(updated);
+  const updated: Project = { ...project, slack, updatedAt: nextUpdatedAt(project.updatedAt) };
+  await updateProject(repo, updated, project.updatedAt);
   return maskedView(updated);
 }
 
@@ -82,8 +98,12 @@ export async function disconnectProjectSlack(
   userEmail: string,
 ): Promise<ProjectSlackView> {
   const project = await assertProjectOwner(repo, name, userEmail);
-  const updated: Project = { ...project, slack: undefined, updatedAt: new Date().toISOString() };
-  await repo.update(updated);
+  const updated: Project = {
+    ...project,
+    slack: undefined,
+    updatedAt: nextUpdatedAt(project.updatedAt),
+  };
+  await updateProject(repo, updated, project.updatedAt);
   return maskedView(updated);
 }
 

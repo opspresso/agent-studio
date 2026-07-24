@@ -1,6 +1,7 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectType } from "@/domain/project/types";
 import { ConflictError, ForbiddenError, NotFoundError } from "@/application/errors";
+import { nextUpdatedAt } from "./timestamps";
 
 export interface CreateProjectInput {
   name: string;
@@ -90,9 +91,16 @@ export async function updateProject(
     displayName: input.displayName ?? existing.displayName,
     description: input.description ?? existing.description,
     departmentCode: input.departmentCode ?? existing.departmentCode,
-    updatedAt: new Date().toISOString(),
+    updatedAt: nextUpdatedAt(existing.updatedAt),
   };
-  await repo.update(updated);
+  try {
+    await repo.update(updated, existing.updatedAt);
+  } catch (error) {
+    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+      throw new ConflictError(`Project "${name}" was modified by another request`);
+    }
+    throw error;
+  }
   return updated;
 }
 

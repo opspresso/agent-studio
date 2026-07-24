@@ -81,10 +81,77 @@ import { keys } from "@/infrastructure/db/keys";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
+import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
+import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 
 const NOW = "2026-01-01T00:00:00.000Z";
+
+describe("project/version atomic writes", () => {
+  const project = {
+    name: "atomic",
+    displayName: "Atomic",
+    description: "",
+    projectType: "agent" as const,
+    ownerEmail: "owner@example.com",
+    createdAt: NOW,
+    updatedAt: "2026-01-01T00:00:01.000Z",
+  };
+
+  it("guards project replacement with the previously read timestamp", async () => {
+    commands.length = 0;
+    await projectRepository.update(project, NOW);
+
+    expect(commands[0]).toMatchObject({
+      ConditionExpression:
+        "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND updatedAt = :expectedUpdatedAt",
+      ExpressionAttributeValues: { ":expectedUpdatedAt": NOW },
+    });
+  });
+
+  it("publishes only when both the version exists and the project snapshot is current", async () => {
+    commands.length = 0;
+    await projectRepository.publish({ ...project, publishedVersion: "1" }, "1", NOW);
+
+    expect(commands[0]?.TransactItems).toMatchObject([
+      {
+        ConditionCheck: {
+          Key: keys.version("atomic", "1"),
+          ConditionExpression: "attribute_exists(PK)",
+        },
+      },
+      {
+        Put: {
+          ExpressionAttributeValues: { ":expectedUpdatedAt": NOW },
+        },
+      },
+    ]);
+  });
+
+  it("deletes only when the project snapshot is current and the version is unpublished", async () => {
+    commands.length = 0;
+    await versionRepository.delete("atomic", "1", NOW);
+
+    expect(commands[0]?.TransactItems).toMatchObject([
+      {
+        ConditionCheck: {
+          Key: keys.project("atomic"),
+          ExpressionAttributeValues: {
+            ":expectedUpdatedAt": NOW,
+            ":versionName": "1",
+          },
+        },
+      },
+      {
+        Delete: {
+          Key: keys.version("atomic", "1"),
+          ConditionExpression: "attribute_exists(PK)",
+        },
+      },
+    ]);
+  });
+});
 
 describe("mcpRepository round-trip", () => {
   it("preserves stored headers through put + get", async () => {

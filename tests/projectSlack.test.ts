@@ -44,6 +44,9 @@ function fakeRepo(initial: Project): { repo: ProjectRepository; current: () => P
     async update(p) {
       stored = p;
     },
+    async publish(p) {
+      stored = p;
+    },
     async delete() {},
   };
   return { repo, current: () => stored };

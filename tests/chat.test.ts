@@ -85,6 +85,7 @@ const emptyProjects: ProjectRepository = {
   },
   async create() {},
   async update() {},
+  async publish() {},
   async delete() {},
 };
 

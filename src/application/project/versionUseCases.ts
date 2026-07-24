@@ -3,6 +3,7 @@ import type { Project, SubagentRef, Version, VersionParameters } from "@/domain/
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectOwner } from "./projectUseCases";
+import { nextUpdatedAt } from "./timestamps";
 
 export interface VersionInput {
   systemPrompt: string;
@@ -174,7 +175,14 @@ export async function deleteVersion(
   if (project.publishedVersion === versionName) {
     throw new ConflictError(`Published version "${versionName}" cannot be deleted`);
   }
-  await versions.delete(projectName, versionName);
+  try {
+    await versions.delete(projectName, versionName, project.updatedAt);
+  } catch (error) {
+    if (error instanceof Error && error.name === "TransactionCanceledException") {
+      throw new ConflictError(`Version "${versionName}" changed while it was being deleted`);
+    }
+    throw error;
+  }
 }
 
 /** Point the project's published pointer at an existing version. */
@@ -191,8 +199,15 @@ export async function publishVersion(
   const updated: Project = {
     ...project,
     publishedVersion: versionName,
-    updatedAt: new Date().toISOString(),
+    updatedAt: nextUpdatedAt(project.updatedAt),
   };
-  await projects.update(updated);
+  try {
+    await projects.publish(updated, versionName, project.updatedAt);
+  } catch (error) {
+    if (error instanceof Error && error.name === "TransactionCanceledException") {
+      throw new ConflictError(`Project "${projectName}" changed while publishing version "${versionName}"`);
+    }
+    throw error;
+  }
   return updated;
 }

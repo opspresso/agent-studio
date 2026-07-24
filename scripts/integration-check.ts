@@ -139,7 +139,12 @@ async function main() {
       maxTurn: 5,
       createdAt: now,
     });
-    await projectRepository.update({ ...project, publishedVersion: "1", updatedAt: now });
+    const publishedAt = new Date(Date.parse(now) + 1).toISOString();
+    await projectRepository.publish(
+      { ...project, publishedVersion: "1", updatedAt: publishedAt },
+      "1",
+      now,
+    );
     const published = await versionRepository.get(projectName, "published");
     assert.ok(published, "published pointer resolves");
     assert.equal(published.versionName, "1");
