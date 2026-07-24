@@ -10,13 +10,10 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
-import { withTimeout } from "@/lib/withTimeout";
 
 const RESULT_ARTIFACT_ID = "result";
 const IMAGE_ARTIFACT_ID = "image";
-/** Wall-clock ceiling for one inbound A2A image generation (matches the run deadline). */
-const IMAGE_TIMEOUT_MS = 600_000;
-/** How often the run loop re-reads the store to honor a cross-request/instance cancel. */
+/** How often the background watcher re-reads the store to honor a cross-request/instance cancel. */
 const CANCEL_POLL_MS = 2000;
 /** Task states that must never be regressed; a stored terminal task wins. */
 const TERMINAL_STATES: readonly TaskState[] = ["completed", "canceled", "failed", "rejected"];
@@ -54,19 +51,20 @@ export class ProjectA2aExecutor implements AgentExecutor {
       { role: "user", content: userMessageText(userMessage) },
     ];
 
-    // Abort in-flight work when a cancel is observed; executeProjectStream also
-    // composes its own wall-clock deadline onto this signal.
+    // A cancel may be persisted by another request or instance (the executor is
+    // per request, so an in-memory flag never reaches a running loop). Poll the
+    // shared store in the background and abort so even a run producing no new
+    // chunks — a hung provider, or a single image call — stops promptly.
     const controller = new AbortController();
+    const stopCancelWatch = this.watchForCancel(taskId, controller);
     try {
       if (this.project.projectType === "image") {
-        const image = await withTimeout(
-          generateImage(this.deps, {
-            project: this.project,
-            version: this.version,
-            prompt: messages[0]?.content ?? "",
-          }),
-          IMAGE_TIMEOUT_MS,
-        );
+        const image = await generateImage(this.deps, {
+          project: this.project,
+          version: this.version,
+          prompt: messages[0]?.content ?? "",
+          signal: controller.signal,
+        });
         eventBus.publish({
           kind: "artifact-update",
           taskId,
@@ -98,21 +96,10 @@ export class ProjectA2aExecutor implements AgentExecutor {
         signal: controller.signal,
       });
       let isFirstChunk = true;
-      // Check on the first chunk, then at most every CANCEL_POLL_MS.
-      let lastCancelCheck = 0;
       for await (const chunk of source) {
-        const now = Date.now();
-        if (now - lastCancelCheck >= CANCEL_POLL_MS) {
-          lastCancelCheck = now;
-          // A cancel may have been persisted by another request or instance —
-          // this executor is constructed per request, so an in-memory flag
-          // would never reach a running loop. The store is the shared channel.
-          const current = await this.store.load(taskId);
-          if (current?.status.state === "canceled") {
-            controller.abort();
-            this.publishStatus(eventBus, taskId, contextId, "canceled", true);
-            return;
-          }
+        if (controller.signal.aborted) {
+          this.publishStatus(eventBus, taskId, contextId, "canceled", true);
+          return;
         }
         if (chunk.error) {
           this.publishStatus(eventBus, taskId, contextId, "failed", true, chunk.error);
@@ -136,12 +123,41 @@ export class ProjectA2aExecutor implements AgentExecutor {
         isFirstChunk = false;
       }
     } catch (error) {
+      // An abort here means the cancel watcher fired mid-run — report canceled.
+      if (controller.signal.aborted) {
+        this.publishStatus(eventBus, taskId, contextId, "canceled", true);
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.publishStatus(eventBus, taskId, contextId, "failed", true, message);
       return;
+    } finally {
+      stopCancelWatch();
     }
 
+    if (controller.signal.aborted) {
+      this.publishStatus(eventBus, taskId, contextId, "canceled", true);
+      return;
+    }
     this.publishStatus(eventBus, taskId, contextId, "completed", true);
+  }
+
+  /** Poll the shared store in the background; abort the run once a cancel lands. */
+  private watchForCancel(taskId: string, controller: AbortController): () => void {
+    const timer = setInterval(() => {
+      void this.store.load(taskId).then(
+        (task) => {
+          if (task?.status.state === "canceled") {
+            controller.abort();
+          }
+        },
+        (error) => {
+          console.error("[a2a] cancel poll failed", error);
+        },
+      );
+    }, CANCEL_POLL_MS);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    return () => clearInterval(timer);
   }
 
   async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {

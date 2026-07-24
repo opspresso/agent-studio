@@ -17,6 +17,7 @@ import {
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
+import type { LlmChannel } from "@/domain/llm/channel";
 import { contentChunk, FakeChannel } from "./fakeChannel";
 
 // --- fixtures ---------------------------------------------------------------
@@ -255,6 +256,24 @@ function fakeStore(overrides: Partial<TaskStore> = {}): TaskStore {
   };
 }
 
+/** A streaming channel that never yields until its signal aborts, then throws —
+ * models a provider that hangs without producing chunks. */
+function hangingChannel(): LlmChannel {
+  return {
+    async chatCompletion() {
+      throw new Error("hangingChannel: not used");
+    },
+    async *chatCompletionStream(params) {
+      await new Promise<void>((_resolve, reject) => {
+        params.signal?.addEventListener("abort", () =>
+          reject(new DOMException("The operation was aborted", "AbortError")),
+        );
+      });
+      yield contentChunk("unreachable");
+    },
+  };
+}
+
 describe("ProjectA2aExecutor", () => {
   it("publishes task, working, result artifact, and completed", async () => {
     const channel = new FakeChannel([[contentChunk("streamed answer")]]);
@@ -346,24 +365,66 @@ describe("ProjectA2aExecutor cancel", () => {
     expect(bus.events).toHaveLength(0);
   });
 
-  it("stops a running loop when the store reports the task canceled", async () => {
-    const channel = new FakeChannel([[contentChunk("partial answer")]]);
-    const store = fakeStore({
-      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
-    });
-    const executor = new ProjectA2aExecutor(
-      executionDepsFixture(channel),
-      projectFixture(),
-      versionFixture(),
-      store,
-    );
-    const bus = new CollectingBus();
-    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+  it("aborts a hung streaming run when a cancel is persisted (no new chunks)", async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = {
+        ...executionDepsFixture(new FakeChannel([])),
+        channel: hangingChannel(),
+      } as unknown as ExecutionDeps;
+      const store = fakeStore({
+        load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+      });
+      const executor = new ProjectA2aExecutor(deps, projectFixture(), versionFixture(), store);
+      const bus = new CollectingBus();
+      const done = executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+      // The provider never yields; advance time so the background poll reads the
+      // store, sees canceled, and aborts the run.
+      await vi.advanceTimersByTimeAsync(2100);
+      await done;
 
-    const last = bus.events.at(-1);
-    expect(last?.kind).toBe("status-update");
-    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
-    // A canceled run never emits a result artifact.
-    expect(bus.events.some((event) => event.kind === "artifact-update")).toBe(false);
+      const last = bus.events.at(-1);
+      expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+      expect(bus.events.some((event) => event.kind === "artifact-update")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts a hung image run when a cancel is persisted", async () => {
+    vi.useFakeTimers();
+    try {
+      const imageChannel = {
+        generateImage: (params: { signal?: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            params.signal?.addEventListener("abort", () =>
+              reject(new DOMException("The operation was aborted", "AbortError")),
+            );
+          }),
+      };
+      const deps = {
+        ...executionDepsFixture(new FakeChannel([])),
+        imageChannel,
+      } as unknown as ExecutionDeps;
+      const store = fakeStore({
+        load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+      });
+      const executor = new ProjectA2aExecutor(
+        deps,
+        projectFixture({ projectType: "image" }),
+        versionFixture({ model: "openai/gpt-image-2" }),
+        store,
+      );
+      const bus = new CollectingBus();
+      const done = executor.execute(new RequestContext(userMessage("draw a cat"), "t1", "c1"), bus);
+      await vi.advanceTimersByTimeAsync(2100);
+      await done;
+
+      const last = bus.events.at(-1);
+      expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+      expect(bus.events.some((event) => event.kind === "artifact-update")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
