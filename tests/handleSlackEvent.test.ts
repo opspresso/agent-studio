@@ -151,6 +151,30 @@ describe("handleSlackEvent", () => {
     expect(updates.at(-1)?.text).toBe(":warning: boom");
   });
 
+  it("keeps the streamed answer and appends the warning on a late failure", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, updates } = makeSlackFake();
+    slack.uploadImage = async () => {
+      throw new Error("upload boom");
+    };
+    const deps = makeDeps(
+      [
+        { delta: { content: "Here is your answer." } },
+        { image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } },
+        { done: true },
+      ],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    const finalText = updates.at(-1)?.text ?? "";
+    expect(finalText).toContain("Here is your answer.");
+    expect(finalText).toContain(":warning:");
+  });
+
   it("replies with guidance when the project is not a runnable agent", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     const { slack, posted } = makeSlackFake();
