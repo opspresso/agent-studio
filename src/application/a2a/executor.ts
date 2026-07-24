@@ -85,7 +85,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
           },
           append: false,
         });
-        this.publishStatus(eventBus, taskId, contextId, "completed", true);
+        await this.publishTerminal(eventBus, taskId, contextId, controller);
         return;
       }
 
@@ -135,11 +135,35 @@ export class ProjectA2aExecutor implements AgentExecutor {
       stopCancelWatch();
     }
 
-    if (controller.signal.aborted) {
-      this.publishStatus(eventBus, taskId, contextId, "canceled", true);
-      return;
+    await this.publishTerminal(eventBus, taskId, contextId, controller);
+  }
+
+  /**
+   * Publish the run's terminal status, deferring to a cancel that raced in. The
+   * controller is a lagging replica synced by the background poll, so a cancel
+   * persisted between polls (before the run finished) would not have aborted it;
+   * consult the authoritative store before ever publishing completed over a
+   * canceled task.
+   */
+  private async publishTerminal(
+    eventBus: ExecutionEventBus,
+    taskId: string,
+    contextId: string,
+    controller: AbortController,
+  ): Promise<void> {
+    if (!controller.signal.aborted) {
+      let current: Task | undefined;
+      try {
+        current = await this.store.load(taskId);
+      } catch (error) {
+        console.error("[a2a] terminal cancel check failed", error);
+      }
+      if (current?.status.state !== "canceled") {
+        this.publishStatus(eventBus, taskId, contextId, "completed", true);
+        return;
+      }
     }
-    this.publishStatus(eventBus, taskId, contextId, "completed", true);
+    this.publishStatus(eventBus, taskId, contextId, "canceled", true);
   }
 
   /** Poll the shared store in the background; abort the run once a cancel lands. */
