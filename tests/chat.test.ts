@@ -293,6 +293,45 @@ describe("runAndPersist image persistence", () => {
   });
 });
 
+describe("runAndPersist size guard and disconnect", () => {
+  it("persists the streamed answer when the client disconnects mid-stream", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "partial answer" } };
+      yield { delta: { content: " never read" } };
+    }
+    const stream = runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source());
+    await stream.next(); // consume only the first chunk
+    await stream.return(undefined); // client disconnect
+
+    const stored = await repo.listMessages("c1");
+    const assistant = stored.find((m) => m.role === "assistant");
+    expect(assistant?.content).toBe("partial answer");
+  });
+
+  it("truncates an oversized tool result instead of failing the whole turn", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const huge = "x".repeat(400_000);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { toolResult: { toolCallId: "call_1", name: "big", content: huge } };
+      yield { delta: { content: "done" } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    const tool = stored.find((m) => m.role === "tool");
+    expect(tool).toBeDefined();
+    expect(Buffer.byteLength(tool?.content ?? "", "utf8")).toBeLessThanOrEqual(350_000);
+    expect(tool?.content.endsWith("…[truncated]")).toBe(true);
+    // The turn still completes: the assistant answer is persisted alongside.
+    expect(stored.some((m) => m.role === "assistant" && m.content === "done")).toBe(true);
+  });
+});
+
 describe("ownership checks", () => {
   it("getChat returns chat and messages for the owner", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
