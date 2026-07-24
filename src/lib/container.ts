@@ -14,10 +14,11 @@ import { usageRepository } from "@/infrastructure/db/repositories/usageRepositor
 import { channel } from "@/infrastructure/llm/channel";
 import { imageChannel } from "@/infrastructure/llm/imageChannel";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
+import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
 
-export { projectRepository, versionRepository, traceRepository };
+export { projectRepository, versionRepository, traceRepository, createA2aTaskStore };
 
 /** Readiness snapshot for the /api/ready probe (DynamoDB + LLM channel). */
 export const readinessReport = () =>

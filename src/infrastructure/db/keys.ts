@@ -43,6 +43,11 @@ export const keys = {
 
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
+  a2aTask: (projectName: string, taskId: string) => ({
+    PK: `A2ATASK#${projectName}#${taskId}`,
+    SK: "META",
+  }),
+
   trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),
   traceRef: (projectName: string, createdAt: string, traceId: string) => ({
     PK: `PROJECT#${projectName}`,

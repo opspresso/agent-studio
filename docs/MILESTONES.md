@@ -4,27 +4,7 @@ Agent Studio는 프로젝트·버전 관리, LLM/에이전트 실행, Skills/MCP
 Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문서는 구현 이력이 아니라
 프로덕션 운영에 남은 필수 기능만 우선순위대로 관리한다.
 
-## M1 — A2A 작업 저장소 영속화
-
-**이유**: inbound A2A의 `message/send`, `tasks/get`, `tasks/cancel` 작업 상태가 현재
-Next.js process 메모리에 저장된다. 요청이 서로 다른 인스턴스로 라우팅되거나 인스턴스가
-재시작되면 작업을 조회·취소할 수 없으므로 수평 확장 전에 공유 저장소가 필요하다.
-
-**범위**
-
-- `InMemoryTaskStore`를 대체하는 DynamoDB 기반 A2A `TaskStore` adapter 구현.
-- A2A task를 기존 single table의 전용 key namespace에 저장하고 만료 시각을 TTL로 관리.
-- 상태 변경은 현재 상태나 revision을 확인하는 조건부 쓰기로 처리해 여러 인스턴스의
-  완료·실패·취소 경쟁에서 완료 상태가 덮어써지지 않도록 보장.
-- `message/send`, `message/stream`, `tasks/get`, `tasks/cancel`이 동일한 공유 저장소 사용.
-- 저장소 port는 application/domain 경계에 두고 A2A route에서 DynamoDB 구현을 주입.
-
-**완료 조건**: 서로 다른 두 서비스 인스턴스에서 작업 생성 후 조회·취소가 가능하고,
-인스턴스 재시작 뒤에도 TTL 전까지 작업을 조회할 수 있다. 동시 완료·취소 요청에서
-유효한 상태 전이 하나만 반영되고 terminal 상태가 역행하지 않으며, task 격리·미존재
-조회·TTL·조건부 쓰기 충돌을 테스트로 검증한다.
-
-## M2 — 비용 임계값 알림 및 차단
+## M1 — 비용 임계값 알림 및 차단
 
 **이유**: 프로젝트별·모델별 일간 비용은 집계되지만 이를 사용하는 보호 장치가 없다.
 폭주하는 루프나 대량 호출자가 턴 제한 안에서 계속 비용을 발생시킬 수 있다.
@@ -42,7 +22,7 @@ Next.js process 메모리에 저장된다. 요청이 서로 다른 인스턴스�
 알림은 하루에 정확히 한 번 발생하며, 임계값 초과·중복 제거·fail-open 동작을
 테스트로 검증한다.
 
-## M3 — 자동화 트리거
+## M2 — 자동화 트리거
 
 **이유**: 현재 실행은 사용자 요청, Slack, A2A 호출에 의존한다. 정기 작업이나 외부
 시스템 이벤트로 published project를 실행할 수 있어야 운영 워크플로에 연결할 수 있다.
@@ -67,7 +47,7 @@ automation과 published version이 없는 프로젝트는 실행하지 않는다
 재전달돼도 실행 이력이 중복 생성되지 않으며 성공·실패·중복 제거·인증 실패·동시 실행
 정책을 테스트로 검증한다. 콘솔에서 automation 설정과 최근 실행 결과를 확인할 수 있다.
 
-## M4 — Managed local MCP
+## M3 — Managed local MCP
 
 **이유**: 현재 Tools에는 이미 실행 중인 public streamable-HTTP MCP server만 등록할 수
 있다. 운영자가 승인한 MCP server를 Agent Studio가 현재 실행 환경에 맞는 하위

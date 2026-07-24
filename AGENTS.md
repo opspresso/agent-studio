@@ -129,8 +129,10 @@ registries are shared: reads are open to any signed-in user; mutations go throug
 - **Slack**: signature verified (HMAC + `timingSafeEqualString`, 5-min replay window);
   events are deduplicated exactly-once via `slackEventRepository.claim` (conditional put).
   Per-project bots and one workspace-default bot coexist.
-- **A2A**: inbound endpoints gated by `A2A_API_KEY` (constant-time compare); task store is
-  in-memory (single-instance assumption, idle entries TTL-evicted). Outbound A2A/agent registry.
+- **A2A**: inbound endpoints gated by `A2A_API_KEY` (constant-time compare); task state is
+  persisted per-project in the single table (`createA2aTaskStore`), TTL-expired, with a
+  terminal-state-guarding conditional write so a concurrent complete/cancel never regresses a
+  finished task. Outbound A2A/agent registry.
 - **Errors**: shared `AppError` base carrying an HTTP status (`src/application/errors.ts`);
   `apiError` (`src/app/api/_lib/http.ts`) maps any of them, else a generic 500.
 - **SSE**: `src/lib/sse.ts` — `sseResponse` (OpenAI `[DONE]` terminator) vs `sseResponseRaw`

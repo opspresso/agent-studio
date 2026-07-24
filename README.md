@@ -151,10 +151,10 @@ executions are sampled with `TRACE_SAMPLE_RATE` (`0`–`1`, default `0.1`). Trac
 on each project's **Traces** tab. Raw prompts and tool results are not stored; spans keep
 only bounded metadata such as character counts, tokens, cost, duration, and subagent trace ids.
 
-Traces, usage rows, and chats expire via DynamoDB TTL (`expiresAt`) so the table stays
-bounded — default retention is 30 / 400 / 180 days, overridable with `TRACE_RETENTION_DAYS`,
-`USAGE_RETENTION_DAYS`, and `CHAT_RETENTION_DAYS`. Enable TTL on the `expiresAt` attribute of
-the production table.
+Traces, usage rows, chats, and inbound A2A tasks expire via DynamoDB TTL (`expiresAt`) so the
+table stays bounded — default retention is 30 / 400 / 180 / 1 days, overridable with
+`TRACE_RETENTION_DAYS`, `USAGE_RETENTION_DAYS`, `CHAT_RETENTION_DAYS`, and
+`A2A_TASK_RETENTION_DAYS`. Enable TTL on the `expiresAt` attribute of the production table.
 
 ## A2A (Agent2Agent)
 
@@ -168,8 +168,11 @@ disables the endpoints). Every project with a published version then serves:
   `tasks/get`, `tasks/cancel`), authenticated with an `X-A2A-Key` header
   matching `A2A_API_KEY`
 
-Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state is in-memory and
-resets on redeploy.
+Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state (`message/send` →
+`tasks/get`/`tasks/cancel`) is persisted per-project in DynamoDB, so it survives
+redeploys and is shared across instances; a terminal-state-guarding conditional
+write keeps a concurrent complete/cancel from regressing a finished task. Rows
+expire via TTL (`A2A_TASK_RETENTION_DAYS`, default 1 day).
 
 **Outbound — call external A2A agents.** Register an agent on /agents with
 protocol `A2A` and its Agent Card URL; custom headers are sent on card

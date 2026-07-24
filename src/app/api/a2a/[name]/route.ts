@@ -1,11 +1,12 @@
-import {
-  DefaultRequestHandler,
-  InMemoryTaskStore,
-  JsonRpcTransportHandler,
-} from "@a2a-js/sdk/server";
+import { DefaultRequestHandler, JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import { buildAgentCard } from "@/infrastructure/a2a/cards";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
-import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
+import {
+  createA2aTaskStore,
+  executionDeps,
+  projectRepository,
+  versionRepository,
+} from "@/lib/container";
 import { getA2aApiKey } from "@/lib/runtime-settings";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { sseResponseRaw } from "@/lib/sse";
@@ -14,52 +15,10 @@ import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
 type RouteContext = { params: Promise<{ name: string }> };
 
 /**
- * Task stores survive across requests so `tasks/get` works after
- * `message/send`; the container is a persistent process (same assumption as
- * the Slack integration). Stores are in-memory and reset on redeploy — this
- * assumes a single instance; horizontal scaling would need a shared store.
- *
- * To bound memory, idle project stores are evicted after a TTL and the total
- * count is capped (LRU eviction).
+ * Task state is persisted in DynamoDB (per-project namespace, TTL-expired) so
+ * `tasks/get`/`tasks/cancel` work after `message/send` across instance restarts
+ * and horizontal scaling. See `@/infrastructure/a2a/taskStore`.
  */
-const TASK_STORE_TTL_MS = 60 * 60 * 1000;
-const MAX_TASK_STORES = 100;
-
-const taskStores = new Map<string, { store: InMemoryTaskStore; lastAccess: number }>();
-
-function taskStoreFor(projectName: string): InMemoryTaskStore {
-  const now = Date.now();
-
-  for (const [name, entry] of taskStores) {
-    if (now - entry.lastAccess > TASK_STORE_TTL_MS) {
-      taskStores.delete(name);
-    }
-  }
-
-  const existing = taskStores.get(projectName);
-  if (existing) {
-    existing.lastAccess = now;
-    return existing.store;
-  }
-
-  if (taskStores.size >= MAX_TASK_STORES) {
-    let oldestName: string | undefined;
-    let oldestAccess = Infinity;
-    for (const [name, entry] of taskStores) {
-      if (entry.lastAccess < oldestAccess) {
-        oldestAccess = entry.lastAccess;
-        oldestName = name;
-      }
-    }
-    if (oldestName !== undefined) {
-      taskStores.delete(oldestName);
-    }
-  }
-
-  const store = new InMemoryTaskStore();
-  taskStores.set(projectName, { store, lastAccess: now });
-  return store;
-}
 
 function isAsyncGenerator(value: unknown): value is AsyncGenerator<unknown> {
   return (
@@ -89,7 +48,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
 
   const requestHandler = new DefaultRequestHandler(
     await buildAgentCard(project, version),
-    taskStoreFor(project.name),
+    createA2aTaskStore(project.name),
     new ProjectA2aExecutor(executionDeps, project, version),
   );
   const transport = new JsonRpcTransportHandler(requestHandler);

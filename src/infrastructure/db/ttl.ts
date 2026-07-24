@@ -26,6 +26,11 @@ export const RETENTION = {
   get chatDays(): number {
     return retentionDays("CHAT_RETENTION_DAYS", 180);
   },
+  /** Inbound A2A task state — ephemeral job state, kept just long enough for
+   * `tasks/get`/`tasks/cancel` after `message/send`. */
+  get a2aTaskDays(): number {
+    return retentionDays("A2A_TASK_RETENTION_DAYS", 1);
+  },
 };
 
 /** Unix-seconds TTL: `retentionDays` after `baseIso`. Falls back to now for an
