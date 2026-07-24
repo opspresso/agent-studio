@@ -148,7 +148,8 @@ project's own secret and always run that project — no selector needed.
 
 Agent executions always persist model/tool/subagent spans. Non-agent and image predict
 executions are sampled with `TRACE_SAMPLE_RATE` (`0`–`1`, default `0.1`). Traces are visible
-on each project's **Traces** tab. Raw prompts and tool results are not stored; spans keep
+on each project's **Traces** tab to the project owner only (they hold other users' runtime
+inputs/outputs). Raw prompts and tool results are not stored; spans keep
 only bounded metadata such as character counts, tokens, cost, duration, and subagent trace ids.
 
 Traces, usage rows, chats, and inbound A2A tasks expire via DynamoDB TTL (`expiresAt`) so the

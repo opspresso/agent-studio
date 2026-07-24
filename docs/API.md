@@ -18,6 +18,8 @@ auth, and error cases for the non-obvious endpoints.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner may mutate one (update/delete/publish, version create/update, Slack
   config), otherwise `403 { "error": "You do not have permission to modify project \"…\"" }`.
+  Two project sub-resources are owner-only to *read* as well — traces and the Slack config —
+  because they expose other users' runtime data / masked secrets (403 for non-owners).
   Chats are per-owner private (non-owner reads return 404). MCP/agent/skill registries are
   shared for reads; mutations require membership in `ADMIN_EMAILS` when set (unset allows
   any signed-in user), otherwise `403 { "error": "Only admins can modify this resource" }`.
@@ -142,8 +144,8 @@ POST   /api/projects/{name}/slack/test
 ```
 
 Slack reads return masked credential state plus `eventsUrl` and a generated app manifest.
-Any signed-in user may read that masked view; update, disconnect, and connection testing are
-owner-only. Masked or omitted secrets are preserved on update. The test endpoint returns
+All four endpoints are owner-only (403 for non-owners) — the masked view still exposes the
+bot token / signing secret edges. Masked or omitted secrets are preserved on update. The test endpoint returns
 `{ ok: true, team, botUser }` or `502` for a Slack API failure.
 
 ## Execution
@@ -199,10 +201,11 @@ GET /api/projects/{name}/traces?limit=50
 GET /api/projects/{name}/traces/{traceId}
 ```
 
-Agent runs are always traced. Text and image predict runs are sampled according to
-`TRACE_SAMPLE_RATE` (0–1, default `0.1`). Trace spans contain model token/cost summaries,
-tool input/output sizes, and local subagent trace links; raw prompts and tool results are
-not persisted.
+Both endpoints are owner-only (403 for non-owners) — traces hold other users' runtime
+inputs/outputs. Agent runs are always traced. Text and image predict runs are sampled
+according to `TRACE_SAMPLE_RATE` (0–1, default `0.1`). Trace spans contain model token/cost
+summaries, tool input/output sizes, and local subagent trace links; raw prompts and tool
+results are not persisted.
 
 ## Models
 

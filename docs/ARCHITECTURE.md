@@ -310,12 +310,12 @@ GET|PUT|DELETE /api/projects/[name]
 GET|POST /api/projects/[name]/versions
 GET|PUT|DELETE /api/projects/[name]/versions/[version]
 POST /api/projects/[name]/publish           set publishedVersion
-GET  /api/projects/[name]/traces            trace list
-GET  /api/projects/[name]/traces/[traceId]  trace detail
+GET  /api/projects/[name]/traces            trace list (owner-only)
+GET  /api/projects/[name]/traces/[traceId]  trace detail (owner-only)
 POST /api/projects/[name]/versions/[version]/predict        (version = name | 'published')
 POST /api/projects/[name]/versions/[version]/chat/completions   OpenAI-compatible
 POST /api/projects/[name]/versions/[version]/agent          SSE stream
-GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot (+ POST …/slack/test)
+GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner-only (+ POST …/slack/test)
 GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
 GET|POST /api/skills/sync                   skills-repo sync status / run
@@ -346,8 +346,11 @@ draining after SIGTERM (`src/lib/lifecycle.ts`), so the load balancer deregister
 in-flight work drains. Point the LB health check at `/api/ready`, restart checks at
 `/api/health`. Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) are
-owner-only — `assertProjectOwner` returns 403 for non-owners. MCP/agent/skill registries
-are shared: reads are open to any signed-in user, while mutations go through
+owner-only — `assertProjectOwner` returns 403 for non-owners. Two project sub-resources
+that expose other users' data are owner-only *reads* as well: traces (runtime
+inputs/outputs) and the Slack config (masked bot token / signing secret + manifest).
+MCP/agent/skill registries are shared: reads are open to any signed-in user, while
+mutations go through
 `withAdminAuth` and are restricted to the effective admin list when set (unset allows any
 signed-in user).
 
