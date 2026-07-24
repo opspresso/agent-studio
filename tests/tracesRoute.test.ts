@@ -73,4 +73,24 @@ describe("GET /api/projects/[name]/traces (owner-gated)", () => {
     expect(res.status).toBe(404);
     expect(traceRepo.listByProject).not.toHaveBeenCalled();
   });
+
+  it("rejects a malformed date with 400 and never reads traces", async () => {
+    projectRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
+    const res = await GET(
+      new Request("http://localhost/api/projects/proj/traces?from=2026-7-1"),
+      ctx("proj"),
+    );
+    expect(res.status).toBe(400);
+    expect(traceRepo.listByProject).not.toHaveBeenCalled();
+  });
+
+  it("rejects a reversed range (from > to) with 400", async () => {
+    projectRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
+    const res = await GET(
+      new Request("http://localhost/api/projects/proj/traces?from=2026-07-31&to=2026-07-01"),
+      ctx("proj"),
+    );
+    expect(res.status).toBe(400);
+    expect(traceRepo.listByProject).not.toHaveBeenCalled();
+  });
 });

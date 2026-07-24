@@ -29,13 +29,8 @@ function codeOf(endpoint: ApiEndpoint, language: string): string | undefined {
 }
 
 describe("buildApiReference — endpoint selection by project type", () => {
-  it("agent project exposes predict, chat/completions, agent, and chat", () => {
-    expect(ids({ projectType: "agent" })).toEqual([
-      "predict",
-      "chat-completions",
-      "agent",
-      "chat",
-    ]);
+  it("agent project exposes predict, chat/completions, and agent", () => {
+    expect(ids({ projectType: "agent" })).toEqual(["predict", "chat-completions", "agent"]);
   });
 
   it("llm project exposes predict and chat/completions only (no agent/chat)", () => {
