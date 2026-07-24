@@ -8,6 +8,11 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      dynamodb:
+        image: amazon/dynamodb-local:latest
+        ports:
+          - 8001:8000
     steps:
       - uses: actions/checkout@v6
 
@@ -28,6 +33,13 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+      - name: Integration tests
+        run: |
+          pnpm init-local-table
+          pnpm test:integration
+        env:
+          DYNAMODB_ENDPOINT_URL: http://127.0.0.1:8001
 
       - name: Build
         run: pnpm build

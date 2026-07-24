@@ -126,7 +126,7 @@ async function main() {
     assert.ok(listed.some((p) => p.name === projectName), "project list contains created");
     pass("project create/get/list");
 
-    await versionRepository.put({
+    await versionRepository.create({
       projectName,
       versionName: "1",
       systemPrompt: "You are a helpful integration bot.",
@@ -148,7 +148,16 @@ async function main() {
     const published = await versionRepository.get(projectName, "published");
     assert.ok(published, "published pointer resolves");
     assert.equal(published.versionName, "1");
-    pass("version put + published pointer resolution");
+    pass("version create + published pointer resolution");
+    await assert.rejects(
+      projectRepository.update(
+        { ...project, description: "stale write", updatedAt: new Date(Date.parse(now) + 2).toISOString() },
+        now,
+      ),
+      (error: unknown) =>
+        error instanceof Error && error.name === "ConditionalCheckFailedException",
+    );
+    pass("project optimistic write conflict");
 
     // ---------- skill ----------
     await skillRepository.put({

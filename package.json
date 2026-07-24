@@ -12,6 +12,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "tsx scripts/integration-check.ts",
     "test:watch": "vitest",
     "init-local-table": "tsx scripts/init-local-table.ts"
   },
