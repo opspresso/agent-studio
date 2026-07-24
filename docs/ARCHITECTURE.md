@@ -172,6 +172,7 @@ predicate — consumers must use it instead of re-deriving author semantics.
 | `error` | engine on failure (mid-stream — no retry) | every consumer surfaces it and stops |
 | `done` | engine when the loop ends without tool calls | OpenAI `finish_reason`, client finalize |
 | `author` | subagent chunks only | consumers filter via `isTopLevelChunk`; client shows an author badge |
+| `traceId` | subagent chunks (stamped by `runProject`) | client correlates a chunk to its subagent's trace |
 
 ## Error Handling
 
@@ -358,7 +359,10 @@ Runtime settings: the admin-only `/settings` page stores overrides for selected 
 (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
 A2A key, public base URL) in the `SETTINGS#app` item.
 `src/lib/runtime-settings.ts` resolves effective values — DB override → env fallback —
-through an in-memory cache (30s TTL, invalidated on write; single-instance assumption).
+through a process-local in-memory cache (30s TTL, invalidated on write). On a
+horizontally-scaled deployment a settings change (e.g. A2A-key rotation, admin demotion)
+propagates to other instances only as their own cache entries expire — up to the 30s TTL;
+immediate cross-instance revocation would need a shared invalidation signal.
 Secret overrides are AES-encrypted at rest and decrypted for outbound dispatch (and at read
 only to reveal the first/last 2 chars of long values in the admin masked view); a stored
 provider list replaces the whole `LLM_PROVIDER_*` env set. Bootstrap env (`AES_ENCRYPTION_KEY`,

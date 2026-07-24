@@ -3,8 +3,12 @@
  * /settings page) take precedence over environment variables. Secrets are
  * decrypted here, at the point of use only.
  *
- * The DB read is cached in memory (TTL below) and invalidated on write —
- * single-instance assumption, same as the in-memory A2A task store.
+ * The DB read is cached in memory (TTL below) and invalidated on write, but the
+ * invalidation is process-local. On a horizontally-scaled deployment a change
+ * made on one instance (rotating the A2A key, demoting an admin, tightening the
+ * allowed sign-in domains) is observed by other instances only once their own
+ * cache entry expires — up to the TTL below. Immediate cross-instance revocation
+ * would need a shared invalidation signal, which is deliberately out of scope.
  */
 
 import type { AppSettings } from "@/domain/settings/types";
