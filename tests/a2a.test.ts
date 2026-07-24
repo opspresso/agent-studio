@@ -365,6 +365,44 @@ describe("ProjectA2aExecutor cancel", () => {
     expect(bus.events).toHaveLength(0);
   });
 
+  it("publishes canceled, not completed, when a cancel raced into the store before the run finished", async () => {
+    // The run completes synchronously, before the 2s background poll fires, so
+    // the controller is never aborted — the terminal decision must still consult
+    // the authoritative store rather than the lagging local signal.
+    const channel = new FakeChannel([[contentChunk("answer")]]);
+    const store = fakeStore({
+      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+    });
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(channel),
+      projectFixture(),
+      versionFixture(),
+      store,
+    );
+    const bus = new CollectingBus();
+    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+
+    const last = bus.events.at(-1);
+    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+  });
+
+  it("publishes canceled for an image run when a cancel raced into the store", async () => {
+    const store = fakeStore({
+      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+    });
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(new FakeChannel([])),
+      projectFixture({ projectType: "image" }),
+      versionFixture({ model: "openai/gpt-image-2" }),
+      store,
+    );
+    const bus = new CollectingBus();
+    await executor.execute(new RequestContext(userMessage("draw"), "t1", "c1"), bus);
+
+    const last = bus.events.at(-1);
+    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+  });
+
   it("aborts a hung streaming run when a cancel is persisted (no new chunks)", async () => {
     vi.useFakeTimers();
     try {
