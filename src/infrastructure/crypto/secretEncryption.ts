@@ -41,22 +41,59 @@ export function decryptSecret(value: string): string {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
-/** True when `value` is an all-asterisk mask produced by {@link maskSecret}. */
+// Length-preserving display masks. Shorter values are fully hidden; values of
+// at least REVEAL_MIN_LENGTH reveal their first/last REVEAL_EDGE characters so an
+// operator can recognize which secret is set. REVEAL_CHAR (U+2022) never appears
+// in real API keys/tokens, so it also marks a mask echoed back from a form.
+const HIDDEN_CHAR = "*";
+const REVEAL_CHAR = "•";
+const REVEAL_MIN_LENGTH = 20;
+const REVEAL_EDGE = 2;
+
+/** True when `value` is a mask produced by {@link maskSecret} (a form echoing
+ * the displayed value back unchanged), never a freshly typed secret. */
 export function isMasked(value: string): boolean {
-  return value.length > 0 && /^\*+$/.test(value);
+  return value.length > 0 && (value.includes(REVEAL_CHAR) || /^\*+$/.test(value));
+}
+
+/** Plaintext byte length without decrypting — AES-GCM preserves plaintext length. */
+function plaintextByteLength(value: string): number {
+  if (!isEncrypted(value)) {
+    return Buffer.byteLength(value, "utf8");
+  }
+  const raw = Buffer.from(value.slice(PREFIX.length), "base64");
+  return Math.max(raw.length - IV_AND_TAG_LENGTH, 0);
+}
+
+function revealEdges(plaintext: string): string {
+  const len = plaintext.length;
+  if (len < REVEAL_MIN_LENGTH) {
+    return HIDDEN_CHAR.repeat(len);
+  }
+  return (
+    plaintext.slice(0, REVEAL_EDGE) +
+    REVEAL_CHAR.repeat(len - REVEAL_EDGE * 2) +
+    plaintext.slice(len - REVEAL_EDGE)
+  );
 }
 
 /**
- * Mask a secret with asterisks matching the plaintext's UTF-8 byte length.
- * For encrypted values the length is derived from the ciphertext (AES-GCM
- * preserves plaintext length) without decrypting.
+ * Mask a secret for display, preserving length. Values shorter than 20 chars are
+ * fully hidden; longer ones reveal their first and last two characters. Revealing
+ * the edges needs the plaintext, so encrypted values are decrypted here — only in
+ * the admin/owner-gated read views that call this; if decryption fails the value
+ * is fully hidden instead. Short values are never decrypted.
  */
 export function maskSecret(value: string): string {
-  if (!isEncrypted(value)) {
-    return "*".repeat(Buffer.byteLength(value, "utf8"));
+  const byteLength = plaintextByteLength(value);
+  if (byteLength < REVEAL_MIN_LENGTH) {
+    return HIDDEN_CHAR.repeat(byteLength);
   }
-  const raw = Buffer.from(value.slice(PREFIX.length), "base64");
-  return "*".repeat(Math.max(raw.length - IV_AND_TAG_LENGTH, 0));
+  try {
+    return revealEdges(isEncrypted(value) ? decryptSecret(value) : value);
+  } catch {
+    return HIDDEN_CHAR.repeat(byteLength);
+  }
 }
 
 /** Encrypt all header values for storage. */

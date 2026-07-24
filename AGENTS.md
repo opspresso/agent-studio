@@ -114,7 +114,8 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   invalidated on write, single-instance assumption). Never read those env vars directly at
   dispatch; go through runtime-settings.
 - **Secrets**: stored headers/tokens are AES-256-GCM encrypted (`enc:v1:` prefix), masked
-  (length-preserving asterisks) on read, decrypted only at dispatch
+  on read (length-preserving; values ≥20 chars reveal their first/last 2 chars, which
+  decrypts at read in the admin/owner-gated views) and decrypted for outbound dispatch
   (`src/infrastructure/crypto/secretEncryption.ts`). A masked or empty value on update
   preserves the stored secret; a masked value under a key with no stored counterpart is
   dropped.

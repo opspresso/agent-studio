@@ -268,7 +268,8 @@ Two deliberate strategies coexist:
 
 ### MCP
 - `McpServer { name, url, description?, headers: Record<string,string> (values encrypted
-  at rest AES-256-GCM `enc:v1:` prefix, masked with length-preserving asterisks on read), createdAt, updatedAt }`
+  at rest AES-256-GCM `enc:v1:` prefix, masked on read — length-preserving, revealing the
+  first/last 2 chars of values ≥20 chars), createdAt, updatedAt }`
 - `url` is SSRF-guarded (`src/infrastructure/net/ssrfGuard.ts`) at registration and dispatch:
   non-http(s) schemes and private/loopback/link-local/metadata addresses are rejected.
 - Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). Tool name
@@ -351,8 +352,9 @@ Runtime settings: the admin-only `/settings` page stores overrides for selected 
 A2A key, public base URL) in the `SETTINGS#app` item.
 `src/lib/runtime-settings.ts` resolves effective values — DB override → env fallback —
 through an in-memory cache (30s TTL, invalidated on write; single-instance assumption).
-Secret overrides are AES-encrypted at rest and decrypted only at dispatch; a stored provider
-list replaces the whole `LLM_PROVIDER_*` env set. Bootstrap env (`AES_ENCRYPTION_KEY`,
+Secret overrides are AES-encrypted at rest and decrypted for outbound dispatch (and at read
+only to reveal the first/last 2 chars of long values in the admin masked view); a stored
+provider list replaces the whole `LLM_PROVIDER_*` env set. Bootstrap env (`AES_ENCRYPTION_KEY`,
 Better Auth, Google OAuth, DynamoDB, `STAGE`) stays env-only. SSE responses use
 `text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.
 

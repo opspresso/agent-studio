@@ -1,8 +1,8 @@
 import type { McpServer } from "@/domain/mcp/types";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
-// Server responses carry masked (length-preserving asterisks) header values —
-// never plaintext or ciphertext.
+// Server responses carry masked (length-preserving; long values reveal first/last
+// 2 chars) header values — never the full plaintext or ciphertext.
 export type { McpServer };
 
 export interface McpTool {

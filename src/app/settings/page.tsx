@@ -192,7 +192,7 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="mt-1 text-sm text-neutral-500">
           Overrides are stored in the database and take precedence over environment variables.
-          Masked values (all asterisks) keep the stored secret; clear a field to fall back to env.
+          Masked values keep the stored secret; clear a field to fall back to env.
         </p>
       </div>
 

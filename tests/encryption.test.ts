@@ -6,8 +6,11 @@ import {
   decryptHeadersForOutbound,
   decryptSecret,
   encryptHeaders,
+  encryptSecret,
   isEncrypted,
+  isMasked,
   maskHeaders,
+  maskSecret,
   mergeHeaderUpdate,
 } from "@/infrastructure/crypto/secretEncryption";
 
@@ -65,5 +68,40 @@ describe("length-preserving masking", () => {
   it("drops an empty value under a key with no stored counterpart", () => {
     const merged = mergeHeaderUpdate({}, { "X-New": "" });
     expect(merged).toEqual({});
+  });
+});
+
+describe("partial-reveal masking (>= 20 chars)", () => {
+  const bullets = (n: number) => "•".repeat(n);
+
+  it("reveals the first and last two chars of a long plaintext, hiding the middle", () => {
+    const key = "sk-live-abcdefghijklmnop"; // 24 chars
+    expect(maskSecret(key)).toBe(`sk${bullets(key.length - 4)}op`);
+    expect(maskSecret(key)).toHaveLength(key.length);
+  });
+
+  it("decrypts an encrypted long secret at display time to reveal its edges", () => {
+    const secret = "sk-proj-0123456789abcdef"; // 24 chars
+    expect(maskSecret(encryptSecret(secret))).toBe(`sk${bullets(secret.length - 4)}ef`);
+  });
+
+  it("still fully hides secrets shorter than 20 chars with asterisks", () => {
+    expect(maskSecret("short-secret")).toBe("*".repeat("short-secret".length));
+    expect(maskSecret(encryptSecret("short-secret"))).toBe("*".repeat("short-secret".length));
+  });
+
+  it("treats a partial-reveal mask echoed back as unchanged", () => {
+    const stored = encryptHeaders({ Authorization: "Bearer super-secret-token-value" });
+    const masked = maskHeaders(stored).Authorization!;
+    expect(masked).toContain("•");
+    const merged = mergeHeaderUpdate(stored, { Authorization: masked });
+    expect(merged.Authorization).toBe(stored.Authorization);
+  });
+
+  it("recognizes both asterisk and partial-reveal masks, but not real secrets", () => {
+    expect(isMasked("******")).toBe(true);
+    expect(isMasked(`sk${bullets(20)}op`)).toBe(true);
+    expect(isMasked("sk-real-secret-value-1234")).toBe(false);
+    expect(isMasked("")).toBe(false);
   });
 });

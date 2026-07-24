@@ -283,7 +283,7 @@ function EditAgentForm({
 
       <HeaderRowsEditor rows={rows} onChange={setRows} emptyHint="No headers. Add one if the endpoint needs auth." />
       <p className="text-xs text-neutral-400">
-        Masked values (all asterisks) keep the stored secret. Type a new value to replace it.
+        Masked values keep the stored secret. Type a new value to replace it.
       </p>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}

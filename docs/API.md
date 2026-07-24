@@ -43,7 +43,8 @@ DELETE /api/skills/{name}     → 204                     | 404
 ```
 
 - Names are slugs (`^[a-z0-9-]+$`).
-- `mcps`/`agents` store `headers` AES-encrypted and return them masked (length-preserving asterisks); a masked
+- `mcps`/`agents` store `headers` AES-encrypted and return them masked (length-preserving;
+  values ≥20 chars reveal their first/last 2 chars); a masked
   or empty value on update preserves the stored secret. Their `url` is SSRF-guarded — a
   private/loopback/link-local/metadata target (or non-http(s) scheme) is rejected with `400`.
 - `projects` mutations are owner-gated (403). `POST /api/projects` body:
@@ -84,8 +85,8 @@ PUT /api/settings → 200 {…same shape…} | 400
   currently effective key for that provider name. Provider `name` must be one of
   `openai | google | anthropic | xai`.
 - `source` is `override` (DB) | `env` | `default` | `unset`. Secret values are always masked
-  (length-preserving asterisks); a masked value on PUT keeps the stored secret, an empty
-  string removes the override (env fallback). Setting `adminEmails` to a list that excludes
+  (length-preserving; values ≥20 chars reveal their first/last 2 chars); a masked value on
+  PUT keeps the stored secret, an empty string removes the override (env fallback). Setting `adminEmails` to a list that excludes
   the caller is rejected with `400`.
 
 ## Chats
