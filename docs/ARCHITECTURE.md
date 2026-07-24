@@ -330,13 +330,15 @@ GET  /api/a2a                               A2A-published project list
 GET  /api/a2a/[name]/.well-known/agent-card.json   public Agent Card
 POST /api/a2a/[name]                        JSON-RPC, gated by X-A2A-Key
 POST /api/slack/events/[project]              project Slack webhook
+GET|POST /api/auth/[...all]                  Better Auth login flow (Google OAuth)
 GET  /api/health                            liveness (static 200)
 GET  /api/ready                             readiness (DynamoDB + LLM reachability)
 ```
 
 All routes require a Better Auth session except the unauthenticated endpoints:
-`/api/health`, `/api/ready`, `/api/slack/events/*` (verified by signing secret),
-`POST /api/a2a/[name]` (gated by `A2A_API_KEY`), and the public Agent Card GET.
+`/api/auth/*` (the Better Auth login flow itself), `/api/health`, `/api/ready`,
+`/api/slack/events/*` (verified by signing secret), `POST /api/a2a/[name]`
+(gated by `A2A_API_KEY`), and the public Agent Card GET.
 `/api/health` is liveness — a static 200 answering "is the process serving". `/api/ready`
 is readiness — it probes DynamoDB and the LLM channel for reachability (short timeout,
 details not surfaced) and returns 503 when a downstream is unreachable or the instance is
