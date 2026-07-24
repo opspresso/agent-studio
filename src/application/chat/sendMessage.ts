@@ -8,6 +8,7 @@ export interface SendMessageInput {
   chatId: string;
   content: string;
   userEmail: string;
+  signal?: AbortSignal;
 }
 
 /**
@@ -55,6 +56,7 @@ export async function sendMessage(
     version,
     messages: toEngineMessages([...existing, userMessage]),
     userEmail: input.userEmail,
+    signal: input.signal,
   });
 
   return runAndPersist(deps, chat, source);

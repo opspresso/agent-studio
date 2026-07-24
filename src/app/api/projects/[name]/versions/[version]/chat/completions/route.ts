@@ -39,13 +39,23 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     };
 
     if (parsed.data.stream) {
-      const source = executeProjectStream(executionDeps, versionParams);
-      return sseResponse(toChatCompletionChunks(source, versionEntity.model));
+      const abortController = new AbortController();
+      const source = executeProjectStream(executionDeps, {
+        ...versionParams,
+        signal: abortController.signal,
+      });
+      return sseResponse(
+        toChatCompletionChunks(source, versionEntity.model),
+        abortController,
+      );
     }
 
     const result = isAgent
-      ? await collectRun(executeAgent(executionDeps, agentParams), versionEntity.model)
-      : await executeVersion(executionDeps, versionParams);
+      ? await collectRun(
+          executeAgent(executionDeps, { ...agentParams, signal: request.signal }),
+          versionEntity.model,
+        )
+      : await executeVersion(executionDeps, { ...versionParams, signal: request.signal });
     return Response.json(toChatCompletion(result));
   } catch (error) {
     return apiError(error);

@@ -9,6 +9,7 @@ export interface AgentRunParams {
   /** OpenAI-shaped message history (see messageMapping.ts). */
   messages: ChatMessageInput[];
   userEmail: string;
+  signal?: AbortSignal;
 }
 
 /** Bound wrapper over `executeAgent(executionDeps, params)`, injected at the route boundary. */

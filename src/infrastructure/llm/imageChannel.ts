@@ -43,7 +43,7 @@ export const imageChannel: ImageChannel = {
       prompt: params.prompt,
       ...(params.size ? { size: params.size as never } : {}),
       ...(params.quality ? { quality: params.quality as never } : {}),
-    })) as unknown as {
+    }, { signal: params.signal })) as unknown as {
       data?: Array<{ b64_json?: string }>;
       usage?: {
         input_tokens?: number;

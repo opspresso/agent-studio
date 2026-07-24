@@ -56,14 +56,18 @@ export async function sendA2aMessage(
   url: string,
   headers: Record<string, string>,
   message: string,
+  signal?: AbortSignal,
 ): Promise<A2aSendResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const requestSignal = signal
+    ? AbortSignal.any([signal, controller.signal])
+    : controller.signal;
   const fetchImpl: typeof fetch = (input, init) =>
     fetchPublicUrl(input, {
       ...init,
       headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) },
-      signal: controller.signal,
+      signal: requestSignal,
     });
 
   try {

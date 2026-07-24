@@ -110,7 +110,7 @@ export const channel: LlmChannel = {
     const response = (await getClient(target).chat.completions.create({
       ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
       stream: false,
-    })) as unknown as {
+    }, { signal: params.signal })) as unknown as {
       model?: string;
       choices?: Array<{
         finish_reason?: string | null;
@@ -145,7 +145,7 @@ export const channel: LlmChannel = {
       ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
       stream: true,
       stream_options: { include_usage: true },
-    })) as unknown as AsyncIterable<{
+    }, { signal: params.signal })) as unknown as AsyncIterable<{
       choices?: Array<{
         finish_reason?: string | null;
         delta?: {

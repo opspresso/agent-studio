@@ -97,6 +97,22 @@ function offersImageTool(channel: FakeChannel): boolean {
   return channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false;
 }
 
+describe("execution cancellation", () => {
+  it("passes the caller signal to the LLM channel", async () => {
+    const channel = new FakeChannel([[contentChunk("done"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    const abortController = new AbortController();
+
+    await executeVersion(deps, {
+      project: projectFixture(),
+      version: versionFixture({ piiFiltering: false }),
+      signal: abortController.signal,
+    });
+
+    expect(channel.seenParams[0]?.signal).toBe(abortController.signal);
+  });
+});
+
 const imageCallScript = [
   [toolCallChunk(0, "call_img", "GenerateImage", '{"prompt":"a red fox"}'), usageChunk(10, 5)],
   [contentChunk("Here is your fox."), usageChunk(8, 4)],

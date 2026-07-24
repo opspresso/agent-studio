@@ -51,6 +51,7 @@ export interface ExecuteVersionInput {
   /** Prior OpenAI-shaped messages; `messages` is the route-layer alias. */
   extraMessages?: ChatMessageInput[];
   messages?: ChatMessageInput[];
+  signal?: AbortSignal;
 }
 
 export interface ExecuteAgentInput {
@@ -59,6 +60,7 @@ export interface ExecuteAgentInput {
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
   userEmail?: string;
+  signal?: AbortSignal;
 }
 
 function toEngineParameters(version: Version): EngineParameters {
@@ -107,6 +109,7 @@ export async function executeVersion(
         variables: input.variables,
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
+        signal: input.signal,
       },
     );
     recorder?.observeResult(result);
@@ -138,6 +141,7 @@ export async function* executeVersionStream(
         variables: input.variables,
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
+        signal: input.signal,
       },
     )) {
       recorder?.observe(chunk);
@@ -145,7 +149,9 @@ export async function* executeVersionStream(
     }
     completed = true;
   } catch (error) {
-    thrown = error;
+    if (!input.signal?.aborted) {
+      thrown = error;
+    }
     throw error;
   } finally {
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
@@ -160,6 +166,7 @@ export interface ExecuteProjectInput {
   variables?: Record<string, string>;
   messages: ChatMessageInput[];
   userEmail?: string;
+  signal?: AbortSignal;
 }
 
 /**
@@ -178,6 +185,7 @@ export function executeProjectStream(
       version: input.version,
       messages: input.messages,
       userEmail: input.userEmail,
+      signal: input.signal,
     });
   }
   return executeVersionStream(deps, {
@@ -185,6 +193,7 @@ export function executeProjectStream(
     version: input.version,
     variables: input.variables,
     messages: input.messages,
+    signal: input.signal,
   });
 }
 
@@ -203,11 +212,18 @@ export async function* executeAgent(
   let thrown: unknown;
   let completed = false;
   try {
-    const agentDeps = await buildAgentDeps(deps, input.version, input.project.name, usage.record);
+    input.signal?.throwIfAborted();
+    const agentDeps = await buildAgentDeps(
+      deps,
+      input.version,
+      input.project.name,
+      usage.record,
+      input.signal,
+    );
     const [skills, subagents, mcp] = await Promise.all([
       resolveSkills(deps, input.version.skillList),
       resolveSubagents(deps, input.version.subagentList),
-      buildMcpTools(deps, input.version),
+      buildMcpTools(deps, input.version, input.signal),
     ]);
     agentDeps.callMcpTool = mcp.callMcpTool;
     for await (const chunk of engine.runAgent(agentDeps, {
@@ -222,13 +238,16 @@ export async function* executeAgent(
       subagents,
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
+      signal: input.signal,
     })) {
       recorder?.observe(chunk);
       yield chunk;
     }
     completed = true;
   } catch (error) {
-    thrown = error;
+    if (!input.signal?.aborted) {
+      thrown = error;
+    }
     throw error;
   } finally {
     await usage.flush();
@@ -287,14 +306,15 @@ async function buildAgentDeps(
   version: Version,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
+  signal?: AbortSignal,
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel;
   return {
     channel,
     recordUsage: recordUsageFn,
     loadSkillContent: buildSkillLoader(deps),
-    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn),
-    generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn),
+    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, signal),
+    generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
   };
 }
 
@@ -311,6 +331,7 @@ function buildImageGenerator(
   version: Version,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
+  signal?: AbortSignal,
 ): engine.AgentDeps["generateImage"] {
   if (version.parameters.imageGeneration !== true) {
     return undefined;
@@ -333,7 +354,14 @@ function buildImageGenerator(
   const resolvedModel = model;
   const imageChannel = deps.imageChannel;
   return async (prompt, size, quality) => {
-    const result = await imageChannel.generateImage({ model: resolvedModel, prompt, size, quality });
+    signal?.throwIfAborted();
+    const result = await imageChannel.generateImage({
+      model: resolvedModel,
+      prompt,
+      size,
+      quality,
+      signal,
+    });
     const costUsd = calculateImageCost(resolvedModel, result.usage);
     await recordUsageFn({
       projectName,
@@ -390,6 +418,7 @@ function buildSkillLoader(
 async function buildMcpTools(
   deps: ExecutionDeps,
   version: Version,
+  signal?: AbortSignal,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
@@ -440,7 +469,7 @@ async function buildMcpTools(
     reserved.add(engine.TRANSFER_TOOL_NAME);
   }
 
-  const toolManager = new ToolManager(servers, reserved);
+  const toolManager = new ToolManager(servers, reserved, signal);
   await toolManager.init();
   const mcpServers: engine.McpServerInfo[] = [];
   for (const [serverName, toolNames] of toolManager.toolNamesByServer) {
@@ -463,18 +492,28 @@ function buildSubagentRunner(
   deps: ExecutionDeps,
   subagentList: SubagentRef[] | undefined,
   recordUsageFn: engine.RecordUsageFn,
+  signal?: AbortSignal,
 ): NonNullable<engine.AgentDeps["runSubagent"]> {
   const refByName = new Map((subagentList ?? []).map((ref) => [ref.name, ref]));
   return async function* runSubagent(agentName, message, turn, maxTurn) {
+    signal?.throwIfAborted();
     const ref = refByName.get(agentName);
     if (!ref) {
       yield { author: agentName, error: `Unknown agent '${agentName}'.` };
       return "";
     }
     if (ref.type === "remote") {
-      return yield* runRemoteSubagent(deps, agentName, message);
+      return yield* runRemoteSubagent(deps, agentName, message, signal);
     }
-    return yield* runLocalSubagent(deps, agentName, message, turn, maxTurn, recordUsageFn);
+    return yield* runLocalSubagent(
+      deps,
+      agentName,
+      message,
+      turn,
+      maxTurn,
+      recordUsageFn,
+      signal,
+    );
   };
 }
 
@@ -486,6 +525,7 @@ async function* runImageSubagent(
   version: Version,
   message: string,
   recordUsageFn: engine.RecordUsageFn,
+  signal?: AbortSignal,
 ): AsyncGenerator<EngineChunk, string> {
   const model = version.model;
   const recorder = deps.traces
@@ -504,7 +544,8 @@ async function* runImageSubagent(
     return "";
   }
   try {
-    const result = await deps.imageChannel.generateImage({ model, prompt: message });
+    signal?.throwIfAborted();
+    const result = await deps.imageChannel.generateImage({ model, prompt: message, signal });
     const costUsd = calculateImageCost(model, result.usage);
     await recordUsageFn({
       projectName: project.name,
@@ -530,6 +571,7 @@ async function* runImageSubagent(
     await finishTrace(recorder);
     return `Generated an image for: ${message}`;
   } catch (error) {
+    signal?.throwIfAborted();
     yield {
       author: agentName,
       ...(recorder ? { traceId: recorder.traceId } : {}),
@@ -547,6 +589,7 @@ async function* runLocalSubagent(
   turn: number,
   maxTurn: number,
   recordUsageFn: engine.RecordUsageFn,
+  signal?: AbortSignal,
 ): AsyncGenerator<EngineChunk, string> {
   const project = await deps.projects.get(agentName);
   if (!project) {
@@ -563,14 +606,22 @@ async function* runLocalSubagent(
   // Dispatch on the child's projectType, like the entry points do: an image
   // project generates an image — its model must never hit chat/completions.
   if (project.projectType === "image") {
-    return yield* runImageSubagent(deps, agentName, project, version, message, recordUsageFn);
+    return yield* runImageSubagent(
+      deps,
+      agentName,
+      project,
+      version,
+      message,
+      recordUsageFn,
+      signal,
+    );
   }
 
   const [skills, subagents, mcp, childDeps] = await Promise.all([
     resolveSkills(deps, version.skillList),
     resolveSubagents(deps, version.subagentList),
-    buildMcpTools(deps, version),
-    buildAgentDeps(deps, version, project.name, recordUsageFn),
+    buildMcpTools(deps, version, signal),
+    buildAgentDeps(deps, version, project.name, recordUsageFn, signal),
   ]);
   childDeps.callMcpTool = mcp.callMcpTool;
   const recorder = deps.traces
@@ -594,6 +645,7 @@ async function* runLocalSubagent(
       subagents,
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
+      signal,
     })) {
       recorder?.observe(chunk);
       if (chunk.delta?.content) {
@@ -622,6 +674,7 @@ async function* runRemoteSubagent(
   deps: ExecutionDeps,
   agentName: string,
   message: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<EngineChunk, string> {
   const agent = await deps.externalAgents.get(agentName);
   if (!agent) {
@@ -639,7 +692,8 @@ async function* runRemoteSubagent(
   }
   const headers = decryptHeadersForOutbound(agent.headers);
   if (agent.protocol === "a2a") {
-    const result = await sendA2aMessage(agent.url, headers, message);
+    const result = await sendA2aMessage(agent.url, headers, message, signal);
+    signal?.throwIfAborted();
     if (!result.ok) {
       yield { author: agentName, error: result.error };
       return "";
@@ -653,13 +707,16 @@ async function* runRemoteSubagent(
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify({ messages: [{ role: "user", content: message }], stream: false }),
-      signal: AbortSignal.timeout(REMOTE_SUBAGENT_TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(REMOTE_SUBAGENT_TIMEOUT_MS)])
+        : AbortSignal.timeout(REMOTE_SUBAGENT_TIMEOUT_MS),
     });
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
     text = data.choices?.[0]?.message?.content ?? "";
   } catch (error) {
+    signal?.throwIfAborted();
     yield { author: agentName, error: error instanceof Error ? error.message : String(error) };
     return "";
   }

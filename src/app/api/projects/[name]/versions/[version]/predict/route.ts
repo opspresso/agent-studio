@@ -38,9 +38,13 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       userEmail: user.email,
     };
     if (parsed.data.stream) {
-      return sseResponse(executeVersionStream(executionDeps, params));
+      const abortController = new AbortController();
+      return sseResponse(
+        executeVersionStream(executionDeps, { ...params, signal: abortController.signal }),
+        abortController,
+      );
     }
-    const result = await executeVersion(executionDeps, params);
+    const result = await executeVersion(executionDeps, { ...params, signal: request.signal });
     return Response.json({ result: result.content, model: result.model, usage: result.usage });
   } catch (error) {
     return apiError(error);

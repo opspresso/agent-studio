@@ -40,12 +40,14 @@ export const POST = withAuth(async (user, request: Request) => {
   }
 
   try {
+    const abortController = new AbortController();
     const { chat, stream } = await createChat(chatDeps, {
       projectName: parsed.data.projectName,
       firstMessage: parsed.data.firstMessage,
       userEmail: user.email,
+      signal: abortController.signal,
     });
-    return sseResponse(withChatMeta(chat, stream));
+    return sseResponse(withChatMeta(chat, stream), abortController);
   } catch (error) {
     if (error instanceof ChatError) {
       return Response.json({ error: error.message }, { status: error.status });

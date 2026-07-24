@@ -26,6 +26,7 @@ export interface ChannelToolDef {
 export interface ChannelParams {
   model: string;
   messages: ChannelMessage[];
+  signal?: AbortSignal;
   tools?: ChannelToolDef[];
   temperature?: number;
   maxTokens?: number;

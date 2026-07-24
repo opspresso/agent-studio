@@ -99,6 +99,7 @@ export interface RunPromptInput {
   variables?: Record<string, string>;
   extraMessages?: ChatMessageInput[];
   parameters?: EngineParameters;
+  signal?: AbortSignal;
 }
 
 export interface RunAgentInput {
@@ -117,6 +118,7 @@ export interface RunAgentInput {
   mcpTools?: ChannelToolDef[];
   /** Per-server grouping of the MCP tools, for the system prompt overview. */
   mcpServers?: McpServerInfo[];
+  signal?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,8 +155,9 @@ function buildChannelParams(
   messages: ChannelMessage[],
   parameters?: EngineParameters,
   tools?: ChannelToolDef[],
+  signal?: AbortSignal,
 ): ChannelParams {
-  const params: ChannelParams = { model, messages };
+  const params: ChannelParams = { model, messages, signal };
   if (parameters?.temperature !== undefined) {
     params.temperature = parameters.temperature;
   }
@@ -377,7 +380,13 @@ function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): Channel
 export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promise<RunResult> {
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
   const messages = buildPromptMessages(input, filter);
-  const params = buildChannelParams(input.model, messages, input.parameters);
+  const params = buildChannelParams(
+    input.model,
+    messages,
+    input.parameters,
+    undefined,
+    input.signal,
+  );
   const { completion, modelUsed } = await completionWithFallback(
     deps.channel,
     params,
@@ -403,7 +412,13 @@ export async function* runPromptStream(
 ): AsyncGenerator<EngineChunk> {
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
   const messages = buildPromptMessages(input, filter);
-  const params = buildChannelParams(input.model, messages, input.parameters);
+  const params = buildChannelParams(
+    input.model,
+    messages,
+    input.parameters,
+    undefined,
+    input.signal,
+  );
   const state = { model: input.model };
   let usage: ChannelUsage | null = null;
   const contentRestorer = filter?.createStreamRestorer();
@@ -432,6 +447,7 @@ export async function* runPromptStream(
       }
     }
   } catch (error) {
+    input.signal?.throwIfAborted();
     const remainingContent = contentRestorer?.flush();
     if (remainingContent) {
       yield { delta: { content: remainingContent } };
@@ -760,7 +776,8 @@ export async function* runAgent(
       return; // turn guard
     }
 
-    const params = buildChannelParams(input.model, messages, input.parameters, tools);
+    input.signal?.throwIfAborted();
+    const params = buildChannelParams(input.model, messages, input.parameters, tools, input.signal);
     const state = { model: input.model };
     let assistantText = "";
     let reasoningText = "";
@@ -803,6 +820,7 @@ export async function* runAgent(
         }
       }
     } catch (error) {
+      input.signal?.throwIfAborted();
       const remainingContent = contentRestorer?.flush();
       if (remainingContent) {
         yield { author, delta: { content: remainingContent } };
@@ -908,6 +926,7 @@ export async function* runAgent(
             resultText =
               "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
           } catch (error) {
+            input.signal?.throwIfAborted();
             resultText = `Error: image generation failed. ${errorMessage(error)}`;
           }
         }
@@ -936,6 +955,7 @@ export async function* runAgent(
         }
       } else if (deps.callMcpTool) {
         content = await deps.callMcpTool(call.name, displayArgs);
+        input.signal?.throwIfAborted();
       } else {
         content = `Error: Tool '${call.name}' cannot be executed in this context.`;
       }

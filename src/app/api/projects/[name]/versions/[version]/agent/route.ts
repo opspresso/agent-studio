@@ -18,13 +18,16 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   try {
     const project = await getProject(projectRepository, name);
     const versionEntity = await getVersion(versionRepository, name, version);
+    const abortController = new AbortController();
     return sseResponse(
       executeAgent(executionDeps, {
         project,
         version: versionEntity,
         messages: parsed.data.messages,
         userEmail: user.email,
+        signal: abortController.signal,
       }),
+      abortController,
     );
   } catch (error) {
     return apiError(error);

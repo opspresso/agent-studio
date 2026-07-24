@@ -45,7 +45,13 @@ class McpSession {
   constructor(
     private readonly url: string,
     private readonly headers: Record<string, string>,
+    private readonly signal?: AbortSignal,
   ) {}
+
+  private requestSignal(): AbortSignal {
+    const timeout = AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS);
+    return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
+  }
 
   private baseHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
@@ -76,7 +82,7 @@ class McpSession {
           clientInfo: { name: "agent-studio", version: "0.1.0" },
         },
       }),
-      signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
+      signal: this.requestSignal(),
     });
     const sessionId = response.headers.get("Mcp-Session-Id");
     if (sessionId) {
@@ -89,7 +95,7 @@ class McpSession {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
-      signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
+      signal: this.requestSignal(),
     });
     this.initialized = true;
   }
@@ -100,7 +106,7 @@ class McpSession {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),
-      signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
+      signal: this.requestSignal(),
     });
     const message = await parseJsonRpc(response);
     if (message?.error) {
@@ -154,7 +160,11 @@ export class ToolManager {
   private _tools: ChannelToolDef[] = [];
   private _toolNamesByServer = new Map<string, string[]>();
 
-  constructor(servers: McpServerConfig[], reservedToolNames?: Iterable<string>) {
+  constructor(
+    servers: McpServerConfig[],
+    reservedToolNames?: Iterable<string>,
+    private readonly signal?: AbortSignal,
+  ) {
     this.servers = servers;
     this.reservedToolNames = new Set(reservedToolNames ?? []);
   }
@@ -169,6 +179,7 @@ export class ToolManager {
   }
 
   async init(): Promise<void> {
+    this.signal?.throwIfAborted();
     if (this.servers.length === 0) {
       return;
     }
@@ -177,11 +188,12 @@ export class ToolManager {
     const tools: ChannelToolDef[] = [];
 
     for (const server of this.servers) {
-      const session = new McpSession(server.url, server.headers);
+      const session = new McpSession(server.url, server.headers, this.signal);
       let serverTools: McpTool[];
       try {
         serverTools = await session.listTools();
       } catch {
+        this.signal?.throwIfAborted();
         // A single broken MCP must not abort the whole tool set.
         continue;
       }
@@ -206,6 +218,7 @@ export class ToolManager {
   }
 
   async callTool(aliasName: string, args: Record<string, unknown>): Promise<string> {
+    this.signal?.throwIfAborted();
     const session = this.sessionByToolName.get(aliasName);
     const originalName = this.originalNameByAlias.get(aliasName);
     if (!session || !originalName) {
@@ -220,6 +233,7 @@ export class ToolManager {
       }
       return formatToolResult(result.content);
     } catch (error) {
+      this.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : String(error);
       return `Tool call failed with error. ${message}`;
     }

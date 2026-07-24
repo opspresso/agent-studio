@@ -10,6 +10,7 @@ export interface CreateChatInput {
   projectName: string;
   firstMessage: string;
   userEmail: string;
+  signal?: AbortSignal;
 }
 
 export interface CreateChatResult {
@@ -63,6 +64,7 @@ export async function createChat(
     version,
     messages: toEngineMessages([userMessage]),
     userEmail: input.userEmail,
+    signal: input.signal,
   });
 
   return { chat, stream: runAndPersist(deps, chat, source) };
