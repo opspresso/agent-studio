@@ -11,9 +11,11 @@
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { readBodyText } from "@/lib/httpBody";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 const MCP_REQUEST_TIMEOUT_MS = 120_000;
+const MAX_MCP_RESPONSE_BYTES = 2_000_000;
 const PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpServerConfig {
@@ -127,7 +129,7 @@ class McpSession {
 
 /** Read a JSON-RPC response body, handling both JSON and SSE framing. */
 async function parseJsonRpc(response: Response): Promise<JsonRpcResponse | undefined> {
-  const text = await response.text();
+  const text = await readBodyText(response, MAX_MCP_RESPONSE_BYTES);
   if (!text) {
     return undefined;
   }

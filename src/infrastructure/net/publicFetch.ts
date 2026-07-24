@@ -59,11 +59,15 @@ export async function fetchPublicUrl(
         },
       },
     });
-    const response = await fetch(url, {
-      ...requestInit,
-      dispatcher,
-    } as RequestInit & { dispatcher: Agent });
-    void dispatcher.close();
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...requestInit,
+        dispatcher,
+      } as RequestInit & { dispatcher: Agent });
+    } finally {
+      void dispatcher.close();
+    }
     if (!REDIRECT_STATUSES.has(response.status)) {
       return response;
     }

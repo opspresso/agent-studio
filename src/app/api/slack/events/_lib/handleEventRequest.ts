@@ -5,6 +5,7 @@ import { slackEventRepository } from "@/infrastructure/db/repositories/slackEven
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
+import { BodyTooLargeError, readBodyText } from "@/lib/httpBody";
 import type {
   SlackBotBinding,
   SlackEventBody,
@@ -18,6 +19,8 @@ const slackEventDeps: SlackEventDeps = {
   slack: slackClient,
 };
 
+const MAX_SLACK_BODY_BYTES = 1_000_000;
+
 /**
  * Shared Slack Events pipeline: verify signature → url_verification →
  * event-type gate → exactly-once claim → ack immediately and process in the
@@ -29,7 +32,15 @@ export async function handleSlackEventRequest(
   request: Request,
   opts: { signingSecret: string; binding: SlackBotBinding; logLabel: string },
 ): Promise<Response> {
-  const body = await request.text();
+  let body: string;
+  try {
+    body = await readBodyText(request, MAX_SLACK_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return Response.json({ error: "Request body too large" }, { status: 413 });
+    }
+    throw error;
+  }
   const verified = verifySlackSignature({
     signingSecret: opts.signingSecret,
     body,
@@ -40,7 +51,12 @@ export async function handleSlackEventRequest(
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const payload = JSON.parse(body) as SlackEventBody & { type?: string; challenge?: string };
+  let payload: SlackEventBody & { type?: string; challenge?: string };
+  try {
+    payload = JSON.parse(body) as SlackEventBody & { type?: string; challenge?: string };
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   if (payload.type === "url_verification" && payload.challenge) {
     return Response.json({ challenge: payload.challenge });

@@ -5,8 +5,10 @@
  */
 
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { readBodyText } from "@/lib/httpBody";
 
 const TIMEOUT_MS = 60_000;
+const MAX_AGENT_RESPONSE_BYTES = 2_000_000;
 
 /**
  * External agents carry no stored model id, so a placeholder is sent. Most
@@ -38,11 +40,12 @@ export async function sendAgentMessage(
       }),
       signal: controller.signal,
     });
+    const responseText = await readBodyText(res, MAX_AGENT_RESPONSE_BYTES);
     if (!res.ok) {
-      const detail = (await res.text().catch(() => "")).slice(0, 500);
+      const detail = responseText.slice(0, 500);
       return { ok: false, error: `HTTP ${res.status}${detail ? `: ${detail}` : ""}` };
     }
-    const data = (await res.json()) as {
+    const data = JSON.parse(responseText) as {
       choices?: { message?: { content?: unknown } }[];
     };
     const text = data.choices?.[0]?.message?.content;

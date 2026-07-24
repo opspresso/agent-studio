@@ -7,10 +7,12 @@
  */
 
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { readBodyText } from "@/lib/httpBody";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const CLIENT_INFO = { name: "agent-studio", version: "1.0.0" };
 const TIMEOUT_MS = 10_000;
+const MAX_MCP_RESPONSE_BYTES = 2_000_000;
 
 export interface McpTool {
   name: string;
@@ -49,9 +51,10 @@ function parseSseMessages(text: string): JsonRpcResponse[] {
 }
 
 async function readJsonRpcResponse(res: Response, id: number): Promise<JsonRpcResponse> {
+  const text = await readBodyText(res, MAX_MCP_RESPONSE_BYTES);
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("text/event-stream")) {
-    const messages = parseSseMessages(await res.text());
+    const messages = parseSseMessages(text);
     const matched = messages.find((m) => m.id === id);
     if (matched) {
       return matched;
@@ -62,7 +65,7 @@ async function readJsonRpcResponse(res: Response, id: number): Promise<JsonRpcRe
     }
     throw new Error("No JSON-RPC response found in event stream");
   }
-  return (await res.json()) as JsonRpcResponse;
+  return JSON.parse(text) as JsonRpcResponse;
 }
 
 export async function listMcpTools(
