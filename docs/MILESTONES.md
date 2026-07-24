@@ -133,25 +133,3 @@ workload로 배포하고 수명 주기를 관리하면 별도 MCP 인프라를 �
 동일한 시각에 만료되며, 이미 만료된 행은 물리 삭제 이전에도 조회에서 제외되고 보존 기간
 내 데이터는 유지된다. 만료 경계값·색인 동반 만료·활성 run 보호를 (주입한 clock으로)
 테스트로 검증한다.
-
-## M7 — Readiness probe와 종료 드레인
-
-**이유**: `/api/health`는 정적 200을 반환하는 liveness probe로, 스스로 밝히듯
-"다운스트림이 건강한가"가 아니라 "프로세스가 요청을 받는가"만 답한다
-(`src/app/api/health/route.ts`). Dockerfile HEALTHCHECK와 LB가 이 엔드포인트를 가리키므로
-DynamoDB나 LLM 채널이 도달 불가인 인스턴스도 healthy로 보고돼 트래픽을 계속 받는다.
-
-**범위**
-
-- liveness와 분리된 readiness 엔드포인트 추가 — DynamoDB 도달성과 LLM 채널 도달성을
-  짧은 타임아웃으로 점검하고 실패 시 비정상 상태 코드 반환.
-- 점검은 가볍고 비용이 낮아야 하며(저비용 DynamoDB 조회, LLM 채널은 실제 완성 호출 없이
-  도달성만), 다운스트림 오류 세부를 그대로 노출하지 않음.
-- LB/오케스트레이터 health check는 readiness로, 프로세스 재시작 판단(liveness)은 기존
-  정적 probe로 분리.
-- SIGTERM 수신 시 readiness를 먼저 unready로 전환해 신규 트래픽을 끊고 in-flight
-  실행·SSE를 드레인하는 경계를 명시(현재는 Next standalone 기본 종료에만 의존).
-
-**완료 조건**: 다운스트림(DynamoDB 또는 LLM 채널)이 도달 불가일 때 readiness가 비정상을,
-정상일 때 200을 반환하고, liveness는 다운스트림과 무관하게 200을 유지한다. 도달성
-성공·실패·타임아웃과 SIGTERM 후 unready 전환을 테스트로 검증한다.

@@ -14,8 +14,14 @@ import { usageRepository } from "@/infrastructure/db/repositories/usageRepositor
 import { channel } from "@/infrastructure/llm/channel";
 import { imageChannel } from "@/infrastructure/llm/imageChannel";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
+import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
+import { checkReadiness } from "@/application/health/readiness";
 
 export { projectRepository, versionRepository, traceRepository };
+
+/** Readiness snapshot for the /api/ready probe (DynamoDB + LLM channel). */
+export const readinessReport = () =>
+  checkReadiness({ checkDb: dbReachable, checkLlm: llmReachable });
 
 const configuredTraceSampleRate = Number(process.env.TRACE_SAMPLE_RATE ?? "0.1");
 const traceSampleRate = Number.isFinite(configuredTraceSampleRate)

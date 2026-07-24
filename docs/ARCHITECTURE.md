@@ -318,12 +318,19 @@ GET  /api/a2a                               A2A-published project list
 GET  /api/a2a/[name]/.well-known/agent-card.json   public Agent Card
 POST /api/a2a/[name]                        JSON-RPC, gated by X-A2A-Key
 POST /api/slack/events/[project]              project Slack webhook
-GET  /api/health
+GET  /api/health                            liveness (static 200)
+GET  /api/ready                             readiness (DynamoDB + LLM reachability)
 ```
 
 All routes require a Better Auth session except the unauthenticated endpoints:
-`/api/health`, `/api/slack/events/*` (verified by signing secret), `POST /api/a2a/[name]`
-(gated by `A2A_API_KEY`), and the public Agent Card GET. Projects are a shared catalog: any signed-in user may read and run any
+`/api/health`, `/api/ready`, `/api/slack/events/*` (verified by signing secret),
+`POST /api/a2a/[name]` (gated by `A2A_API_KEY`), and the public Agent Card GET.
+`/api/health` is liveness — a static 200 answering "is the process serving". `/api/ready`
+is readiness — it probes DynamoDB and the LLM channel for reachability (short timeout,
+details not surfaced) and returns 503 when a downstream is unreachable or the instance is
+draining after SIGTERM (`src/lib/lifecycle.ts`), so the load balancer deregisters it while
+in-flight work drains. Point the LB health check at `/api/ready`, restart checks at
+`/api/health`. Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) are
 owner-only — `assertProjectOwner` returns 403 for non-owners. MCP/agent/skill registries
 are shared: reads are open to any signed-in user, while mutations go through

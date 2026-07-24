@@ -189,7 +189,11 @@ docker compose up --build             # local container + DynamoDB Local
 - The `Deploy` workflow (manual `workflow_dispatch`) runs typecheck + tests, builds
   and pushes the image to ECR, then forces a new ECS service deployment and waits
   for it to stabilize.
-- `/api/health` is the LB/orchestrator health check (unauthenticated, dependency-free).
+- `/api/ready` is the LB/orchestrator health check: it probes DynamoDB and the LLM
+  channel and returns 503 when a downstream is unreachable or the instance is draining.
+  `/api/health` is a static liveness probe (unauthenticated, dependency-free) for restart
+  decisions; both are unauthenticated.
 - node runs as PID 1 (exec-form CMD) so SIGTERM drains in-flight SSE streams on
-  rolling deploys; pair with a generous container `stopTimeout` (e.g. 120s).
+  rolling deploys; on SIGTERM the instance flips `/api/ready` to unready first so the LB
+  stops routing new traffic. Pair with a generous container `stopTimeout` (e.g. 120s).
 - AWS credentials come from the task/instance role — never bake keys into the image.

@@ -12,7 +12,9 @@ auth, and error cases for the non-obvious endpoints.
   local dev, `scripts/dev-session.ts` prints one). Missing/invalid session →
   `401 { "error": "Unauthorized" }`. The login flow itself lives under `/api/auth/*`
   (Better Auth catch-all). Webhooks are gated differently: `/api/a2a/*` by the
-  `X-A2A-Key` header, `/api/slack/events/*` by the Slack signing secret, `/api/health` is open.
+  `X-A2A-Key` header, `/api/slack/events/*` by the Slack signing secret, and `/api/health`
+  (liveness, static 200) and `/api/ready` (readiness — 200, or 503 when DynamoDB / the LLM
+  channel is unreachable or the instance is draining) are open.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner may mutate one (update/delete/publish, version create/update, Slack
   config), otherwise `403 { "error": "You do not have permission to modify project \"…\"" }`.
