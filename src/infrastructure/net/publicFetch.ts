@@ -54,7 +54,11 @@ export async function fetchPublicUrl(
     const family = address.includes(":") ? 6 : 4;
     const dispatcher = new Agent({
       connect: {
-        lookup(_hostname, _options, callback) {
+        lookup(_hostname, options, callback) {
+          if (typeof options === "object" && options.all) {
+            callback(null, [{ address, family }]);
+            return;
+          }
           callback(null, address, family);
         },
       },
