@@ -1,0 +1,47 @@
+/**
+ * Row retention via DynamoDB TTL. Trace/usage/chat rows carry a unix-seconds
+ * `expiresAt` attribute (the table's TTL attribute, shared with the Slack dedup
+ * rows); expired rows are also filtered out of reads because the physical purge
+ * is only eventually consistent (up to ~48h). Retention windows are configurable
+ * with safe defaults.
+ */
+
+const SECONDS_PER_DAY = 86_400;
+
+function retentionDays(envVar: string, fallback: number): number {
+  const raw = Number(process.env[envVar]);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
+export const RETENTION = {
+  /** Debug traces (sampled) — short-lived. */
+  get traceDays(): number {
+    return retentionDays("TRACE_RETENTION_DAYS", 30);
+  },
+  /** Cost/usage rows — kept well beyond the dashboard's 184-day query window. */
+  get usageDays(): number {
+    return retentionDays("USAGE_RETENTION_DAYS", 400);
+  },
+  /** Chats and their messages, measured from last activity. */
+  get chatDays(): number {
+    return retentionDays("CHAT_RETENTION_DAYS", 180);
+  },
+};
+
+/** Unix-seconds TTL: `retentionDays` after `baseIso`. Falls back to now for an
+ * unparseable base so a row is never written without an expiry. */
+export function expiresAtSeconds(baseIso: string, retentionDays: number): number {
+  const parsed = Date.parse(baseIso);
+  const baseMs = Number.isNaN(parsed) ? Date.now() : parsed;
+  return Math.floor(baseMs / 1000) + retentionDays * SECONDS_PER_DAY;
+}
+
+/** True once the row's TTL has passed. Absent `expiresAt` never expires. */
+export function isExpired(expiresAt: unknown, nowMs: number): boolean {
+  return typeof expiresAt === "number" && expiresAt * 1000 <= nowMs;
+}
+
+/** Drop rows whose TTL has already passed (physical purge lags). */
+export function notExpired<T extends Record<string, unknown>>(items: T[], nowMs: number): T[] {
+  return items.filter((item) => !isExpired(item.expiresAt, nowMs));
+}

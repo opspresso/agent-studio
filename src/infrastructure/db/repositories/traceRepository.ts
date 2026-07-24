@@ -3,6 +3,7 @@ import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace } from "@/domain/trace/types";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 
 const MAX_SPANS = 100;
 
@@ -25,6 +26,8 @@ function fromItem(item: Record<string, unknown>): Trace {
 export class DynamoTraceRepository implements TraceRepository {
   async put(trace: Trace): Promise<void> {
     const traceKey = keys.trace(trace.traceId);
+    // Body and index row share one expiry so the ref never dangles.
+    const expiresAt = expiresAtSeconds(trace.createdAt, RETENTION.traceDays);
     await getDocumentClient().send(
       new TransactWriteCommand({
         TransactItems: [
@@ -45,6 +48,7 @@ export class DynamoTraceRepository implements TraceRepository {
                 entityType: "TRACE",
                 GSI1PK: keys.traceProjectPartition(trace.projectName),
                 GSI1SK: `${trace.createdAt}#${trace.traceId}`,
+                expiresAt,
               },
               ConditionExpression: "attribute_not_exists(PK)",
             },
@@ -57,6 +61,7 @@ export class DynamoTraceRepository implements TraceRepository {
                 entityType: "TRACE_REF",
                 tracePK: traceKey.PK,
                 traceSK: traceKey.SK,
+                expiresAt,
               },
               ConditionExpression: "attribute_not_exists(PK)",
             },
@@ -74,7 +79,10 @@ export class DynamoTraceRepository implements TraceRepository {
         ConsistentRead: true,
       }),
     );
-    return result.Item ? fromItem(result.Item) : null;
+    if (!result.Item || isExpired(result.Item.expiresAt, Date.now())) {
+      return null;
+    }
+    return fromItem(result.Item);
   }
 
   async listByProject(projectName: string, limit = 50): Promise<Trace[]> {
@@ -88,7 +96,7 @@ export class DynamoTraceRepository implements TraceRepository {
         Limit: Math.min(Math.max(limit, 1), 100),
       }),
     );
-    return (result.Items ?? []).map(fromItem);
+    return notExpired(result.Items ?? [], Date.now()).map(fromItem);
   }
 }
 

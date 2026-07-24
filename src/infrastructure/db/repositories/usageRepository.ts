@@ -14,6 +14,7 @@ import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
+import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { UsageDelta, UsageRow } from "@/domain/usage/types";
 
@@ -68,7 +69,8 @@ export class DynamoUsageRepository implements UsageRepository {
                 "#date = if_not_exists(#date, :date), " +
                 "entityType = if_not_exists(entityType, :et), " +
                 "GSI1PK = if_not_exists(GSI1PK, :g1pk), " +
-                "GSI1SK = if_not_exists(GSI1SK, :g1sk)",
+                "GSI1SK = if_not_exists(GSI1SK, :g1sk), " +
+                "expiresAt = if_not_exists(expiresAt, :exp)",
               ExpressionAttributeNames: { "#date": "date" },
               ExpressionAttributeValues: {
                 ":empty": {},
@@ -77,6 +79,9 @@ export class DynamoUsageRepository implements UsageRepository {
                 ":et": "Usage",
                 ":g1pk": keys.usageDatePartition(delta.date),
                 ":g1sk": delta.projectName,
+                // Retention runs from the usage date, so a day's row is never
+                // purged mid-aggregation and backfilled dates don't linger.
+                ":exp": expiresAtSeconds(`${delta.date}T00:00:00Z`, RETENTION.usageDays),
               },
             },
           },
@@ -128,7 +133,7 @@ export class DynamoUsageRepository implements UsageRepository {
         ":to": toKey.SK,
       },
     });
-    return items.map(toUsageRow);
+    return notExpired(items, Date.now()).map(toUsageRow);
   }
 
   async listByDateRange(from: string, to: string): Promise<UsageRow[]> {
@@ -141,7 +146,7 @@ export class DynamoUsageRepository implements UsageRepository {
         KeyConditionExpression: "GSI1PK = :pk",
         ExpressionAttributeValues: { ":pk": keys.usageDatePartition(date) },
       });
-      for (const item of items) {
+      for (const item of notExpired(items, Date.now())) {
         rows.push(toUsageRow(item));
       }
     }

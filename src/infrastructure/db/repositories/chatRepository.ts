@@ -10,6 +10,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { Chat, ChatMessage, ChatMessageImage, ChatRole } from "@/domain/chat/types";
 import type { ChannelToolCall } from "@/domain/llm/types";
@@ -40,7 +41,7 @@ function chatUpdate(chat: Chat, condition: string): UpdateCommand {
       "SET GSI1PK = :gsi1pk, GSI1SK = :gsi1sk, entityType = :entityType, " +
       "chatId = :chatId, title = :title, ownerEmail = :ownerEmail, " +
       "projectName = :projectName, createdAt = :createdAt, updatedAt = :updatedAt, " +
-      "nextSeq = if_not_exists(nextSeq, :zero)",
+      "expiresAt = :expiresAt, nextSeq = if_not_exists(nextSeq, :zero)",
     ExpressionAttributeValues: {
       ":gsi1pk": keys.chatOwnerPartition(chat.ownerEmail),
       ":gsi1sk": chat.updatedAt,
@@ -51,6 +52,9 @@ function chatUpdate(chat: Chat, condition: string): UpdateCommand {
       ":projectName": chat.projectName ?? null,
       ":createdAt": chat.createdAt,
       ":updatedAt": chat.updatedAt,
+      // Retention runs from last activity — each update pushes the expiry out,
+      // so an active chat is never purged mid-run.
+      ":expiresAt": expiresAtSeconds(chat.updatedAt, RETENTION.chatDays),
       ":zero": 0,
     },
     ConditionExpression: condition,
@@ -59,7 +63,13 @@ function chatUpdate(chat: Chat, condition: string): UpdateCommand {
 
 function toMessageItem(message: ChatMessage) {
   const { PK, SK } = keys.chatMessage(message.chatId, message.seq);
-  return { PK, SK, entityType: MESSAGE_ENTITY, ...message };
+  return {
+    PK,
+    SK,
+    entityType: MESSAGE_ENTITY,
+    ...message,
+    expiresAt: expiresAtSeconds(message.createdAt, RETENTION.chatDays),
+  };
 }
 
 function fromMessageItem(item: DynamoItem): ChatMessage {
@@ -94,7 +104,10 @@ export const chatRepository: ChatRepository = {
     const res = await getDocumentClient().send(
       new GetCommand({ TableName: getTableName(), Key: keys.chat(chatId) }),
     );
-    return res.Item ? fromChatItem(res.Item) : null;
+    if (!res.Item || isExpired(res.Item.expiresAt, Date.now())) {
+      return null;
+    }
+    return fromChatItem(res.Item);
   },
 
   async listByOwner(ownerEmail) {
@@ -113,7 +126,7 @@ export const chatRepository: ChatRepository = {
           ExclusiveStartKey: lastKey,
         }),
       );
-      for (const item of res.Items ?? []) {
+      for (const item of notExpired(res.Items ?? [], Date.now())) {
         chats.push(fromChatItem(item));
       }
       lastKey = res.LastEvaluatedKey;
@@ -205,7 +218,7 @@ export const chatRepository: ChatRepository = {
           ExclusiveStartKey: lastKey,
         }),
       );
-      for (const item of res.Items ?? []) {
+      for (const item of notExpired(res.Items ?? [], Date.now())) {
         messages.push(fromMessageItem(item));
       }
       lastKey = res.LastEvaluatedKey;

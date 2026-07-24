@@ -151,6 +151,11 @@ executions are sampled with `TRACE_SAMPLE_RATE` (`0`–`1`, default `0.1`). Trac
 on each project's **Traces** tab. Raw prompts and tool results are not stored; spans keep
 only bounded metadata such as character counts, tokens, cost, duration, and subagent trace ids.
 
+Traces, usage rows, and chats expire via DynamoDB TTL (`expiresAt`) so the table stays
+bounded — default retention is 30 / 400 / 180 days, overridable with `TRACE_RETENTION_DAYS`,
+`USAGE_RETENTION_DAYS`, and `CHAT_RETENTION_DAYS`. Enable TTL on the `expiresAt` attribute of
+the production table.
+
 ## A2A (Agent2Agent)
 
 Both directions of the [A2A protocol](https://a2a-protocol.org) are supported.

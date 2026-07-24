@@ -89,6 +89,15 @@ Conventions:
 - Usage rows are updated with atomic `ADD` per model: `calls.{model}`, `inputTokens.{model}`,
   `outputTokens.{model}`, `costUsd.{model}` — two-step update: `SET … if_not_exists` to
   materialise the maps, then `ADD calls.#model :calls, …` on the nested number attrs.
+- Row retention (`src/infrastructure/db/ttl.ts`): trace, usage, and chat/message rows carry
+  a unix-seconds `expiresAt` (the table's TTL attribute, shared with Slack dedup rows) so the
+  single table does not grow without bound. Retention runs from the trace `createdAt`, the
+  usage `date`, and the chat's last activity / a message's `createdAt`; a trace and its
+  deletion reference share one expiry so the ref never dangles. Windows default to 30 / 400 /
+  180 days and are overridable via `TRACE_RETENTION_DAYS` / `USAGE_RETENTION_DAYS` /
+  `CHAT_RETENTION_DAYS`. Because the physical TTL purge is only eventually consistent, reads
+  also filter out already-expired rows. Enable TTL on `expiresAt` on the prod table
+  (`scripts/init-local-table.ts` does this for local).
 - Key builders live in `src/infrastructure/db/keys.ts` — never hand-write key strings elsewhere.
 - List queries paginate: most through `queryAll()` (`src/infrastructure/db/query.ts`) — a Query
   page caps at 1MB, so an unpaginated list silently truncates. `chatRepository` runs its own

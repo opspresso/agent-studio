@@ -111,25 +111,3 @@ workload로 배포하고 수명 주기를 관리하면 별도 MCP 인프라를 �
 
 **완료 조건**: 저장된 테스트 세트에서 두 버전을 실행해 열 단위로 비교할 수 있고,
 버전을 수정하면 캐시된 셀이 오래된 상태로 표시된다.
-
-## M6 — 데이터 수명(TTL) 및 보존
-
-**이유**: `traceRepository`와 `usageRepository`가 쓰는 trace·usage 행에는 만료
-속성이 없어 무기한 누적된다. TTL은 dedup 행(`slackEventRepository`의 `expiresAt`,
-24시간)에만 적용돼 있고 chat은 실행 lock(`activeRunExpiresAt`)만 만료된다. 단일
-테이블이 계속 커지면 저장 비용과 조회 지연이 늘고, chat·trace가 PII를 담을 수 있는데도
-데이터 최소화 정책이 없다.
-
-**범위**
-
-- trace(및 `TRACE_REF` 색인 행), usage, chat/message에 unix epoch(초) `expiresAt`
-  속성을 부여하고 테이블 TTL로 자동 삭제 — `slackEventRepository`의 기존 패턴 재사용.
-- 데이터 종류별 보존 기간을 설정 값으로 두고 안전한 기본값 적용.
-- 색인·참조 행(`TRACE_REF` 등)이 본체와 같은 만료 시각을 갖도록 해 dangling 참조를 방지.
-- 물리적 TTL 삭제가 지연되는 동안에도 이미 만료된 행은 조회에서 부재로 처리.
-- 진행 중인 usage 일간 집계나 활성 chat run은 조기 만료하지 않도록 경계 설정.
-
-**완료 조건**: 각 데이터 종류에 보존 기간에 맞는 `expiresAt`가 설정되고 본체와 색인 행이
-동일한 시각에 만료되며, 이미 만료된 행은 물리 삭제 이전에도 조회에서 제외되고 보존 기간
-내 데이터는 유지된다. 만료 경계값·색인 동반 만료·활성 run 보호를 (주입한 clock으로)
-테스트로 검증한다.

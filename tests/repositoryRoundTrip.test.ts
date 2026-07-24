@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // --- Fake document client: a Map keyed by `PK|SK`, plus a command log -------
 
@@ -87,6 +87,16 @@ import { usageRepository } from "@/infrastructure/db/repositories/usageRepositor
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 
 const NOW = "2026-01-01T00:00:00.000Z";
+
+// TTL read-filters compare each row's expiry against the wall clock; pin it to
+// NOW so rows written with NOW-era timestamps are not treated as expired.
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(NOW));
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 describe("project/version atomic writes", () => {
   const project = {

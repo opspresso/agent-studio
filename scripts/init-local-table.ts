@@ -7,6 +7,7 @@ import {
   DescribeTableCommand,
   DynamoDBClient,
   ResourceNotFoundException,
+  UpdateTimeToLiveCommand,
 } from "@aws-sdk/client-dynamodb";
 
 const endpoint = process.env.DYNAMODB_ENDPOINT_URL ?? "http://localhost:8000";
@@ -73,6 +74,15 @@ async function main() {
     }),
   );
   console.log(`Created table ${tableName}`);
+
+  // Row retention: trace/usage/chat and Slack dedup rows carry `expiresAt`.
+  await client.send(
+    new UpdateTimeToLiveCommand({
+      TableName: tableName,
+      TimeToLiveSpecification: { AttributeName: "expiresAt", Enabled: true },
+    }),
+  );
+  console.log(`Enabled TTL on ${tableName}.expiresAt`);
 }
 
 main().catch((error) => {
