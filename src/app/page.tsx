@@ -36,10 +36,16 @@ const DOMAINS = [
 ] as const;
 
 const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: string }> = [
-  { kind: "meta", text: 'POST /projects/support-triage/versions/published/agent' },
+  { kind: "meta", text: 'POST /api/projects/support-triage/versions/published/agent' },
   { kind: "text", text: 'data: {"delta":{"content":"Looking at the report…"}}' },
-  { kind: "tool", text: 'data: {"delta":{"toolCalls":[{"name":"Skill","args":{"name":"triage-rules"}}]}}' },
-  { kind: "tool", text: 'data: {"toolResult":{"name":"Skill","content":"# Triage rules…"}}' },
+  {
+    kind: "tool",
+    text: 'data: {"delta":{"toolCalls":[{"id":"call_1","type":"function","function":{"name":"Skill","arguments":"{\\"skill_name\\":\\"triage-rules\\"}"}}]}}',
+  },
+  {
+    kind: "tool",
+    text: 'data: {"toolResult":{"toolCallId":"call_1","name":"Skill: triage-rules","content":"# Triage rules…"}}',
+  },
   { kind: "author", text: 'data: {"author":"escalation-agent","delta":{"content":"Severity: P2"}}' },
   { kind: "text", text: 'data: {"delta":{"content":"Filed as P2 with repro steps."}}' },
   { kind: "meta", text: 'data: {"usage":{"inputTokens":812,"outputTokens":164,"costUsd":0.0031}}' },
