@@ -111,3 +111,32 @@ workload로 배포하고 수명 주기를 관리하면 별도 MCP 인프라를 �
 
 **완료 조건**: 저장된 테스트 세트에서 두 버전을 실행해 열 단위로 비교할 수 있고,
 버전을 수정하면 캐시된 셀이 오래된 상태로 표시된다.
+
+## M6 — Skill 부속 파일 동기화
+
+**이유**: 현재 GitHub skill sync는 각 디렉터리의 `SKILL.md`만 저장하며, `Skill`
+tool의 `file_path` 파라미터도 실제 파일을 조회하지 않고 항상 본문을 반환한다. 이 때문에
+skill이 참조하는 세부 가이드·스키마·템플릿을 progressive disclosure로 불러올 수 없고,
+모델에 노출된 tool 계약과 실제 동작도 일치하지 않는다.
+
+**범위**
+
+- GitHub snapshot에서 `SKILL.md`가 있는 디렉터리를 skill root로 정하고, 그 아래의
+  지원되는 text 부속 파일을 상대 경로와 함께 수집.
+- `Skill` 본문과 부속 파일을 분리 저장하고, skill 삭제·재동기화 시 같은 source의
+  오래된 부속 파일을 제거.
+- `Skill` tool의 `file_path`를 실제 상대 경로로 해석해 요청한 파일만 반환하고,
+  누락·미지원 형식·크기 초과를 구분한 오류 제공.
+- 경로 정규화와 skill root 경계 검사를 적용해 절대 경로, `..`, symlink 우회와
+  다른 skill 파일 접근을 차단.
+- 허용 확장자, 파일별·skill별 크기, 파일 수와 tool result 크기에 상한을 두고
+  GitHub tree·blob 처리와 저장소 사용량을 제한.
+- sync 결과에 본문·부속 파일의 추가·변경·삭제·건너뜀 수와 건너뛴 이유를 표시.
+- 기존 `SKILL.md` 단독 skill과 API 응답 형식은 하위 호환으로 유지.
+- 실행할 수 없는 script와 binary asset의 동기화·실행·배포는 이 마일스톤에서 제외.
+
+**완료 조건**: `references/*.md`와 text template이 포함된 skill을 GitHub에서
+동기화한 뒤 `Skill(skill_name, file_path)`로 정확한 파일을 로드할 수 있고, 재동기화에서
+변경·삭제된 파일이 저장소에 일관되게 반영된다. 동일 파일명·중첩 경로·없는 경로·경로
+순회·symlink·미지원 형식·파일 수 및 크기 상한·truncated tree를 테스트하며, 기존
+`file_path` 없는 호출은 이전과 동일한 `SKILL.md` 본문을 반환한다.
