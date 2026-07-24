@@ -1,5 +1,14 @@
 export type ProjectType = "llm" | "agent" | "image";
 
+/**
+ * Per-project API token. Only the SHA-256 hash of the token is stored — the raw
+ * value is shown once at creation and never persisted or re-readable.
+ */
+export interface ProjectApiToken {
+  tokenHash: string;
+  createdAt: string;
+}
+
 /** Per-project Slack bot credentials. Secrets are AES-encrypted at rest. */
 export interface SlackIntegration {
   botToken: string;

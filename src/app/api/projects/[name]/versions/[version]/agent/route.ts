@@ -1,16 +1,20 @@
-import { withAuth } from "@/lib/session";
 import { sseResponse } from "@/lib/sse";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { agentSchema } from "@/app/api/projects/_lib/schemas";
+import { authenticateExecution } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
-export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const POST = async (request: Request, ctx: RouteContext) => {
   const { name, version } = await ctx.params;
+  const principal = await authenticateExecution(request, name);
+  if (principal instanceof Response) {
+    return principal;
+  }
   const parsed = agentSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return invalidRequest(parsed.error);
@@ -24,7 +28,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
         project,
         version: versionEntity,
         messages: parsed.data.messages,
-        userEmail: user.email,
+        userEmail: principal.email,
         signal: abortController.signal,
       }),
       abortController,
@@ -32,4 +36,4 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   } catch (error) {
     return apiError(error);
   }
-});
+};

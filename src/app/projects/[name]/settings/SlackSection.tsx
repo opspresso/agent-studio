@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
-import { CopyButton } from "@/app/_components/CopyButton";
+import { CollapsibleCode } from "@/app/_components/CollapsibleCode";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
   disconnectProjectSlack,
@@ -117,17 +117,12 @@ export function SlackSection({ projectName }: { projectName: string }) {
         bot token and signing secret here.
       </p>
 
-      <details className="rounded-md border border-neutral-200 dark:border-neutral-800">
-        <summary className="cursor-pointer px-3 py-2 text-xs font-medium">App manifest</summary>
-        <div className="px-3 pb-3">
-          <pre className="max-h-64 overflow-auto rounded bg-neutral-50 p-2 text-[11px] dark:bg-neutral-900">
-            {JSON.stringify(view.manifest, null, 2)}
-          </pre>
-          <div className="mt-2">
-            <CopyButton text={JSON.stringify(view.manifest, null, 2)} label="Copy manifest" />
-          </div>
-        </div>
-      </details>
+      <CollapsibleCode
+        title="App manifest"
+        language="json"
+        code={JSON.stringify(view.manifest, null, 2)}
+        copyLabel="Copy manifest"
+      />
 
       <label className="block">
         <span className="text-sm font-medium">Bot token</span>

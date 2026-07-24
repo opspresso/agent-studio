@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { CollapsibleCode } from "@/app/_components/CollapsibleCode";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { getProjectA2a } from "../../lib/api";
 import type { ProjectA2aView } from "../../lib/api";
@@ -57,6 +58,15 @@ export function A2aSection({ projectName }: { projectName: string }) {
       )}
 
       {view.cardUrl && <CopyableUrl url={view.cardUrl} />}
+
+      {view.card && (
+        <CollapsibleCode
+          title="Agent Card"
+          language="json"
+          code={JSON.stringify(view.card, null, 2)}
+          copyLabel="Copy card"
+        />
+      )}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
     </CollapsibleSection>

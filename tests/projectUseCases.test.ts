@@ -160,6 +160,11 @@ function makeProjectRepo(initial: Project[] = []): ProjectRepository {
     async delete(name) {
       projects = projects.filter((p) => p.name !== name);
     },
+    async getApiToken() {
+      return null;
+    },
+    async setApiToken() {},
+    async deleteApiToken() {},
   };
 }
 

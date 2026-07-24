@@ -68,6 +68,7 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | Auth unique lock (email, token, ...) | `AUTHUNIQUE#{model}#{field}#{value}` | `LOCK` | — | — |
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
+| Project API token | `PROJECT#{name}` | `APITOKEN` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
 | Chat message | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
 | Skill | `SKILL#{name}` | `META` | `TYPE#SKILL` | `{name}` |
@@ -322,6 +323,7 @@ GET  /api/projects/[name]/traces/[traceId]  trace detail (owner-only)
 POST /api/projects/[name]/versions/[version]/predict        (version = name | 'published')
 POST /api/projects/[name]/versions/[version]/chat/completions   OpenAI-compatible
 POST /api/projects/[name]/versions/[version]/agent          SSE stream
+GET|POST|DELETE /api/projects/[name]/token  per-project API token, owner-only (POST returns raw token once)
 GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner-only (+ POST …/slack/test)
 GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
@@ -345,7 +347,12 @@ GET  /api/ready                             readiness (DynamoDB + LLM reachabili
 All routes require a Better Auth session except the unauthenticated endpoints:
 `/api/auth/*` (the Better Auth login flow itself), `/api/health`, `/api/ready`,
 `/api/slack/events/*` (verified by signing secret), `POST /api/a2a/[name]`
-(gated by `A2A_API_KEY`), and the public Agent Card GET.
+(gated by `A2A_API_KEY`), and the public Agent Card GET. The three execution endpoints
+(`predict`, `chat/completions`, `agent`) also accept a per-project API token via
+`Authorization: Bearer <token>` in place of the session — resolved by
+`authenticateExecution` (`src/app/api/projects/_lib/executionAuth.ts`), which verifies the
+token's SHA-256 hash against the `PROJECT#{name}` `APITOKEN` item and runs as the project
+owner. Only the hash is stored; the raw token is shown once at generation.
 `/api/health` is liveness — a static 200 answering "is the process serving". `/api/ready`
 is readiness — it probes DynamoDB and the LLM channel for reachability (short timeout,
 details not surfaced) and returns 503 when a downstream is unreachable or the instance is

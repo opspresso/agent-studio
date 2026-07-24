@@ -1,4 +1,4 @@
-import type { Project, Version } from "./types";
+import type { Project, ProjectApiToken, Version } from "./types";
 
 export interface ProjectRepository {
   get(name: string): Promise<Project | null>;
@@ -7,6 +7,12 @@ export interface ProjectRepository {
   update(project: Project, expectedUpdatedAt: string): Promise<void>;
   publish(project: Project, versionName: string, expectedUpdatedAt: string): Promise<void>;
   delete(name: string): Promise<void>;
+  /** Read the project's API token record (hash + createdAt), or null if none. */
+  getApiToken(name: string): Promise<ProjectApiToken | null>;
+  /** Create or replace the project's API token record (regeneration overwrites). */
+  setApiToken(name: string, token: ProjectApiToken): Promise<void>;
+  /** Remove the project's API token record. */
+  deleteApiToken(name: string): Promise<void>;
 }
 
 export interface VersionRepository {
