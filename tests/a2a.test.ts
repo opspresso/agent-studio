@@ -6,7 +6,7 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
   settingsRepository: { get: async () => null, put: async () => {} },
 }));
 import type { Message, Task } from "@a2a-js/sdk";
-import type { AgentExecutionEvent, ExecutionEventBus } from "@a2a-js/sdk/server";
+import type { AgentExecutionEvent, ExecutionEventBus, TaskStore } from "@a2a-js/sdk/server";
 import { RequestContext } from "@a2a-js/sdk/server";
 import { buildAgentCard, buildProjectA2aRpcUrl } from "@/infrastructure/a2a/cards";
 import {
@@ -247,6 +247,14 @@ function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
   } as unknown as ExecutionDeps;
 }
 
+function fakeStore(overrides: Partial<TaskStore> = {}): TaskStore {
+  return {
+    load: async () => undefined,
+    save: async () => {},
+    ...overrides,
+  };
+}
+
 describe("ProjectA2aExecutor", () => {
   it("publishes task, working, result artifact, and completed", async () => {
     const channel = new FakeChannel([[contentChunk("streamed answer")]]);
@@ -254,6 +262,7 @@ describe("ProjectA2aExecutor", () => {
       executionDepsFixture(channel),
       projectFixture(),
       versionFixture(),
+      fakeStore(),
     );
     const bus = new CollectingBus();
     await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
@@ -276,6 +285,7 @@ describe("ProjectA2aExecutor", () => {
       executionDepsFixture(new FakeChannel([])),
       projectFixture({ projectType: "image" }),
       versionFixture({ model: "openai/gpt-image-2" }),
+      fakeStore(),
     );
     const bus = new CollectingBus();
     await executor.execute(new RequestContext(userMessage("고양이를 그려줘"), "t1", "c1"), bus);
@@ -289,5 +299,71 @@ describe("ProjectA2aExecutor", () => {
     ]);
     const last = bus.events.at(-1);
     expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+  });
+});
+
+describe("ProjectA2aExecutor cancel", () => {
+  it("persists a canceled state and publishes canceled on cancelTask", async () => {
+    const saved: Task[] = [];
+    const store = fakeStore({
+      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "working" } }),
+      save: async (task: Task) => {
+        saved.push(task);
+      },
+    });
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(new FakeChannel([])),
+      projectFixture(),
+      versionFixture(),
+      store,
+    );
+    const bus = new CollectingBus();
+    await executor.cancelTask("t1", bus);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.status.state).toBe("canceled");
+    const last = bus.events.at(-1);
+    expect(last?.kind).toBe("status-update");
+    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+  });
+
+  it("is a no-op when the task is already terminal", async () => {
+    const save = vi.fn(async () => {});
+    const store = fakeStore({
+      load: async () => taskFixture({ id: "t1", status: { state: "completed" } }),
+      save,
+    });
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(new FakeChannel([])),
+      projectFixture(),
+      versionFixture(),
+      store,
+    );
+    const bus = new CollectingBus();
+    await executor.cancelTask("t1", bus);
+
+    expect(save).not.toHaveBeenCalled();
+    expect(bus.events).toHaveLength(0);
+  });
+
+  it("stops a running loop when the store reports the task canceled", async () => {
+    const channel = new FakeChannel([[contentChunk("partial answer")]]);
+    const store = fakeStore({
+      load: async () => taskFixture({ id: "t1", contextId: "c1", status: { state: "canceled" } }),
+    });
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(channel),
+      projectFixture(),
+      versionFixture(),
+      store,
+    );
+    const bus = new CollectingBus();
+    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+
+    const last = bus.events.at(-1);
+    expect(last?.kind).toBe("status-update");
+    expect(last && "status" in last ? last.status.state : undefined).toBe("canceled");
+    // A canceled run never emits a result artifact.
+    expect(bus.events.some((event) => event.kind === "artifact-update")).toBe(false);
   });
 });

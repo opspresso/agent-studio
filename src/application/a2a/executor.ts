@@ -5,14 +5,21 @@
  */
 
 import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
-import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
+import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
+import { withTimeout } from "@/lib/withTimeout";
 
 const RESULT_ARTIFACT_ID = "result";
 const IMAGE_ARTIFACT_ID = "image";
+/** Wall-clock ceiling for one inbound A2A image generation (matches the run deadline). */
+const IMAGE_TIMEOUT_MS = 600_000;
+/** How often the run loop re-reads the store to honor a cross-request/instance cancel. */
+const CANCEL_POLL_MS = 2000;
+/** Task states that must never be regressed; a stored terminal task wins. */
+const TERMINAL_STATES: readonly TaskState[] = ["completed", "canceled", "failed", "rejected"];
 
 function userMessageText(message: Message): string {
   return message.parts
@@ -21,12 +28,11 @@ function userMessageText(message: Message): string {
 }
 
 export class ProjectA2aExecutor implements AgentExecutor {
-  private readonly cancelled = new Set<string>();
-
   constructor(
     private readonly deps: ExecutionDeps,
     private readonly project: Project,
     private readonly version: Version,
+    private readonly store: TaskStore,
   ) {}
 
   async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
@@ -48,13 +54,19 @@ export class ProjectA2aExecutor implements AgentExecutor {
       { role: "user", content: userMessageText(userMessage) },
     ];
 
+    // Abort in-flight work when a cancel is observed; executeProjectStream also
+    // composes its own wall-clock deadline onto this signal.
+    const controller = new AbortController();
     try {
       if (this.project.projectType === "image") {
-        const image = await generateImage(this.deps, {
-          project: this.project,
-          version: this.version,
-          prompt: messages[0]?.content ?? "",
-        });
+        const image = await withTimeout(
+          generateImage(this.deps, {
+            project: this.project,
+            version: this.version,
+            prompt: messages[0]?.content ?? "",
+          }),
+          IMAGE_TIMEOUT_MS,
+        );
         eventBus.publish({
           kind: "artifact-update",
           taskId,
@@ -83,12 +95,24 @@ export class ProjectA2aExecutor implements AgentExecutor {
         project: this.project,
         version: this.version,
         messages,
+        signal: controller.signal,
       });
       let isFirstChunk = true;
+      // Check on the first chunk, then at most every CANCEL_POLL_MS.
+      let lastCancelCheck = 0;
       for await (const chunk of source) {
-        if (this.cancelled.has(taskId)) {
-          this.publishStatus(eventBus, taskId, contextId, "canceled", true);
-          return;
+        const now = Date.now();
+        if (now - lastCancelCheck >= CANCEL_POLL_MS) {
+          lastCancelCheck = now;
+          // A cancel may have been persisted by another request or instance —
+          // this executor is constructed per request, so an in-memory flag
+          // would never reach a running loop. The store is the shared channel.
+          const current = await this.store.load(taskId);
+          if (current?.status.state === "canceled") {
+            controller.abort();
+            this.publishStatus(eventBus, taskId, contextId, "canceled", true);
+            return;
+          }
         }
         if (chunk.error) {
           this.publishStatus(eventBus, taskId, contextId, "failed", true, chunk.error);
@@ -115,19 +139,25 @@ export class ProjectA2aExecutor implements AgentExecutor {
       const message = error instanceof Error ? error.message : String(error);
       this.publishStatus(eventBus, taskId, contextId, "failed", true, message);
       return;
-    } finally {
-      this.cancelled.delete(taskId);
     }
 
     this.publishStatus(eventBus, taskId, contextId, "completed", true);
   }
 
   async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
-    this.cancelled.add(taskId);
-    // The final canceled status is published by the execute loop when it
-    // observes the flag; publishing here as well covers tasks with no
-    // running loop (e.g. already persisted tasks).
-    void eventBus;
+    const task = await this.store.load(taskId);
+    if (!task || TERMINAL_STATES.includes(task.status.state)) {
+      return;
+    }
+    // Persist the cancel: the store's conditional write refuses to regress an
+    // already-terminal task, so a complete/cancel race resolves to whichever
+    // lands first. This makes `tasks/get` reflect the cancel and lets a running
+    // loop (here or on another instance) observe it via its store poll.
+    await this.store.save({
+      ...task,
+      status: { state: "canceled", timestamp: new Date().toISOString() },
+    });
+    this.publishStatus(eventBus, taskId, task.contextId, "canceled", true);
   }
 
   private chunkParts(chunk: EngineChunk): Part[] {
