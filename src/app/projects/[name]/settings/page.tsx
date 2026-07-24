@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { A2aSection } from "./A2aSection";
 import { SlackSection } from "./SlackSection";
 
@@ -113,9 +114,9 @@ export default function SettingsPage() {
         </label>
         <label className="block">
           <span className="text-sm font-medium">Description</span>
-          <textarea
+          <ResizableTextarea
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={setDescription}
             rows={4}
             className={inputClass}
           />

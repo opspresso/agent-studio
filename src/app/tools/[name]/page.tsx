@@ -12,6 +12,7 @@ import {
   type McpTool,
 } from "../api";
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
+import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 
 export default function McpDetailPage() {
   const params = useParams<{ name: string }>();
@@ -259,9 +260,10 @@ function EditMcpForm({
       </label>
       <label className="block">
         <span className="text-sm font-medium">Description</span>
-        <input
+        <ResizableTextarea
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
+          rows={2}
           className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
         />
       </label>
