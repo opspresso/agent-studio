@@ -1,19 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { DateRangePicker } from "@/app/_components/DateRangePicker";
+import { DailyCostChart } from "@/app/_components/DailyCostChart";
+import { defaultDateRange } from "@/app/_lib/dateRange";
+import { buildDailySeries } from "@/app/_lib/usage";
 import { usageSummary, type UsageRow } from "../../lib/api";
-
-function isoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function defaultRange(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date();
-  from.setUTCDate(from.getUTCDate() - 29);
-  return { from: isoDate(from), to: isoDate(to) };
-}
 
 function sumRecord(record: Record<string, number>): number {
   let total = 0;
@@ -27,7 +20,7 @@ export default function UsagePage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
 
-  const [range, setRange] = useState(defaultRange);
+  const [range, setRange] = useState(defaultDateRange);
   const [rows, setRows] = useState<UsageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,31 +42,16 @@ export default function UsagePage() {
     void load();
   }, [load]);
 
+  const daily = useMemo(
+    () => buildDailySeries(rows, "model", range.from, range.to),
+    [rows, range.from, range.to],
+  );
   const totalCalls = rows.reduce((sum, row) => sum + sumRecord(row.calls), 0);
   const totalCost = rows.reduce((sum, row) => sum + sumRecord(row.costUsd), 0);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="block text-neutral-500">From</span>
-          <input
-            type="date"
-            value={range.from}
-            onChange={(e) => setRange((prev) => ({ ...prev, from: e.target.value }))}
-            className="mt-1 rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
-          />
-        </label>
-        <label className="text-sm">
-          <span className="block text-neutral-500">To</span>
-          <input
-            type="date"
-            value={range.to}
-            onChange={(e) => setRange((prev) => ({ ...prev, to: e.target.value }))}
-            className="mt-1 rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
-          />
-        </label>
-      </div>
+      <DateRangePicker value={range} onChange={setRange} />
 
       {error && (
         <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
@@ -86,8 +64,13 @@ export default function UsagePage() {
       ) : rows.length === 0 ? (
         <p className="text-sm text-neutral-500">No usage recorded in this range.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-          <table className="w-full text-sm">
+        <>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+            <p className="mb-2 text-xs uppercase tracking-wide text-neutral-500">Daily cost</p>
+            <DailyCostChart data={daily.data} keys={daily.keys} />
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+            <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-left text-xs uppercase text-neutral-500 dark:bg-neutral-900">
               <tr>
                 <th className="px-4 py-2 font-medium">Date</th>
@@ -111,8 +94,9 @@ export default function UsagePage() {
                 <td className="px-4 py-2 text-right">${totalCost.toFixed(4)}</td>
               </tr>
             </tfoot>
-          </table>
-        </div>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

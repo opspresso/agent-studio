@@ -1,4 +1,5 @@
 import type { UsageRow } from "@/domain/usage/types";
+import { toISODate } from "./dateRange";
 
 export type { UsageRow };
 
@@ -134,16 +135,4 @@ export function buildDailySeries(
   }
 
   return { data, keys: hasOthers ? [...keys, OTHERS_KEY] : keys };
-}
-
-export function toISODate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-/** A range ending today, spanning `days` days inclusive. */
-export function presetRange(days: number): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date();
-  from.setUTCDate(from.getUTCDate() - (days - 1));
-  return { from: toISODate(from), to: toISODate(to) };
 }
