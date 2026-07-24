@@ -110,6 +110,21 @@ describe("buildAgentCard", () => {
     );
     expect(card.defaultOutputModes).toEqual(["image/png", "image/jpeg", "image/webp"]);
   });
+
+  it("advertises text-only output for LLM projects", async () => {
+    const card = await buildAgentCard(projectFixture({ projectType: "llm" }), versionFixture());
+    expect(card.defaultOutputModes).toEqual(["text/plain"]);
+  });
+
+  it("advertises text and image output modes for agent projects", async () => {
+    const card = await buildAgentCard(projectFixture({ projectType: "agent" }), versionFixture());
+    expect(card.defaultOutputModes).toEqual([
+      "text/plain",
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+    ]);
+  });
 });
 
 // --- outbound text extraction ----------------------------------------------

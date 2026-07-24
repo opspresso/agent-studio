@@ -10,6 +10,11 @@ import { buildPublicUrl } from "@/lib/public-url";
 
 /** Spec version implemented by @a2a-js/sdk 0.3.x. */
 const A2A_PROTOCOL_VERSION = "0.3.0";
+const OUTPUT_MODES: Record<Project["projectType"], string[]> = {
+  llm: ["text/plain"],
+  image: ["image/png", "image/jpeg", "image/webp"],
+  agent: ["text/plain", "image/png", "image/jpeg", "image/webp"],
+};
 
 export async function buildProjectA2aRpcUrl(projectName: string): Promise<string> {
   return buildPublicUrl(`/api/a2a/${encodeURIComponent(projectName)}`);
@@ -21,10 +26,6 @@ export async function buildProjectAgentCardUrl(projectName: string): Promise<str
 
 export async function buildAgentCard(project: Project, version: Version): Promise<AgentCard> {
   const rpcUrl = await buildProjectA2aRpcUrl(project.name);
-  const outputModes =
-    project.projectType === "image"
-      ? ["image/png", "image/jpeg", "image/webp"]
-      : ["text/plain", "image/png", "image/jpeg", "image/webp"];
   return {
     protocolVersion: A2A_PROTOCOL_VERSION,
     name: project.displayName || project.name,
@@ -35,7 +36,7 @@ export async function buildAgentCard(project: Project, version: Version): Promis
     additionalInterfaces: [{ transport: "JSONRPC", url: rpcUrl }],
     capabilities: { streaming: true },
     defaultInputModes: ["text/plain"],
-    defaultOutputModes: outputModes,
+    defaultOutputModes: OUTPUT_MODES[project.projectType],
     skills: [
       {
         id: project.name,
