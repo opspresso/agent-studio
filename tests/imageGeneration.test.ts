@@ -88,6 +88,43 @@ describe("generateImage", () => {
     });
   });
 
+  it("passes a deadline-composed signal to the channel and propagates caller cancellation", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const imageChannel: ImageChannel = {
+      async generateImage(params) {
+        signals.push(params.signal);
+        return {
+          b64: "aGk=",
+          mimeType: "image/png",
+          usage: { textInputTokens: 1, imageInputTokens: 0, imageOutputTokens: 1 },
+        };
+      },
+    };
+    const usage: UsageRepository = {
+      async record() {},
+      async listByProject() {
+        return [];
+      },
+      async listByDateRange() {
+        return [];
+      },
+    };
+    const controller = new AbortController();
+    await generateImage(
+      { imageChannel, usage },
+      { project, version: version("openai/gpt-image-2"), prompt: "x", signal: controller.signal },
+    );
+
+    // The channel receives a deadline-composed signal (not the caller's own),
+    // but a caller abort still flows through it to cancel the HTTP request.
+    const sent = signals[0];
+    expect(sent).toBeInstanceOf(AbortSignal);
+    expect(sent).not.toBe(controller.signal);
+    expect(sent?.aborted).toBe(false);
+    controller.abort();
+    expect(sent?.aborted).toBe(true);
+  });
+
   it("prefers a direct prompt over the template and rejects empty prompts", async () => {
     const { deps, prompts } = fakeDeps();
     await generateImage(deps, {

@@ -6,6 +6,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
+import { withRunDeadline } from "@/lib/runDeadline";
 
 export interface ImageGenerationDeps {
   imageChannel: ImageChannel;
@@ -22,6 +23,9 @@ export interface GenerateImageInput {
   prompt?: string;
   size?: string;
   quality?: string;
+  /** Caller cancellation (client disconnect / A2A cancel); a run deadline is
+   * composed onto it so a hung provider call can't run or bill unbounded. */
+  signal?: AbortSignal;
 }
 
 export interface GenerateImageOutput {
@@ -75,6 +79,7 @@ export async function generateImage(
       prompt,
       size: input.size,
       quality: input.quality,
+      signal: withRunDeadline(input.signal),
     });
 
     const costUsd = calculateImageCost(model, result.usage);

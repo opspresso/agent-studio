@@ -21,8 +21,9 @@ vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
   };
 });
 
-import { executeAgent, executeVersion, withRunDeadline } from "@/application/execution/runProject";
+import { executeAgent, executeVersion } from "@/application/execution/runProject";
 import type { ExecutionDeps } from "@/application/execution/runProject";
+import { withRunDeadline } from "@/lib/runDeadline";
 import { MODEL_CONFIGS } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
