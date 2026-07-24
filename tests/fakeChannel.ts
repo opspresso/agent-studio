@@ -63,6 +63,14 @@ export function toolCallChunk(
   };
 }
 
+/** A streaming continuation fragment for an in-progress tool call: only appended
+ * argument text, no id/name (they arrived in an earlier fragment). */
+export function toolCallArgsChunk(index: number, args: string): ChannelChunk {
+  return {
+    choices: [{ delta: { tool_calls: [{ index, function: { arguments: args } }] } }],
+  };
+}
+
 export function usageChunk(promptTokens: number, completionTokens: number): ChannelChunk {
   return {
     choices: [],
