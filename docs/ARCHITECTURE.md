@@ -28,7 +28,9 @@ src/
     db/             # Single-table client, key builders, repositories
     llm/            # OpenAI-compatible provider channels, streaming
     mcp/            # MCP HTTP client
-    a2a/  slack/  github/  storage/  net/  crypto/   # A2A client, Slack, skills-repo sync, S3 image store, SSRF guard, AES
+    a2a/  agent/  slack/  github/  storage/  net/  crypto/  health/
+                    # A2A + external-agent clients, Slack, skills-repo sync, S3 image
+                    # store, SSRF guard, AES, readiness probes
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
   components/       # Shared React components
@@ -395,9 +397,9 @@ there is no session and otherwise passes the `SessionUser` as the handler's firs
 /                     dashboard when signed in, landing page otherwise
 /projects             project catalog (cards)
 /projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
-/projects/[name]/versions | settings | usage
+/projects/[name]/versions | usage | traces | api-reference | settings
 /chats  /chats/[chatId]
-/skills  /tools (MCP)  /agents
+/skills  /tools (MCP)  /agents  (each + /[name] detail page)
 /dashboard            cost dashboard (range picker, group by project/provider/model)
 /settings             admin-only runtime env-var overrides
 ```
