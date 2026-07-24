@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
+import { usageRepository } from "@/lib/container";
 import { summaryQuerySchema } from "./validation";
 
 export const GET = withAuth(async (_user, request: Request) => {

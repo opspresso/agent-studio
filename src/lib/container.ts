@@ -18,7 +18,7 @@ import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
 
-export { projectRepository, versionRepository, traceRepository, createA2aTaskStore };
+export { projectRepository, versionRepository, traceRepository, usageRepository, createA2aTaskStore };
 
 /** Readiness snapshot for the /api/ready probe (DynamoDB + LLM channel). */
 export const readinessReport = () =>
