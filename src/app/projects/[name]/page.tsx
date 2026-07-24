@@ -15,6 +15,7 @@ import {
 } from "../lib/api";
 import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 
 function toInput(version: Version): VersionInput {
   return {
@@ -206,8 +207,7 @@ export default function PlaygroundPage() {
         />
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Run</h2>
+      <CollapsibleSection title="Run">
         <RunPanel
           projectName={name}
           versionName={dirty && selectedName === "" ? null : selectedName || null}
@@ -215,7 +215,7 @@ export default function PlaygroundPage() {
           systemPrompt={draft.systemPrompt}
           userPromptTemplate={draft.userPromptTemplate}
         />
-      </section>
+      </CollapsibleSection>
     </div>
   );
 }

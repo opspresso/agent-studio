@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { A2aSection } from "./A2aSection";
 import { SlackSection } from "./SlackSection";
 
@@ -135,20 +136,23 @@ export default function SettingsPage() {
 
       <A2aSection projectName={name} />
 
-      <div className="rounded-lg border border-red-200 p-4 dark:border-red-900/60">
-        <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">Danger zone</h2>
-        <p className="mt-1 text-sm text-neutral-500">
+      <CollapsibleSection
+        title="Danger zone"
+        titleClassName="text-sm font-semibold text-red-700 dark:text-red-400"
+        className="border-red-200 dark:border-red-900/60"
+      >
+        <p className="text-sm text-neutral-500">
           Deleting a project removes all its versions and usage records.
         </p>
         <button
           type="button"
           onClick={remove}
           disabled={deleting}
-          className="mt-3 rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+          className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
         >
           {deleting ? "Deleting…" : "Delete project"}
         </button>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }

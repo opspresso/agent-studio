@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { getProjectA2a } from "../../lib/api";
 import type { ProjectA2aView } from "../../lib/api";
@@ -26,9 +27,9 @@ export function A2aSection({ projectName }: { projectName: string }) {
   const ready = view.enabled && view.published;
 
   return (
-    <section className="space-y-4 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">A2A</h2>
+    <CollapsibleSection
+      title="A2A"
+      badge={
         <span
           className={`rounded-full px-2 py-0.5 text-xs ${
             ready
@@ -38,8 +39,8 @@ export function A2aSection({ projectName }: { projectName: string }) {
         >
           {ready ? "exposed" : view.enabled ? "not published" : "disabled"}
         </span>
-      </div>
-
+      }
+    >
       <p className="text-xs leading-relaxed text-neutral-500">
         The published version is exposed as an A2A agent. Share the Agent Card URL with external
         systems; callers authenticate with the <code className="font-mono">X-A2A-Key</code> header.
@@ -58,6 +59,6 @@ export function A2aSection({ projectName }: { projectName: string }) {
       {view.cardUrl && <CopyableUrl url={view.cardUrl} />}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-    </section>
+    </CollapsibleSection>
   );
 }

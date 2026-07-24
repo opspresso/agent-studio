@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
@@ -96,11 +97,9 @@ export function SlackSection({ projectName }: { projectName: string }) {
   }
 
   return (
-    <section className="space-y-4 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-          Slack bot
-        </h2>
+    <CollapsibleSection
+      title="Slack bot"
+      badge={
         <span
           className={`rounded-full px-2 py-0.5 text-xs ${
             view.enabled
@@ -110,8 +109,8 @@ export function SlackSection({ projectName }: { projectName: string }) {
         >
           {view.enabled ? "enabled" : view.configured ? "configured (off)" : "not connected"}
         </span>
-      </div>
-
+      }
+    >
       <p className="text-xs leading-relaxed text-neutral-500">
         Create a dedicated Slack app for this project from the manifest below
         (api.slack.com/apps → Create New App → From a manifest), install it, then paste the
@@ -187,6 +186,6 @@ export function SlackSection({ projectName }: { projectName: string }) {
           </button>
         )}
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }
