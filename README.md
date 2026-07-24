@@ -90,7 +90,7 @@ pnpm build          # production build
 - `ADMIN_EMAILS` (comma-separated) restricts mutations of the shared skill/MCP/agent
   registries and access to the `/settings` page; unset allows any signed-in user.
 - The admin `/settings` page stores runtime overrides for selected env vars
-  (admin/allowed-domain lists, LLM channels, Slack workspace bot, skills repo,
+  (admin/allowed-domain lists, LLM channels, skills repo,
   A2A key, public base URL) in DynamoDB — a stored override wins over the env value.
 - The header theme control cycles through system, light, and dark appearances. The
   selection is stored in the browser; system mode follows operating-system changes.
@@ -128,8 +128,9 @@ Project Settings → Slack bot generates a project-specific manifest (events URL
 AES-encrypted with masked reads. Events on that URL are verified with that
 project's own secret and always run that project — no selector needed.
 
-- Subscribe to `app_mention` and `message.im` (scopes: `app_mentions:read`,
-  `im:history`, `chat:write`).
+- Subscribe to `app_mention` and `message.im`; the generated manifest requests
+  every bot scope the integration needs (mentions, DMs, files, reactions, user
+  profiles, …).
 - Replies stream into one message via `chat.update`; thread replies carry the full
   thread as multi-turn context.
 - Events are verified (signing secret, 5-minute replay window), deduplicated by

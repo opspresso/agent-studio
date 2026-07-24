@@ -21,7 +21,7 @@ pnpm exec vitest run -t "streamWithFallback"
 ```
 
 There is **no lint step** (no ESLint config); `typecheck` + `test` are the checks.
-Node 22 (`engines >=22`), pnpm 11 (pinned via `packageManager`). CI (`.github/workflows/ci.yml`) runs typecheck → test → build.
+Node 22 (`engines >=22`), pnpm 11 (pinned via `packageManager`). CI (`.github/workflows/ci.yml`) runs typecheck → test → integration test → build.
 
 ### Local development
 
@@ -31,7 +31,7 @@ pnpm init-local-table                              # create table + GSIs (uses A
 
 pnpm tsx scripts/mock-llm.ts                              # mock OpenAI-compatible LLM (set LLM_BASE_URL=http://127.0.0.1:8002/v1)
 pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses Google OAuth)
-pnpm tsx --env-file=.env.local scripts/integration-check.ts  # repos + engine against local DynamoDB (NOT in CI)
+pnpm tsx --env-file=.env.local scripts/integration-check.ts  # repos + engine against local DynamoDB (CI runs this as pnpm test:integration)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts    # seed sample skills
 ```
 
@@ -129,9 +129,9 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   events are deduplicated exactly-once via `slackEventRepository.claim` (conditional put).
   Per-project bots and one workspace-default bot coexist.
 - **A2A**: inbound endpoints gated by `A2A_API_KEY` (constant-time compare); task store is
-  in-memory (single-instance assumption, TTL/LRU evicted). Outbound A2A/agent registry.
+  in-memory (single-instance assumption, idle entries TTL-evicted). Outbound A2A/agent registry.
 - **Errors**: shared `AppError` base carrying an HTTP status (`src/application/errors.ts`);
-  `apiError` (`src/app/api/projects/_lib/http.ts`) maps any of them, else a generic 500.
+  `apiError` (`src/app/api/_lib/http.ts`) maps any of them, else a generic 500.
 - **SSE**: `src/lib/sse.ts` — `sseResponse` (OpenAI `[DONE]` terminator) vs `sseResponseRaw`
   (A2A JSON-RPC framing).
 
@@ -144,5 +144,6 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   before changing `run.ts`/`messageMapping.ts`.
 - Tests mock at boundaries: `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
   `vi.mock("@/infrastructure/db/client")`. Keep tests deterministic — no real `Date.now`,
-  timers, randomness, or network (repository integration is only in the manual
-  `integration-check.ts`, not CI).
+  timers, randomness, or network (repository integration lives in
+  `integration-check.ts`, run against a local DynamoDB — in CI as its own step,
+  outside vitest).

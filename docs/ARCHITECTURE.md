@@ -46,8 +46,9 @@ composition root (`container.ts`) itself.
 Composition is distributed across a few deliberate wiring sites: `src/lib/container.ts`
 (repositories + `executionDeps`/`imageDeps` — including the required LLM/image channels, so
 a missing injection is a type error rather than a silent network call),
-`src/application/{agent,mcp,skill,settings}/index.ts` (each registry slice instantiates its
-`createXUseCases(repo)` singleton), `src/app/api/chats/_deps.ts` (the `ChatDeps` bag), and
+`src/application/{agent,mcp,skill,settings}/index.ts` (each slice instantiates its
+`createXUseCases(repo)` singleton — agent/mcp/skill share the registry CRUD core,
+settings has its own use cases), `src/app/api/chats/_deps.ts` (the `ChatDeps` bag), and
 `src/app/api/slack/events/_lib/` (the `SlackEventDeps` bag: bound `runAgent` + the
 `SlackClientPort`, mirroring `ChatDeps`). Three DI styles are in use on purpose: factory
 `createXUseCases(repo)` for registry slices (their shared CRUD core lives in
@@ -233,13 +234,15 @@ Two deliberate strategies coexist:
   carries across subagent transfers, while tool args/results re-entering engine context
   stay masked. Best-effort (regex; emails + phones only). Off = byte-identical to the
   unfiltered path.
-- Cost: `recordUsage` computes cost from the model registry pricing and atomically ADDs
-  into the daily usage row. Single-shot runs record per call; agent runs buffer per-turn
-  usage in `createUsageAggregator` and flush once at run end.
+- Cost: computed from registry pricing at the call site (`calculateCost` /
+  `calculateImageCost` in `src/domain/llm/models.ts`) and passed to `recordUsage`, which
+  hands it to the usage repository's atomic ADD into the daily usage row. Single-shot runs
+  record per call; agent runs buffer per-turn usage in `createUsageAggregator` and flush
+  once at run end.
 - Model registry `src/domain/llm/models.ts`: `ModelConfig { id, provider, displayName,
   pricing { inputPer1M, outputPer1M, cachedInputPer1M?, imageInputPer1M?,
   imageOutputPer1M?, perImage? }, capabilities { tools, structuredOutput, imageInput,
-  reasoning, imageGeneration? }, contextWindow, maxTokens, hidden? }`.
+  reasoning, reasoningWithTools?, imageGeneration? }, contextWindow, maxTokens, hidden? }`.
 
 ### Skills
 - Skill = markdown behavior instructions (progressive disclosure): system prompt lists
@@ -261,9 +264,9 @@ Two deliberate strategies coexist:
   to; servers that are unreachable or expose no tools are omitted.
 
 ### External Agents (registry, A2A-lite)
-- `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), protocol ('openai' |
-  'a2a'), description, headers (encrypted like MCP), createdAt }` — usable as `type:'remote'`
-  subagents. `url` is SSRF-guarded like MCP.
+- `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), protocol? ('openai' |
+  'a2a', absent = openai), description, headers (encrypted like MCP), createdAt, updatedAt }`
+  — usable as `type:'remote'` subagents. `url` is SSRF-guarded like MCP.
 
 ### Chat
 - `Chat { chatId, title, ownerEmail, projectName?, createdAt, updatedAt }`,

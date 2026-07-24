@@ -10,7 +10,8 @@ auth, and error cases for the non-obvious endpoints.
   `text/event-stream`.
 - **Auth**: application routes require a Better Auth session cookie (Google OAuth login; for
   local dev, `scripts/dev-session.ts` prints one). Missing/invalid session →
-  `401 { "error": "Unauthorized" }`. Webhooks are gated differently: `/api/a2a/*` by the
+  `401 { "error": "Unauthorized" }`. The login flow itself lives under `/api/auth/*`
+  (Better Auth catch-all). Webhooks are gated differently: `/api/a2a/*` by the
   `X-A2A-Key` header, `/api/slack/events/*` by the Slack signing secret, `/api/health` is open.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner may mutate one (update/delete/publish, version create/update, Slack
@@ -212,9 +213,14 @@ Set `A2A_API_KEY` to enable. Each project with a published version serves a publ
 and a JSON-RPC endpoint; see [README](../README.md#a2a-agent2agent) for the full contract.
 
 ```
+GET  /api/a2a                                           (session) → { enabled, projects }
 GET  /api/a2a/{project}/.well-known/agent-card.json     (public)
 POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send, message/stream,
                                                          tasks/get, tasks/cancel)
 ```
+
+`GET /api/a2a` lists the published projects exposed over A2A: `enabled` reports whether
+`A2A_API_KEY` is configured, and each project entry carries
+`{ name, displayName, description, cardUrl }`.
 
 Missing key → `503` (not configured) or `401` (mismatch, constant-time compared).

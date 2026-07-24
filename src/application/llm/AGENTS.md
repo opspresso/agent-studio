@@ -8,9 +8,9 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - All `tool_calls` of one model response aggregate into **one** assistant message, then all
   tool results append, then the loop recurses with `turn + 1`. Never split a response's
   tool calls across assistant messages — providers reject orphaned tool results.
-- Builtin tools are intercepted **before** MCP dispatch, in this order: `Skill`
-  (progressive skill loading), `transfer_to_agent` (subagent transfer), `GenerateImage`.
-  Anything else goes to `deps.callMcpTool`.
+- Builtin tools are intercepted **before** MCP dispatch, in this order:
+  `transfer_to_agent` (subagent transfer), `GenerateImage`, `Skill` (progressive
+  skill loading). Anything else goes to `deps.callMcpTool`.
 - Turn guard: `turn >= maxTurn` (default 50) silently ends the loop. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
