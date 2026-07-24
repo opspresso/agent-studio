@@ -345,32 +345,6 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             }),
           ],
         });
-
-        const chatBody = { projectName, firstMessage: "hi" };
-        endpoints.push({
-          id: "chat",
-          method: "POST",
-          path: "/api/chats",
-          title: "Chat",
-          description:
-            "Start a private chat backed by this agent project. Streams SSE beginning with a { chat } envelope carrying the new chatId.",
-          auth: "token",
-          streaming: true,
-          requestFields: [
-            { name: "projectName", type: "string", required: true, description: "This project's name." },
-            { name: "firstMessage", type: "string", required: true, description: "The user's opening message." },
-          ],
-          errorCodes: [400, 401],
-          codeExamples: [
-            curlExample({
-              method: "POST",
-              url: abs("/api/chats"),
-              auth: "token",
-              body: chatBody,
-              streaming: true,
-            }),
-          ],
-        });
       }
     }
   }

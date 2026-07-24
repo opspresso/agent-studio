@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { CopyButton } from "@/app/_components/CopyButton";
@@ -24,21 +24,19 @@ function FieldRows({ fields, depth = 0 }: { fields: FieldSpec[]; depth?: number 
   return (
     <>
       {fields.map((field) => (
-        <tr key={`${depth}-${field.name}`} className="align-top">
-          <td className="py-1.5 pr-4 font-mono" style={depth > 0 ? { paddingLeft: depth * 16 } : undefined}>
-            {depth > 0 && <span className="text-neutral-400">└ </span>}
-            {field.name}
-            {field.required && <span className="ml-1 text-red-500">*</span>}
-          </td>
-          <td className="py-1.5 pr-4 font-mono text-neutral-500">{field.type}</td>
-          <td className="py-1.5 text-neutral-500">{field.description}</td>
-        </tr>
+        <Fragment key={`${depth}-${field.name}`}>
+          <tr className="align-top">
+            <td className="py-1.5 pr-4 font-mono" style={depth > 0 ? { paddingLeft: depth * 16 } : undefined}>
+              {depth > 0 && <span className="text-neutral-400">└ </span>}
+              {field.name}
+              {field.required && <span className="ml-1 text-red-500">*</span>}
+            </td>
+            <td className="py-1.5 pr-4 font-mono text-neutral-500">{field.type}</td>
+            <td className="py-1.5 text-neutral-500">{field.description}</td>
+          </tr>
+          {field.children && <FieldRows fields={field.children} depth={depth + 1} />}
+        </Fragment>
       ))}
-      {fields.map((field) =>
-        field.children ? (
-          <FieldRows key={`c-${depth}-${field.name}`} fields={field.children} depth={depth + 1} />
-        ) : null,
-      )}
     </>
   );
 }
