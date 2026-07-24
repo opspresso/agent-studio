@@ -140,3 +140,66 @@ skill이 참조하는 세부 가이드·스키마·템플릿을 progressive disc
 변경·삭제된 파일이 저장소에 일관되게 반영된다. 동일 파일명·중첩 경로·없는 경로·경로
 순회·symlink·미지원 형식·파일 수 및 크기 상한·truncated tree를 테스트하며, 기존
 `file_path` 없는 호출은 이전과 동일한 `SKILL.md` 본문을 반환한다.
+
+## M7 — 데이터 수명(TTL) 및 보존
+
+**이유**: `traceRepository`와 `usageRepository`가 쓰는 trace·usage 행에는 만료
+속성이 없어 무기한 누적된다. TTL은 dedup 행(`slackEventRepository`의 `expiresAt`,
+24시간)에만 적용돼 있고 chat은 실행 lock(`activeRunExpiresAt`)만 만료된다. 단일
+테이블이 계속 커지면 저장 비용과 조회 지연이 늘고, chat·trace가 PII를 담을 수 있는데도
+데이터 최소화 정책이 없다.
+
+**범위**
+
+- trace(및 `TRACE_REF` 색인 행), usage, chat/message에 unix epoch(초) `expiresAt`
+  속성을 부여하고 테이블 TTL로 자동 삭제 — `slackEventRepository`의 기존 패턴 재사용.
+- 데이터 종류별 보존 기간을 설정 값으로 두고 안전한 기본값 적용.
+- 색인·참조 행(`TRACE_REF` 등)이 본체와 같은 만료 시각을 갖도록 해 dangling 참조를 방지.
+- 물리적 TTL 삭제가 지연되는 동안에도 이미 만료된 행은 조회에서 부재로 처리.
+- 진행 중인 usage 일간 집계나 활성 chat run은 조기 만료하지 않도록 경계 설정.
+
+**완료 조건**: 각 데이터 종류에 보존 기간에 맞는 `expiresAt`가 설정되고 본체와 색인 행이
+동일한 시각에 만료되며, 이미 만료된 행은 물리 삭제 이전에도 조회에서 제외되고 보존 기간
+내 데이터는 유지된다. 만료 경계값·색인 동반 만료·활성 run 보호를 (주입한 clock으로)
+테스트로 검증한다.
+
+## M8 — Readiness probe와 종료 드레인
+
+**이유**: `/api/health`는 정적 200을 반환하는 liveness probe로, 스스로 밝히듯
+"다운스트림이 건강한가"가 아니라 "프로세스가 요청을 받는가"만 답한다
+(`src/app/api/health/route.ts`). Dockerfile HEALTHCHECK와 LB가 이 엔드포인트를 가리키므로
+DynamoDB나 LLM 채널이 도달 불가인 인스턴스도 healthy로 보고돼 트래픽을 계속 받는다.
+
+**범위**
+
+- liveness와 분리된 readiness 엔드포인트 추가 — DynamoDB 도달성과 LLM 채널 도달성을
+  짧은 타임아웃으로 점검하고 실패 시 비정상 상태 코드 반환.
+- 점검은 가볍고 비용이 낮아야 하며(저비용 DynamoDB 조회, LLM 채널은 실제 완성 호출 없이
+  도달성만), 다운스트림 오류 세부를 그대로 노출하지 않음.
+- LB/오케스트레이터 health check는 readiness로, 프로세스 재시작 판단(liveness)은 기존
+  정적 probe로 분리.
+- SIGTERM 수신 시 readiness를 먼저 unready로 전환해 신규 트래픽을 끊고 in-flight
+  실행·SSE를 드레인하는 경계를 명시(현재는 Next standalone 기본 종료에만 의존).
+
+**완료 조건**: 다운스트림(DynamoDB 또는 LLM 채널)이 도달 불가일 때 readiness가 비정상을,
+정상일 때 200을 반환하고, liveness는 다운스트림과 무관하게 200을 유지한다. 도달성
+성공·실패·타임아웃과 SIGTERM 후 unready 전환을 테스트로 검증한다.
+
+## M9 — Fail-open 기본값 가드레일
+
+**이유**: `isAdmin`은 admin 목록이 비면 로그인한 전원을 admin으로 취급하고
+(`src/lib/session.ts`), 로그인 허용 도메인도 비면 아무 구글 계정이나 로그인된다
+(`src/lib/auth.ts`). 두 값 모두 `BOOT_REQUIRED_ENV`에 없어(`src/lib/config.ts`)
+강제되지 않으므로, 무설정으로 배포하면 인터넷의 임의 구글 계정이 admin이 될 수 있다.
+
+**범위**
+
+- `alpha`·`prod` STAGE에서 `ADMIN_EMAILS` 또는 `ALLOWED_EMAIL_DOMAINS`가 비어 있으면
+  부팅 거부(`assertRequiredConfig`와 같은 boot 시점 검증).
+- `local` STAGE는 무설정 개발 편의를 위해 기존 fail-open 유지.
+- 거부 메시지에 어떤 변수가 비었는지와 현재 STAGE를 표시.
+- fail-open의 의미를 config 주석에 STAGE 조건과 함께 갱신.
+
+**완료 조건**: `alpha`·`prod` STAGE에서 admin 또는 allowed-domain 목록이 비면 부팅이
+실패하고 두 값이 설정되면 정상 부팅하며, `local` STAGE는 비어 있어도 부팅한다. STAGE별
+부팅 허용·거부와 누락 변수 보고를 테스트로 검증한다.
