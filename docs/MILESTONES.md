@@ -184,22 +184,3 @@ DynamoDB나 LLM 채널이 도달 불가인 인스턴스도 healthy로 보고돼 
 **완료 조건**: 다운스트림(DynamoDB 또는 LLM 채널)이 도달 불가일 때 readiness가 비정상을,
 정상일 때 200을 반환하고, liveness는 다운스트림과 무관하게 200을 유지한다. 도달성
 성공·실패·타임아웃과 SIGTERM 후 unready 전환을 테스트로 검증한다.
-
-## M9 — Fail-open 기본값 가드레일
-
-**이유**: `isAdmin`은 admin 목록이 비면 로그인한 전원을 admin으로 취급하고
-(`src/lib/session.ts`), 로그인 허용 도메인도 비면 아무 구글 계정이나 로그인된다
-(`src/lib/auth.ts`). 두 값 모두 `BOOT_REQUIRED_ENV`에 없어(`src/lib/config.ts`)
-강제되지 않으므로, 무설정으로 배포하면 인터넷의 임의 구글 계정이 admin이 될 수 있다.
-
-**범위**
-
-- `alpha`·`prod` STAGE에서 `ADMIN_EMAILS` 또는 `ALLOWED_EMAIL_DOMAINS`가 비어 있으면
-  부팅 거부(`assertRequiredConfig`와 같은 boot 시점 검증).
-- `local` STAGE는 무설정 개발 편의를 위해 기존 fail-open 유지.
-- 거부 메시지에 어떤 변수가 비었는지와 현재 STAGE를 표시.
-- fail-open의 의미를 config 주석에 STAGE 조건과 함께 갱신.
-
-**완료 조건**: `alpha`·`prod` STAGE에서 admin 또는 allowed-domain 목록이 비면 부팅이
-실패하고 두 값이 설정되면 정상 부팅하며, `local` STAGE는 비어 있어도 부팅한다. STAGE별
-부팅 허용·거부와 누락 변수 보고를 테스트로 검증한다.

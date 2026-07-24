@@ -24,6 +24,30 @@ export function assertRequiredConfig(): void {
   }
 }
 
+/**
+ * Access-control guardrail for deployed stages. An empty ADMIN_EMAILS or
+ * ALLOWED_EMAIL_DOMAINS is fail-open — any signed-in user is an admin, and any
+ * Google account may sign in — so `alpha`/`prod` refuse to boot until both are
+ * set. `local` keeps the fail-open default for zero-config development.
+ */
+export function assertAccessControlConfig(): void {
+  if (config.stage === "local") {
+    return;
+  }
+  const missing: string[] = [];
+  if (config.adminEmails.length === 0) {
+    missing.push("ADMIN_EMAILS");
+  }
+  if (config.allowedEmailDomains.length === 0) {
+    missing.push("ALLOWED_EMAIL_DOMAINS");
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `STAGE=${config.stage} requires access-control config; set: ${missing.join(", ")}`,
+    );
+  }
+}
+
 export const config = {
   get stage(): Stage {
     const stage = process.env.STAGE ?? "local";
@@ -56,7 +80,8 @@ export const config = {
   },
   /**
    * Email domains allowed to sign in (ALLOWED_EMAIL_DOMAINS, comma-separated).
-   * Empty means no restriction.
+   * Empty means no restriction (fail-open); refused at boot in `alpha`/`prod`
+   * by `assertAccessControlConfig`.
    */
   get allowedEmailDomains(): string[] {
     return (process.env.ALLOWED_EMAIL_DOMAINS ?? "")
@@ -66,7 +91,8 @@ export const config = {
   },
   /**
    * Emails allowed to mutate shared registries (ADMIN_EMAILS, comma-separated).
-   * Empty means no restriction — any signed-in user may mutate.
+   * Empty means no restriction — any signed-in user may mutate (fail-open);
+   * refused at boot in `alpha`/`prod` by `assertAccessControlConfig`.
    */
   get adminEmails(): string[] {
     return (process.env.ADMIN_EMAILS ?? "")
