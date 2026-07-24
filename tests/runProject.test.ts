@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
+const { sendA2aMessageMock } = vi.hoisted(() => ({
+  sendA2aMessageMock: vi.fn(),
+}));
+
+vi.mock("@/infrastructure/a2a/client", () => ({
+  sendA2aMessage: sendA2aMessageMock,
+}));
+
 // Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
 vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/infrastructure/net/ssrfGuard")>();
@@ -311,6 +319,68 @@ describe("executeAgent local subagent projectType dispatch", () => {
     expect(
       recorded.some((d) => d.projectName === "painter-img" && d.model === "google/gemini-3-pro-image"),
     ).toBe(true);
+  });
+});
+
+describe("executeAgent remote A2A image subagent", () => {
+  it("forwards returned image artifacts as authored image chunks", async () => {
+    sendA2aMessageMock.mockResolvedValueOnce({
+      ok: true,
+      text: "",
+      images: [{ b64: "aW1n", mimeType: "image/png", name: "generated.png" }],
+    });
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(
+          0,
+          "call_t",
+          "transfer_to_agent",
+          '{"agent_name":"painter-a2a","message":"a watercolor cat"}',
+        ),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Here you go."), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.externalAgents.get = (async (name: string) =>
+      name === "painter-a2a"
+        ? {
+            name,
+            url: "https://agents.example.com/painter",
+            protocol: "a2a",
+            description: "Generates images",
+            headers: {},
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }
+        : null) as ExecutionDeps["externalAgents"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "painter-a2a", type: "remote" }],
+        },
+        messages: [{ role: "user", content: "고양이를 그려줘" }],
+      }),
+    );
+
+    expect(sendA2aMessageMock).toHaveBeenCalledWith(
+      "https://agents.example.com/painter",
+      {},
+      "a watercolor cat",
+      undefined,
+    );
+    expect(chunks.find((chunk) => chunk.image)).toMatchObject({
+      author: "painter-a2a",
+      image: {
+        b64: "aW1n",
+        mimeType: "image/png",
+        prompt: "a watercolor cat",
+      },
+    });
+    expect(chunks.some((chunk) => chunk.error)).toBe(false);
   });
 });
 

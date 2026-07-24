@@ -698,8 +698,16 @@ async function* runRemoteSubagent(
       yield { author: agentName, error: result.error };
       return "";
     }
-    yield { author: agentName, delta: { content: result.text } };
-    return result.text;
+    for (const image of result.images) {
+      yield {
+        author: agentName,
+        image: { b64: image.b64, mimeType: image.mimeType, prompt: message },
+      };
+    }
+    if (result.text) {
+      yield { author: agentName, delta: { content: result.text } };
+    }
+    return result.text || `Received ${result.images.length} generated image(s).`;
   }
   let text = "";
   try {

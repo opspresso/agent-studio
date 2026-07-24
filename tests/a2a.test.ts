@@ -9,7 +9,11 @@ import type { Message, Task } from "@a2a-js/sdk";
 import type { AgentExecutionEvent, ExecutionEventBus } from "@a2a-js/sdk/server";
 import { RequestContext } from "@a2a-js/sdk/server";
 import { buildAgentCard, buildProjectA2aRpcUrl } from "@/infrastructure/a2a/cards";
-import { extractA2aText, normalizeAgentCardUrl } from "@/infrastructure/a2a/client";
+import {
+  extractA2aImages,
+  extractA2aText,
+  normalizeAgentCardUrl,
+} from "@/infrastructure/a2a/client";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
@@ -31,7 +35,7 @@ function projectFixture(overrides: Partial<Project> = {}): Project {
   };
 }
 
-function versionFixture(): Version {
+function versionFixture(overrides: Partial<Version> = {}): Version {
   return {
     projectName: "helper",
     versionName: "v1",
@@ -43,6 +47,7 @@ function versionFixture(): Version {
     skillList: [],
     subagentList: [],
     createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -96,6 +101,14 @@ describe("buildAgentCard", () => {
     expect(card.url).toBe(await buildProjectA2aRpcUrl("helper"));
     expect(card.skills).toHaveLength(1);
     expect(card.skills[0]?.id).toBe("helper");
+  });
+
+  it("advertises image output modes for image projects", async () => {
+    const card = await buildAgentCard(
+      projectFixture({ projectType: "image" }),
+      versionFixture({ model: "openai/gpt-image-2" }),
+    );
+    expect(card.defaultOutputModes).toEqual(["image/png", "image/jpeg", "image/webp"]);
   });
 });
 
@@ -161,6 +174,31 @@ describe("extractA2aText", () => {
   });
 });
 
+describe("extractA2aImages", () => {
+  it("extracts base64 image file parts from artifacts", () => {
+    const task = taskFixture({
+      artifacts: [
+        {
+          artifactId: "image",
+          parts: [
+            {
+              kind: "file",
+              file: { bytes: "aW1n", mimeType: "image/png", name: "generated.png" },
+            },
+            {
+              kind: "file",
+              file: { bytes: "cGRm", mimeType: "application/pdf", name: "ignored.pdf" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(extractA2aImages(task)).toEqual([
+      { b64: "aW1n", mimeType: "image/png", name: "generated.png" },
+    ]);
+  });
+});
+
 describe("normalizeAgentCardUrl", () => {
   it("appends the well-known path to base URLs and keeps card URLs", () => {
     expect(normalizeAgentCardUrl("https://x.test/api/a2a/p")).toBe(
@@ -184,6 +222,13 @@ function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: { record: async () => {}, listByProject: reject, listByDateRange: reject },
     channel,
+    imageChannel: {
+      generateImage: async () => ({
+        b64: "aW1n",
+        mimeType: "image/png",
+        usage: { textInputTokens: 1, imageInputTokens: 0, imageOutputTokens: 2 },
+      }),
+    },
   } as unknown as ExecutionDeps;
 }
 
@@ -209,5 +254,25 @@ describe("ProjectA2aExecutor", () => {
     expect(artifact && "artifact" in artifact ? artifact.artifact.parts : []).toEqual([
       { kind: "text", text: "streamed answer" },
     ]);
+  });
+
+  it("runs image projects through the image channel and publishes a file artifact", async () => {
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(new FakeChannel([])),
+      projectFixture({ projectType: "image" }),
+      versionFixture({ model: "openai/gpt-image-2" }),
+    );
+    const bus = new CollectingBus();
+    await executor.execute(new RequestContext(userMessage("고양이를 그려줘"), "t1", "c1"), bus);
+
+    const artifact = bus.events.find((event) => event.kind === "artifact-update");
+    expect(artifact && "artifact" in artifact ? artifact.artifact.parts : []).toEqual([
+      {
+        kind: "file",
+        file: { bytes: "aW1n", mimeType: "image/png", name: "generated.png" },
+      },
+    ]);
+    const last = bus.events.at(-1);
+    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
   });
 });

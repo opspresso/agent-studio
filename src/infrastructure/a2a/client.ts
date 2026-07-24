@@ -10,7 +10,15 @@ import type { Message, Part, Task } from "@a2a-js/sdk";
 import { A2AClient } from "@a2a-js/sdk/client";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 
-export type A2aSendResult = { ok: true; text: string } | { ok: false; error: string };
+export interface A2aImage {
+  b64: string;
+  mimeType: string;
+  name?: string;
+}
+
+export type A2aSendResult =
+  | { ok: true; text: string; images: A2aImage[] }
+  | { ok: false; error: string };
 
 const AGENT_CARD_SUFFIX = "/.well-known/agent-card.json";
 const TIMEOUT_MS = 120_000;
@@ -23,6 +31,32 @@ export function normalizeAgentCardUrl(url: string): string {
 
 function partsText(parts: Part[]): string {
   return parts.map((part) => (part.kind === "text" ? part.text : "")).join("");
+}
+
+function partsImages(parts: Part[]): A2aImage[] {
+  return parts.flatMap((part) => {
+    if (part.kind !== "file" || !("bytes" in part.file)) {
+      return [];
+    }
+    const file = part.file;
+    if (!file.mimeType?.startsWith("image/")) {
+      return [];
+    }
+    return [
+      {
+        b64: file.bytes,
+        mimeType: file.mimeType,
+        ...(file.name ? { name: file.name } : {}),
+      },
+    ];
+  });
+}
+
+function resultParts(result: Message | Task): Part[] {
+  if (result.kind === "message") {
+    return result.parts;
+  }
+  return (result.artifacts ?? []).flatMap((artifact) => artifact.parts);
 }
 
 export function extractA2aText(result: Message | Task): string {
@@ -52,6 +86,10 @@ export function extractA2aText(result: Message | Task): string {
   return "";
 }
 
+export function extractA2aImages(result: Message | Task): A2aImage[] {
+  return partsImages(resultParts(result));
+}
+
 export async function sendA2aMessage(
   url: string,
   headers: Record<string, string>,
@@ -79,17 +117,21 @@ export async function sendA2aMessage(
         role: "user",
         parts: [{ kind: "text", text: message }],
       },
-      configuration: { blocking: true, acceptedOutputModes: ["text/plain"] },
+      configuration: {
+        blocking: true,
+        acceptedOutputModes: ["text/plain", "image/png", "image/jpeg", "image/webp"],
+      },
     });
     if ("error" in response) {
       return { ok: false, error: `A2A error ${response.error.code}: ${response.error.message}` };
     }
     const text = extractA2aText(response.result);
-    if (!text) {
+    const images = extractA2aImages(response.result);
+    if (!text && images.length === 0) {
       const state = response.result.kind === "task" ? response.result.status.state : "message";
-      return { ok: false, error: `A2A reply contained no text (state: ${state})` };
+      return { ok: false, error: `A2A reply contained no supported content (state: ${state})` };
     }
-    return { ok: true, text };
+    return { ok: true, text, images };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       return { ok: false, error: `Request timed out after ${TIMEOUT_MS / 1000}s` };

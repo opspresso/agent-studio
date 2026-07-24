@@ -21,6 +21,10 @@ export async function buildProjectAgentCardUrl(projectName: string): Promise<str
 
 export async function buildAgentCard(project: Project, version: Version): Promise<AgentCard> {
   const rpcUrl = await buildProjectA2aRpcUrl(project.name);
+  const outputModes =
+    project.projectType === "image"
+      ? ["image/png", "image/jpeg", "image/webp"]
+      : ["text/plain", "image/png", "image/jpeg", "image/webp"];
   return {
     protocolVersion: A2A_PROTOCOL_VERSION,
     name: project.displayName || project.name,
@@ -31,7 +35,7 @@ export async function buildAgentCard(project: Project, version: Version): Promis
     additionalInterfaces: [{ transport: "JSONRPC", url: rpcUrl }],
     capabilities: { streaming: true },
     defaultInputModes: ["text/plain"],
-    defaultOutputModes: ["text/plain"],
+    defaultOutputModes: outputModes,
     skills: [
       {
         id: project.name,

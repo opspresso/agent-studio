@@ -4,13 +4,15 @@
  * `result` artifact appends -> completed/failed.
  */
 
-import type { Message, Task, TaskState } from "@a2a-js/sdk";
+import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
+import { generateImage } from "@/application/image/generateImage";
 
 const RESULT_ARTIFACT_ID = "result";
+const IMAGE_ARTIFACT_ID = "image";
 
 function userMessageText(message: Message): string {
   return message.parts
@@ -45,13 +47,43 @@ export class ProjectA2aExecutor implements AgentExecutor {
     const messages: ChatMessageInput[] = [
       { role: "user", content: userMessageText(userMessage) },
     ];
-    const source = executeProjectStream(this.deps, {
-      project: this.project,
-      version: this.version,
-      messages,
-    });
 
     try {
+      if (this.project.projectType === "image") {
+        const image = await generateImage(this.deps, {
+          project: this.project,
+          version: this.version,
+          prompt: messages[0]?.content ?? "",
+        });
+        eventBus.publish({
+          kind: "artifact-update",
+          taskId,
+          contextId,
+          artifact: {
+            artifactId: IMAGE_ARTIFACT_ID,
+            name: IMAGE_ARTIFACT_ID,
+            parts: [
+              {
+                kind: "file",
+                file: {
+                  bytes: image.imageBase64,
+                  mimeType: image.mimeType,
+                  name: `generated.${this.imageExtension(image.mimeType)}`,
+                },
+              },
+            ],
+          },
+          append: false,
+        });
+        this.publishStatus(eventBus, taskId, contextId, "completed", true);
+        return;
+      }
+
+      const source = executeProjectStream(this.deps, {
+        project: this.project,
+        version: this.version,
+        messages,
+      });
       let isFirstChunk = true;
       for await (const chunk of source) {
         if (this.cancelled.has(taskId)) {
@@ -62,8 +94,8 @@ export class ProjectA2aExecutor implements AgentExecutor {
           this.publishStatus(eventBus, taskId, contextId, "failed", true, chunk.error);
           return;
         }
-        const content = this.chunkContent(chunk);
-        if (!content) {
+        const parts = this.chunkParts(chunk);
+        if (parts.length === 0) {
           continue;
         }
         eventBus.publish({
@@ -73,7 +105,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
           artifact: {
             artifactId: RESULT_ARTIFACT_ID,
             name: RESULT_ARTIFACT_ID,
-            parts: [{ kind: "text", text: content }],
+            parts,
           },
           append: !isFirstChunk,
         });
@@ -98,13 +130,32 @@ export class ProjectA2aExecutor implements AgentExecutor {
     void eventBus;
   }
 
-  private chunkContent(chunk: EngineChunk): string | undefined {
+  private chunkParts(chunk: EngineChunk): Part[] {
     // Only top-level assistant text goes into the artifact; subagent chunks
     // are re-authored and would duplicate the parent's final answer.
     if (chunk.author && chunk.author !== this.project.name) {
-      return undefined;
+      return [];
     }
-    return chunk.delta?.content || undefined;
+    if (chunk.image) {
+      return [
+        {
+          kind: "file",
+          file: {
+            bytes: chunk.image.b64,
+            mimeType: chunk.image.mimeType,
+            name: `generated.${this.imageExtension(chunk.image.mimeType)}`,
+          },
+        },
+      ];
+    }
+    return chunk.delta?.content ? [{ kind: "text", text: chunk.delta.content }] : [];
+  }
+
+  private imageExtension(mimeType: string): string {
+    if (mimeType === "image/jpeg") {
+      return "jpg";
+    }
+    return mimeType.split("/")[1] || "bin";
   }
 
   private publishStatus(
