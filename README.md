@@ -52,6 +52,7 @@ pnpm tsx scripts/mock-llm.ts
 pnpm tsx --env-file=.env.local scripts/dev-session.ts
 
 # End-to-end integration check (repositories + engine against local DynamoDB)
+# CI runs the same script as `pnpm test:integration`
 pnpm tsx --env-file=.env.local scripts/integration-check.ts
 
 # Seed sample skills (conversation, image-generation)
@@ -94,6 +95,19 @@ pnpm build          # production build
   A2A key, public base URL) in DynamoDB — a stored override wins over the env value.
 - The header theme control cycles through system, light, and dark appearances. The
   selection is stored in the browser; system mode follows operating-system changes.
+
+## Project API
+
+Each project's **API Reference** tab documents how to call it from outside the
+console — the execution endpoints (`predict`, `chat/completions`, `agent`), plus the
+A2A and Slack endpoints when those are configured — with the project's own name and
+published version filled in. Every entry carries a copyable curl example, and the
+OpenAI-compatible endpoint adds Python and Node.js SDK samples; credentials appear
+only as `$PROJECT_API_TOKEN`-style placeholders.
+
+Generate the token under Project Settings → API token: it is shown once, stored only
+as a SHA-256 hash, scoped to that project, and sent as `Authorization: Bearer <token>`
+in place of the session cookie. See [docs/API.md](docs/API.md) for the full contract.
 
 ## Image Generation
 
@@ -205,4 +219,7 @@ docker compose up --build             # local container + DynamoDB Local
 - node runs as PID 1 (exec-form CMD) so SIGTERM drains in-flight SSE streams on
   rolling deploys; on SIGTERM the instance flips `/api/ready` to unready first so the LB
   stops routing new traffic. Pair with a generous container `stopTimeout` (e.g. 120s).
+- Every run (predict, chat, agent, Slack, A2A, image) is bounded by a wall-clock
+  deadline — `MAX_RUN_DURATION_MS`, default `600000` (10 minutes) — so a hung provider
+  or tool call cannot run, or bill, unbounded.
 - AWS credentials come from the task/instance role — never bake keys into the image.
