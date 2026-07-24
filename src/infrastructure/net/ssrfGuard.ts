@@ -110,6 +110,9 @@ export async function resolvePublicUrl(
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new SsrfError(`Unsupported URL scheme: ${url.protocol.replace(":", "")}`);
   }
+  if (url.username || url.password) {
+    throw new SsrfError("URL credentials are not allowed");
+  }
 
   const host = url.hostname;
   const bare = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;

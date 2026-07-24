@@ -13,6 +13,15 @@ describe("assertPublicUrl scheme handling", () => {
   it("rejects an unparseable URL", async () => {
     await expect(assertPublicUrl("not a url")).rejects.toBeInstanceOf(SsrfError);
   });
+
+  it.each([
+    "https://user@example.com",
+    "https://user:password@example.com",
+  ])("rejects embedded credentials in %s", async (url) => {
+    await expect(
+      assertPublicUrl(url, resolvesTo("93.184.216.34")),
+    ).rejects.toThrow("URL credentials are not allowed");
+  });
 });
 
 describe("assertPublicUrl with IP literals", () => {
