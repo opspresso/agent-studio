@@ -114,8 +114,9 @@ solely for Better Auth unique-field lookups (email/token → auth row).
 
 ## Request Flow (Execution)
 
-Six execution entry points converge on the facade functions in
-`src/application/execution/runProject.ts` — the composition point that resolves a version's
+Six execution entry points converge on the facades in
+`src/application/execution/runProject.ts` (`executeVersion` / `executeVersionStream` /
+`executeProjectStream` / `executeAgent`) — the composition point that resolves a version's
 skills/MCP tools/subagents from repositories, assembles the injected engine deps, and
 records usage. To trace any request, start there.
 
@@ -127,6 +128,11 @@ records usage. To trace any request, start there.
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent` in `app/api/chats/_deps.ts`) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
+
+The two table entries not on that list are thin wrappers alongside: `generateImage`
+(`src/application/image/generateImage.ts`, the image predict path) and `collectRun`
+(`src/app/api/projects/_lib/openai.ts`, which drains `executeAgent` for the non-stream
+OpenAI response).
 
 `executeProjectStream` is the canonical projectType → strategy dispatch (`agent` runs the
 multi-turn tool loop, anything else streams a single-shot completion). New entry points
