@@ -21,7 +21,7 @@ vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
   };
 });
 
-import { executeAgent, executeVersion } from "@/application/execution/runProject";
+import { executeAgent, executeVersion, withRunDeadline } from "@/application/execution/runProject";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { MODEL_CONFIGS } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
@@ -105,8 +105,26 @@ function offersImageTool(channel: FakeChannel): boolean {
   return channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false;
 }
 
+describe("withRunDeadline", () => {
+  it("composes a caller signal so its abort still propagates", () => {
+    const controller = new AbortController();
+    const composed = withRunDeadline(controller.signal);
+    expect(composed).toBeInstanceOf(AbortSignal);
+    expect(composed).not.toBe(controller.signal);
+    expect(composed.aborted).toBe(false);
+    controller.abort();
+    expect(composed.aborted).toBe(true);
+  });
+
+  it("returns a live (not-yet-aborted) deadline signal when there is no caller signal", () => {
+    const composed = withRunDeadline(undefined);
+    expect(composed).toBeInstanceOf(AbortSignal);
+    expect(composed.aborted).toBe(false);
+  });
+});
+
 describe("execution cancellation", () => {
-  it("passes the caller signal to the LLM channel", async () => {
+  it("propagates caller cancellation to the LLM channel through the run deadline", async () => {
     const channel = new FakeChannel([[contentChunk("done"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);
     const abortController = new AbortController();
@@ -117,7 +135,14 @@ describe("execution cancellation", () => {
       signal: abortController.signal,
     });
 
-    expect(channel.seenParams[0]?.signal).toBe(abortController.signal);
+    // The channel receives a deadline-composed signal (not the caller's own),
+    // but a caller abort still flows through it.
+    const sent = channel.seenParams[0]?.signal;
+    expect(sent).toBeInstanceOf(AbortSignal);
+    expect(sent).not.toBe(abortController.signal);
+    expect(sent?.aborted).toBe(false);
+    abortController.abort();
+    expect(sent?.aborted).toBe(true);
   });
 });
 
@@ -370,7 +395,8 @@ describe("executeAgent remote A2A image subagent", () => {
       "https://agents.example.com/painter",
       {},
       "a watercolor cat",
-      undefined,
+      // The run's deadline-composed signal now propagates to remote subagents.
+      expect.any(AbortSignal),
     );
     expect(chunks.find((chunk) => chunk.image)).toMatchObject({
       author: "painter-a2a",

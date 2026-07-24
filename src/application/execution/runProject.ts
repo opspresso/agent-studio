@@ -90,6 +90,19 @@ function bindUsage(deps: ExecutionDeps): engine.RecordUsageFn {
   return (record) => recordUsage(deps.usage, record);
 }
 
+/**
+ * Wall-clock backstop for a single run. Composes the caller's abort signal
+ * (client disconnect, A2A cancel) with a hard deadline so a hung provider/tool
+ * call can never run — or bill — unbounded. Generous by default: only stuck or
+ * runaway runs hit it, not legitimately long multi-turn / reasoning runs.
+ */
+const MAX_RUN_DURATION_MS = Number(process.env.MAX_RUN_DURATION_MS) || 600_000;
+
+export function withRunDeadline(signal: AbortSignal | undefined): AbortSignal {
+  const deadline = AbortSignal.timeout(MAX_RUN_DURATION_MS);
+  return signal ? AbortSignal.any([signal, deadline]) : deadline;
+}
+
 // --- Single-shot version execution -----------------------------------------
 
 export async function executeVersion(
@@ -110,7 +123,7 @@ export async function executeVersion(
         variables: input.variables,
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
-        signal: input.signal,
+        signal: withRunDeadline(input.signal),
       },
     );
     recorder?.observeResult(result);
@@ -142,7 +155,7 @@ export async function* executeVersionStream(
         variables: input.variables,
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
-        signal: input.signal,
+        signal: withRunDeadline(input.signal),
       },
     )) {
       recorder?.observe(chunk);
@@ -214,17 +227,21 @@ export async function* executeAgent(
   let completed = false;
   try {
     input.signal?.throwIfAborted();
+    // Compose the caller's signal with a hard deadline; classification in the
+    // catch stays keyed on `input.signal` so a deadline reads as error, a
+    // caller abort as cancelled.
+    const runSignal = withRunDeadline(input.signal);
     const agentDeps = await buildAgentDeps(
       deps,
       input.version,
       input.project.name,
       usage.record,
-      input.signal,
+      runSignal,
     );
     const [skills, subagents, mcp] = await Promise.all([
       resolveSkills(deps, input.version.skillList),
       resolveSubagents(deps, input.version.subagentList),
-      buildMcpTools(deps, input.version, input.signal),
+      buildMcpTools(deps, input.version, runSignal),
     ]);
     agentDeps.callMcpTool = mcp.callMcpTool;
     for await (const chunk of engine.runAgent(agentDeps, {
@@ -239,7 +256,7 @@ export async function* executeAgent(
       subagents,
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
-      signal: input.signal,
+      signal: runSignal,
     })) {
       recorder?.observe(chunk);
       yield chunk;
