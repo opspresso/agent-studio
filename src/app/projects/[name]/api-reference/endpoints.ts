@@ -313,8 +313,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             body: { messages: ccMessages, stream: false },
           }),
           pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages }),
-          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages }),
           pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true }),
+          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages }),
           nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true }),
         ],
       });

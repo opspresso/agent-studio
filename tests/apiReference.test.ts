@@ -80,8 +80,8 @@ describe("buildApiReference — code examples (curl + Python + Node.js)", () => 
     expect(cc?.codeExamples.map((c) => c.label)).toEqual([
       "curl",
       "Python",
-      "Node.js",
       "Python (stream)",
+      "Node.js",
       "Node.js (stream)",
     ]);
   });
