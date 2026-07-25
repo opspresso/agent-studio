@@ -7,7 +7,9 @@ import { z } from "zod";
  */
 export const MAX_ATTACHMENTS = 4;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const MAX_ATTACHMENT_CHARS = Math.ceil((MAX_ATTACHMENT_BYTES * 4) / 3);
+// Padded base64 length: 4 chars per 3-byte group, so a file at exactly the byte
+// cap must still fit. Scaling the byte count by 4/3 rounds one char short of it.
+const MAX_ATTACHMENT_CHARS = 4 * Math.ceil(MAX_ATTACHMENT_BYTES / 3);
 const SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 
 export const attachedImageSchema = z.object({

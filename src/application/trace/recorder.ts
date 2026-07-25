@@ -117,8 +117,6 @@ export class TraceRecorder {
             costUsd: chunk.usage.costUsd,
           },
         });
-        // Only this run's own calls move the window; otherwise a long transfer
-        // would be billed to the next model span's duration.
         this.modelStartedAt = now;
       }
     }
@@ -212,6 +210,10 @@ export class TraceRecorder {
     // The hop this run made; anything below it belongs to the same transfer.
     const child = path[0] ?? author;
     const key = `${child}#${chunk.traceId ?? "-"}`;
+    // While a child streams, this run is not inside a model call — so its next
+    // model span starts here, not before the transfer. Without this the child's
+    // whole duration lands on the parent's next model span.
+    this.modelStartedAt = now;
     const existing = this.subagents.get(key);
     if (existing) {
       existing.lastSeenAt = now;

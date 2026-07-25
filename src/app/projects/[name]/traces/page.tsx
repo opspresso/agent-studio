@@ -18,7 +18,9 @@ function subagentLink(span: Trace["spans"][number]): { agent: string; traceId: s
 }
 
 function spanTokens(span: Trace["spans"][number]): string {
-  const input = span.input?.inputTokens;
+  // A subagent span carries its rolled-up totals in `output` (the child's model
+  // is not this run's), a model span splits them across input/output.
+  const input = span.input?.inputTokens ?? span.output?.inputTokens;
   const output = span.output?.outputTokens;
   if (typeof input !== "number" && typeof output !== "number") {
     return "";
