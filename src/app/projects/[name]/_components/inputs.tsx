@@ -269,6 +269,14 @@ export function McpBindingInput({
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<string[]>([]);
+  /**
+   * Rows being edited, per server. The saved binding cannot hold them: a row
+   * whose header name is still blank has no place in an override map, so
+   * deriving rows from the binding would delete a freshly added row before it
+   * could be typed into. Same split as the registry header editor, which keeps
+   * its rows in the form and only projects them on submit.
+   */
+  const [rowsByName, setRowsByName] = useState<Record<string, OverrideRow[]>>({});
 
   const available = options.filter(
     (o) => !values.some((v) => v.name === o.value) && matches(o, draft),
@@ -281,7 +289,18 @@ export function McpBindingInput({
     setDraft("");
   }
 
-  function setHeaders(name: string, rows: OverrideRow[]) {
+  function remove(name: string) {
+    onChange(values.filter((v) => v.name !== name));
+    setRowsByName(({ [name]: _dropped, ...rest }) => rest);
+    setExpanded((prev) => prev.filter((n) => n !== name));
+  }
+
+  function rowsFor(binding: McpBinding): OverrideRow[] {
+    return rowsByName[binding.name] ?? overridesToRows(binding.headers);
+  }
+
+  function setRows(name: string, rows: OverrideRow[]) {
+    setRowsByName((prev) => ({ ...prev, [name]: rows }));
     onChange(
       values.map((binding) => {
         if (binding.name !== name) {
@@ -329,7 +348,7 @@ export function McpBindingInput({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onChange(values.filter((v) => v.name !== binding.name))}
+                    onClick={() => remove(binding.name)}
                     className="text-neutral-400 hover:text-red-500"
                     aria-label={`Remove ${binding.name}`}
                   >
@@ -339,8 +358,8 @@ export function McpBindingInput({
               </div>
               {isOpen && (
                 <OverrideEditor
-                  rows={overridesToRows(binding.headers)}
-                  onChange={(rows) => setHeaders(binding.name, rows)}
+                  rows={rowsFor(binding)}
+                  onChange={(rows) => setRows(binding.name, rows)}
                 />
               )}
             </div>

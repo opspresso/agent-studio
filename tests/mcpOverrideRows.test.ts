@@ -48,4 +48,22 @@ describe("MCP override row encoding", () => {
     const headers = { Authorization: "Bearer x", "X-Tenant": "acme", "X-Gone": null };
     expect(rowsToOverrides(overridesToRows(headers))).toEqual(headers);
   });
+
+  it("does NOT round-trip a row whose header name is still blank", () => {
+    // The editor must therefore own its rows rather than deriving them from the
+    // saved binding: a freshly added (blank) row has no representation in an
+    // override map, so a derive-from-props editor deletes it before it can be
+    // typed into — which is exactly how "+ Add header override" appeared to do
+    // nothing.
+    const rows = [
+      { key: "Authorization", value: "Bearer x", remove: false },
+      { key: "", value: "", remove: false },
+    ];
+
+    const projected = rowsToOverrides(rows);
+
+    expect(projected).toEqual({ Authorization: "Bearer x" });
+    expect(overridesToRows(projected)).toHaveLength(1);
+    expect(overridesToRows(projected)).not.toEqual(rows);
+  });
 });
