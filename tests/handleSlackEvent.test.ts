@@ -5,7 +5,8 @@ import {
   type SlackEventBody,
   type SlackEventDeps,
 } from "@/application/slack/handleSlackEvent";
-import type { EngineChunk } from "@/domain/llm/types";
+import type { SlackMessage } from "@/infrastructure/slack/client";
+import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 
@@ -42,8 +43,11 @@ function versionFixture(): Version {
 function makeSlackFake() {
   const posted: Array<{ channel: string; text: string; thread_ts?: string }> = [];
   const updates: Array<{ ts: string; text: string }> = [];
+  const calls: string[] = [];
+  const replies: SlackMessage[] = [];
   const slack: SlackClientPort = {
     async postMessage(_token, args) {
+      calls.push("postMessage");
       posted.push(args);
       return { ts: "100.1", channel: args.channel };
     },
@@ -53,10 +57,20 @@ function makeSlackFake() {
     },
     async uploadImage() {},
     async threadReplies() {
-      return [];
+      calls.push("threadReplies");
+      // Slack returns everything already in the thread — including whatever
+      // this handler posted itself.
+      return [
+        ...replies,
+        ...posted.map((message, index) => ({
+          ts: `100.${index + 1}`,
+          bot_id: "B0",
+          text: message.text,
+        })),
+      ];
     },
   };
-  return { slack, posted, updates };
+  return { slack, posted, updates, calls, replies };
 }
 
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
@@ -184,6 +198,128 @@ describe("handleSlackEvent", () => {
     await handleSlackEvent(deps, EVENT, BINDING);
 
     expect(posted[0]?.text).toContain("Agent project not available");
+  });
+
+  it("reads the thread before posting its own placeholder", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, calls, replies } = makeSlackFake();
+    replies.push(
+      { ts: "0.9", user: "U1", text: "<@U0> earlier question" },
+      { ts: "0.95", bot_id: "B0", text: "earlier answer" },
+    );
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, event: { ...EVENT.event, thread_ts: "0.9" } },
+      BINDING,
+    );
+
+    expect(calls).toEqual(["threadReplies", "postMessage"]);
+    expect(seen.map((m) => m.content)).toEqual([
+      "earlier question",
+      "earlier answer",
+      "hello",
+    ]);
+  });
+
+  it("keeps the newest turns of a long thread", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, replies } = makeSlackFake();
+    for (let turn = 1; turn <= 60; turn += 1) {
+      replies.push({ ts: `0.${turn}`, user: "U1", text: `turn ${turn}` });
+    }
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, event: { ...EVENT.event, thread_ts: "0.1" } },
+      BINDING,
+    );
+
+    // 50 most recent turns plus the current message — the oldest are dropped,
+    // never the newest.
+    expect(seen).toHaveLength(51);
+    expect(seen[0]?.content).toBe("turn 11");
+    expect(seen.at(-2)?.content).toBe("turn 60");
+    expect(seen.at(-1)?.content).toBe("hello");
+  });
+
+  it("answers a file_share message instead of dropping it", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    let ran = false;
+    deps.runAgent = async function* () {
+      ran = true;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          type: "message",
+          channel_type: "im",
+          subtype: "file_share",
+          channel: "C1",
+          ts: "1.0",
+          text: "look at this",
+        },
+      },
+      BINDING,
+    );
+
+    expect(ran).toBe(true);
+  });
+
+  it("still ignores bot messages and bookkeeping subtypes", async () => {
+    const { slack, posted } = makeSlackFake();
+    const deps = makeDeps([], slack);
+
+    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, bot_id: "B9" } }, BINDING);
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, event: { ...EVENT.event, subtype: "message_changed" } },
+      BINDING,
+    );
+
+    expect(posted).toEqual([]);
+  });
+
+  it("answers without history when the thread read fails", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, updates } = makeSlackFake();
+    slack.threadReplies = async () => {
+      throw new Error("replies boom");
+    };
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, event: { ...EVENT.event, thread_ts: "0.9" } },
+      BINDING,
+    );
+
+    const finalText = updates.at(-1)?.text ?? "";
+    expect(finalText).toContain("answer");
+    expect(finalText).toContain(":warning:");
   });
 
   it("passes a live deadline signal into the run", async () => {

@@ -54,6 +54,14 @@ const UPDATE_INTERVAL_MS = 1000;
  * stops producing chunks entirely (hung provider or tool) still ends and
  * reports a timeout instead of leaving the placeholder up. */
 const RUN_TIMEOUT_MS = 3 * 60 * 1000;
+/** Most recent thread turns carried as context; older turns are dropped. */
+const MAX_HISTORY_MESSAGES = 50;
+/**
+ * Message subtypes still worth handling. Subtyped messages are mostly channel
+ * bookkeeping (joins, edits, …), but a user's file upload arrives as
+ * `file_share` and dropping it would leave the mention unanswered.
+ */
+const ALLOWED_SUBTYPES = new Set(["file_share"]);
 
 /** Convert thread replies to engine messages: bot turns → assistant, human turns → user. */
 export function threadToMessages(replies: SlackMessage[], currentTs: string): ChatMessageInput[] {
@@ -83,7 +91,7 @@ export async function handleSlackEvent(
     return;
   }
   // Ignore our own (and any other bot's) messages to prevent loops.
-  if (event.bot_id || event.subtype) {
+  if (event.bot_id || (event.subtype && !ALLOWED_SUBTYPES.has(event.subtype))) {
     return;
   }
 
@@ -104,6 +112,24 @@ export async function handleSlackEvent(
   }
 
   console.log(`[slack] run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
+
+  const warnings: string[] = [];
+  // Read the thread *before* posting the placeholder — otherwise our own
+  // placeholder comes back as an assistant turn in this run's own context.
+  let history: ChatMessageInput[] = [];
+  if (event.thread_ts !== undefined) {
+    try {
+      const replies = await deps.slack.threadReplies(token, {
+        channel: event.channel,
+        ts: event.thread_ts,
+      });
+      history = threadToMessages(replies, event.ts).slice(-MAX_HISTORY_MESSAGES);
+    } catch (error) {
+      console.error("[slack] thread history failed", error);
+      warnings.push("Thread history unavailable; answered without prior context.");
+    }
+  }
+
   const placeholder = await deps.slack.postMessage(token, {
     channel: event.channel,
     thread_ts: threadTs,
@@ -112,21 +138,13 @@ export async function handleSlackEvent(
 
   let text = "";
   let lastUpdate = 0;
-  let failed: string | null = null;
   const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
   const deadline = AbortSignal.timeout(RUN_TIMEOUT_MS);
   try {
-    const history =
-      event.thread_ts !== undefined
-        ? threadToMessages(
-            await deps.slack.threadReplies(token, { channel: event.channel, ts: event.thread_ts }),
-            event.ts,
-          )
-        : [];
     const messages: ChatMessageInput[] = [...history, { role: "user", content: message }];
     for await (const chunk of deps.runAgent({ project, version, messages, signal: deadline })) {
       if (chunk.error) {
-        failed = chunk.error;
+        warnings.push(chunk.error);
         break;
       }
       // Stream tool activity so the first (tool-heavy) turn shows progress.
@@ -162,15 +180,17 @@ export async function handleSlackEvent(
       }
     }
   } catch (error) {
-    failed = deadline.aborted
-      ? "Agent run timed out"
-      : error instanceof Error
-        ? error.message
-        : "agent run failed";
+    warnings.push(
+      deadline.aborted
+        ? "Agent run timed out"
+        : error instanceof Error
+          ? error.message
+          : "agent run failed",
+    );
   }
 
   console.log(
-    `[slack] run done project=${projectName} chars=${text.length} images=${images.length} failed=${failed ?? "no"}`,
+    `[slack] run done project=${projectName} chars=${text.length} images=${images.length} warnings=${warnings.length}`,
   );
   for (const [index, image] of images.entries()) {
     try {
@@ -184,21 +204,18 @@ export async function handleSlackEvent(
       });
     } catch (error) {
       console.error("[slack] image upload failed", error);
-      failed = failed ?? `Image upload failed: ${error instanceof Error ? error.message : "unknown"}`;
+      warnings.push(`Image upload failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
   }
+  const suffix = warnings.map((warning) => `:warning: ${warning}`).join("\n");
   try {
     await deps.slack.updateMessage(token, {
       channel: placeholder.channel,
       ts: placeholder.ts,
-      // Append the warning rather than replacing a good answer: a late failure
+      // Append the warnings rather than replacing a good answer: a late failure
       // (image upload, timeout, mid-stream error) must not discard text that
       // was already streamed to the user.
-      text: failed
-        ? text
-          ? `${text}\n\n:warning: ${failed}`
-          : `:warning: ${failed}`
-        : text || "(no response)",
+      text: text ? (suffix ? `${text}\n\n${suffix}` : text) : suffix || "(no response)",
     });
   } catch (error) {
     console.error("[slack] final update failed", error);

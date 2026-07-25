@@ -1,7 +1,12 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
+import { slackClient } from "@/infrastructure/slack/client";
 import { threadToMessages } from "@/application/slack/handleSlackEvent";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function sign(secret: string, timestamp: string, body: string): string {
   return `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${body}`).digest("hex")}`;
@@ -60,6 +65,47 @@ describe("verifySlackSignature", () => {
         signature: null,
       }),
     ).toBe(false);
+  });
+});
+
+describe("slackClient.threadReplies", () => {
+  it("pages to the end of the thread so the newest replies are not dropped", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(url);
+      const second = url.includes("cursor=c2");
+      return {
+        ok: true,
+        json: async () =>
+          second
+            ? { ok: true, messages: [{ ts: "3", text: "newest" }] }
+            : {
+                ok: true,
+                messages: [
+                  { ts: "1", text: "oldest" },
+                  { ts: "2", text: "mid" },
+                ],
+                response_metadata: { next_cursor: "c2" },
+              },
+      };
+    });
+
+    const messages = await slackClient.threadReplies("tok", { channel: "C1", ts: "1" });
+
+    expect(messages.map((m) => m.text)).toEqual(["oldest", "mid", "newest"]);
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toContain("cursor=c2");
+  });
+
+  it("throws when Slack rejects the read", async () => {
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      json: async () => ({ ok: false, error: "thread_not_found" }),
+    }));
+
+    await expect(slackClient.threadReplies("tok", { channel: "C1", ts: "1" })).rejects.toThrow(
+      "thread_not_found",
+    );
   });
 });
 
