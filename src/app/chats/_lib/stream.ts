@@ -1,4 +1,5 @@
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { isTopLevelChunk } from "@/domain/llm/types";
 import type { LiveTurn, StreamChunk } from "./types";
 
 /** Render a tool result payload to a readable string for a collapsible block. */
@@ -30,7 +31,7 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   if (chunk.author) {
     author = chunk.author;
   }
-  if (typeof chunk.delta?.content === "string" && !chunk.author) {
+  if (typeof chunk.delta?.content === "string" && isTopLevelChunk(chunk)) {
     text += chunk.delta.content;
   }
   if (Array.isArray(chunk.delta?.toolCalls)) {

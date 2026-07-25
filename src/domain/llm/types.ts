@@ -63,8 +63,11 @@ export interface EngineChunk {
  * True for chunks belonging to the top-level run's visible answer stream.
  * The single owned predicate — every stream consumer must use this instead of
  * re-deriving author semantics.
+ *
+ * Takes the `author` field alone so client-side wire shapes (the browser's own
+ * chunk interface) can use the same predicate rather than re-deriving it.
  */
-export function isTopLevelChunk(chunk: EngineChunk): boolean {
+export function isTopLevelChunk(chunk: { author?: string }): boolean {
   return chunk.author === undefined;
 }
 

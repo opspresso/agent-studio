@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectRun } from "@/app/api/projects/_lib/openai";
+import { collectRun, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
 import type { EngineChunk } from "@/domain/llm/types";
 
 async function* stream(chunks: EngineChunk[]): AsyncGenerator<EngineChunk> {
@@ -7,6 +7,11 @@ async function* stream(chunks: EngineChunk[]): AsyncGenerator<EngineChunk> {
     yield chunk;
   }
 }
+
+const finishReasons = (frames: Record<string, unknown>[]): unknown[] =>
+  frames
+    .map((frame) => (frame.choices as Array<{ finish_reason: unknown }>)[0]?.finish_reason)
+    .filter((reason) => reason !== null);
 
 describe("collectRun", () => {
   it("collects only top-level content but bills subagent usage too", async () => {
@@ -25,5 +30,36 @@ describe("collectRun", () => {
     expect(result.usage.inputTokens).toBe(15);
     expect(result.usage.outputTokens).toBe(6);
     expect(result.usage.costUsd).toBeCloseTo(0.03, 10);
+  });
+});
+
+describe("toChatCompletionChunks finish_reason", () => {
+  async function collectFrames(chunks: EngineChunk[]): Promise<Record<string, unknown>[]> {
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(stream(chunks), "m")) {
+      frames.push(frame);
+    }
+    return frames;
+  }
+
+  it("reports stop when the model finished on its own", async () => {
+    const frames = await collectFrames([{ delta: { content: "hi" } }, { done: true }]);
+    expect(finishReasons(frames)).toEqual(["stop"]);
+  });
+
+  it("reports length when the agent loop ended at its turn guard (no done chunk)", async () => {
+    // engine.runAgent returns without `done` when the turn budget runs out; an
+    // OpenAI client would otherwise see the stream just cut off.
+    const frames = await collectFrames([{ delta: { content: "partial" } }]);
+    expect(finishReasons(frames)).toEqual(["length"]);
+  });
+
+  it("emits exactly one terminal frame", async () => {
+    const frames = await collectFrames([
+      { delta: { content: "a" } },
+      { author: "child", delta: { content: "nested" } },
+      { done: true },
+    ]);
+    expect(finishReasons(frames)).toHaveLength(1);
   });
 });

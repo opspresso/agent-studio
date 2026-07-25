@@ -27,6 +27,12 @@ export function toChatCompletion(result: RunResult): Record<string, unknown> {
  * Reshape engine chunks into OpenAI `chat.completion.chunk` objects for SSE.
  * Only top-level content reaches the OpenAI client; nested subagent chunks are
  * internal to the agent loop and hidden here.
+ *
+ * Every stream ends with exactly one finish_reason chunk. `done` means the
+ * model stopped on its own → `stop`. An agent loop that exhausts its turn
+ * budget ends without `done` (see the turn guard in engine.runAgent) → `length`,
+ * the OpenAI signal for "stopped at a limit". Without this an OpenAI client
+ * would see the stream simply cut off.
  */
 export async function* toChatCompletionChunks(
   source: AsyncGenerator<EngineChunk>,
@@ -34,6 +40,7 @@ export async function* toChatCompletionChunks(
 ): AsyncGenerator<Record<string, unknown>> {
   const base = { id: newChatId(), object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model };
   let sentRole = false;
+  let finished = false;
   for await (const chunk of source) {
     if (chunk.error) {
       throw new Error(chunk.error);
@@ -48,8 +55,12 @@ export async function* toChatCompletionChunks(
       yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
     }
     if (chunk.done) {
+      finished = true;
       yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] };
     }
+  }
+  if (!finished) {
+    yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "length" }] };
   }
 }
 

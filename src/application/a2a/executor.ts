@@ -7,6 +7,7 @@
 import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
+import { isTopLevelChunk } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
@@ -203,7 +204,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
   private chunkParts(chunk: EngineChunk): Part[] {
     // Only top-level assistant text goes into the artifact; subagent chunks
     // are re-authored and would duplicate the parent's final answer.
-    if (chunk.author && chunk.author !== this.project.name) {
+    if (!isTopLevelChunk(chunk)) {
       return [];
     }
     if (chunk.image) {

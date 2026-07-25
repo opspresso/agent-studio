@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { isTopLevelChunk } from "@/domain/llm/types";
 import { inputClass } from "./inputs";
 
 interface ToolResultView {
@@ -112,7 +113,7 @@ export function RunPanel({
           setAuthor(chunk.author);
         }
         const content = chunk.delta?.content;
-        if (content && !chunk.author) {
+        if (content && isTopLevelChunk(chunk)) {
           setText((prev) => prev + content);
         }
         if (chunk.delta?.toolCalls) {

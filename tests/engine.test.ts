@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
-import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import {
+  contentChunk,
+  FakeChannel,
+  mergedDeltaChunk,
+  toolCallChunk,
+  usageChunk,
+} from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -85,6 +91,69 @@ describe("runAgent tool loop", () => {
       name: "Skill: image-generation",
       content: "# skill content",
     });
+  });
+
+  it("runs a tool call that arrives in the same delta as assistant content", async () => {
+    // Gateways (vLLM/LiteLLM) and reasoning shims put content and tool_calls in
+    // ONE delta. Treating the delta fields as mutually exclusive silently drops
+    // the call and the loop ends as if the model never asked for a tool.
+    const channel = new FakeChannel([
+      [
+        mergedDeltaChunk(
+          { content: "Let me check. " },
+          { index: 0, id: "call_1", name: "getWeather", args: '{"city":"Seoul"}' },
+        ),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("It is sunny."), usageChunk(8, 4)],
+    ]);
+    const callMcpTool = vi.fn(async () => "sunny");
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "weather?" }],
+        mcpTools: [{ type: "function", function: { name: "getWeather", parameters: {} } }],
+      }),
+    );
+
+    expect(callMcpTool).toHaveBeenCalledWith("getWeather", { city: "Seoul" });
+    // The text that shared the delta still streams, and the loop continues.
+    const text = chunks
+      .filter((c) => c.delta?.content)
+      .map((c) => c.delta?.content)
+      .join("");
+    expect(text).toBe("Let me check. It is sunny.");
+    expect(chunks.some((c) => c.done)).toBe(true);
+  });
+
+  it("runs a tool call that shares a delta with reasoning content", async () => {
+    const channel = new FakeChannel([
+      [
+        mergedDeltaChunk(
+          { reasoningContent: "thinking…" },
+          { index: 0, id: "call_r", name: "search", args: "{}" },
+        ),
+        usageChunk(3, 1),
+      ],
+      [contentChunk("found"), usageChunk(2, 1)],
+    ]);
+    const callMcpTool = vi.fn(async () => "results");
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "search" }],
+        mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
+      }),
+    );
+
+    expect(callMcpTool).toHaveBeenCalledTimes(1);
+    expect(chunks.some((c) => c.delta?.reasoningContent === "thinking…")).toBe(true);
   });
 
   it("stops at the turn guard instead of looping forever", async () => {

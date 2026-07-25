@@ -441,12 +441,15 @@ export async function* runPromptStream(
       if (!delta) {
         continue;
       }
+      // Independent checks, not a chain: a provider may carry content and
+      // reasoning_content in the SAME delta, and an `else if` would drop one.
       if (delta.content) {
         const content = contentRestorer?.push(delta.content) ?? delta.content;
         if (content) {
           yield { delta: { content } };
         }
-      } else if (delta.reasoning_content) {
+      }
+      if (delta.reasoning_content) {
         const reasoningContent =
           reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
         if (reasoningContent) {
@@ -808,20 +811,28 @@ export async function* runAgent(
         if (!delta) {
           continue;
         }
+        // Independent checks, not a chain. The three delta fields are
+        // concurrent accumulation buffers on the wire, not mutually exclusive
+        // events: OpenAI-compatible gateways (vLLM, LiteLLM) and reasoning
+        // shims routinely emit content or reasoning_content alongside
+        // tool_calls in one delta, and an `else if` would silently drop the
+        // tool call — the loop would then finish as if the model never asked.
         if (delta.content) {
           assistantText += delta.content;
           const content = contentRestorer?.push(delta.content) ?? delta.content;
           if (content) {
             yield { author, delta: { content } };
           }
-        } else if (delta.reasoning_content) {
+        }
+        if (delta.reasoning_content) {
           reasoningText += delta.reasoning_content;
           const reasoningContent =
             reasoningRestorer?.push(delta.reasoning_content) ?? delta.reasoning_content;
           if (reasoningContent) {
             yield { author, delta: { reasoningContent } };
           }
-        } else if (delta.tool_calls) {
+        }
+        if (delta.tool_calls) {
           for (const toolCall of delta.tool_calls) {
             accumulator.add(toolCall);
           }

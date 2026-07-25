@@ -71,6 +71,35 @@ export function toolCallArgsChunk(index: number, args: string): ChannelChunk {
   };
 }
 
+/**
+ * One delta carrying text (or reasoning) AND a tool call together — the shape
+ * OpenAI-compatible gateways and reasoning shims emit. The engine must treat
+ * the delta fields as concurrent buffers, never as mutually exclusive events.
+ */
+export function mergedDeltaChunk(
+  text: { content?: string; reasoningContent?: string },
+  toolCall: { index: number; id: string; name: string; args: string },
+): ChannelChunk {
+  return {
+    choices: [
+      {
+        delta: {
+          content: text.content ?? null,
+          reasoning_content: text.reasoningContent ?? null,
+          tool_calls: [
+            {
+              index: toolCall.index,
+              id: toolCall.id,
+              type: "function",
+              function: { name: toolCall.name, arguments: toolCall.args },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 export function usageChunk(promptTokens: number, completionTokens: number): ChannelChunk {
   return {
     choices: [],
