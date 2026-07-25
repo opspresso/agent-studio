@@ -17,6 +17,25 @@ import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 
+/**
+ * Whether the run's model can take the images the panel would attach — vision for
+ * a text run, the edit endpoint for an image project. `undefined` when the model
+ * is not in the fetched catalog, so an unlisted-but-valid model is not blocked.
+ */
+function runImageCapability(
+  models: ModelConfig[],
+  modelId: string,
+  projectType: Project["projectType"],
+): boolean | undefined {
+  const model = models.find((m) => m.id === modelId);
+  if (!model) {
+    return undefined;
+  }
+  return projectType === "image"
+    ? Boolean(model.capabilities.imageGeneration)
+    : model.capabilities.imageInput;
+}
+
 function toInput(version: Version): VersionInput {
   return {
     systemPrompt: version.systemPrompt,
@@ -214,6 +233,7 @@ export default function PlaygroundPage() {
           projectType={project.projectType}
           systemPrompt={draft.systemPrompt}
           userPromptTemplate={draft.userPromptTemplate}
+          modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
         />
       </CollapsibleSection>
     </div>

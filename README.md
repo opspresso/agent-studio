@@ -119,6 +119,9 @@ the same way, and the console's chat composer takes up to 4 images (5MB each,
 have the `imageInput` capability, otherwise the request is rejected rather than quietly
 losing the picture.
 
+Every project type's **RUN** panel takes attachments: an `agent`/`llm` run sends them for the
+model to look at, an `image` run edits them.
+
 **Generation and editing.** `image` projects generate images directly — attach source images
 to the run (console **RUN** panel, or `images` on `predict`) and the prompt edits them
 instead. Agent runs can draw with the builtin `GenerateImage` tool and change an existing
