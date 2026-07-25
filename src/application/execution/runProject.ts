@@ -956,6 +956,62 @@ async function* runImageSubagent(
   }
 }
 
+/**
+ * A prompt project answering a transfer. Its version's user prompt template is
+ * the whole of its behaviour, so it runs through the single-shot path the
+ * project's own endpoint uses; the transfer message arrives as the user turn
+ * after the rendered template. The template renders with no variables — a
+ * transfer carries a written message, not a variable map — so a template that
+ * expects them collapses those placeholders to empty, exactly as a run with
+ * missing variables does.
+ */
+async function* runPromptSubagent(
+  deps: ExecutionDeps,
+  project: Project,
+  version: Version,
+  message: string,
+  recordUsageFn: engine.RecordUsageFn,
+  ancestry: readonly string[],
+  signal?: AbortSignal,
+  images?: ImageBytes[],
+): AsyncGenerator<EngineChunk, string> {
+  const recorder = deps.traces
+    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
+    : undefined;
+  let text = "";
+  let thrown: unknown;
+  let completed = false;
+  try {
+    for await (const chunk of engine.runPromptStream(
+      { channel: deps.channel, recordUsage: recordUsageFn },
+      {
+        projectName: project.name,
+        model: version.model,
+        fallbackModel: version.fallbackModel,
+        systemPrompt: version.systemPrompt,
+        userPromptTemplate: version.userPromptTemplate,
+        extraMessages: [{ role: "user", content: subagentContent(message, images) }],
+        parameters: toEngineParameters(version),
+        signal,
+      },
+    )) {
+      recorder?.observe(chunk);
+      if (chunk.delta?.content) {
+        text += chunk.delta.content;
+      }
+      // Author is stamped by `authored`; this level only claims its trace id.
+      yield { ...chunk, ...(recorder ? { traceId: recorder.traceId } : {}) };
+    }
+    completed = true;
+  } catch (error) {
+    thrown = error;
+    throw error;
+  } finally {
+    await finishTrace(recorder, thrown, !completed && thrown === undefined);
+  }
+  return text;
+}
+
 async function* runLocalSubagent(
   deps: ExecutionDeps,
   agentName: string,
@@ -985,6 +1041,21 @@ async function* runLocalSubagent(
     return yield* runImageSubagent(
       deps,
       agentName,
+      project,
+      version,
+      message,
+      recordUsageFn,
+      ancestry,
+      signal,
+      images,
+    );
+  }
+  // A prompt project's behaviour lives in its user prompt template, and the
+  // tool loop has nowhere to put one — running it there answers from a bare
+  // system prompt instead of from the project as configured.
+  if (project.projectType !== "agent") {
+    return yield* runPromptSubagent(
+      deps,
       project,
       version,
       message,

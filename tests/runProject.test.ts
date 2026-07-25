@@ -981,6 +981,57 @@ describe("executeAgent local subagent projectType dispatch", () => {
       recorded.some((d) => d.projectName === "painter-img" && d.model === "google/gemini-3-pro-image"),
     ).toBe(true);
   });
+
+  it("answers a prompt-project child through its user prompt template", async () => {
+    // A prompt project's behaviour IS its template. Sending the transfer down
+    // the tool loop drops it and the child answers from a bare system prompt.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"summarizer","message":"three otters"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Summarized."), usageChunk(1, 1)],
+      [contentChunk("Passed on."), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) =>
+      name === "summarizer"
+        ? { ...projectFixture(), name: "summarizer", projectType: "llm" }
+        : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string, versionName: string) =>
+      projectName === "summarizer" && versionName === "published"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "summarizer",
+            systemPrompt: "You summarize.",
+            userPromptTemplate: "Answer in exactly one sentence.",
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "summarizer", type: "local" }],
+        },
+        messages: [{ role: "user", content: "summarize this" }],
+      }),
+    );
+
+    const childRequest = channel.seenParams[1];
+    expect(childRequest?.messages.map((m) => m.content)).toEqual([
+      "You summarize.",
+      "Answer in exactly one sentence.",
+      "three otters",
+    ]);
+    // No tool loop: the child was never offered tools.
+    expect(childRequest?.tools).toBeUndefined();
+    expect(chunks.some((c) => c.error)).toBe(false);
+    expect(chunks.find((c) => c.author === "summarizer" && c.delta?.content)?.delta?.content).toBe(
+      "Summarized.",
+    );
+  });
 });
 
 describe("executeAgent subagent turn budget", () => {

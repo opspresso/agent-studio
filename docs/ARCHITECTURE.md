@@ -141,7 +141,10 @@ OpenAI response).
 
 `executeProjectStream` is the canonical projectType → strategy dispatch (`agent` runs the
 multi-turn tool loop, anything else streams a single-shot completion). New entry points
-should call it instead of re-encoding that decision.
+should call it instead of re-encoding that decision. A subagent transfer dispatches on the
+same axis inside `runLocalSubagent`: an `image` child generates, a prompt child runs its
+user prompt template with the transfer message as the user turn, and only an `agent` child
+enters the tool loop.
 
 ```mermaid
 sequenceDiagram
