@@ -42,6 +42,8 @@ export class McpSession {
   private sessionId: string | undefined;
   private nextId = 1;
   private initialized = false;
+  /** The handshake while it is in flight; see {@link ensureInitialized}. */
+  private handshake: Promise<void> | undefined;
 
   constructor(
     private readonly url: string,
@@ -67,10 +69,28 @@ export class McpSession {
     return headers;
   }
 
+  /**
+   * Handshake once, even when several callers arrive together. The MCP calls of
+   * one model response are dispatched concurrently, and a session served from
+   * the discovery cache is still uninitialized when the first of them lands —
+   * so without this the server would hand out one session per racing caller and
+   * every id but the last would be lost, never released. A failed handshake
+   * clears the memo so the next call may retry.
+   */
   private async ensureInitialized(): Promise<void> {
     if (this.initialized) {
       return;
     }
+    this.handshake ??= this.initialize();
+    try {
+      await this.handshake;
+    } catch (error) {
+      this.handshake = undefined;
+      throw error;
+    }
+  }
+
+  private async initialize(): Promise<void> {
     const response = await fetchPublicUrl(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
@@ -157,6 +177,7 @@ export class McpSession {
     } finally {
       this.sessionId = undefined;
       this.initialized = false;
+      this.handshake = undefined;
     }
   }
 }

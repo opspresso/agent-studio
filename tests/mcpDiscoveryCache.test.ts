@@ -115,6 +115,26 @@ describe("ToolManager discovery over the cache", () => {
     ]);
   });
 
+  it("handshakes once when a warm session serves two calls at the same time", async () => {
+    stubMcpServer();
+    await new ToolManager([server()]).init();
+    vi.unstubAllGlobals();
+
+    const methods = stubMcpServer();
+    const manager = new ToolManager([server()]);
+    await manager.init();
+    expect(methods).toEqual([]); // cache hit: the session is still uninitialized
+
+    // The engine dispatches one response's MCP calls concurrently, so a warm
+    // session's first two calls race into the handshake together. Two
+    // `initialize`s mean two server-side sessions and only one id to release —
+    // the leak the cache was not supposed to reintroduce.
+    await Promise.all([manager.callTool("search", {}), manager.callTool("search", {})]);
+
+    expect(methods.filter((method) => method === "initialize")).toHaveLength(1);
+    expect(methods.filter((method) => method === "tools/call")).toHaveLength(2);
+  });
+
   it("does not cache a failed discovery", async () => {
     const failing = stubMcpServer({ listFails: true });
     await new ToolManager([server()]).init();

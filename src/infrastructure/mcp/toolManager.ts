@@ -11,7 +11,9 @@
  *     is reported through {@link ToolManager.warnings} so the run can surface it,
  *   - discovery is served from {@link ../discoveryCache the discovery cache} when
  *     it is warm, which also leaves the session to handshake lazily on its first
- *     tool call — a turn that calls nothing then makes no MCP request at all.
+ *     tool call — a turn that calls nothing then makes no MCP request at all,
+ *     and a turn that calls several at once still handshakes exactly once
+ *     ({@link ./session McpSession} serializes it).
  */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
