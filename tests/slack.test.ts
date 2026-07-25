@@ -109,6 +109,38 @@ describe("slackClient.threadReplies", () => {
   });
 });
 
+describe("slackClient.downloadFile", () => {
+  it("sends the bot token only to Slack file hosts", async () => {
+    const seen: Array<{ url: string; auth: string | undefined }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: { headers?: Record<string, string> }) => {
+      seen.push({ url, auth: init?.headers?.Authorization });
+      return { ok: true, arrayBuffer: async () => new TextEncoder().encode("bytes").buffer };
+    });
+
+    const data = await slackClient.downloadFile("tok", "https://files.slack.com/f/F1/shot.png");
+
+    expect(data.toString()).toBe("bytes");
+    expect(seen[0]?.auth).toBe("Bearer tok");
+  });
+
+  it("refuses a foreign host without fetching it", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      seen.push(url);
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+    });
+
+    await expect(slackClient.downloadFile("tok", "https://evil.example.com/x")).rejects.toThrow(
+      "unexpected host",
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it("refuses a non-URL", async () => {
+    await expect(slackClient.downloadFile("tok", "not a url")).rejects.toThrow("not a URL");
+  });
+});
+
 describe("threadToMessages", () => {
   it("maps bot turns to assistant, humans to user, and drops the current event", () => {
     const messages = threadToMessages(

@@ -9,6 +9,11 @@ export interface SlackMessage {
 
 /** Per-page size for paginated reads; Slack's recommended maximum. */
 const PAGE_SIZE = 200;
+/**
+ * Hosts a file download may target. The URL comes from an event payload, so it
+ * is untrusted input: only Slack's own file hosts are fetched with the bot token.
+ */
+const FILE_HOSTS = new Set(["files.slack.com", "slack.com", "www.slack.com"]);
 /** Page cap so a pathological thread cannot loop unbounded. */
 const MAX_THREAD_PAGES = 10;
 
@@ -66,6 +71,27 @@ export const slackClient = {
       channel_id: args.channel,
       ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
     });
+  },
+  /**
+   * Download a file shared with the bot. Slack's `url_private*` links require the
+   * bot token, so the host is verified before the token is attached — never send
+   * credentials to a host named by an inbound payload.
+   */
+  async downloadFile(token: string, url: string): Promise<Buffer> {
+    let host: string;
+    try {
+      host = new URL(url).host;
+    } catch {
+      throw new Error(`Slack file url is not a URL: ${url}`);
+    }
+    if (!FILE_HOSTS.has(host)) {
+      throw new Error(`Slack file url has an unexpected host: ${host}`);
+    }
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      throw new Error(`Slack file download failed: ${res.status}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
   },
   authTest(token: string): Promise<{ team?: string; user?: string; bot_id?: string }> {
     return slackApi(token, "auth.test", {});
