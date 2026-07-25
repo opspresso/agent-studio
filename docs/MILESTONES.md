@@ -19,6 +19,183 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 
 ---
 
+## M1 — 레이어 경계 강제와 데이터 보호 포트
+
+**이유**: `app → application → domain ← infrastructure` 의존 규칙이 문서에만 있고
+기계적 강제 수단이 없다(ESLint 없음, 아키텍처 테스트 없음). domain 순수성은 지켜지고
+있으나 application이 infrastructure를 직접 import 하는 곳이 28건 / 14개 파일이다.
+특히 `secretEncryption`(7곳)·`timingSafe`(1곳)와 `ssrfGuard`(4곳)는 암호화·아웃바운드
+정책이라는 정책 관여 협력자인데 포트 없이 하드와이어링돼 있어, 이들을 쓰는 모든
+application 테스트가 `AES_ENCRYPTION_KEY` 환경변수와 `vi.mock`에 묶여 있다.
+라우트도 같은 규칙을 벗어난다 — app이 infrastructure를 직접 import 하는 곳이 14건이고,
+그중 조립 지점(`api/chats/_deps.ts`, `api/slack/events/_lib/`) 7건을 뺀 7건이 위반이다.
+
+**선행**: 없음. 다른 모든 마일스톤의 선행이다.
+
+**범위**
+
+- `tests/architecture.test.ts` 추가. 새 의존성 없이 `node:fs` + 정규식으로 구현한다.
+  - domain → application/infrastructure/lib/app 금지 (허용 목록 비어 있음)
+  - domain → next/react/@aws-sdk/better-auth 금지 (허용 목록 비어 있음)
+  - application → infrastructure/app 금지 (현행 위반을 허용 목록으로 동결)
+  - infrastructure → application/app 금지 (허용 목록 비어 있음)
+  - app → infrastructure 금지 (현행 위반 7건을 허용 목록으로 동결). 조립 지점
+    `api/chats/_deps.ts`와 `api/slack/events/_lib/`는 허용 목록이 아니라 **규칙의
+    예외**로 둔다 — 영구 예외와 임시 동결을 한 목록에 섞으면 목록이 비었는지로
+    완료를 판정할 수 없다.
+  - 허용 목록은 `"파일 -> import"` 정렬 배열이며 `toEqual`로 정확 비교한다.
+    개수 비교나 부분 매칭은 한 건이 사라지고 다른 건이 생기는 교체를 놓친다.
+  - `import type`도 위반으로 집계하되 항목에 `(type)`을 붙여 구분한다.
+- `SecretCipher` 포트를 domain에 정의하고 application 8곳(`secretEncryption` 7,
+  `timingSafe` 1)을 주입으로 전환한다. 필요한 메서드는 실제 사용 표면을 조사해
+  결정하고, 추측으로 넓히지 않는다.
+  - `timingSafe`를 별도 포트로 만들지 않는 이유: `apiTokenUseCases.ts:126`의
+    `timingSafeEqualString(decryptSecret(stored.token), candidate)`는 두 호출이 한
+    연산("복호화 후 상수시간 비교")이다. 포트가 이 연산을 통째로 흡수하면 평문 토큰이
+    application 레이어에 잠시도 존재하지 않는다 — 두 포트로 쪼개면 그 이점이 사라진다.
+  - `infrastructure/slack/verify.ts:30`의 `timingSafeEqualString`은 infrastructure
+    내부 사용이라 위반이 아니다. 건드리지 않는다.
+  - `app/api/a2a/[name]/route.ts:37`의 사용은 app 허용 목록 소관이므로 M3에서 처리한다.
+- `UrlPolicy` 포트를 domain에 정의하고 application 4곳을 주입으로 전환한다.
+  차단 시 `ValidationError`를 throw 하는 계약으로 정리해 `SsrfError`가 application에
+  노출되지 않게 한다.
+- 구체 구현 배선은 `lib/container.ts`에서만 한다. 기본 인자(default parameter)로
+  구체 구현을 넣지 않는다 — 결합이 남는다.
+
+**완료 조건**: `pnpm test`가 통과하고, `src/domain`에 임의의 상위 레이어 import를
+넣으면 테스트가 실패한다. `grep -rn "infrastructure/crypto\|ssrfGuard" src/application/`이
+무결과다. application 허용 목록이 28건에서 16건으로 줄고, 목록에서 제거한 12건이
+다시 들어오면 테스트가 실패한다. app 허용 목록은 7건으로 동결된 채이며(M3에서 비운다)
+조립 지점 2곳은 목록에 없다. 마스킹 3단계 길이 티어, `enc:v1:` 접두사,
+"마스킹된 값은 저장된 시크릿을 보존", "대응 저장값 없는 마스킹 값은 드롭",
+"등록 시점과 dispatch 시점 양쪽 SSRF 검증", "차단된 MCP 서버는 skip하되 run은 계속"
+동작이 그대로이며, `tests/registrySecrets.test.ts`·`tests/encryption.test.ts`·
+`tests/projectUseCases.test.ts`·`tests/apiToken.test.ts`·`tests/projectSlack.test.ts`가
+수정 없이 통과한다. `vi.mock("@/infrastructure/net/ssrfGuard")` 5건은 fake 주입으로
+대체돼 사라진다.
+
+---
+
+## M2 — 컴포지션 루트 단일화
+
+**이유**: 조립 지점이 네 갈래다 — `lib/container.ts`,
+`application/{agent,mcp,skill,settings}/index.ts`, `app/api/chats/_deps.ts`,
+`app/api/slack/events/_lib/handleEventRequest.ts`. 그중 넷은 application 레이어 안에서
+DynamoDB repository 싱글톤을 생성하므로 `@/application/mcp`를 import 하면 AWS SDK가
+전이 로딩되고, `application/skill/index.ts`가 재수출한 `skillRepository`는
+`api/skills/sync/route.ts`까지 도달한다. 또한 `src/lib/`에는 infrastructure보다 위인
+모듈(`container.ts`)과 아래인 모듈(`date.ts`, `slug.ts`)이 섞여 있어 lib→infra 3건,
+infra→lib 12건의 양방향 의존이 성립한다. M5·M6이 새 실행 진입점을 추가할 때 따를
+관례가 하나여야 한다.
+
+**선행**: M1
+
+**범위**
+
+- `application/{agent,mcp,skill,settings}/index.ts`를 팩토리·타입 재수출만 남긴다.
+  싱글톤 4개는 `lib/container.ts`로 옮기고 `skillRepository` 재수출을 제거한다.
+- 라우트 11곳의 import를 `@/application/{slice}` → `@/lib/container`로 교체한다.
+  `api/skills/sync/route.ts`는 repository를 직접 다루지 않고 container가 조립한 함수를 쓴다.
+- `src/shared/` 신설 — 아무것도 import 하지 않는 leaf. `date`, `slug`, `withTimeout`,
+  `runDeadline`, `lifecycle`, `generatedSecret`, `public-url` 이동.
+- `lib/auth-adapter.ts`(347줄, DynamoDB 어댑터)를 `infrastructure/db/authAdapter.ts`로,
+  `lib/sse.ts`·`lib/httpBody.ts`를 `app/api/_lib/`로 옮긴다.
+- `lib/runtime-settings.ts`를 repository·cipher 주입 형태로 전환한다. 이 모듈을 그대로
+  application으로 옮기면 이를 쓰는 infrastructure 4곳(`channel`, `imageChannel`,
+  `probes`, `skillsRepoClient`)이 역방향 위반이 되므로, 해당 4곳이 container에서 설정을
+  주입받는 형태로 함께 바꾼다. 프로세스 로컬 TTL 캐시(`DEFAULT_TTL_MS = 5_000`,
+  `SETTINGS_CACHE_TTL_MS`로 재정의)와 `invalidateSettingsCache()` 동작은 유지한다.
+- `settingsUseCases`의 `process.env` 직접 참조 5곳을 주입으로 전환한다.
+- 중복 정리: `parseList` 3벌(`runtime-settings`, `settingsUseCases`, `config` 인라인 2곳)을
+  `src/shared/`의 1벌로, 401 응답 생성 2벌(`lib/session.ts`, `_lib/executionAuth.ts`)을
+  `app/api/_lib/http.ts`로 통합한다. 상수시간 비교도 2벌이다 —
+  `infrastructure/crypto/timingSafe.ts`와 `lib/generatedSecret.ts:47`의 인라인 구현이
+  같은 로직이고, `apiTokenUseCases`는 두 경로를 모두 쓴다(암호화 토큰은 전자,
+  레거시 해시는 후자). `generatedSecret`이 `src/shared/`로 옮겨오는 이 시점에 1벌로
+  합친다. M1이 만든 `SecretCipher` 구현도 그 1벌을 쓴다.
+- `lib/`에는 `config.ts`와 `container/`만 남는다.
+- 아키텍처 테스트에 규칙 2개 추가: `src/shared`는 어떤 `@/` import도 금지,
+  infrastructure → `@/lib/container` 금지.
+
+**완료 조건**: `grep -rn "@/infrastructure" src/application/*/index.ts`와
+`grep -rn "from \"@/" src/shared/`가 모두 무결과다. application 허용 목록이 16건에서
+10건으로 줄고(slice `index.ts` 6건), 새 규칙 2개의 허용 목록은 비어 있다.
+`pnpm build`가 통과해 라우트 핸들러
+시그니처가 검증되며, 라우트의 응답 형태와 상태 코드가 그대로다(`api/skills/sync`의
+502/503/500 분기 포함). `tests/runtimeSettings.test.ts`·`tests/settingsUseCases.test.ts`·
+`tests/authAdapter.test.ts`·`tests/session.test.ts`가 수정 없이 통과한다.
+
+---
+
+## M3 — 아웃바운드 디스패치 포트화와 실행 파사드 정리
+
+**이유**: 실행 함수가 `executeVersion`·`executeVersionStream`·`executeAgent`·
+`executeProjectStream`·`generateImage` 다섯 개이고 호출처가 일곱 곳이라, 실행 경로에
+정책을 하나 추가하려면 일곱 곳을 고쳐야 한다. M4(비용 가드)가 정확히 그 작업이다.
+동시에 `runProject.ts`는 1340줄에 책임이 여덟 가지이며, 그중 `runRemoteSubagent`는
+raw `fetch`로 A2A와 OpenAI 형태 HTTP를 직접 호출하는 순수 프로토콜 코드다. 이것이
+application에 남은 infrastructure 의존의 대부분을 만든다.
+라우트 쪽에도 같은 성격의 잔여물이 있다 — A2A 노출 판정이 라우트 4곳에 복제돼 있고,
+`McpTool` 타입은 정의가 3벌로 갈려 이미 서로 어긋났다.
+
+**선행**: M2
+
+**범위**
+
+- `RemoteAgentDispatcher` 포트를 domain에 정의하고 구현을 `infrastructure/agent/`로
+  옮긴다. `a2a/client`, `agentClient`, `publicFetch` 의존이 여기로 흡수된다.
+- `McpToolProvider` 포트를 정의해 `mcpClient`·`toolManager` 의존을 흡수한다.
+- 타입 전용 위반 2건(`syncSkills`의 `SkillsRepoSnapshot`,
+  `handleSlackEvent`의 `SlackMessage`)의 타입 정의를 domain으로 올린다.
+- `McpTool` 정의 3벌을 domain 1벌로 통합한다. 이미 drift 했다 —
+  `infrastructure/mcp/session.ts`는 `description?` + `inputSchema?`,
+  `infrastructure/mcp/mcpClient.ts`는 `description` 필수에 `inputSchema` 없음,
+  `app/tools/api.ts`는 클라이언트가 손으로 재정의한 3벌째다. 넓은 쪽(`session.ts`)을
+  `domain/mcp/types.ts`로 올리고 나머지를 import로 교체한다. 좁히면 `session.ts`의
+  `inputSchema` 사용처가 깨진다. `ListToolsResult`·`SendMessageResult`도 같은 기준으로
+  판단해 domain 개념이면 올리고 어댑터 전용 표현이면 infrastructure에 남긴다.
+- A2A 노출 판정을 use case로 추출한다. "published version 확인 → agent card 생성"이
+  라우트 4곳(`api/a2a/route.ts`, `api/a2a/[name]/route.ts`,
+  `api/a2a/[name]/.well-known/agent-card.json/route.ts`,
+  `api/projects/[name]/a2a/route.ts`)에 복제돼 있고, 이들이 `resolveRunnableVersion`을
+  우회해 `versionRepository.get(project.name, project.publishedVersion)`을 직접 호출한다.
+  published-only 정책의 소유자는 `resolveRunnableVersion`이므로 use case가 그것을 쓴다.
+  인증 없는 Agent Card 서빙(A2A 규약)은 그대로 둔다.
+  `api/projects/[name]/slack/test/route.ts`의 `slackClient` 직접 호출도 함께 정리한다.
+- `runProject.ts` 분해 — 외부 공개 표면(`executeVersion`/`executeVersionStream`/
+  `executeAgent`/`executeProjectStream`/`ExecutionDeps`)은 불변:
+  - `execution/deps.ts` — 타입
+  - `execution/runProject.ts` — 진입점만
+  - `execution/traceLifecycle.ts` — recorder 생성·샘플링·종료
+  - `execution/imageTool.ts` — 이미지 툴과 이미지 서브에이전트
+  - `execution/subagentRunner.ts` — 로컬/원격 라우팅과 가드
+  - `execution/mcpTools.ts` — MCP 도구 해석과 세션 정리
+- `buildImageGenerator`와 `runImageSubagent`에 중복된 usage 기록 블록
+  (`textInputTokens + imageInputTokens` / `imageOutputTokens` / `calculateImageCost`)을
+  한 함수로 통합한다.
+- 실행 진입점을 수렴한다. 라우트·chat·Slack·A2A가 각자 다른 실행 함수를 고르지 않고
+  단일 파사드에 프로젝트·버전·메시지를 넘기면 `projectType`과 stream 여부에 따라
+  파사드가 분기하도록 한다. 이미지 생성 경로도 이 파사드 안으로 들어온다.
+- `ConditionalCheckFailedException` → `AppError` 매핑 중복(registry 3, projectUseCases 2,
+  versionUseCases 1, projectSlack 1)을 공용 헬퍼 하나로 통합하되, 각 호출부의 에러 메시지
+  문자열과 HTTP 상태는 그대로 둔다.
+
+**완료 조건**: application·app 허용 목록이 모두 비고, `tests/architecture.test.ts`에서 두
+허용 목록 배열 자체를 제거해도 테스트가 통과한다(조립 지점 예외는 규칙에 남는다).
+`grep -rn "interface McpTool" src/`가 domain 1건이고,
+`grep -rn "versionRepository\.\|projectRepository\." src/app`이 무결과다. published version이
+없는 프로젝트가 A2A 엔드포인트 4곳에서 동일하게 거부되는 것을 테스트 1개로 잠근다.
+`wc -l src/application/execution/runProject.ts`가
+250 이하다. 실행 정책을 추가할 지점이 파사드 한 곳이며, 이를 `git grep`으로 확인할 수 있다.
+`git diff --stat tests/`가 비어 있는 상태로 `tests/runProject.test.ts`·`tests/mcpBindings.test.ts`·
+`tests/imageGeneration.test.ts`·`tests/a2a.test.ts`·`tests/trace.test.ts`·
+`tests/piiFiltering.test.ts`·`tests/usageAggregator.test.ts`가 통과한다.
+`MAX_SUBAGENT_DEPTH=5`와 ancestry 순환 검사, 가드 위반을 tool error로 yield 하는 처리,
+finally에서의 MCP 세션 정리, run 종료 시 usage 1회 flush, cancelled/error/정상 종료
+3분기 판정, 서브에이전트 chunk 재-author 규칙이 모두 그대로다.
+
+---
+
 ## M4 — 비용 임계값 알림 및 차단
 
 **이유**: 프로젝트별·모델별 일간 비용은 집계되지만 이를 사용하는 보호 장치가 없다.
