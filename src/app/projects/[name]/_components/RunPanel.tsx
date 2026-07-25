@@ -44,12 +44,15 @@ export function RunPanel({
   projectType,
   systemPrompt,
   userPromptTemplate,
+  modelAcceptsImages,
 }: {
   projectName: string;
   versionName: string | null;
   projectType: ProjectType;
   systemPrompt: string;
   userPromptTemplate: string;
+  /** From the model registry; `undefined` when the model is not in the catalog. */
+  modelAcceptsImages?: boolean;
 }) {
   const varNames = useMemo(
     () => extractVariables(systemPrompt, userPromptTemplate),
@@ -74,7 +77,17 @@ export function RunPanel({
   const { attachments, attachError, addFiles, removeAt } = useAttachments();
 
   const needsMessage = projectType === "agent" || projectType === "image";
-  const canRun = versionName !== null && !running && (!needsMessage || message.trim() !== "");
+  // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
+  const canRun =
+    versionName !== null &&
+    !running &&
+    (!needsMessage || message.trim() !== "" || attachments.length > 0);
+  const attachHint =
+    projectType === "image"
+      ? attachments.length > 0
+        ? "The prompt edits these images."
+        : "Attach an image to edit it instead of generating a new one."
+      : "Attached images are sent with the run for the model to look at.";
 
   async function run() {
     if (versionName === null) {
@@ -103,10 +116,29 @@ export function RunPanel({
         setCost(result.usage.costUsd);
         return;
       }
+      const imageParts = toRequestImages(attachments).map((image) => ({
+        type: "image_url" as const,
+        image_url: { url: `data:${image.mimeType};base64,${image.b64}` },
+      }));
       const res =
         projectType === "agent"
-          ? await streamAgent(projectName, versionName, [{ role: "user", content: message }])
-          : await streamPredict(projectName, versionName, { variables });
+          ? await streamAgent(projectName, versionName, [
+              {
+                role: "user",
+                content:
+                  imageParts.length > 0
+                    ? [...(message ? [{ type: "text" as const, text: message }] : []), ...imageParts]
+                    : message,
+              },
+            ])
+          : await streamPredict(projectName, versionName, {
+              variables,
+              // The prompt itself comes from the template; an attachment rides
+              // along as an extra user turn for the model to look at.
+              ...(imageParts.length > 0
+                ? { messages: [{ role: "user", content: imageParts }] }
+                : {}),
+            });
 
       for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
         if (chunk.error) {
@@ -201,26 +233,25 @@ export function RunPanel({
         <p className="text-xs text-neutral-400">No template variables detected.</p>
       )}
 
-      {projectType === "image" && (
-        <div className="space-y-1">
-          <span className="text-sm font-medium">Source images</span>
-          <p className="text-xs text-neutral-400">
-            {attachments.length > 0
-              ? "The prompt edits these images."
-              : "Attach an image to edit it instead of generating a new one."}
+      <div className="space-y-1">
+        <span className="text-sm font-medium">
+          {projectType === "image" ? "Source images" : "Images"}
+        </span>
+        <p className="text-xs text-neutral-400">{attachHint}</p>
+        <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
+        <AttachButton
+          onPick={(files) => void addFiles(files)}
+          disabled={running}
+          label="📎 Attach"
+        />
+        {modelAcceptsImages === false && attachments.length > 0 && (
+          <p className="text-xs text-red-600">
+            {projectType === "image"
+              ? "This model cannot edit images; the run will be rejected."
+              : "This model does not accept image input; the run will be rejected."}
           </p>
-          <AttachmentBar
-            attachments={attachments}
-            attachError={attachError}
-            onRemove={removeAt}
-          />
-          <AttachButton
-            onPick={(files) => void addFiles(files)}
-            disabled={running}
-            label="📎 Attach"
-          />
-        </div>
-      )}
+        )}
+      </div>
 
       {projectType === "image" && (
         <div className="flex gap-3">

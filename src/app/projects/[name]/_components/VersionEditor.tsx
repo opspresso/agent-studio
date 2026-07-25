@@ -307,8 +307,12 @@ export function VersionEditor({
                 )
               }
             />
-            Image generation (GenerateImage tool)
+            Images (GenerateImage + EditImage tools)
           </label>
+          <p className="text-xs text-neutral-400">
+            Lets the agent draw a picture and change an existing one — an image the user
+            attached, or one it drew earlier.
+          </p>
           {value.parameters.imageGeneration && (
             <Field label="Image model">
               <select
