@@ -5,8 +5,11 @@
  *   - tool-name collision aliasing (`name_1`, `name_2`) with a reverse mapping,
  *   - builtin reserved names are seeded so only MCP tools get suffixed,
  *   - results capped at 100,000 chars; multi-block results JSON-stringified,
- *   - every request aborts after 120s so a hung server degrades to a tool error
- *     instead of stalling the whole agent run.
+ *   - failures (transport, JSON-RPC, and the server's own `isError`) come back as
+ *     `Error: …` text, never thrown: the model reads them as a tool result and
+ *     the trace recorder reads the prefix as a failed span,
+ *   - a tool call aborts after 120s and discovery after 10s, so a hung server
+ *     degrades to a tool error (or to missing tools) instead of stalling the run.
  */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
@@ -14,7 +17,14 @@ import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/lib/httpBody";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
-const MCP_REQUEST_TIMEOUT_MS = 120_000;
+/** A tool may legitimately take minutes; the model is waiting on its answer. */
+const MCP_CALL_TIMEOUT_MS = 120_000;
+/**
+ * Discovery is on the critical path of *every* run's first token, and a server
+ * that accepts the connection but never answers would otherwise hold the whole
+ * run for the call timeout. Failing fast only costs that server's tools.
+ */
+const MCP_DISCOVERY_TIMEOUT_MS = 10_000;
 /** Cleanup runs after the answer is delivered; keep it short. */
 const SESSION_END_TIMEOUT_MS = 5_000;
 const MAX_MCP_RESPONSE_BYTES = 2_000_000;
@@ -52,8 +62,8 @@ class McpSession {
     private readonly signal?: AbortSignal,
   ) {}
 
-  private requestSignal(): AbortSignal {
-    const timeout = AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS);
+  private requestSignal(timeoutMs: number): AbortSignal {
+    const timeout = AbortSignal.timeout(timeoutMs);
     return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
   }
 
@@ -86,7 +96,7 @@ class McpSession {
           clientInfo: { name: "agent-studio", version: "0.1.0" },
         },
       }),
-      signal: this.requestSignal(),
+      signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),
     });
     const sessionId = response.headers.get("Mcp-Session-Id");
     if (sessionId) {
@@ -99,18 +109,22 @@ class McpSession {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
-      signal: this.requestSignal(),
+      signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),
     });
     this.initialized = true;
   }
 
-  private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
+  private async request(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number,
+  ): Promise<unknown> {
     await this.ensureInitialized();
     const response = await fetchPublicUrl(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),
-      signal: this.requestSignal(),
+      signal: this.requestSignal(timeoutMs),
     });
     const message = await parseJsonRpc(response);
     if (message?.error) {
@@ -120,12 +134,14 @@ class McpSession {
   }
 
   async listTools(): Promise<McpTool[]> {
-    const result = (await this.request("tools/list", {})) as { tools?: McpTool[] } | undefined;
+    const result = (await this.request("tools/list", {}, MCP_DISCOVERY_TIMEOUT_MS)) as
+      | { tools?: McpTool[] }
+      | undefined;
     return result?.tools ?? [];
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.request("tools/call", { name, arguments: args });
+    return this.request("tools/call", { name, arguments: args }, MCP_CALL_TIMEOUT_MS);
   }
 
   /**
@@ -223,8 +239,14 @@ export class ToolManager {
         const session = new McpSession(server.url, server.headers, this.signal);
         try {
           return { server, session, tools: await session.listTools() };
-        } catch {
-          // A single broken MCP must not abort the whole tool set.
+        } catch (error) {
+          // A single broken MCP must not abort the whole tool set — but it must
+          // not vanish either: without this line the tools are simply absent and
+          // the run looks like a model that ignored them.
+          console.warn(
+            `[mcp] discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
+            error instanceof Error ? error.message : String(error),
+          );
           return null;
         }
       }),
@@ -268,25 +290,33 @@ export class ToolManager {
     await Promise.all(sessions.map((session) => session.end()));
   }
 
+  /**
+   * Dispatch one tool. Failures are returned as text, never thrown, and always
+   * carry the `Error: ` prefix every tool-result producer in the codebase uses —
+   * it is what marks a result as a failure downstream (the trace recorder keys
+   * on it). A server's own `isError` verdict is reported the same way, so the
+   * model cannot read a failed call as a successful one.
+   */
   async callTool(aliasName: string, args: Record<string, unknown>): Promise<string> {
     this.signal?.throwIfAborted();
     const session = this.sessionByToolName.get(aliasName);
     const originalName = this.originalNameByAlias.get(aliasName);
     if (!session || !originalName) {
-      return `Tool call failed: MCP for tool ${aliasName} not found`;
+      return `Error: tool call failed. No MCP server provides the tool '${aliasName}'.`;
     }
     try {
       const result = (await session.callTool(originalName, args)) as
         | { content?: unknown[]; isError?: boolean }
         | undefined;
       if (!result || !Array.isArray(result.content)) {
-        return `Tool call failed: No content from MCP for tool ${originalName}`;
+        return `Error: tool call failed. No content from MCP for tool '${originalName}'.`;
       }
-      return formatToolResult(result.content);
+      const output = formatToolResult(result.content);
+      return result.isError === true ? asErrorResult(output) : output;
     } catch (error) {
       this.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : String(error);
-      return `Tool call failed with error. ${message}`;
+      return `Error: tool call failed. ${message}`;
     }
   }
 }
@@ -345,6 +375,11 @@ function extractBlock(block: unknown): string {
     return "Invalid resource content: missing text and blob";
   }
   return `Invalid content type: ${b.type}`;
+}
+
+/** Mark a payload as a failure without stuttering when it already says so. */
+function asErrorResult(output: string): string {
+  return output.startsWith("Error:") ? output : `Error: the tool reported a failure. ${output}`;
 }
 
 function formatToolResult(content: unknown[]): string {

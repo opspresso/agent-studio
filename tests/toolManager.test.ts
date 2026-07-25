@@ -34,6 +34,8 @@ interface ServerScript {
   networkError?: boolean;
   /** When set, tools/list returns a JSON-RPC error envelope. */
   listError?: { code: number; message: string };
+  /** When set, tools/call reports the MCP spec's own failure flag. */
+  callIsError?: boolean;
 }
 
 interface RecordedCall {
@@ -91,7 +93,14 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         ? { jsonrpc: "2.0", id: body.id, error: script.listError }
         : { jsonrpc: "2.0", id: body.id, result: { tools: script.listTools ?? [] } };
     } else if (body.method === "tools/call") {
-      payload = { jsonrpc: "2.0", id: body.id, result: { content: script.callContent ?? [] } };
+      payload = {
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          content: script.callContent ?? [],
+          ...(script.callIsError ? { isError: true } : {}),
+        },
+      };
     } else {
       payload = { jsonrpc: "2.0", id: body.id, result: {} };
     }
@@ -144,7 +153,11 @@ describe("ToolManager tool-name collision aliasing", () => {
     const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
 
-    expect(await manager.callTool("does_not_exist", {})).toContain("not found");
+    // Failures use the same `Error: ` prefix as every other tool-result producer;
+    // the trace recorder reads that prefix to mark the span failed.
+    const result = await manager.callTool("does_not_exist", {});
+    expect(result.startsWith("Error:")).toBe(true);
+    expect(result).toContain("does_not_exist");
   });
 });
 
@@ -224,6 +237,38 @@ describe("ToolManager result truncation", () => {
     const result = await manager.callTool("dump", {});
     expect(result.endsWith(suffix)).toBe(true);
     expect(result.length).toBe(100_000 + suffix.length);
+  });
+
+  it("marks a result the server flagged as isError", async () => {
+    // Without this the model reads a failed call as a successful one, and the
+    // trace records the span as ok.
+    stubMcpFetch({
+      "https://bad.test/mcp": {
+        listTools: [{ name: "lookup" }],
+        callContent: [textBlock("no such record")],
+        callIsError: true,
+      },
+    });
+    const manager = new ToolManager([server("bad", "https://bad.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("lookup", {});
+    expect(result.startsWith("Error:")).toBe(true);
+    expect(result).toContain("no such record");
+  });
+
+  it("does not stutter when the flagged payload already reads as an error", async () => {
+    stubMcpFetch({
+      "https://bad2.test/mcp": {
+        listTools: [{ name: "lookup" }],
+        callContent: [textBlock("Error: upstream refused")],
+        callIsError: true,
+      },
+    });
+    const manager = new ToolManager([server("bad2", "https://bad2.test/mcp")]);
+    await manager.init();
+
+    expect(await manager.callTool("lookup", {})).toBe("Error: upstream refused");
   });
 
   it("returns a short result untouched", async () => {
@@ -309,7 +354,7 @@ describe("ToolManager request timeout", () => {
     await manager.init();
 
     const result = await manager.callTool("slow", {});
-    expect(result).toBe("Tool call failed with error. The operation was aborted due to timeout");
+    expect(result).toBe("Error: tool call failed. The operation was aborted due to timeout");
   });
 });
 
@@ -332,6 +377,39 @@ describe("ToolManager toolNamesByServer", () => {
     // server b's colliding tool is grouped under its aliased name
     expect(manager.toolNamesByServer.get("b")).toEqual(["search_1"]);
     expect(manager.toolNamesByServer.has("down")).toBe(false);
+  });
+});
+
+describe("ToolManager request budgets", () => {
+  it("gives discovery a far shorter budget than a tool call", async () => {
+    // Discovery sits on every run's time-to-first-token: a server that accepts
+    // the connection and never answers must not hold the run for the full call
+    // timeout. Recorded through AbortSignal.timeout so no clock is involved.
+    const timeouts: number[] = [];
+    const real = AbortSignal.timeout.bind(AbortSignal);
+    const spy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      timeouts.push(ms);
+      return real(ms);
+    });
+    try {
+      stubMcpFetch({
+        "https://a.test/mcp": {
+          listTools: [{ name: "search" }],
+          callContent: [textBlock("ok")],
+        },
+      });
+      const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+      await manager.init();
+      const discovery = [...timeouts];
+      timeouts.length = 0;
+      await manager.callTool("search", {});
+
+      expect(discovery.length).toBeGreaterThan(0);
+      expect(new Set(discovery)).toEqual(new Set([10_000]));
+      expect(timeouts).toEqual([120_000]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

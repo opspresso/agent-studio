@@ -67,6 +67,31 @@ describe("TraceRecorder", () => {
     expect(JSON.stringify(traces[0])).not.toContain("full message");
   });
 
+  it("marks a tool span failed from the shared Error: prefix", async () => {
+    // The prefix is the convention every tool-result producer follows (engine
+    // builtins, the skill loader, the MCP manager). It is the only signal the
+    // recorder has that a tool failed.
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "p",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({
+      delta: { toolCalls: [{ id: "call-1", function: { name: "lookup", arguments: "{}" } }] },
+    });
+    recorder.observe({
+      toolResult: { toolCallId: "call-1", name: "lookup", content: "Error: tool call failed." },
+    });
+    await recorder.finish();
+
+    const span = traces[0]?.spans.find((s) => s.kind === "tool");
+    expect(span?.status).toBe("error");
+  });
+
   it("keeps two transfers to the same agent as two spans", async () => {
     const { repository, traces } = memoryRepository();
     const recorder = new TraceRecorder(repository, {
