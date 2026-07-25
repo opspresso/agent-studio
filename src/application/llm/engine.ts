@@ -20,7 +20,12 @@ import type {
   ChannelUsage,
   LlmChannel,
 } from "@/domain/llm/channel";
-import { applyModelConstraints, calculateCost } from "@/domain/llm/models";
+import {
+  applyModelConstraints,
+  calculateCost,
+  describeImageInputReject,
+} from "@/domain/llm/models";
+import { hasImageParts } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -28,6 +33,7 @@ import type {
   RunResult,
   UsageInfo,
 } from "@/domain/llm/types";
+import { ValidationError } from "@/application/errors";
 import { PiiFilter } from "./pii";
 import { renderTemplate } from "./template";
 
@@ -140,6 +146,39 @@ function isRetryableError(error: unknown): boolean {
     return false;
   }
   return code === 429 || (code >= 500 && code < 600);
+}
+
+/**
+ * Gate an image-bearing run on the primary model, and report whether the run
+ * carries images at all. Images only enter through the input messages (tool
+ * results are text), so one check at entry covers every turn of the loop.
+ */
+function assertImageInputAllowed(model: string, messages: ChatMessageInput[]): boolean {
+  if (!messages.some(hasImageParts)) {
+    return false;
+  }
+  const reject = describeImageInputReject(model);
+  if (reject) {
+    throw new ValidationError(reject);
+  }
+  return true;
+}
+
+/**
+ * The fallback model for a run, dropped when the run carries images the fallback
+ * cannot read — a misconfigured fallback must not fail a request the primary
+ * model can serve.
+ */
+function imageEligibleFallback(fallbackModel: string | undefined, withImages: boolean): string | undefined {
+  if (!fallbackModel || !withImages) {
+    return fallbackModel;
+  }
+  const reject = describeImageInputReject(fallbackModel);
+  if (!reject) {
+    return fallbackModel;
+  }
+  console.warn(`[engine] fallback skipped for an image request: ${reject}`);
+  return undefined;
 }
 
 function toUsageInfo(model: string, usage: ChannelUsage | null | undefined): UsageInfo {
@@ -258,6 +297,13 @@ async function recordUsageIfPossible(
 // Single-shot generation
 // ---------------------------------------------------------------------------
 
+/**
+ * Keys whose values are opaque payloads, not prose: an image data URL carries no
+ * PII to mask, and rewriting it (a base64 run can look like a phone number)
+ * would corrupt the image.
+ */
+const OPAQUE_KEYS = new Set(["image_url"]);
+
 function maskValues(filter: PiiFilter, value: unknown): unknown {
   if (typeof value === "string") {
     return filter.mask(value);
@@ -267,7 +313,10 @@ function maskValues(filter: PiiFilter, value: unknown): unknown {
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, maskValues(filter, item)]),
+      Object.entries(value).map(([key, item]) => [
+        key,
+        OPAQUE_KEYS.has(key) ? item : maskValues(filter, item),
+      ]),
     );
   }
   return value;
@@ -286,7 +335,10 @@ function restoreValues(filter: PiiFilter, value: unknown): unknown {
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, restoreValues(filter, item)]),
+      Object.entries(value).map(([key, item]) => [
+        key,
+        OPAQUE_KEYS.has(key) ? item : restoreValues(filter, item),
+      ]),
     );
   }
   return value;
@@ -386,6 +438,7 @@ function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): Channel
 }
 
 export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promise<RunResult> {
+  const withImages = assertImageInputAllowed(input.model, input.extraMessages ?? []);
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
   const messages = buildPromptMessages(input, filter);
   const params = buildChannelParams(
@@ -398,7 +451,7 @@ export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promis
   const { completion, modelUsed } = await completionWithFallback(
     deps.channel,
     params,
-    input.fallbackModel,
+    imageEligibleFallback(input.fallbackModel, withImages),
   );
   const choice = completion.choices[0];
   const content = filter?.restore(choice?.message.content ?? "") ?? choice?.message.content ?? "";
@@ -418,6 +471,7 @@ export async function* runPromptStream(
   deps: EngineDeps,
   input: RunPromptInput,
 ): AsyncGenerator<EngineChunk> {
+  const withImages = assertImageInputAllowed(input.model, input.extraMessages ?? []);
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
   const messages = buildPromptMessages(input, filter);
   const params = buildChannelParams(
@@ -433,7 +487,12 @@ export async function* runPromptStream(
   const reasoningRestorer = filter?.createStreamRestorer();
 
   try {
-    for await (const chunk of streamWithFallback(deps.channel, params, input.fallbackModel, state)) {
+    for await (const chunk of streamWithFallback(
+      deps.channel,
+      params,
+      imageEligibleFallback(input.fallbackModel, withImages),
+      state,
+    )) {
       if (chunk.usage) {
         usage = chunk.usage;
       }
@@ -757,6 +816,8 @@ export async function* runAgent(
   deps: AgentDeps,
   input: RunAgentInput,
 ): AsyncGenerator<EngineChunk> {
+  const withImages = assertImageInputAllowed(input.model, input.messages);
+  const fallbackModel = imageEligibleFallback(input.fallbackModel, withImages);
   const maxTurn = input.maxTurn ?? DEFAULT_MAX_TURN;
   const skills = input.skills ?? [];
   const subagents = input.subagents ?? [];
@@ -803,12 +864,7 @@ export async function* runAgent(
     const reasoningRestorer = filter?.createStreamRestorer();
 
     try {
-      for await (const chunk of streamWithFallback(
-        deps.channel,
-        params,
-        input.fallbackModel,
-        state,
-      )) {
+      for await (const chunk of streamWithFallback(deps.channel, params, fallbackModel, state)) {
         if (chunk.usage) {
           usage = chunk.usage;
         }

@@ -7,7 +7,7 @@
 import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { isTopLevelChunk, messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
@@ -63,7 +63,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
         const image = await generateImage(this.deps, {
           project: this.project,
           version: this.version,
-          prompt: messages[0]?.content ?? "",
+          prompt: messages[0] ? messageText(messages[0]) : "",
           signal: controller.signal,
         });
         eventBus.publish({

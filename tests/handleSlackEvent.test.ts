@@ -6,6 +6,7 @@ import {
   type SlackEventDeps,
 } from "@/application/slack/handleSlackEvent";
 import type { SlackMessage } from "@/infrastructure/slack/client";
+import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
@@ -115,7 +116,8 @@ describe("handleSlackEvent", () => {
       },
     } as unknown as ProjectRepository;
     deps.runAgent = async function* (input) {
-      userMessage = input.messages.at(-1)?.content ?? undefined;
+      const last = input.messages.at(-1);
+      userMessage = last ? messageText(last) : undefined;
       yield { done: true };
     };
 
