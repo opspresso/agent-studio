@@ -46,7 +46,12 @@ function makeSlackFake() {
   const updates: Array<{ ts: string; text: string }> = [];
   const calls: string[] = [];
   const replies: SlackMessage[] = [];
+  const downloads: string[] = [];
   const slack: SlackClientPort = {
+    async downloadFile(_token, url) {
+      downloads.push(url);
+      return Buffer.from("png-bytes");
+    },
     async postMessage(_token, args) {
       calls.push("postMessage");
       posted.push(args);
@@ -71,7 +76,7 @@ function makeSlackFake() {
       ];
     },
   };
-  return { slack, posted, updates, calls, replies };
+  return { slack, posted, updates, calls, replies, downloads };
 }
 
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
@@ -322,6 +327,155 @@ describe("handleSlackEvent", () => {
     const finalText = updates.at(-1)?.text ?? "";
     expect(finalText).toContain("answer");
     expect(finalText).toContain(":warning:");
+  });
+
+  it("sends an attached image to the agent as a content part", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, downloads } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          subtype: "file_share",
+          text: "<@U0> what is this?",
+          files: [
+            {
+              id: "F1",
+              name: "shot.png",
+              mimetype: "image/png",
+              size: 9,
+              url_private_download: "https://files.slack.com/f/F1",
+            },
+          ],
+        },
+      },
+      BINDING,
+    );
+
+    expect(downloads).toEqual(["https://files.slack.com/f/F1"]);
+    expect(seen.at(-1)?.content).toEqual([
+      { type: "text", text: "what is this?" },
+      {
+        type: "image_url",
+        image_url: { url: `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}` },
+      },
+    ]);
+  });
+
+  it("runs an image-only message without an empty text part", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          subtype: "file_share",
+          text: "",
+          files: [{ mimetype: "image/jpeg", url_private: "https://files.slack.com/f/F2" }],
+        },
+      },
+      BINDING,
+    );
+
+    expect(seen.at(-1)?.content).toEqual([
+      {
+        type: "image_url",
+        image_url: { url: `data:image/jpeg;base64,${Buffer.from("png-bytes").toString("base64")}` },
+      },
+    ]);
+  });
+
+  it("reports oversized, unsupported and non-image attachments instead of dropping them", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, updates, downloads } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          subtype: "file_share",
+          files: [
+            {
+              name: "huge.png",
+              mimetype: "image/png",
+              size: 6 * 1024 * 1024,
+              url_private_download: "https://files.slack.com/f/huge",
+            },
+            {
+              name: "art.svg",
+              mimetype: "image/svg+xml",
+              url_private_download: "https://files.slack.com/f/svg",
+            },
+            { name: "notes.pdf", mimetype: "application/pdf" },
+          ],
+        },
+      },
+      BINDING,
+    );
+
+    expect(downloads).toEqual([]);
+    const finalText = updates.at(-1)?.text ?? "";
+    expect(finalText).toContain("answer");
+    expect(finalText).toContain("larger than 5MB");
+    expect(finalText).toContain("Unsupported image type image/svg+xml");
+    expect(finalText).toContain("Ignored 1 non-image attachment");
+  });
+
+  it("keeps answering when an attachment download fails", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, updates } = makeSlackFake();
+    slack.downloadFile = async () => {
+      throw new Error("unexpected host: evil.example.com");
+    };
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { delta: { content: "answer" } };
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          subtype: "file_share",
+          files: [{ mimetype: "image/png", url_private_download: "https://evil.example.com/x" }],
+        },
+      },
+      BINDING,
+    );
+
+    expect(seen.at(-1)?.content).toBe("hello");
+    expect(updates.at(-1)?.text).toContain("Could not read attachment");
   });
 
   it("passes a live deadline signal into the run", async () => {
