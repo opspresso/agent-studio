@@ -15,6 +15,7 @@ import {
 } from "../lib/api";
 import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
+import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 
 /**
@@ -226,16 +227,22 @@ export default function PlaygroundPage() {
         />
       </section>
 
-      <CollapsibleSection title="Run">
-        <RunPanel
-          projectName={name}
-          versionName={dirty && selectedName === "" ? null : selectedName || null}
-          projectType={project.projectType}
-          systemPrompt={draft.systemPrompt}
-          userPromptTemplate={draft.userPromptTemplate}
-          modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
-        />
-      </CollapsibleSection>
+      <section className="space-y-4">
+        <CollapsibleSection title="Preview">
+          <PromptPreview projectName={name} draft={draft} />
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Run">
+          <RunPanel
+            projectName={name}
+            versionName={dirty && selectedName === "" ? null : selectedName || null}
+            projectType={project.projectType}
+            systemPrompt={draft.systemPrompt}
+            userPromptTemplate={draft.userPromptTemplate}
+            modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
+          />
+        </CollapsibleSection>
+      </section>
     </div>
   );
 }

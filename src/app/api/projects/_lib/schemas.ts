@@ -83,6 +83,15 @@ export const updateVersionSchema = versionInputSchema.partial().extend({
 export const publishSchema = z.object({ versionName: z.string().min(1) });
 
 /**
+ * A version as it stands in the editor, plus the variables to render its
+ * template with. The body carries the whole draft rather than a version name
+ * because the point of the preview is to see what is *not saved yet*.
+ */
+export const previewPromptSchema = versionInputSchema.extend({
+  variables: z.record(z.string(), z.string()).optional(),
+});
+
+/**
  * Cap on one inline image payload. A data URL is ~1 char per byte, so this
  * bounds a request that carries images to a few of them at a few MB each.
  */

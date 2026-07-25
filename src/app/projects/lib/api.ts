@@ -127,6 +127,28 @@ export function updateVersion(
   }).then((r) => readJson<Version>(r));
 }
 
+export interface PromptPreview {
+  messages: Array<{ role: "system" | "user"; content: string }>;
+  toolNames: string[];
+  warnings: string[];
+}
+
+/**
+ * Assemble what the draft in the editor would send. Owner-only, and it contacts
+ * the bound MCP servers, so the panel calls it on demand rather than as the
+ * editor changes.
+ */
+export function previewPrompt(
+  name: string,
+  input: VersionInput & { variables?: Record<string, string> },
+): Promise<PromptPreview> {
+  return fetch(`/api/projects/${name}/preview`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<PromptPreview>(r));
+}
+
 export function deleteVersion(name: string, version: string): Promise<void> {
   return fetch(`/api/projects/${name}/versions/${version}`, { method: "DELETE" }).then(assertOk);
 }

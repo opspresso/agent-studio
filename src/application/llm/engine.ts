@@ -558,7 +558,12 @@ async function* runSubagentWithPii(
   }
 }
 
-function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): ChannelMessage[] {
+/**
+ * The messages a single-shot run sends: the system prompt, the rendered user
+ * prompt template, then any history. Exported so the Playground preview shows
+ * this assembly rather than a second implementation of it.
+ */
+export function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): ChannelMessage[] {
   const messages: ChannelMessage[] = [];
   if (input.systemPrompt) {
     messages.push({ role: "system", content: input.systemPrompt });
@@ -925,7 +930,13 @@ function imageSystemPromptAddition(
   return ["## Available Images", "", ...howTo.flatMap((line) => [line, ""]), ...table].join("\n");
 }
 
-function buildAgentSystemPrompt(
+/**
+ * The system prompt an agent run actually sends: the version's own text plus
+ * the sections the engine appends for what this run can reach. Exported for the
+ * Playground preview — the assembled prompt is what a reader needs to see, and
+ * a second implementation of it would drift.
+ */
+export function buildAgentSystemPrompt(
   base: string | undefined,
   skills: SkillInfo[],
   subagents: SubagentInfo[],
@@ -1014,7 +1025,13 @@ const EDIT_IMAGE_TOOL_DEF: ChannelToolDef = {
   },
 };
 
-function buildAgentTools(
+/**
+ * The tool set an agent run declares, and the builtin names it claimed.
+ * Exported for the Playground preview, which reports the names the model will
+ * actually be offered — deriving them a second time would drift from the
+ * offered/intercepted contract this function owns.
+ */
+export function buildAgentTools(
   mcpTools: ChannelToolDef[] | undefined,
   skills: SkillInfo[],
   subagents: SubagentInfo[],
@@ -1046,6 +1063,22 @@ function buildAgentTools(
   return { tools, builtinNames };
 }
 
+/**
+ * What a run can do with an image, which is what decides whether the system
+ * prompt carries an `## Available Images` section and whether the image tools
+ * are offered. Derived from the deps rather than the version, so the preview
+ * and the run cannot disagree about a section's presence.
+ */
+export function imagePromptUses(
+  deps: Pick<AgentDeps, "editImage" | "runSubagent">,
+  subagents: SubagentInfo[],
+): { canEdit: boolean; canTransfer: boolean } {
+  return {
+    canEdit: Boolean(deps.editImage),
+    canTransfer: subagents.length > 0 && Boolean(deps.runSubagent),
+  };
+}
+
 async function loadSkillSafe(
   loader: (skillName: string, filePath?: string) => Promise<string>,
   skills: SkillInfo[],
@@ -1074,7 +1107,6 @@ export async function* runAgent(
   const imageInputReject = describeImageInputReject(input.model);
   const skills = input.skills ?? [];
   const subagents = input.subagents ?? [];
-  const hasSubagents = subagents.length > 0;
   // Top-level chunks stay unauthored: "no author" is the contract every
   // consumer uses to pick out the visible answer. Subagent chunks are the only
   // authored ones — the runSubagent wrapper stamps the subagent's name.
@@ -1082,8 +1114,7 @@ export async function* runAgent(
 
   // Handles are worth keeping when something can act on them: this run can edit
   // an image, or it can hand one to another agent that will.
-  const canEdit = Boolean(deps.editImage);
-  const canTransfer = hasSubagents && Boolean(deps.runSubagent);
+  const { canEdit, canTransfer } = imagePromptUses(deps, subagents);
   const images = new ImageRegistry();
   if (canEdit || canTransfer) {
     registerInputImages(images, input.messages);
