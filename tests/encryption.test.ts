@@ -33,11 +33,13 @@ describe("header encryption round-trip", () => {
 });
 
 describe("length-preserving masking", () => {
-  it("masks encrypted headers with asterisks matching the plaintext length", () => {
+  it("masks encrypted headers to the plaintext length", () => {
     const headers = { Authorization: "Bearer secret-token", "X-Api-Key": "abc123" };
     const masked = maskHeaders(encryptHeaders(headers));
 
-    expect(masked.Authorization).toBe("*".repeat("Bearer secret-token".length));
+    // 19 chars: reveals two at each end. 6 chars: fully hidden.
+    expect(masked.Authorization).toBe(`Be${"•".repeat(15)}en`);
+    expect(masked.Authorization).toHaveLength("Bearer secret-token".length);
     expect(masked["X-Api-Key"]).toBe("*".repeat("abc123".length));
   });
 
@@ -75,23 +77,63 @@ describe("length-preserving masking", () => {
   });
 });
 
-describe("partial-reveal masking (>= 20 chars)", () => {
+describe("partial-reveal masking tiers", () => {
   const bullets = (n: number) => "•".repeat(n);
+  const chars = (n: number) => "a".repeat(n);
 
-  it("reveals the first and last two chars of a long plaintext, hiding the middle", () => {
+  it("hides 1–8 characters entirely", () => {
+    for (const len of [1, 4, 8]) {
+      expect(maskSecret(chars(len))).toBe("*".repeat(len));
+    }
+  });
+
+  it("reveals two characters at each end from 9 through 20", () => {
+    const nine = "abcdefghi";
+    expect(maskSecret(nine)).toBe(`ab${bullets(5)}hi`);
+
+    const twenty = "ab" + chars(16) + "yz";
+    expect(maskSecret(twenty)).toBe(`ab${bullets(16)}yz`);
+    expect(maskSecret(twenty)).toHaveLength(20);
+  });
+
+  it("reveals four characters at each end from 21 up", () => {
+    const twentyOne = "abcd" + chars(13) + "wxyz";
+    expect(maskSecret(twentyOne)).toBe(`abcd${bullets(13)}wxyz`);
+    expect(maskSecret(twentyOne)).toHaveLength(21);
+
     const key = "sk-live-abcdefghijklmnop"; // 24 chars
-    expect(maskSecret(key)).toBe(`sk${bullets(key.length - 4)}op`);
-    expect(maskSecret(key)).toHaveLength(key.length);
+    expect(maskSecret(key)).toBe(`sk-l${bullets(16)}mnop`);
+  });
+
+  it("keeps every tier boundary exact", () => {
+    // The boundaries are the whole point of the rule; pin both sides of each.
+    expect(maskSecret(chars(8))).toBe("*".repeat(8));
+    expect(maskSecret(chars(9))).toBe(`aa${bullets(5)}aa`);
+    expect(maskSecret(chars(20))).toBe(`aa${bullets(16)}aa`);
+    expect(maskSecret(chars(21))).toBe(`aaaa${bullets(13)}aaaa`);
+  });
+
+  it("preserves length at every tier", () => {
+    for (const len of [1, 8, 9, 20, 21, 64]) {
+      expect(maskSecret(chars(len))).toHaveLength(len);
+    }
   });
 
   it("decrypts an encrypted long secret at display time to reveal its edges", () => {
     const secret = "sk-proj-0123456789abcdef"; // 24 chars
-    expect(maskSecret(encryptSecret(secret))).toBe(`sk${bullets(secret.length - 4)}ef`);
+    expect(maskSecret(encryptSecret(secret))).toBe(`sk-p${bullets(16)}cdef`);
   });
 
-  it("still fully hides secrets shorter than 20 chars with asterisks", () => {
-    expect(maskSecret("short-secret")).toBe("*".repeat("short-secret".length));
-    expect(maskSecret(encryptSecret("short-secret"))).toBe("*".repeat("short-secret".length));
+  it("tiers multi-byte text by characters, not by its larger byte length", () => {
+    // Byte length only decides whether decrypting is worth it; once the
+    // plaintext is in hand the tier comes from what will actually be displayed.
+    const korean = "비밀키값"; // 4 chars, 12 UTF-8 bytes
+    expect(maskSecret(korean)).toBe("*".repeat(4));
+    expect(maskSecret(encryptSecret(korean))).toBe("*".repeat(4));
+
+    const longer = "가나다라마바사"; // 7 chars, 21 bytes — still under the 9-char tier
+    expect(maskSecret(longer)).toBe("*".repeat(7));
+    expect(maskSecret(longer)).not.toContain("가");
   });
 
   it("treats a partial-reveal mask echoed back as unchanged", () => {

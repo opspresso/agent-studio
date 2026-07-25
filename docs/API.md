@@ -51,7 +51,7 @@ DELETE /api/skills/{name}     → 204                     | 404
 
 - Names are slugs (`^[a-z0-9-]+$`).
 - `mcps`/`agents` store `headers` AES-encrypted and return them masked (length-preserving;
-  values ≥20 chars reveal their first/last 2 chars); a masked
+  9–20 chars reveal 2 at each end, 21+ reveal 4); a masked
   or empty value on update preserves the stored secret. Their `url` is SSRF-guarded — a
   private/loopback/link-local/metadata target (or non-http(s) scheme) is rejected with `400`.
 - `mcps` also accept an optional `content` (markdown operator notes). `description` is the
@@ -123,7 +123,7 @@ PUT /api/settings → 200 {…same shape…} | 400
   currently effective key for that provider name. Provider `name` must be one of
   `openai | google | anthropic | xai`.
 - `source` is `override` (DB) | `env` | `default` | `unset`. Secret values are always masked
-  (length-preserving; values ≥20 chars reveal their first/last 2 chars); a masked value on
+  (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); a masked value on
   PUT keeps the stored secret, an empty string removes the override (env fallback). Setting `adminEmails` to a list that excludes
   the caller is rejected with `400`.
 

@@ -1,8 +1,8 @@
 import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
-// Server responses carry masked (length-preserving; long values reveal first/last
-// 2 chars) header values — never the full plaintext or ciphertext.
+// Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
+// each end, 21+ reveal 4) header values — never the full plaintext or ciphertext.
 export type { AgentProtocol, ExternalAgent };
 
 export interface CreateAgentInput {

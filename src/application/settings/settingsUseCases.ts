@@ -44,7 +44,7 @@ const FIELD_SPECS: FieldSpec[] = [
 ];
 
 export interface SettingFieldView {
-  /** Masked for secrets (length-preserving; long values reveal first/last 2 chars) —
+  /** Masked for secrets (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4) —
    * never the full plaintext or the ciphertext. */
   value: string;
   source: "override" | "env" | "default" | "unset";
@@ -54,7 +54,7 @@ export interface SettingFieldView {
 export interface LlmProviderView {
   name: string;
   baseUrl: string;
-  /** Masked (length-preserving; long values reveal first/last 2 chars). */
+  /** Masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
   apiKey: string;
   keepModelPrefix: boolean;
 }

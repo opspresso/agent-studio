@@ -41,14 +41,25 @@ export function decryptSecret(value: string): string {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
-// Length-preserving display masks. Shorter values are fully hidden; values of
-// at least REVEAL_MIN_LENGTH reveal their first/last REVEAL_EDGE characters so an
-// operator can recognize which secret is set. REVEAL_CHAR (U+2022) never appears
-// in real API keys/tokens, so it also marks a mask echoed back from a form.
+// Length-preserving display masks. How much of a secret an operator may see
+// scales with how much of it stays hidden — a longer value can spare more
+// characters before the remainder stops being a secret:
+//
+//   1–8 chars    fully hidden           ********
+//   9–20 chars   first 2 + last 2       ab••••••••••••yz
+//   21+ chars    first 4 + last 4       abcd••••••••••••••••wxyz
+//
+// REVEAL_CHAR (U+2022) never appears in real API keys/tokens, so it also marks
+// a mask echoed back from a form (see isMasked).
 const HIDDEN_CHAR = "*";
 const REVEAL_CHAR = "•";
-const REVEAL_MIN_LENGTH = 20;
-const REVEAL_EDGE = 2;
+/** [minimum length, characters revealed at each end], longest tier first. */
+const REVEAL_TIERS: ReadonlyArray<readonly [number, number]> = [
+  [21, 4],
+  [9, 2],
+];
+/** Below this length nothing is ever revealed. */
+const SHORTEST_REVEAL_LENGTH = REVEAL_TIERS[REVEAL_TIERS.length - 1]![0];
 
 /** True when `value` is a mask produced by {@link maskSecret} (a form echoing
  * the displayed value back unchanged), never a freshly typed secret. */
@@ -65,28 +76,33 @@ function plaintextByteLength(value: string): number {
   return Math.max(raw.length - IV_AND_TAG_LENGTH, 0);
 }
 
+/** Tiers are chosen by character count, so a multi-byte secret is judged by what
+ * is actually displayed rather than by how many bytes it occupies. */
 function revealEdges(plaintext: string): string {
   const len = plaintext.length;
-  if (len < REVEAL_MIN_LENGTH) {
+  const edge = REVEAL_TIERS.find(([min]) => len >= min)?.[1] ?? 0;
+  // Never let the two revealed edges meet — that would print the whole secret.
+  // Holds for the tiers above; it is a guard on the table, not on the input.
+  if (edge === 0 || len < edge * 2 + 1) {
     return HIDDEN_CHAR.repeat(len);
   }
   return (
-    plaintext.slice(0, REVEAL_EDGE) +
-    REVEAL_CHAR.repeat(len - REVEAL_EDGE * 2) +
-    plaintext.slice(len - REVEAL_EDGE)
+    plaintext.slice(0, edge) + REVEAL_CHAR.repeat(len - edge * 2) + plaintext.slice(len - edge)
   );
 }
 
 /**
- * Mask a secret for display, preserving length. Values shorter than 20 chars are
- * fully hidden; longer ones reveal their first and last two characters. Revealing
- * the edges needs the plaintext, so encrypted values are decrypted here — only in
- * the admin/owner-gated read views that call this; if decryption fails the value
- * is fully hidden instead. Short values are never decrypted.
+ * Mask a secret for display, preserving length. See REVEAL_TIERS for how much of
+ * a value is revealed at each length. Revealing the edges needs the plaintext,
+ * so encrypted values are decrypted here — only in the admin/owner-gated read
+ * views that call this; if decryption fails the value is fully hidden instead.
+ * Values too short to reveal anything are never decrypted.
  */
 export function maskSecret(value: string): string {
   const byteLength = plaintextByteLength(value);
-  if (byteLength < REVEAL_MIN_LENGTH) {
+  // UTF-8 never uses fewer bytes than characters, so a byte length below the
+  // shortest revealing tier settles the question without decrypting.
+  if (byteLength < SHORTEST_REVEAL_LENGTH) {
     return HIDDEN_CHAR.repeat(byteLength);
   }
   try {

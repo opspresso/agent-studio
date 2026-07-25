@@ -11,7 +11,7 @@ export interface ExternalAgent {
   /** Wire protocol for dispatch. Absent means "openai" (pre-existing rows). */
   protocol?: AgentProtocol;
   description: string;
-  /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; long values reveal first/last 2 chars). */
+  /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
   headers: Record<string, string>;
   createdAt: string;
   updatedAt: string;

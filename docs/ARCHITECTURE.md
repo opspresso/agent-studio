@@ -301,7 +301,7 @@ Two deliberate strategies coexist:
 ### MCP
 - `McpServer { name, url, description?, content?, headers: Record<string,string> (values
   encrypted at rest AES-256-GCM `enc:v1:` prefix, masked on read — length-preserving,
-  revealing the first/last 2 chars of values ≥20 chars), createdAt, updatedAt }`.
+  revealing 2 chars at each end from 9 chars and 4 from 21), createdAt, updatedAt }`.
   `description` is a one-line summary and the only field the model sees (it becomes a row
   in the system prompt's server table); `content` is markdown operator notes shown in the
   console only — unlike a skill's content it is never sent to the model. Descriptions are
@@ -415,7 +415,7 @@ horizontally-scaled deployment a settings change (e.g. A2A-key rotation, admin d
 propagates to other instances only as their own cache entries expire — up to the 30s TTL;
 immediate cross-instance revocation would need a shared invalidation signal.
 Secret overrides are AES-encrypted at rest and decrypted for outbound dispatch (and at read
-only to reveal the first/last 2 chars of long values in the admin masked view); a stored
+only to reveal the edge characters of long values in the admin masked view); a stored
 provider list replaces the whole `LLM_PROVIDER_*` env set. Bootstrap env (`AES_ENCRYPTION_KEY`,
 Better Auth, Google OAuth, DynamoDB, `STAGE`) stays env-only. SSE responses use
 `text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.

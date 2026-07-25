@@ -32,9 +32,11 @@ import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
 import { ConflictError, NotFoundError } from "@/application/errors";
-import { isEncrypted } from "@/infrastructure/crypto/secretEncryption";
+import { isEncrypted, isMasked } from "@/infrastructure/crypto/secretEncryption";
 
-const MASK = /^\*+$/;
+/** The display contract is "maskSecret produced this", not any one glyph —
+ * asserting the shape would re-break every time the reveal tiers change. */
+const expectMasked = (value: string | undefined) => expect(isMasked(value ?? "")).toBe(true);
 const NOW = "2026-01-01T00:00:00.000Z";
 
 function makeMcpRepo(initial: McpServer[] = []) {
@@ -97,13 +99,13 @@ describe("MCP registry secret contract", () => {
       url: "https://mcp.example/mcp",
       headers: { Authorization: "Bearer token-1" },
     });
-    expect(created?.headers.Authorization).toMatch(MASK);
+    expectMasked(created?.headers.Authorization);
     expect(isEncrypted(store.get("m")!.headers.Authorization!)).toBe(true);
 
     const got = await useCases.get("m");
     const listed = await useCases.list();
-    expect(got?.headers.Authorization).toMatch(MASK);
-    expect(listed[0]?.headers.Authorization).toMatch(MASK);
+    expectMasked(got?.headers.Authorization);
+    expectMasked(listed[0]?.headers.Authorization);
     for (const value of [created, got, ...listed].map((s) => s?.headers.Authorization ?? "")) {
       expect(value).not.toContain("enc:v1:");
       expect(value).not.toContain("token-1");
@@ -121,7 +123,7 @@ describe("MCP registry secret contract", () => {
     const storedBefore = store.get("m")!.headers.Authorization;
 
     const masked = await useCases.update("m", { headers: { Authorization: "********" } });
-    expect(masked?.headers.Authorization).toMatch(MASK);
+    expectMasked(masked?.headers.Authorization);
     expect(store.get("m")!.headers.Authorization).toBe(storedBefore);
 
     await useCases.update("m", { headers: { Authorization: "Bearer token-2" } });
@@ -218,13 +220,13 @@ describe("external agent registry secret contract", () => {
       description: "",
       headers: { "X-Api-Key": "plain-key" },
     });
-    expect(created?.headers["X-Api-Key"]).toMatch(MASK);
+    expectMasked(created?.headers["X-Api-Key"]);
     expect(isEncrypted(store.get("a")!.headers["X-Api-Key"]!)).toBe(true);
 
     const got = await useCases.get("a");
     const listed = await useCases.list();
-    expect(got?.headers["X-Api-Key"]).toMatch(MASK);
-    expect(listed[0]?.headers["X-Api-Key"]).toMatch(MASK);
+    expectMasked(got?.headers["X-Api-Key"]);
+    expectMasked(listed[0]?.headers["X-Api-Key"]);
     for (const value of [created, got, ...listed].map((a) => a?.headers["X-Api-Key"] ?? "")) {
       expect(value).not.toContain("enc:v1:");
       expect(value).not.toContain("plain-key");

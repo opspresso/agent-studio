@@ -23,7 +23,7 @@ export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
 /**
  * Editable key/value header rows. Every header value is stored encrypted at
  * rest, so each row is flagged as a secret. On edit, existing values arrive
- * masked (length-preserving; long values reveal their first/last 2 chars); leaving a value
+ * masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); leaving a value
  * masked keeps the stored secret, while typing a new value replaces it.
  */
 export function HeaderRowsEditor({
