@@ -118,6 +118,15 @@ PUT /api/settings → 200 {…same shape…} | 400
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `githubToken`, `a2aApiKey`,
   `publicBaseUrl`.
+
+```
+POST /api/settings/a2a-key → 200 { key, view }   (raw key, shown once)
+```
+
+- Admin-only. Issues a fresh app-wide A2A key (`asa_` + 32 random bytes) as a settings
+  override and returns it once alongside the updated (masked) settings view. Reissuing
+  invalidates the previous key immediately. A key pasted in by hand through `PUT /api/settings`
+  still works — this endpoint only saves you from inventing one.
 - `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
   array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
   currently effective key for that provider name. Provider `name` must be one of
@@ -191,10 +200,15 @@ A per-project token lets external callers reach the execution endpoints with
 stored; the raw value is returned once at generation and cannot be retrieved again.
 
 ```
-GET    /api/projects/{name}/token   → { configured, createdAt? }
-POST   /api/projects/{name}/token   → { token, createdAt }   (raw token, shown once)
+GET    /api/projects/{name}/token   → { configured, masked?, createdAt? }
+POST   /api/projects/{name}/token   → { token, masked, createdAt }   (raw token, shown once)
 DELETE /api/projects/{name}/token   → 204
 ```
+
+Tokens are `ast_` + 32 random bytes (base64url). `masked` is the display mask recorded at
+generation (`ast_••••…••wXyZ`) — the token itself stays unrecoverable, so this is the only
+way the console can show *which* token is set. It is absent on tokens issued before masks
+were recorded; those keep working, since verification compares hashes and never the prefix.
 
 All three are owner-only (403 for non-owners). `POST` generates or regenerates the token —
 regeneration overwrites the previous one, which stops working immediately. The token is

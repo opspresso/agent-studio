@@ -33,9 +33,9 @@ export function TokenSection({ projectName }: { projectName: string }) {
     setBusy(true);
     setError(null);
     try {
-      const { token, createdAt } = await generateProjectToken(projectName);
+      const { token, masked, createdAt } = await generateProjectToken(projectName);
       setRawToken(token);
-      setStatus({ configured: true, createdAt });
+      setStatus({ configured: true, masked, createdAt });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate token");
     } finally {
@@ -101,10 +101,18 @@ export function TokenSection({ projectName }: { projectName: string }) {
       )}
 
       {status.configured && !rawToken && (
-        <p className="text-sm text-neutral-500">
-          A token is set{status.createdAt ? ` (created ${status.createdAt.slice(0, 10)})` : ""}. The
-          value is hashed and cannot be shown again — regenerate to get a new one.
-        </p>
+        <div className="space-y-1">
+          {status.masked && (
+            <code className="block truncate rounded bg-neutral-100 px-2 py-1.5 font-mono text-xs dark:bg-neutral-800">
+              {status.masked}
+            </code>
+          )}
+          <p className="text-sm text-neutral-500">
+            A token is set{status.createdAt ? ` (created ${status.createdAt.slice(0, 10)})` : ""}.
+            Only its hash is stored, so the full value cannot be shown again — regenerate to get a
+            new one.
+          </p>
+        </div>
       )}
 
       <div className="flex flex-wrap gap-2">

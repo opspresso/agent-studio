@@ -103,6 +103,9 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  /** Raw A2A key, held only until the page is left — it is masked from then on. */
+  const [newA2aKey, setNewA2aKey] = useState<string | null>(null);
+  const [issuingA2aKey, setIssuingA2aKey] = useState(false);
 
   function applyView(next: SettingsView) {
     setView(next);
@@ -174,6 +177,35 @@ export default function SettingsPage() {
     }
   }
 
+  async function issueA2aKey(replacing: boolean) {
+    if (
+      replacing &&
+      !confirm("Generate a new A2A_API_KEY? The current key stops working immediately.")
+    ) {
+      return;
+    }
+    setIssuingA2aKey(true);
+    setError(null);
+    setNewA2aKey(null);
+    try {
+      const res = await fetch("/api/settings/a2a-key", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as {
+        key?: string;
+        view?: SettingsView;
+        error?: string;
+      };
+      if (!res.ok || !data.key || !data.view) {
+        throw new Error(data.error ?? `Request failed (${res.status})`);
+      }
+      setNewA2aKey(data.key);
+      applyView(data.view);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate A2A key");
+    } finally {
+      setIssuingA2aKey(false);
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-neutral-500">Loading…</p>;
   }
@@ -233,6 +265,37 @@ export default function SettingsPage() {
                 </label>
               );
             })}
+            {section.title === "A2A" && (
+              <div className="space-y-2">
+                {newA2aKey && (
+                  <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
+                    <code className="block truncate rounded bg-white px-2 py-1.5 font-mono text-xs dark:bg-neutral-900">
+                      {newA2aKey}
+                    </code>
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      Copy it now — this is the only time the key is shown. Inbound A2A callers
+                      must send it as <code className="font-mono">X-A2A-Key</code>.
+                    </p>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => issueA2aKey(view?.fields.a2aApiKey?.source !== "unset")}
+                  disabled={issuingA2aKey}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                >
+                  {issuingA2aKey
+                    ? "Working…"
+                    : view?.fields.a2aApiKey?.source === "unset"
+                      ? "Generate key"
+                      : "Regenerate key"}
+                </button>
+                <p className="text-xs text-neutral-400">
+                  Generating stores the key as an override and shows it once. You can also paste
+                  a key of your own into the field above.
+                </p>
+              </div>
+            )}
             {section.title === "LLM" && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">

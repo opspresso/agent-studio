@@ -275,6 +275,8 @@ export async function testProjectSlack(
 
 export interface ProjectTokenStatus {
   configured: boolean;
+  /** Display mask of the stored token; absent on tokens issued before masks. */
+  masked?: string;
   createdAt?: string;
 }
 
@@ -289,13 +291,18 @@ export async function getProjectToken(name: string): Promise<ProjectTokenStatus>
 /** Generate (or regenerate) the project API token. Returns the raw token once. */
 export async function generateProjectToken(
   name: string,
-): Promise<{ token: string; createdAt: string }> {
+): Promise<{ token: string; masked: string; createdAt: string }> {
   const res = await fetch(`/api/projects/${name}/token`, { method: "POST" });
-  const data = (await res.json()) as { token?: string; createdAt?: string; error?: string };
+  const data = (await res.json()) as {
+    token?: string;
+    masked?: string;
+    createdAt?: string;
+    error?: string;
+  };
   if (!res.ok || !data.token) {
     throw new Error(data.error ?? `Failed to generate token (${res.status})`);
   }
-  return { token: data.token, createdAt: data.createdAt ?? "" };
+  return { token: data.token, masked: data.masked ?? "", createdAt: data.createdAt ?? "" };
 }
 
 export async function revokeProjectToken(name: string): Promise<void> {

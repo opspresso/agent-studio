@@ -362,6 +362,7 @@ POST /api/projects/[name]/versions/[version]/predict        (version = name | 'p
 POST /api/projects/[name]/versions/[version]/chat/completions   OpenAI-compatible
 POST /api/projects/[name]/versions/[version]/agent          SSE stream
 GET|POST|DELETE /api/projects/[name]/token  per-project API token, owner-only (POST returns raw token once)
+POST /api/settings/a2a-key                  issue/reissue the app-wide A2A key, admin-only
 GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner-only (+ POST …/slack/test)
 GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
@@ -419,6 +420,16 @@ only to reveal the edge characters of long values in the admin masked view); a s
 provider list replaces the whole `LLM_PROVIDER_*` env set. Bootstrap env (`AES_ENCRYPTION_KEY`,
 Better Auth, Google OAuth, DynamoDB, `STAGE`) stays env-only. SSE responses use
 `text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.
+
+Generated secrets: the two credentials Agent Studio issues itself carry a prefix naming
+product and kind (`src/lib/generatedSecret.ts`) — `asa_` for the app-wide A2A key, `ast_`
+for a project API token — so a leaked string is traceable to what it opens. Both are issued
+from the console and shown in full exactly once. The A2A key is an ordinary settings
+override: encrypted, then masked on every later read. A project API token is stored as a
+SHA-256 hash and is unrecoverable, so its display mask is computed at generation and stored
+beside the hash — it carries only the prefix and the edge characters a mask reveals, never
+enough to reconstruct the token. Verification compares hashes and ignores the prefix, so
+tokens issued under the older `sk_proj_` prefix keep working.
 
 ## Auth
 

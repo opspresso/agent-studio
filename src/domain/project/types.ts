@@ -6,6 +6,15 @@ export type ProjectType = "llm" | "agent" | "image";
  */
 export interface ProjectApiToken {
   tokenHash: string;
+  /**
+   * The display mask computed at generation time, e.g. `ast_••••••••wXyZ`.
+   * Stored rather than derived because the token itself is unrecoverable: this
+   * is the only way the console can show *which* token is set. It holds nothing
+   * beyond the prefix and the few edge characters a mask reveals, so it cannot
+   * be used to reconstruct the token. Absent on tokens issued before masks were
+   * displayed.
+   */
+  masked?: string;
   createdAt: string;
 }
 

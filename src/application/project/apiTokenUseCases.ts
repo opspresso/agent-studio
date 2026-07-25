@@ -1,26 +1,34 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import { apiTokenHashEquals, generateApiTokenValue, hashApiToken } from "@/lib/apiToken";
+import { generateSecretValue, hashSecret, secretHashEquals } from "@/lib/generatedSecret";
+import { maskSecret } from "@/infrastructure/crypto/secretEncryption";
 import { assertProjectOwner, getProject } from "./projectUseCases";
 
 export interface ApiTokenStatus {
   configured: boolean;
+  /** Display mask of the current token, when one was recorded at generation. */
+  masked?: string;
   createdAt?: string;
 }
 
 /**
  * Generate (or regenerate) the project's API token. Owner-only. Returns the raw
  * token once — only its hash is persisted, overwriting any previous token.
+ *
+ * The mask is computed here and stored alongside the hash: the token cannot be
+ * recovered later, so without it the console could only say "a token is set"
+ * and never which one.
  */
 export async function generateApiToken(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
-): Promise<{ token: string; createdAt: string }> {
+): Promise<{ token: string; masked: string; createdAt: string }> {
   await assertProjectOwner(repo, name, userEmail);
-  const token = generateApiTokenValue();
+  const token = generateSecretValue("projectApiToken");
+  const masked = maskSecret(token);
   const createdAt = new Date().toISOString();
-  await repo.setApiToken(name, { tokenHash: hashApiToken(token), createdAt });
-  return { token, createdAt };
+  await repo.setApiToken(name, { tokenHash: hashSecret(token), masked, createdAt });
+  return { token, masked, createdAt };
 }
 
 /** Report whether the project has an API token, and when it was created. Owner-only. */
@@ -31,7 +39,14 @@ export async function getApiTokenStatus(
 ): Promise<ApiTokenStatus> {
   await assertProjectOwner(repo, name, userEmail);
   const token = await repo.getApiToken(name);
-  return token ? { configured: true, createdAt: token.createdAt } : { configured: false };
+  if (!token) {
+    return { configured: false };
+  }
+  return {
+    configured: true,
+    ...(token.masked ? { masked: token.masked } : {}),
+    createdAt: token.createdAt,
+  };
 }
 
 /** Remove the project's API token. Owner-only. Idempotent. */
@@ -58,7 +73,7 @@ export async function verifyProjectApiToken(
   if (!stored) {
     return null;
   }
-  if (!apiTokenHashEquals(hashApiToken(token), stored.tokenHash)) {
+  if (!secretHashEquals(hashSecret(token), stored.tokenHash)) {
     return null;
   }
   const project = await getProject(repo, name);

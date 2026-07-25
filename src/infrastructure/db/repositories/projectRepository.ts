@@ -228,6 +228,7 @@ export const projectRepository: ProjectRepository = {
     }
     return {
       tokenHash: result.Item.tokenHash as string,
+      masked: result.Item.masked as string | undefined,
       createdAt: result.Item.createdAt as string,
     };
   },
@@ -241,6 +242,7 @@ export const projectRepository: ProjectRepository = {
           ...key,
           entityType: "APITOKEN",
           tokenHash: token.tokenHash,
+          masked: token.masked,
           createdAt: token.createdAt,
         },
       }),
