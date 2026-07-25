@@ -23,7 +23,10 @@ import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
-import { decryptHeadersForOutbound } from "@/infrastructure/crypto/secretEncryption";
+import {
+  decryptHeadersForOutbound,
+  mergeOutboundHeaders,
+} from "@/infrastructure/crypto/secretEncryption";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
@@ -437,14 +440,15 @@ async function buildMcpTools(
   }
   const descriptionByName = new Map<string, string>();
   const resolved = await Promise.all(
-    mcpList.map(async (name) => {
-      const mcp = await deps.mcps.get(name);
+    mcpList.map(async (binding) => {
+      const mcp = await deps.mcps.get(binding.name);
       if (!mcp) {
         return null;
       }
       try {
         // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
-        // window; a blocked server is skipped, not fatal to the run.
+        // window; a blocked server is skipped, not fatal to the run. The URL is
+        // always the registry's — a binding may redefine headers, never the host.
         await assertPublicUrl(mcp.url);
       } catch (error) {
         console.warn(
@@ -452,18 +456,19 @@ async function buildMcpTools(
         );
         return null;
       }
-      return mcp;
+      return { mcp, binding };
     }),
   );
   const servers = [];
-  for (const mcp of resolved) {
-    if (!mcp) {
+  for (const entry of resolved) {
+    if (!entry) {
       continue;
     }
+    const { mcp, binding } = entry;
     servers.push({
       name: mcp.name,
       url: mcp.url,
-      headers: decryptHeadersForOutbound(mcp.headers),
+      headers: mergeOutboundHeaders(mcp.headers, binding.headers),
     });
     descriptionByName.set(mcp.name, mcp.description ?? "");
   }

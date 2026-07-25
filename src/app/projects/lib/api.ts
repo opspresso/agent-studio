@@ -1,4 +1,5 @@
 import type {
+  McpBinding,
   Project,
   ProjectType,
   SubagentRef,
@@ -12,7 +13,7 @@ import type { Trace } from "@/domain/trace/types";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
-export type { Project, ProjectType, SubagentRef, Version, VersionParameters };
+export type { McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
 export type { ModelConfig, EngineChunk, UsageRow, Trace };
 
 // --- Projects -------------------------------------------------------------
@@ -84,7 +85,7 @@ export interface VersionInput {
   model: string;
   fallbackModel?: string;
   parameters: VersionParameters;
-  mcpList: string[];
+  mcpList: McpBinding[];
   skillList: string[];
   subagentList: SubagentRef[];
   maxTurn?: number;

@@ -5,13 +5,17 @@ import { describe, expect, it } from "vitest";
 import {
   decryptHeadersForOutbound,
   decryptSecret,
+  encryptHeaderOverrides,
   encryptHeaders,
   encryptSecret,
   isEncrypted,
   isMasked,
+  maskHeaderOverrides,
   maskHeaders,
   maskSecret,
+  mergeHeaderOverrideUpdate,
   mergeHeaderUpdate,
+  mergeOutboundHeaders,
 } from "@/infrastructure/crypto/secretEncryption";
 
 describe("header encryption round-trip", () => {
@@ -103,5 +107,115 @@ describe("partial-reveal masking (>= 20 chars)", () => {
     expect(isMasked(`sk${bullets(20)}op`)).toBe(true);
     expect(isMasked("sk-real-secret-value-1234")).toBe(false);
     expect(isMasked("")).toBe(false);
+  });
+});
+
+describe("MCP header overrides", () => {
+  it("encrypts values but carries the null delete marker through untouched", () => {
+    const encrypted = encryptHeaderOverrides({
+      Authorization: "Bearer project-token",
+      "X-Drop-Me": null,
+    });
+    expect(isEncrypted(encrypted.Authorization as string)).toBe(true);
+    expect(encrypted["X-Drop-Me"]).toBeNull();
+  });
+
+  it("masks values but leaves the delete marker visible as null", () => {
+    const masked = maskHeaderOverrides(
+      encryptHeaderOverrides({ Authorization: "Bearer super-secret-token-value", "X-Gone": null }),
+    );
+    expect(masked.Authorization).not.toContain("secret");
+    expect(masked.Authorization).toContain("•");
+    expect(masked["X-Gone"]).toBeNull();
+  });
+
+  it("keeps the stored secret when a masked or empty value is submitted back", () => {
+    const stored = encryptHeaderOverrides({ Authorization: "Bearer super-secret-token-value" });
+    const masked = maskHeaderOverrides(stored).Authorization as string;
+
+    expect(mergeHeaderOverrideUpdate(stored, { Authorization: masked }).Authorization).toBe(
+      stored.Authorization,
+    );
+    expect(mergeHeaderOverrideUpdate(stored, { Authorization: "" }).Authorization).toBe(
+      stored.Authorization,
+    );
+  });
+
+  it("drops a masked value that has no stored counterpart", () => {
+    // A mask can only confirm an existing secret, never create one.
+    expect(mergeHeaderOverrideUpdate({}, { "X-New": "******" })).toEqual({});
+  });
+
+  it("replaces a stored value when a new plaintext secret is typed", () => {
+    const stored = encryptHeaderOverrides({ Authorization: "Bearer old" });
+    const merged = mergeHeaderOverrideUpdate(stored, { Authorization: "Bearer new" });
+    expect(merged.Authorization).not.toBe(stored.Authorization);
+    expect(decryptSecret(merged.Authorization as string)).toBe("Bearer new");
+  });
+
+  it("keeps an explicit removal across an update round-trip", () => {
+    const stored = encryptHeaderOverrides({ "X-Tenant": null });
+    expect(mergeHeaderOverrideUpdate(stored, { "X-Tenant": null })["X-Tenant"]).toBeNull();
+  });
+});
+
+describe("mergeOutboundHeaders", () => {
+  const registry = encryptHeaders({
+    Authorization: "Bearer registry-default",
+    "X-Shared": "shared-value",
+  });
+
+  it("returns the registry headers unchanged when a binding has no overrides", () => {
+    expect(mergeOutboundHeaders(registry, undefined)).toEqual({
+      Authorization: "Bearer registry-default",
+      "X-Shared": "shared-value",
+    });
+    expect(mergeOutboundHeaders(registry, {})).toEqual({
+      Authorization: "Bearer registry-default",
+      "X-Shared": "shared-value",
+    });
+  });
+
+  it("overwrites a registry default, adds a new header, and removes a default", () => {
+    const merged = mergeOutboundHeaders(
+      registry,
+      encryptHeaderOverrides({
+        Authorization: "Bearer project-token",
+        "X-Tenant": "acme",
+        "X-Shared": null,
+      }),
+    );
+    expect(merged).toEqual({
+      Authorization: "Bearer project-token",
+      "X-Tenant": "acme",
+    });
+  });
+
+  it("lets two bindings send different credentials to the same registry server", () => {
+    const a = mergeOutboundHeaders(registry, encryptHeaderOverrides({ Authorization: "Bearer a" }));
+    const b = mergeOutboundHeaders(registry, encryptHeaderOverrides({ Authorization: "Bearer b" }));
+    expect(a.Authorization).toBe("Bearer a");
+    expect(b.Authorization).toBe("Bearer b");
+    // The shared registry header still reaches both.
+    expect(a["X-Shared"]).toBe("shared-value");
+    expect(b["X-Shared"]).toBe("shared-value");
+  });
+
+  it("displaces a registry header that differs only by case", () => {
+    // HTTP header names are case-insensitive; sending both would let the server
+    // pick arbitrarily between the registry default and the override.
+    const merged = mergeOutboundHeaders(
+      registry,
+      encryptHeaderOverrides({ authorization: "Bearer lowercase" }),
+    );
+    expect(Object.keys(merged).filter((k) => k.toLowerCase() === "authorization")).toEqual([
+      "authorization",
+    ]);
+    expect(merged.authorization).toBe("Bearer lowercase");
+  });
+
+  it("removes a registry default whose case differs from the override key", () => {
+    const merged = mergeOutboundHeaders(registry, { "x-shared": null });
+    expect(Object.keys(merged)).toEqual(["Authorization"]);
   });
 });

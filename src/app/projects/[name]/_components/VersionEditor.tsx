@@ -7,7 +7,14 @@ import { listMcps } from "@/app/tools/api";
 import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { listProjects } from "../../lib/api";
 import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
-import { Field, NumberField, SearchSelectInput, SubagentInput, inputClass } from "./inputs";
+import {
+  Field,
+  McpBindingInput,
+  NumberField,
+  SearchSelectInput,
+  SubagentInput,
+  inputClass,
+} from "./inputs";
 import type { PickerOption } from "./inputs";
 
 type SubagentOption = PickerOption & { type: "local" | "remote" };
@@ -321,12 +328,10 @@ export function VersionEditor({
         </div>
       )}
 
-      <SearchSelectInput
-        label="MCP servers"
+      <McpBindingInput
         values={value.mcpList}
         onChange={(mcpList) => patch({ mcpList })}
         options={mcpOptions}
-        placeholder="Search registered MCP servers"
       />
       <SearchSelectInput
         label="Skills"

@@ -45,6 +45,21 @@ export interface SubagentRef {
   type: "local" | "remote";
 }
 
+/**
+ * A version's binding to a registry MCP server. The URL always comes from the
+ * registry; only headers may be redefined per version.
+ *
+ * `headers` layers over the registry server's own headers at dispatch:
+ * a string value replaces a registry default or adds a new header, and `null`
+ * removes a registry default. Matching is case-insensitive, as HTTP header
+ * names are. Values are AES-encrypted at rest and masked on read exactly like
+ * the registry's headers.
+ */
+export interface McpBinding {
+  name: string;
+  headers?: Record<string, string | null>;
+}
+
 export interface Version {
   projectName: string;
   versionName: string;
@@ -53,7 +68,8 @@ export interface Version {
   model: string;
   fallbackModel?: string;
   parameters: VersionParameters;
-  mcpList: string[];
+  /** Bound MCP servers. Legacy rows stored plain names; reads normalize them. */
+  mcpList: McpBinding[];
   skillList: string[];
   subagentList: SubagentRef[];
   maxTurn?: number;

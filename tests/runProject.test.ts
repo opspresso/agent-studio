@@ -281,7 +281,7 @@ describe("executeAgent MCP dispatch SSRF re-check", () => {
       const chunks = await collect(
         executeAgent(deps, {
           project: projectFixture(),
-          version: { ...versionFixture({ piiFiltering: false }), mcpList: ["internal-mcp"] },
+          version: { ...versionFixture({ piiFiltering: false }), mcpList: [{ name: "internal-mcp" }] },
           messages: [{ role: "user", content: "hi" }],
         }),
       );

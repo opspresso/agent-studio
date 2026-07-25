@@ -213,8 +213,17 @@ Two deliberate strategies coexist:
   createdAt, updatedAt }`
 - `Version { versionName, systemPrompt, userPromptTemplate, model, fallbackModel?, parameters
   (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema,
-  imageGeneration?/imageModel?), mcpList: string[], skillList: string[],
+  imageGeneration?/imageModel?), mcpList: McpBinding[], skillList: string[],
   subagentList: {name, type:'local'|'remote'}[], maxTurn?, createdAt }`
+- `McpBinding { name, headers?: Record<string, string | null> }` — binds the version to a
+  registry MCP server. The URL is always the registry's; `headers` layers over the server's
+  own headers at dispatch (string = replace/add, `null` = remove a default, matched
+  case-insensitively), so one registry server serves many projects under different
+  credentials. Override values carry the same AES-encrypt/mask lifecycle as registry
+  headers, which makes a version the first entity holding secrets: API responses go through
+  `toVersionView`, while execution paths read the repository value and decrypt at dispatch.
+  Rows written before overrides existed stored `mcpList` as `string[]`; reads normalize them
+  and the API still accepts that shape.
 - Template variables `{{var}}` rendered server-side before dispatch.
 - Version writes validate capability fit for catalog models (agent projects require
   `capabilities.tools`; `structuredOutput` requires the capability); unknown/custom model
@@ -292,7 +301,9 @@ Two deliberate strategies coexist:
 ### MCP
 - `McpServer { name, url, description?, headers: Record<string,string> (values encrypted
   at rest AES-256-GCM `enc:v1:` prefix, masked on read — length-preserving, revealing the
-  first/last 2 chars of values ≥20 chars), createdAt, updatedAt }`
+  first/last 2 chars of values ≥20 chars), createdAt, updatedAt }`. These headers are the
+  shared default; a version's `McpBinding.headers` may redefine them per project
+  (`mergeOutboundHeaders` in `src/infrastructure/crypto/secretEncryption.ts`).
 - `url` is SSRF-guarded (`src/infrastructure/net/ssrfGuard.ts`) at registration and dispatch:
   non-http(s) schemes and private/loopback/link-local/metadata addresses are rejected.
   Outbound calls go through `fetchPublicUrl`, which re-resolves and re-checks DNS on every

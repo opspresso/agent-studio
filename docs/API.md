@@ -71,12 +71,37 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 
 Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
-structuredOutput?, jsonSchema?, imageGeneration?, imageModel? }`, `mcpList[]`, `skillList[]`,
+structuredOutput?, jsonSchema?, imageGeneration?, imageModel? }`,
+`mcpList[{ name, headers? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
 image-capable registry model is rejected with 400. `mcpList`/`skillList`/`subagentList`
 entries must resolve to registered MCP servers, skills, agents, or projects — a dangling
 reference is rejected with 400. On update only *newly added* entries are checked, so a
 version stays editable after a registry entry it already referenced is deleted.
+
+#### MCP bindings and per-version header overrides
+
+Each `mcpList` entry binds the version to a registry MCP server. The URL is always the
+registry's; only headers may be redefined, so the same server can be called with different
+credentials from different projects without registering it twice.
+
+```json
+"mcpList": [
+  { "name": "shared-mcp",
+    "headers": { "Authorization": "Bearer project-token", "X-Tenant": "acme", "X-Shared": null } }
+]
+```
+
+- A string value replaces a registry default or adds a new header; `null` removes a registry
+  default for this version. Matching is case-insensitive, as HTTP header names are.
+- Omitting `headers` (or sending `{}`) uses the registry headers unchanged.
+- A bare string entry — `"mcpList": ["shared-mcp"]`, the shape before overrides existed — is
+  still accepted and normalizes to `{ "name": "shared-mcp" }`.
+- Override values are AES-encrypted at rest and returned masked (same rule as registry
+  headers); a masked or empty value on update preserves the stored secret, and a masked
+  value under a header with no stored counterpart is dropped. `null` markers are returned
+  as-is — a removal is not a secret.
+- Editing overrides is owner-only, like every other version write.
 
 ## App settings
 

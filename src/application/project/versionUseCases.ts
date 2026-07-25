@@ -1,5 +1,15 @@
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, SubagentRef, Version, VersionParameters } from "@/domain/project/types";
+import type {
+  McpBinding,
+  Project,
+  SubagentRef,
+  Version,
+  VersionParameters,
+} from "@/domain/project/types";
+import {
+  maskHeaderOverrides,
+  mergeHeaderOverrideUpdate,
+} from "@/infrastructure/crypto/secretEncryption";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
@@ -24,7 +34,7 @@ export interface VersionRefRepos {
 
 /** The reference lists as they appear on a version. */
 interface VersionRefs {
-  mcpList?: string[];
+  mcpList?: McpBinding[];
   skillList?: string[];
   subagentList?: SubagentRef[];
 }
@@ -42,14 +52,14 @@ async function assertReferencesExist(
   next: VersionRefs,
   existing?: VersionRefs,
 ): Promise<void> {
-  const knownMcps = new Set(existing?.mcpList ?? []);
+  const knownMcps = new Set((existing?.mcpList ?? []).map((binding) => binding.name));
   const knownSkills = new Set(existing?.skillList ?? []);
   const knownSubagents = new Set((existing?.subagentList ?? []).map(subagentKey));
 
   const checks: Array<Promise<string | null>> = [
     ...(next.mcpList ?? [])
-      .filter((name) => !knownMcps.has(name))
-      .map(async (name) =>
+      .filter((binding) => !knownMcps.has(binding.name))
+      .map(async ({ name }) =>
         (await refs.mcps.get(name)) ? null : `MCP server "${name}" does not exist`,
       ),
     ...(next.skillList ?? [])
@@ -80,10 +90,50 @@ export interface VersionInput {
   model: string;
   fallbackModel?: string;
   parameters: VersionParameters;
-  mcpList: string[];
+  mcpList: McpBinding[];
   skillList: string[];
   subagentList: SubagentRef[];
   maxTurn?: number;
+}
+
+/**
+ * Resolve submitted MCP bindings to their stored form: header override values
+ * are encrypted at rest, and a masked or empty value keeps the secret already
+ * stored under the same server and header name. A binding with no overrides is
+ * stored without the field, so an untouched version is byte-identical to what
+ * it was before overrides existed.
+ */
+function resolveMcpBindings(next: McpBinding[], existing: McpBinding[] = []): McpBinding[] {
+  const storedByName = new Map(existing.map((binding) => [binding.name, binding.headers ?? {}]));
+  return next.map((binding) => {
+    if (!binding.headers || Object.keys(binding.headers).length === 0) {
+      return { name: binding.name };
+    }
+    const headers = mergeHeaderOverrideUpdate(
+      storedByName.get(binding.name) ?? {},
+      binding.headers,
+    );
+    return Object.keys(headers).length > 0
+      ? { name: binding.name, headers }
+      : { name: binding.name };
+  });
+}
+
+/**
+ * A version as an API response may carry it. Versions hold secrets now that MCP
+ * bindings can override headers, so every route that returns one masks it here.
+ * Execution paths deliberately do NOT: they read the repository value and
+ * decrypt at dispatch.
+ */
+export function toVersionView(version: Version): Version {
+  return {
+    ...version,
+    mcpList: version.mcpList.map((binding) =>
+      binding.headers
+        ? { name: binding.name, headers: maskHeaderOverrides(binding.headers) }
+        : binding,
+    ),
+  };
 }
 
 export interface CreateVersionInput extends VersionInput {
@@ -184,7 +234,7 @@ export async function createVersion(
     model: input.model,
     fallbackModel: input.fallbackModel,
     parameters: input.parameters,
-    mcpList: input.mcpList,
+    mcpList: resolveMcpBindings(input.mcpList),
     skillList: input.skillList,
     subagentList: input.subagentList,
     maxTurn: input.maxTurn,
@@ -230,7 +280,9 @@ export async function updateVersion(
     fallbackModel:
       input.fallbackModel === null ? undefined : input.fallbackModel ?? existing.fallbackModel,
     parameters: input.parameters ?? existing.parameters,
-    mcpList: input.mcpList ?? existing.mcpList,
+    mcpList: input.mcpList
+      ? resolveMcpBindings(input.mcpList, existing.mcpList)
+      : existing.mcpList,
     skillList: input.skillList ?? existing.skillList,
     subagentList: input.subagentList ?? existing.subagentList,
     maxTurn: input.maxTurn === null ? undefined : input.maxTurn ?? existing.maxTurn,

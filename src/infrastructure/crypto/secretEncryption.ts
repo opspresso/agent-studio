@@ -141,3 +141,79 @@ export function decryptHeadersForOutbound(
     Object.entries(headers).map(([k, v]) => [k, decryptSecret(v)]),
   );
 }
+
+// --- Header overrides -------------------------------------------------------
+// A version may redefine a registry server's headers. Overrides carry the same
+// encryption/masking lifecycle as the registry's own headers, plus one extra
+// value: `null` marks "remove this registry default", so it must survive
+// encryption, masking, and update-merging untouched.
+
+/** Values a header override map may hold; `null` removes a registry default. */
+export type HeaderOverrides = Record<string, string | null>;
+
+export function encryptHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides {
+  return Object.fromEntries(
+    Object.entries(overrides).map(([k, v]) => [k, v === null ? null : encryptSecret(v)]),
+  );
+}
+
+export function maskHeaderOverrides(overrides: HeaderOverrides): HeaderOverrides {
+  return Object.fromEntries(
+    Object.entries(overrides).map(([k, v]) => [k, v === null ? null : maskSecret(v)]),
+  );
+}
+
+/**
+ * Merge a submitted override map against the stored one, mirroring
+ * {@link mergeHeaderUpdate}: a masked or empty value keeps the stored secret,
+ * and a masked value with no stored counterpart is dropped — a mask can only
+ * confirm an existing secret, never create one. `null` passes straight through
+ * as an explicit removal.
+ */
+export function mergeHeaderOverrideUpdate(
+  stored: HeaderOverrides,
+  update: HeaderOverrides,
+): HeaderOverrides {
+  const merged: HeaderOverrides = {};
+  for (const [key, value] of Object.entries(update)) {
+    if (value === null) {
+      merged[key] = null;
+      continue;
+    }
+    if (isMasked(value) || value === "") {
+      const previous = stored[key];
+      if (previous !== undefined) {
+        merged[key] = previous;
+      }
+      continue;
+    }
+    merged[key] = encryptSecret(value);
+  }
+  return merged;
+}
+
+/**
+ * Final outbound headers for one MCP dispatch: the registry server's headers
+ * with a version's overrides layered on. HTTP header names are case-insensitive,
+ * so an override displaces a registry default that differs only by case —
+ * otherwise both would be sent and the server would pick arbitrarily.
+ *
+ * Only call at dispatch time; both inputs are stored encrypted.
+ */
+export function mergeOutboundHeaders(
+  registryHeaders: Record<string, string>,
+  overrides: HeaderOverrides | undefined,
+): Record<string, string> {
+  const merged = decryptHeadersForOutbound(registryHeaders);
+  for (const [key, value] of Object.entries(overrides ?? {})) {
+    for (const existing of Object.keys(merged)) {
+      if (existing.toLowerCase() === key.toLowerCase()) {
+        delete merged[existing];
+      }
+    }
+    if (value !== null) {
+      merged[key] = decryptSecret(value);
+    }
+  }
+  return merged;
+}

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ChannelToolCall } from "@/domain/llm/types";
+import type { McpBinding } from "@/domain/project/types";
 
 export const projectNameSchema = z
   .string()
@@ -35,13 +36,26 @@ export const subagentRefSchema = z.object({
   type: z.enum(["local", "remote"]),
 });
 
+/**
+ * An MCP binding. A bare string stays accepted — that was the whole shape
+ * before per-version header overrides — and normalizes to a binding with none.
+ * In the object form, a `null` header value removes a registry default.
+ */
+export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
+  z.string().min(1).transform((name): McpBinding => ({ name })),
+  z.object({
+    name: z.string().min(1),
+    headers: z.record(z.string().min(1), z.string().nullable()).optional(),
+  }),
+]);
+
 export const versionInputSchema = z.object({
   systemPrompt: z.string().default(""),
   userPromptTemplate: z.string().default(""),
   model: z.string().min(1),
   fallbackModel: z.string().optional(),
   parameters: versionParametersSchema.default({ piiFiltering: false }),
-  mcpList: z.array(z.string()).default([]),
+  mcpList: z.array(mcpBindingSchema).default([]),
   skillList: z.array(z.string()).default([]),
   subagentList: z.array(subagentRefSchema).default([]),
   maxTurn: z.number().int().positive().optional(),

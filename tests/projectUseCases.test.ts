@@ -1,3 +1,7 @@
+// MCP header overrides are encrypted at rest, so the key must be present before
+// the encryption module reads config.
+process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+
 import { describe, expect, it, vi } from "vitest";
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
@@ -11,8 +15,14 @@ import {
   createVersion as createVersionUseCase,
   deleteVersion,
   publishVersion,
+  toVersionView,
   updateVersion as updateVersionUseCase,
 } from "@/application/project/versionUseCases";
+import {
+  decryptSecret,
+  isEncrypted,
+  isMasked,
+} from "@/infrastructure/crypto/secretEncryption";
 import { createProject, deleteProject, updateProject } from "@/application/project/projectUseCases";
 import { updateVersionSchema, versionNameSchema } from "@/app/api/projects/_lib/schemas";
 import {
@@ -354,7 +364,7 @@ describe("version reference validation", () => {
         makeVersionRepo(),
         makeProjectRepo([projectFixture("p")]),
         "p",
-        { ...versionInput(), mcpList: ["ghost-mcp"] },
+        { ...versionInput(), mcpList: [{ name: "ghost-mcp" }] },
         OWNER,
         NO_REFS_EXIST,
       ),
@@ -389,7 +399,7 @@ describe("version reference validation", () => {
         makeVersionRepo(),
         makeProjectRepo([projectFixture("p")]),
         "p",
-        { ...versionInput(), mcpList: ["m1"], skillList: ["s1"] },
+        { ...versionInput(), mcpList: [{ name: "m1" }], skillList: ["s1"] },
         OWNER,
         NO_REFS_EXIST,
       ),
@@ -399,7 +409,7 @@ describe("version reference validation", () => {
   it("keeps a version editable when a reference it already had was deleted", async () => {
     // Deleting an MCP server must not strand every version that ever used it:
     // only newly added references are checked.
-    const existing = { ...versionFixture("p", "1"), mcpList: ["deleted-mcp"] };
+    const existing = { ...versionFixture("p", "1"), mcpList: [{ name: "deleted-mcp" }] };
     const updated = await updateVersion(
       makeVersionRepo([existing]),
       makeProjectRepo([projectFixture("p")]),
@@ -410,18 +420,18 @@ describe("version reference validation", () => {
       NO_REFS_EXIST,
     );
     expect(updated.systemPrompt).toBe("edited");
-    expect(updated.mcpList).toEqual(["deleted-mcp"]);
+    expect(updated.mcpList).toEqual([{ name: "deleted-mcp" }]);
   });
 
   it("still rejects a reference newly added by an update", async () => {
-    const existing = { ...versionFixture("p", "1"), mcpList: ["deleted-mcp"] };
+    const existing = { ...versionFixture("p", "1"), mcpList: [{ name: "deleted-mcp" }] };
     await expect(
       updateVersion(
         makeVersionRepo([existing]),
         makeProjectRepo([projectFixture("p")]),
         "p",
         "1",
-        { mcpList: ["deleted-mcp", "ghost-mcp"] },
+        { mcpList: [{ name: "deleted-mcp" }, { name: "ghost-mcp" }] },
         OWNER,
         NO_REFS_EXIST,
       ),
@@ -435,13 +445,114 @@ describe("version reference validation", () => {
       "p",
       {
         ...versionInput(),
-        mcpList: ["real-mcp"],
+        mcpList: [{ name: "real-mcp" }],
         skillList: ["real-skill"],
         subagentList: [{ name: "real-project", type: "local" }],
       },
       OWNER,
     );
-    expect(created.mcpList).toEqual(["real-mcp"]);
+    expect(created.mcpList).toEqual([{ name: "real-mcp" }]);
+  });
+});
+
+describe("MCP binding header overrides", () => {
+  const bindingWith = (headers: Record<string, string | null>) => [
+    { name: "shared-mcp", headers },
+  ];
+
+  it("encrypts override values at rest and never stores plaintext", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      { ...versionInput(), mcpList: bindingWith({ Authorization: "Bearer project-secret" }) },
+      OWNER,
+    );
+
+    const stored = created.mcpList[0]?.headers?.Authorization as string;
+    expect(isEncrypted(stored)).toBe(true);
+    expect(decryptSecret(stored)).toBe("Bearer project-secret");
+  });
+
+  it("masks override values on the API view but keeps removals visible", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      {
+        ...versionInput(),
+        mcpList: bindingWith({
+          Authorization: "Bearer super-secret-token-value",
+          "X-Shared": null,
+        }),
+      },
+      OWNER,
+    );
+
+    const view = toVersionView(created);
+    const headers = view.mcpList[0]?.headers ?? {};
+    expect(isMasked(headers.Authorization as string)).toBe(true);
+    expect(headers.Authorization).not.toContain("secret");
+    // A removal is not a secret — it must stay legible so the editor can show it.
+    expect(headers["X-Shared"]).toBeNull();
+  });
+
+  it("keeps the stored secret when the masked view is submitted back", async () => {
+    const projects = makeProjectRepo([projectFixture("p")]);
+    const versions = makeVersionRepo();
+    const created = await createVersion(
+      versions,
+      projects,
+      "p",
+      {
+        ...versionInput(),
+        mcpList: bindingWith({ Authorization: "Bearer super-secret-token-value" }),
+      },
+      OWNER,
+    );
+    const maskedView = toVersionView(created);
+
+    const updated = await updateVersion(versions, projects, "p", created.versionName, {
+      mcpList: maskedView.mcpList,
+    }, OWNER);
+
+    expect(updated.mcpList[0]?.headers?.Authorization).toBe(
+      created.mcpList[0]?.headers?.Authorization,
+    );
+  });
+
+  it("drops a masked value under a header with no stored counterpart", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      { ...versionInput(), mcpList: bindingWith({ "X-New": "******" }) },
+      OWNER,
+    );
+    // A mask can only confirm an existing secret, never create one.
+    expect(created.mcpList[0]).toEqual({ name: "shared-mcp" });
+  });
+
+  it("stores no headers field when a binding has no overrides", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      { ...versionInput(), mcpList: [{ name: "shared-mcp" }] },
+      OWNER,
+    );
+    expect(created.mcpList).toEqual([{ name: "shared-mcp" }]);
+  });
+
+  it("refuses a non-owner editing another project's overrides", async () => {
+    const projects = makeProjectRepo([projectFixture("p")]);
+    const versions = makeVersionRepo([versionFixture("p", "1")]);
+
+    await expect(
+      updateVersion(versions, projects, "p", "1", {
+        mcpList: bindingWith({ Authorization: "Bearer stolen" }),
+      }, OTHER),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 
@@ -827,5 +938,30 @@ describe("updateVersionSchema", () => {
     const parsed = updateVersionSchema.safeParse({ fallbackModel: null, maxTurn: null });
 
     expect(parsed.success).toBe(true);
+  });
+
+  it("still accepts the pre-override mcpList shape and normalizes it to bindings", () => {
+    // Clients written before per-version header overrides send plain names.
+    const parsed = updateVersionSchema.safeParse({ mcpList: ["alpha", "beta"] });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
+  });
+
+  it("accepts a binding with header overrides, including a null removal", () => {
+    const parsed = updateVersionSchema.safeParse({
+      mcpList: [{ name: "alpha", headers: { Authorization: "Bearer x", "X-Gone": null } }],
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.mcpList?.[0]?.headers).toEqual({
+      Authorization: "Bearer x",
+      "X-Gone": null,
+    });
+  });
+
+  it("rejects a binding with no server name", () => {
+    expect(updateVersionSchema.safeParse({ mcpList: [{ headers: {} }] }).success).toBe(false);
+    expect(updateVersionSchema.safeParse({ mcpList: [""] }).success).toBe(false);
   });
 });

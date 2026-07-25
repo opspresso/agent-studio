@@ -163,6 +163,54 @@ describe("project/version atomic writes", () => {
   });
 });
 
+describe("versionRepository mcpList normalization", () => {
+  const legacyKey = keys.version("legacy", "1");
+
+  function writeRaw(mcpList: unknown): void {
+    store.set(`${legacyKey.PK}|${legacyKey.SK}`, {
+      ...legacyKey,
+      entityType: "VERSION",
+      projectName: "legacy",
+      versionName: "1",
+      systemPrompt: "",
+      userPromptTemplate: "",
+      model: "openai/gpt-5-mini",
+      parameters: { piiFiltering: false },
+      mcpList,
+      skillList: [],
+      subagentList: [],
+      createdAt: NOW,
+    });
+  }
+
+  it("reads a row written before overrides existed as bindings with none", async () => {
+    // mcpList used to be a plain string[]; those rows are still valid bindings.
+    writeRaw(["alpha", "beta"]);
+
+    const version = await versionRepository.get("legacy", "1");
+
+    expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
+  });
+
+  it("keeps overrides on rows written in the binding shape", async () => {
+    writeRaw([{ name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } }]);
+
+    const version = await versionRepository.get("legacy", "1");
+
+    expect(version?.mcpList).toEqual([
+      { name: "alpha", headers: { Authorization: "enc:v1:x", "X-Gone": null } },
+    ]);
+  });
+
+  it("drops entries with no usable name instead of failing the read", async () => {
+    writeRaw(["ok", "", { headers: {} }, null, 42]);
+
+    const version = await versionRepository.get("legacy", "1");
+
+    expect(version?.mcpList).toEqual([{ name: "ok" }]);
+  });
+});
+
 describe("mcpRepository round-trip", () => {
   it("uses conditional writes for the CRUD lifecycle", async () => {
     const server = {

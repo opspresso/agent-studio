@@ -2,7 +2,7 @@ import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dyn
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import type { VersionRepository } from "@/domain/project/repository";
-import type { Version } from "@/domain/project/types";
+import type { McpBinding, Version } from "@/domain/project/types";
 
 const ENTITY_TYPE = "VERSION";
 const PUBLISHED = "published";
@@ -23,6 +23,33 @@ function toItem(version: Version): VersionItem {
   };
 }
 
+/**
+ * `mcpList` was a plain `string[]` before per-version header overrides existed.
+ * Rows written then are still valid bindings with no override, so normalize on
+ * read rather than migrating the table.
+ */
+function toMcpBindings(raw: unknown): McpBinding[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.flatMap((entry) => {
+    if (typeof entry === "string") {
+      return entry ? [{ name: entry }] : [];
+    }
+    if (entry && typeof entry === "object") {
+      const binding = entry as { name?: unknown; headers?: unknown };
+      if (typeof binding.name === "string" && binding.name) {
+        return [
+          binding.headers && typeof binding.headers === "object"
+            ? { name: binding.name, headers: binding.headers as McpBinding["headers"] }
+            : { name: binding.name },
+        ];
+      }
+    }
+    return [];
+  });
+}
+
 function fromItem(item: Record<string, unknown>): Version {
   return {
     projectName: item.projectName as string,
@@ -32,7 +59,7 @@ function fromItem(item: Record<string, unknown>): Version {
     model: item.model as string,
     fallbackModel: item.fallbackModel as string | undefined,
     parameters: item.parameters as Version["parameters"],
-    mcpList: (item.mcpList as string[] | undefined) ?? [],
+    mcpList: toMcpBindings(item.mcpList),
     skillList: (item.skillList as string[] | undefined) ?? [],
     subagentList: (item.subagentList as Version["subagentList"] | undefined) ?? [],
     maxTurn: item.maxTurn as number | undefined,
