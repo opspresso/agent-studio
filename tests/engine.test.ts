@@ -469,6 +469,93 @@ describe("runAgent MCP server system prompt", () => {
   });
 });
 
+describe("runAgent skill and subagent system prompt", () => {
+  it("lists skills in a table and leaves the tool's own parameters to the tool", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel, loadSkillContent: async () => "" },
+        {
+          projectName: "p",
+          model: MODEL,
+          systemPrompt: "base prompt",
+          messages: [{ role: "user", content: "hi" }],
+          skills: [{ name: "writing", description: "how to write" }],
+        },
+      ),
+    );
+
+    const content = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(content).toContain("## Available Skills");
+    expect(content).toContain("| writing | how to write |");
+    // `file_path` is documented on the Skill tool's parameter, not twice.
+    expect(content).not.toContain("file_path");
+    const skillTool = channel.seenParams[0]?.tools?.find((t) => t.function.name === "Skill");
+    const skillName = (
+      skillTool?.function.parameters as { properties: { skill_name: { enum: string[] } } }
+    ).properties.skill_name;
+    expect(skillName.enum).toEqual(["writing"]);
+  });
+
+  it("lists subagents in a table shaped like the other sections", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel, runSubagent: async function* () {
+            return "";
+          } },
+        {
+          projectName: "p",
+          model: MODEL,
+          systemPrompt: "base prompt",
+          messages: [{ role: "user", content: "hi" }],
+          subagents: [
+            { name: "painter", description: "draws pictures", type: "local" },
+            { name: "blank", description: "", type: "local" },
+          ],
+        },
+      ),
+    );
+
+    const content = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(content).toContain("## Available Agents");
+    expect(content).toContain("| painter | draws pictures |");
+    expect(content).toContain("| blank | No description |");
+    // `agent_name` is an enum, so the prompt does not restate which names are legal.
+    expect(content).not.toContain("NOTE:");
+    // Nothing points the model at a description it is never given.
+    expect(content).not.toContain("your description");
+  });
+
+  it("keeps the agent table intact when a description spans lines or contains a pipe", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel, runSubagent: async function* () {
+            return "";
+          } },
+        {
+          projectName: "p",
+          model: MODEL,
+          messages: [{ role: "user", content: "hi" }],
+          subagents: [
+            { name: "multi", description: "  first line\n\n  second | piped  ", type: "local" },
+            { name: "after", description: "still listed", type: "remote" },
+          ],
+        },
+      ),
+    );
+
+    const content = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(content).toContain("| multi | first line second \\| piped |");
+    expect(content).toContain("| after | still listed |");
+    const tableLines = content
+      .split("\n")
+      .filter((line) => line.startsWith("| ") && !line.startsWith("|--"));
+    expect(tableLines).toHaveLength(3); // header + 2 agents
+  });
+});
+
 describe("runAgent image input", () => {
   const DATA_URL = "data:image/png;base64,aGVsbG8=";
   const IMAGE_MESSAGE: RunAgentInput["messages"] = [

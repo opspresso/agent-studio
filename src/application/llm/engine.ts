@@ -784,13 +784,13 @@ function skillSystemPromptAddition(skills: SkillInfo[]): string {
   return [
     "## Available Skills",
     "",
-    "You have access to the following skills. Use the `Skill` tool to load a skill's content when needed.",
+    // Reaching a file inside a skill is documented on the tool's own `file_path`
+    // parameter, which the model reads anyway.
+    "Load a skill with the `Skill` tool when its description matches what you are about to do.",
     "",
     "| Skill | Description |",
     "|-------|-------------|",
     rows,
-    "",
-    "To use a skill, call the Skill tool with the skill name. You can also request specific files within a skill by providing the file_path parameter.",
   ].join("\n");
 }
 
@@ -814,31 +814,33 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
   ].join("\n");
 }
 
+/**
+ * Shaped like the skill and MCP sections: same heading level, same table, same
+ * `tableCell` escaping, so a description that spans lines or carries a pipe
+ * cannot end the section early and swallow the agents listed after it.
+ *
+ * The set of names is not restated in prose: `transfer_to_agent`'s `agent_name`
+ * is an enum, which constrains the call itself rather than asking for it.
+ */
 function subagentSystemPromptAddition(subagents: SubagentInfo[]): string {
-  const blocks = subagents
-    .map((a) => `Agent name: ${a.name}\nAgent description: ${a.description || "No description"}`)
-    .join("\n\n");
-  const quoted = subagents.map((a) => `\`${a.name}\``).join(", ");
+  const rows = subagents
+    .map((a) => `| ${a.name} | ${tableCell(a.description) || "No description"} |`)
+    .join("\n");
   return [
-    "You have a list of other agents to transfer to:",
+    "## Available Agents",
     "",
-    blocks,
+    // An agent's own description is given to whoever may transfer to it, never
+    // to itself, so the routing rule points at the instructions above instead —
+    // the only statement of its role the model actually receives.
+    "Answer directly when the request fits your own instructions above. When another agent's description fits it better, call the `transfer_to_agent` function with a self-contained `message`; once that agent has answered, do not call it again for the same request.",
     "",
-    "If you are the best to answer the question according to your description,",
-    "you can answer it.",
-    "",
-    "If another agent is better for answering the question according to its",
-    "description, call `transfer_to_agent` function to transfer the question to that agent.",
-    "When you transfer, write a self-contained `message` for that agent.",
-    "Once you have obtained the desired answer by calling `transfer_to_agent`, you do not need to call the same agent again to respond.",
-    "",
-    "NOTE: the only available agents for `transfer_to_agent` function are",
-    `${quoted}.`,
+    "| Agent | Description |",
+    "|-------|-------------|",
+    rows,
   ].join("\n");
 }
 
 function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
-  const names = skills.map((s) => s.name).join(", ");
   return {
     type: "function",
     function: {
@@ -853,7 +855,7 @@ function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
             // Enumerated like the transfer tool's `agent_name`: a free-text name
             // is the main source of "skill is not connected" round trips.
             enum: skills.map((s) => s.name),
-            description: `The name of the skill to load. Available skills: ${names}`,
+            description: "The name of the skill to load.",
           },
           file_path: {
             type: "string",
