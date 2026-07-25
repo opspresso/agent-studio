@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
 import { withAuth } from "@/lib/session";
-import { projectRepository } from "@/lib/container";
+import { projectRepository, secretCipher } from "@/lib/container";
 import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import {
   buildProjectSlackManifest,
@@ -30,7 +30,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
     // manifest, so unlike the shared project catalog it is owner-only.
     await assertProjectOwner(projectRepository, name, user.email);
     const project = await getProject(projectRepository, name);
-    const view = await getProjectSlack(projectRepository, name);
+    const view = await getProjectSlack(projectRepository, name, secretCipher);
     const baseUrl = await resolveBaseUrl(request);
     return Response.json({
       ...view,
@@ -49,7 +49,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
     return invalidRequest(parsed.error);
   }
   try {
-    const view = await updateProjectSlack(projectRepository, name, parsed.data, user.email);
+    const view = await updateProjectSlack(projectRepository, name, parsed.data, user.email, secretCipher);
     const baseUrl = await resolveBaseUrl(request);
     return Response.json({ ...view, eventsUrl: `${baseUrl}${view.eventsPath}` });
   } catch (error) {
@@ -60,7 +60,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
 export const DELETE = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    const view = await disconnectProjectSlack(projectRepository, name, user.email);
+    const view = await disconnectProjectSlack(projectRepository, name, user.email, secretCipher);
     const baseUrl = await resolveBaseUrl(request);
     return Response.json({ ...view, eventsUrl: `${baseUrl}${view.eventsPath}` });
   } catch (error) {

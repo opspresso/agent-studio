@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository } from "@/lib/container";
+import { projectRepository, secretCipher } from "@/lib/container";
 import { assertProjectOwner } from "@/application/project/projectUseCases";
 import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { slackClient } from "@/infrastructure/slack/client";
@@ -11,7 +11,7 @@ export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) 
   const { name } = await ctx.params;
   try {
     const project = await assertProjectOwner(projectRepository, name, user.email);
-    const runtime = resolveProjectSlackRuntime(project);
+    const runtime = resolveProjectSlackRuntime(secretCipher, project);
     if (!runtime) {
       return Response.json(
         { error: "Slack is not configured or not enabled for this project" },

@@ -23,12 +23,9 @@ import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
 import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
-import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
-import {
-  decryptHeadersForOutbound,
-  mergeOutboundHeaders,
-} from "@/infrastructure/crypto/secretEncryption";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
@@ -49,6 +46,10 @@ export interface ExecutionDeps {
   channel: LlmChannel;
   /** Image channel — wired by the composition root; tests inject a fake. */
   imageChannel: ImageChannel;
+  /** Secret cipher — wired by the composition root; tests inject a fake. */
+  cipher: SecretCipher;
+  /** Outbound URL policy — wired by the composition root; tests inject a fake. */
+  urlPolicy: UrlPolicy;
   traces?: TraceRepository;
   traceSampleRate?: number;
 }
@@ -790,9 +791,9 @@ async function buildMcpTools(
           // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
           // window; a blocked server is skipped, not fatal to the run. The URL is
           // always the registry's — a binding may redefine headers, never the host.
-          await assertPublicUrl(mcp.url);
+          await deps.urlPolicy.assertAllowed(mcp.url);
         } catch (error) {
-          const reason = error instanceof SsrfError ? error.message : String(error);
+          const reason = error instanceof BlockedUrlError ? error.message : String(error);
           console.warn(`Skipping MCP server '${mcp.name}': ${reason}`);
           return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
         }
@@ -800,7 +801,7 @@ async function buildMcpTools(
           server: {
             name: mcp.name,
             url: mcp.url,
-            headers: mergeOutboundHeaders(mcp.headers, binding.headers),
+            headers: deps.cipher.mergeOutboundHeaders(mcp.headers, binding.headers),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
           },
           description: mcp.description ?? "",
@@ -1287,15 +1288,15 @@ async function* runRemoteSubagent(
     return "";
   }
   try {
-    await assertPublicUrl(agent.url);
+    await deps.urlPolicy.assertAllowed(agent.url);
   } catch (error) {
     yield {
       author: agentName,
-      error: error instanceof SsrfError ? error.message : "Blocked remote agent URL",
+      error: error instanceof BlockedUrlError ? error.message : "Blocked remote agent URL",
     };
     return "";
   }
-  const headers = decryptHeadersForOutbound(agent.headers);
+  const headers = deps.cipher.decryptHeadersForOutbound(agent.headers);
   if (agent.protocol === "a2a") {
     const result = await sendA2aMessage(agent.url, headers, message, signal);
     signal?.throwIfAborted();

@@ -6,10 +6,7 @@ import type {
   Version,
   VersionParameters,
 } from "@/domain/project/types";
-import {
-  maskHeaderOverrides,
-  mergeHeaderOverrideUpdate,
-} from "@/infrastructure/crypto/secretEncryption";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
@@ -146,13 +143,17 @@ export interface VersionInput {
  * stored without the field, so an untouched version is byte-identical to what
  * it was before overrides existed.
  */
-function resolveMcpBindings(next: McpBinding[], existing: McpBinding[] = []): McpBinding[] {
+function resolveMcpBindings(
+  cipher: SecretCipher,
+  next: McpBinding[],
+  existing: McpBinding[] = [],
+): McpBinding[] {
   const storedByName = new Map(existing.map((binding) => [binding.name, binding.headers ?? {}]));
   return next.map((binding) => {
     if (!binding.headers || Object.keys(binding.headers).length === 0) {
       return { name: binding.name };
     }
-    const headers = mergeHeaderOverrideUpdate(
+    const headers = cipher.mergeHeaderOverrideUpdate(
       storedByName.get(binding.name) ?? {},
       binding.headers,
     );
@@ -168,12 +169,12 @@ function resolveMcpBindings(next: McpBinding[], existing: McpBinding[] = []): Mc
  * Execution paths deliberately do NOT: they read the repository value and
  * decrypt at dispatch.
  */
-export function toVersionView(version: Version): Version {
+export function toVersionView(cipher: SecretCipher, version: Version): Version {
   return {
     ...version,
     mcpList: version.mcpList.map((binding) =>
       binding.headers
-        ? { name: binding.name, headers: maskHeaderOverrides(binding.headers) }
+        ? { name: binding.name, headers: cipher.maskHeaderOverrides(binding.headers) }
         : binding,
     ),
   };
@@ -256,6 +257,7 @@ export async function createVersion(
   input: CreateVersionInput,
   userEmail: string,
   refs: VersionRefRepos,
+  cipher: SecretCipher,
 ): Promise<Version> {
   const project = await assertProjectOwner(projects, projectName, userEmail);
   assertValidImageModel(input.parameters);
@@ -278,7 +280,7 @@ export async function createVersion(
     model: input.model,
     fallbackModel: input.fallbackModel,
     parameters: input.parameters,
-    mcpList: resolveMcpBindings(input.mcpList),
+    mcpList: resolveMcpBindings(cipher, input.mcpList),
     skillList: input.skillList,
     subagentList: input.subagentList,
     maxTurn: input.maxTurn,
@@ -306,6 +308,7 @@ export async function updateVersion(
   input: UpdateVersionInput,
   userEmail: string,
   refs: VersionRefRepos,
+  cipher: SecretCipher,
 ): Promise<Version> {
   const project = await assertProjectOwner(projects, projectName, userEmail);
   if (input.parameters) {
@@ -326,7 +329,7 @@ export async function updateVersion(
       input.fallbackModel === null ? undefined : input.fallbackModel ?? existing.fallbackModel,
     parameters: input.parameters ?? existing.parameters,
     mcpList: input.mcpList
-      ? resolveMcpBindings(input.mcpList, existing.mcpList)
+      ? resolveMcpBindings(cipher, input.mcpList, existing.mcpList)
       : existing.mcpList,
     skillList: input.skillList ?? existing.skillList,
     subagentList: input.subagentList ?? existing.subagentList,

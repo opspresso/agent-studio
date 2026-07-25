@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository } from "@/lib/container";
+import { projectRepository, secretCipher } from "@/lib/container";
 import {
   generateApiToken,
   getApiTokenStatus,
@@ -22,7 +22,7 @@ export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) 
   const { name } = await ctx.params;
   try {
     // Returns the raw token once; only its hash is stored.
-    return Response.json(await generateApiToken(projectRepository, name, user.email));
+    return Response.json(await generateApiToken(projectRepository, name, user.email, secretCipher));
   } catch (error) {
     return apiError(error);
   }

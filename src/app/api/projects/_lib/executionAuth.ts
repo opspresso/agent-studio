@@ -1,5 +1,5 @@
 import { getSessionUser } from "@/lib/session";
-import { projectRepository } from "@/lib/container";
+import { projectRepository, secretCipher } from "@/lib/container";
 import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
 
 export interface ExecutionPrincipal {
@@ -23,7 +23,7 @@ export async function authenticateExecution(
   const header = request.headers.get("authorization");
   const bearer = header ? /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim() : undefined;
   if (bearer) {
-    const email = await verifyProjectApiToken(projectRepository, projectName, bearer);
+    const email = await verifyProjectApiToken(projectRepository, projectName, bearer, secretCipher);
     return email ? { email, viaToken: true } : unauthorized();
   }
   const user = await getSessionUser();

@@ -6,13 +6,8 @@ import {
   createRegistryUseCases,
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
-import {
-  decryptHeadersForOutbound,
-  encryptHeaders,
-  maskHeaders,
-  mergeHeaderUpdate,
-} from "@/infrastructure/crypto/secretEncryption";
-import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
+import type { SecretCipher } from "@/domain/security/secretCipher";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { listMcpTools, type ListToolsResult } from "@/infrastructure/mcp/mcpClient";
 import { invalidateMcpDiscovery } from "@/infrastructure/mcp/discoveryCache";
 
@@ -37,30 +32,34 @@ export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput,
 }
 
 /** Client-safe projection: encrypted header values are replaced with a mask. */
-function masked(server: McpServer): McpServer {
-  return { ...server, headers: maskHeaders(server.headers) };
+function masked(cipher: SecretCipher, server: McpServer): McpServer {
+  return { ...server, headers: cipher.maskHeaders(server.headers) };
 }
 
-export function createMcpUseCases(repo: McpRepository): McpUseCases {
+export function createMcpUseCases(
+  repo: McpRepository,
+  cipher: SecretCipher,
+  policy: UrlPolicy,
+): McpUseCases {
   const registry = createRegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput>({
     label: "MCP server",
     repo,
-    view: masked,
+    view: (server) => masked(cipher, server),
     async build(input, now) {
-      await assertAllowedUrl(input.url);
+      await assertAllowedUrl(policy, input.url);
       return {
         name: input.name,
         url: input.url,
         description: input.description,
         content: input.content,
-        headers: encryptHeaders(input.headers),
+        headers: cipher.encryptHeaders(input.headers),
         createdAt: now,
         updatedAt: now,
       };
     },
     async apply(existing, patch, now) {
       if (patch.url !== undefined) {
-        await assertAllowedUrl(patch.url);
+        await assertAllowedUrl(policy, patch.url);
       }
       const updated = {
         ...existing,
@@ -69,7 +68,7 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
         content: patch.content ?? existing.content,
         headers:
           patch.headers !== undefined
-            ? mergeHeaderUpdate(existing.headers, patch.headers)
+            ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)
             : existing.headers,
         updatedAt: now,
       };
@@ -91,11 +90,11 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
         throw new NotFoundError(`MCP server not found: ${name}`);
       }
       try {
-        await assertPublicUrl(existing.url);
+        await policy.assertAllowed(existing.url);
       } catch (error) {
-        return { ok: false, error: error instanceof SsrfError ? error.message : "Blocked URL" };
+        return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
       }
-      return listMcpTools(existing.url, decryptHeadersForOutbound(existing.headers));
+      return listMcpTools(existing.url, cipher.decryptHeadersForOutbound(existing.headers));
     },
   };
 }

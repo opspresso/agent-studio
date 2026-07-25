@@ -2,6 +2,12 @@
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import type { UrlPolicy } from "@/domain/security/urlPolicy";
+
+// Allow every URL: these tests are about the run loop, not the SSRF policy.
+// Injected rather than module-mocked, now that the policy is a port.
+const testUrlPolicy: UrlPolicy = { async assertAllowed() {} };
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 
 // MCP dispatch goes through the SSRF-guarded fetch; forward it to the stubbed
@@ -9,11 +15,6 @@ import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
-vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/infrastructure/net/ssrfGuard")>();
-  return { ...actual, assertPublicUrl: async () => {} };
-});
-
 import { executeAgent } from "@/application/execution/runProject";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { encryptHeaderOverrides, encryptHeaders } from "@/infrastructure/crypto/secretEncryption";
@@ -81,6 +82,8 @@ function depsFixture(channel: FakeChannel) {
     },
     channel,
     imageChannel,
+    cipher: secretCipher,
+    urlPolicy: testUrlPolicy,
   } as unknown as ExecutionDeps;
 }
 

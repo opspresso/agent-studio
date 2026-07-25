@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, versionRefRepos, versionRepository } from "@/lib/container";
+import { projectRepository, secretCipher, versionRefRepos, versionRepository } from "@/lib/container";
 import {
   deleteVersion,
   getVersion,
@@ -14,7 +14,9 @@ type RouteContext = { params: Promise<{ name: string; version: string }> };
 export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
   const { name, version } = await ctx.params;
   try {
-    return Response.json(toVersionView(await getVersion(versionRepository, name, version)));
+    return Response.json(
+      toVersionView(secretCipher, await getVersion(versionRepository, name, version)),
+    );
   } catch (error) {
     return apiError(error);
   }
@@ -29,6 +31,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
   try {
     return Response.json(
       toVersionView(
+        secretCipher,
         await updateVersion(
           versionRepository,
           projectRepository,
@@ -37,6 +40,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
           parsed.data,
           user.email,
           versionRefRepos,
+          secretCipher,
         ),
       ),
     );

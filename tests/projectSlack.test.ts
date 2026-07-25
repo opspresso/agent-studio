@@ -1,9 +1,18 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   buildProjectSlackManifest,
-  resolveProjectSlackRuntime,
-  updateProjectSlack,
+  resolveProjectSlackRuntime as resolveProjectSlackRuntimeImpl,
+  updateProjectSlack as updateProjectSlackImpl,
 } from "@/application/slack/projectSlack";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+
+// The cipher is injected now; every call below is unchanged.
+type Upd = Parameters<typeof updateProjectSlackImpl>;
+const resolveProjectSlackRuntime = (
+  project: Parameters<typeof resolveProjectSlackRuntimeImpl>[1],
+) => resolveProjectSlackRuntimeImpl(secretCipher, project);
+const updateProjectSlack = (repo: Upd[0], name: Upd[1], update: Upd[2], email: Upd[3]) =>
+  updateProjectSlackImpl(repo, name, update, email, secretCipher);
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { ForbiddenError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";

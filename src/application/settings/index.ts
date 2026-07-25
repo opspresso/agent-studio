@@ -1,4 +1,5 @@
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { createSettingsUseCases } from "./settingsUseCases";
 
 export * from "./settingsUseCases";
@@ -8,4 +9,4 @@ export * from "./settingsUseCases";
  * the use cases. Route handlers import this instance so they never touch
  * infrastructure directly.
  */
-export const settingsUseCases = createSettingsUseCases(settingsRepository);
+export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher);

@@ -15,9 +15,10 @@ import {
   createVersion as createVersionUseCase,
   deleteVersion,
   publishVersion,
-  toVersionView,
+  toVersionView as toVersionViewUseCase,
   updateVersion as updateVersionUseCase,
 } from "@/application/project/versionUseCases";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import {
   decryptSecret,
   isEncrypted,
@@ -257,7 +258,12 @@ function createVersion(
   userEmail: string,
   refs: VersionRefRepos = ALL_REFS_EXIST,
 ): Promise<Version> {
-  return createVersionUseCase(versions, projects, projectName, input, userEmail, refs);
+  return createVersionUseCase(versions, projects, projectName, input, userEmail, refs, secretCipher);
+}
+
+/** The cipher is injected now; every test below still calls this as before. */
+function toVersionView(version: Version): Version {
+  return toVersionViewUseCase(secretCipher, version);
 }
 
 function updateVersion(
@@ -269,7 +275,16 @@ function updateVersion(
   userEmail: string,
   refs: VersionRefRepos = ALL_REFS_EXIST,
 ): Promise<Version> {
-  return updateVersionUseCase(versions, projects, projectName, versionName, input, userEmail, refs);
+  return updateVersionUseCase(
+    versions,
+    projects,
+    projectName,
+    versionName,
+    input,
+    userEmail,
+    refs,
+    secretCipher,
+  );
 }
 
 // --- Tests ------------------------------------------------------------------

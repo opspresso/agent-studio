@@ -7,13 +7,8 @@ import {
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
-import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
-import {
-  decryptHeadersForOutbound,
-  encryptHeaders,
-  maskHeaders,
-  mergeHeaderUpdate,
-} from "@/infrastructure/crypto/secretEncryption";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 import { sendAgentMessage, type SendMessageResult } from "@/infrastructure/agent/agentClient";
 
 export interface CreateAgentInput {
@@ -38,30 +33,34 @@ export interface AgentUseCases
 }
 
 /** Client-safe projection: encrypted header values are replaced with a mask. */
-function masked(agent: ExternalAgent): ExternalAgent {
-  return { ...agent, headers: maskHeaders(agent.headers) };
+function masked(cipher: SecretCipher, agent: ExternalAgent): ExternalAgent {
+  return { ...agent, headers: cipher.maskHeaders(agent.headers) };
 }
 
-export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCases {
+export function createAgentUseCases(
+  repo: ExternalAgentRepository,
+  cipher: SecretCipher,
+  policy: UrlPolicy,
+): AgentUseCases {
   const registry = createRegistryUseCases<ExternalAgent, CreateAgentInput, UpdateAgentInput>({
     label: "External agent",
     repo,
-    view: masked,
+    view: (agent) => masked(cipher, agent),
     async build(input, now) {
-      await assertAllowedUrl(input.url);
+      await assertAllowedUrl(policy, input.url);
       return {
         name: input.name,
         url: input.url,
         ...(input.protocol ? { protocol: input.protocol } : {}),
         description: input.description,
-        headers: encryptHeaders(input.headers),
+        headers: cipher.encryptHeaders(input.headers),
         createdAt: now,
         updatedAt: now,
       };
     },
     async apply(existing, patch, now) {
       if (patch.url !== undefined) {
-        await assertAllowedUrl(patch.url);
+        await assertAllowedUrl(policy, patch.url);
       }
       return {
         ...existing,
@@ -70,7 +69,7 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
         description: patch.description ?? existing.description,
         headers:
           patch.headers !== undefined
-            ? mergeHeaderUpdate(existing.headers, patch.headers)
+            ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)
             : existing.headers,
         updatedAt: now,
       };
@@ -86,11 +85,11 @@ export function createAgentUseCases(repo: ExternalAgentRepository): AgentUseCase
         throw new NotFoundError(`External agent not found: ${name}`);
       }
       try {
-        await assertPublicUrl(existing.url);
+        await policy.assertAllowed(existing.url);
       } catch (error) {
-        return { ok: false, error: error instanceof SsrfError ? error.message : "Blocked URL" };
+        return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
       }
-      const headers = decryptHeadersForOutbound(existing.headers);
+      const headers = cipher.decryptHeadersForOutbound(existing.headers);
       if ((existing.protocol ?? "openai") === "a2a") {
         return sendA2aMessage(existing.url, headers, message);
       }

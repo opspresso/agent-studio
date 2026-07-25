@@ -8,20 +8,19 @@ vi.mock("@/infrastructure/a2a/client", () => ({
   sendA2aMessage: sendA2aMessageMock,
 }));
 
-// Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
-vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/infrastructure/net/ssrfGuard")>();
-  return {
-    ...actual,
-    assertPublicUrl: async (url: string) => {
-      if (new URL(url).hostname.endsWith(".internal")) {
-        throw new actual.SsrfError(`URL is not allowed: ${url}`);
-      }
-    },
-  };
-});
-
 import { executeAgent, executeVersion } from "@/application/execution/runProject";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
+
+// Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
+// Injected rather than module-mocked, now that the policy is a port.
+const testUrlPolicy: UrlPolicy = {
+  async assertAllowed(url) {
+    if (new URL(url).hostname.endsWith(".internal")) {
+      throw new BlockedUrlError(`URL is not allowed: ${url}`);
+    }
+  },
+};
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { withRunDeadline } from "@/lib/runDeadline";
 import { MODEL_CONFIGS } from "@/domain/llm/models";
@@ -103,6 +102,8 @@ function executionDepsFixture(channel: FakeChannel) {
     },
     channel,
     imageChannel,
+    cipher: secretCipher,
+    urlPolicy: testUrlPolicy,
   } as unknown as ExecutionDeps;
   return { deps, recorded, imageModels, edits };
 }
