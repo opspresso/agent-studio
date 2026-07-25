@@ -47,7 +47,9 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - Turn guard: `turn >= maxTurn` (default 50) silently ends the loop. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
-  charged against the parent's budget — the parent always resumes at `turn + 2`.
+  charged against the parent's budget — the parent always resumes at `turn + 2` — but the
+  child's ceiling is clamped to the parent's in `runProject.ts`, so a child version with a
+  larger `maxTurn` cannot raise the limit the run started under.
 
 ## Author contract
 

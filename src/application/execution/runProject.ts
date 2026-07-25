@@ -1036,7 +1036,10 @@ async function* runLocalSubagent(
       systemPrompt: version.systemPrompt,
       messages: [{ role: "user", content: subagentContent(message, images) }],
       parameters: toEngineParameters(version),
-      maxTurn: version.maxTurn ?? maxTurn,
+      // Clamped to the parent's ceiling: the child continues the parent's turn
+      // counter (`startTurn`), so a child version configured with a larger
+      // maxTurn would raise the limit the whole run was started under.
+      maxTurn: Math.min(version.maxTurn ?? maxTurn, maxTurn),
       startTurn: turn,
       skills,
       subagents,

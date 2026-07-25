@@ -983,6 +983,55 @@ describe("executeAgent local subagent projectType dispatch", () => {
   });
 });
 
+describe("executeAgent subagent turn budget", () => {
+  it("clamps a child's maxTurn to the parent's ceiling", async () => {
+    // The child continues the parent's turn counter, so a child version with a
+    // larger maxTurn used to raise the limit the whole run started under.
+    const childCall = (id: string) => toolCallChunk(0, id, "ping", "{}");
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        usageChunk(1, 1),
+      ],
+      [childCall("c1"), usageChunk(1, 1)],
+      [childCall("c2"), usageChunk(1, 1)],
+      [childCall("c3"), usageChunk(1, 1)],
+      [childCall("c4"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) => ({
+      ...projectFixture(),
+      name,
+    })) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string, versionName: string) =>
+      projectName === "child" && versionName === "published"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "child",
+            model: "gpt-child",
+            maxTurn: 50,
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "child", type: "local" }],
+          maxTurn: 3,
+        },
+        messages: [{ role: "user", content: "delegate" }],
+      }),
+    );
+
+    // Child starts at turn 1 and stops at the parent's ceiling of 3 — two model
+    // calls. Its own maxTurn of 50 would have let it run until the scripts ran out.
+    expect(channel.seenParams.filter((params) => params.model === "gpt-child")).toHaveLength(2);
+  });
+});
+
 describe("executeAgent subagent recursion guards", () => {
   /** Every project is an agent that can transfer to `target`, so A -> B -> A is possible. */
   function mutualDeps(channel: FakeChannel, target: (name: string) => string) {
