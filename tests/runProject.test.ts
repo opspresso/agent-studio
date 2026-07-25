@@ -605,7 +605,26 @@ describe("executeAgent image transfer to a subagent", () => {
 
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
     expect(systemPrompt).toContain("## Available Images");
-    expect(systemPrompt).toContain("No images yet");
+    // This version has no image tools of its own, so the empty state names the
+    // sources it does have rather than promising a picture it cannot make.
+    expect(systemPrompt).toContain("an image a tool returns, or one the user sends");
+    expect(systemPrompt).not.toContain("an image you generate");
+  });
+
+  it("promises generated ids only to a version that can generate", async () => {
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps, parent } = imageProjectDeps(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: parent,
+        version: { ...parentVersion(), parameters: { piiFiltering: false, imageGeneration: true } },
+        messages: [{ role: "user", content: "draw me a cat" }],
+      }),
+    );
+
+    const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(systemPrompt).toContain("an image you generate or edit");
   });
 });
 

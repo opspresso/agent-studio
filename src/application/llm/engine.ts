@@ -909,7 +909,13 @@ function imageSystemPromptAddition(
   uses: { canEdit: boolean; canTransfer: boolean },
 ): string {
   // Listed even when empty: the image tools' only documentation is a pointer to
-  // this section, so it has to exist before the first picture does.
+  // this section, so it has to exist before the first picture does. What the
+  // empty state promises follows what this run can actually do — the image
+  // tools are offered together, so a run that cannot edit cannot generate
+  // either, and its ids can only arrive from a tool result or the user.
+  const emptyState = uses.canEdit
+    ? "No images yet — an image you generate or edit gets an id you can use here."
+    : "No images yet — an image a tool returns, or one the user sends, gets an id you can use here.";
   const table =
     handles.length > 0
       ? [
@@ -917,7 +923,7 @@ function imageSystemPromptAddition(
           "|-------|--------|",
           ...handles.map((h) => `| ${h.id} | ${tableCell(h.origin)} |`),
         ]
-      : ["No images yet — an image you generate gets an id you can use here."];
+      : [emptyState];
   const howTo: string[] = [];
   if (uses.canEdit) {
     howTo.push(
