@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, versionRepository } from "@/lib/container";
+import { projectRepository, versionRefRepos, versionRepository } from "@/lib/container";
 import { createVersion, listVersions } from "@/application/project/versionUseCases";
 import { createVersionSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -24,6 +24,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       name,
       parsed.data,
       user.email,
+      versionRefRepos,
     );
     return Response.json(version, { status: 201 });
   } catch (error) {

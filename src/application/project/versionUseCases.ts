@@ -1,9 +1,78 @@
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, SubagentRef, Version, VersionParameters } from "@/domain/project/types";
+import type { SkillRepository } from "@/domain/skill/repository";
+import type { McpRepository } from "@/domain/mcp/repository";
+import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectOwner } from "./projectUseCases";
 import { nextUpdatedAt } from "./timestamps";
+
+/**
+ * Registry lookups a version's references are checked against. A dangling
+ * reference degrades silently at run time (an unknown skill loads as an empty
+ * description, an unknown subagent yields a tool error), so a typo would only
+ * surface as a subtly worse answer — catch it at the write boundary instead.
+ */
+export interface VersionRefRepos {
+  skills: Pick<SkillRepository, "get">;
+  mcps: Pick<McpRepository, "get">;
+  externalAgents: Pick<ExternalAgentRepository, "get">;
+  /** Local subagents are other projects. */
+  projects: Pick<ProjectRepository, "get">;
+}
+
+/** The reference lists as they appear on a version. */
+interface VersionRefs {
+  mcpList?: string[];
+  skillList?: string[];
+  subagentList?: SubagentRef[];
+}
+
+const subagentKey = (ref: SubagentRef): string => `${ref.type}:${ref.name}`;
+
+/**
+ * Reject references that do not resolve. Only entries absent from `existing`
+ * are checked: a version whose skill or MCP server was deleted afterwards must
+ * still be editable, otherwise deleting a registry entry would strand every
+ * version that ever used it.
+ */
+async function assertReferencesExist(
+  refs: VersionRefRepos,
+  next: VersionRefs,
+  existing?: VersionRefs,
+): Promise<void> {
+  const knownMcps = new Set(existing?.mcpList ?? []);
+  const knownSkills = new Set(existing?.skillList ?? []);
+  const knownSubagents = new Set((existing?.subagentList ?? []).map(subagentKey));
+
+  const checks: Array<Promise<string | null>> = [
+    ...(next.mcpList ?? [])
+      .filter((name) => !knownMcps.has(name))
+      .map(async (name) =>
+        (await refs.mcps.get(name)) ? null : `MCP server "${name}" does not exist`,
+      ),
+    ...(next.skillList ?? [])
+      .filter((name) => !knownSkills.has(name))
+      .map(async (name) =>
+        (await refs.skills.get(name)) ? null : `Skill "${name}" does not exist`,
+      ),
+    ...(next.subagentList ?? [])
+      .filter((ref) => !knownSubagents.has(subagentKey(ref)))
+      .map(async (ref) => {
+        const found =
+          ref.type === "remote"
+            ? await refs.externalAgents.get(ref.name)
+            : await refs.projects.get(ref.name);
+        return found ? null : `${ref.type === "remote" ? "Agent" : "Project"} "${ref.name}" does not exist`;
+      }),
+  ];
+
+  const missing = (await Promise.all(checks)).filter((message): message is string => message !== null);
+  if (missing.length > 0) {
+    throw new ValidationError(missing.join("; "));
+  }
+}
 
 export interface VersionInput {
   systemPrompt: string;
@@ -93,11 +162,13 @@ export async function createVersion(
   projectName: string,
   input: CreateVersionInput,
   userEmail: string,
+  refs: VersionRefRepos,
 ): Promise<Version> {
   const project = await assertProjectOwner(projects, projectName, userEmail);
   assertValidImageModel(input.parameters);
   assertModelSupports(project, input.model, input.parameters);
   warnUnknownCatalogModel(projectName, input.model);
+  await assertReferencesExist(refs, input);
   const existing = await versions.list(projectName);
 
   const versionName = input.versionName ?? nextVersionName(existing);
@@ -140,6 +211,7 @@ export async function updateVersion(
   versionName: string,
   input: UpdateVersionInput,
   userEmail: string,
+  refs: VersionRefRepos,
 ): Promise<Version> {
   const project = await assertProjectOwner(projects, projectName, userEmail);
   if (input.parameters) {
@@ -149,6 +221,7 @@ export async function updateVersion(
     warnUnknownCatalogModel(projectName, input.model);
   }
   const existing = await getVersion(versions, projectName, versionName);
+  await assertReferencesExist(refs, input, existing);
   const updated: Version = {
     ...existing,
     systemPrompt: input.systemPrompt ?? existing.systemPrompt,

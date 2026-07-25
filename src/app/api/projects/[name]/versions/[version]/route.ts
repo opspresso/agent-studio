@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, versionRepository } from "@/lib/container";
+import { projectRepository, versionRefRepos, versionRepository } from "@/lib/container";
 import { deleteVersion, getVersion, updateVersion } from "@/application/project/versionUseCases";
 import { updateVersionSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -23,7 +23,15 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
   }
   try {
     return Response.json(
-      await updateVersion(versionRepository, projectRepository, name, version, parsed.data, user.email),
+      await updateVersion(
+        versionRepository,
+        projectRepository,
+        name,
+        version,
+        parsed.data,
+        user.email,
+        versionRefRepos,
+      ),
     );
   } catch (error) {
     return apiError(error);

@@ -20,6 +20,14 @@ import { checkReadiness } from "@/application/health/readiness";
 
 export { projectRepository, versionRepository, traceRepository, usageRepository, createA2aTaskStore };
 
+/** Registry lookups a version's mcp/skill/subagent references are validated against. */
+export const versionRefRepos = {
+  skills: skillRepository,
+  mcps: mcpRepository,
+  externalAgents: externalAgentRepository,
+  projects: projectRepository,
+};
+
 /** Readiness snapshot for the /api/ready probe (DynamoDB + LLM channel). */
 export const readinessReport = () =>
   checkReadiness({ checkDb: dbReachable, checkLlm: llmReachable });

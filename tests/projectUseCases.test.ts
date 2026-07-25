@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { VersionInput } from "@/application/project/versionUseCases";
+import type {
+  CreateVersionInput,
+  UpdateVersionInput,
+  VersionInput,
+  VersionRefRepos,
+} from "@/application/project/versionUseCases";
 import {
-  createVersion,
+  createVersion as createVersionUseCase,
   deleteVersion,
   publishVersion,
-  updateVersion,
+  updateVersion as updateVersionUseCase,
 } from "@/application/project/versionUseCases";
 import { createProject, deleteProject, updateProject } from "@/application/project/projectUseCases";
 import { updateVersionSchema, versionNameSchema } from "@/app/api/projects/_lib/schemas";
@@ -210,6 +215,48 @@ function makeVersionRepo(initial: Version[] = []): VersionRepository {
   };
 }
 
+/** Registry where every reference resolves — the default for tests that are
+ * not about reference validation. Tests that are pass their own set. */
+const ALL_REFS_EXIST: VersionRefRepos = {
+  skills: { get: async (name) => ({ name }) as never },
+  mcps: { get: async (name) => ({ name }) as never },
+  externalAgents: { get: async (name) => ({ name }) as never },
+  projects: { get: async (name) => ({ name }) as never },
+};
+
+/** Registry where nothing resolves. */
+const NO_REFS_EXIST: VersionRefRepos = {
+  skills: { get: async () => null },
+  mcps: { get: async () => null },
+  externalAgents: { get: async () => null },
+  projects: { get: async () => null },
+};
+
+// Thin wrappers so the existing cases keep their signature; `refs` is required
+// on the real use cases (a route that forgets it is a type error).
+function createVersion(
+  versions: VersionRepository,
+  projects: ProjectRepository,
+  projectName: string,
+  input: CreateVersionInput,
+  userEmail: string,
+  refs: VersionRefRepos = ALL_REFS_EXIST,
+): Promise<Version> {
+  return createVersionUseCase(versions, projects, projectName, input, userEmail, refs);
+}
+
+function updateVersion(
+  versions: VersionRepository,
+  projects: ProjectRepository,
+  projectName: string,
+  versionName: string,
+  input: UpdateVersionInput,
+  userEmail: string,
+  refs: VersionRefRepos = ALL_REFS_EXIST,
+): Promise<Version> {
+  return updateVersionUseCase(versions, projects, projectName, versionName, input, userEmail, refs);
+}
+
 // --- Tests ------------------------------------------------------------------
 
 describe("createVersion naming", () => {
@@ -297,6 +344,104 @@ describe("createVersion naming", () => {
         OTHER,
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("version reference validation", () => {
+  it("rejects a create that names an MCP server, skill, or subagent that does not exist", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        { ...versionInput(), mcpList: ["ghost-mcp"] },
+        OWNER,
+        NO_REFS_EXIST,
+      ),
+    ).rejects.toThrow(/MCP server "ghost-mcp" does not exist/);
+
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        { ...versionInput(), skillList: ["ghost-skill"] },
+        OWNER,
+        NO_REFS_EXIST,
+      ),
+    ).rejects.toThrow(/Skill "ghost-skill" does not exist/);
+
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        { ...versionInput(), subagentList: [{ name: "ghost-agent", type: "remote" }] },
+        OWNER,
+        NO_REFS_EXIST,
+      ),
+    ).rejects.toThrow(/Agent "ghost-agent" does not exist/);
+  });
+
+  it("reports every dangling reference at once", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        { ...versionInput(), mcpList: ["m1"], skillList: ["s1"] },
+        OWNER,
+        NO_REFS_EXIST,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("keeps a version editable when a reference it already had was deleted", async () => {
+    // Deleting an MCP server must not strand every version that ever used it:
+    // only newly added references are checked.
+    const existing = { ...versionFixture("p", "1"), mcpList: ["deleted-mcp"] };
+    const updated = await updateVersion(
+      makeVersionRepo([existing]),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      "1",
+      { systemPrompt: "edited" },
+      OWNER,
+      NO_REFS_EXIST,
+    );
+    expect(updated.systemPrompt).toBe("edited");
+    expect(updated.mcpList).toEqual(["deleted-mcp"]);
+  });
+
+  it("still rejects a reference newly added by an update", async () => {
+    const existing = { ...versionFixture("p", "1"), mcpList: ["deleted-mcp"] };
+    await expect(
+      updateVersion(
+        makeVersionRepo([existing]),
+        makeProjectRepo([projectFixture("p")]),
+        "p",
+        "1",
+        { mcpList: ["deleted-mcp", "ghost-mcp"] },
+        OWNER,
+        NO_REFS_EXIST,
+      ),
+    ).rejects.toThrow(/"ghost-mcp" does not exist/);
+  });
+
+  it("accepts references that resolve", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      {
+        ...versionInput(),
+        mcpList: ["real-mcp"],
+        skillList: ["real-skill"],
+        subagentList: [{ name: "real-project", type: "local" }],
+      },
+      OWNER,
+    );
+    expect(created.mcpList).toEqual(["real-mcp"]);
   });
 });
 
