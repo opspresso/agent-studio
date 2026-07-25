@@ -5,8 +5,20 @@ function newChatId(): string {
   return `chatcmpl-${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
+/**
+ * An image produced during a run. OpenAI's chat schema has no field for these,
+ * so they ride along as an `images` extension rather than being dropped.
+ */
+export interface RunImage {
+  b64: string;
+  mimeType: string;
+  prompt?: string;
+}
+
 /** Wrap a single-shot result as an OpenAI ChatCompletion object. */
-export function toChatCompletion(result: RunResult): Record<string, unknown> {
+export function toChatCompletion(
+  result: RunResult & { images?: RunImage[] },
+): Record<string, unknown> {
   return {
     id: newChatId(),
     object: "chat.completion",
@@ -20,6 +32,7 @@ export function toChatCompletion(result: RunResult): Record<string, unknown> {
       completion_tokens: result.usage.outputTokens,
       total_tokens: result.usage.inputTokens + result.usage.outputTokens,
     },
+    ...(result.images && result.images.length > 0 ? { images: result.images } : {}),
   };
 }
 
@@ -54,6 +67,14 @@ export async function* toChatCompletionChunks(
       sentRole = true;
       yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
     }
+    if (chunk.image) {
+      // No OpenAI counterpart: an `images` delta extension, so a client that
+      // knows about it receives the picture and one that does not just ignores it.
+      const images = [chunk.image];
+      const delta = sentRole ? { images } : { role: "assistant", images };
+      sentRole = true;
+      yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
+    }
     if (chunk.done) {
       finished = true;
       yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] };
@@ -68,8 +89,9 @@ export async function* toChatCompletionChunks(
 export async function collectRun(
   source: AsyncGenerator<EngineChunk>,
   model: string,
-): Promise<RunResult> {
+): Promise<RunResult & { images: RunImage[] }> {
   let content = "";
+  const images: RunImage[] = [];
   const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
   for await (const chunk of source) {
     if (chunk.error) {
@@ -77,6 +99,11 @@ export async function collectRun(
     }
     if (isTopLevelChunk(chunk) && chunk.delta?.content) {
       content += chunk.delta.content;
+    }
+    // Images are collected from subagent turns too: an image subagent is how an
+    // agent project delegates drawing, and the picture is the answer.
+    if (chunk.image) {
+      images.push(chunk.image);
     }
     // Usage counts every chunk, subagent turns included, so the reported
     // usage matches what the run actually billed.
@@ -86,5 +113,5 @@ export async function collectRun(
       usage.costUsd += chunk.usage.costUsd;
     }
   }
-  return { content, model, usage };
+  return { content, model, usage, images };
 }

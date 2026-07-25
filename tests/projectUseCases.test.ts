@@ -24,7 +24,11 @@ import {
   isMasked,
 } from "@/infrastructure/crypto/secretEncryption";
 import { createProject, deleteProject, updateProject } from "@/application/project/projectUseCases";
-import { updateVersionSchema, versionNameSchema } from "@/app/api/projects/_lib/schemas";
+import {
+  chatMessageSchema,
+  updateVersionSchema,
+  versionNameSchema,
+} from "@/app/api/projects/_lib/schemas";
 import {
   ConflictError,
   ForbiddenError,
@@ -963,5 +967,66 @@ describe("updateVersionSchema", () => {
   it("rejects a binding with no server name", () => {
     expect(updateVersionSchema.safeParse({ mcpList: [{ headers: {} }] }).success).toBe(false);
     expect(updateVersionSchema.safeParse({ mcpList: [""] }).success).toBe(false);
+  });
+});
+
+describe("chatMessageSchema content parts", () => {
+  const imagePart = {
+    type: "image_url",
+    image_url: { url: "data:image/png;base64,aGk=", detail: "high" },
+  };
+
+  it("still accepts a plain string body", () => {
+    expect(chatMessageSchema.safeParse({ role: "user", content: "hello" }).success).toBe(true);
+    expect(chatMessageSchema.safeParse({ role: "assistant", content: null }).success).toBe(true);
+  });
+
+  it("accepts mixed text and image parts", () => {
+    const parsed = chatMessageSchema.safeParse({
+      role: "user",
+      content: [{ type: "text", text: "what is this?" }, imagePart],
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.content).toEqual([{ type: "text", text: "what is this?" }, imagePart]);
+  });
+
+  it("accepts an https image url", () => {
+    const parsed = chatMessageSchema.safeParse({
+      role: "user",
+      content: [{ type: "image_url", image_url: { url: "https://example.com/a.png" } }],
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects image urls with any other scheme", () => {
+    for (const url of ["file:///etc/passwd", "http://example.com/a.png", "data:text/html,x"]) {
+      const parsed = chatMessageSchema.safeParse({
+        role: "user",
+        content: [{ type: "image_url", image_url: { url } }],
+      });
+      expect(parsed.success, url).toBe(false);
+    }
+  });
+
+  it("rejects an image payload over the size cap", () => {
+    const parsed = chatMessageSchema.safeParse({
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: `data:image/png;base64,${"A".repeat(11_000_000)}` } },
+      ],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects an unknown part type", () => {
+    const parsed = chatMessageSchema.safeParse({
+      role: "user",
+      content: [{ type: "audio_url", audio_url: { url: "https://example.com/a.mp3" } }],
+    });
+
+    expect(parsed.success).toBe(false);
   });
 });

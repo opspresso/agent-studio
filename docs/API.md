@@ -254,6 +254,23 @@ single completion.
 // response: an OpenAI chat.completion object (or chat.completion.chunk SSE when stream=true)
 ```
 
+**Image input.** A message body may be OpenAI content parts instead of a string. Image bytes
+travel inline as a `data:image/…;base64,…` url; a remote image must be `https://`. One payload
+is capped at 10MB, and the version's model must have the `imageInput` capability — otherwise
+`400`, and a `fallbackModel` that cannot read images is skipped for that request.
+
+```json
+{ "messages": [ { "role": "user", "content": [
+    { "type": "text", "text": "what is in this picture?" },
+    { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0…", "detail": "auto" } }
+] } ] }
+```
+
+**Image output.** Images produced by a run (the `GenerateImage` / `EditImage` builtins, or an
+`image` subagent) have no place in the OpenAI schema, so they ride along as an extension:
+`images: [ { b64, mimeType, prompt? } ]` on the completion object, and `choices[0].delta.images`
+frames in a stream. Clients that do not know the field simply ignore it.
+
 ### `POST /api/projects/{name}/versions/{version}/agent`
 
 Agent SSE stream. Body `{ "messages": [ … ] }`. Emits `EngineChunk` frames

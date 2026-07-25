@@ -79,10 +79,38 @@ export const updateVersionSchema = versionInputSchema.partial().extend({
 
 export const publishSchema = z.object({ versionName: z.string().min(1) });
 
+/**
+ * Cap on one inline image payload. A data URL is ~1 char per byte, so this
+ * bounds a request that carries images to a few of them at a few MB each.
+ */
+const MAX_IMAGE_URL_CHARS = 10 * 1024 * 1024;
+
+/**
+ * One OpenAI content part. Image bytes arrive inline as `data:image/…;base64,…`;
+ * a remote image must be https (the provider fetches it, so no other scheme is
+ * useful and `file:`-style urls are never intended).
+ */
+const contentPartSchema = z.union([
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.literal("image_url"),
+    image_url: z.object({
+      url: z
+        .string()
+        .max(MAX_IMAGE_URL_CHARS, "image payload is too large")
+        .refine(
+          (url) => url.startsWith("data:image/") || url.startsWith("https://"),
+          "image url must be a data:image/… or https:// url",
+        ),
+      detail: z.enum(["low", "high", "auto"]).optional(),
+    }),
+  }),
+]);
+
 /** OpenAI-shaped chat message accepted on execution routes. */
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant", "tool"]),
-  content: z.string().nullable().optional(),
+  content: z.union([z.string(), z.array(contentPartSchema)]).nullable().optional(),
   name: z.string().optional(),
   tool_calls: z.array(z.custom<ChannelToolCall>()).optional(),
   tool_call_id: z.string().optional(),
