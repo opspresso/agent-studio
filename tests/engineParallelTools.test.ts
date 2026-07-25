@@ -414,6 +414,60 @@ describe("images an MCP tool returns", () => {
     // The overflow is stated, not silently swallowed.
     expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toContain("dropped");
   });
+
+  it("gives every turn its own budget, as the result text promises", async () => {
+    // The cap exists to bound ONE turn's context. Spending it across the whole
+    // run would leave a screenshot agent blind from its second turn on, while
+    // the result text kept telling the model the limit was per turn.
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "screenshot", "{}"), usageChunk(10, 5)],
+      [toolCallChunk(0, "call_2", "screenshot", "{}"), usageChunk(10, 5)],
+      [contentChunk("both pages look fine."), usageChunk(8, 4)],
+    ]);
+    const four = Array.from({ length: 4 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "captured", images: four }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "check both pages" }],
+        mcpTools: screenshotTools,
+      }),
+    );
+
+    expect(chunks.filter((c) => c.image)).toHaveLength(8);
+    expect(chunks.filter((c) => c.toolResult?.content.includes("dropped"))).toHaveLength(0);
+  });
+
+  it("does not claim images are attached when none were", async () => {
+    const channel = screenshotChannel();
+    const many = Array.from({ length: 6 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      // Two calls in one response: the second finds the turn's budget spent.
+      callMcpTool: async () => ({ text: "captured", images: many }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "capture" }],
+        mcpTools: screenshotTools,
+      }),
+    );
+
+    const toolResult = chunks.find((c) => c.toolResult)?.toolResult?.content ?? "";
+    expect(toolResult).toContain("4 image(s)");
+    expect(toolResult).toContain("2 more were dropped");
+    expect(toolResult).not.toContain("0 image(s)");
+  });
 });
 
 describe("per-turn tool result budget", () => {

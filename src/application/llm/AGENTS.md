@@ -36,8 +36,10 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   the same route a transfer's answer takes — while the tool result text says so and names the
   ids (only when an image tool or a transfer can act on them). Accepted only when the model
   takes image input; otherwise the result says they were dropped, because sending parts a
-  text-only model rejects fails the whole turn. Capped per turn by `MAX_ATTACHMENTS`, and once
-  images are in context a fallback model that cannot read them is dropped.
+  text-only model rejects fails the whole turn. Capped by `MAX_ATTACHMENTS` **per turn** —
+  the cap bounds one request, so it resets each turn rather than leaving a screenshot agent
+  blind after its first — and once images are in context a fallback model that cannot read
+  them is dropped.
 - Image handles: a per-run registry ids every usable image (`img_1`, `img_2`, …) — the
   inline `data:` images in the input messages, plus everything the run drew. `EditImage`
   and `transfer_to_agent`'s `image_ids` resolve an id to bytes, so the registry (not the dep)

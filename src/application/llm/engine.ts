@@ -1120,9 +1120,6 @@ export async function* runAgent(
   // Ids already spoken for, across every turn: what the assistant message a
   // chat persists must not repeat.
   const usedCallIds = new Set<string>();
-  // One turn's worth of pictures an MCP tool may add to the context, sharing the
-  // cap a user turn gets — they cost the same and arrive the same way.
-  let imageBudget = MAX_ATTACHMENTS;
   while (true) {
     if (turn >= maxTurn) {
       return; // turn guard
@@ -1213,6 +1210,11 @@ export async function* runAgent(
     const postContextMessages: ChannelMessage[] = [];
     /** Pictures MCP tools returned this turn, attached after the tool results. */
     const attachedImages: Array<{ b64: string; mimeType: string }> = [];
+    // One turn's worth of pictures an MCP tool may add to the context, sharing
+    // the cap a user turn gets — they cost the same and arrive the same way.
+    // Per turn, not per run: the cap bounds one request, and spending it once
+    // would leave a screenshot agent blind for the rest of the run.
+    let imageBudget = MAX_ATTACHMENTS;
     let nextTurn = turn + 1;
 
     // Announce every call before any of them runs: the client sees the whole
@@ -1438,14 +1440,22 @@ export async function* runAgent(
               attachedImages.push(image);
               yield { author, image: { ...image, prompt: `Returned by ${call.name}` } };
             }
-            // A tool message carries text only, so the bytes ride on the
-            // follow-up user message appended after this turn's tool results.
-            content += `\n\n${accepted.length} image(s) returned by this tool are attached to the next message${
-              ids.length > 0 ? ` (image id${ids.length > 1 ? "s" : ""}: ${ids.join(", ")})` : ""
-            }.`;
+            if (accepted.length > 0) {
+              // A tool message carries text only, so the bytes ride on the
+              // follow-up user message appended after this turn's tool results.
+              content += `\n\n${accepted.length} image(s) returned by this tool are attached to the next message${
+                ids.length > 0 ? ` (image id${ids.length > 1 ? "s" : ""}: ${ids.join(", ")})` : ""
+              }.`;
+            }
             const dropped = produced.length - accepted.length;
             if (dropped > 0) {
-              content += ` ${dropped} more were dropped: at most ${MAX_ATTACHMENTS} images per turn.`;
+              // Never "0 attached, 2 dropped": a turn whose budget is already
+              // spent has nothing coming, and saying otherwise makes the model
+              // answer about a picture it will never see.
+              content +=
+                accepted.length > 0
+                  ? ` ${dropped} more were dropped: at most ${MAX_ATTACHMENTS} images per turn.`
+                  : `\n\n${dropped} image(s) from this tool were dropped: this turn's limit of ${MAX_ATTACHMENTS} images is already spent.`;
             }
           }
         }
