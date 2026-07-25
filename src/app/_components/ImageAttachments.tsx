@@ -32,17 +32,20 @@ export function useAttachments() {
         failures.push(error instanceof Error ? error.message : `${file.name}: unreadable`);
       }
     }
-    setAttachments((prev) => {
-      const room = MAX_ATTACHMENTS - prev.length;
-      if (added.length > room) {
-        failures.push(`At most ${MAX_ATTACHMENTS} images per message`);
-      }
-      return [...prev, ...added.slice(0, Math.max(room, 0))];
-    });
+    // Reported from here, not from inside the updater: the updater runs after the
+    // check below, so a message pushed there would never be shown — the images
+    // over the cap would just disappear.
+    if (added.length > Math.max(MAX_ATTACHMENTS - attachments.length, 0)) {
+      failures.push(`At most ${MAX_ATTACHMENTS} images per message`);
+    }
+    setAttachments((prev) => [
+      ...prev,
+      ...added.slice(0, Math.max(MAX_ATTACHMENTS - prev.length, 0)),
+    ]);
     if (failures.length > 0) {
       setAttachError(failures.join(" · "));
     }
-  }, []);
+  }, [attachments.length]);
 
   const removeAt = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));

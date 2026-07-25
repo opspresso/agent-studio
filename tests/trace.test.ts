@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace } from "@/domain/trace/types";
@@ -115,6 +115,41 @@ describe("TraceRecorder", () => {
       inputTokens: 6,
       outputTokens: 51,
     });
+  });
+
+  it("does not bill a transfer's duration to the parent's next model span", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const { repository, traces } = memoryRepository();
+      const recorder = new TraceRecorder(repository, {
+        projectName: "parent",
+        versionName: "1",
+        projectType: "agent",
+        model: "openai/gpt-5-mini",
+        messageCount: 1,
+      });
+
+      // Turn 1: a one-second model call that ends in a transfer.
+      vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+      recorder.observe({ usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 } });
+      // The child streams for forty seconds.
+      vi.setSystemTime(new Date("2026-01-01T00:00:41.000Z"));
+      recorder.observe({
+        author: "child",
+        traceId: "t",
+        usage: { inputTokens: 5, outputTokens: 5, costUsd: 0.002 },
+      });
+      // Turn 2: the parent resumes and answers in two seconds.
+      vi.setSystemTime(new Date("2026-01-01T00:00:43.000Z"));
+      recorder.observe({ usage: { inputTokens: 2, outputTokens: 2, costUsd: 0.001 } });
+      await recorder.finish();
+
+      const modelSpans = traces[0]?.spans.filter((span) => span.kind === "model") ?? [];
+      expect(modelSpans.map((span) => span.durationMs)).toEqual([1000, 2000]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("fails the subagent span, not the run, when a transfer errors", async () => {

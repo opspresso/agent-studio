@@ -401,11 +401,6 @@ export interface CostTokens {
 }
 
 /**
- * Apply provider constraints the catalog knows about: models with
- * `reasoningWithTools: false` reject `tools` + `reasoning_effort` on
- * chat/completions, so the effort is forced to the provider's remedy, "none".
- */
-/**
  * Why a model cannot accept image input, or `null` when it can. A model missing
  * from the registry is rejected: sending images to an unknown model fails at
  * the provider with a far less legible error.
@@ -420,6 +415,11 @@ export function describeImageInputReject(modelId: string): string | null {
     : `Model does not accept image input: ${modelId}`;
 }
 
+/**
+ * Apply provider constraints the catalog knows about: models with
+ * `reasoningWithTools: false` reject `tools` + `reasoning_effort` on
+ * chat/completions, so the effort is forced to the provider's remedy, "none".
+ */
 export function applyModelConstraints(params: ChannelParams): ChannelParams {
   const cfg = getModelConfig(params.model);
   if (
