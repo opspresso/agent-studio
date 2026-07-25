@@ -11,10 +11,15 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - Builtin tools are intercepted **before** MCP dispatch, in this order:
   `transfer_to_agent` (subagent transfer), `GenerateImage`, `EditImage`, `Skill` (progressive
   skill loading). Anything else goes to `deps.callMcpTool`.
-- Image handles: a per-run registry ids every editable image (`img_1`, `img_2`, …) — the
+- Image handles: a per-run registry ids every usable image (`img_1`, `img_2`, …) — the
   inline `data:` images in the input messages, plus everything the run drew. `EditImage`
-  resolves an id to bytes, so the registry (not the dep) owns the bookkeeping; the model
-  learns new ids from the image tool results and the input ones from the system prompt.
+  and `transfer_to_agent`'s `image_ids` resolve an id to bytes, so the registry (not the dep)
+  owns the bookkeeping; the model learns new ids from the image tool results and the input
+  ones from the system prompt. The registry is populated when either use exists (an image
+  dep, or a subagent to hand a picture to) — a run that can do neither skips it.
+- A transfer passes the model-written message **and** the bytes of any `image_ids`, so a
+  child edits the real picture instead of a description of it. An unknown id fails the
+  transfer with the available ids listed, rather than silently transferring without it.
 - Turn guard: `turn >= maxTurn` (default 50) silently ends the loop. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT

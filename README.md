@@ -122,10 +122,12 @@ losing the picture.
 **Generation and editing.** `image` projects generate images directly — attach source images
 to the run (console **RUN** panel, or `images` on `predict`) and the prompt edits them
 instead. Agent runs can draw with the builtin `GenerateImage` tool and change an existing
-image with `EditImage` — both enabled by a version's `imageGeneration` parameter. `EditImage` addresses an image by a
-per-run handle (`img_1`, `img_2`, …) covering both what the user sent and what the run drew,
-so "now make it night" works on either. Generated images are uploaded to a public-read S3
-bucket when `S3_BUCKET_NAME` is set; unset disables persistence.
+image with `EditImage` — both enabled by a version's `imageGeneration` parameter. `EditImage`
+addresses an image by a per-run handle (`img_1`, `img_2`, …) covering both what the user sent
+and what the run drew, so "now make it night" works on either. Those handles also travel
+through a subagent transfer as `image_ids`, so an agent can hand a picture to a dedicated
+image project and get it *edited* instead of redrawn. Generated images are uploaded to a
+public-read S3 bucket when `S3_BUCKET_NAME` is set; unset disables persistence.
 
 ## PII Filtering
 
@@ -165,9 +167,10 @@ project's own secret and always run that project — no selector needed.
   profiles, …).
 - Replies stream into one message via `chat.update`; a mention inside a thread carries the
   thread (its 50 most recent turns) as multi-turn context.
-- Image attachments on the mention/DM are downloaded with the bot token and analyzed —
-  up to 4 images, 5MB each, `png`/`jpeg`/`gif`/`webp`. Anything skipped is reported in the
-  reply. Attachments in *earlier* thread turns are not re-read.
+- Image attachments are downloaded with the bot token and analyzed — up to 4 images per run,
+  5MB each, `png`/`jpeg`/`gif`/`webp`. The mention's own images come first; whatever budget is
+  left goes to the newest images earlier in the thread, so "make the picture I sent blue"
+  still has the picture. Anything skipped is reported in the reply.
 - Events are verified (signing secret, 5-minute replay window), deduplicated by
   `event_id` (conditional put, 24h TTL), acked within 3 seconds, and processed in
   the background. `after()` requires a persistent process; an abrupt process loss can

@@ -478,6 +478,86 @@ describe("handleSlackEvent", () => {
     expect(updates.at(-1)?.text).toContain("Could not read attachment");
   });
 
+  it("carries an image from an earlier thread turn into the run", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, replies, downloads } = makeSlackFake();
+    replies.push(
+      {
+        ts: "0.9",
+        user: "U1",
+        text: "<@U0> here is the picture",
+        files: [{ id: "F1", mimetype: "image/png", url_private_download: "https://files.slack.com/f/F1" }],
+      },
+      { ts: "0.95", bot_id: "B0", text: "nice picture" },
+    );
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, event: { ...EVENT.event, thread_ts: "0.9", text: "<@U0> make it blue" } },
+      BINDING,
+    );
+
+    expect(downloads).toEqual(["https://files.slack.com/f/F1"]);
+    const dataUrl = `data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`;
+    // The picture stays on the turn that sent it, ahead of the new instruction.
+    expect(seen).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "here is the picture" },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+      { role: "assistant", content: "nice picture" },
+      { role: "user", content: "make it blue" },
+    ]);
+  });
+
+  it("spends the image budget on the current message before the thread", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, replies, downloads } = makeSlackFake();
+    const file = (id: string) => ({
+      id,
+      mimetype: "image/png",
+      url_private_download: `https://files.slack.com/f/${id}`,
+    });
+    replies.push({ ts: "0.9", user: "U1", text: "older", files: [file("OLD")] });
+    const deps = makeDeps([], slack);
+    deps.runAgent = async function* () {
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          thread_ts: "0.9",
+          subtype: "file_share",
+          files: [file("N1"), file("N2"), file("N3"), file("N4")],
+        },
+      },
+      BINDING,
+    );
+
+    // Four images on this message exhaust the budget, so the older one is not fetched.
+    expect(downloads).toEqual([
+      "https://files.slack.com/f/N1",
+      "https://files.slack.com/f/N2",
+      "https://files.slack.com/f/N3",
+      "https://files.slack.com/f/N4",
+    ]);
+  });
+
   it("passes a live deadline signal into the run", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

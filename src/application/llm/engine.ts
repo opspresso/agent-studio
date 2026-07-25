@@ -141,6 +141,8 @@ export interface AgentDeps extends EngineDeps {
     message: string,
     turn: number,
     maxTurn: number,
+    /** Images the parent handed over; the child edits or looks at them. */
+    images?: Array<{ b64: string; mimeType: string }>,
   ) => AsyncGenerator<EngineChunk, string>;
   /** Generate an image for the builtin GenerateImage tool. */
   generateImage?: (
@@ -415,8 +417,9 @@ async function* runSubagentWithPii(
   message: string,
   turn: number,
   maxTurn: number,
+  images?: Array<{ b64: string; mimeType: string }>,
 ): AsyncGenerator<EngineChunk, string> {
-  const source = runSubagent(agentName, message, turn, maxTurn);
+  const source = runSubagent(agentName, message, turn, maxTurn, images);
   const contentRestorer = filter.createStreamRestorer();
   const reasoningRestorer = filter.createStreamRestorer();
   let author: string | undefined;
@@ -764,7 +767,7 @@ function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
   };
 }
 
-function transferToolDef(subagents: SubagentInfo[]): ChannelToolDef {
+function transferToolDef(subagents: SubagentInfo[], withImages: boolean): ChannelToolDef {
   return {
     type: "function",
     function: {
@@ -782,6 +785,16 @@ function transferToolDef(subagents: SubagentInfo[]): ChannelToolDef {
             type: "string",
             description: "The full message to send to the target agent.",
           },
+          ...(withImages
+            ? {
+                image_ids: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "Ids of images to hand over (see Editable Images). Pass these when the other agent must edit or look at an existing image instead of making one up.",
+                },
+              }
+            : {}),
         },
         required: ["agent_name", "message"],
       },
@@ -789,13 +802,26 @@ function transferToolDef(subagents: SubagentInfo[]): ChannelToolDef {
   };
 }
 
-function imageSystemPromptAddition(handles: readonly ImageHandle[]): string {
+function imageSystemPromptAddition(
+  handles: readonly ImageHandle[],
+  uses: { canEdit: boolean; canTransfer: boolean },
+): string {
   const rows = handles.map((h) => `| ${h.id} | ${tableCell(h.origin)} |`).join("\n");
+  const howTo: string[] = [];
+  if (uses.canEdit) {
+    howTo.push(
+      `Pass an id to the \`${EDIT_IMAGE_TOOL_NAME}\` tool to change that image. An image you generate later also gets an id, reported in the ${IMAGE_TOOL_NAME} result.`,
+    );
+  }
+  if (uses.canTransfer) {
+    howTo.push(
+      `Pass ids as \`image_ids\` on \`${TRANSFER_TOOL_NAME}\` so the other agent receives the actual picture instead of a description of it.`,
+    );
+  }
   return [
-    "## Editable Images",
+    "## Available Images",
     "",
-    `Pass one of these ids to the \`${EDIT_IMAGE_TOOL_NAME}\` tool to change that image. An image you generate later also gets an id, reported in the ${IMAGE_TOOL_NAME} result.`,
-    "",
+    ...howTo.flatMap((line) => [line, ""]),
     "| Image | Source |",
     "|-------|--------|",
     rows,
@@ -807,7 +833,7 @@ function buildAgentSystemPrompt(
   skills: SkillInfo[],
   subagents: SubagentInfo[],
   mcpServers: McpServerInfo[],
-  editableImages: readonly ImageHandle[],
+  images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean },
 ): string {
   const parts: string[] = [];
   if (base) {
@@ -822,8 +848,8 @@ function buildAgentSystemPrompt(
   if (subagents.length > 0) {
     parts.push(subagentSystemPromptAddition(subagents));
   }
-  if (editableImages.length > 0) {
-    parts.push(imageSystemPromptAddition(editableImages));
+  if (images.handles.length > 0) {
+    parts.push(imageSystemPromptAddition(images.handles, images));
   }
   return parts.join("\n\n");
 }
@@ -897,13 +923,14 @@ function buildAgentTools(
   subagents: SubagentInfo[],
   withImageTool: boolean,
   withEditTool: boolean,
+  withImageTransfer: boolean,
 ): ChannelToolDef[] {
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
   if (skills.length > 0) {
     tools.push(skillToolDef(skills));
   }
   if (subagents.length > 0) {
-    tools.push(transferToolDef(subagents));
+    tools.push(transferToolDef(subagents, withImageTransfer));
   }
   if (withImageTool) {
     tools.push(IMAGE_TOOL_DEF);
@@ -946,8 +973,12 @@ export async function* runAgent(
   // authored ones — the runSubagent wrapper stamps the subagent's name.
   const author = undefined;
 
+  // Handles are worth keeping when something can act on them: this run can edit
+  // an image, or it can hand one to another agent that will.
+  const canEdit = Boolean(deps.editImage);
+  const canTransfer = hasSubagents && Boolean(deps.runSubagent);
   const images = new ImageRegistry();
-  if (deps.editImage) {
+  if (canEdit || canTransfer) {
     registerInputImages(images, input.messages);
   }
   const systemPrompt = buildAgentSystemPrompt(
@@ -955,14 +986,15 @@ export async function* runAgent(
     skills,
     subagents,
     input.mcpServers ?? [],
-    deps.editImage ? images.list() : [],
+    { handles: images.list(), canEdit, canTransfer },
   );
   const tools = buildAgentTools(
     input.mcpTools,
     skills,
     subagents,
     Boolean(deps.generateImage),
-    Boolean(deps.editImage),
+    canEdit,
+    canTransfer,
   );
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
 
@@ -1094,6 +1126,20 @@ export async function* runAgent(
           toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
           continue;
         }
+        // Named images travel as bytes, so the child edits the real picture
+        // instead of a description of it.
+        const requestedIds = Array.isArray(displayArgs.image_ids)
+          ? displayArgs.image_ids.filter((id): id is string => typeof id === "string")
+          : [];
+        const handedOver = requestedIds.map((id) => images.get(id)).filter(Boolean) as ImageHandle[];
+        if (handedOver.length < requestedIds.length) {
+          const known = images.list().map((handle) => handle.id);
+          const errorText = `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`;
+          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
+          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          continue;
+        }
+        const childImages = handedOver.map(({ b64, mimeType }) => ({ b64, mimeType }));
         // Pass ONLY the model-written message (no parent history). The child's
         // final text returns as a "For context" user message.
         const childText = filter
@@ -1104,8 +1150,9 @@ export async function* runAgent(
               message,
               turn + 1,
               maxTurn,
+              childImages,
             )
-          : yield* deps.runSubagent(agentName, message, turn + 1, maxTurn);
+          : yield* deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages);
         toolMessages.push({
           role: "tool",
           tool_call_id: call.id,

@@ -5,6 +5,15 @@ export interface SlackMessage {
   user?: string;
   bot_id?: string;
   text?: string;
+  /** Attachments on a thread message; present when the bot has files:read. */
+  files?: Array<{
+    id?: string;
+    name?: string;
+    mimetype?: string;
+    size?: number;
+    url_private_download?: string;
+    url_private?: string;
+  }>;
 }
 
 /** Per-page size for paginated reads; Slack's recommended maximum. */

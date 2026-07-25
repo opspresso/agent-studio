@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
-import { threadToMessages } from "@/application/slack/handleSlackEvent";
+import { threadToTurns } from "@/application/slack/handleSlackEvent";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -141,9 +141,9 @@ describe("slackClient.downloadFile", () => {
   });
 });
 
-describe("threadToMessages", () => {
+describe("threadToTurns", () => {
   it("maps bot turns to assistant, humans to user, and drops the current event", () => {
-    const messages = threadToMessages(
+    const turns = threadToTurns(
       [
         { ts: "1", user: "U1", text: "<@UBOT> first question" },
         { ts: "2", bot_id: "B1", text: "first answer" },
@@ -152,9 +152,23 @@ describe("threadToMessages", () => {
       ],
       "4",
     );
-    expect(messages).toEqual([
+    expect(turns.map((t) => t.message)).toEqual([
       { role: "user", content: "first question" },
       { role: "assistant", content: "first answer" },
     ]);
+  });
+
+  it("keeps a text-less turn that carried files, with its attachments", () => {
+    const turns = threadToTurns(
+      [
+        { ts: "1", user: "U1", text: "", files: [{ id: "F1", mimetype: "image/png" }] },
+        { ts: "2", user: "U1", text: "" },
+      ],
+      "9",
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.message).toEqual({ role: "user", content: "" });
+    expect(turns[0]?.files).toEqual([{ id: "F1", mimetype: "image/png" }]);
   });
 });

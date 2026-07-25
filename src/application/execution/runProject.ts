@@ -17,7 +17,7 @@ import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
-import type { ImageChannel } from "@/domain/llm/imageChannel";
+import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
@@ -570,6 +570,23 @@ async function closeMcp(close: (() => Promise<void>) | undefined): Promise<void>
 }
 
 /**
+ * The child's first user turn: the transfer message, plus any images the parent
+ * handed over as inline parts so a vision-capable child can look at them.
+ */
+function subagentContent(message: string, images?: ImageBytes[]): ChatMessageInput["content"] {
+  if (!images || images.length === 0) {
+    return message;
+  }
+  return [
+    { type: "text", text: message },
+    ...images.map((image) => ({
+      type: "image_url" as const,
+      image_url: { url: `data:${image.mimeType};base64,${image.b64}` },
+    })),
+  ];
+}
+
+/**
  * How deep a chain of local subagent transfers may go. Turn accounting alone
  * does not bound it: a child version carries its own `maxTurn`, so a child can
  * raise the ceiling its parent was running under.
@@ -585,7 +602,7 @@ function buildSubagentRunner(
   signal?: AbortSignal,
 ): NonNullable<engine.AgentDeps["runSubagent"]> {
   const refByName = new Map((subagentList ?? []).map((ref) => [ref.name, ref]));
-  return async function* runSubagent(agentName, message, turn, maxTurn) {
+  return async function* runSubagent(agentName, message, turn, maxTurn, images) {
     signal?.throwIfAborted();
     const ref = refByName.get(agentName);
     if (!ref) {
@@ -593,6 +610,15 @@ function buildSubagentRunner(
       return "";
     }
     if (ref.type === "remote") {
+      if (images && images.length > 0) {
+        // The outbound A2A/agent clients send text parts only, so silently
+        // dropping the picture would look like a refusal to edit it.
+        yield {
+          author: agentName,
+          error: `Agent '${agentName}' is a remote agent; images cannot be transferred to it.`,
+        };
+        return "";
+      }
       return yield* runRemoteSubagent(deps, agentName, message, signal);
     }
     // Refuse cycles and runaway nesting as tool errors, like an unknown agent:
@@ -621,11 +647,15 @@ function buildSubagentRunner(
       recordUsageFn,
       [...ancestry, agentName],
       signal,
+      images,
     );
   };
 }
 
-/** An image-project child generates one image from the transfer message. */
+/**
+ * An image-project child produces one image from the transfer message: it edits
+ * the images the parent handed over, or draws from scratch when there are none.
+ */
 async function* runImageSubagent(
   deps: ExecutionDeps,
   agentName: string,
@@ -634,6 +664,7 @@ async function* runImageSubagent(
   message: string,
   recordUsageFn: engine.RecordUsageFn,
   signal?: AbortSignal,
+  images?: ImageBytes[],
 ): AsyncGenerator<EngineChunk, string> {
   const model = version.model;
   const recorder = deps.traces
@@ -653,7 +684,11 @@ async function* runImageSubagent(
   }
   try {
     signal?.throwIfAborted();
-    const result = await deps.imageChannel.generateImage({ model, prompt: message, signal });
+    const sources = images ?? [];
+    const result =
+      sources.length > 0
+        ? await deps.imageChannel.editImage({ model, prompt: message, images: sources, signal })
+        : await deps.imageChannel.generateImage({ model, prompt: message, signal });
     const costUsd = calculateImageCost(model, result.usage);
     await recordUsageFn({
       projectName: project.name,
@@ -699,6 +734,7 @@ async function* runLocalSubagent(
   recordUsageFn: engine.RecordUsageFn,
   ancestry: readonly string[],
   signal?: AbortSignal,
+  images?: ImageBytes[],
 ): AsyncGenerator<EngineChunk, string> {
   const project = await deps.projects.get(agentName);
   if (!project) {
@@ -723,6 +759,7 @@ async function* runLocalSubagent(
       message,
       recordUsageFn,
       signal,
+      images,
     );
   }
 
@@ -746,7 +783,7 @@ async function* runLocalSubagent(
       model: version.model,
       fallbackModel: version.fallbackModel,
       systemPrompt: version.systemPrompt,
-      messages: [{ role: "user", content: message }],
+      messages: [{ role: "user", content: subagentContent(message, images) }],
       parameters: toEngineParameters(version),
       maxTurn: version.maxTurn ?? maxTurn,
       startTurn: turn,
