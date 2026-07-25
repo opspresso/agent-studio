@@ -99,6 +99,21 @@ export function messageText(message: Pick<ChatMessageInput, "content">): string 
     .join("\n");
 }
 
+/**
+ * Decode a `data:<mime>;base64,<payload>` url into bytes — the inverse of how
+ * inline images are encoded into a content part. Any other url form (an https
+ * image the provider fetches for itself) returns null.
+ */
+export function parseImageDataUrl(url: string): { b64: string; mimeType: string } | null {
+  const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
+  const mimeType = match?.[1];
+  const b64 = match?.[2];
+  if (!mimeType || !b64 || !mimeType.startsWith("image/")) {
+    return null;
+  }
+  return { b64, mimeType };
+}
+
 /** True when a message body carries at least one image part. */
 export function hasImageParts(message: Pick<ChatMessageInput, "content">): boolean {
   return Array.isArray(message.content) && message.content.some((p) => p.type === "image_url");

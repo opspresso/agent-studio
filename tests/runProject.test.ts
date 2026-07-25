@@ -65,6 +65,7 @@ function executionDepsFixture(channel: FakeChannel) {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const recorded: UsageDelta[] = [];
   const imageModels: string[] = [];
+  const edits: Array<{ model: string; prompt: string; sources: string[] }> = [];
   const imageChannel: ImageChannel = {
     async generateImage(params) {
       imageModels.push(params.model);
@@ -72,6 +73,18 @@ function executionDepsFixture(channel: FakeChannel) {
         b64: "aW1n",
         mimeType: "image/png",
         usage: { textInputTokens: 10, imageInputTokens: 0, imageOutputTokens: 100 },
+      };
+    },
+    async editImage(params) {
+      edits.push({
+        model: params.model,
+        prompt: params.prompt,
+        sources: params.images.map((image) => image.b64),
+      });
+      return {
+        b64: "ZWRpdA==",
+        mimeType: "image/png",
+        usage: { textInputTokens: 5, imageInputTokens: 20, imageOutputTokens: 60 },
       };
     },
   };
@@ -91,7 +104,7 @@ function executionDepsFixture(channel: FakeChannel) {
     channel,
     imageChannel,
   } as unknown as ExecutionDeps;
-  return { deps, recorded, imageModels };
+  return { deps, recorded, imageModels, edits };
 }
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
@@ -239,6 +252,144 @@ describe("executeAgent GenerateImage opt-in", () => {
       }),
     );
     expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
+  });
+});
+
+describe("executeAgent EditImage", () => {
+  const ATTACHED = "data:image/png;base64,YXR0YWNoZWQ=";
+  /** A vision-capable model: an image-bearing run is gated on the registry. */
+  const visionVersion = (parameters: VersionParameters): Version => ({
+    ...versionFixture(parameters),
+    model: "google/gemini-2.5-flash",
+  });
+  const editScript = [
+    [
+      toolCallChunk(0, "call_edit", "EditImage", '{"image_id":"img_1","prompt":"make it night"}'),
+      usageChunk(10, 5),
+    ],
+    [contentChunk("Done — it is night now."), usageChunk(8, 4)],
+  ];
+
+  function offersEditTool(channel: FakeChannel): boolean {
+    return channel.seenParams[0]?.tools?.some((t) => t.function.name === "EditImage") ?? false;
+  }
+
+  it("edits an attached image and records usage against the image model", async () => {
+    const channel = new FakeChannel(editScript);
+    const { deps, recorded, edits } = executionDepsFixture(channel);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "make this night" },
+              { type: "image_url", image_url: { url: ATTACHED } },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(edits).toEqual([
+      { model: DEFAULT_IMAGE_MODEL, prompt: "make it night", sources: ["YXR0YWNoZWQ="] },
+    ]);
+    expect(chunks.find((c) => c.image)?.image).toMatchObject({ b64: "ZWRpdA==" });
+    const editUsage = recorded.find((d) => d.model === DEFAULT_IMAGE_MODEL);
+    // 5 text + 20 image input tokens, 60 image output tokens — same accounting as generate.
+    expect(editUsage?.inputTokens).toBe(25);
+    expect(editUsage?.outputTokens).toBe(60);
+  });
+
+  it("lists the attached image in the system prompt so the model can name it", async () => {
+    const channel = new FakeChannel(editScript);
+    const { deps } = executionDepsFixture(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        messages: [
+          { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
+        ],
+      }),
+    );
+
+    const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(systemPrompt).toContain("## Editable Images");
+    expect(systemPrompt).toContain("| img_1 | sent by the user |");
+  });
+
+  it("returns an error tool result for an unknown image id", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_edit", "EditImage", '{"image_id":"img_9","prompt":"night"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("I could not find that image."), usageChunk(1, 1)],
+    ]);
+    const { deps, edits } = executionDepsFixture(channel);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        messages: [
+          { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
+        ],
+      }),
+    );
+
+    expect(edits).toEqual([]);
+    const result = chunks.find((c) => c.toolResult?.name === "EditImage")?.toolResult;
+    expect(result?.content).toContain("no image with id 'img_9'");
+    expect(result?.content).toContain("img_1");
+  });
+
+  it("is not offered when the version has not opted into image generation", async () => {
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: visionVersion({ piiFiltering: false, imageGeneration: false }),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(offersEditTool(channel)).toBe(false);
+  });
+
+  it("hands a generated image its own editable id", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_img", "GenerateImage", '{"prompt":"a red fox"}'), usageChunk(1, 1)],
+      [
+        toolCallChunk(0, "call_edit", "EditImage", '{"image_id":"img_1","prompt":"at night"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("A fox, then the same fox at night."), usageChunk(1, 1)],
+    ]);
+    const { deps, edits } = executionDepsFixture(channel);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: visionVersion({ piiFiltering: false, imageGeneration: true }),
+        messages: [{ role: "user", content: "draw a fox, then make it night" }],
+      }),
+    );
+
+    const generated = chunks.find((c) => c.toolResult?.name === "GenerateImage")?.toolResult;
+    expect(generated?.content).toContain("image id: img_1");
+    // The edit ran on the bytes the generator produced, not on an attachment.
+    expect(edits).toEqual([
+      { model: DEFAULT_IMAGE_MODEL, prompt: "at night", sources: ["aW1n"] },
+    ]);
+    expect(chunks.filter((c) => c.image)).toHaveLength(2);
   });
 });
 

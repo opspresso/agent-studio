@@ -25,7 +25,7 @@ import {
   calculateCost,
   describeImageInputReject,
 } from "@/domain/llm/models";
-import { hasImageParts } from "@/domain/llm/types";
+import { hasImageParts, parseImageDataUrl } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -40,7 +40,61 @@ import { renderTemplate } from "./template";
 export const SKILL_TOOL_NAME = "Skill";
 export const TRANSFER_TOOL_NAME = "transfer_to_agent";
 export const IMAGE_TOOL_NAME = "GenerateImage";
+export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 const DEFAULT_MAX_TURN = 50;
+
+/** An image this run can edit, addressed by a short id the model can quote. */
+interface ImageHandle {
+  id: string;
+  b64: string;
+  mimeType: string;
+  origin: string;
+}
+
+/**
+ * The images EditImage can reach in one run: the user's inline attachments plus
+ * everything the run has drawn so far. Ids are stable for the run and travel to
+ * the model through the system prompt and the image tool results.
+ */
+class ImageRegistry {
+  private readonly handles: ImageHandle[] = [];
+
+  add(image: { b64: string; mimeType: string }, origin: string): ImageHandle {
+    const handle: ImageHandle = { id: `img_${this.handles.length + 1}`, ...image, origin };
+    this.handles.push(handle);
+    return handle;
+  }
+
+  get(id: string): ImageHandle | undefined {
+    return this.handles.find((handle) => handle.id === id);
+  }
+
+  list(): readonly ImageHandle[] {
+    return this.handles;
+  }
+}
+
+/**
+ * Register every inline image in the input messages. An https image part is
+ * skipped: the provider fetches those itself, so the bytes an edit needs are
+ * not in hand.
+ */
+function registerInputImages(registry: ImageRegistry, messages: ChatMessageInput[]): void {
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) {
+      continue;
+    }
+    for (const part of message.content) {
+      if (part.type !== "image_url") {
+        continue;
+      }
+      const bytes = parseImageDataUrl(part.image_url.url);
+      if (bytes) {
+        registry.add(bytes, message.role === "assistant" ? "an earlier answer" : "sent by the user");
+      }
+    }
+  }
+}
 
 export type RecordUsageFn = (record: {
   projectName: string;
@@ -94,6 +148,16 @@ export interface AgentDeps extends EngineDeps {
     size?: string,
     quality?: string,
   ) => Promise<{ b64: string; mimeType: string }>;
+  /**
+   * Edit existing image bytes for the builtin EditImage tool. The engine owns the
+   * handle bookkeeping and hands over the resolved bytes, so this stays pure I/O.
+   */
+  editImage?: (params: {
+    prompt: string;
+    images: Array<{ b64: string; mimeType: string }>;
+    size?: string;
+    quality?: string;
+  }) => Promise<{ b64: string; mimeType: string }>;
 }
 
 export interface RunPromptInput {
@@ -725,11 +789,25 @@ function transferToolDef(subagents: SubagentInfo[]): ChannelToolDef {
   };
 }
 
+function imageSystemPromptAddition(handles: readonly ImageHandle[]): string {
+  const rows = handles.map((h) => `| ${h.id} | ${tableCell(h.origin)} |`).join("\n");
+  return [
+    "## Editable Images",
+    "",
+    `Pass one of these ids to the \`${EDIT_IMAGE_TOOL_NAME}\` tool to change that image. An image you generate later also gets an id, reported in the ${IMAGE_TOOL_NAME} result.`,
+    "",
+    "| Image | Source |",
+    "|-------|--------|",
+    rows,
+  ].join("\n");
+}
+
 function buildAgentSystemPrompt(
   base: string | undefined,
   skills: SkillInfo[],
   subagents: SubagentInfo[],
   mcpServers: McpServerInfo[],
+  editableImages: readonly ImageHandle[],
 ): string {
   const parts: string[] = [];
   if (base) {
@@ -743,6 +821,9 @@ function buildAgentSystemPrompt(
   }
   if (subagents.length > 0) {
     parts.push(subagentSystemPromptAddition(subagents));
+  }
+  if (editableImages.length > 0) {
+    parts.push(imageSystemPromptAddition(editableImages));
   }
   return parts.join("\n\n");
 }
@@ -776,11 +857,46 @@ const IMAGE_TOOL_DEF: ChannelToolDef = {
   },
 };
 
+const EDIT_IMAGE_TOOL_DEF: ChannelToolDef = {
+  type: "function",
+  function: {
+    name: EDIT_IMAGE_TOOL_NAME,
+    description:
+      "Edit an existing image: change, add or remove something in it, or restyle it. Address the image by its id (see Editable Images, and the ids reported by GenerateImage). The edited image is delivered to the user automatically.",
+    parameters: {
+      type: "object",
+      properties: {
+        image_id: {
+          type: "string",
+          description: "Id of the image to edit, e.g. 'img_1'.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "Detailed English instruction describing the edited result, not just the change.",
+        },
+        size: {
+          type: "string",
+          enum: ["1024x1024", "1536x1024", "1024x1536"],
+          description: "Output dimensions; default 1024x1024.",
+        },
+        quality: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description: "Rendering quality; default medium.",
+        },
+      },
+      required: ["image_id", "prompt"],
+    },
+  },
+};
+
 function buildAgentTools(
   mcpTools: ChannelToolDef[] | undefined,
   skills: SkillInfo[],
   subagents: SubagentInfo[],
   withImageTool: boolean,
+  withEditTool: boolean,
 ): ChannelToolDef[] {
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
   if (skills.length > 0) {
@@ -791,6 +907,9 @@ function buildAgentTools(
   }
   if (withImageTool) {
     tools.push(IMAGE_TOOL_DEF);
+  }
+  if (withEditTool) {
+    tools.push(EDIT_IMAGE_TOOL_DEF);
   }
   return tools;
 }
@@ -827,13 +946,24 @@ export async function* runAgent(
   // authored ones — the runSubagent wrapper stamps the subagent's name.
   const author = undefined;
 
+  const images = new ImageRegistry();
+  if (deps.editImage) {
+    registerInputImages(images, input.messages);
+  }
   const systemPrompt = buildAgentSystemPrompt(
     input.systemPrompt,
     skills,
     subagents,
     input.mcpServers ?? [],
+    deps.editImage ? images.list() : [],
   );
-  const tools = buildAgentTools(input.mcpTools, skills, subagents, Boolean(deps.generateImage));
+  const tools = buildAgentTools(
+    input.mcpTools,
+    skills,
+    subagents,
+    Boolean(deps.generateImage),
+    Boolean(deps.editImage),
+  );
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
 
   const messages: ChannelMessage[] = [];
@@ -1003,8 +1133,12 @@ export async function* runAgent(
           try {
             const image = await deps.generateImage(maskedPrompt, size, quality);
             yield { author, image: { ...image, prompt: displayPrompt } };
-            resultText =
-              "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
+            const handle = deps.editImage
+              ? images.add(image, `generated: ${displayPrompt.slice(0, 60)}`)
+              : undefined;
+            resultText = handle
+              ? `Image generated and delivered to the user (image id: ${handle.id}, editable with ${EDIT_IMAGE_TOOL_NAME}). Briefly describe what was drawn; do not claim you cannot show images.`
+              : "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
           } catch (error) {
             input.signal?.throwIfAborted();
             resultText = `Error: image generation failed. ${errorMessage(error)}`;
@@ -1020,6 +1154,50 @@ export async function* runAgent(
           },
         };
         toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedResultText });
+        continue;
+      }
+
+      if (call.name === EDIT_IMAGE_TOOL_NAME && deps.editImage) {
+        const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
+        const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
+        const imageId = typeof displayArgs.image_id === "string" ? displayArgs.image_id : "";
+        const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
+        const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
+        const source = images.get(imageId);
+        let resultText: string;
+        if (!maskedPrompt.trim()) {
+          resultText = `Error: ${EDIT_IMAGE_TOOL_NAME} requires a prompt.`;
+        } else if (!source) {
+          const known = images.list().map((handle) => handle.id);
+          resultText = known.length
+            ? `Error: no image with id '${imageId}'. Available images: ${known.join(", ")}.`
+            : `Error: no image is available to edit yet. Generate one first, or ask the user to attach one.`;
+        } else {
+          try {
+            const image = await deps.editImage({
+              prompt: maskedPrompt,
+              images: [{ b64: source.b64, mimeType: source.mimeType }],
+              size,
+              quality,
+            });
+            yield { author, image: { ...image, prompt: displayPrompt } };
+            const handle = images.add(image, `edited from ${source.id}`);
+            resultText = `Image edited and delivered to the user (image id: ${handle.id}). Briefly describe the change; do not claim you cannot show images.`;
+          } catch (error) {
+            input.signal?.throwIfAborted();
+            resultText = `Error: image edit failed. ${errorMessage(error)}`;
+          }
+        }
+        const maskedEditText = filter?.mask(resultText) ?? resultText;
+        yield {
+          author,
+          toolResult: {
+            toolCallId: call.id,
+            name: call.name,
+            content: filter?.restore(maskedEditText) ?? resultText,
+          },
+        };
+        toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedEditText });
         continue;
       }
 

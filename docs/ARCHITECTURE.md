@@ -178,7 +178,7 @@ predicate — consumers must use it instead of re-deriving author semantics.
 | `delta.content` / `delta.reasoningContent` | engine per stream delta (PII-restored) | top-level only: chat persistence, Slack text, OpenAI chunks, A2A artifact, client answer bubble |
 | `delta.toolCalls` | engine when a turn requests tools (display args) | client tool-call rendering; Slack progress indicator |
 | `toolResult` | engine after each tool finishes | chat tool rows (UI-only, not replayed), client tool panel |
-| `image` | GenerateImage builtin | chat image persistence (S3), Slack upload, client gallery |
+| `image` | GenerateImage / EditImage builtins | chat image persistence (S3), Slack upload, OpenAI `images` extension, client gallery |
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
 | `error` | engine on failure (mid-stream — no retry) | every consumer surfaces it and stops |
 | `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | OpenAI `finish_reason` (`stop` with `done`, `length` without), client finalize |
@@ -253,10 +253,17 @@ Two deliberate strategies coexist:
   - builtin tools intercepted before MCP dispatch: `Skill` (progressive skill loading),
     `transfer_to_agent` (subagent transfer — local recursion or remote agent HTTP call;
     budget guard `turn + 2 >= maxTurn` rejects transfer), `GenerateImage` (image
-    generation via the injected `generateImage` dep; results persist to S3 when configured).
-    `generateImage` is injected only when the version opts in via
+    generation via the injected `generateImage` dep; results persist to S3 when configured),
+    `EditImage` (edit an existing image by handle id via the injected `editImage` dep).
+    Both image deps are injected only when the version opts in via
     `parameters.imageGeneration: true`; the model is `parameters.imageModel` when set and
-    still image-capable, else the registry's default image model
+    still image-capable, else the registry's default image model. Whether that model's
+    provider implements the edit endpoint is only known at dispatch, so a refusal comes back
+    as a tool-result error rather than hiding the tool
+  - image handles: a per-run registry ids the inline `data:` images of the input messages and
+    every image the run produced (`img_1`, `img_2`, …). `EditImage` takes an id, so the engine
+    resolves bytes and the dep stays pure I/O. An `https://` image part gets no handle — the
+    provider fetches those itself, so the bytes are not in hand
   - subagent transfer passes ONLY the model-written `message` (no parent history);
     child's final text returns as a "For context: ..." user message
   - local transfers carry an ancestry chain (`src/application/execution/runProject.ts`):

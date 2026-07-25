@@ -338,6 +338,7 @@ async function buildAgentDeps(
     loadSkillContent: buildSkillLoader(deps),
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, ancestry, signal),
     generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
+    editImage: buildImageEditor(deps, version, projectName, recordUsageFn, signal),
   };
 }
 
@@ -389,6 +390,53 @@ function buildImageGenerator(
     await recordUsageFn({
       projectName,
       model: resolvedModel,
+      inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
+      outputTokens: result.usage.imageOutputTokens,
+      costUsd,
+    });
+    return { b64: result.b64, mimeType: result.mimeType };
+  };
+}
+
+/**
+ * The EditImage builtin rides on the same per-version opt-in as GenerateImage:
+ * a version that may draw may also redraw. Whether the resolved model's provider
+ * implements the edit endpoint is only known at dispatch, so a provider refusal
+ * comes back as a tool-result error rather than hiding the tool.
+ */
+function buildImageEditor(
+  deps: ExecutionDeps,
+  version: Version,
+  projectName: string,
+  recordUsageFn: engine.RecordUsageFn,
+  signal?: AbortSignal,
+): engine.AgentDeps["editImage"] {
+  if (version.parameters.imageGeneration !== true) {
+    return undefined;
+  }
+  const requested = version.parameters.imageModel;
+  const model =
+    requested && getModelConfig(requested)?.capabilities.imageGeneration
+      ? requested
+      : DEFAULT_IMAGE_MODEL;
+  if (!model) {
+    return undefined;
+  }
+  const imageChannel = deps.imageChannel;
+  return async ({ prompt, images, size, quality }) => {
+    signal?.throwIfAborted();
+    const result = await imageChannel.editImage({
+      model,
+      prompt,
+      images,
+      size,
+      quality,
+      signal,
+    });
+    const costUsd = calculateImageCost(model, result.usage);
+    await recordUsageFn({
+      projectName,
+      model,
       inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
       outputTokens: result.usage.imageOutputTokens,
       costUsd,
