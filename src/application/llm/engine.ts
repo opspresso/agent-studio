@@ -2,8 +2,8 @@
  * LLM engine. Runs prompt and agent executions over a single
  * OpenAI-compatible channel:
  *   - runPrompt / runPromptStream: single-shot generation with fallback retry.
- *   - runAgent: recursive multi-turn tool loop (Skill + transfer_to_agent
- *     builtins intercepted before MCP dispatch).
+ *   - runAgent: recursive multi-turn tool loop (a builtin serves a call only when
+ *     it was offered this run; other names dispatch to MCP, concurrently).
  *
  * Pure application logic: the channel, usage recorder, MCP dispatcher, skill
  * loader and subagent runner are all injected so the loop is testable without
@@ -211,6 +211,61 @@ export interface RunAgentInput {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** MCP calls of one response that may be in flight at once. */
+const MAX_PARALLEL_TOOL_CALLS = 5;
+
+/**
+ * Tool-result text one turn may add to the context. Each result is already
+ * capped on its own, but a turn holding several of them plus a whole skill body
+ * would blow the context window (or the bill) before the provider complains.
+ */
+const MAX_TOOL_RESULT_CHARS_PER_TURN = 200_000;
+
+/** Run `fn` over `items` with at most `limit` in flight; results keep input order. */
+async function mapWithLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const index = next;
+      next += 1;
+      const item = items[index];
+      if (index >= items.length || item === undefined) {
+        return;
+      }
+      results[index] = await fn(item);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Spend one turn's tool-result budget in call order. Truncation is explicit so
+ * the model can narrow its next call instead of silently working from a cut-off
+ * payload; an entirely omitted result is reported as an error, which also makes
+ * budget exhaustion visible as a failed span in the trace.
+ */
+function createToolResultBudget(total: number): (content: string) => string {
+  let remaining = total;
+  return (content) => {
+    if (content.length <= remaining) {
+      remaining -= content.length;
+      return content;
+    }
+    const room = remaining;
+    remaining = 0;
+    if (room <= 0) {
+      return "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
+    }
+    return `${content.slice(0, room)}\n…(truncated: kept ${room} of ${content.length} chars, this turn's tool output budget is exhausted)`;
+  };
 }
 
 /** 429 or 5xx are the only fallback-eligible errors, matching FallbackRunner. */
@@ -1125,18 +1180,51 @@ export async function* runAgent(
     const postContextMessages: ChannelMessage[] = [];
     let nextTurn = turn + 1;
 
-    for (const call of calls) {
+    // Announce every call before any of them runs: the client sees the whole
+    // plan at once, and the MCP calls below can overlap.
+    // `builtin` is decided by the offered set, not by the dep — an MCP tool that
+    // arrived under a builtin's name is only shadowed when that builtin is offered.
+    const prepared = calls.map((call) => {
       const args = parseToolArguments(call.arguments);
-      const wireItem = toWireToolCall(call.id, call.name, args);
-      wireToolCalls.push(wireItem);
       const displayArgs = filter
         ? (restoreValues(filter, args) as Record<string, unknown>)
         : args;
+      return { call, args, displayArgs, builtin: builtinNames.has(call.name) };
+    });
+    for (const { call, args, displayArgs } of prepared) {
+      wireToolCalls.push(toWireToolCall(call.id, call.name, args));
       yield { author, delta: { toolCalls: [toWireToolCall(call.id, call.name, displayArgs)] } };
+    }
 
-      // Gated on the offered set, not on the dep: an MCP tool that arrived under
-      // a builtin's name is only shadowed when that builtin is actually offered.
-      if (builtinNames.has(call.name) && call.name === TRANSFER_TOOL_NAME) {
+    // The MCP calls of one response are independent by construction — the model
+    // asked for them together — so they run concurrently instead of adding up
+    // their latencies. Builtins stay strictly in call order below: a transfer
+    // moves the turn budget and the image tools mutate the image registry.
+    // Failures are settled rather than thrown, so one rejection cannot leave the
+    // other in-flight calls' rejections unhandled; each is rethrown in order.
+    const mcpDispatch = deps.callMcpTool;
+    const mcpCalls = mcpDispatch ? prepared.filter((entry) => !entry.builtin) : [];
+    const mcpSettled = new Map<string, { ok: string } | { err: unknown }>();
+    if (mcpDispatch && mcpCalls.length > 0) {
+      const settled = await mapWithLimit(mcpCalls, MAX_PARALLEL_TOOL_CALLS, async (entry) => {
+        try {
+          return { ok: await mcpDispatch(entry.call.name, entry.displayArgs) };
+        } catch (err) {
+          return { err };
+        }
+      });
+      mcpCalls.forEach((entry, index) => {
+        const result = settled[index];
+        if (result) {
+          mcpSettled.set(entry.call.id, result);
+        }
+      });
+    }
+
+    const spendResultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN);
+
+    for (const { call, args, displayArgs, builtin } of prepared) {
+      if (builtin && call.name === TRANSFER_TOOL_NAME) {
         // Child runs at turn+1 and the parent resumes at turn+2, so two turns
         // must remain or the resume would trip the initial guard.
         if (turn + 2 >= maxTurn) {
@@ -1195,7 +1283,7 @@ export async function* runAgent(
         continue;
       }
 
-      if (builtinNames.has(call.name) && call.name === IMAGE_TOOL_NAME && deps.generateImage) {
+      if (builtin && call.name === IMAGE_TOOL_NAME && deps.generateImage) {
         const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
         const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
         const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
@@ -1231,7 +1319,7 @@ export async function* runAgent(
         continue;
       }
 
-      if (builtinNames.has(call.name) && call.name === EDIT_IMAGE_TOOL_NAME && deps.editImage) {
+      if (builtin && call.name === EDIT_IMAGE_TOOL_NAME && deps.editImage) {
         const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
         const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
         const imageId = typeof displayArgs.image_id === "string" ? displayArgs.image_id : "";
@@ -1277,7 +1365,7 @@ export async function* runAgent(
 
       let content: string;
       let resultName = call.name;
-      if (builtinNames.has(call.name) && call.name === SKILL_TOOL_NAME && deps.loadSkillContent) {
+      if (builtin && call.name === SKILL_TOOL_NAME && deps.loadSkillContent) {
         const skillName = typeof displayArgs.skill_name === "string" ? displayArgs.skill_name : "";
         const filePath =
           typeof displayArgs.file_path === "string" ? displayArgs.file_path : undefined;
@@ -1285,12 +1373,21 @@ export async function* runAgent(
         if (skillName) {
           resultName = `${SKILL_TOOL_NAME}: ${skillName}`;
         }
-      } else if (deps.callMcpTool) {
-        content = await deps.callMcpTool(call.name, displayArgs);
-        input.signal?.throwIfAborted();
       } else {
-        content = `Error: Tool '${call.name}' cannot be executed in this context.`;
+        const settled = mcpSettled.get(call.id);
+        if (!settled) {
+          content = `Error: Tool '${call.name}' cannot be executed in this context.`;
+        } else if ("err" in settled) {
+          // Dispatched above; a thrown dispatcher still tears the run down here,
+          // in call order, exactly as a sequential dispatch did.
+          input.signal?.throwIfAborted();
+          throw settled.err;
+        } else {
+          input.signal?.throwIfAborted();
+          content = settled.ok;
+        }
       }
+      content = spendResultBudget(content);
       const maskedContent = filter?.mask(content) ?? content;
       yield {
         author,

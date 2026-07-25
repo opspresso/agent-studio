@@ -157,7 +157,7 @@ sequenceDiagram
   loop until no tool_calls or turn guard
     E->>E: channel stream (fallback: retry once before first chunk)
     E-->>R: EngineChunk (delta / toolCalls / usage)
-    E->>T: dispatch tool calls (builtins intercepted before MCP)
+    E->>T: dispatch tool calls (offered builtins in order, MCP concurrently)
     T-->>E: tool results
   end
   E-->>R: EngineChunk {done}
@@ -251,11 +251,18 @@ Two deliberate strategies coexist:
   - turn guard `currentTurn >= maxTurn` (default 50) stops the loop
   - all tool_calls of one response aggregate into ONE assistant message, then tool results
     append, then recurse with `turn + 1`
-  - builtin tools intercepted before MCP dispatch: `Skill` (progressive skill loading),
-    `transfer_to_agent` (subagent transfer — local recursion or remote agent HTTP call;
-    budget guard `turn + 2 >= maxTurn` rejects transfer), `GenerateImage` (image
+  - a builtin serves a call only when that builtin was **offered** this run (the offered
+    names come from `buildAgentTools`, never from dep presence): `Skill` (progressive skill
+    loading), `transfer_to_agent` (subagent transfer — local recursion or remote agent HTTP
+    call; budget guard `turn + 2 >= maxTurn` rejects transfer), `GenerateImage` (image
     generation via the injected `generateImage` dep; results persist to S3 when configured),
-    `EditImage` (edit an existing image by handle id via the injected `editImage` dep).
+    `EditImage` (edit an existing image by handle id via the injected `editImage` dep). Any
+    other name is an MCP tool; `BUILTIN_TOOL_NAMES` is reserved during alias allocation so an
+    MCP tool never carries a name a builtin might claim.
+  - the MCP calls of one response run concurrently (≤5 in flight) while builtins run in call
+    order; results, tool messages and the assistant `tool_calls` stay in call order
+  - one turn's tool-result text is capped (`MAX_TOOL_RESULT_CHARS_PER_TURN`, 200KB, spent in
+    call order): a truncated result says so and one that no longer fits becomes `Error: …`
     Both image deps are injected only when the version opts in via
     `parameters.imageGeneration: true`; the model is `parameters.imageModel` when set and
     still image-capable, else the registry's default image model. Whether that model's

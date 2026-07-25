@@ -74,9 +74,10 @@ deps. Key behaviors:
 - One OpenAI-compatible channel for all providers; model ids are `provider/model`. Routing
   by per-provider channels is configured via `LLM_PROVIDER_*` env (see README).
 - `runAgent` is a recursive multi-turn tool loop: all `tool_calls` of a response aggregate
-  into one assistant message; builtin `Skill` (progressive skill loading) and
-  `transfer_to_agent` (subagent transfer) are intercepted before MCP dispatch; a turn guard
-  stops the loop.
+  into one assistant message; a builtin (`Skill`, `transfer_to_agent`, `GenerateImage`,
+  `EditImage`) serves a call only when that builtin was **offered** this run, and every other
+  name goes to MCP — the MCP calls of one response run concurrently while builtins run in call
+  order, and results stay in call order; a turn guard stops the loop.
 - Fallback: on a retryable error (429/5xx) **before the first chunk**, retry once with
   `fallbackModel`; a mid-stream failure yields an `{error}` chunk and does not retry.
 - Stream author contract: top-level chunks are unauthored; only subagent chunks carry

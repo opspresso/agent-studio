@@ -152,3 +152,99 @@ describe("ToolCallAccumulator reassembles streamed fragments", () => {
     expect(callMcpTool).toHaveBeenCalledWith("search", { query: "cats" });
   });
 });
+
+describe("MCP calls of one response overlap", () => {
+  it("dispatches them concurrently while keeping results in call order", async () => {
+    // The first call only finishes once the second has started: sequential
+    // dispatch deadlocks here, concurrent dispatch completes.
+    let releaseSlow: (() => void) | undefined;
+    const slowBlocked = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const started: string[] = [];
+    const callMcpTool = vi.fn(async (name: string) => {
+      started.push(name);
+      if (name === "slow") {
+        await slowBlocked;
+        return "slow done";
+      }
+      releaseSlow?.();
+      return "fast done";
+    });
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_slow", "slow", "{}"),
+        toolCallChunk(1, "call_fast", "fast", "{}"),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("both done"), usageChunk(8, 4)],
+    ]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "do both" }],
+        mcpTools: [
+          { type: "function", function: { name: "slow", parameters: {} } },
+          { type: "function", function: { name: "fast", parameters: {} } },
+        ],
+      }),
+    );
+
+    expect(started).toEqual(["slow", "fast"]);
+    // Results and tool messages still follow the assistant message's tool_calls.
+    expect(chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content)).toEqual([
+      "slow done",
+      "fast done",
+    ]);
+    const messages = followUpMessages(channel);
+    expect(toolMsgIdsOf(messages)).toEqual(["call_slow", "call_fast"]);
+    expect(idsOf(assistantWithToolCalls(messages)?.tool_calls)).toEqual([
+      "call_slow",
+      "call_fast",
+    ]);
+  });
+});
+
+describe("per-turn tool result budget", () => {
+  it("truncates past the budget and omits what no longer fits", async () => {
+    // Each result is capped on its own, but a turn full of them would blow the
+    // context window. The cut is explicit so the model can narrow its next call.
+    const big = "x".repeat(150_000);
+    const callMcpTool = vi.fn(async () => big);
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_1", "dump", "{}"),
+        toolCallChunk(1, "call_2", "dump", "{}"),
+        toolCallChunk(2, "call_3", "dump", "{}"),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("enough"), usageChunk(8, 4)],
+    ]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "dump everything" }],
+        mcpTools: [{ type: "function", function: { name: "dump", parameters: {} } }],
+      }),
+    );
+
+    const results = chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content ?? "");
+    expect(results[0]).toBe(big);
+    expect(results[1]?.startsWith("x".repeat(50_000))).toBe(true);
+    expect(results[1]).toContain("truncated");
+    // Nothing left: reported as an error so the trace shows a failed span.
+    expect(results[2]?.startsWith("Error:")).toBe(true);
+    expect(results[2]).toContain("budget is exhausted");
+    // The context carries exactly what the model was shown.
+    const toolContents = followUpMessages(channel)
+      .filter((m) => m.role === "tool")
+      .map((m) => String(m.content));
+    expect(toolContents).toEqual(results);
+  });
+});

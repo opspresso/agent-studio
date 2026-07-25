@@ -8,9 +8,24 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - All `tool_calls` of one model response aggregate into **one** assistant message, then all
   tool results append, then the loop recurses with `turn + 1`. Never split a response's
   tool calls across assistant messages — providers reject orphaned tool results.
-- Builtin tools are intercepted **before** MCP dispatch, in this order:
-  `transfer_to_agent` (subagent transfer), `GenerateImage`, `EditImage`, `Skill` (progressive
-  skill loading). Anything else goes to `deps.callMcpTool`.
+- A builtin serves a call **only when that builtin was offered this run**.
+  `buildAgentTools` returns the names it pushed and the loop intercepts exactly those, so a
+  name a builtin did not claim (no skills connected → no `Skill` tool) belongs to whoever
+  declared it — `deps.callMcpTool`. Never gate interception on a dep instead: every agent run
+  gets `loadSkillContent`, so the dep says nothing about what the model was offered.
+  `BUILTIN_TOOL_NAMES` is reserved when MCP aliases are allocated, before the run knows which
+  builtins it will offer, so an MCP tool never carries a name a builtin might claim.
+- Dispatch of one response: every call is announced first, then the **MCP calls run
+  concurrently** (≤5 in flight) while builtins run strictly in call order — a transfer moves
+  the turn budget and the image tools mutate the image registry. Results, tool messages and
+  the assistant message's `tool_calls` all stay in call order; a dispatcher that throws still
+  tears the run down, at its position in that order.
+- One turn's tool-result text is capped (`MAX_TOOL_RESULT_CHARS_PER_TURN`), spent in call
+  order. A truncated result says so; one that no longer fits is returned as `Error: …`, which
+  also surfaces the exhaustion as a failed span in the trace.
+- A tool result that begins with `Error: ` means the call failed — the shared convention for
+  every producer (engine builtins, the skill loader, `ToolManager`). The trace recorder reads
+  that prefix; a new producer that invents its own wording records failures as successes.
 - Image handles: a per-run registry ids every usable image (`img_1`, `img_2`, …) — the
   inline `data:` images in the input messages, plus everything the run drew. `EditImage`
   and `transfer_to_agent`'s `image_ids` resolve an id to bytes, so the registry (not the dep)
