@@ -43,6 +43,9 @@ function fakeDeps() {
         usage: { textInputTokens: 100, imageInputTokens: 0, imageOutputTokens: 4160 },
       };
     },
+    async editImage() {
+      throw new Error("editImage is not part of the generate use case");
+    },
   };
   const usage: UsageRepository = {
     async record(delta) {
@@ -91,6 +94,9 @@ describe("generateImage", () => {
   it("passes a deadline-composed signal to the channel and propagates caller cancellation", async () => {
     const signals: (AbortSignal | undefined)[] = [];
     const imageChannel: ImageChannel = {
+      async editImage() {
+        throw new Error("editImage is not part of the generate use case");
+      },
       async generateImage(params) {
         signals.push(params.signal);
         return {

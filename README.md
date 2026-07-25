@@ -109,10 +109,19 @@ Generate the token under Project Settings → API token: it is shown once, store
 as a SHA-256 hash, scoped to that project, and sent as `Authorization: Bearer <token>`
 in place of the session cookie. See [docs/API.md](docs/API.md) for the full contract.
 
-## Image Generation
+## Images
 
-`image` projects generate images directly, and agent runs can generate them via the
-builtin `GenerateImage` tool. Generated images are uploaded to a public-read S3
+**Input.** A message body may carry OpenAI content parts, so a run can be given images to
+look at: `chat/completions` accepts them inline as `data:image/…;base64,…` (or an `https://`
+url the provider fetches), and a Slack mention or DM's image attachments are downloaded and
+sent the same way. The version's model must have the `imageInput` capability, otherwise the
+request is rejected rather than quietly losing the picture.
+
+**Generation and editing.** `image` projects generate images directly, and agent runs can
+draw with the builtin `GenerateImage` tool and change an existing image with `EditImage` —
+both enabled by a version's `imageGeneration` parameter. `EditImage` addresses an image by a
+per-run handle (`img_1`, `img_2`, …) covering both what the user sent and what the run drew,
+so "now make it night" works on either. Generated images are uploaded to a public-read S3
 bucket when `S3_BUCKET_NAME` is set; unset disables persistence.
 
 ## PII Filtering
@@ -151,8 +160,11 @@ project's own secret and always run that project — no selector needed.
 - Subscribe to `app_mention` and `message.im`; the generated manifest requests
   every bot scope the integration needs (mentions, DMs, files, reactions, user
   profiles, …).
-- Replies stream into one message via `chat.update`; thread replies carry the full
-  thread as multi-turn context.
+- Replies stream into one message via `chat.update`; a mention inside a thread carries the
+  thread (its 50 most recent turns) as multi-turn context.
+- Image attachments on the mention/DM are downloaded with the bot token and analyzed —
+  up to 4 images, 5MB each, `png`/`jpeg`/`gif`/`webp`. Anything skipped is reported in the
+  reply. Attachments in *earlier* thread turns are not re-read.
 - Events are verified (signing secret, 5-minute replay window), deduplicated by
   `event_id` (conditional put, 24h TTL), acked within 3 seconds, and processed in
   the background. `after()` requires a persistent process; an abrupt process loss can

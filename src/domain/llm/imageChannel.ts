@@ -10,6 +10,25 @@ export interface ImageGenerationParams {
   quality?: string;
 }
 
+/** Bytes of one image, as they travel inside the app. */
+export interface ImageBytes {
+  b64: string;
+  mimeType: string;
+}
+
+/** Edit an existing image (OpenAI Images edit API shape). */
+export interface ImageEditParams {
+  model: string;
+  prompt: string;
+  /** Source images; a provider that composes takes more than one. */
+  images: ImageBytes[];
+  /** Optional mask marking the region to change (transparent = edit here). */
+  mask?: ImageBytes;
+  signal?: AbortSignal;
+  size?: string;
+  quality?: string;
+}
+
 export interface ImageGenerationUsage {
   textInputTokens: number;
   imageInputTokens: number;
@@ -25,4 +44,5 @@ export interface ImageGenerationResult {
 
 export interface ImageChannel {
   generateImage(params: ImageGenerationParams): Promise<ImageGenerationResult>;
+  editImage(params: ImageEditParams): Promise<ImageGenerationResult>;
 }
