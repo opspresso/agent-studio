@@ -56,7 +56,23 @@ export async function* toChatCompletionChunks(
   let finished = false;
   for await (const chunk of source) {
     if (chunk.error) {
-      throw new Error(chunk.error);
+      // An authored error is a subagent failure the engine reports to the parent
+      // as a tool error; the parent goes on to answer, so it must not end the
+      // stream. Only a top-level failure fails the request.
+      if (isTopLevelChunk(chunk)) {
+        throw new Error(chunk.error);
+      }
+      continue;
+    }
+    if (chunk.image) {
+      // Images come from subagent turns too (an image subagent is how an agent
+      // project delegates drawing), so this is checked before the top-level
+      // filter. No OpenAI counterpart: an `images` delta extension, so a client
+      // that knows about it receives the picture and one that does not ignores it.
+      const images = [chunk.image];
+      const delta = sentRole ? { images } : { role: "assistant", images };
+      sentRole = true;
+      yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
     }
     if (!isTopLevelChunk(chunk)) {
       continue;
@@ -64,14 +80,6 @@ export async function* toChatCompletionChunks(
     const content = chunk.delta?.content;
     if (content) {
       const delta = sentRole ? { content } : { role: "assistant", content };
-      sentRole = true;
-      yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
-    }
-    if (chunk.image) {
-      // No OpenAI counterpart: an `images` delta extension, so a client that
-      // knows about it receives the picture and one that does not just ignores it.
-      const images = [chunk.image];
-      const delta = sentRole ? { images } : { role: "assistant", images };
       sentRole = true;
       yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
     }
@@ -95,7 +103,12 @@ export async function collectRun(
   const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
   for await (const chunk of source) {
     if (chunk.error) {
-      throw new Error(chunk.error);
+      // Same as the streaming path: a subagent failure is a tool error the
+      // parent may still answer from, so it does not fail the request.
+      if (isTopLevelChunk(chunk)) {
+        throw new Error(chunk.error);
+      }
+      continue;
     }
     if (isTopLevelChunk(chunk) && chunk.delta?.content) {
       content += chunk.delta.content;

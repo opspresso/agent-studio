@@ -520,6 +520,62 @@ describe("handleSlackEvent", () => {
     ]);
   });
 
+  it("never attaches the bot's own uploaded image to its assistant turn", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, replies, downloads } = makeSlackFake();
+    // The bot answered an earlier mention by uploading a picture. Slack reports
+    // that share as a thread message with files, and an assistant message can
+    // only carry text — image parts on it are rejected by the provider.
+    replies.push({
+      ts: "0.95",
+      bot_id: "B0",
+      text: "",
+      files: [{ id: "OWN", mimetype: "image/png", url_private_download: "https://files.slack.com/f/OWN" }],
+    });
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, event: { ...EVENT.event, thread_ts: "0.9", text: "<@U0> make it blue" } },
+      BINDING,
+    );
+
+    // Not downloaded at all: the budget belongs to the user's pictures.
+    expect(downloads).toEqual([]);
+    expect(seen).toEqual([
+      { role: "assistant", content: "" },
+      { role: "user", content: "make it blue" },
+    ]);
+  });
+
+  it("keeps answering after a subagent error chunk", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, updates } = makeSlackFake();
+    // An authored error is a refused transfer reported to the parent as a tool
+    // error; the parent goes on to answer and that answer must be delivered.
+    const deps = makeDeps(
+      [
+        { author: "simple-image", error: "images cannot be transferred to it" },
+        { delta: { content: "I drew it myself instead." } },
+        { done: true },
+      ],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    const finalText = updates.at(-1)?.text ?? "";
+    expect(finalText).toContain("I drew it myself instead.");
+    expect(finalText).toContain(":warning: images cannot be transferred to it");
+  });
+
   it("spends the image budget on the current message before the thread", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

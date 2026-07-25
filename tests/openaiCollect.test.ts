@@ -84,6 +84,68 @@ describe("toChatCompletionChunks images", () => {
     expect(deltas[1]).toEqual({ content: "drawn" });
     expect(finishReasons(frames)).toEqual(["stop"]);
   });
+
+  it("streams an image a subagent drew", async () => {
+    // Delegating to an image subagent is how an agent project draws, so the
+    // picture arrives authored — it is still the answer.
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(
+      stream([
+        { author: "simple-image", image: { b64: "Ynll", mimeType: "image/png" } },
+        { delta: { content: "here it is" } },
+        { done: true },
+      ]),
+      "m",
+    )) {
+      frames.push(frame);
+    }
+
+    const deltas = frames.map((f) => (f.choices as Array<{ delta: unknown }>)[0]?.delta);
+    expect(deltas[0]).toEqual({
+      role: "assistant",
+      images: [{ b64: "Ynll", mimeType: "image/png" }],
+    });
+    expect(deltas[1]).toEqual({ content: "here it is" });
+  });
+});
+
+describe("authored error chunks", () => {
+  it("does not fail the stream when a subagent reports an error", async () => {
+    // The engine hands a failed transfer to the parent as a tool error and the
+    // parent still answers; only a top-level error fails the request.
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(
+      stream([
+        { author: "child", error: "remote agent cannot take images" },
+        { delta: { content: "did it locally" } },
+        { done: true },
+      ]),
+      "m",
+    )) {
+      frames.push(frame);
+    }
+    expect(finishReasons(frames)).toEqual(["stop"]);
+  });
+
+  it("still fails the stream on a top-level error", async () => {
+    await expect(async () => {
+      for await (const _frame of toChatCompletionChunks(stream([{ error: "boom" }]), "m")) {
+        void _frame;
+      }
+    }).rejects.toThrow("boom");
+  });
+
+  it("collects the answer past a subagent error", async () => {
+    const result = await collectRun(
+      stream([
+        { author: "child", error: "transfer refused" },
+        { delta: { content: "answered anyway" } },
+        { done: true },
+      ]),
+      "m",
+    );
+    expect(result.content).toBe("answered anyway");
+  });
 });
 
 describe("toChatCompletionChunks finish_reason", () => {

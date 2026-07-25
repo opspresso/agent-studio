@@ -508,6 +508,44 @@ describe("executeAgent image transfer to a subagent", () => {
     expect(result?.content).toContain("img_1");
   });
 
+  it("reports a child that cannot accept the handed-over image without failing the run", async () => {
+    // The child's model is not vision-capable, so engine.runAgent throws on entry
+    // instead of streaming. That must reach the parent as a tool error like every
+    // other refused transfer — not tear down the whole run.
+    const channel = new FakeChannel(
+      transferScript('{"agent_name":"text-child","message":"look","image_ids":["img_1"]}'),
+    );
+    const fixture = executionDepsFixture(channel);
+    const childVersion: Version = {
+      ...versionFixture({ piiFiltering: false }),
+      projectName: "text-child",
+      // Not in the model registry, so image input is rejected.
+      model: "gpt-test",
+    };
+    const deps = {
+      ...fixture.deps,
+      projects: { get: async (name: string) => ({ ...projectFixture(), name }) },
+      versions: { get: async () => childVersion, list: async () => [childVersion] },
+    } as unknown as ExecutionDeps;
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: { ...projectFixture(), name: "sample-agent" },
+        version: { ...parentVersion(), subagentList: [{ name: "text-child", type: "local" }] },
+        messages: [
+          { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
+        ],
+      }),
+    );
+
+    const failure = chunks.find((c) => c.error);
+    expect(failure?.author).toBe("text-child");
+    expect(failure?.error).toContain("image input");
+    // The parent resumed and answered, and the stream ended normally.
+    expect(chunks.some((c) => c.delta?.content === "Done — the image is updated.")).toBe(true);
+    expect(chunks.some((c) => c.done)).toBe(true);
+  });
+
   it("offers image_ids and lists the images in the system prompt", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps, parent } = imageProjectDeps(channel);
