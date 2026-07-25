@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toSlug } from "@/lib/slug";
 import { createMcp, listMcps, type McpServer } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
+import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 
 export default function ToolsPage() {
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -98,6 +99,7 @@ function RegisterMcpModal({
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
+  const [content, setContent] = useState("");
   const [rows, setRows] = useState<HeaderRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +113,7 @@ function RegisterMcpModal({
         name,
         url,
         description: description || undefined,
+        content: content || undefined,
         headers: rowsToRecord(rows),
       });
       onCreated();
@@ -156,8 +159,22 @@ function RegisterMcpModal({
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder="One-line summary shown to the model"
               className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
             />
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium">Content (markdown)</span>
+            <ResizableTextarea
+              value={content}
+              onChange={setContent}
+              rows={6}
+              placeholder="Setup steps, caveats, links…"
+              className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+            />
+            <span className="mt-1 block text-xs text-neutral-400">
+              Operator notes for the console. Not sent to the model — only the description is.
+            </span>
           </label>
 
           <HeaderRowsEditor rows={rows} onChange={setRows} />

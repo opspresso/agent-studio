@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
+import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 
 export default function SkillDetailPage() {
   const params = useParams<{ name: string }>();
@@ -173,9 +174,9 @@ function EditSkillForm({
       </label>
       <label className="block">
         <span className="text-sm font-medium">Content (markdown)</span>
-        <textarea
+        <ResizableTextarea
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={setContent}
           rows={16}
           className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
         />

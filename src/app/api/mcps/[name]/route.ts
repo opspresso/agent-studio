@@ -8,6 +8,7 @@ type RouteContext = { params: Promise<{ name: string }> };
 const updateSchema = z.object({
   url: z.url().optional(),
   description: z.string().optional(),
+  content: z.string().optional(),
   headers: z.record(z.string(), z.string()).optional(),
 });
 

@@ -19,12 +19,14 @@ export interface CreateMcpInput {
   name: string;
   url: string;
   description?: string;
+  content?: string;
   headers: Record<string, string>;
 }
 
 export interface UpdateMcpInput {
   url?: string;
   description?: string;
+  content?: string;
   headers?: Record<string, string>;
 }
 
@@ -49,6 +51,7 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
         name: input.name,
         url: input.url,
         description: input.description,
+        content: input.content,
         headers: encryptHeaders(input.headers),
         createdAt: now,
         updatedAt: now,
@@ -62,6 +65,7 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
         ...existing,
         url: patch.url ?? existing.url,
         description: patch.description ?? existing.description,
+        content: patch.content ?? existing.content,
         headers:
           patch.headers !== undefined
             ? mergeHeaderUpdate(existing.headers, patch.headers)

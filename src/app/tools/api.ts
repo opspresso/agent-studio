@@ -14,12 +14,14 @@ export interface CreateMcpInput {
   name: string;
   url: string;
   description?: string;
+  content?: string;
   headers: Record<string, string>;
 }
 
 export interface UpdateMcpInput {
   url?: string;
   description?: string;
+  content?: string;
   headers?: Record<string, string>;
 }
 

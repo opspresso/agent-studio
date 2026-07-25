@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/lib/slug";
 import { createSkill, listSkills, type Skill } from "./api";
+import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -179,9 +180,9 @@ function CreateSkillModal({
           </label>
           <label className="block">
             <span className="text-sm font-medium">Content (markdown)</span>
-            <textarea
+            <ResizableTextarea
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={setContent}
               rows={8}
               placeholder="# Instructions…"
               className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"

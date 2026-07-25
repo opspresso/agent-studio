@@ -299,9 +299,14 @@ Two deliberate strategies coexist:
   item on re-sync drops stale attachments; skipped files are reported with reasons.
 
 ### MCP
-- `McpServer { name, url, description?, headers: Record<string,string> (values encrypted
-  at rest AES-256-GCM `enc:v1:` prefix, masked on read — length-preserving, revealing the
-  first/last 2 chars of values ≥20 chars), createdAt, updatedAt }`. These headers are the
+- `McpServer { name, url, description?, content?, headers: Record<string,string> (values
+  encrypted at rest AES-256-GCM `enc:v1:` prefix, masked on read — length-preserving,
+  revealing the first/last 2 chars of values ≥20 chars), createdAt, updatedAt }`.
+  `description` is a one-line summary and the only field the model sees (it becomes a row
+  in the system prompt's server table); `content` is markdown operator notes shown in the
+  console only — unlike a skill's content it is never sent to the model. Descriptions are
+  escaped when rendered into the table, so a legacy multi-line value cannot break it.
+  These headers are the
   shared default; a version's `McpBinding.headers` may redefine them per project
   (`mergeOutboundHeaders` in `src/infrastructure/crypto/secretEncryption.ts`).
 - `url` is SSRF-guarded (`src/infrastructure/net/ssrfGuard.ts`) at registration and dispatch:

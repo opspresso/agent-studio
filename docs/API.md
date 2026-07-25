@@ -54,6 +54,9 @@ DELETE /api/skills/{name}     → 204                     | 404
   values ≥20 chars reveal their first/last 2 chars); a masked
   or empty value on update preserves the stored secret. Their `url` is SSRF-guarded — a
   private/loopback/link-local/metadata target (or non-http(s) scheme) is rejected with `400`.
+- `mcps` also accept an optional `content` (markdown operator notes). `description` is the
+  one-line summary the model sees in an agent run's server table; `content` is console-only
+  and never reaches the model.
 - `projects` mutations are owner-gated (403). `POST /api/projects` body:
 
 ```json

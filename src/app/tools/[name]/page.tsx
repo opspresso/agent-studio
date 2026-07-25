@@ -138,6 +138,15 @@ export default function McpDetailPage() {
         />
       ) : (
         <>
+          {server.content && (
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-neutral-500">Content</h2>
+              <div className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 font-mono text-sm dark:border-neutral-800 dark:bg-neutral-900">
+                {server.content}
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="mb-2 text-sm font-medium text-neutral-500">Headers</h2>
             {headerEntries.length === 0 ? (
@@ -224,6 +233,7 @@ function EditMcpForm({
 }) {
   const [url, setUrl] = useState(server.url);
   const [description, setDescription] = useState(server.description ?? "");
+  const [content, setContent] = useState(server.content ?? "");
   const [rows, setRows] = useState<HeaderRow[]>(recordToRows(server.headers));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -236,6 +246,7 @@ function EditMcpForm({
       await updateMcp(server.name, {
         url,
         description,
+        content,
         headers: rowsToRecord(rows),
       });
       onSaved();
@@ -260,12 +271,25 @@ function EditMcpForm({
       </label>
       <label className="block">
         <span className="text-sm font-medium">Description</span>
-        <ResizableTextarea
+        <input
           value={description}
-          onChange={setDescription}
-          rows={2}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="One-line summary shown to the model"
           className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
         />
+      </label>
+      <label className="block">
+        <span className="text-sm font-medium">Content (markdown)</span>
+        <ResizableTextarea
+          value={content}
+          onChange={setContent}
+          rows={8}
+          placeholder="Setup steps, caveats, links…"
+          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+        />
+        <span className="mt-1 block text-xs text-neutral-400">
+          Operator notes for the console. Not sent to the model — only the description is.
+        </span>
       </label>
 
       <HeaderRowsEditor rows={rows} onChange={setRows} />

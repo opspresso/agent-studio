@@ -7,6 +7,7 @@ const createSchema = z.object({
   name: z.string().regex(/^[a-z0-9-]+$/, "name must be a slug (lowercase letters, digits, hyphens)"),
   url: z.url(),
   description: z.string().optional(),
+  content: z.string().optional(),
   headers: z.record(z.string(), z.string()).default({}),
 });
 
