@@ -34,6 +34,7 @@ function version(model: string, template = "A cat wearing {{style}} clothes"): V
 function fakeDeps() {
   const recorded: UsageDelta[] = [];
   const prompts: string[] = [];
+  const edits: Array<{ prompt: string; sources: string[] }> = [];
   const imageChannel: ImageChannel = {
     async generateImage(params) {
       prompts.push(params.prompt);
@@ -43,8 +44,13 @@ function fakeDeps() {
         usage: { textInputTokens: 100, imageInputTokens: 0, imageOutputTokens: 4160 },
       };
     },
-    async editImage() {
-      throw new Error("editImage is not part of the generate use case");
+    async editImage(params) {
+      edits.push({ prompt: params.prompt, sources: params.images.map((i) => i.b64) });
+      return {
+        b64: "ZWRpdGVk",
+        mimeType: "image/png",
+        usage: { textInputTokens: 20, imageInputTokens: 300, imageOutputTokens: 1000 },
+      };
     },
   };
   const usage: UsageRepository = {
@@ -58,7 +64,7 @@ function fakeDeps() {
       return [];
     },
   };
-  return { deps: { imageChannel, usage }, recorded, prompts };
+  return { deps: { imageChannel, usage }, recorded, prompts, edits };
 }
 
 describe("generateImage", () => {
@@ -143,6 +149,37 @@ describe("generateImage", () => {
     await expect(
       generateImage(deps, { project, version: version("openai/gpt-image-2", "") }),
     ).rejects.toThrow(/prompt is empty/);
+  });
+
+  it("edits the source images when any are supplied", async () => {
+    const { deps, edits, prompts, recorded } = fakeDeps();
+
+    const result = await generateImage(deps, {
+      project,
+      version: version("openai/gpt-image-2"),
+      prompt: "make it night",
+      images: [{ b64: "c291cmNl", mimeType: "image/png" }],
+    });
+
+    expect(edits).toEqual([{ prompt: "make it night", sources: ["c291cmNl"] }]);
+    expect(prompts).toEqual([]); // the generate endpoint was not touched
+    expect(result.imageBase64).toBe("ZWRpdGVk");
+    // Text + image input tokens are billed together, same as the generate path.
+    expect(recorded[0]).toMatchObject({ inputTokens: 320, outputTokens: 1000 });
+  });
+
+  it("generates when the images list is present but empty", async () => {
+    const { deps, edits, prompts } = fakeDeps();
+
+    await generateImage(deps, {
+      project,
+      version: version("openai/gpt-image-2"),
+      prompt: "a cat",
+      images: [],
+    });
+
+    expect(edits).toEqual([]);
+    expect(prompts).toEqual(["a cat"]);
   });
 
   it("still returns the image when usage recording fails", async () => {

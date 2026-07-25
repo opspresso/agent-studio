@@ -26,6 +26,7 @@ import {
 import { createProject, deleteProject, updateProject } from "@/application/project/projectUseCases";
 import {
   chatMessageSchema,
+  predictSchema,
   updateVersionSchema,
   versionNameSchema,
 } from "@/app/api/projects/_lib/schemas";
@@ -967,6 +968,31 @@ describe("updateVersionSchema", () => {
   it("rejects a binding with no server name", () => {
     expect(updateVersionSchema.safeParse({ mcpList: [{ headers: {} }] }).success).toBe(false);
     expect(updateVersionSchema.safeParse({ mcpList: [""] }).success).toBe(false);
+  });
+});
+
+describe("predictSchema source images", () => {
+  const image = { b64: "aGk=", mimeType: "image/png" };
+
+  it("accepts source images for an image-project run", () => {
+    const parsed = predictSchema.safeParse({ prompt: "make it night", images: [image] });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.images).toEqual([image]);
+  });
+
+  it("applies the same caps as every other attachment surface", () => {
+    expect(predictSchema.safeParse({ prompt: "x", images: Array(5).fill(image) }).success).toBe(
+      false,
+    );
+    expect(
+      predictSchema.safeParse({ prompt: "x", images: [{ ...image, mimeType: "image/tiff" }] })
+        .success,
+    ).toBe(false);
+    expect(
+      predictSchema.safeParse({ prompt: "x", images: [{ ...image, b64: "A".repeat(7_500_000) }] })
+        .success,
+    ).toBe(false);
   });
 });
 

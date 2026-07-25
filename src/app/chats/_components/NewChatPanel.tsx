@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
-import { attachmentSrc, toRequestImages } from "../_lib/attachments";
-import { EMPTY_TURN, type AgentProject, type Attachment, type LiveTurn } from "../_lib/types";
-import { AttachButton, AttachmentBar, LiveAssistant, MessageView, useAttachments } from "./parts";
+import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
+import { EMPTY_TURN, type AgentProject, type LiveTurn } from "../_lib/types";
+import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import { LiveAssistant, MessageView } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 
 export function NewChatPanel() {

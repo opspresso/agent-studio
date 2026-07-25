@@ -1,7 +1,7 @@
 import { calculateImageCost, getModelConfig } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
 import { renderTemplate } from "@/application/llm/template";
-import type { ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
+import type { ImageBytes, ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
@@ -23,6 +23,12 @@ export interface GenerateImageInput {
   variables?: Record<string, string>;
   /** Direct prompt override; falls back to the rendered version template. */
   prompt?: string;
+  /**
+   * Source images. With any present the prompt edits them instead of drawing
+   * from scratch — the same distinction the Images API draws between
+   * generate and edit.
+   */
+  images?: ImageBytes[];
   size?: string;
   quality?: string;
   /** Caller cancellation (client disconnect / A2A cancel); a run deadline is
@@ -77,13 +83,24 @@ export async function generateImage(
       : undefined;
   beginRun();
   try {
-    const result: ImageGenerationResult = await deps.imageChannel.generateImage({
-      model,
-      prompt,
-      size: input.size,
-      quality: input.quality,
-      signal: withRunDeadline(input.signal),
-    });
+    const sources = input.images ?? [];
+    const result: ImageGenerationResult =
+      sources.length > 0
+        ? await deps.imageChannel.editImage({
+            model,
+            prompt,
+            images: sources,
+            size: input.size,
+            quality: input.quality,
+            signal: withRunDeadline(input.signal),
+          })
+        : await deps.imageChannel.generateImage({
+            model,
+            prompt,
+            size: input.size,
+            quality: input.quality,
+            signal: withRunDeadline(input.signal),
+          });
 
     const costUsd = calculateImageCost(model, result.usage);
     const inputTokens = result.usage.textInputTokens + result.usage.imageInputTokens;
