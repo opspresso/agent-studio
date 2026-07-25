@@ -233,9 +233,12 @@ Two deliberate strategies coexist:
   `capabilities.tools`; `structuredOutput` requires the capability); unknown/custom model
   ids stay allowed with a warning ($0 cost until added to the catalog).
 - Version writes also validate that `mcpList`/`skillList`/`subagentList` entries resolve
-  (`VersionRefRepos`, injected by the route from the composition root). On update only
-  newly added entries are checked, so deleting a registry entry never strands the versions
-  that already referenced it.
+  (`VersionRefRepos`, injected by the route from the composition root), and that the project
+  type can actually run them — only `agent` projects do, so a binding added to any other type
+  is rejected instead of being stored, shown in the editor and silently ignored at run time.
+  On update only newly added entries are checked in both cases, so deleting a registry entry
+  never strands the versions that already referenced it, and configuration stored before
+  these rules stays editable (and removable).
 - Which version a run executes is owned by `resolveRunnableVersion`
   (`src/application/project/resolveRunnableVersion.ts`): the published pointer always
   wins; only interactive surfaces (chat) opt into falling back to the newest draft;
@@ -376,6 +379,11 @@ Two deliberate strategies coexist:
 - `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`) —
   a tool row always carries `toolCallId`, an assistant row may carry
   `toolCalls`/`images`, and illegal combinations are unrepresentable.
+- A run persists one flattened assistant message holding the accumulated text and the run's
+  **top-level** `toolCalls`, preceded by its tool rows. Replay pairs each row with the call
+  that declared it and re-emits it after that message, bounded by the last N assistant turns
+  and a total character budget — so a follow-up question can see what the tools returned
+  without letting tool output crowd out the conversation.
 
 ### Usage / Cost
 - Daily per-project per-model aggregates (see table design). Dashboard reads

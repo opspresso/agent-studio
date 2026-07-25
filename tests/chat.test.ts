@@ -176,12 +176,14 @@ describe("toEngineMessages", () => {
     ]);
   });
 
-  it("keeps a tool message paired with its assistant tool_calls", () => {
+  it("pairs a tool row with its assistant even though storage writes it first", () => {
+    // A turn is stored as `tool… → assistant`, the reverse of what the wire
+    // format accepts, so the row is emitted after the call that declared it.
     expect(
       toEngineMessages([
         message({ seq: 0, role: "user", content: "hi" }),
-        message({ seq: 1, role: "assistant", content: "", toolCalls: [{ id: "call_1" }] }),
-        message({ seq: 2, role: "tool", content: "42", toolCallId: "call_1" }),
+        message({ seq: 1, role: "tool", content: "42", toolCallId: "call_1" }),
+        message({ seq: 2, role: "assistant", content: "", toolCalls: [{ id: "call_1" }] }),
       ]),
     ).toEqual([
       { role: "user", content: "hi" },
@@ -189,14 +191,87 @@ describe("toEngineMessages", () => {
       { role: "tool", content: "42", tool_call_id: "call_1" },
     ]);
   });
+
+  it("drops a declared call whose result was never stored, rather than orphaning it", () => {
+    // A transfer's call has no persisted result; declaring it would make the
+    // whole payload invalid.
+    expect(
+      toEngineMessages([
+        message({ seq: 0, role: "user", content: "hi" }),
+        message({
+          seq: 1,
+          role: "assistant",
+          content: "done",
+          toolCalls: [{ id: "call_1" }, { id: "call_missing" }],
+        }),
+        message({ seq: 2, role: "tool", content: "42", toolCallId: "call_1" }),
+      ]),
+    ).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "done", tool_calls: [{ id: "call_1" }] },
+      { role: "tool", content: "42", tool_call_id: "call_1" },
+    ]);
+  });
+
+  it("replays only the most recent turns' tools", () => {
+    const history = [0, 1, 2, 3].flatMap((turn) => [
+      message({ seq: turn * 3, role: "user", content: `q${turn}` }),
+      message({ seq: turn * 3 + 1, role: "tool", content: `r${turn}`, toolCallId: `call_${turn}` }),
+      message({
+        seq: turn * 3 + 2,
+        role: "assistant",
+        content: `a${turn}`,
+        toolCalls: [{ id: `call_${turn}` }],
+      }),
+    ]);
+
+    const mapped = toEngineMessages(history, { toolReplayTurns: 2 });
+
+    // Every turn's text survives; only the last two carry their tool traffic.
+    expect(mapped.filter((m) => m.role === "assistant")).toHaveLength(4);
+    expect(mapped.filter((m) => m.role === "tool").map((m) => m.content)).toEqual(["r2", "r3"]);
+    expect(mapped.filter((m) => m.role === "assistant" && m.tool_calls)).toHaveLength(2);
+  });
+
+  it("replays nothing when the option is zero", () => {
+    const mapped = toEngineMessages(
+      [
+        message({ seq: 0, role: "user", content: "hi" }),
+        message({ seq: 1, role: "tool", content: "42", toolCallId: "call_1" }),
+        message({ seq: 2, role: "assistant", content: "done", toolCalls: [{ id: "call_1" }] }),
+      ],
+      { toolReplayTurns: 0 },
+    );
+
+    expect(mapped).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "done" },
+    ]);
+  });
+
+  it("truncates replayed tool output rather than letting it fill the context", () => {
+    const huge = "x".repeat(30_000);
+    const mapped = toEngineMessages([
+      message({ seq: 0, role: "user", content: "hi" }),
+      message({ seq: 1, role: "tool", content: huge, toolCallId: "call_1" }),
+      message({ seq: 2, role: "assistant", content: "done", toolCalls: [{ id: "call_1" }] }),
+    ]);
+
+    const replayed = mapped.find((m) => m.role === "tool");
+    expect(String(replayed?.content).length).toBeLessThan(huge.length);
+    expect(String(replayed?.content)).toContain("[truncated]");
+  });
 });
 
 describe("runAndPersist -> toEngineMessages round-trip", () => {
-  it("persists tool results for display but does not replay them into engine context", async () => {
+  it("replays a turn's tool traffic on the next turn", async () => {
+    // Without this the follow-up question reaches a model that cannot see what
+    // the tool returned, so it calls the same tool again to answer.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "hi" }),
     ]);
     async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { toolCalls: [{ id: "call_1", function: { name: "lookup" } }] } };
       yield { toolResult: { toolCallId: "call_1", name: "lookup", content: "42" } };
       yield { delta: { content: "The answer is 42." } };
     }
@@ -205,19 +280,42 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     }
 
     const stored = await repo.listMessages("c1");
-    // The tool result IS persisted (for UI), alongside the final assistant text.
     expect(
       stored.some((m) => m.role === "tool" && m.content === "42" && m.toolName === "lookup"),
     ).toBe(true);
-    expect(stored.some((m) => m.role === "assistant" && m.content === "The answer is 42.")).toBe(
-      true,
-    );
+    const assistant = stored.find((m) => m.role === "assistant");
+    expect(assistant).toMatchObject({ content: "The answer is 42." });
 
-    // On reload the engine sees only the conversation text — the orphan tool row
-    // is dropped because the stored assistant message carries no tool_calls.
     expect(toEngineMessages(stored)).toEqual([
       { role: "user", content: "hi" },
-      { role: "assistant", content: "The answer is 42." },
+      {
+        role: "assistant",
+        content: "The answer is 42.",
+        tool_calls: [{ id: "call_1", function: { name: "lookup" } }],
+      },
+      { role: "tool", content: "42", tool_call_id: "call_1" },
+    ]);
+  });
+
+  it("does not claim a subagent's tool calls as its own", async () => {
+    // An authored call belongs to the child's conversation; hanging it off this
+    // assistant message would declare a result this turn never produced.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { author: "child", delta: { toolCalls: [{ id: "child_call", function: { name: "x" } }] } };
+      yield { delta: { content: "Done." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.find((m) => m.role === "assistant")).not.toHaveProperty("toolCalls");
+    expect(toEngineMessages(stored)).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Done." },
     ]);
   });
 

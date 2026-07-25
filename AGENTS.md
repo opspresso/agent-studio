@@ -149,10 +149,12 @@ registries are shared: reads are open to any signed-in user; mutations go throug
 ## Conventions that bite
 
 - Domain purity: nothing in `src/domain/` imports infrastructure/framework/AWS.
-- Chat tool-message persistence is deliberately UI-only: tool rows are persisted for display
-  but **not replayed** into engine context (the stored assistant message carries no
-  `tool_calls`, so `toEngineMessages` drops the orphans). See `src/application/chat/AGENTS.md`
-  before changing `run.ts`/`messageMapping.ts`.
+- Chat persistence is flattened but tool traffic **is** replayed: the stored assistant
+  message carries the run's top-level `tool_calls`, and `toEngineMessages` pairs each tool
+  row with its call and re-emits it *after* that message (storage order within a turn is the
+  reverse of the wire order). Bounded by the last N turns and a total character budget; a
+  call with no stored result is dropped rather than orphaned. See
+  `src/application/chat/AGENTS.md` before changing `run.ts`/`messageMapping.ts`.
 - User-image limits and encoding have single owners: caps in
   `src/domain/llm/imageLimits.ts` (client composers, API bodies, Slack all read them) and the
   `data:` encoding in `imageDataUrl`/`parseImageDataUrl` (`src/domain/llm/types.ts`). Copies of

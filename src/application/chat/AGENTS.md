@@ -19,16 +19,21 @@ into `ChatDeps.runAgent`.
 
 - **Version resolution**: `resolveVersion` asks the version repo for `"published"`
   (the port resolves the pointer) and falls back to the newest version by `createdAt`.
-- **Persistence is flattened.** After a run, `runAndPersist` writes tool results
-  (`EngineChunk.toolResult` → `{ toolCallId, toolName, content }`) as `tool` messages followed by
-  ONE `assistant` message holding the accumulated visible text. We intentionally do NOT
-  reconstruct per-turn assistant `tool_calls` even though the engine exposes
-  `delta.toolCalls` — the task's persistence contract is "accumulated content + tool
-  messages". Consequence: `toEngineMessages` drops `tool` messages that have no matching
-  assistant `tool_calls` (all of them, currently), so replayed history is user +
-  assistant turns; tool messages are kept only for UI display. To enable full tool replay
-  later, accumulate `delta.toolCalls` onto the persisted assistant message — the mapper
-  already pairs them by id.
+- **Persistence is flattened, but tool traffic is replayed.** After a run, `runAndPersist`
+  writes tool results (`EngineChunk.toolResult` → `{ toolCallId, toolName, content }`) as
+  `tool` messages followed by ONE `assistant` message holding the accumulated visible text
+  **and the run's top-level `delta.toolCalls`**. Per-turn assistant messages are still not
+  reconstructed — every turn's calls hang off the single flattened assistant message.
+  - Only top-level calls are stored (`isTopLevelChunk`): a subagent's belong to its own
+    conversation, and declaring them here would claim results this turn never produced.
+  - `toEngineMessages` pairs each stored `tool` row with the call that declared it and emits
+    it *after* that assistant message — storage order within a turn is `tool… → assistant`,
+    the reverse of what the wire format accepts. A call with no stored result (a transfer's,
+    which persists none) is dropped rather than left as an orphan the provider rejects, and a
+    row with no matching call stays display-only.
+  - Replay is bounded twice: the last `toolReplayTurns` assistant turns (default 3) and
+    `MAX_REPLAYED_TOOL_CHARS` of text spent newest-first, truncating with a marker. Tool
+    output is the bulkiest thing in a chat; unbounded replay would crowd out the conversation.
 - **Images** (generated `EngineChunk.image`, and the user's attachments) are uploaded
   through the optional `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set)
   by `storeMessageImages` and persisted as `images: [{ url, prompt? }]` on the message —

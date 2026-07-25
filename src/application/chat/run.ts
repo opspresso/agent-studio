@@ -2,7 +2,7 @@ import type { Project, Version } from "@/domain/project/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type { Chat, ChatMessageImage } from "@/domain/chat/types";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
-import type { ContentPart, EngineChunk } from "@/domain/llm/types";
+import type { ChannelToolCall, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { AttachedImage, ChatDeps } from "./deps";
 
 /**
@@ -90,11 +90,11 @@ function truncateForPersist(content: string): string {
  * A persistence failure is logged, never thrown: throwing on the return path
  * would reject the SSE `cancel()`, and the client already saw the answer.
  *
- * Tool messages are persisted for UI/audit display only. They are intentionally
- * NOT replayed into engine context on the next turn: the assistant message is
- * stored without `tool_calls`, so `toEngineMessages` drops the orphaned tool rows
- * and the conversation continues from the final assistant text alone. Keep both
- * sides of this contract in sync (see the round-trip test in tests/chat.test.ts).
+ * The turn's top-level tool calls are stored on the assistant message, which is
+ * what lets `toEngineMessages` pair them with their tool rows and replay the
+ * recent ones — without it a follow-up question reaches a model that cannot see
+ * what the tools returned and calls them again. Keep both sides of this contract
+ * in sync (see the round-trip test in tests/chat.test.ts).
  */
 export async function* runAndPersist(
   deps: ChatDeps,
@@ -104,6 +104,10 @@ export async function* runAndPersist(
 ): AsyncGenerator<EngineChunk> {
   let content = "";
   const toolMessages: { content: string; toolCallId: string; toolName: string }[] = [];
+  // Only the top-level run's calls: a subagent's belong to its own conversation,
+  // and hanging them off this assistant message would claim results this turn
+  // never produced.
+  const toolCalls: ChannelToolCall[] = [];
   const generatedImages: { b64: string; mimeType: string; prompt?: string }[] = [];
   let persisted = false;
 
@@ -135,6 +139,7 @@ export async function* runAndPersist(
         seq: await deps.chats.reserveMessageSeq(chat.chatId),
         role: "assistant",
         content: truncateForPersist(content),
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
         ...(images.length > 0 ? { images } : {}),
         createdAt: now,
       });
@@ -149,6 +154,9 @@ export async function* runAndPersist(
       const delta = chunk.delta?.content;
       if (typeof delta === "string" && isTopLevelChunk(chunk)) {
         content += delta;
+      }
+      if (chunk.delta?.toolCalls && isTopLevelChunk(chunk)) {
+        toolCalls.push(...chunk.delta.toolCalls);
       }
       if (chunk.toolResult) {
         toolMessages.push({
