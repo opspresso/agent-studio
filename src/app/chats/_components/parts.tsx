@@ -4,6 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { formatShortDateTime } from "@/lib/date";
+import { imageDataUrl } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import type { Attachment } from "@/app/_lib/imageAttachments";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
@@ -57,7 +58,7 @@ export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
 }
 
 export function liveImageSrc(image: LiveImage): string {
-  return `data:${image.mimeType};base64,${image.b64}`;
+  return imageDataUrl(image);
 }
 
 export function AuthorBadge({ path }: { path: string[] }) {

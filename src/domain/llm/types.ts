@@ -109,9 +109,18 @@ export function messageText(message: Pick<ChatMessageInput, "content">): string 
 }
 
 /**
- * Decode a `data:<mime>;base64,<payload>` url into bytes — the inverse of how
- * inline images are encoded into a content part. Any other url form (an https
- * image the provider fetches for itself) returns null.
+ * Encode image bytes as the `data:` url an `image_url` content part carries.
+ * Every surface that inlines an image goes through here, so the encoding has
+ * one owner alongside the decoder below.
+ */
+export function imageDataUrl(image: { b64: string; mimeType: string }): string {
+  return `data:${image.mimeType};base64,${image.b64}`;
+}
+
+/**
+ * Decode a `data:<mime>;base64,<payload>` url into bytes — the inverse of
+ * `imageDataUrl`. Any other url form (an https image the provider fetches for
+ * itself) returns null.
  */
 export function parseImageDataUrl(url: string): { b64: string; mimeType: string } | null {
   const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);

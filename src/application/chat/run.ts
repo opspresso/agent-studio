@@ -1,7 +1,7 @@
 import type { Project, Version } from "@/domain/project/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type { Chat, ChatMessageImage } from "@/domain/chat/types";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import type { ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { AttachedImage, ChatDeps } from "./deps";
 
@@ -32,7 +32,7 @@ export function userTurnContent(
     ...(content ? [{ type: "text" as const, text: content }] : []),
     ...images.map((image) => ({
       type: "image_url" as const,
-      image_url: { url: `data:${image.mimeType};base64,${image.b64}` },
+      image_url: { url: imageDataUrl(image) },
     })),
   ];
 }

@@ -3,11 +3,11 @@
 import { useCallback, useRef, useState } from "react";
 import {
   ACCEPTED_IMAGE_TYPES,
-  MAX_ATTACHMENTS,
   attachmentSrc,
   readAttachment,
   type Attachment,
 } from "../_lib/imageAttachments";
+import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 
 /**
  * Staged image attachments for one turn — shared by the chat composers and the

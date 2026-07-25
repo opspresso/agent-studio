@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { attachedImageSchema, attachedImagesSchema, MAX_ATTACHMENTS } from "@/app/api/_lib/attachments";
-import { MAX_ATTACHMENT_BYTES } from "@/app/_lib/imageAttachments";
+import { attachedImageSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 
-/** Padded base64 length of a file of exactly `bytes` bytes. */
+/** Padded base64 length of a file of exactly `bytes` bytes — deliberately not
+ *  the module's own helper, so a wrong formula there cannot pass this test. */
 function base64Chars(bytes: number): number {
   return 4 * Math.ceil(bytes / 3);
 }

@@ -148,6 +148,10 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   but **not replayed** into engine context (the stored assistant message carries no
   `tool_calls`, so `toEngineMessages` drops the orphans). See `src/application/chat/AGENTS.md`
   before changing `run.ts`/`messageMapping.ts`.
+- User-image limits and encoding have single owners: caps in
+  `src/domain/llm/imageLimits.ts` (client composers, API bodies, Slack all read them) and the
+  `data:` encoding in `imageDataUrl`/`parseImageDataUrl` (`src/domain/llm/types.ts`). Copies of
+  either had already drifted apart once — never restate a cap locally.
 - Tests mock at boundaries: `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
   `vi.mock("@/infrastructure/db/client")`. Keep tests deterministic — no real `Date.now`,
   timers, randomness, or network (repository integration lives in
