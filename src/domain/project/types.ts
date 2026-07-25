@@ -75,6 +75,13 @@ export interface SubagentRef {
 export interface McpBinding {
   name: string;
   headers?: Record<string, string | null>;
+  /**
+   * Which of the server's tools this version offers the model. Absent means all
+   * of them — the shape every binding had before, and the right default for a
+   * small server. A large server is worth narrowing: every tool costs prompt
+   * budget and dilutes the model's choice.
+   */
+  tools?: string[];
 }
 
 export interface Version {

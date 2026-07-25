@@ -5,6 +5,8 @@ import type { Trace, TraceSpan } from "@/domain/trace/types";
 
 const MAX_PREVIEW_CHARS = 1_000;
 const MAX_SPANS = 100;
+/** A run reports one warning per unusable binding; the item stays bounded. */
+const MAX_WARNINGS = 20;
 
 export interface TraceContext {
   projectName: string;
@@ -50,6 +52,7 @@ export class TraceRecorder {
    * two spans because each child run has its own trace id.
    */
   private readonly subagents = new Map<string, SubagentEntry>();
+  private readonly warnings: string[] = [];
   private error: string | undefined;
 
   constructor(
@@ -59,6 +62,9 @@ export class TraceRecorder {
 
   observe(chunk: EngineChunk): void {
     const now = new Date();
+    if (chunk.warning && this.warnings.length < MAX_WARNINGS) {
+      this.warnings.push(preview(chunk.warning));
+    }
     for (const call of chunk.delta?.toolCalls ?? []) {
       const id = call.id;
       if (id) {
@@ -194,6 +200,7 @@ export class TraceRecorder {
       status: this.error ? "failed" : cancelled ? "cancelled" : "completed",
       spans: this.spans,
       ...(this.spansDropped > 0 ? { spansDropped: this.spansDropped } : {}),
+      ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}),
       startedAt: this.startedAt.toISOString(),
       endedAt: endedAt.toISOString(),
       durationMs: Math.max(0, endedAt.getTime() - this.startedAt.getTime()),

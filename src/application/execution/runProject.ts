@@ -21,7 +21,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
-import { ToolManager } from "@/infrastructure/mcp/toolManager";
+import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
@@ -244,13 +244,20 @@ export async function* executeAgent(
       readSkill,
       runSignal,
     );
-    const [skills, subagents, mcp] = await Promise.all([
-      resolveSkills(readSkill, input.version.skillList),
-      resolveSubagents(deps, input.version.subagentList),
-      buildMcpTools(deps, input.version, runSignal),
-    ]);
+    const { skills, subagents, mcp, warnings } = await resolveRunTools(
+      deps,
+      input.version,
+      readSkill,
+      runSignal,
+    );
     agentDeps.callMcpTool = mcp.callMcpTool;
     closeMcpSessions = mcp.close;
+    // Before the first token: what this run lost is part of reading its answer.
+    for (const warning of warnings) {
+      const chunk: EngineChunk = { warning };
+      recorder?.observe(chunk);
+      yield chunk;
+    }
     for await (const chunk of engine.runAgent(agentDeps, {
       projectName: input.project.name,
       model: input.version.model,
@@ -484,41 +491,72 @@ function createSkillReader(deps: ExecutionDeps): SkillReader {
 async function resolveSkills(
   readSkill: SkillReader,
   skillList: string[] | undefined,
-): Promise<engine.SkillInfo[]> {
+): Promise<{ skills: engine.SkillInfo[]; warnings: string[] }> {
+  // Warnings are read off the settled results, not pushed from inside the
+  // callbacks, so their order follows the version's list rather than whichever
+  // repository read happened to finish first.
   const resolved = await Promise.all(
-    (skillList ?? []).map(async (name) => {
-      const skill = await readSkill(name);
-      if (!skill) {
-        console.warn(`[run] skill '${name}' is not in the registry; not offering it this run`);
-        return null;
-      }
-      return { name, description: skill.description ?? "" };
-    }),
+    (skillList ?? []).map(
+      async (name): Promise<{ skill?: engine.SkillInfo; warning?: string }> => {
+        const skill = await readSkill(name);
+        if (!skill) {
+          console.warn(`[run] skill '${name}' is not in the registry; not offering it this run`);
+          return { warning: `Skill '${name}' is no longer in the registry; it was not offered.` };
+        }
+        return { skill: { name, description: skill.description ?? "" } };
+      },
+    ),
   );
-  return resolved.filter((skill): skill is engine.SkillInfo => skill !== null);
+  const skills: engine.SkillInfo[] = [];
+  const warnings: string[] = [];
+  for (const entry of resolved) {
+    if (entry.skill) {
+      skills.push(entry.skill);
+    }
+    if (entry.warning) {
+      warnings.push(entry.warning);
+    }
+  }
+  return { skills, warnings };
 }
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 async function resolveSubagents(
   deps: ExecutionDeps,
   subagentList: SubagentRef[] | undefined,
-): Promise<engine.SubagentInfo[]> {
+): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
-    (subagentList ?? []).map(async (ref) => {
-      const target =
-        ref.type === "remote"
-          ? await deps.externalAgents.get(ref.name)
-          : await deps.projects.get(ref.name);
-      if (!target) {
-        console.warn(
-          `[run] ${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
-        );
-        return null;
-      }
-      return { name: ref.name, description: target.description ?? "", type: ref.type };
-    }),
+    (subagentList ?? []).map(
+      async (ref): Promise<{ subagent?: engine.SubagentInfo; warning?: string }> => {
+        const target =
+          ref.type === "remote"
+            ? await deps.externalAgents.get(ref.name)
+            : await deps.projects.get(ref.name);
+        if (!target) {
+          console.warn(
+            `[run] ${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
+          );
+          return {
+            warning: `${ref.type === "remote" ? "Remote agent" : "Agent project"} '${ref.name}' no longer exists; a transfer to it was not offered.`,
+          };
+        }
+        return {
+          subagent: { name: ref.name, description: target.description ?? "", type: ref.type },
+        };
+      },
+    ),
   );
-  return resolved.filter((agent): agent is engine.SubagentInfo => agent !== null);
+  const subagents: engine.SubagentInfo[] = [];
+  const warnings: string[] = [];
+  for (const entry of resolved) {
+    if (entry.subagent) {
+      subagents.push(entry.subagent);
+    }
+    if (entry.warning) {
+      warnings.push(entry.warning);
+    }
+  }
+  return { subagents, warnings };
 }
 
 function buildSkillLoader(
@@ -528,6 +566,66 @@ function buildSkillLoader(
     loadSkillFileContent(await readSkill(skillName), skillName, filePath);
 }
 
+/**
+ * MCP tools one run may declare. Providers reject a request that declares too
+ * many (OpenAI's own limit is 128), and the whole run fails with it — so the
+ * tail is dropped and reported instead.
+ */
+const MAX_MCP_TOOLS_PER_RUN = 120;
+
+type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
+
+/**
+ * Resolve a version's skills, subagents and MCP tools together.
+ *
+ * The MCP promise is handled separately so a *sibling's* failure still releases
+ * the sessions that opened: awaiting all three as a plain `Promise.all` drops
+ * the tool manager on the floor, and every session it opened stays alive
+ * server-side until that server times it out.
+ */
+async function resolveRunTools(
+  deps: ExecutionDeps,
+  version: Version,
+  readSkill: SkillReader,
+  signal?: AbortSignal,
+): Promise<{
+  skills: engine.SkillInfo[];
+  subagents: engine.SubagentInfo[];
+  mcp: ResolvedMcp;
+  /** Everything the run lost while resolving, in version-list order. */
+  warnings: string[];
+}> {
+  const mcpPending = buildMcpTools(deps, version, signal);
+  // Claim the rejection now: a sibling that rejects first would otherwise let
+  // this one surface as an unhandled rejection before the catch below runs.
+  const mcpSettled = mcpPending.then(
+    (mcp) => ({ mcp }),
+    (error: unknown) => ({ error }),
+  );
+  try {
+    const [skills, subagents, settled] = await Promise.all([
+      resolveSkills(readSkill, version.skillList),
+      resolveSubagents(deps, version.subagentList),
+      mcpSettled,
+    ]);
+    if ("error" in settled) {
+      throw settled.error;
+    }
+    return {
+      skills: skills.skills,
+      subagents: subagents.subagents,
+      mcp: settled.mcp,
+      warnings: [...skills.warnings, ...subagents.warnings, ...settled.mcp.warnings],
+    };
+  } catch (error) {
+    const settled = await mcpSettled;
+    if ("mcp" in settled) {
+      await closeMcp(settled.mcp.close);
+    }
+    throw error;
+  }
+}
+
 async function buildMcpTools(
   deps: ExecutionDeps,
   version: Version,
@@ -535,47 +633,59 @@ async function buildMcpTools(
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
-  callMcpTool?: (name: string, args: Record<string, unknown>) => Promise<string>;
+  callMcpTool?: engine.AgentDeps["callMcpTool"];
+  /** Why a bound server contributed no tools; surfaced to the user by the run. */
+  warnings: string[];
   /** Releases the MCP sessions; call in a `finally` once the run is over. */
   close?: () => Promise<void>;
 }> {
   const mcpList = version.mcpList ?? [];
   if (mcpList.length === 0) {
-    return { mcpTools: [], mcpServers: [] };
+    return { mcpTools: [], mcpServers: [], warnings: [] };
   }
   const descriptionByName = new Map<string, string>();
   const resolved = await Promise.all(
-    mcpList.map(async (binding) => {
-      const mcp = await deps.mcps.get(binding.name);
-      if (!mcp) {
-        return null;
-      }
-      try {
-        // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
-        // window; a blocked server is skipped, not fatal to the run. The URL is
-        // always the registry's — a binding may redefine headers, never the host.
-        await assertPublicUrl(mcp.url);
-      } catch (error) {
-        console.warn(
-          `Skipping MCP server '${mcp.name}': ${error instanceof SsrfError ? error.message : String(error)}`,
-        );
-        return null;
-      }
-      return { mcp, binding };
-    }),
+    mcpList.map(
+      async (binding): Promise<{ server?: McpServerConfig; description?: string; warning?: string }> => {
+        const mcp = await deps.mcps.get(binding.name);
+        if (!mcp) {
+          console.warn(`[run] MCP server '${binding.name}' is not in the registry; skipping it`);
+          return {
+            warning: `MCP server '${binding.name}' is no longer in the registry; its tools were not offered.`,
+          };
+        }
+        try {
+          // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
+          // window; a blocked server is skipped, not fatal to the run. The URL is
+          // always the registry's — a binding may redefine headers, never the host.
+          await assertPublicUrl(mcp.url);
+        } catch (error) {
+          const reason = error instanceof SsrfError ? error.message : String(error);
+          console.warn(`Skipping MCP server '${mcp.name}': ${reason}`);
+          return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
+        }
+        return {
+          server: {
+            name: mcp.name,
+            url: mcp.url,
+            headers: mergeOutboundHeaders(mcp.headers, binding.headers),
+            ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
+          },
+          description: mcp.description ?? "",
+        };
+      },
+    ),
   );
-  const servers = [];
+  const warnings: string[] = [];
+  const servers: McpServerConfig[] = [];
   for (const entry of resolved) {
-    if (!entry) {
-      continue;
+    if (entry.warning) {
+      warnings.push(entry.warning);
     }
-    const { mcp, binding } = entry;
-    servers.push({
-      name: mcp.name,
-      url: mcp.url,
-      headers: mergeOutboundHeaders(mcp.headers, binding.headers),
-    });
-    descriptionByName.set(mcp.name, mcp.description ?? "");
+    if (entry.server) {
+      servers.push(entry.server);
+      descriptionByName.set(entry.server.name, entry.description ?? "");
+    }
   }
 
   // Every builtin name is reserved, not just the ones this version activates:
@@ -583,20 +693,43 @@ async function buildMcpTools(
   // offer, and a name that a builtin *may* claim must never resolve to an MCP
   // tool the engine would then shadow.
   const toolManager = new ToolManager(servers, engine.BUILTIN_TOOL_NAMES, signal);
-  await toolManager.init();
+  try {
+    await toolManager.init();
+  } catch (error) {
+    // Discovery may have opened sessions before it gave up (a run cancelled
+    // mid-init). Nobody else holds this manager, so release them here.
+    await closeMcp(() => toolManager.close());
+    throw error;
+  }
+  // Providers cap how many tools one request may declare, and a request over
+  // that limit fails outright — losing the tail is strictly better than losing
+  // the run. Builtins are added after this, so leave them room.
+  const capped = toolManager.tools.slice(0, MAX_MCP_TOOLS_PER_RUN);
+  const droppedTools = toolManager.tools.length - capped.length;
+  const offered = new Set(capped.map((tool) => tool.function.name));
   const mcpServers: engine.McpServerInfo[] = [];
   for (const [serverName, toolNames] of toolManager.toolNamesByServer) {
-    if (toolNames.length > 0) {
+    const visible = toolNames.filter((name) => offered.has(name));
+    if (visible.length > 0) {
       mcpServers.push({
         name: serverName,
         description: descriptionByName.get(serverName) ?? "",
-        toolNames,
+        toolNames: visible,
       });
     }
   }
   return {
-    mcpTools: toolManager.tools,
+    mcpTools: capped,
     mcpServers,
+    warnings: [
+      ...warnings,
+      ...toolManager.warnings,
+      ...(droppedTools > 0
+        ? [
+            `${droppedTools} MCP tool(s) were not offered: a run may declare at most ${MAX_MCP_TOOLS_PER_RUN}. Narrow a binding's tool selection.`,
+          ]
+        : []),
+    ],
     callMcpTool: (name, args) => toolManager.callTool(name, args),
     close: () => toolManager.close(),
   };
@@ -862,22 +995,40 @@ async function* runLocalSubagent(
     );
   }
 
-  const readSkill = createSkillReader(deps);
-  const [skills, subagents, mcp, childDeps] = await Promise.all([
-    resolveSkills(readSkill, version.skillList),
-    resolveSubagents(deps, version.subagentList),
-    buildMcpTools(deps, version, signal),
-    buildAgentDeps(deps, version, project.name, recordUsageFn, ancestry, readSkill, signal),
-  ]);
-  childDeps.callMcpTool = mcp.callMcpTool;
+  // Opened before the version's tools resolve, so the trace covers that work
+  // and can record what resolving lost.
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
     : undefined;
+  const readSkill = createSkillReader(deps);
+  const { skills, subagents, mcp, warnings } = await resolveRunTools(
+    deps,
+    version,
+    readSkill,
+    signal,
+  );
+  const childDeps = await buildAgentDeps(
+    deps,
+    version,
+    project.name,
+    recordUsageFn,
+    ancestry,
+    readSkill,
+    signal,
+  );
+  childDeps.callMcpTool = mcp.callMcpTool;
 
   let text = "";
   let thrown: unknown;
   let completed = false;
   try {
+    // Inside the try: a consumer that stops reading here must still release the
+    // sessions the resolve above opened.
+    for (const warning of warnings) {
+      const chunk: EngineChunk = { warning, ...(recorder ? { traceId: recorder.traceId } : {}) };
+      recorder?.observe(chunk);
+      yield chunk;
+    }
     for await (const chunk of engine.runAgent(childDeps, {
       projectName: project.name,
       model: version.model,

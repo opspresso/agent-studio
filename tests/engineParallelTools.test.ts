@@ -40,7 +40,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
     const calledOrder: string[] = [];
     const callMcpTool = vi.fn(async (name: string) => {
       calledOrder.push(name);
-      return name === "getWeather" ? "sunny" : "09:00";
+      return { text: name === "getWeather" ? "sunny" : "09:00" };
     });
     const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
     const input: RunAgentInput = {
@@ -88,7 +88,7 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
       yield { author: "child", delta: { content: "child says hi" } };
       return "child-answer";
     });
-    const callMcpTool = vi.fn(async () => "sunny");
+    const callMcpTool = vi.fn(async () => ({ text: "sunny" }));
     const deps: AgentDeps = { channel, recordUsage: async () => {}, runSubagent, callMcpTool };
     const input: RunAgentInput = {
       projectName: "parent",
@@ -135,7 +135,7 @@ describe("ToolCallAccumulator reassembles streamed fragments", () => {
       ],
       [contentChunk("found"), usageChunk(8, 4)],
     ]);
-    const callMcpTool = vi.fn(async () => "results");
+    const callMcpTool = vi.fn(async () => ({ text: "results" }));
     const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
 
     await collect(
@@ -166,10 +166,10 @@ describe("MCP calls of one response overlap", () => {
       started.push(name);
       if (name === "slow") {
         await slowBlocked;
-        return "slow done";
+        return { text: "slow done" };
       }
       releaseSlow?.();
-      return "fast done";
+      return { text: "fast done" };
     });
     const channel = new FakeChannel([
       [
@@ -208,12 +208,108 @@ describe("MCP calls of one response overlap", () => {
   });
 });
 
+describe("images an MCP tool returns", () => {
+  const PIXEL = "iVBORw0KGgo=";
+  const screenshotTools = [{ type: "function" as const, function: { name: "screenshot", parameters: {} } }];
+
+  function screenshotChannel(): FakeChannel {
+    return new FakeChannel([
+      [toolCallChunk(0, "call_1", "screenshot", "{}"), usageChunk(10, 5)],
+      [contentChunk("I see a login form."), usageChunk(8, 4)],
+    ]);
+  }
+
+  it("attaches the picture to the next turn and delivers it to the user", async () => {
+    // A tool message is text-only, so bytes that stayed in the tool result would
+    // never reach the model — the run would answer about a picture it never saw.
+    const channel = screenshotChannel();
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "captured", images: [{ b64: PIXEL, mimeType: "image/png" }] }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "what is on screen?" }],
+        mcpTools: screenshotTools,
+      }),
+    );
+
+    // The user sees it.
+    expect(chunks.filter((c) => c.image).map((c) => c.image?.b64)).toEqual([PIXEL]);
+    // The model sees it: a user turn carrying the bytes, after the tool message.
+    const messages = followUpMessages(channel);
+    const withImage = messages.find(
+      (m) => m.role === "user" && Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"),
+    );
+    expect(withImage).toBeDefined();
+    const lastToolIdx = messages.map((m) => m.role).lastIndexOf("tool");
+    expect(messages.indexOf(withImage as ChannelMessage)).toBeGreaterThan(lastToolIdx);
+    // And the tool result says the picture is coming, so the text is not a dead end.
+    const toolResult = chunks.find((c) => c.toolResult)?.toolResult?.content ?? "";
+    expect(toolResult).toContain("captured");
+    expect(toolResult).toContain("attached");
+  });
+
+  it("tells the model the pictures were dropped when it cannot read images", async () => {
+    // Sending image parts to a text-only model fails the whole turn.
+    const channel = screenshotChannel();
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "captured", images: [{ b64: PIXEL, mimeType: "image/png" }] }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5-mini-text-only-not-in-catalog",
+        messages: [{ role: "user", content: "what is on screen?" }],
+        mcpTools: screenshotTools,
+      }),
+    );
+
+    expect(chunks.some((c) => c.image)).toBe(false);
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toContain("dropped");
+    const hasImagePart = followUpMessages(channel).some(
+      (m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"),
+    );
+    expect(hasImagePart).toBe(false);
+  });
+
+  it("caps how many pictures one turn may take in", async () => {
+    const channel = screenshotChannel();
+    const many = Array.from({ length: 9 }, () => ({ b64: PIXEL, mimeType: "image/png" }));
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "captured", images: many }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "capture everything" }],
+        mcpTools: screenshotTools,
+      }),
+    );
+
+    expect(chunks.filter((c) => c.image)).toHaveLength(4);
+    // The overflow is stated, not silently swallowed.
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toContain("dropped");
+  });
+});
+
 describe("per-turn tool result budget", () => {
   it("truncates past the budget and omits what no longer fits", async () => {
     // Each result is capped on its own, but a turn full of them would blow the
     // context window. The cut is explicit so the model can narrow its next call.
     const big = "x".repeat(150_000);
-    const callMcpTool = vi.fn(async () => big);
+    const callMcpTool = vi.fn(async () => ({ text: big }));
     const channel = new FakeChannel([
       [
         toolCallChunk(0, "call_1", "dump", "{}"),

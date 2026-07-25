@@ -256,4 +256,8 @@ docker compose up --build             # local container + DynamoDB Local
 - Every run (predict, chat, agent, Slack, A2A, image) is bounded by a wall-clock
   deadline — `MAX_RUN_DURATION_MS`, default `600000` (10 minutes) — so a hung provider
   or tool call cannot run, or bill, unbounded.
+- A bound MCP server's tool list is cached in process memory for
+  `MCP_DISCOVERY_CACHE_TTL_MS` (default `60000`), which also lets a turn that calls no tool
+  skip the MCP handshake entirely. Editing the registry entry invalidates it on the instance
+  that served the edit; the TTL bounds the others.
 - AWS credentials come from the task/instance role — never bake keys into the image.

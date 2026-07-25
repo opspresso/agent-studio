@@ -1,7 +1,8 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 
 // MCP dispatch goes through the SSRF-guarded fetch; forward it to the stubbed
 // global so a scripted JSON-RPC server can answer without DNS or undici.
@@ -126,6 +127,12 @@ async function run(
   }
   return { chunks, toolNames: (channel.seenParams[0]?.tools ?? []).map((t) => t.function.name) };
 }
+
+beforeEach(() => {
+  // Discovery is cached process-wide; a stale entry would answer the next
+  // test's init and hide the request it is asserting on.
+  clearMcpDiscoveryCache();
+});
 
 describe("an MCP tool named like a builtin", () => {
   it("is aliased even when that builtin is inactive, so it stays callable", async () => {

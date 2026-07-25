@@ -115,6 +115,23 @@ async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]>
   return chunks;
 }
 
+/** Collect the traces a run persists, for tests that assert on them. */
+function captureTraces(deps: ExecutionDeps): Trace[] {
+  const traces: Trace[] = [];
+  deps.traces = {
+    async put(trace) {
+      traces.push(trace);
+    },
+    async get() {
+      return null;
+    },
+    async listByProject() {
+      return traces;
+    },
+  };
+  return traces;
+}
+
 function offersImageTool(channel: FakeChannel): boolean {
   return channel.seenParams[0]?.tools?.some((t) => t.function.name === "GenerateImage") ?? false;
 }
@@ -774,6 +791,92 @@ describe("executeAgent registry bindings that no longer resolve", () => {
   });
 });
 
+describe("executeAgent reports the bindings it could not use", () => {
+  it("warns about a deleted skill and a deleted subagent before the answer, and records it on the trace", async () => {
+    // Dropping these silently is indistinguishable from a model that simply
+    // chose not to call anything — the run looks fine and answers worse.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const channel = new FakeChannel([[contentChunk("answered"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    const traces = captureTraces(deps);
+    deps.skills.get = (async () => null) as ExecutionDeps["skills"]["get"];
+    deps.projects.get = (async () => null) as ExecutionDeps["projects"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          skillList: ["gone-skill"],
+          subagentList: [{ name: "gone-agent", type: "local" }],
+        },
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    const warnings = chunks.flatMap((chunk) => (chunk.warning ? [chunk.warning] : []));
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("gone-skill");
+    expect(warnings[1]).toContain("gone-agent");
+    // They arrive before any answer text, so the reader sees them in context.
+    const firstWarning = chunks.findIndex((chunk) => chunk.warning);
+    const firstContent = chunks.findIndex((chunk) => chunk.delta?.content);
+    expect(firstWarning).toBeLessThan(firstContent);
+    // A warning is not a failure: the run still completes and answers.
+    expect(chunks.some((chunk) => chunk.error)).toBe(false);
+    expect(chunks.some((chunk) => chunk.done)).toBe(true);
+
+    expect(traces[0]?.warnings).toHaveLength(2);
+    expect(traces[0]?.status).toBe("completed");
+    warn.mockRestore();
+  });
+
+  it("warns about an MCP server that is no longer in the registry", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const channel = new FakeChannel([[contentChunk("answered"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    deps.mcps.get = (async () => null) as ExecutionDeps["mcps"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          mcpList: [{ name: "gone-mcp" }],
+        },
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(chunks.flatMap((chunk) => (chunk.warning ? [chunk.warning] : []))).toEqual([
+      expect.stringContaining("gone-mcp"),
+    ]);
+    warn.mockRestore();
+  });
+
+  it("says nothing when every binding resolves", async () => {
+    const channel = new FakeChannel([[contentChunk("answered"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    deps.skills.get = (async (name: string) => ({
+      name,
+      description: "here",
+      content: "# here",
+      createdAt: "",
+      updatedAt: "",
+    })) as ExecutionDeps["skills"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: { ...versionFixture({ piiFiltering: false }), skillList: ["here"] },
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(chunks.some((chunk) => chunk.warning)).toBe(false);
+  });
+});
+
 describe("executeAgent PII filtering", () => {
   it("passes the version toggle to the engine", async () => {
     const channel = new FakeChannel([[contentChunk("Contact the masked value."), usageChunk(1, 1)]]);
@@ -1055,22 +1158,6 @@ describe("executeAgent remote A2A image subagent", () => {
 });
 
 describe("execution tracing policy", () => {
-  function captureTraces(deps: ExecutionDeps): Trace[] {
-    const traces: Trace[] = [];
-    deps.traces = {
-      async put(trace) {
-        traces.push(trace);
-      },
-      async get() {
-        return null;
-      },
-      async listByProject() {
-        return traces;
-      },
-    };
-    return traces;
-  }
-
   it("always traces agent runs", async () => {
     const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
     const { deps } = executionDepsFixture(channel);

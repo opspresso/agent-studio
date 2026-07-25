@@ -1,7 +1,8 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 
 // MCP dispatch goes through the SSRF-guarded fetch; forward it to the stubbed
 // global so a scripted JSON-RPC server can answer without DNS or undici.
@@ -84,7 +85,7 @@ function depsFixture(channel: FakeChannel) {
 }
 
 /** Record the headers every MCP request carried, answering the JSON-RPC handshake. */
-function stubMcpServer(): Array<Record<string, string>> {
+function stubMcpServer(toolNames: string[] = ["search"]): Array<Record<string, string>> {
   const seen: Array<Record<string, string>> = [];
   vi.stubGlobal(
     "fetch",
@@ -94,7 +95,8 @@ function stubMcpServer(): Array<Record<string, string>> {
       if (body.method === "notifications/initialized") {
         return new Response("", { status: 202 });
       }
-      const result = body.method === "tools/list" ? { tools: [{ name: "search" }] } : {};
+      const result =
+        body.method === "tools/list" ? { tools: toolNames.map((name) => ({ name })) } : {};
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
       });
@@ -126,6 +128,12 @@ async function dispatchHeaders(
     vi.unstubAllGlobals();
   }
 }
+
+beforeEach(() => {
+  // Discovery is cached process-wide; a stale entry would answer the next
+  // test's init and hide the request it is asserting on.
+  clearMcpDiscoveryCache();
+});
 
 describe("per-project MCP header overrides at dispatch", () => {
   it("sends the registry headers unchanged when a binding has no override", async () => {
@@ -191,5 +199,49 @@ describe("per-project MCP header overrides at dispatch", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("what a run may offer from a bound server", () => {
+  /** Run one turn and report the tool names the channel was given, plus warnings. */
+  async function offeredTools(mcpList: McpBinding[], serverTools: string[]) {
+    stubMcpServer(serverTools);
+    try {
+      const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+      const chunks: EngineChunk[] = [];
+      for await (const chunk of executeAgent(depsFixture(channel), {
+        project: projectFixture("p"),
+        version: versionFixture("p", mcpList),
+        messages: [{ role: "user", content: "hi" }],
+      })) {
+        chunks.push(chunk);
+      }
+      return {
+        names: (channel.seenParams[0]?.tools ?? []).map((t) => t.function.name),
+        warnings: chunks.flatMap((chunk) => (chunk.warning ? [chunk.warning] : [])),
+      };
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it("offers only the tools a binding selected", async () => {
+    const { names } = await offeredTools(
+      [{ name: "shared-mcp", tools: ["search"] }],
+      ["search", "write", "delete"],
+    );
+
+    expect(names).toEqual(["search"]);
+  });
+
+  it("caps the tools one run declares and says how many were left out", async () => {
+    // A provider rejects a request that declares too many tools, and the whole
+    // run fails with it — losing the tail beats losing the run.
+    const many = Array.from({ length: 130 }, (_, index) => `tool_${index}`);
+
+    const { names, warnings } = await offeredTools([{ name: "shared-mcp" }], many);
+
+    expect(names).toHaveLength(120);
+    expect(warnings.some((warning) => warning.includes("at most 120"))).toBe(true);
   });
 });

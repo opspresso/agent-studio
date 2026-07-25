@@ -1,198 +1,34 @@
 /**
- * MCP tool manager. Talks the MCP streamable-HTTP JSON-RPC protocol
- * (`initialize` -> `tools/list` -> `tools/call`) over plain `fetch` — no SDK
- * dependency. Behaviours:
+ * MCP tool manager. Builds a run's tool set over {@link McpSession}, which owns
+ * the protocol. Behaviours:
  *   - tool-name collision aliasing (`name_1`, `name_2`) with a reverse mapping,
  *   - builtin reserved names are seeded so only MCP tools get suffixed,
  *   - results capped at 100,000 chars; multi-block results JSON-stringified,
  *   - failures (transport, JSON-RPC, and the server's own `isError`) come back as
  *     `Error: …` text, never thrown: the model reads them as a tool result and
  *     the trace recorder reads the prefix as a failed span,
- *   - a tool call aborts after 120s and discovery after 10s, so a hung server
- *     degrades to a tool error (or to missing tools) instead of stalling the run.
+ *   - a server that cannot be reached loses only its own tools, and the reason
+ *     is reported through {@link ToolManager.warnings} so the run can surface it,
+ *   - discovery is served from {@link ../discoveryCache the discovery cache} when
+ *     it is warm, which also leaves the session to handshake lazily on its first
+ *     tool call — a turn that calls nothing then makes no MCP request at all.
  */
 
 import type { ChannelToolDef } from "@/domain/llm/channel";
-import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
-import { readBodyText } from "@/lib/httpBody";
+import type { ImageBytes } from "@/domain/llm/imageChannel";
+import type { McpToolResult } from "@/domain/llm/types";
+import { getCachedTools, setCachedTools } from "./discoveryCache";
+import { McpSession, type McpTool } from "./session";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
-/** A tool may legitimately take minutes; the model is waiting on its answer. */
-const MCP_CALL_TIMEOUT_MS = 120_000;
-/**
- * Discovery is on the critical path of *every* run's first token, and a server
- * that accepts the connection but never answers would otherwise hold the whole
- * run for the call timeout. Failing fast only costs that server's tools.
- */
-const MCP_DISCOVERY_TIMEOUT_MS = 10_000;
-/** Cleanup runs after the answer is delivered; keep it short. */
-const SESSION_END_TIMEOUT_MS = 5_000;
-const MAX_MCP_RESPONSE_BYTES = 2_000_000;
-const PROTOCOL_VERSION = "2025-06-18";
 
 export interface McpServerConfig {
   name: string;
   url: string;
   /** Already-decrypted outbound headers. */
   headers: Record<string, string>;
-}
-
-interface McpTool {
-  name: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
-}
-
-interface JsonRpcResponse {
-  jsonrpc: string;
-  id?: number | string;
-  result?: unknown;
-  error?: { code: number; message: string };
-}
-
-/** One streamable-HTTP session against a single MCP server. */
-class McpSession {
-  private sessionId: string | undefined;
-  private nextId = 1;
-  private initialized = false;
-
-  constructor(
-    private readonly url: string,
-    private readonly headers: Record<string, string>,
-    private readonly signal?: AbortSignal,
-  ) {}
-
-  private requestSignal(timeoutMs: number): AbortSignal {
-    const timeout = AbortSignal.timeout(timeoutMs);
-    return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
-  }
-
-  private baseHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      ...this.headers,
-    };
-    if (this.sessionId) {
-      headers["Mcp-Session-Id"] = this.sessionId;
-    }
-    return headers;
-  }
-
-  private async ensureInitialized(): Promise<void> {
-    if (this.initialized) {
-      return;
-    }
-    const response = await fetchPublicUrl(this.url, {
-      method: "POST",
-      headers: this.baseHeaders(),
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: this.nextId++,
-        method: "initialize",
-        params: {
-          protocolVersion: PROTOCOL_VERSION,
-          capabilities: {},
-          clientInfo: { name: "agent-studio", version: "0.1.0" },
-        },
-      }),
-      signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),
-    });
-    const sessionId = response.headers.get("Mcp-Session-Id");
-    if (sessionId) {
-      this.sessionId = sessionId;
-    }
-    await parseJsonRpc(response);
-
-    // Notify the server that initialization completed.
-    await fetchPublicUrl(this.url, {
-      method: "POST",
-      headers: this.baseHeaders(),
-      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
-      signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),
-    });
-    this.initialized = true;
-  }
-
-  private async request(
-    method: string,
-    params: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<unknown> {
-    await this.ensureInitialized();
-    const response = await fetchPublicUrl(this.url, {
-      method: "POST",
-      headers: this.baseHeaders(),
-      body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),
-      signal: this.requestSignal(timeoutMs),
-    });
-    const message = await parseJsonRpc(response);
-    if (message?.error) {
-      throw new Error(`MCP error (${message.error.code}): ${message.error.message}`);
-    }
-    return message?.result;
-  }
-
-  async listTools(): Promise<McpTool[]> {
-    const result = (await this.request("tools/list", {}, MCP_DISCOVERY_TIMEOUT_MS)) as
-      | { tools?: McpTool[] }
-      | undefined;
-    return result?.tools ?? [];
-  }
-
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.request("tools/call", { name, arguments: args }, MCP_CALL_TIMEOUT_MS);
-  }
-
-  /**
-   * Release the server-side session (streamable HTTP `DELETE`). Best-effort:
-   * servers may not implement it, and a run must never fail on cleanup.
-   */
-  async end(): Promise<void> {
-    if (!this.sessionId) {
-      return;
-    }
-    try {
-      const response = await fetchPublicUrl(this.url, {
-        method: "DELETE",
-        headers: this.baseHeaders(),
-        signal: AbortSignal.timeout(SESSION_END_TIMEOUT_MS),
-      });
-      await response.body?.cancel();
-    } catch {
-      // Session teardown is best-effort.
-    } finally {
-      this.sessionId = undefined;
-      this.initialized = false;
-    }
-  }
-}
-
-/** Read a JSON-RPC response body, handling both JSON and SSE framing. */
-async function parseJsonRpc(response: Response): Promise<JsonRpcResponse | undefined> {
-  const text = await readBodyText(response, MAX_MCP_RESPONSE_BYTES);
-  if (!text) {
-    return undefined;
-  }
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("text/event-stream") || text.includes("data:")) {
-    let last: JsonRpcResponse | undefined;
-    for (const line of text.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("data:")) {
-        const payload = trimmed.slice("data:".length).trim();
-        if (payload && payload !== "[DONE]") {
-          try {
-            last = JSON.parse(payload) as JsonRpcResponse;
-          } catch {
-            // ignore keep-alive / non-JSON frames
-          }
-        }
-      }
-    }
-    return last;
-  }
-  return JSON.parse(text) as JsonRpcResponse;
+  /** Offer only these of the server's tools; absent/empty means all of them. */
+  tools?: string[];
 }
 
 export class ToolManager {
@@ -200,10 +36,11 @@ export class ToolManager {
   private readonly reservedToolNames: Set<string>;
   private readonly sessionByToolName = new Map<string, McpSession>();
   private readonly originalNameByAlias = new Map<string, string>();
-  /** One entry per reachable server, for teardown. */
+  /** One entry per session opened, for teardown. */
   private readonly sessions: McpSession[] = [];
   private _tools: ChannelToolDef[] = [];
   private _toolNamesByServer = new Map<string, string[]>();
+  private readonly _warnings: string[] = [];
 
   constructor(
     servers: McpServerConfig[],
@@ -224,6 +61,15 @@ export class ToolManager {
   }
 
   /**
+   * Why a configured server contributed no tools. A run reports these to the
+   * user: without them an unreachable server is indistinguishable from a model
+   * that chose not to call anything.
+   */
+  get warnings(): readonly string[] {
+    return this._warnings;
+  }
+
+  /**
    * Connect to every server and build the tool set. Discovery runs in parallel
    * — servers are independent, and a single unreachable one would otherwise add
    * its full 120s timeout to the time-to-first-token. Alias allocation stays
@@ -237,16 +83,30 @@ export class ToolManager {
     const discovered = await Promise.all(
       this.servers.map(async (server) => {
         const session = new McpSession(server.url, server.headers, this.signal);
+        // Registered before the first request: a session that initializes and
+        // then fails — or one abandoned when the run aborts mid-discovery —
+        // must still be reachable by `close()`, or it is leaked server-side.
+        this.sessions.push(session);
+        const cached = getCachedTools(server.url, server.headers);
+        if (cached) {
+          // The session stays uninitialized; it handshakes on its first actual
+          // tool call, so a run that calls nothing makes no request at all.
+          return { server, session, tools: cached };
+        }
         try {
-          return { server, session, tools: await session.listTools() };
+          const tools = await session.listTools();
+          setCachedTools(server.url, server.headers, tools);
+          return { server, session, tools };
         } catch (error) {
           // A single broken MCP must not abort the whole tool set — but it must
-          // not vanish either: without this line the tools are simply absent and
-          // the run looks like a model that ignored them.
+          // not vanish either: without this the tools are simply absent and the
+          // run looks like a model that ignored them.
+          const reason = error instanceof Error ? error.message : String(error);
           console.warn(
             `[mcp] discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
-            error instanceof Error ? error.message : String(error),
+            reason,
           );
+          this._warnings.push(`MCP server '${server.name}' is unreachable (${reason}); its tools are unavailable this run.`);
           return null;
         }
       }),
@@ -260,9 +120,9 @@ export class ToolManager {
       if (!entry) {
         continue;
       }
-      this.sessions.push(entry.session);
+      const offered = this.selectOffered(entry.server, entry.tools);
       const aliases: string[] = [];
-      for (const tool of entry.tools) {
+      for (const tool of offered) {
         const alias = allocateToolName(tool.name, usedNames, aliasIndexByName);
         tools.push({
           type: "function",
@@ -282,6 +142,28 @@ export class ToolManager {
   }
 
   /**
+   * Narrow a server's tools to the binding's allowlist, keeping the server's own
+   * order so aliases stay deterministic. A name the allowlist asks for but the
+   * server no longer offers is reported: it is a binding that has silently
+   * stopped doing what it says.
+   */
+  private selectOffered(server: McpServerConfig, discovered: McpTool[]): McpTool[] {
+    const allowed = server.tools;
+    if (!allowed || allowed.length === 0) {
+      return discovered;
+    }
+    const wanted = new Set(allowed);
+    const offered = discovered.filter((tool) => wanted.has(tool.name));
+    const missing = allowed.filter((name) => !discovered.some((tool) => tool.name === name));
+    if (missing.length > 0) {
+      this._warnings.push(
+        `MCP server '${server.name}' no longer offers ${missing.map((name) => `'${name}'`).join(", ")}; that selection was skipped.`,
+      );
+    }
+    return offered;
+  }
+
+  /**
    * Release every server-side session. Call once the run is over (in a
    * `finally`); best-effort, never throws.
    */
@@ -297,26 +179,30 @@ export class ToolManager {
    * on it). A server's own `isError` verdict is reported the same way, so the
    * model cannot read a failed call as a successful one.
    */
-  async callTool(aliasName: string, args: Record<string, unknown>): Promise<string> {
+  async callTool(aliasName: string, args: Record<string, unknown>): Promise<McpToolResult> {
     this.signal?.throwIfAborted();
     const session = this.sessionByToolName.get(aliasName);
     const originalName = this.originalNameByAlias.get(aliasName);
     if (!session || !originalName) {
-      return `Error: tool call failed. No MCP server provides the tool '${aliasName}'.`;
+      return { text: `Error: tool call failed. No MCP server provides the tool '${aliasName}'.` };
     }
     try {
       const result = (await session.callTool(originalName, args)) as
         | { content?: unknown[]; isError?: boolean }
         | undefined;
       if (!result || !Array.isArray(result.content)) {
-        return `Error: tool call failed. No content from MCP for tool '${originalName}'.`;
+        return {
+          text: `Error: tool call failed. No content from MCP for tool '${originalName}'.`,
+        };
       }
       const output = formatToolResult(result.content);
-      return result.isError === true ? asErrorResult(output) : output;
+      // A failed call's images are dropped: the text is the diagnosis, and
+      // attaching a picture to a failure only spends context.
+      return result.isError === true ? { text: asErrorResult(output.text) } : output;
     } catch (error) {
       this.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : String(error);
-      return `Error: tool call failed. ${message}`;
+      return { text: `Error: tool call failed. ${message}` };
     }
   }
 }
@@ -342,39 +228,59 @@ function allocateToolName(
   return alias;
 }
 
-function extractBlock(block: unknown): string {
+/**
+ * One content block as the model will read it, plus the bytes when the block is
+ * a picture. The text placeholder still stands in for the image inside the tool
+ * result, because a `tool` message cannot carry an image part — the engine
+ * attaches the bytes to the turn and names them there.
+ */
+interface ExtractedBlock {
+  text: string;
+  image?: ImageBytes;
+}
+
+function imageBlock(data: string | undefined, mimeType: string | undefined): ExtractedBlock {
+  if (!data || !mimeType?.startsWith("image/")) {
+    return { text: "[image result omitted]" };
+  }
+  return { text: "[image]", image: { b64: data, mimeType } };
+}
+
+function extractBlock(block: unknown): ExtractedBlock {
   if (!block || typeof block !== "object") {
-    return "Invalid content";
+    return { text: "Invalid content" };
   }
   const b = block as {
     type?: string;
     text?: string;
+    data?: string;
+    mimeType?: string;
     resource?: { text?: string; blob?: string; mimeType?: string };
   };
   if (b.type === "text") {
-    return b.text || "No result";
+    return { text: b.text || "No result" };
   }
   if (b.type === "image") {
-    return "[image result omitted]";
+    return imageBlock(b.data, b.mimeType);
   }
   if (b.type === "resource" && b.resource) {
     if (b.resource.text != null) {
-      return b.resource.text || "No result";
+      return { text: b.resource.text || "No result" };
     }
     if (b.resource.blob != null) {
       const mime = b.resource.mimeType ?? "application/octet-stream";
       if (mime.startsWith("image/")) {
-        return "[image result omitted]";
+        return imageBlock(b.resource.blob, mime);
       }
       try {
-        return Buffer.from(b.resource.blob, "base64").toString("utf-8");
+        return { text: Buffer.from(b.resource.blob, "base64").toString("utf-8") };
       } catch {
-        return `Unsupported binary resource (mimeType: ${mime})`;
+        return { text: `Unsupported binary resource (mimeType: ${mime})` };
       }
     }
-    return "Invalid resource content: missing text and blob";
+    return { text: "Invalid resource content: missing text and blob" };
   }
-  return `Invalid content type: ${b.type}`;
+  return { text: `Invalid content type: ${b.type}` };
 }
 
 /** Mark a payload as a failure without stuttering when it already says so. */
@@ -382,8 +288,10 @@ function asErrorResult(output: string): string {
   return output.startsWith("Error:") ? output : `Error: the tool reported a failure. ${output}`;
 }
 
-function formatToolResult(content: unknown[]): string {
-  const data = content.map(extractBlock);
+function formatToolResult(content: unknown[]): McpToolResult {
+  const blocks = content.map(extractBlock);
+  const data = blocks.map((block) => block.text);
+  const images = blocks.flatMap((block) => (block.image ? [block.image] : []));
   const first = data[0];
   let output: string;
   if (data.length === 1 && first !== undefined) {
@@ -394,5 +302,5 @@ function formatToolResult(content: unknown[]): string {
   if (output.length > MAX_TOOL_RESULT_LENGTH) {
     output = `${output.slice(0, MAX_TOOL_RESULT_LENGTH)}...(truncated after 100KB)`;
   }
-  return output;
+  return images.length > 0 ? { text: output, images } : { text: output };
 }

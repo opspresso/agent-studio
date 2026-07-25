@@ -47,6 +47,8 @@ export const mcpBindingSchema: z.ZodType<McpBinding> = z.union([
   z.object({
     name: z.string().min(1),
     headers: z.record(z.string().min(1), z.string().nullable()).optional(),
+    /** Omitted or empty means "every tool this server offers". */
+    tools: z.array(z.string().min(1)).optional(),
   }),
 ]);
 

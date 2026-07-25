@@ -26,6 +26,13 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - A tool result that begins with `Error: ` means the call failed — the shared convention for
   every producer (engine builtins, the skill loader, `ToolManager`). The trace recorder reads
   that prefix; a new producer that invents its own wording records failures as successes.
+- An MCP tool may return **images** (`McpToolResult.images`). A `tool` message is text-only,
+  so the bytes ride on a follow-up **user** message appended after that turn's tool results —
+  the same route a transfer's answer takes — while the tool result text says so and names the
+  ids (only when an image tool or a transfer can act on them). Accepted only when the model
+  takes image input; otherwise the result says they were dropped, because sending parts a
+  text-only model rejects fails the whole turn. Capped per turn by `MAX_ATTACHMENTS`, and once
+  images are in context a fallback model that cannot read them is dropped.
 - Image handles: a per-run registry ids every usable image (`img_1`, `img_2`, …) — the
   inline `data:` images in the input messages, plus everything the run drew. `EditImage`
   and `transfer_to_agent`'s `image_ids` resolve an id to bytes, so the registry (not the dep)

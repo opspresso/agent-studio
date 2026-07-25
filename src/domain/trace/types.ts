@@ -29,6 +29,13 @@ export interface Trace {
   spans: TraceSpan[];
   /** Spans dropped after the per-trace cap; absent when nothing was dropped. */
   spansDropped?: number;
+  /**
+   * Bindings the run could not use (a deleted skill, an unreachable MCP server).
+   * The run still answered, so this is not an `error` — but the answer was
+   * produced with less than the version declares, which is what makes an
+   * otherwise puzzling trace readable.
+   */
+  warnings?: string[];
   startedAt: string;
   endedAt: string;
   durationMs: number;

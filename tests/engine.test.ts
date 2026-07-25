@@ -28,7 +28,7 @@ describe("runAgent tool loop", () => {
     const recorded: unknown[] = [];
     const callMcpTool = vi.fn(async (name: string) => {
       expect(name).toBe("getWeather");
-      return "sunny";
+      return { text: "sunny" };
     });
     const deps: AgentDeps = {
       channel,
@@ -108,7 +108,7 @@ describe("runAgent tool loop", () => {
       loadSkillContent: async () => "# never reached",
       callMcpTool: async (name) => {
         called.push(name);
-        return "mcp answered";
+        return { text: "mcp answered" };
       },
     };
     const input: RunAgentInput = {
@@ -139,7 +139,7 @@ describe("runAgent tool loop", () => {
       ],
       [contentChunk("It is sunny."), usageChunk(8, 4)],
     ]);
-    const callMcpTool = vi.fn(async () => "sunny");
+    const callMcpTool = vi.fn(async () => ({ text: "sunny" }));
     const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(
@@ -172,7 +172,7 @@ describe("runAgent tool loop", () => {
       ],
       [contentChunk("found"), usageChunk(2, 1)],
     ]);
-    const callMcpTool = vi.fn(async () => "results");
+    const callMcpTool = vi.fn(async () => ({ text: "results" }));
     const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
 
     const chunks = await collect(
@@ -201,7 +201,7 @@ describe("runAgent tool loop", () => {
       recordUsage: async (r) => {
         recorded.push(r);
       },
-      callMcpTool: async () => "ok",
+      callMcpTool: async () => ({ text: "ok" }),
     };
     const input: RunAgentInput = {
       projectName: "looper",

@@ -73,6 +73,14 @@ export interface EngineChunk {
     content: string;
   };
   usage?: UsageInfo;
+  /**
+   * The run goes on, but in a shape the user has to be told about — a skill or
+   * subagent whose registry entry is gone, an MCP server whose tools could not
+   * be reached. Without this such a run is indistinguishable from a model that
+   * simply chose not to call anything. Unlike {@link error} it never ends the
+   * stream, and it carries no answer text.
+   */
+  warning?: string;
   error?: string;
   done?: boolean;
 }
@@ -135,6 +143,17 @@ export function parseImageDataUrl(url: string): { b64: string; mimeType: string 
 /** True when a message body carries at least one image part. */
 export function hasImageParts(message: Pick<ChatMessageInput, "content">): boolean {
   return Array.isArray(message.content) && message.content.some((p) => p.type === "image_url");
+}
+
+/**
+ * What one MCP tool call produced: the text the model reads, plus any image
+ * blocks the server returned. Images travel separately because a `tool` message
+ * carries text only — the engine attaches them to the turn as image parts, the
+ * same way a subagent transfer hands a picture back.
+ */
+export interface McpToolResult {
+  text: string;
+  images?: Array<{ b64: string; mimeType: string }>;
 }
 
 /** Result of a single-shot (non-agent) run. */

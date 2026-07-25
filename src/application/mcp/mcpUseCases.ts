@@ -14,6 +14,7 @@ import {
 } from "@/infrastructure/crypto/secretEncryption";
 import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { listMcpTools, type ListToolsResult } from "@/infrastructure/mcp/mcpClient";
+import { invalidateMcpDiscovery } from "@/infrastructure/mcp/discoveryCache";
 
 export interface CreateMcpInput {
   name: string;
@@ -61,7 +62,7 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
       if (patch.url !== undefined) {
         await assertAllowedUrl(patch.url);
       }
-      return {
+      const updated = {
         ...existing,
         url: patch.url ?? existing.url,
         description: patch.description ?? existing.description,
@@ -72,6 +73,12 @@ export function createMcpUseCases(repo: McpRepository): McpUseCases {
             : existing.headers,
         updatedAt: now,
       };
+      // A new url or new credentials can mean a different tool list, so an
+      // operator fixing a server must not have to wait out the discovery TTL on
+      // the instance they are working against.
+      invalidateMcpDiscovery(existing.url);
+      invalidateMcpDiscovery(updated.url);
+      return updated;
     },
   });
 

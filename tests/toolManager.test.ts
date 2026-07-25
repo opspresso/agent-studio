@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
+import { listMcpTools } from "@/infrastructure/mcp/mcpClient";
+import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
@@ -36,11 +38,16 @@ interface ServerScript {
   listError?: { code: number; message: string };
   /** When set, tools/call reports the MCP spec's own failure flag. */
   callIsError?: boolean;
+  /** Hook fired as each request arrives, for tests that need to race one. */
+  onRequest?: (method: string) => void;
 }
 
 interface RecordedCall {
   url: string;
+  /** JSON-RPC method; absent on a bodyless request such as the session DELETE. */
   method: string;
+  /** HTTP verb, which is what distinguishes a session release from a request. */
+  httpMethod: string;
   params?: Record<string, unknown>;
   hasSignal: boolean;
 }
@@ -78,9 +85,11 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     calls.push({
       url,
       method: body.method,
+      httpMethod: init?.method ?? "GET",
       params: body.params,
       hasSignal: init?.signal instanceof AbortSignal,
     });
+    script.onRequest?.(body.method);
 
     if (body.method === "notifications/initialized") {
       return new Response("", { status: 202 });
@@ -118,6 +127,12 @@ function textBlock(text: string): { type: "text"; text: string } {
   return { type: "text", text };
 }
 
+beforeEach(() => {
+  // Discovery is cached process-wide, so one test's tool list would otherwise
+  // answer the next test's init and swallow its requests.
+  clearMcpDiscoveryCache();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -141,9 +156,9 @@ describe("ToolManager tool-name collision aliasing", () => {
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "search_1", "search_2"]);
     // The reverse mapping must dispatch each alias to the server that owns it.
-    expect(await manager.callTool("search", {})).toBe("from server A");
-    expect(await manager.callTool("search_1", {})).toBe("from server B");
-    expect(await manager.callTool("search_2", {})).toBe("from server C");
+    expect((await manager.callTool("search", {})).text).toBe("from server A");
+    expect((await manager.callTool("search_1", {})).text).toBe("from server B");
+    expect((await manager.callTool("search_2", {})).text).toBe("from server C");
   });
 
   it("returns a not-found message for an unknown alias", async () => {
@@ -156,8 +171,8 @@ describe("ToolManager tool-name collision aliasing", () => {
     // Failures use the same `Error: ` prefix as every other tool-result producer;
     // the trace recorder reads that prefix to mark the span failed.
     const result = await manager.callTool("does_not_exist", {});
-    expect(result.startsWith("Error:")).toBe(true);
-    expect(result).toContain("does_not_exist");
+    expect(result.text.startsWith("Error:")).toBe(true);
+    expect(result.text).toContain("does_not_exist");
   });
 });
 
@@ -202,7 +217,7 @@ describe("ToolManager response parsing", () => {
     await manager.init();
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["ping"]);
-    expect(await manager.callTool("ping", {})).toBe("pong");
+    expect((await manager.callTool("ping", {})).text).toBe("pong");
   });
 
   it("parses text/event-stream (SSE) JSON-RPC envelopes", async () => {
@@ -218,7 +233,7 @@ describe("ToolManager response parsing", () => {
     await manager.init();
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["ping"]);
-    expect(await manager.callTool("ping", {})).toBe("pong-sse");
+    expect((await manager.callTool("ping", {})).text).toBe("pong-sse");
   });
 });
 
@@ -235,8 +250,8 @@ describe("ToolManager result truncation", () => {
     await manager.init();
 
     const result = await manager.callTool("dump", {});
-    expect(result.endsWith(suffix)).toBe(true);
-    expect(result.length).toBe(100_000 + suffix.length);
+    expect(result.text.endsWith(suffix)).toBe(true);
+    expect(result.text.length).toBe(100_000 + suffix.length);
   });
 
   it("marks a result the server flagged as isError", async () => {
@@ -253,8 +268,8 @@ describe("ToolManager result truncation", () => {
     await manager.init();
 
     const result = await manager.callTool("lookup", {});
-    expect(result.startsWith("Error:")).toBe(true);
-    expect(result).toContain("no such record");
+    expect(result.text.startsWith("Error:")).toBe(true);
+    expect(result.text).toContain("no such record");
   });
 
   it("does not stutter when the flagged payload already reads as an error", async () => {
@@ -268,7 +283,7 @@ describe("ToolManager result truncation", () => {
     const manager = new ToolManager([server("bad2", "https://bad2.test/mcp")]);
     await manager.init();
 
-    expect(await manager.callTool("lookup", {})).toBe("Error: upstream refused");
+    expect((await manager.callTool("lookup", {})).text).toBe("Error: upstream refused");
   });
 
   it("returns a short result untouched", async () => {
@@ -281,7 +296,7 @@ describe("ToolManager result truncation", () => {
     const manager = new ToolManager([server("small", "https://small.test/mcp")]);
     await manager.init();
 
-    expect(await manager.callTool("echo", {})).toBe("hello");
+    expect((await manager.callTool("echo", {})).text).toBe("hello");
   });
 });
 
@@ -299,7 +314,7 @@ describe("ToolManager per-server error isolation", () => {
     await manager.init();
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
-    expect(await manager.callTool("weather", {})).toBe("sunny");
+    expect((await manager.callTool("weather", {})).text).toBe("sunny");
   });
 
   it("keeps a healthy server's tools when another server's tools/list returns an error", async () => {
@@ -315,6 +330,237 @@ describe("ToolManager per-server error isolation", () => {
     await manager.init();
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
+  });
+});
+
+describe("ToolManager per-binding tool allowlist", () => {
+  it("offers only the selected tools, keeping alias allocation deterministic", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "search" }, { name: "write" }, { name: "delete" }],
+        callContent: [textBlock("ok")],
+      },
+      "https://b.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
+    });
+    const manager = new ToolManager([
+      { name: "a", url: "https://a.test/mcp", headers: {}, tools: ["search", "write"] },
+      server("b", "https://b.test/mcp"),
+    ]);
+
+    await manager.init();
+
+    // "delete" is never offered, and b's clash still aliases off a's "search".
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write", "search_1"]);
+    expect(manager.toolNamesByServer.get("a")).toEqual(["search", "write"]);
+  });
+
+  it("treats an empty selection as every tool", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }, { name: "write" }] },
+    });
+    const manager = new ToolManager([
+      { name: "a", url: "https://a.test/mcp", headers: {}, tools: [] },
+    ]);
+
+    await manager.init();
+
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
+  });
+
+  it("reports a selected tool the server no longer exposes", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }] },
+    });
+    const manager = new ToolManager([
+      { name: "a", url: "https://a.test/mcp", headers: {}, tools: ["search", "renamed-away"] },
+    ]);
+
+    await manager.init();
+
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["search"]);
+    expect(manager.warnings[0]).toContain("renamed-away");
+  });
+});
+
+describe("ToolManager image results", () => {
+  const PIXEL = "iVBORw0KGgo=";
+
+  it("returns an image block's bytes instead of dropping the picture", async () => {
+    // A screenshot or chart tool used to come back as "[image result omitted]",
+    // which made those servers unusable even though the engine handles images.
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "screenshot" }],
+        callContent: [{ type: "image", data: PIXEL, mimeType: "image/png" }],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("screenshot", {});
+
+    expect(result.images).toEqual([{ b64: PIXEL, mimeType: "image/png" }]);
+    expect(result.text).toBe("[image]");
+  });
+
+  it("reads an image carried as a resource blob", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "chart" }],
+        callContent: [
+          textBlock("here is the chart"),
+          { type: "resource", resource: { blob: PIXEL, mimeType: "image/png" } },
+        ],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("chart", {});
+
+    expect(result.images).toEqual([{ b64: PIXEL, mimeType: "image/png" }]);
+    expect(result.text).toContain("here is the chart");
+  });
+
+  it("omits an image block that carries no usable bytes", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "broken" }],
+        callContent: [{ type: "image", mimeType: "image/png" }],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("broken", {});
+
+    expect(result.images).toBeUndefined();
+    expect(result.text).toBe("[image result omitted]");
+  });
+
+  it("drops images from a call the server flagged as failed", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "screenshot" }],
+        callContent: [{ type: "image", data: PIXEL, mimeType: "image/png" }],
+        callIsError: true,
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("screenshot", {});
+
+    // The text is the diagnosis; attaching a picture to a failure only spends context.
+    expect(result.images).toBeUndefined();
+    expect(result.text.startsWith("Error:")).toBe(true);
+  });
+});
+
+describe("ToolManager session release", () => {
+  const deletesTo = (calls: RecordedCall[], url: string) =>
+    calls.filter((call) => call.url === url && call.httpMethod === "DELETE");
+
+  it("releases a session whose discovery failed after it had been established", async () => {
+    const calls = stubMcpFetch({
+      "https://rpcfail.test/mcp": {
+        sessionId: "sess-1",
+        listError: { code: -32000, message: "boom" },
+      },
+    });
+    const manager = new ToolManager([server("rpcfail", "https://rpcfail.test/mcp")]);
+
+    await manager.init();
+    await manager.close();
+
+    // The server handed out a session before it refused tools/list; leaving it
+    // open would strand one per run against a half-broken server.
+    expect(deletesTo(calls, "https://rpcfail.test/mcp")).toHaveLength(1);
+    expect(manager.warnings).toHaveLength(1);
+    expect(manager.warnings[0]).toContain("rpcfail");
+  });
+
+  it("releases sessions opened before the run was cancelled mid-discovery", async () => {
+    const controller = new AbortController();
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": {
+        sessionId: "sess-a",
+        listTools: [{ name: "search" }],
+        // The caller gives up while discovery is in flight — after the session
+        // exists, which is exactly when abandoning it would leak.
+        onRequest: (method) => {
+          if (method === "initialize") {
+            controller.abort();
+          }
+        },
+      },
+    });
+    const manager = new ToolManager(
+      [server("a", "https://a.test/mcp")],
+      undefined,
+      controller.signal,
+    );
+
+    await expect(manager.init()).rejects.toThrow();
+    await manager.close();
+
+    expect(deletesTo(calls, "https://a.test/mcp")).toHaveLength(1);
+  });
+
+  it("is idempotent: a second close sends nothing", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { sessionId: "sess-a", listTools: [{ name: "search" }] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+
+    await manager.init();
+    await manager.close();
+    await manager.close();
+
+    expect(deletesTo(calls, "https://a.test/mcp")).toHaveLength(1);
+  });
+});
+
+describe("listMcpTools (registry probe)", () => {
+  it("returns the server's tools and always releases the session", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": {
+        sessionId: "sess-a",
+        listTools: [{ name: "search", description: "Search things" }],
+      },
+    });
+
+    const result = await listMcpTools("https://a.test/mcp", {});
+
+    expect(result).toEqual({ ok: true, tools: [{ name: "search", description: "Search things" }] });
+    // A probe that left the session open would strand one per button press.
+    expect(calls.filter((c) => c.httpMethod === "DELETE")).toHaveLength(1);
+  });
+
+  it("reports a JSON-RPC failure without throwing, and still releases the session", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { sessionId: "sess-a", listError: { code: -32000, message: "boom" } },
+    });
+
+    const result = await listMcpTools("https://a.test/mcp", {});
+
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ error: expect.stringContaining("boom") });
+    expect(calls.filter((c) => c.httpMethod === "DELETE")).toHaveLength(1);
+  });
+
+  it("speaks the same handshake a run does", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }] },
+    });
+
+    await listMcpTools("https://a.test/mcp", {});
+
+    expect(calls.map((c) => c.method)).toEqual([
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+    ]);
   });
 });
 
@@ -354,7 +600,7 @@ describe("ToolManager request timeout", () => {
     await manager.init();
 
     const result = await manager.callTool("slow", {});
-    expect(result).toBe("Error: tool call failed. The operation was aborted due to timeout");
+    expect(result.text).toBe("Error: tool call failed. The operation was aborted due to timeout");
   });
 });
 

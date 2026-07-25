@@ -216,8 +216,10 @@ Two deliberate strategies coexist:
   (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema,
   imageGeneration?/imageModel?), mcpList: McpBinding[], skillList: string[],
   subagentList: {name, type:'local'|'remote'}[], maxTurn?, createdAt }`
-- `McpBinding { name, headers?: Record<string, string | null> }` — binds the version to a
-  registry MCP server. The URL is always the registry's; `headers` layers over the server's
+- `McpBinding { name, headers?: Record<string, string | null>, tools?: string[] }` — binds the
+  version to a registry MCP server. `tools` narrows which of that server's tools the run
+  offers (absent/empty = all of them); a run declares at most 120 MCP tools in total and
+  reports what it had to leave out. The URL is always the registry's; `headers` layers over the server's
   own headers at dispatch (string = replace/add, `null` = remove a default, matched
   case-insensitively), so one registry server serves many projects under different
   credentials. Override values carry the same AES-encrypt/mask lifecycle as registry
@@ -338,12 +340,25 @@ Two deliberate strategies coexist:
   oldest-first) so repeated tool calls reuse connections — transport only; the guard still
   runs per request, so a host that starts resolving privately is rejected before a pooled
   dispatcher is reached.
-- Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). Tool name
+- Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The protocol has
+  one owner, `McpSession` (`src/infrastructure/mcp/session.ts`) — both the engine's
+  `ToolManager` and the registry's "Test connection" probe run on it. Tool name
   collisions get `_1/_2` suffix aliases with reverse mapping. Tool results capped at
   100,000 chars. Servers are contacted in parallel at init (one unreachable server would
   otherwise add its full 120s timeout to time-to-first-token) while alias allocation stays
-  in configured order so names are deterministic; sessions are released with a `DELETE`
-  when the run ends (`ToolManager.close()`, called from the execution facade's `finally`).
+  in configured order so names are deterministic; sessions are registered before their first
+  request and released with a `DELETE` when the run ends (`ToolManager.close()`, called from
+  the execution facade's `finally` — including when discovery itself failed or was cancelled).
+- Discovery is cached per `url + headers` (`discoveryCache.ts`, `MCP_DISCOVERY_CACHE_TTL_MS`,
+  default 60s, invalidated when the registry entry is edited). On a hit the session is left
+  uninitialized and handshakes lazily on its first tool call, so a turn that calls no tool
+  makes **no** MCP request at all — a chat used to pay the full handshake per message per
+  server. Failures are never cached; headers are part of the key so one tenant's tool list
+  never answers another's.
+- A tool's **image** results (`image` blocks, and `resource` blobs with an image mime type)
+  come back as bytes rather than being dropped. The engine registers them, streams them to
+  the user, and attaches them to the turn as a follow-up user message — only when the model
+  accepts image input, since a text-only model would reject the parts and fail the turn.
 - Agent runs append a "Connected MCP Servers" table (server name, description, aliased
   tool names) to the system prompt so the model knows which server a tool group belongs
   to; servers that are unreachable or expose no tools are omitted.

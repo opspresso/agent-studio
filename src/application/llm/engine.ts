@@ -25,14 +25,16 @@ import {
   calculateCost,
   describeImageInputReject,
 } from "@/domain/llm/models";
-import { hasImageParts, parseImageDataUrl } from "@/domain/llm/types";
+import { hasImageParts, imageDataUrl, parseImageDataUrl } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
   EngineParameters,
+  McpToolResult,
   RunResult,
   UsageInfo,
 } from "@/domain/llm/types";
+import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
 import { PiiFilter } from "./pii";
 import { renderTemplate } from "./template";
@@ -141,7 +143,7 @@ export interface EngineDeps {
 
 export interface AgentDeps extends EngineDeps {
   /** Dispatch an MCP tool by its (aliased) name. */
-  callMcpTool?: (name: string, args: Record<string, unknown>) => Promise<string>;
+  callMcpTool?: (name: string, args: Record<string, unknown>) => Promise<McpToolResult>;
   /** Load full skill content for progressive disclosure. */
   loadSkillContent?: (skillName: string, filePath?: string) => Promise<string>;
   /**
@@ -1043,8 +1045,10 @@ export async function* runAgent(
   input: RunAgentInput,
 ): AsyncGenerator<EngineChunk> {
   const withImages = assertImageInputAllowed(input.model, input.messages);
-  const fallbackModel = imageEligibleFallback(input.fallbackModel, withImages);
+  let fallbackModel = imageEligibleFallback(input.fallbackModel, withImages);
   const maxTurn = input.maxTurn ?? DEFAULT_MAX_TURN;
+  // Whether a picture an MCP tool returns can enter this run's context at all.
+  const imageInputReject = describeImageInputReject(input.model);
   const skills = input.skills ?? [];
   const subagents = input.subagents ?? [];
   const hasSubagents = subagents.length > 0;
@@ -1090,6 +1094,9 @@ export async function* runAgent(
   );
 
   let turn = input.startTurn ?? 0;
+  // One turn's worth of pictures an MCP tool may add to the context, sharing the
+  // cap a user turn gets — they cost the same and arrive the same way.
+  let imageBudget = MAX_ATTACHMENTS;
   while (true) {
     if (turn >= maxTurn) {
       return; // turn guard
@@ -1178,6 +1185,8 @@ export async function* runAgent(
     const wireToolCalls: ChannelToolCall[] = [];
     const toolMessages: ChannelMessage[] = [];
     const postContextMessages: ChannelMessage[] = [];
+    /** Pictures MCP tools returned this turn, attached after the tool results. */
+    const attachedImages: Array<{ b64: string; mimeType: string }> = [];
     let nextTurn = turn + 1;
 
     // Announce every call before any of them runs: the client sees the whole
@@ -1204,7 +1213,7 @@ export async function* runAgent(
     // other in-flight calls' rejections unhandled; each is rethrown in order.
     const mcpDispatch = deps.callMcpTool;
     const mcpCalls = mcpDispatch ? prepared.filter((entry) => !entry.builtin) : [];
-    const mcpSettled = new Map<string, { ok: string } | { err: unknown }>();
+    const mcpSettled = new Map<string, { ok: McpToolResult } | { err: unknown }>();
     if (mcpDispatch && mcpCalls.length > 0) {
       const settled = await mapWithLimit(mcpCalls, MAX_PARALLEL_TOOL_CALLS, async (entry) => {
         try {
@@ -1384,7 +1393,35 @@ export async function* runAgent(
           throw settled.err;
         } else {
           input.signal?.throwIfAborted();
-          content = settled.ok;
+          content = settled.ok.text;
+          const produced = settled.ok.images ?? [];
+          if (produced.length > 0 && imageInputReject) {
+            // Sending parts this model rejects would fail the whole turn, so the
+            // model is told the pictures existed instead of silently losing them.
+            content += `\n\n(${produced.length} image(s) from this tool were dropped: ${imageInputReject})`;
+          } else if (produced.length > 0) {
+            const accepted = produced.slice(0, imageBudget);
+            imageBudget -= accepted.length;
+            const ids: string[] = [];
+            for (const image of accepted) {
+              // An id is only worth handing over when something can act on it.
+              const handle = canEdit || canTransfer ? images.add(image, `returned by ${call.name}`) : undefined;
+              if (handle) {
+                ids.push(handle.id);
+              }
+              attachedImages.push(image);
+              yield { author, image: { ...image, prompt: `Returned by ${call.name}` } };
+            }
+            // A tool message carries text only, so the bytes ride on the
+            // follow-up user message appended after this turn's tool results.
+            content += `\n\n${accepted.length} image(s) returned by this tool are attached to the next message${
+              ids.length > 0 ? ` (image id${ids.length > 1 ? "s" : ""}: ${ids.join(", ")})` : ""
+            }.`;
+            const dropped = produced.length - accepted.length;
+            if (dropped > 0) {
+              content += ` ${dropped} more were dropped: at most ${MAX_ATTACHMENTS} images per turn.`;
+            }
+          }
         }
       }
       content = spendResultBudget(content);
@@ -1398,6 +1435,24 @@ export async function* runAgent(
         },
       };
       toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedContent });
+    }
+
+    if (attachedImages.length > 0) {
+      // A tool message is text-only, so the bytes enter as a user turn — the
+      // same route a transfer's "For context" answer takes.
+      postContextMessages.push({
+        role: "user",
+        content: [
+          { type: "text", text: "Images returned by the tool calls above:" },
+          ...attachedImages.map((image) => ({
+            type: "image_url" as const,
+            image_url: { url: imageDataUrl(image) },
+          })),
+        ],
+      });
+      // The context now carries images, so a fallback that cannot read them
+      // would turn a retryable failure into a hard one.
+      fallbackModel = imageEligibleFallback(fallbackModel, true);
     }
 
     const assistantMessage: ChannelMessage = {

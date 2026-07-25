@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { McpBinding, SubagentRef } from "../../lib/api";
+import { testMcpConnection } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
 
 const inputClass =
@@ -188,6 +189,98 @@ export function SearchSelectInput({
  * version only. Values are stored encrypted, so existing ones arrive masked —
  * leaving a masked value keeps the stored secret.
  */
+/**
+ * Pick which of a server's tools this version offers. The list is fetched from
+ * the server itself (the same probe the registry's "Test connection" uses), so
+ * the choices are what the model would actually be given. No selection means
+ * every tool, which is what a binding meant before it could be narrowed.
+ */
+function ToolSelector({
+  selected,
+  onChange,
+  load,
+}: {
+  selected: string[] | undefined;
+  onChange: (tools: string[]) => void;
+  load: () => Promise<Array<{ name: string; description: string }>>;
+}) {
+  const [tools, setTools] = useState<Array<{ name: string; description: string }> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    load().then(
+      (fetched) => {
+        if (!cancelled) {
+          setTools(fetched);
+        }
+      },
+      (reason: unknown) => {
+        if (!cancelled) {
+          setError(reason instanceof Error ? reason.message : "Could not reach this server");
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // The loader closes over a stable binding name; refetching per render would
+    // hammer the MCP server on every keystroke elsewhere in the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (error) {
+    return (
+      <p className="px-2 pb-2 text-neutral-500">
+        {error} — leaving this unset offers every tool the server exposes.
+      </p>
+    );
+  }
+  if (!tools) {
+    return <p className="px-2 pb-2 text-neutral-500">Loading tools…</p>;
+  }
+  if (tools.length === 0) {
+    return <p className="px-2 pb-2 text-neutral-500">This server exposes no tools.</p>;
+  }
+
+  const chosen = selected ?? [];
+  // A stored name the server no longer exposes stays listed so it can be cleared.
+  const missing = chosen.filter((name) => !tools.some((tool) => tool.name === name));
+  return (
+    <div className="space-y-1 px-2 pb-2">
+      <p className="text-neutral-500">
+        {chosen.length === 0
+          ? "Every tool is offered. Select some to narrow what the model sees."
+          : `${chosen.length} of ${tools.length} tools offered.`}
+      </p>
+      {[...tools, ...missing.map((name) => ({ name, description: "no longer exposed" }))].map(
+        (tool) => (
+          <label key={tool.name} className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={chosen.includes(tool.name)}
+              onChange={(e) =>
+                onChange(
+                  e.target.checked
+                    ? [...chosen, tool.name]
+                    : chosen.filter((name) => name !== tool.name),
+                )
+              }
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-mono">{tool.name}</span>
+              {tool.description && (
+                <span className="ml-1 text-neutral-400">{tool.description}</span>
+              )}
+            </span>
+          </label>
+        ),
+      )}
+    </div>
+  );
+}
+
 function OverrideEditor({
   rows,
   onChange,
@@ -277,6 +370,7 @@ export function McpBindingInput({
    * its rows in the form and only projects them on submit.
    */
   const [rowsByName, setRowsByName] = useState<Record<string, OverrideRow[]>>({});
+  const [toolsOpen, setToolsOpen] = useState<string[]>([]);
 
   const available = options.filter(
     (o) => !values.some((v) => v.name === o.value) && matches(o, draft),
@@ -293,6 +387,28 @@ export function McpBindingInput({
     onChange(values.filter((v) => v.name !== name));
     setRowsByName(({ [name]: _dropped, ...rest }) => rest);
     setExpanded((prev) => prev.filter((n) => n !== name));
+    setToolsOpen((prev) => prev.filter((n) => n !== name));
+  }
+
+  function toggle(
+    set: (update: (prev: string[]) => string[]) => void,
+    current: string[],
+    name: string,
+  ) {
+    set(() => (current.includes(name) ? current.filter((n) => n !== name) : [...current, name]));
+  }
+
+  /** An empty selection is stored as "all tools", the shape a binding had before. */
+  function setTools(name: string, tools: string[]) {
+    onChange(
+      values.map((binding) => {
+        if (binding.name !== name) {
+          return binding;
+        }
+        const { tools: _previous, ...rest } = binding;
+        return tools.length > 0 ? { ...rest, tools } : rest;
+      }),
+    );
   }
 
   function rowsFor(binding: McpBinding): OverrideRow[] {
@@ -331,17 +447,21 @@ export function McpBindingInput({
                       ({count} header override{count === 1 ? "" : "s"})
                     </span>
                   )}
+                  <span className="ml-1 text-neutral-400">
+                    ({binding.tools?.length ? `${binding.tools.length} tools` : "all tools"})
+                  </span>
                 </span>
                 <span className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() =>
-                      setExpanded(
-                        isOpen
-                          ? expanded.filter((n) => n !== binding.name)
-                          : [...expanded, binding.name],
-                      )
-                    }
+                    onClick={() => toggle(setToolsOpen, toolsOpen, binding.name)}
+                    className="text-neutral-500 hover:text-brand"
+                  >
+                    {toolsOpen.includes(binding.name) ? "Hide tools" : "Tools"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggle(setExpanded, expanded, binding.name)}
                     className="text-neutral-500 hover:text-brand"
                   >
                     {isOpen ? "Hide headers" : "Headers"}
@@ -356,6 +476,13 @@ export function McpBindingInput({
                   </button>
                 </span>
               </div>
+              {toolsOpen.includes(binding.name) && (
+                <ToolSelector
+                  selected={binding.tools}
+                  onChange={(tools) => setTools(binding.name, tools)}
+                  load={() => testMcpConnection(binding.name)}
+                />
+              )}
               {isOpen && (
                 <OverrideEditor
                   rows={rowsFor(binding)}
