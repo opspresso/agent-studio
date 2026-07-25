@@ -47,8 +47,17 @@ export interface ChatMessageInput {
 export interface EngineChunk {
   /** Internal correlation id for a traced subagent execution. */
   traceId?: string;
-  /** Subagent that authored this chunk; top-level chunks carry no author. */
+  /**
+   * Subagent that authored this chunk — the *innermost* one, so a nested
+   * transfer reports who actually ran. Top-level chunks carry no author.
+   */
   author?: string;
+  /**
+   * The transfer chain that produced this chunk, outermost first
+   * (`["sample-agent", "simple-image"]`). Absent on top-level chunks; its last
+   * element is always {@link author}.
+   */
+  authorPath?: string[];
   delta?: {
     content?: string;
     reasoningContent?: string;

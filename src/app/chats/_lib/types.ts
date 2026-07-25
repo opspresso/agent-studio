@@ -9,6 +9,8 @@ export interface StreamChunk {
   toolResult?: unknown;
   image?: { b64: string; mimeType: string; prompt?: string };
   author?: string;
+  /** Transfer chain that produced the chunk, outermost first. */
+  authorPath?: string[];
   error?: string;
 }
 
@@ -34,7 +36,12 @@ export interface LiveTurn {
   toolCalls: LiveToolCall[];
   tools: LiveToolResult[];
   images: LiveImage[];
-  author?: string;
+  /**
+   * The chain currently producing chunks, outermost first — cleared when the
+   * top-level agent takes over again, so the badge never claims a subagent is
+   * still running after it returned.
+   */
+  authorPath?: string[];
 }
 
 export interface AgentProject {

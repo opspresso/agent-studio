@@ -534,6 +534,114 @@ describe("executeAgent image transfer to a subagent", () => {
   });
 });
 
+describe("executeAgent nested transfer identity", () => {
+  /** bruce-bot -> sample-agent -> simple-image, the shape the console exercises. */
+  function chainDeps(channel: FakeChannel) {
+    const fixture = executionDepsFixture(channel);
+    const projects: Record<string, Project> = {
+      "bruce-bot": { ...projectFixture(), name: "bruce-bot" },
+      "sample-agent": { ...projectFixture(), name: "sample-agent" },
+      "simple-image": {
+        ...projectFixture(),
+        name: "simple-image",
+        projectType: "image",
+        publishedVersion: "1",
+      },
+    };
+    const versions: Record<string, Version> = {
+      "bruce-bot": {
+        ...versionFixture({ piiFiltering: false }),
+        projectName: "bruce-bot",
+        model: "google/gemini-2.5-flash",
+        subagentList: [{ name: "sample-agent", type: "local" }],
+      },
+      "sample-agent": {
+        ...versionFixture({ piiFiltering: false }),
+        projectName: "sample-agent",
+        model: "google/gemini-2.5-flash",
+        subagentList: [{ name: "simple-image", type: "local" }],
+      },
+      "simple-image": {
+        ...versionFixture({ piiFiltering: false }),
+        projectName: "simple-image",
+        model: DEFAULT_IMAGE_MODEL ?? "openai/gpt-image-2",
+      },
+    };
+    const traces: Trace[] = [];
+    const deps = {
+      ...fixture.deps,
+      projects: { get: async (name: string) => projects[name] ?? null },
+      versions: { get: async (project: string) => versions[project] ?? null, list: async () => [] },
+      traces: { put: async (trace: Trace) => void traces.push(trace) },
+      traceSampleRate: 1,
+    } as unknown as ExecutionDeps;
+    return { deps, traces, top: projects["bruce-bot"] as Project, version: versions["bruce-bot"] as Version };
+  }
+
+  const chainScript = [
+    // bruce-bot hands off…
+    [
+      toolCallChunk(0, "t1", "transfer_to_agent", '{"agent_name":"sample-agent","message":"draw"}'),
+      usageChunk(1, 1),
+    ],
+    // …sample-agent hands off again…
+    [
+      toolCallChunk(0, "t2", "transfer_to_agent", '{"agent_name":"simple-image","message":"a fox"}'),
+      usageChunk(2, 2),
+    ],
+    // …sample-agent wraps up, then bruce-bot answers.
+    [contentChunk("passing it up"), usageChunk(3, 3)],
+    [contentChunk("here is your fox"), usageChunk(4, 4)],
+  ];
+
+  it("reports the innermost agent and the full chain, not the first hop", async () => {
+    const channel = new FakeChannel(chainScript);
+    const { deps, top, version } = chainDeps(channel);
+
+    const chunks = await collect(executeAgent(deps, { project: top, version, messages: [{ role: "user", content: "draw a fox" }] }));
+
+    // The image came from two levels down; before this it surfaced as "sample-agent".
+    const imageChunk = chunks.find((c) => c.image);
+    expect(imageChunk?.author).toBe("simple-image");
+    expect(imageChunk?.authorPath).toEqual(["sample-agent", "simple-image"]);
+    // The middle hop still reports itself for its own output.
+    const middle = chunks.find((c) => c.author === "sample-agent" && c.delta?.content);
+    expect(middle?.authorPath).toEqual(["sample-agent"]);
+    // Top-level answer stays unauthored, so the visible answer is unchanged.
+    const answer = chunks.filter((c) => c.author === undefined && c.delta?.content);
+    expect(answer.map((c) => c.delta?.content).join("")).toBe("here is your fox");
+  });
+
+  it("records the chain on every trace in the tree", async () => {
+    const channel = new FakeChannel(chainScript);
+    const { deps, traces, top, version } = chainDeps(channel);
+
+    await collect(executeAgent(deps, { project: top, version, messages: [{ role: "user", content: "draw a fox" }] }));
+
+    const byProject = new Map(traces.map((trace) => [trace.projectName, trace]));
+    expect(byProject.get("bruce-bot")?.ancestry).toBeUndefined(); // the root has no caller
+    expect(byProject.get("sample-agent")?.ancestry).toEqual(["bruce-bot", "sample-agent"]);
+    expect(byProject.get("simple-image")?.ancestry).toEqual([
+      "bruce-bot",
+      "sample-agent",
+      "simple-image",
+    ]);
+
+    // Each level links one step down, and names the chain it saw.
+    const rootSubagent = byProject
+      .get("bruce-bot")
+      ?.spans.find((span) => span.kind === "subagent");
+    // One span per transfer this run made, with how deep it went recorded on it.
+    expect(rootSubagent?.name).toBe("sample-agent");
+    expect(rootSubagent?.output?.chain).toBe("sample-agent → simple-image");
+    expect(rootSubagent?.output?.subagentTraceId).toBe(byProject.get("sample-agent")?.traceId);
+    const midSubagent = byProject
+      .get("sample-agent")
+      ?.spans.find((span) => span.kind === "subagent");
+    expect(midSubagent?.output?.subagentTraceId).toBe(byProject.get("simple-image")?.traceId);
+  });
+});
+
 describe("executeAgent PII filtering", () => {
   it("passes the version toggle to the engine", async () => {
     const channel = new FakeChannel([[contentChunk("Contact the masked value."), usageChunk(1, 1)]]);
@@ -693,9 +801,10 @@ describe("executeAgent subagent recursion guards", () => {
 
     const loopError = chunks.find((c) => c.error?.includes("would loop"));
     expect(loopError).toBeDefined();
-    // Re-authored by the child's runner on the way out — the refusal surfaces
-    // as the child speaking, and names the chain that would have looped.
-    expect(loopError?.author).toBe("child");
+    // The refusal names the transfer that was refused, and its path shows the hop
+    // it came through — the middle hop no longer overwrites the author.
+    expect(loopError?.author).toBe("painter");
+    expect(loopError?.authorPath).toEqual(["child", "painter"]);
     expect(loopError?.error).toContain("painter -> child");
     // The run still completes normally instead of being torn down.
     expect(chunks.some((c) => c.done)).toBe(true);

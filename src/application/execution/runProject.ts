@@ -218,7 +218,9 @@ export async function* executeAgent(
   // flush once (per project/date/model) when the run ends, even on error.
   const usage = createUsageAggregator(deps.usage);
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length)
+    ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, [
+        input.project.name,
+      ])
     : undefined;
   let thrown: unknown;
   let completed = false;
@@ -296,6 +298,8 @@ function createTraceRecorder(
   project: Project,
   version: Version,
   messageCount: number,
+  /** Transfer chain that reached this run, outermost first. */
+  ancestry?: readonly string[],
 ): TraceRecorder {
   return new TraceRecorder(traces, {
     projectName: project.name,
@@ -303,6 +307,7 @@ function createTraceRecorder(
     projectType: project.projectType,
     model: version.model,
     messageCount,
+    ...(ancestry ? { ancestry: [...ancestry] } : {}),
   });
 }
 
@@ -602,7 +607,13 @@ function buildSubagentRunner(
   signal?: AbortSignal,
 ): NonNullable<engine.AgentDeps["runSubagent"]> {
   const refByName = new Map((subagentList ?? []).map((ref) => [ref.name, ref]));
-  return async function* runSubagent(agentName, message, turn, maxTurn, images) {
+  async function* dispatch(
+    agentName: string,
+    message: string,
+    turn: number,
+    maxTurn: number,
+    images?: ImageBytes[],
+  ): AsyncGenerator<EngineChunk, string> {
     signal?.throwIfAborted();
     const ref = refByName.get(agentName);
     if (!ref) {
@@ -649,7 +660,38 @@ function buildSubagentRunner(
       signal,
       images,
     );
-  };
+  }
+
+  return (agentName, message, turn, maxTurn, images) =>
+    authored(agentName, dispatch(agentName, message, turn, maxTurn, images));
+}
+
+/**
+ * Stamp the chunks flowing out of one transfer with who produced them.
+ *
+ * `author` keeps the *innermost* agent — a chunk from `simple-image` two levels
+ * down must not surface as its middle hop — and `authorPath` accumulates the
+ * chain so a consumer can render `sample-agent → simple-image`. `traceId` is
+ * deliberately NOT touched here: each level stamps its own trace id on the way
+ * out (see runLocalSubagent) because a parent's trace links to the run one level
+ * down, not to the deepest one.
+ */
+async function* authored(
+  agentName: string,
+  source: AsyncGenerator<EngineChunk, string>,
+): AsyncGenerator<EngineChunk, string> {
+  while (true) {
+    const step = await source.next();
+    if (step.done) {
+      return step.value;
+    }
+    const chunk = step.value;
+    yield {
+      ...chunk,
+      author: chunk.author ?? agentName,
+      authorPath: [agentName, ...(chunk.authorPath ?? [])],
+    };
+  }
 }
 
 /**
@@ -663,12 +705,13 @@ async function* runImageSubagent(
   version: Version,
   message: string,
   recordUsageFn: engine.RecordUsageFn,
+  ancestry: readonly string[],
   signal?: AbortSignal,
   images?: ImageBytes[],
 ): AsyncGenerator<EngineChunk, string> {
   const model = version.model;
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, project, version, 1)
+    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
     : undefined;
   if (!getModelConfig(model)?.capabilities.imageGeneration) {
     yield {
@@ -758,6 +801,7 @@ async function* runLocalSubagent(
       version,
       message,
       recordUsageFn,
+      ancestry,
       signal,
       images,
     );
@@ -771,7 +815,7 @@ async function* runLocalSubagent(
   ]);
   childDeps.callMcpTool = mcp.callMcpTool;
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, project, version, 1)
+    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
     : undefined;
 
   let text = "";
@@ -797,10 +841,10 @@ async function* runLocalSubagent(
       if (chunk.delta?.content) {
         text += chunk.delta.content;
       }
-      // Re-author child chunks with the subagent's name for the preview UI.
+      // Stamp this level's trace id so the parent's trace links to *this* run;
+      // the author stays whatever produced the chunk (see `authored`).
       yield {
         ...chunk,
-        author: agentName,
         ...(recorder ? { traceId: recorder.traceId } : {}),
       };
     }

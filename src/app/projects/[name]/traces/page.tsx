@@ -4,7 +4,27 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { defaultDateRange } from "@/app/_lib/dateRange";
+import Link from "next/link";
 import { listTraces, type Trace } from "../../lib/api";
+
+/** The nested trace a subagent span points at, when it has one. */
+function subagentLink(span: Trace["spans"][number]): { agent: string; traceId: string } | null {
+  const traceId = span.output?.subagentTraceId;
+  if (span.kind !== "subagent" || typeof traceId !== "string") {
+    return null;
+  }
+  // The innermost agent of the chain owns that trace.
+  return { agent: span.author ?? span.name, traceId };
+}
+
+function spanTokens(span: Trace["spans"][number]): string {
+  const input = span.input?.inputTokens;
+  const output = span.output?.outputTokens;
+  if (typeof input !== "number" && typeof output !== "number") {
+    return "";
+  }
+  return `${typeof input === "number" ? input : 0} in / ${typeof output === "number" ? output : 0} out`;
+}
 
 export default function TracesPage() {
   const { name } = useParams<{ name: string }>();
@@ -52,6 +72,7 @@ export default function TracesPage() {
                 <span className="font-mono text-sm">{trace.traceId.slice(0, 8)}</span>
                 <span className="ml-2 text-sm text-neutral-500">
                   version {trace.versionName} · {trace.spans.length} spans
+                  {trace.spansDropped ? ` (+${trace.spansDropped} dropped)` : ""}
                 </span>
               </div>
               <div className="text-sm">
@@ -62,6 +83,11 @@ export default function TracesPage() {
               </div>
             </div>
             <p className="mt-1 text-xs text-neutral-500">{trace.createdAt}</p>
+            {trace.ancestry && trace.ancestry.length > 1 && (
+              <p className="mt-1 text-xs text-neutral-500">
+                called via <span className="font-mono">{trace.ancestry.join(" → ")}</span>
+              </p>
+            )}
           </summary>
           {trace.error && <p className="mt-3 text-sm text-red-600">{trace.error}</p>}
           <div className="mt-4 overflow-x-auto">
@@ -70,19 +96,42 @@ export default function TracesPage() {
                 <tr>
                   <th className="py-2 pr-4">Kind</th>
                   <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Tokens</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 text-right">Duration</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                {trace.spans.map((span) => (
-                  <tr key={span.spanId}>
-                    <td className="py-2 pr-4">{span.kind}</td>
-                    <td className="py-2 pr-4 font-mono">{span.name}</td>
-                    <td className="py-2 pr-4">{span.status}</td>
-                    <td className="py-2 text-right">{span.durationMs} ms</td>
-                  </tr>
-                ))}
+                {trace.spans.map((span) => {
+                  const nested = subagentLink(span);
+                  return (
+                    <tr key={span.spanId}>
+                      <td className="py-2 pr-4">{span.kind}</td>
+                      <td className="py-2 pr-4 font-mono">
+                        {typeof span.output?.chain === "string" ? span.output.chain : span.name}
+                        {nested && (
+                          <Link
+                            href={`/projects/${nested.agent}/traces`}
+                            className="ml-2 font-sans text-xs text-brand hover:underline"
+                          >
+                            trace {nested.traceId.slice(0, 8)} ↗
+                          </Link>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-neutral-500">{spanTokens(span)}</td>
+                      <td
+                        className={
+                          span.status === "error"
+                            ? "py-2 pr-4 text-red-600"
+                            : "py-2 pr-4"
+                        }
+                      >
+                        {span.status}
+                      </td>
+                      <td className="py-2 text-right">{span.durationMs} ms</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
