@@ -348,6 +348,116 @@ describe("executeAgent local subagent projectType dispatch", () => {
   });
 });
 
+describe("executeAgent subagent recursion guards", () => {
+  /** Every project is an agent that can transfer to `target`, so A -> B -> A is possible. */
+  function mutualDeps(channel: FakeChannel, target: (name: string) => string) {
+    const { deps, recorded } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) => ({
+      ...projectFixture(),
+      name,
+    })) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string) => ({
+      ...versionFixture({ piiFiltering: false }),
+      projectName,
+      subagentList: [{ name: target(projectName), type: "local" as const }],
+      maxTurn: 50,
+    })) as ExecutionDeps["versions"]["get"];
+    return { deps, recorded };
+  }
+
+  it("refuses a transfer back to a project already on the chain", async () => {
+    // painter -> child -> painter. The third hop must be rejected as a tool
+    // error rather than recursing until the wall-clock deadline.
+    const transferToChild = toolCallChunk(
+      0,
+      "call_1",
+      "transfer_to_agent",
+      '{"agent_name":"child","message":"go"}',
+    );
+    const transferToPainter = toolCallChunk(
+      0,
+      "call_2",
+      "transfer_to_agent",
+      '{"agent_name":"painter","message":"back"}',
+    );
+    const channel = new FakeChannel([
+      [transferToChild, usageChunk(1, 1)],
+      [transferToPainter, usageChunk(1, 1)],
+      [contentChunk("child done"), usageChunk(1, 1)],
+      [contentChunk("parent done"), usageChunk(1, 1)],
+    ]);
+    const { deps } = mutualDeps(channel, (name) => (name === "painter" ? "child" : "painter"));
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "child", type: "local" }],
+        },
+        messages: [{ role: "user", content: "start" }],
+      }),
+    );
+
+    const loopError = chunks.find((c) => c.error?.includes("would loop"));
+    expect(loopError).toBeDefined();
+    // Re-authored by the child's runner on the way out — the refusal surfaces
+    // as the child speaking, and names the chain that would have looped.
+    expect(loopError?.author).toBe("child");
+    expect(loopError?.error).toContain("painter -> child");
+    // The run still completes normally instead of being torn down.
+    expect(chunks.some((c) => c.done)).toBe(true);
+  });
+
+  it("stops a straight chain at the depth limit", async () => {
+    // Each project transfers to a fresh name, so the cycle guard never fires —
+    // only the depth cap can stop it.
+    const transfer = (n: number) =>
+      toolCallChunk(0, `call_${n}`, "transfer_to_agent", `{"agent_name":"a${n}","message":"go"}`);
+    const channel = new FakeChannel([
+      [transfer(1), usageChunk(1, 1)],
+      [transfer(2), usageChunk(1, 1)],
+      [transfer(3), usageChunk(1, 1)],
+      [transfer(4), usageChunk(1, 1)],
+      [transfer(5), usageChunk(1, 1)],
+      [transfer(6), usageChunk(1, 1)],
+      [contentChunk("deep done"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) => ({
+      ...projectFixture(),
+      name,
+    })) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string) => {
+      const depth = Number(projectName.replace("a", "")) || 0;
+      return {
+        ...versionFixture({ piiFiltering: false }),
+        projectName,
+        subagentList: [{ name: `a${depth + 1}`, type: "local" as const }],
+        maxTurn: 50,
+      };
+    }) as ExecutionDeps["versions"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "a1", type: "local" }],
+        },
+        messages: [{ role: "user", content: "start" }],
+      }),
+    );
+
+    expect(chunks.some((c) => c.error?.includes("depth limit"))).toBe(true);
+  });
+});
+
 describe("executeAgent remote A2A image subagent", () => {
   it("forwards returned image artifacts as authored image chunks", async () => {
     sendA2aMessageMock.mockResolvedValueOnce({

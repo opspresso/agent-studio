@@ -213,6 +213,7 @@ export async function* executeAgent(
     : undefined;
   let thrown: unknown;
   let completed = false;
+  let closeMcpSessions: (() => Promise<void>) | undefined;
   try {
     input.signal?.throwIfAborted();
     // Compose the caller's signal with a hard deadline; classification in the
@@ -224,6 +225,7 @@ export async function* executeAgent(
       input.version,
       input.project.name,
       usage.record,
+      [input.project.name],
       runSignal,
     );
     const [skills, subagents, mcp] = await Promise.all([
@@ -232,6 +234,7 @@ export async function* executeAgent(
       buildMcpTools(deps, input.version, runSignal),
     ]);
     agentDeps.callMcpTool = mcp.callMcpTool;
+    closeMcpSessions = mcp.close;
     for await (const chunk of engine.runAgent(agentDeps, {
       projectName: input.project.name,
       model: input.version.model,
@@ -256,6 +259,7 @@ export async function* executeAgent(
     }
     throw error;
   } finally {
+    await closeMcp(closeMcpSessions);
     await usage.flush();
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
@@ -312,6 +316,8 @@ async function buildAgentDeps(
   version: Version,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
+  /** Transfer chain this run sits on; the top-level run starts with itself. */
+  ancestry: readonly string[],
   signal?: AbortSignal,
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel;
@@ -319,7 +325,7 @@ async function buildAgentDeps(
     channel,
     recordUsage: recordUsageFn,
     loadSkillContent: buildSkillLoader(deps),
-    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, signal),
+    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, ancestry, signal),
     generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
   };
 }
@@ -422,6 +428,8 @@ async function buildMcpTools(
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
   callMcpTool?: (name: string, args: Record<string, unknown>) => Promise<string>;
+  /** Releases the MCP sessions; call in a `finally` once the run is over. */
+  close?: () => Promise<void>;
 }> {
   const mcpList = version.mcpList ?? [];
   if (mcpList.length === 0) {
@@ -484,13 +492,35 @@ async function buildMcpTools(
     mcpTools: toolManager.tools,
     mcpServers,
     callMcpTool: (name, args) => toolManager.callTool(name, args),
+    close: () => toolManager.close(),
   };
 }
+
+/** Release MCP sessions without ever failing the run that just finished. */
+async function closeMcp(close: (() => Promise<void>) | undefined): Promise<void> {
+  if (!close) {
+    return;
+  }
+  try {
+    await close();
+  } catch (error) {
+    console.warn("[mcp] session cleanup failed", error);
+  }
+}
+
+/**
+ * How deep a chain of local subagent transfers may go. Turn accounting alone
+ * does not bound it: a child version carries its own `maxTurn`, so a child can
+ * raise the ceiling its parent was running under.
+ */
+const MAX_SUBAGENT_DEPTH = 5;
 
 function buildSubagentRunner(
   deps: ExecutionDeps,
   subagentList: SubagentRef[] | undefined,
   recordUsageFn: engine.RecordUsageFn,
+  /** Project names already on this transfer chain, outermost first. */
+  ancestry: readonly string[],
   signal?: AbortSignal,
 ): NonNullable<engine.AgentDeps["runSubagent"]> {
   const refByName = new Map((subagentList ?? []).map((ref) => [ref.name, ref]));
@@ -504,6 +534,23 @@ function buildSubagentRunner(
     if (ref.type === "remote") {
       return yield* runRemoteSubagent(deps, agentName, message, signal);
     }
+    // Refuse cycles and runaway nesting as tool errors, like an unknown agent:
+    // the parent sees the refusal and can answer, instead of the run burning
+    // tokens until the wall-clock deadline.
+    if (ancestry.includes(agentName)) {
+      yield {
+        author: agentName,
+        error: `Transfer to '${agentName}' would loop (already on this chain: ${ancestry.join(" -> ")}).`,
+      };
+      return "";
+    }
+    if (ancestry.length >= MAX_SUBAGENT_DEPTH) {
+      yield {
+        author: agentName,
+        error: `Subagent depth limit (${MAX_SUBAGENT_DEPTH}) reached; not transferring to '${agentName}'.`,
+      };
+      return "";
+    }
     return yield* runLocalSubagent(
       deps,
       agentName,
@@ -511,6 +558,7 @@ function buildSubagentRunner(
       turn,
       maxTurn,
       recordUsageFn,
+      [...ancestry, agentName],
       signal,
     );
   };
@@ -588,6 +636,7 @@ async function* runLocalSubagent(
   turn: number,
   maxTurn: number,
   recordUsageFn: engine.RecordUsageFn,
+  ancestry: readonly string[],
   signal?: AbortSignal,
 ): AsyncGenerator<EngineChunk, string> {
   const project = await deps.projects.get(agentName);
@@ -620,7 +669,7 @@ async function* runLocalSubagent(
     resolveSkills(deps, version.skillList),
     resolveSubagents(deps, version.subagentList),
     buildMcpTools(deps, version, signal),
-    buildAgentDeps(deps, version, project.name, recordUsageFn, signal),
+    buildAgentDeps(deps, version, project.name, recordUsageFn, ancestry, signal),
   ]);
   childDeps.callMcpTool = mcp.callMcpTool;
   const recorder = deps.traces
@@ -662,6 +711,7 @@ async function* runLocalSubagent(
     thrown = error;
     throw error;
   } finally {
+    await closeMcp(mcp.close);
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
   return text;

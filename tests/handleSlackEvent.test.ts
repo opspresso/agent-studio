@@ -185,4 +185,24 @@ describe("handleSlackEvent", () => {
 
     expect(posted[0]?.text).toContain("Agent project not available");
   });
+
+  it("passes a live deadline signal into the run", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    let seen: AbortSignal | undefined;
+    deps.runAgent = async function* (input) {
+      seen = input.signal;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    // A wall-clock signal, not a chunk-arrival poll: a run that stops producing
+    // chunks entirely still gets aborted.
+    expect(seen).toBeInstanceOf(AbortSignal);
+    expect(seen?.aborted).toBe(false);
+  });
+
 });

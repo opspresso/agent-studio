@@ -50,8 +50,9 @@ export interface SlackEventBody {
 }
 
 const UPDATE_INTERVAL_MS = 1000;
-/** Hard deadline for one agent run; on expiry the message reports a timeout
- * instead of showing the placeholder forever. */
+/** Hard deadline for one agent run, enforced by an abort signal so a run that
+ * stops producing chunks entirely (hung provider or tool) still ends and
+ * reports a timeout instead of leaving the placeholder up. */
 const RUN_TIMEOUT_MS = 3 * 60 * 1000;
 
 /** Convert thread replies to engine messages: bot turns → assistant, human turns → user. */
@@ -113,7 +114,7 @@ export async function handleSlackEvent(
   let lastUpdate = 0;
   let failed: string | null = null;
   const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
-  const deadline = Date.now() + RUN_TIMEOUT_MS;
+  const deadline = AbortSignal.timeout(RUN_TIMEOUT_MS);
   try {
     const history =
       event.thread_ts !== undefined
@@ -123,11 +124,7 @@ export async function handleSlackEvent(
           )
         : [];
     const messages: ChatMessageInput[] = [...history, { role: "user", content: message }];
-    for await (const chunk of deps.runAgent({ project, version, messages })) {
-      if (Date.now() > deadline) {
-        failed = "Agent run timed out";
-        break;
-      }
+    for await (const chunk of deps.runAgent({ project, version, messages, signal: deadline })) {
       if (chunk.error) {
         failed = chunk.error;
         break;
@@ -141,7 +138,7 @@ export async function handleSlackEvent(
           .updateMessage(token, {
             channel: placeholder.channel,
             ts: placeholder.ts,
-            text: `:hammer_and_wrench: _${toolCall.function.name} 사용 중…_`,
+            text: `:hammer_and_wrench: _Using ${toolCall.function.name}…_`,
           })
           .catch(() => {});
       }
@@ -165,7 +162,11 @@ export async function handleSlackEvent(
       }
     }
   } catch (error) {
-    failed = error instanceof Error ? error.message : "agent run failed";
+    failed = deadline.aborted
+      ? "Agent run timed out"
+      : error instanceof Error
+        ? error.message
+        : "agent run failed";
   }
 
   console.log(
