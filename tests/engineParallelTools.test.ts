@@ -205,6 +205,35 @@ describe("ToolCallAccumulator makes every call of a response addressable", () =>
     expect(ids[1]).toBeTruthy();
     expect(ids[1]).not.toBe("call_a");
   });
+
+  it("keeps synthesized ids distinct across the run's turns", async () => {
+    // A chat persists ONE assistant message carrying every turn's calls. Ids
+    // that only had to be unique per response would collide there, and the
+    // next request would carry duplicate tool_call_ids.
+    const channel = new FakeChannel([
+      [toolCallChunkWithoutId(0, "getTime", "{}"), usageChunk(10, 5)],
+      [toolCallChunkWithoutId(0, "getTime", "{}"), usageChunk(10, 5)],
+      [contentChunk("done"), usageChunk(8, 4)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: vi.fn(async () => ({ text: "ok" })),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "twice" }],
+        mcpTools: [{ type: "function", function: { name: "getTime", parameters: {} } }],
+      }),
+    );
+
+    const announced = chunks.flatMap((c) => c.delta?.toolCalls ?? []).map((c) => c.id);
+    expect(announced).toHaveLength(2);
+    expect(new Set(announced).size).toBe(2);
+  });
 });
 
 describe("ToolCallAccumulator reassembles streamed fragments", () => {

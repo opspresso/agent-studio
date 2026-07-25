@@ -20,6 +20,11 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   the turn budget and the image tools mutate the image registry. Results, tool messages and
   the assistant message's `tool_calls` all stay in call order; a dispatcher that throws still
   tears the run down, at its position in that order.
+- Every call carries an id unique across the **run**, not just the response: a provider that
+  omits ids (some OpenAI-compatible gateways do) gets `call_1`, `call_2`, … from a counter
+  shared by every turn. Results are keyed by id, and a chat persists one assistant message
+  holding every turn's calls — per-response uniqueness would put duplicate `tool_call_id`s
+  on it and the next request would be rejected.
 - One turn's tool-result text is capped (`MAX_TOOL_RESULT_CHARS_PER_TURN`), spent in call
   order. A truncated result says so; one that no longer fits is returned as `Error: …`, which
   also surfaces the exhaustion as a failed span in the trace.

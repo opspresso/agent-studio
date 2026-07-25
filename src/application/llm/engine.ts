@@ -695,6 +695,13 @@ class ToolCallAccumulator {
   private readonly byIndex = new Map<number, AccumulatedCall>();
   private readonly order: number[] = [];
 
+  /**
+   * @param usedIds ids already spoken for. Shared across a run's turns so a
+   * synthesized id is unique in the whole conversation the run appends to, not
+   * just in one response.
+   */
+  constructor(private readonly usedIds: Set<string> = new Set()) {}
+
   add(toolCall: ChannelToolCall): void {
     const index = toolCall.index ?? 0;
     let entry = this.byIndex.get(index);
@@ -715,25 +722,27 @@ class ToolCallAccumulator {
   }
 
   /**
-   * The response's calls in delta order, each carrying an id unique within the
-   * response. Dispatch keys results by id, so a provider that omits ids (some
+   * The response's calls in delta order, each carrying an id unique across the
+   * run. Dispatch keys results by id, so a provider that omits ids (some
    * OpenAI-compatible gateways do) or repeats one would otherwise have a call
-   * served another call's result, and the follow-up turn would carry duplicate
-   * `tool_call_id`s the provider rejects.
+   * served another call's result. Uniqueness spans the run rather than the one
+   * response because the assistant message a chat persists carries *every*
+   * turn's calls: two turns that both synthesized `call_1` would leave that
+   * message with duplicate `tool_call_id`s, which the next request is rejected
+   * for.
    */
   finalize(): AccumulatedCall[] {
     const calls: AccumulatedCall[] = [];
-    const used = new Set<string>();
     for (const index of this.order) {
       const entry = this.byIndex.get(index);
       if (!entry || !entry.name) {
         continue;
       }
       let id = entry.id;
-      for (let suffix = calls.length + 1; !id || used.has(id); suffix += 1) {
+      for (let suffix = this.usedIds.size + 1; !id || this.usedIds.has(id); suffix += 1) {
         id = `call_${suffix}`;
       }
-      used.add(id);
+      this.usedIds.add(id);
       calls.push(id === entry.id ? entry : { ...entry, id });
     }
     return calls;
@@ -1108,6 +1117,9 @@ export async function* runAgent(
   );
 
   let turn = input.startTurn ?? 0;
+  // Ids already spoken for, across every turn: what the assistant message a
+  // chat persists must not repeat.
+  const usedCallIds = new Set<string>();
   // One turn's worth of pictures an MCP tool may add to the context, sharing the
   // cap a user turn gets — they cost the same and arrive the same way.
   let imageBudget = MAX_ATTACHMENTS;
@@ -1122,7 +1134,7 @@ export async function* runAgent(
     let assistantText = "";
     let reasoningText = "";
     let usage: ChannelUsage | null = null;
-    const accumulator = new ToolCallAccumulator();
+    const accumulator = new ToolCallAccumulator(usedCallIds);
     const contentRestorer = filter?.createStreamRestorer();
     const reasoningRestorer = filter?.createStreamRestorer();
 
