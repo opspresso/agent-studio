@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { collectRun, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
+import {
+  collectRun,
+  toChatCompletion,
+  toChatCompletionChunks,
+} from "@/app/api/projects/_lib/openai";
 import type { EngineChunk } from "@/domain/llm/types";
 
 async function* stream(chunks: EngineChunk[]): AsyncGenerator<EngineChunk> {
@@ -30,6 +34,55 @@ describe("collectRun", () => {
     expect(result.usage.inputTokens).toBe(15);
     expect(result.usage.outputTokens).toBe(6);
     expect(result.usage.costUsd).toBeCloseTo(0.03, 10);
+  });
+});
+
+describe("collectRun images", () => {
+  it("returns generated images alongside the answer", async () => {
+    const result = await collectRun(
+      stream([
+        { delta: { content: "here you go" } },
+        { image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } },
+        { author: "painter", image: { b64: "Ynll", mimeType: "image/png" } },
+        { done: true },
+      ]),
+      "m",
+    );
+    expect(result.images).toEqual([
+      { b64: "aGk=", mimeType: "image/png", prompt: "a cat" },
+      { b64: "Ynll", mimeType: "image/png" },
+    ]);
+    expect(toChatCompletion(result).images).toEqual(result.images);
+  });
+
+  it("omits the images field when a run produced none", async () => {
+    const result = await collectRun(stream([{ delta: { content: "text only" } }]), "m");
+    expect(result.images).toEqual([]);
+    expect(toChatCompletion(result)).not.toHaveProperty("images");
+  });
+});
+
+describe("toChatCompletionChunks images", () => {
+  it("streams an image as a delta extension without a terminal frame", async () => {
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(
+      stream([
+        { image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } },
+        { delta: { content: "drawn" } },
+        { done: true },
+      ]),
+      "m",
+    )) {
+      frames.push(frame);
+    }
+
+    const deltas = frames.map((f) => (f.choices as Array<{ delta: unknown }>)[0]?.delta);
+    expect(deltas[0]).toEqual({
+      role: "assistant",
+      images: [{ b64: "aGk=", mimeType: "image/png", prompt: "a cat" }],
+    });
+    expect(deltas[1]).toEqual({ content: "drawn" });
+    expect(finishReasons(frames)).toEqual(["stop"]);
   });
 });
 
