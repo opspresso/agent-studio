@@ -106,7 +106,9 @@ Conventions:
 - Key builders live in `src/infrastructure/db/keys.ts` — never hand-write key strings elsewhere.
 - List queries paginate: most through `queryAll()` (`src/infrastructure/db/query.ts`) — a Query
   page caps at 1MB, so an unpaginated list silently truncates. `chatRepository` runs its own
-  `LastEvaluatedKey` loops; `traceRepository` is intentionally bounded top-N via `Limit`.
+  `LastEvaluatedKey` loops; `traceRepository` is intentionally bounded top-N via `Limit`, and
+  keeps pulling pages (bounded) until that limit is filled with live rows, because DynamoDB
+  applies `Limit` before the app-side expired-row filter.
 
 Why one table and two GSIs: primary-key access covers everything item-scoped (a project and
 its versions share a partition; a chat and its messages share a partition). `GSI1` serves
@@ -125,7 +127,7 @@ records usage. To trace any request, start there.
 
 | Entry point | Caller | Facade used |
 |---|---|---|
-| Predict | `POST …/predict` | `executeVersion` / `executeVersionStream`; image projects → `generateImage` |
+| Predict | `POST …/predict` | `executeVersion` / `executeVersionStream` (single-shot for **every** projectType — an agent project's tools/skills/subagents do not run here, which is what lets this path render `variables`); image projects → `generateImage` |
 | OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream); `executeVersion` / `collectRun(executeAgent)` (non-stream) |
 | Agent SSE | `POST …/agent` | `executeAgent` |
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent` in `app/api/chats/_deps.ts`) |
@@ -179,7 +181,7 @@ predicate — consumers must use it instead of re-deriving author semantics.
 | `image` | GenerateImage builtin | chat image persistence (S3), Slack upload, client gallery |
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
 | `error` | engine on failure (mid-stream — no retry) | every consumer surfaces it and stops |
-| `done` | engine when the loop ends without tool calls | OpenAI `finish_reason`, client finalize |
+| `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | OpenAI `finish_reason` (`stop` with `done`, `length` without), client finalize |
 | `author` | subagent chunks only | consumers filter via `isTopLevelChunk`; client shows an author badge |
 | `traceId` | subagent chunks (stamped by `runProject`) | client correlates a chunk to its subagent's trace |
 
@@ -217,6 +219,10 @@ Two deliberate strategies coexist:
 - Version writes validate capability fit for catalog models (agent projects require
   `capabilities.tools`; `structuredOutput` requires the capability); unknown/custom model
   ids stay allowed with a warning ($0 cost until added to the catalog).
+- Version writes also validate that `mcpList`/`skillList`/`subagentList` entries resolve
+  (`VersionRefRepos`, injected by the route from the composition root). On update only
+  newly added entries are checked, so deleting a registry entry never strands the versions
+  that already referenced it.
 - Which version a run executes is owned by `resolveRunnableVersion`
   (`src/application/project/resolveRunnableVersion.ts`): the published pointer always
   wins; only interactive surfaces (chat) opt into falling back to the newest draft;
@@ -244,6 +250,11 @@ Two deliberate strategies coexist:
     still image-capable, else the registry's default image model
   - subagent transfer passes ONLY the model-written `message` (no parent history);
     child's final text returns as a "For context: ..." user message
+  - local transfers carry an ancestry chain (`src/application/execution/runProject.ts`):
+    transferring to a project already on the chain, or nesting past
+    `MAX_SUBAGENT_DEPTH` (5), is refused as an authored error chunk. Turn accounting
+    alone cannot bound this — a child version carries its own `maxTurn` and can raise
+    the ceiling its parent was running under
   - top-level chunks are unauthored; subagent chunks carry `author` (see the
     EngineChunk contract above)
 - Fallback: on 429/5xx from the primary model **before the first chunk**, retry once with
@@ -284,9 +295,18 @@ Two deliberate strategies coexist:
   first/last 2 chars of values ≥20 chars), createdAt, updatedAt }`
 - `url` is SSRF-guarded (`src/infrastructure/net/ssrfGuard.ts`) at registration and dispatch:
   non-http(s) schemes and private/loopback/link-local/metadata addresses are rejected.
+  Outbound calls go through `fetchPublicUrl`, which re-resolves and re-checks DNS on every
+  request and every redirect hop, pins the connection to the checked address, and refuses
+  cross-origin redirects. Dispatchers are pooled per `origin|address` (bounded, evicted
+  oldest-first) so repeated tool calls reuse connections — transport only; the guard still
+  runs per request, so a host that starts resolving privately is rejected before a pooled
+  dispatcher is reached.
 - Tool loading via MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). Tool name
   collisions get `_1/_2` suffix aliases with reverse mapping. Tool results capped at
-  100,000 chars.
+  100,000 chars. Servers are contacted in parallel at init (one unreachable server would
+  otherwise add its full 120s timeout to time-to-first-token) while alias allocation stays
+  in configured order so names are deterministic; sessions are released with a `DELETE`
+  when the run ends (`ToolManager.close()`, called from the execution facade's `finally`).
 - Agent runs append a "Connected MCP Servers" table (server name, description, aliased
   tool names) to the system prompt so the model knows which server a tool group belongs
   to; servers that are unreachable or expose no tools are omitted.

@@ -34,6 +34,8 @@ auth, and error cases for the non-obvious endpoints.
   (`{ chats }`, `{ models }`, `{ items }` respectively).
 - **SSE framing**: each event is `data: {json}\n\n`; OpenAI-style streams end with
   `data: [DONE]\n\n`. On a mid-stream failure a final `data: {"error":"…"}` frame is sent.
+  `chat/completions` streams always carry exactly one `finish_reason` chunk: `stop` when the
+  model finished on its own, `length` when an agent run ended at its turn budget.
 
 ## Resource CRUD — projects, skills, mcps, agents
 
@@ -71,7 +73,10 @@ Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel? }`, `mcpList[]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
-image-capable registry model is rejected with 400.
+image-capable registry model is rejected with 400. `mcpList`/`skillList`/`subagentList`
+entries must resolve to registered MCP servers, skills, agents, or projects — a dangling
+reference is rejected with 400. On update only *newly added* entries are checked, so a
+version stays editable after a registry entry it already referenced is deleted.
 
 ## App settings
 
@@ -176,6 +181,11 @@ token (`Authorization: Bearer <token>`). A token authenticates as the project ow
 
 Single-shot run. `{version}` may be `published`.
 
+**Regardless of `projectType`** this endpoint runs one completion: an `agent`
+project's MCP tools, skills, and subagents do **not** run here. That is what makes
+`variables` (server-side `{{var}}` template rendering) available on this endpoint.
+For the multi-turn tool loop use `chat/completions` or `agent` below.
+
 ```json
 // request (llm/agent project)
 { "variables": { "topic": "otters" }, "messages": [ … ]?, "stream": false }
@@ -206,6 +216,9 @@ single completion.
 
 Agent SSE stream. Body `{ "messages": [ … ] }`. Emits `EngineChunk` frames
 (`delta.content`, `toolResult`, `author` for subagent turns, `error`) then `data: [DONE]`.
+
+A transfer to a project already on the current transfer chain, or beyond 5 levels of
+nesting, is refused as an authored error chunk rather than recursing.
 
 ## Usage
 
