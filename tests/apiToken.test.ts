@@ -1,9 +1,13 @@
+// A 32-byte key must be present before the encryption module reads config.
+process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+
 import { describe, expect, it } from "vitest";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
 import {
   generateApiToken,
   getApiTokenStatus,
+  revealApiToken,
   revokeApiToken,
   verifyProjectApiToken,
 } from "@/application/project/apiTokenUseCases";
@@ -13,7 +17,8 @@ import {
   secretHashEquals,
   secretPrefix,
 } from "@/lib/generatedSecret";
-import { ForbiddenError } from "@/application/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
+import { decryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
 
 const OWNER = "owner@example.com";
 
@@ -89,23 +94,25 @@ describe("generated secret helpers", () => {
 });
 
 describe("generateApiToken", () => {
-  it("returns the raw token and stores only its hash", async () => {
+  it("returns the raw token and stores it encrypted, never in plaintext", async () => {
     const { repo, stored } = makeRepo(project());
     const { token, masked, createdAt } = await generateApiToken(repo, "my-bot", OWNER);
 
     expect(token.startsWith(secretPrefix("projectApiToken"))).toBe(true);
     expect(createdAt).toBeTruthy();
-    // Only the hash is persisted — never the raw value.
-    expect(stored()?.tokenHash).toBe(hashSecret(token));
-    expect(stored()?.tokenHash).not.toBe(token);
+    // Stored encrypted so the owner can read it back — never as plaintext, and
+    // with no hash left over from the form that could not be read back.
+    expect(isEncrypted(stored()?.token ?? "")).toBe(true);
+    expect(stored()?.token).not.toBe(token);
+    expect(decryptSecret(stored()?.token ?? "")).toBe(token);
+    expect(stored()?.tokenHash).toBeUndefined();
 
-    // The stored mask is what lets the console show which token is set; it must
-    // never be enough to reconstruct one.
+    // The stored mask is what lets the console show which token is set without
+    // decrypting; it must never be enough to reconstruct one.
     expect(stored()?.masked).toBe(masked);
     expect(masked).toHaveLength(token.length);
     expect(masked).toContain("•");
     expect(masked).not.toContain(token.slice(8, -4));
-    expect(hashSecret(masked)).not.toBe(stored()?.tokenHash);
   });
 
   it("leaves the prefix legible in the mask so the kind is still identifiable", async () => {
@@ -169,6 +176,7 @@ describe("getApiTokenStatus / revokeApiToken", () => {
     expect(status.configured).toBe(true);
     expect(status.createdAt).toBeTruthy();
     expect(status.masked).toBe(masked);
+    expect(status.revealable).toBe(true);
 
     await revokeApiToken(repo, "my-bot", OWNER);
     expect(await getApiTokenStatus(repo, "my-bot", OWNER)).toEqual({ configured: false });
@@ -201,5 +209,52 @@ describe("getApiTokenStatus for tokens issued before masks existed", () => {
     expect(status.masked).toBeUndefined();
     // The old token still verifies — the prefix was never part of verification.
     expect(await verifyProjectApiToken(repo, "my-bot", "sk_proj_legacy")).toBe(OWNER);
+  });
+});
+
+describe("revealApiToken", () => {
+  it("returns the token the owner generated", async () => {
+    const { repo } = makeRepo(project());
+    const { token, createdAt } = await generateApiToken(repo, "my-bot", OWNER);
+
+    expect(await revealApiToken(repo, "my-bot", OWNER)).toEqual({ token, createdAt });
+  });
+
+  it("refuses a token that predates encrypted storage instead of failing obscurely", async () => {
+    // Hash-only rows have nothing to decrypt; the owner is told to regenerate.
+    const { repo } = makeRepo(project());
+    await repo.setApiToken("my-bot", {
+      tokenHash: hashSecret("ast_legacy"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    await expect(revealApiToken(repo, "my-bot", OWNER)).rejects.toBeInstanceOf(ValidationError);
+    // Regenerating replaces it with a readable one.
+    const { token } = await generateApiToken(repo, "my-bot", OWNER);
+    expect((await revealApiToken(repo, "my-bot", OWNER)).token).toBe(token);
+    // …and the legacy token stops working, because the hash is gone.
+    expect(await verifyProjectApiToken(repo, "my-bot", "ast_legacy")).toBeNull();
+  });
+
+  it("rejects a non-owner and a project with no token", async () => {
+    const { repo } = makeRepo(project());
+    await generateApiToken(repo, "my-bot", OWNER);
+    await expect(revealApiToken(repo, "my-bot", "other@example.com")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+
+    await revokeApiToken(repo, "my-bot", OWNER);
+    await expect(revealApiToken(repo, "my-bot", OWNER)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("authenticates nobody when the stored token cannot be decrypted", async () => {
+    // A rotated or wrong AES key must fail closed, not fall through to a match.
+    const { repo } = makeRepo(project());
+    await repo.setApiToken("my-bot", {
+      token: "enc:v1:not-real-ciphertext",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(await verifyProjectApiToken(repo, "my-bot", "ast_anything")).toBeNull();
   });
 });

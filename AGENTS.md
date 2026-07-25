@@ -120,7 +120,11 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   decrypts at read in the admin/owner-gated views) and decrypted for outbound dispatch
   (`src/infrastructure/crypto/secretEncryption.ts`). A masked or empty value on update
   preserves the stored secret; a masked value under a key with no stored counterpart is
-  dropped.
+  dropped. Two app-issued secrets can be read back in plaintext through a dedicated
+  `POST …/reveal` (never a GET — the body is a live credential): the app-wide A2A key
+  (admin-only) and a project's API token (owner-only). The project token is therefore
+  stored encrypted rather than hashed; tokens predating that still verify by hash but
+  cannot be revealed. Every reveal is logged with the caller's email.
 - **PII filtering**: opt-in per version (`parameters.piiFiltering`) — emails/phone numbers
   are regex-masked with reversible format-preserving tokens before every LLM dispatch and
   restored in responses, including streaming and subagent transfers

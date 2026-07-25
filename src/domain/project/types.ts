@@ -1,18 +1,26 @@
 export type ProjectType = "llm" | "agent" | "image";
 
 /**
- * Per-project API token. Only the SHA-256 hash of the token is stored — the raw
- * value is shown once at creation and never persisted or re-readable.
+ * Per-project API token. The token is stored AES-256-GCM encrypted so the owner
+ * can read it back in the console — a deliberate trade: unlike a hash, stored
+ * ciphertext is usable by anyone who obtains both the table and the encryption
+ * key. Exactly one of the two forms below is present.
  */
 export interface ProjectApiToken {
-  tokenHash: string;
+  /** The token, `enc:v1:`-encrypted. Decryptable by the owner-gated read path. */
+  token?: string;
+  /**
+   * SHA-256 hash — the only form tokens issued before revealing existed have.
+   * Verification still accepts them; they can never be shown again, so the
+   * console offers regeneration instead.
+   */
+  tokenHash?: string;
   /**
    * The display mask computed at generation time, e.g. `ast_••••••••wXyZ`.
-   * Stored rather than derived because the token itself is unrecoverable: this
-   * is the only way the console can show *which* token is set. It holds nothing
-   * beyond the prefix and the few edge characters a mask reveals, so it cannot
-   * be used to reconstruct the token. Absent on tokens issued before masks were
-   * displayed.
+   * Stored rather than derived so a hash-only token can still be identified,
+   * and so listing one costs no decryption. It holds nothing beyond the prefix
+   * and the few edge characters a mask reveals. Absent on tokens issued before
+   * masks were displayed.
    */
   masked?: string;
   createdAt: string;

@@ -120,13 +120,18 @@ PUT /api/settings → 200 {…same shape…} | 400
   `publicBaseUrl`.
 
 ```
-POST /api/settings/a2a-key → 200 { key, view }   (raw key, shown once)
+POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
+POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 ```
 
 - Admin-only. Issues a fresh app-wide A2A key (`asa_` + 32 random bytes) as a settings
-  override and returns it once alongside the updated (masked) settings view. Reissuing
+  override and returns it alongside the updated (masked) settings view. Reissuing
   invalidates the previous key immediately. A key pasted in by hand through `PUT /api/settings`
   still works — this endpoint only saves you from inventing one.
+- `/reveal` returns the *effective* key in plaintext — the stored override decrypted, or the
+  env value when there is no override — or `404` when none is configured. A POST although it
+  reads, for the same reason as the project token: the body is a live credential. Every
+  reveal is logged server-side with the caller's email.
 - `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
   array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
   currently effective key for that provider name. Provider `name` must be one of
@@ -201,23 +206,31 @@ bot token / signing secret edges. Masked or omitted secrets are preserved on upd
 ## Project API token
 
 A per-project token lets external callers reach the execution endpoints with
-`Authorization: Bearer <token>` instead of a session cookie. Only the SHA-256 hash is
-stored; the raw value is returned once at generation and cannot be retrieved again.
+`Authorization: Bearer <token>` instead of a session cookie. The token is stored
+AES-256-GCM encrypted (not hashed) so the owner can read it back on request.
 
 ```
-GET    /api/projects/{name}/token   → { configured, masked?, createdAt? }
-POST   /api/projects/{name}/token   → { token, masked, createdAt }   (raw token, shown once)
-DELETE /api/projects/{name}/token   → 204
+GET    /api/projects/{name}/token          → { configured, masked?, createdAt?, revealable? }
+POST   /api/projects/{name}/token          → { token, masked, createdAt }   (raw token)
+POST   /api/projects/{name}/token/reveal   → { token, createdAt }           (raw token)
+DELETE /api/projects/{name}/token          → 204
 ```
 
 Tokens are `ast_` + 32 random bytes (base64url). `masked` is the display mask recorded at
 generation (`ast_••••…••wXyZ`) — the token itself stays unrecoverable, so this is the only
-way the console can show *which* token is set. It is absent on tokens issued before masks
-were recorded; those keep working, since verification compares hashes and never the prefix.
+way the console can show *which* token is set without decrypting. It is absent on tokens
+issued before masks were recorded; those keep working, since verification never looks at
+the prefix.
 
-All three are owner-only (403 for non-owners). `POST` generates or regenerates the token —
+All four are owner-only (403 for non-owners). `POST` generates or regenerates the token —
 regeneration overwrites the previous one, which stops working immediately. The token is
 scoped to its project (validated against the `{name}` in the request path).
+
+`/reveal` is a POST although it reads: the body is a live credential, so it stays out of
+caches, history and prefetches. `revealable` is `false` for a token issued before encrypted
+storage — only its hash exists, so `/reveal` answers `400` with instructions to regenerate.
+Verification accepts both forms (decrypt-and-compare in constant time, or hash comparison
+for a legacy token). Every reveal is logged server-side with the caller's email.
 
 ## Execution
 

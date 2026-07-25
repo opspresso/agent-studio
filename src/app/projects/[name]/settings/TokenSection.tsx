@@ -6,13 +6,17 @@ import { CopyButton } from "@/app/_components/CopyButton";
 import {
   generateProjectToken,
   getProjectToken,
+  revealProjectToken,
   revokeProjectToken,
   type ProjectTokenStatus,
 } from "../../lib/api";
 
 export function TokenSection({ projectName }: { projectName: string }) {
   const [status, setStatus] = useState<ProjectTokenStatus | null>(null);
+  // The plaintext token, either just generated or read back on request. Held in
+  // component state only, so leaving the page hides it again.
   const [rawToken, setRawToken] = useState<string | null>(null);
+  const [freshlyIssued, setFreshlyIssued] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,7 +39,8 @@ export function TokenSection({ projectName }: { projectName: string }) {
     try {
       const { token, masked, createdAt } = await generateProjectToken(projectName);
       setRawToken(token);
-      setStatus({ configured: true, masked, createdAt });
+      setFreshlyIssued(true);
+      setStatus({ configured: true, masked, createdAt, revealable: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate token");
     } finally {
@@ -53,8 +58,22 @@ export function TokenSection({ projectName }: { projectName: string }) {
       await revokeProjectToken(projectName);
       setStatus({ configured: false });
       setRawToken(null);
+      setFreshlyIssued(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to revoke token");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reveal() {
+    setBusy(true);
+    setError(null);
+    try {
+      setRawToken(await revealProjectToken(projectName));
+      setFreshlyIssued(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reveal token");
     } finally {
       setBusy(false);
     }
@@ -82,7 +101,8 @@ export function TokenSection({ projectName }: { projectName: string }) {
       <p className="text-xs leading-relaxed text-neutral-500">
         A token lets external callers run this project&apos;s execution APIs (predict, chat
         completions, agent) with an <code className="font-mono">Authorization: Bearer</code> header
-        instead of a browser session. It is scoped to this project.
+        instead of a browser session. It is scoped to this project and stored encrypted, so you
+        can read it back here.
       </p>
 
       {rawToken && (
@@ -92,25 +112,46 @@ export function TokenSection({ projectName }: { projectName: string }) {
               {rawToken}
             </code>
             <CopyButton text={rawToken} />
+            <button
+              type="button"
+              onClick={() => setRawToken(null)}
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              Hide
+            </button>
           </div>
           <p className="text-xs text-amber-700 dark:text-amber-400">
-            Copy it now — this is the only time the token is shown. It is stored hashed and cannot be
-            retrieved again.
+            {freshlyIssued
+              ? "This token is now live; the previous one stopped working."
+              : "Anyone holding this token can run this project's APIs."}
           </p>
         </div>
       )}
 
       {status.configured && !rawToken && (
         <div className="space-y-1">
-          {status.masked && (
-            <code className="block truncate rounded bg-neutral-100 px-2 py-1.5 font-mono text-xs dark:bg-neutral-800">
-              {status.masked}
-            </code>
-          )}
+          <div className="flex items-center gap-2">
+            {status.masked && (
+              <code className="min-w-0 flex-1 truncate rounded bg-neutral-100 px-2 py-1.5 font-mono text-xs dark:bg-neutral-800">
+                {status.masked}
+              </code>
+            )}
+            {status.revealable !== false && (
+              <button
+                type="button"
+                onClick={reveal}
+                disabled={busy}
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                Reveal
+              </button>
+            )}
+          </div>
           <p className="text-sm text-neutral-500">
             A token is set{status.createdAt ? ` (created ${status.createdAt.slice(0, 10)})` : ""}.
-            Only its hash is stored, so the full value cannot be shown again — regenerate to get a
-            new one.
+            {status.revealable === false
+              ? " It was issued before tokens could be shown again, so only its hash is stored — regenerate to get one you can read back."
+              : ""}
           </p>
         </div>
       )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CopyButton } from "@/app/_components/CopyButton";
 
 type SettingSource = "override" | "env" | "default" | "unset";
 
@@ -104,7 +105,10 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   /** Raw A2A key, held only until the page is left — it is masked from then on. */
-  const [newA2aKey, setNewA2aKey] = useState<string | null>(null);
+  // The plaintext A2A key, either just issued or read back on request. Held in
+  // component state only, so leaving the page hides it again.
+  const [a2aKeyShown, setA2aKeyShown] = useState<string | null>(null);
+  const [a2aKeyFreshlyIssued, setA2aKeyFreshlyIssued] = useState(false);
   const [issuingA2aKey, setIssuingA2aKey] = useState(false);
 
   function applyView(next: SettingsView) {
@@ -186,7 +190,7 @@ export default function SettingsPage() {
     }
     setIssuingA2aKey(true);
     setError(null);
-    setNewA2aKey(null);
+    setA2aKeyShown(null);
     try {
       const res = await fetch("/api/settings/a2a-key", { method: "POST" });
       const data = (await res.json().catch(() => ({}))) as {
@@ -197,10 +201,30 @@ export default function SettingsPage() {
       if (!res.ok || !data.key || !data.view) {
         throw new Error(data.error ?? `Request failed (${res.status})`);
       }
-      setNewA2aKey(data.key);
+      setA2aKeyShown(data.key);
+      setA2aKeyFreshlyIssued(true);
       applyView(data.view);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate A2A key");
+    } finally {
+      setIssuingA2aKey(false);
+    }
+  }
+
+  /** Read the effective key back in plaintext (stored override decrypted, or env). */
+  async function revealA2aKey() {
+    setIssuingA2aKey(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/settings/a2a-key/reveal", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { key?: string; error?: string };
+      if (!res.ok || !data.key) {
+        throw new Error(data.error ?? `Request failed (${res.status})`);
+      }
+      setA2aKeyShown(data.key);
+      setA2aKeyFreshlyIssued(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reveal A2A key");
     } finally {
       setIssuingA2aKey(false);
     }
@@ -267,32 +291,58 @@ export default function SettingsPage() {
             })}
             {section.title === "A2A" && (
               <div className="space-y-2">
-                {newA2aKey && (
+                {a2aKeyShown && (
                   <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-                    <code className="block truncate rounded bg-white px-2 py-1.5 font-mono text-xs dark:bg-neutral-900">
-                      {newA2aKey}
-                    </code>
+                    <div className="flex items-center gap-2">
+                      <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1.5 font-mono text-xs dark:bg-neutral-900">
+                        {a2aKeyShown}
+                      </code>
+                      <CopyButton text={a2aKeyShown} />
+                      <button
+                        type="button"
+                        onClick={() => setA2aKeyShown(null)}
+                        className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                      >
+                        Hide
+                      </button>
+                    </div>
                     <p className="text-xs text-amber-700 dark:text-amber-400">
-                      Copy it now — this is the only time the key is shown. Inbound A2A callers
-                      must send it as <code className="font-mono">X-A2A-Key</code>.
+                      {a2aKeyFreshlyIssued
+                        ? "This key is now live; the previous one stopped working. "
+                        : ""}
+                      Inbound A2A callers must send it as{" "}
+                      <code className="font-mono">X-A2A-Key</code>.
                     </p>
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => issueA2aKey(view?.fields.a2aApiKey?.source !== "unset")}
-                  disabled={issuingA2aKey}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
-                >
-                  {issuingA2aKey
-                    ? "Working…"
-                    : view?.fields.a2aApiKey?.source === "unset"
-                      ? "Generate key"
-                      : "Regenerate key"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => issueA2aKey(view?.fields.a2aApiKey?.source !== "unset")}
+                    disabled={issuingA2aKey}
+                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                  >
+                    {issuingA2aKey
+                      ? "Working…"
+                      : view?.fields.a2aApiKey?.source === "unset"
+                        ? "Generate key"
+                        : "Regenerate key"}
+                  </button>
+                  {view?.fields.a2aApiKey?.source !== "unset" && !a2aKeyShown && (
+                    <button
+                      type="button"
+                      onClick={revealA2aKey}
+                      disabled={issuingA2aKey}
+                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    >
+                      Reveal key
+                    </button>
+                  )}
+                </div>
                 <p className="text-xs text-neutral-400">
-                  Generating stores the key as an override and shows it once. You can also paste
-                  a key of your own into the field above.
+                  Generating stores the key as an override. The key is kept encrypted, so
+                  &ldquo;Reveal key&rdquo; can show it again later. You can also paste a key of
+                  your own into the field above.
                 </p>
               </div>
             )}

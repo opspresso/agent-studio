@@ -284,6 +284,8 @@ export interface ProjectTokenStatus {
   /** Display mask of the stored token; absent on tokens issued before masks. */
   masked?: string;
   createdAt?: string;
+  /** False for a legacy hashed token, which can only be replaced. */
+  revealable?: boolean;
 }
 
 export async function getProjectToken(name: string): Promise<ProjectTokenStatus> {
@@ -309,6 +311,19 @@ export async function generateProjectToken(
     throw new Error(data.error ?? `Failed to generate token (${res.status})`);
   }
   return { token: data.token, masked: data.masked ?? "", createdAt: data.createdAt ?? "" };
+}
+
+/**
+ * Read the stored token back in plaintext (owner-only). A POST, not a GET: the
+ * response body is a live credential and must stay out of caches and history.
+ */
+export async function revealProjectToken(name: string): Promise<string> {
+  const res = await fetch(`/api/projects/${name}/token/reveal`, { method: "POST" });
+  const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
+  if (!res.ok || !data.token) {
+    throw new Error(data.error ?? `Failed to reveal token (${res.status})`);
+  }
+  return data.token;
 }
 
 export async function revokeProjectToken(name: string): Promise<void> {

@@ -105,9 +105,13 @@ published version filled in. Every entry carries a copyable curl example, and th
 OpenAI-compatible endpoint adds Python and Node.js SDK samples; credentials appear
 only as `$PROJECT_API_TOKEN`-style placeholders.
 
-Generate the token under Project Settings → API token: it is shown once, stored only
-as a SHA-256 hash, scoped to that project, and sent as `Authorization: Bearer <token>`
-in place of the session cookie. See [docs/API.md](docs/API.md) for the full contract.
+Generate the token under Project Settings → API token: it is scoped to that project and
+sent as `Authorization: Bearer <token>` in place of the session cookie. The token is
+stored AES-256-GCM encrypted rather than hashed, so the project owner can reveal and copy
+it again later — the trade is that stored ciphertext is usable to anyone who obtains both
+the table and `AES_ENCRYPTION_KEY`, where a hash would not be. Tokens issued before this
+change hold only a hash: they keep working but cannot be revealed, so regenerate one to
+read it back. See [docs/API.md](docs/API.md) for the full contract.
 
 ## Images
 

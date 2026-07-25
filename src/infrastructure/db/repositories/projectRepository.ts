@@ -226,8 +226,10 @@ export const projectRepository: ProjectRepository = {
     if (!result.Item) {
       return null;
     }
+    // One of `token` (encrypted, revealable) or `tokenHash` (legacy) is set.
     return {
-      tokenHash: result.Item.tokenHash as string,
+      ...(typeof result.Item.token === "string" ? { token: result.Item.token } : {}),
+      ...(typeof result.Item.tokenHash === "string" ? { tokenHash: result.Item.tokenHash } : {}),
       masked: result.Item.masked as string | undefined,
       createdAt: result.Item.createdAt as string,
     };
@@ -241,7 +243,10 @@ export const projectRepository: ProjectRepository = {
         Item: {
           ...key,
           entityType: "APITOKEN",
-          tokenHash: token.tokenHash,
+          // Written as one whole item, so regenerating an encrypted token over a
+          // legacy hashed one leaves no stale `tokenHash` behind.
+          ...(token.token !== undefined ? { token: token.token } : {}),
+          ...(token.tokenHash !== undefined ? { tokenHash: token.tokenHash } : {}),
           masked: token.masked,
           createdAt: token.createdAt,
         },

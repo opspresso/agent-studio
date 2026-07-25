@@ -1,6 +1,8 @@
 import type { ProjectRepository } from "@/domain/project/repository";
+import { NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/lib/generatedSecret";
-import { maskSecret } from "@/infrastructure/crypto/secretEncryption";
+import { decryptSecret, encryptSecret, maskSecret } from "@/infrastructure/crypto/secretEncryption";
+import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
 import { assertProjectOwner, getProject } from "./projectUseCases";
 
 export interface ApiTokenStatus {
@@ -8,15 +10,16 @@ export interface ApiTokenStatus {
   /** Display mask of the current token, when one was recorded at generation. */
   masked?: string;
   createdAt?: string;
+  /** False for a legacy hashed token, which can only be replaced. */
+  revealable?: boolean;
 }
 
 /**
  * Generate (or regenerate) the project's API token. Owner-only. Returns the raw
- * token once — only its hash is persisted, overwriting any previous token.
+ * token and stores it encrypted, so the owner can read it back later.
  *
- * The mask is computed here and stored alongside the hash: the token cannot be
- * recovered later, so without it the console could only say "a token is set"
- * and never which one.
+ * The mask is stored alongside it so listing a token costs no decryption, and so
+ * a legacy hashed token can still be identified.
  */
 export async function generateApiToken(
   repo: ProjectRepository,
@@ -27,7 +30,7 @@ export async function generateApiToken(
   const token = generateSecretValue("projectApiToken");
   const masked = maskSecret(token);
   const createdAt = new Date().toISOString();
-  await repo.setApiToken(name, { tokenHash: hashSecret(token), masked, createdAt });
+  await repo.setApiToken(name, { token: encryptSecret(token), masked, createdAt });
   return { token, masked, createdAt };
 }
 
@@ -46,7 +49,37 @@ export async function getApiTokenStatus(
     configured: true,
     ...(token.masked ? { masked: token.masked } : {}),
     createdAt: token.createdAt,
+    revealable: token.token !== undefined,
   };
+}
+
+/**
+ * Return the project's API token in plaintext. Owner-only, and deliberately a
+ * separate call from the status read: the token never rides along with a routine
+ * page load, only with an explicit request to see it.
+ *
+ * A token issued before tokens were stored encrypted has only its hash, so there
+ * is nothing to decrypt — the owner is told to regenerate rather than left with a
+ * silent failure.
+ */
+export async function revealApiToken(
+  repo: ProjectRepository,
+  name: string,
+  userEmail: string,
+): Promise<{ token: string; createdAt: string }> {
+  await assertProjectOwner(repo, name, userEmail);
+  const stored = await repo.getApiToken(name);
+  if (!stored) {
+    throw new NotFoundError(`Project "${name}" has no API token`);
+  }
+  if (stored.token === undefined) {
+    throw new ValidationError(
+      "This token was issued before tokens could be shown again, so only its hash is stored. Regenerate it to get a token you can read back.",
+    );
+  }
+  // Secret access is worth a trail even when it is authorized.
+  console.warn(`[token] API token of project '${name}' revealed by ${userEmail}`);
+  return { token: decryptSecret(stored.token), createdAt: stored.createdAt };
 }
 
 /** Remove the project's API token. Owner-only. Idempotent. */
@@ -60,9 +93,12 @@ export async function revokeApiToken(
 }
 
 /**
- * Verify a raw Bearer token against the project's stored hash. On success returns
+ * Verify a raw Bearer token against the project's stored token. On success returns
  * the project owner's email (the token acts on the owner's behalf); on any
  * mismatch or missing token, returns null. The token is scoped to this project.
+ *
+ * Both storage forms are accepted: the encrypted one is compared in constant time
+ * after decryption, and a legacy hashed token keeps working by hash comparison.
  */
 export async function verifyProjectApiToken(
   repo: ProjectRepository,
@@ -73,9 +109,34 @@ export async function verifyProjectApiToken(
   if (!stored) {
     return null;
   }
-  if (!secretHashEquals(hashSecret(token), stored.tokenHash)) {
+  if (!matches(stored, token, name)) {
     return null;
   }
   const project = await getProject(repo, name);
   return project.ownerEmail;
+}
+
+function matches(
+  stored: { token?: string; tokenHash?: string },
+  candidate: string,
+  projectName: string,
+): boolean {
+  if (stored.token !== undefined) {
+    try {
+      return timingSafeEqualString(decryptSecret(stored.token), candidate);
+    } catch (error) {
+      // A stored token that will not decrypt (wrong or rotated AES key) is an
+      // operational fault, not a wrong caller: it must be visible, and it must
+      // not authenticate anyone.
+      console.error(
+        `[token] API token of project '${projectName}' cannot be decrypted:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      return false;
+    }
+  }
+  if (stored.tokenHash !== undefined) {
+    return secretHashEquals(hashSecret(candidate), stored.tokenHash);
+  }
+  return false;
 }
