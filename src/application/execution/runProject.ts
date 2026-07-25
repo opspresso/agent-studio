@@ -649,17 +649,32 @@ function buildSubagentRunner(
       };
       return "";
     }
-    return yield* runLocalSubagent(
-      deps,
-      agentName,
-      message,
-      turn,
-      maxTurn,
-      recordUsageFn,
-      [...ancestry, agentName],
-      signal,
-      images,
-    );
+    try {
+      return yield* runLocalSubagent(
+        deps,
+        agentName,
+        message,
+        turn,
+        maxTurn,
+        recordUsageFn,
+        [...ancestry, agentName],
+        signal,
+        images,
+      );
+    } catch (error) {
+      // A child that throws on entry (a model that cannot take the images it was
+      // handed, a broken dep) must not tear down the parent run: report it as a
+      // tool error like every other refusal above, so the parent still answers.
+      // Cancellation is not a refusal — it propagates.
+      if (signal?.aborted) {
+        throw error;
+      }
+      yield {
+        author: agentName,
+        error: `Agent '${agentName}' failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+      return "";
+    }
   }
 
   return (agentName, message, turn, maxTurn, images) =>

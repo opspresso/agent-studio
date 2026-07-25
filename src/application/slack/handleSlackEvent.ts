@@ -182,6 +182,12 @@ async function withHistoryImages(
   let remaining = budget;
   for (let index = turns.length - 1; index >= 0 && remaining > 0; index -= 1) {
     const turn = turns[index];
+    // Only a human turn's images are input. The bot's own uploads would come back
+    // as `image_url` parts on an *assistant* message — a shape OpenAI-compatible
+    // providers reject — and would spend the budget on pictures this run drew.
+    if (turn?.message.role !== "user") {
+      continue;
+    }
     // Only image attachments are relevant here, and an older turn's unrelated
     // files are not worth reporting on — the user is asking about this turn.
     const imageFiles = (turn?.files ?? []).filter((file) =>
@@ -300,7 +306,13 @@ export async function handleSlackEvent(
     for await (const chunk of deps.runAgent({ project, version, messages, signal: deadline })) {
       if (chunk.error) {
         warnings.push(chunk.error);
-        break;
+        // A subagent's failure reaches the parent as a tool error and the parent
+        // often answers anyway (a refused transfer, an unusable child model), so
+        // only a top-level failure ends the run.
+        if (isTopLevelChunk(chunk)) {
+          break;
+        }
+        continue;
       }
       // Stream tool activity so the first (tool-heavy) turn shows progress.
       const toolCall = chunk.delta?.toolCalls?.[0] as

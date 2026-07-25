@@ -160,7 +160,12 @@ export function RunPanel({
       for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
         if (chunk.error) {
           setError(chunk.error);
-          break;
+          // A subagent failure is reported to the parent as a tool error and the
+          // parent may still answer; only a top-level error ends the run.
+          if (isTopLevelChunk(chunk)) {
+            break;
+          }
+          continue;
         }
         // Track who is running: an authored chunk names the innermost agent (and
         // its chain); an unauthored one means control is back at the top level.
