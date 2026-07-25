@@ -14,11 +14,21 @@ import { usageRepository } from "@/infrastructure/db/repositories/usageRepositor
 import { channel } from "@/infrastructure/llm/channel";
 import { imageChannel } from "@/infrastructure/llm/imageChannel";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
 
-export { projectRepository, versionRepository, traceRepository, usageRepository, createA2aTaskStore };
+export {
+  projectRepository,
+  versionRepository,
+  traceRepository,
+  usageRepository,
+  createA2aTaskStore,
+  secretCipher,
+  urlPolicy,
+};
 
 /** Registry lookups a version's mcp/skill/subagent references are validated against. */
 export const versionRefRepos = {
@@ -47,6 +57,8 @@ export const executionDeps = {
   usage: usageRepository,
   channel,
   imageChannel,
+  cipher: secretCipher,
+  urlPolicy,
   traces: traceRepository,
   traceSampleRate,
 };

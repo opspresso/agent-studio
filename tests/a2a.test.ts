@@ -6,6 +6,7 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
   settingsRepository: { get: async () => null, put: async () => {} },
 }));
 import type { Message, Task } from "@a2a-js/sdk";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { AgentExecutionEvent, ExecutionEventBus, TaskStore } from "@a2a-js/sdk/server";
 import { RequestContext } from "@a2a-js/sdk/server";
 import { buildAgentCard, buildProjectA2aRpcUrl } from "@/infrastructure/a2a/cards";

@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, versionRefRepos, versionRepository } from "@/lib/container";
+import { projectRepository, secretCipher, versionRefRepos, versionRepository } from "@/lib/container";
 import { createVersion, listVersions, toVersionView } from "@/application/project/versionUseCases";
 import { createVersionSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -9,7 +9,7 @@ type RouteContext = { params: Promise<{ name: string }> };
 export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const versions = await listVersions(versionRepository, name);
-  return Response.json(versions.map(toVersionView));
+  return Response.json(versions.map((version) => toVersionView(secretCipher, version)));
 });
 
 export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
@@ -26,8 +26,9 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       parsed.data,
       user.email,
       versionRefRepos,
+      secretCipher,
     );
-    return Response.json(toVersionView(version), { status: 201 });
+    return Response.json(toVersionView(secretCipher, version), { status: 201 });
   } catch (error) {
     return apiError(error);
   }

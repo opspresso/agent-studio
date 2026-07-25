@@ -1,7 +1,12 @@
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
+import { createSettingsUseCases as createSettingsUseCasesImpl } from "@/application/settings/settingsUseCases";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+
+// The cipher is injected now; every call below is unchanged.
+const createSettingsUseCases = (repo: Parameters<typeof createSettingsUseCasesImpl>[0]) =>
+  createSettingsUseCasesImpl(repo, secretCipher);
 import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";

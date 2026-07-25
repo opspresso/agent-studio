@@ -63,9 +63,14 @@ application 테스트가 `AES_ENCRYPTION_KEY` 환경변수와 `vi.mock`에 묶�
   구체 구현을 넣지 않는다 — 결합이 남는다.
 
 **완료 조건**: `pnpm test`가 통과하고, `src/domain`에 임의의 상위 레이어 import를
-넣으면 테스트가 실패한다. `grep -rn "infrastructure/crypto\|ssrfGuard" src/application/`이
-무결과다. application 허용 목록이 28건에서 16건으로 줄고, 목록에서 제거한 12건이
-다시 들어오면 테스트가 실패한다. app 허용 목록은 7건으로 동결된 채이며(M3에서 비운다)
+넣으면 테스트가 실패한다.
+`grep -rn "infrastructure/crypto\|ssrfGuard" src/application/ | grep -v "/index.ts:"`가
+무결과다 — use case는 포트만 알고, 구현을 아는 것은 슬라이스의 조립 지점뿐이다.
+application 허용 목록이 28건에서 21건으로 줄고, 목록에서 제거한 12건이
+다시 들어오면 테스트가 실패한다. 12건을 걷어내면서 5건이 새로 생기는데
+(`{agent,mcp,settings}/index.ts`가 주입할 포트 구현을 import한다) 이는 M2가 싱글톤을
+`lib/container.ts`로 옮길 때 index 항목 11건과 함께 사라진다.
+app 허용 목록은 7건으로 동결된 채이며(M3에서 비운다)
 조립 지점 2곳은 목록에 없다. 마스킹 3단계 길이 티어, `enc:v1:` 접두사,
 "마스킹된 값은 저장된 시크릿을 보존", "대응 저장값 없는 마스킹 값은 드롭",
 "등록 시점과 dispatch 시점 양쪽 SSRF 검증", "차단된 MCP 서버는 skip하되 run은 계속"
@@ -118,8 +123,9 @@ infra→lib 12건의 양방향 의존이 성립한다. M5·M6이 새 실행 진�
   infrastructure → `@/lib/container` 금지.
 
 **완료 조건**: `grep -rn "@/infrastructure" src/application/*/index.ts`와
-`grep -rn "from \"@/" src/shared/`가 모두 무결과다. application 허용 목록이 16건에서
-10건으로 줄고(slice `index.ts` 6건), 새 규칙 2개의 허용 목록은 비어 있다.
+`grep -rn "from \"@/" src/shared/`가 모두 무결과다. application 허용 목록이 21건에서
+10건으로 줄고(slice `index.ts` 11건 — repository 4, 포트 구현 5, 타입 재수출 2),
+새 규칙 2개의 허용 목록은 비어 있다.
 `pnpm build`가 통과해 라우트 핸들러
 시그니처가 검증되며, 라우트의 응답 형태와 상태 코드가 그대로다(`api/skills/sync`의
 502/503/500 분기 포함). `tests/runtimeSettings.test.ts`·`tests/settingsUseCases.test.ts`·

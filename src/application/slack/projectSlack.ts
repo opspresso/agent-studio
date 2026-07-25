@@ -1,11 +1,6 @@
 import { ConflictError, ValidationError } from "@/application/errors";
 import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
-import {
-  decryptSecret,
-  encryptSecret,
-  isMasked,
-  maskSecret,
-} from "@/infrastructure/crypto/secretEncryption";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import { nextUpdatedAt } from "@/application/project/timestamps";
@@ -28,13 +23,13 @@ export function eventsPathFor(projectName: string): string {
   return `/api/slack/events/${projectName}`;
 }
 
-function maskedView(project: Project): ProjectSlackView {
+function maskedView(cipher: SecretCipher, project: Project): ProjectSlackView {
   const slack = project.slack;
   return {
     enabled: slack?.enabled ?? false,
     configured: Boolean(slack?.botToken && slack.signingSecret),
-    botToken: slack?.botToken ? maskSecret(slack.botToken) : "",
-    signingSecret: slack?.signingSecret ? maskSecret(slack.signingSecret) : "",
+    botToken: slack?.botToken ? cipher.mask(slack.botToken) : "",
+    signingSecret: slack?.signingSecret ? cipher.mask(slack.signingSecret) : "",
     eventsPath: eventsPathFor(project.name),
   };
 }
@@ -42,16 +37,21 @@ function maskedView(project: Project): ProjectSlackView {
 export async function getProjectSlack(
   repo: ProjectRepository,
   name: string,
+  cipher: SecretCipher,
 ): Promise<ProjectSlackView> {
-  return maskedView(await getProject(repo, name));
+  return maskedView(cipher, await getProject(repo, name));
 }
 
 /** Merge semantics: masked/empty input keeps the stored secret; plaintext replaces it. */
-function mergeSecret(stored: string | undefined, input: string | undefined): string {
-  if (input === undefined || isMasked(input) || input === "") {
+function mergeSecret(
+  cipher: SecretCipher,
+  stored: string | undefined,
+  input: string | undefined,
+): string {
+  if (input === undefined || cipher.isMasked(input) || input === "") {
     return stored ?? "";
   }
-  return encryptSecret(input);
+  return cipher.encrypt(input);
 }
 
 async function updateProject(
@@ -74,14 +74,15 @@ export async function updateProjectSlack(
   name: string,
   update: ProjectSlackUpdate,
   userEmail: string,
+  cipher: SecretCipher,
 ): Promise<ProjectSlackView> {
   const project = await assertProjectOwner(repo, name, userEmail);
   if (project.projectType !== "agent") {
     throw new ValidationError("Slack bots can only be attached to agent projects");
   }
   const slack: SlackIntegration = {
-    botToken: mergeSecret(project.slack?.botToken, update.botToken),
-    signingSecret: mergeSecret(project.slack?.signingSecret, update.signingSecret),
+    botToken: mergeSecret(cipher, project.slack?.botToken, update.botToken),
+    signingSecret: mergeSecret(cipher, project.slack?.signingSecret, update.signingSecret),
     enabled: update.enabled ?? project.slack?.enabled ?? false,
   };
   if (slack.enabled && (!slack.botToken || !slack.signingSecret)) {
@@ -89,13 +90,14 @@ export async function updateProjectSlack(
   }
   const updated: Project = { ...project, slack, updatedAt: nextUpdatedAt(project.updatedAt) };
   await updateProject(repo, updated, project.updatedAt);
-  return maskedView(updated);
+  return maskedView(cipher, updated);
 }
 
 export async function disconnectProjectSlack(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
+  cipher: SecretCipher,
 ): Promise<ProjectSlackView> {
   const project = await assertProjectOwner(repo, name, userEmail);
   const updated: Project = {
@@ -104,11 +106,12 @@ export async function disconnectProjectSlack(
     updatedAt: nextUpdatedAt(project.updatedAt),
   };
   await updateProject(repo, updated, project.updatedAt);
-  return maskedView(updated);
+  return maskedView(cipher, updated);
 }
 
 /** Decrypt credentials for runtime use. Only call at dispatch time. */
 export function resolveProjectSlackRuntime(
+  cipher: SecretCipher,
   project: Project,
 ): { botToken: string; signingSecret: string } | null {
   const slack = project.slack;
@@ -116,8 +119,8 @@ export function resolveProjectSlackRuntime(
     return null;
   }
   return {
-    botToken: decryptSecret(slack.botToken),
-    signingSecret: decryptSecret(slack.signingSecret),
+    botToken: cipher.decrypt(slack.botToken),
+    signingSecret: cipher.decrypt(slack.signingSecret),
   };
 }
 

@@ -15,7 +15,9 @@ vi.mock("@/lib/session", () => ({
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
 }));
 
-vi.mock("@/lib/container", () => ({ projectRepository: projectRepo }));
+vi.mock("@/lib/container", async () => ({ projectRepository: projectRepo,
+  secretCipher: (await import("@/infrastructure/crypto/secretCipher")).secretCipher,
+}));
 vi.mock("@/lib/public-url", () => ({
   resolvePublicBaseUrl: async () => "https://studio.example.com",
 }));

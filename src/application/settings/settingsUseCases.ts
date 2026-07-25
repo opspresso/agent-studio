@@ -4,7 +4,7 @@ import type { AppSettings, LlmProviderSetting } from "@/domain/settings/types";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import { config } from "@/lib/config";
-import { encryptSecret, isMasked, maskSecret } from "@/infrastructure/crypto/secretEncryption";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 
 export type SettingKey = Exclude<keyof AppSettings, "updatedAt" | "llmProviders">;
 
@@ -79,7 +79,10 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
   llmProviders?: LlmProviderInput[];
 };
 
-function toProviderViews(settings: AppSettings | null): SettingsView["llmProviders"] {
+function toProviderViews(
+  cipher: SecretCipher,
+  settings: AppSettings | null,
+): SettingsView["llmProviders"] {
   const stored = settings?.llmProviders;
   if (stored !== undefined) {
     return {
@@ -87,7 +90,7 @@ function toProviderViews(settings: AppSettings | null): SettingsView["llmProvide
       items: stored.map((provider) => ({
         name: provider.name,
         baseUrl: provider.baseUrl,
-        apiKey: maskSecret(provider.apiKey),
+        apiKey: cipher.mask(provider.apiKey),
         keepModelPrefix: provider.keepModelPrefix ?? false,
       })),
     };
@@ -97,19 +100,19 @@ function toProviderViews(settings: AppSettings | null): SettingsView["llmProvide
     items: parseProviderConfigs(process.env).map((provider) => ({
       name: provider.name,
       baseUrl: provider.baseUrl,
-      apiKey: maskSecret(provider.apiKey),
+      apiKey: cipher.mask(provider.apiKey),
       keepModelPrefix: provider.keepModelPrefix,
     })),
   };
 }
 
-function toView(settings: AppSettings | null): SettingsView {
+function toView(cipher: SecretCipher, settings: AppSettings | null): SettingsView {
   const fields = {} as Record<SettingKey, SettingFieldView>;
   for (const spec of FIELD_SPECS) {
     const stored = settings?.[spec.key];
     if (stored !== undefined) {
       fields[spec.key] = {
-        value: spec.secret ? maskSecret(stored) : stored,
+        value: spec.secret ? cipher.mask(stored) : stored,
         source: "override",
         secret: spec.secret,
       };
@@ -118,7 +121,7 @@ function toView(settings: AppSettings | null): SettingsView {
     const envValue = spec.env();
     if (envValue !== undefined) {
       fields[spec.key] = {
-        value: spec.secret ? maskSecret(envValue) : envValue,
+        value: spec.secret ? cipher.mask(envValue) : envValue,
         source: "env",
         secret: spec.secret,
       };
@@ -130,7 +133,11 @@ function toView(settings: AppSettings | null): SettingsView {
       secret: spec.secret,
     };
   }
-  return { fields, llmProviders: toProviderViews(settings), updatedAt: settings?.updatedAt };
+  return {
+    fields,
+    llmProviders: toProviderViews(cipher, settings),
+    updatedAt: settings?.updatedAt,
+  };
 }
 
 /**
@@ -139,6 +146,7 @@ function toView(settings: AppSettings | null): SettingsView {
  * override first, else from the env-derived provider set.
  */
 function toProviderSetting(
+  cipher: SecretCipher,
   input: LlmProviderInput,
   stored: LlmProviderSetting[] | undefined,
 ): LlmProviderSetting {
@@ -154,11 +162,11 @@ function toProviderSetting(
   }
   const apiKey = input.apiKey.trim();
   let storedKey: string;
-  if (!isMasked(apiKey)) {
+  if (!cipher.isMasked(apiKey)) {
     if (!apiKey) {
       throw new ValidationError(`LLM provider "${name}" needs an API key`);
     }
-    storedKey = encryptSecret(apiKey);
+    storedKey = cipher.encrypt(apiKey);
   } else {
     const existingStoredKey = stored?.find((provider) => provider.name === name)?.apiKey;
     const envKey = parseProviderConfigs(process.env).find((provider) => provider.name === name)?.apiKey;
@@ -173,7 +181,7 @@ function toProviderSetting(
     if (envKey === undefined) {
       throw new ValidationError(`LLM provider "${name}" needs an API key (no stored value to keep)`);
     }
-    storedKey = encryptSecret(envKey);
+    storedKey = cipher.encrypt(envKey);
   }
   return {
     name,
@@ -196,10 +204,13 @@ export interface SettingsUseCases {
   update(patch: SettingsUpdate, userEmail: string): Promise<SettingsView>;
 }
 
-export function createSettingsUseCases(repo: SettingsRepository): SettingsUseCases {
+export function createSettingsUseCases(
+  repo: SettingsRepository,
+  cipher: SecretCipher,
+): SettingsUseCases {
   return {
     async getView() {
-      return toView(await repo.get());
+      return toView(cipher, await repo.get());
     },
 
     async update(patch, userEmail) {
@@ -214,8 +225,8 @@ export function createSettingsUseCases(repo: SettingsRepository): SettingsUseCas
         if (value === "") {
           delete next[spec.key];
         } else if (spec.secret) {
-          if (!isMasked(value)) {
-            next[spec.key] = encryptSecret(value);
+          if (!cipher.isMasked(value)) {
+            next[spec.key] = cipher.encrypt(value);
           }
         } else {
           next[spec.key] = value;
@@ -227,7 +238,7 @@ export function createSettingsUseCases(repo: SettingsRepository): SettingsUseCas
           delete next.llmProviders;
         } else {
           const providers = patch.llmProviders.map((input) =>
-            toProviderSetting(input, stored?.llmProviders),
+            toProviderSetting(cipher, input, stored?.llmProviders),
           );
           const names = new Set(providers.map((provider) => provider.name));
           if (names.size !== providers.length) {
@@ -247,7 +258,7 @@ export function createSettingsUseCases(repo: SettingsRepository): SettingsUseCas
 
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
-      return toView(next);
+      return toView(cipher, next);
     },
   };
 }

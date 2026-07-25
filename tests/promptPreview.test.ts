@@ -6,12 +6,13 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
 
-vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/infrastructure/net/ssrfGuard")>();
-  return { ...actual, assertPublicUrl: async () => {} };
-});
-
 import { executeAgent, previewPrompt } from "@/application/execution/runProject";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import type { UrlPolicy } from "@/domain/security/urlPolicy";
+
+// Allow every URL: these tests are about the run loop, not the SSRF policy.
+// Injected rather than module-mocked, now that the policy is a port.
+const testUrlPolicy: UrlPolicy = { async assertAllowed() {} };
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
@@ -77,6 +78,8 @@ function executionDepsFixture(channel: FakeChannel) {
     usage: { record: async () => {} },
     channel,
     imageChannel,
+    cipher: secretCipher,
+    urlPolicy: testUrlPolicy,
   } as unknown as ExecutionDeps;
 }
 

@@ -3,19 +3,6 @@ process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef")
 
 import { describe, expect, it, vi } from "vitest";
 
-// Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
-vi.mock("@/infrastructure/net/ssrfGuard", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/infrastructure/net/ssrfGuard")>();
-  return {
-    ...actual,
-    assertPublicUrl: async (url: string) => {
-      if (new URL(url).hostname.endsWith(".internal")) {
-        throw new actual.SsrfError(`URL is not allowed: ${url}`);
-      }
-    },
-  };
-});
-
 const listMcpToolsMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, tools: [] })));
 vi.mock("@/infrastructure/mcp/mcpClient", () => ({ listMcpTools: listMcpToolsMock }));
 
@@ -25,8 +12,26 @@ vi.mock("@/infrastructure/agent/agentClient", () => ({ sendAgentMessage: sendAge
 const sendA2aMessageMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, text: "hi" })));
 vi.mock("@/infrastructure/a2a/client", () => ({ sendA2aMessage: sendA2aMessageMock }));
 
-import { createAgentUseCases } from "@/application/agent/agentUseCases";
-import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
+import { createAgentUseCases as createAgentUseCasesImpl } from "@/application/agent/agentUseCases";
+import { createMcpUseCases as createMcpUseCasesImpl } from "@/application/mcp/mcpUseCases";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
+
+// Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
+// Injected rather than module-mocked, now that the policy is a port.
+const testPolicy: UrlPolicy = {
+  async assertAllowed(url) {
+    if (new URL(url).hostname.endsWith(".internal")) {
+      throw new BlockedUrlError(`URL is not allowed: ${url}`);
+    }
+  },
+};
+
+// The cipher and policy are injected now; every call below is unchanged.
+const createMcpUseCases = (repo: Parameters<typeof createMcpUseCasesImpl>[0]) =>
+  createMcpUseCasesImpl(repo, secretCipher, testPolicy);
+const createAgentUseCases = (repo: Parameters<typeof createAgentUseCasesImpl>[0]) =>
+  createAgentUseCasesImpl(repo, secretCipher, testPolicy);
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";

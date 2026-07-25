@@ -7,7 +7,7 @@
  */
 
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
-import { assertPublicUrl, SsrfError } from "@/infrastructure/net/ssrfGuard";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 
 /** Minimal repository shape shared by the registry slices. */
 export interface RegistryRepository<T> {
@@ -19,11 +19,11 @@ export interface RegistryRepository<T> {
 }
 
 /** SSRF policy at the write boundary: a blocked URL is invalid input (400). */
-export async function assertAllowedUrl(url: string): Promise<void> {
+export async function assertAllowedUrl(policy: UrlPolicy, url: string): Promise<void> {
   try {
-    await assertPublicUrl(url);
+    await policy.assertAllowed(url);
   } catch (error) {
-    throw new ValidationError(error instanceof SsrfError ? error.message : "Blocked URL");
+    throw new ValidationError(error instanceof BlockedUrlError ? error.message : "Blocked URL");
   }
 }
 

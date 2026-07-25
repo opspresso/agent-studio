@@ -1,8 +1,7 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import { NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/lib/generatedSecret";
-import { decryptSecret, encryptSecret, maskSecret } from "@/infrastructure/crypto/secretEncryption";
-import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 import { assertProjectOwner, getProject } from "./projectUseCases";
 
 export interface ApiTokenStatus {
@@ -25,12 +24,13 @@ export async function generateApiToken(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
+  cipher: SecretCipher,
 ): Promise<{ token: string; masked: string; createdAt: string }> {
   await assertProjectOwner(repo, name, userEmail);
   const token = generateSecretValue("projectApiToken");
-  const masked = maskSecret(token);
+  const masked = cipher.mask(token);
   const createdAt = new Date().toISOString();
-  await repo.setApiToken(name, { token: encryptSecret(token), masked, createdAt });
+  await repo.setApiToken(name, { token: cipher.encrypt(token), masked, createdAt });
   return { token, masked, createdAt };
 }
 
@@ -66,6 +66,7 @@ export async function revealApiToken(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
+  cipher: SecretCipher,
 ): Promise<{ token: string; createdAt: string }> {
   await assertProjectOwner(repo, name, userEmail);
   const stored = await repo.getApiToken(name);
@@ -79,7 +80,7 @@ export async function revealApiToken(
   }
   // Secret access is worth a trail even when it is authorized.
   console.warn(`[token] API token of project '${name}' revealed by ${userEmail}`);
-  return { token: decryptSecret(stored.token), createdAt: stored.createdAt };
+  return { token: cipher.decrypt(stored.token), createdAt: stored.createdAt };
 }
 
 /** Remove the project's API token. Owner-only. Idempotent. */
@@ -104,12 +105,13 @@ export async function verifyProjectApiToken(
   repo: ProjectRepository,
   name: string,
   token: string,
+  cipher: SecretCipher,
 ): Promise<string | null> {
   const stored = await repo.getApiToken(name);
   if (!stored) {
     return null;
   }
-  if (!matches(stored, token, name)) {
+  if (!matches(cipher, stored, token, name)) {
     return null;
   }
   const project = await getProject(repo, name);
@@ -117,13 +119,14 @@ export async function verifyProjectApiToken(
 }
 
 function matches(
+  cipher: SecretCipher,
   stored: { token?: string; tokenHash?: string },
   candidate: string,
   projectName: string,
 ): boolean {
   if (stored.token !== undefined) {
     try {
-      return timingSafeEqualString(decryptSecret(stored.token), candidate);
+      return cipher.decryptEquals(stored.token, candidate);
     } catch (error) {
       // A stored token that will not decrypt (wrong or rotated AES key) is an
       // operational fault, not a wrong caller: it must be visible, and it must

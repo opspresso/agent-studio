@@ -5,12 +5,24 @@ import { describe, expect, it } from "vitest";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
 import {
-  generateApiToken,
+  generateApiToken as generateApiTokenImpl,
   getApiTokenStatus,
-  revealApiToken,
+  revealApiToken as revealApiTokenImpl,
   revokeApiToken,
-  verifyProjectApiToken,
+  verifyProjectApiToken as verifyProjectApiTokenImpl,
 } from "@/application/project/apiTokenUseCases";
+import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+
+// The cipher is injected now; every call below is unchanged.
+type Gen = Parameters<typeof generateApiTokenImpl>;
+type Rev = Parameters<typeof revealApiTokenImpl>;
+type Ver = Parameters<typeof verifyProjectApiTokenImpl>;
+const generateApiToken = (repo: Gen[0], name: Gen[1], email: Gen[2]) =>
+  generateApiTokenImpl(repo, name, email, secretCipher);
+const revealApiToken = (repo: Rev[0], name: Rev[1], email: Rev[2]) =>
+  revealApiTokenImpl(repo, name, email, secretCipher);
+const verifyProjectApiToken = (repo: Ver[0], name: Ver[1], token: Ver[2]) =>
+  verifyProjectApiTokenImpl(repo, name, token, secretCipher);
 import {
   generateSecretValue,
   hashSecret,
