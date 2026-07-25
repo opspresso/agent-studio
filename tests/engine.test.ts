@@ -405,4 +405,60 @@ describe("runAgent MCP server system prompt", () => {
     const content = String(channel.seenParams[0]?.messages[0]?.content);
     expect(content).not.toContain("Connected MCP Servers");
   });
+
+  it("keeps the table intact when a description spans lines or contains a pipe", async () => {
+    // Descriptions are a single markdown table cell. A newline would end the
+    // row early and orphan the remaining servers; a pipe would add a column.
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel },
+        {
+          projectName: "p",
+          model: MODEL,
+          messages: [{ role: "user", content: "hi" }],
+          mcpTools: [{ type: "function", function: { name: "a", parameters: {} } }],
+          mcpServers: [
+            { name: "multi", description: "  first line\n\n  second | piped  ", toolNames: ["a"] },
+            { name: "after", description: "still listed", toolNames: ["b"] },
+          ],
+        },
+      ),
+    );
+
+    const content = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(content).toContain("| multi | first line second \\| piped | a |");
+    // The row after the offending one is still a row of the same table.
+    expect(content).toContain("| after | still listed | b |");
+    const tableLines = content
+      .split("\n")
+      .filter((line) => line.startsWith("| ") && !line.startsWith("|--"));
+    expect(tableLines).toHaveLength(3); // header + 2 servers
+  });
+});
+
+describe("runAgent skill system prompt", () => {
+  it("keeps the skill table intact when a description spans lines", async () => {
+    // Synced skills take their description from SKILL.md frontmatter, which is
+    // not constrained to one line the way the console input is.
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel, loadSkillContent: async () => "" },
+        {
+          projectName: "p",
+          model: MODEL,
+          messages: [{ role: "user", content: "hi" }],
+          skills: [
+            { name: "wrapped", description: "line one\nline two" },
+            { name: "blank", description: "" },
+          ],
+        },
+      ),
+    );
+
+    const content = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(content).toContain("| wrapped | line one line two |");
+    expect(content).toContain("| blank | No description |");
+  });
 });

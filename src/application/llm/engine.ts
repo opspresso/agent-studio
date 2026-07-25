@@ -556,7 +556,7 @@ function subagentContextMessage(agentName: string, text: string): string {
 
 function skillSystemPromptAddition(skills: SkillInfo[]): string {
   const rows = skills
-    .map((s) => `| ${s.name} | ${s.description || "No description"} |`)
+    .map((s) => `| ${s.name} | ${tableCell(s.description) || "No description"} |`)
     .join("\n");
   return [
     "## Available Skills",
@@ -571,9 +571,14 @@ function skillSystemPromptAddition(skills: SkillInfo[]): string {
   ].join("\n");
 }
 
+/** One markdown table cell: a newline or a pipe in the value would break the row. */
+function tableCell(value: string): string {
+  return value.replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|").trim();
+}
+
 function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
   const rows = servers
-    .map((s) => `| ${s.name} | ${s.description} | ${s.toolNames.join(", ")} |`)
+    .map((s) => `| ${s.name} | ${tableCell(s.description)} | ${s.toolNames.join(", ")} |`)
     .join("\n");
   return [
     "## Connected MCP Servers",
