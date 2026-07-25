@@ -6,7 +6,7 @@ import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import { inputClass } from "./inputs";
 
 interface ToolResultView {
@@ -44,7 +44,9 @@ function toolCallView(raw: unknown, author?: string): ToolCallView {
  * both reads as two separate agents.
  */
 function mergePath(seen: string[][], path: string[]): string[][] {
-  const key = (p: string[]) => p.join(">");
+  // The trailing separator keeps the comparison on whole names: without it `img`
+  // reads as a chain prefix of the unrelated agent `image-agent`.
+  const key = (p: string[]) => `${p.join(">")}>`;
   if (seen.some((existing) => key(existing).startsWith(key(path)))) {
     return seen;
   }
@@ -135,7 +137,7 @@ export function RunPanel({
       }
       const imageParts = toRequestImages(attachments).map((image) => ({
         type: "image_url" as const,
-        image_url: { url: `data:${image.mimeType};base64,${image.b64}` },
+        image_url: { url: imageDataUrl(image) },
       }));
       const res =
         projectType === "agent"
@@ -344,7 +346,7 @@ export function RunPanel({
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={`data:${image.mimeType};base64,${image.imageBase64}`}
+              src={imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType })}
               alt="Generated image"
               className="max-w-full rounded"
             />
@@ -364,7 +366,7 @@ export function RunPanel({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           key={`image-${i}`}
-          src={`data:${img.mimeType};base64,${img.b64}`}
+          src={imageDataUrl(img)}
           alt={img.prompt ?? "Generated image"}
           className="max-w-full rounded-md border border-neutral-200 dark:border-neutral-800"
         />

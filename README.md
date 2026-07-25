@@ -172,8 +172,10 @@ project's own secret and always run that project — no selector needed.
   thread (its 50 most recent turns) as multi-turn context.
 - Image attachments are downloaded with the bot token and analyzed — up to 4 images per run,
   5MB each, `png`/`jpeg`/`gif`/`webp`. The mention's own images come first; whatever budget is
-  left goes to the newest images earlier in the thread, so "make the picture I sent blue"
-  still has the picture. Anything skipped is reported in the reply.
+  left goes to the newest images in the 10 most recent turns of the thread, so "make the
+  picture I sent blue" still has the picture without re-fetching a long thread's whole
+  history. Only the humans' pictures count — the bot's own uploads are skipped. Anything
+  skipped is reported in the reply.
 - Events are verified (signing secret, 5-minute replay window), deduplicated by
   `event_id` (conditional put, 24h TTL), acked within 3 seconds, and processed in
   the background. `after()` requires a persistent process; an abrupt process loss can

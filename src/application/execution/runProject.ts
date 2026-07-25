@@ -10,6 +10,7 @@
 
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { LlmChannel } from "@/domain/llm/channel";
+import { imageDataUrl } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
@@ -586,7 +587,7 @@ function subagentContent(message: string, images?: ImageBytes[]): ChatMessageInp
     { type: "text", text: message },
     ...images.map((image) => ({
       type: "image_url" as const,
-      image_url: { url: `data:${image.mimeType};base64,${image.b64}` },
+      image_url: { url: imageDataUrl(image) },
     })),
   ];
 }

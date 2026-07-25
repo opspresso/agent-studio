@@ -570,6 +570,26 @@ describe("executeAgent image transfer to a subagent", () => {
     expect(systemPrompt).toContain("| img_1 | sent by the user |");
     expect(systemPrompt).toContain("image_ids");
   });
+
+  it("still explains image ids on a turn that starts with no images", async () => {
+    // `image_ids` is offered whenever there is an agent to transfer to, and its
+    // description points at this section — so the section cannot be conditional
+    // on an image already existing.
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps, parent } = imageProjectDeps(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: parent,
+        version: parentVersion(),
+        messages: [{ role: "user", content: "draw me a cat" }],
+      }),
+    );
+
+    const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(systemPrompt).toContain("## Available Images");
+    expect(systemPrompt).toContain("No images yet");
+  });
 });
 
 describe("executeAgent nested transfer identity", () => {

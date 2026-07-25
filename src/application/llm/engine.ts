@@ -791,7 +791,7 @@ function transferToolDef(subagents: SubagentInfo[], withImages: boolean): Channe
                   type: "array",
                   items: { type: "string" },
                   description:
-                    "Ids of images to hand over (see Editable Images). Pass these when the other agent must edit or look at an existing image instead of making one up.",
+                    "Ids of images to hand over (see Available Images). Pass these when the other agent must edit or look at an existing image instead of making one up.",
                 },
               }
             : {}),
@@ -806,7 +806,16 @@ function imageSystemPromptAddition(
   handles: readonly ImageHandle[],
   uses: { canEdit: boolean; canTransfer: boolean },
 ): string {
-  const rows = handles.map((h) => `| ${h.id} | ${tableCell(h.origin)} |`).join("\n");
+  // Listed even when empty: the image tools' only documentation is a pointer to
+  // this section, so it has to exist before the first picture does.
+  const table =
+    handles.length > 0
+      ? [
+          "| Image | Source |",
+          "|-------|--------|",
+          ...handles.map((h) => `| ${h.id} | ${tableCell(h.origin)} |`),
+        ]
+      : ["No images yet — an image you generate gets an id you can use here."];
   const howTo: string[] = [];
   if (uses.canEdit) {
     howTo.push(
@@ -818,14 +827,7 @@ function imageSystemPromptAddition(
       `Pass ids as \`image_ids\` on \`${TRANSFER_TOOL_NAME}\` so the other agent receives the actual picture instead of a description of it.`,
     );
   }
-  return [
-    "## Available Images",
-    "",
-    ...howTo.flatMap((line) => [line, ""]),
-    "| Image | Source |",
-    "|-------|--------|",
-    rows,
-  ].join("\n");
+  return ["## Available Images", "", ...howTo.flatMap((line) => [line, ""]), ...table].join("\n");
 }
 
 function buildAgentSystemPrompt(
@@ -848,7 +850,7 @@ function buildAgentSystemPrompt(
   if (subagents.length > 0) {
     parts.push(subagentSystemPromptAddition(subagents));
   }
-  if (images.handles.length > 0) {
+  if (images.canEdit || images.canTransfer) {
     parts.push(imageSystemPromptAddition(images.handles, images));
   }
   return parts.join("\n\n");
@@ -888,7 +890,7 @@ const EDIT_IMAGE_TOOL_DEF: ChannelToolDef = {
   function: {
     name: EDIT_IMAGE_TOOL_NAME,
     description:
-      "Edit an existing image: change, add or remove something in it, or restyle it. Address the image by its id (see Editable Images, and the ids reported by GenerateImage). The edited image is delivered to the user automatically.",
+      "Edit an existing image: change, add or remove something in it, or restyle it. Address the image by its id (see Available Images, and the ids reported by GenerateImage). The edited image is delivered to the user automatically.",
     parameters: {
       type: "object",
       properties: {

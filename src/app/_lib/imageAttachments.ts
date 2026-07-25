@@ -1,3 +1,6 @@
+import { imageDataUrl } from "@/domain/llm/types";
+import { MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_TYPES } from "@/domain/llm/imageLimits";
+
 /** An image staged in a composer or run panel, before the turn is sent. */
 export interface Attachment {
   b64: string;
@@ -5,10 +8,8 @@ export interface Attachment {
   name: string;
 }
 
-/** Mirrors the server caps in `src/app/api/_lib/attachments.ts`. */
-export const MAX_ATTACHMENTS = 4;
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+/** Widened for the file picker's `accept` and a plain `includes` check. */
+export const ACCEPTED_IMAGE_TYPES: readonly string[] = SUPPORTED_IMAGE_TYPES;
 
 /**
  * Read a picked file into an attachment. Rejecting here (rather than on submit)
@@ -32,7 +33,7 @@ export async function readAttachment(file: File): Promise<Attachment> {
 }
 
 export function attachmentSrc(attachment: Attachment): string {
-  return `data:${attachment.mimeType};base64,${attachment.b64}`;
+  return imageDataUrl(attachment);
 }
 
 /** Strip the display-only field: the API takes bytes and a type. */

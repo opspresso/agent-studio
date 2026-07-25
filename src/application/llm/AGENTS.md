@@ -15,8 +15,10 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   inline `data:` images in the input messages, plus everything the run drew. `EditImage`
   and `transfer_to_agent`'s `image_ids` resolve an id to bytes, so the registry (not the dep)
   owns the bookkeeping; the model learns new ids from the image tool results and the input
-  ones from the system prompt. The registry is populated when either use exists (an image
-  dep, or a subagent to hand a picture to) — a run that can do neither skips it.
+  ones from the system prompt's `## Available Images` section — which is present whenever
+  those tools are offered, even before the first image exists (the tool descriptions'
+  only documentation is a pointer to it). The registry is populated when either use exists
+  (an image dep, or a subagent to hand a picture to) — a run that can do neither skips it.
 - A transfer passes the model-written message **and** the bytes of any `image_ids`, so a
   child edits the real picture instead of a description of it. An unknown id fails the
   transfer with the available ids listed, rather than silently transferring without it.

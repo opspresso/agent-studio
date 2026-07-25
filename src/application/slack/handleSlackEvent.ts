@@ -2,7 +2,12 @@ import type { SlackMessage } from "@/infrastructure/slack/client";
 import type { ExecuteAgentInput } from "@/application/execution/runProject";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
+  SUPPORTED_IMAGE_TYPES,
+} from "@/domain/llm/imageLimits";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
 
 /** The slice of the Slack Web API the event handler uses; faked in tests. */
@@ -48,6 +53,12 @@ export interface SlackEventFile {
 
 export interface SlackEventBody {
   event_id?: string;
+  /**
+   * Who the event was delivered for — our own app's user id in this workspace.
+   * Comparing it to `event.user` identifies the bot's own messages without an
+   * extra `auth.test` round trip.
+   */
+  authorizations?: Array<{ user_id?: string; is_bot?: boolean }>;
   event?: {
     type?: string;
     subtype?: string;
@@ -75,10 +86,19 @@ const MAX_HISTORY_MESSAGES = 50;
  * `file_share` and dropping it would leave the mention unanswered.
  */
 const ALLOWED_SUBTYPES = new Set(["file_share"]);
-/** Attachment limits. Anything dropped is reported, never silently skipped. */
-const MAX_IMAGE_ATTACHMENTS = 4;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+/**
+ * Attachment limits — the same ones every other surface enforces. Anything
+ * dropped is reported, never silently skipped.
+ */
+const MAX_IMAGE_ATTACHMENTS = MAX_ATTACHMENTS;
+const MAX_IMAGE_BYTES = MAX_ATTACHMENT_BYTES;
+const SUPPORTED_TYPES = new Set<string>(SUPPORTED_IMAGE_TYPES);
+/**
+ * How many recent turns are searched for images. A thread can be long and its
+ * pictures are re-downloaded and re-encoded on every mention, so only the
+ * recent context is worth that cost.
+ */
+const HISTORY_IMAGE_LOOKBACK = 10;
 
 /** One thread turn: the mapped engine message plus the attachments it carried. */
 export interface ThreadTurn {
@@ -132,7 +152,7 @@ async function collectImageParts(
   for (const file of images.slice(0, budget)) {
     const label = file.name ?? file.id ?? "attachment";
     const mimeType = file.mimetype ?? "";
-    if (!SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+    if (!SUPPORTED_TYPES.has(mimeType)) {
       warnings.push(`Unsupported image type ${mimeType} (${label}).`);
       continue;
     }
@@ -154,7 +174,7 @@ async function collectImageParts(
       }
       parts.push({
         type: "image_url",
-        image_url: { url: `data:${mimeType};base64,${data.toString("base64")}` },
+        image_url: { url: imageDataUrl({ b64: data.toString("base64"), mimeType }) },
       });
     } catch (error) {
       console.error("[slack] attachment download failed", error);
@@ -180,7 +200,8 @@ async function withHistoryImages(
 ): Promise<ChatMessageInput[]> {
   const partsByIndex = new Map<number, ContentPart[]>();
   let remaining = budget;
-  for (let index = turns.length - 1; index >= 0 && remaining > 0; index -= 1) {
+  const oldest = Math.max(0, turns.length - HISTORY_IMAGE_LOOKBACK);
+  for (let index = turns.length - 1; index >= oldest && remaining > 0; index -= 1) {
     const turn = turns[index];
     // Only a human turn's images are input. The bot's own uploads would come back
     // as `image_url` parts on an *assistant* message — a shape OpenAI-compatible
@@ -233,8 +254,15 @@ export async function handleSlackEvent(
   if (!event?.channel || !event.ts) {
     return;
   }
-  // Ignore our own (and any other bot's) messages to prevent loops.
-  if (event.bot_id || (event.subtype && !ALLOWED_SUBTYPES.has(event.subtype))) {
+  // Ignore our own (and any other bot's) messages to prevent loops. `bot_id` is
+  // not enough on its own: a file the bot shares through the external upload flow
+  // is attributed to the bot *user*, and `file_share` is an allowed subtype — so
+  // the app's own user id is checked too.
+  const selfUserId = body.authorizations?.find((auth) => auth.user_id)?.user_id;
+  if (event.bot_id || (selfUserId && event.user === selfUserId)) {
+    return;
+  }
+  if (event.subtype && !ALLOWED_SUBTYPES.has(event.subtype)) {
     return;
   }
 
