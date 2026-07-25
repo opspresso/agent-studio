@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { formatShortDateTime } from "@/lib/date";
-import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
+import {
+  ACCEPTED_IMAGE_TYPES,
+  MAX_ATTACHMENTS,
+  attachmentSrc,
+  readAttachment,
+} from "../_lib/attachments";
+import type { Attachment, ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
 
 function MessageTimestamp({ createdAt }: { createdAt: string }) {
   const formatted = formatShortDateTime(createdAt);
@@ -69,10 +75,15 @@ export function AuthorBadge({ author }: { author: string }) {
 export function MessageView({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex flex-col items-end">
-        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-brand px-4 py-2 text-sm text-white">
-          {message.content}
-        </div>
+      <div className="flex flex-col items-end gap-1">
+        {(message.images ?? []).map((image, index) => (
+          <GeneratedImage key={`attached-${index}`} src={image.url} alt="Attached image" />
+        ))}
+        {message.content && (
+          <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-brand px-4 py-2 text-sm text-white">
+            {message.content}
+          </div>
+        )}
         <MessageTimestamp createdAt={message.createdAt} />
       </div>
     );
@@ -145,24 +156,149 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
   );
 }
 
+/**
+ * Staged image attachments for one turn. Owned by a hook so the two composers
+ * (new chat, existing thread) share one set of limits and one error surface.
+ */
+export function useAttachments() {
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  const addFiles = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+    setAttachError(null);
+    const added: Attachment[] = [];
+    const failures: string[] = [];
+    for (const file of Array.from(files)) {
+      try {
+        added.push(await readAttachment(file));
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : `${file.name}: unreadable`);
+      }
+    }
+    setAttachments((prev) => {
+      const room = MAX_ATTACHMENTS - prev.length;
+      if (added.length > room) {
+        failures.push(`At most ${MAX_ATTACHMENTS} images per message`);
+      }
+      return [...prev, ...added.slice(0, Math.max(room, 0))];
+    });
+    if (failures.length > 0) {
+      setAttachError(failures.join(" · "));
+    }
+  }, []);
+
+  const removeAt = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const clear = useCallback(() => {
+    setAttachments([]);
+    setAttachError(null);
+  }, []);
+
+  return { attachments, attachError, addFiles, removeAt, clear };
+}
+
+export function AttachmentBar({
+  attachments,
+  attachError,
+  onRemove,
+}: {
+  attachments: Attachment[];
+  attachError: string | null;
+  onRemove: (index: number) => void;
+}) {
+  if (attachments.length === 0 && !attachError) {
+    return null;
+  }
+  return (
+    <div className="mb-2 space-y-1">
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((attachment, index) => (
+            <div key={`${attachment.name}-${index}`} className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={attachmentSrc(attachment)}
+                alt={attachment.name}
+                className="h-16 w-16 rounded-md border border-neutral-200 object-cover dark:border-neutral-800"
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(index)}
+                aria-label={`Remove ${attachment.name}`}
+                className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-neutral-800 text-xs leading-5 text-white hover:bg-neutral-700"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {attachError && <p className="text-xs text-red-600">{attachError}</p>}
+    </div>
+  );
+}
+
+export function AttachButton({
+  onPick,
+  disabled,
+}: {
+  onPick: (files: FileList | null) => void;
+  disabled?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_IMAGE_TYPES.join(",")}
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          onPick(event.target.files);
+          // Reset so picking the same file again still fires a change event.
+          event.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={disabled}
+        aria-label="Attach images"
+        title="Attach images"
+        className="rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+      >
+        📎
+      </button>
+    </>
+  );
+}
+
 export function Composer({
   onSend,
   disabled,
   placeholder,
 }: {
-  onSend: (content: string) => void;
+  onSend: (content: string, attachments: Attachment[]) => void;
   disabled?: boolean;
   placeholder?: string;
 }) {
   const [value, setValue] = useState("");
+  const { attachments, attachError, addFiles, removeAt, clear } = useAttachments();
 
   function submit() {
     const trimmed = value.trim();
-    if (!trimmed || disabled) {
+    if ((!trimmed && attachments.length === 0) || disabled) {
       return;
     }
     setValue("");
-    onSend(trimmed);
+    clear();
+    onSend(trimmed, attachments);
   }
 
   return (
@@ -171,28 +307,31 @@ export function Composer({
         event.preventDefault();
         submit();
       }}
-      className="flex items-end gap-2"
     >
-      <textarea
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            submit();
-          }
-        }}
-        rows={1}
-        placeholder={placeholder ?? "Send a message…"}
-        className="max-h-40 min-h-[42px] flex-1 resize-y rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-brand dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-      />
-      <button
-        type="submit"
-        disabled={disabled || !value.trim()}
-        className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Send
-      </button>
+      <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
+      <div className="flex items-end gap-2">
+        <AttachButton onPick={(files) => void addFiles(files)} disabled={disabled} />
+        <textarea
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+          rows={1}
+          placeholder={placeholder ?? "Send a message…"}
+          className="max-h-40 min-h-[42px] flex-1 resize-y rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-brand dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        />
+        <button
+          type="submit"
+          disabled={disabled || (!value.trim() && attachments.length === 0)}
+          className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Send
+        </button>
+      </div>
     </form>
   );
 }

@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
-import type { ChatDeps } from "./deps";
+import type { AttachedImage, ChatDeps } from "./deps";
 import { ChatValidationError } from "./errors";
-import { toEngineMessages } from "./messageMapping";
-import { resolveVersion, runAndPersist } from "./run";
+import { resolveVersion, runAndPersist, storeMessageImages, userTurnContent } from "./run";
 import { titleFromMessage } from "./title";
 import { claimChatRun } from "./runLease";
 
 export interface CreateChatInput {
   projectName: string;
   firstMessage: string;
+  /** Images the user attached to the first message. */
+  images?: AttachedImage[];
   userEmail: string;
   signal?: AbortSignal;
 }
@@ -53,11 +54,14 @@ export async function createChat(
   const runId = await claimChatRun(deps.chats, chat.chatId);
 
   try {
+    const attachments = input.images ?? [];
+    const storedImages = await storeMessageImages(deps, attachments);
     const userMessage: ChatMessage = {
       chatId: chat.chatId,
       seq: await deps.chats.reserveMessageSeq(chat.chatId),
       role: "user",
       content: input.firstMessage,
+      ...(storedImages.length > 0 ? { images: storedImages } : {}),
       createdAt: now,
     };
     await deps.chats.appendMessage(userMessage);
@@ -65,7 +69,9 @@ export async function createChat(
     const source = deps.runAgent({
       project,
       version,
-      messages: toEngineMessages([userMessage]),
+      // The attachment bytes go straight to the engine; the stored URLs are for
+      // replay on later turns.
+      messages: [{ role: "user", content: userTurnContent(input.firstMessage, attachments) }],
       userEmail: input.userEmail,
       signal: input.signal,
     });

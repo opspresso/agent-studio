@@ -1,13 +1,15 @@
 import type { ChatMessage } from "@/domain/chat/types";
-import type { ChatDeps } from "./deps";
+import type { AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { toEngineMessages } from "./messageMapping";
-import { resolveVersion, runAndPersist } from "./run";
+import { resolveVersion, runAndPersist, storeMessageImages, userTurnContent } from "./run";
 import { claimChatRun } from "./runLease";
 
 export interface SendMessageInput {
   chatId: string;
   content: string;
+  /** Images the user attached to this turn. */
+  images?: AttachedImage[];
   userEmail: string;
   signal?: AbortSignal;
 }
@@ -45,11 +47,14 @@ export async function sendMessage(
     const existing = await deps.chats.listMessages(input.chatId);
     const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
     const now = new Date().toISOString();
+    const attachments = input.images ?? [];
+    const storedImages = await storeMessageImages(deps, attachments);
     const userMessage: ChatMessage = {
       chatId: input.chatId,
       seq: userSeq,
       role: "user",
       content: input.content,
+      ...(storedImages.length > 0 ? { images: storedImages } : {}),
       createdAt: now,
     };
     await deps.chats.appendMessage(userMessage);
@@ -57,7 +62,12 @@ export async function sendMessage(
     const source = deps.runAgent({
       project,
       version,
-      messages: toEngineMessages([...existing, userMessage]),
+      // History replays from storage; this turn carries the attachment bytes
+      // themselves, which is what lets the agent edit what was just sent.
+      messages: [
+        ...toEngineMessages(existing),
+        { role: "user", content: userTurnContent(input.content, attachments) },
+      ],
       userEmail: input.userEmail,
       signal: input.signal,
     });

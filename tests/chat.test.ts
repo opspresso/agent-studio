@@ -12,6 +12,7 @@ import { deleteChat } from "@/application/chat/deleteChat";
 import { sendMessage } from "@/application/chat/sendMessage";
 import { ChatConflictError, ChatForbiddenError, ChatNotFoundError } from "@/application/chat/errors";
 import { claimChatRun } from "@/application/chat/runLease";
+import { createChatSchema, sendMessageSchema } from "@/app/api/chats/_lib/schemas";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -385,6 +386,178 @@ describe("ownership checks", () => {
   it("error statuses map to HTTP codes", () => {
     expect(new ChatNotFoundError().status).toBe(404);
     expect(new ChatForbiddenError().status).toBe(403);
+  });
+});
+
+describe("chat image attachments", () => {
+  const PNG = { b64: "YXR0YWNoZWQ=", mimeType: "image/png" };
+
+  const agentProjects: ProjectRepository = {
+    ...emptyProjects,
+    async get() {
+      return {
+        name: "p1",
+        displayName: "P1",
+        description: "",
+        projectType: "agent",
+        ownerEmail: "owner@x.com",
+        publishedVersion: "1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+    },
+  };
+  const publishedVersions: VersionRepository = {
+    ...emptyVersions,
+    async get() {
+      return {
+        projectName: "p1",
+        versionName: "1",
+        systemPrompt: "",
+        userPromptTemplate: "",
+        model: "google/gemini-2.5-flash",
+        parameters: { piiFiltering: false },
+        mcpList: [],
+        skillList: [],
+        subagentList: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+      };
+    },
+  };
+
+  it("replays a stored attachment as an image content part", () => {
+    const stored = message({ seq: 0, role: "user", content: "look" });
+    (stored as { images?: Array<{ url: string }> }).images = [
+      { url: "https://bucket.s3.example.com/images/a.png" },
+    ];
+
+    expect(toEngineMessages([stored])).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          {
+            type: "image_url",
+            image_url: { url: "https://bucket.s3.example.com/images/a.png" },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("omits the text part when the stored turn was image-only", () => {
+    const stored = message({ seq: 0, role: "user", content: "" });
+    (stored as { images?: Array<{ url: string }> }).images = [{ url: "https://x/y.png" }];
+
+    expect(toEngineMessages([stored])).toEqual([
+      {
+        role: "user",
+        content: [{ type: "image_url", image_url: { url: "https://x/y.png" } }],
+      },
+    ]);
+  });
+
+  it("sends the attachment bytes to the engine and persists the uploaded url", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const seenMessages: unknown[] = [];
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      storeImage: async () => "https://bucket.s3.example.com/images/a.png",
+      runAgent: (params) => {
+        seenMessages.push(...params.messages);
+        return emptyAgent();
+      },
+    });
+
+    const stream = await sendMessage(deps, {
+      chatId: "c1",
+      content: "what is this?",
+      images: [PNG],
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain so the run completes and persistence happens
+    }
+
+    // The engine gets real bytes — that is what makes the attachment editable.
+    expect(seenMessages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this?" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,YXR0YWNoZWQ=" } },
+        ],
+      },
+    ]);
+    const user = (await repo.listMessages("c1")).find((m) => m.role === "user");
+    expect(user?.role === "user" && user.images).toEqual([
+      { url: "https://bucket.s3.example.com/images/a.png" },
+    ]);
+  });
+
+  it("still runs the turn when image persistence is unconfigured", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const seenMessages: unknown[] = [];
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      runAgent: (params) => {
+        seenMessages.push(...params.messages);
+        return emptyAgent();
+      },
+    });
+
+    const stream = await sendMessage(deps, {
+      chatId: "c1",
+      content: "",
+      images: [PNG],
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain
+    }
+
+    expect(seenMessages).toEqual([
+      {
+        role: "user",
+        content: [{ type: "image_url", image_url: { url: "data:image/png;base64,YXR0YWNoZWQ=" } }],
+      },
+    ]);
+    const user = (await repo.listMessages("c1")).find((m) => m.role === "user");
+    expect(user?.role === "user" && user.images).toBeUndefined();
+  });
+});
+
+describe("chat request schemas", () => {
+  const image = { b64: "aGk=", mimeType: "image/png" };
+
+  it("accepts an image-only turn but not an empty one", () => {
+    expect(sendMessageSchema.safeParse({ content: "", images: [image] }).success).toBe(true);
+    expect(sendMessageSchema.safeParse({ content: "hi" }).success).toBe(true);
+    expect(sendMessageSchema.safeParse({ content: "   " }).success).toBe(false);
+    expect(sendMessageSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rejects unsupported types, oversized payloads and too many images", () => {
+    expect(
+      sendMessageSchema.safeParse({ content: "x", images: [{ ...image, mimeType: "image/svg+xml" }] })
+        .success,
+    ).toBe(false);
+    expect(
+      sendMessageSchema.safeParse({ content: "x", images: [{ ...image, b64: "A".repeat(7_500_000) }] })
+        .success,
+    ).toBe(false);
+    expect(
+      sendMessageSchema.safeParse({ content: "x", images: Array(5).fill(image) }).success,
+    ).toBe(false);
+  });
+
+  it("requires a project and something to say when creating a chat", () => {
+    expect(createChatSchema.safeParse({ projectName: "p1", images: [image] }).success).toBe(true);
+    expect(createChatSchema.safeParse({ projectName: "p1", firstMessage: "hi" }).success).toBe(true);
+    expect(createChatSchema.safeParse({ projectName: "p1" }).success).toBe(false);
+    expect(createChatSchema.safeParse({ firstMessage: "hi" }).success).toBe(false);
   });
 });
 

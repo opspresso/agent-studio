@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { withAuth } from "@/lib/session";
 import { sseResponse } from "@/lib/sse";
 import { createChat } from "@/application/chat/createChat";
@@ -6,15 +5,11 @@ import { listChats } from "@/application/chat/listChats";
 import { ChatError } from "@/application/chat/errors";
 import type { Chat } from "@/domain/chat/types";
 import { chatDeps } from "./_deps";
+import { createChatSchema } from "./_lib/schemas";
 
 export const GET = withAuth(async (user) => {
   const chats = await listChats(chatDeps, user.email);
   return Response.json({ chats });
-});
-
-const createSchema = z.object({
-  projectName: z.string().min(1),
-  firstMessage: z.string().min(1),
 });
 
 /** Prepend a `{ chat }` envelope so the client learns the chatId before deltas arrive. */
@@ -31,10 +26,10 @@ export const POST = withAuth(async (user, request: Request) => {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
 
-  const parsed = createSchema.safeParse(body);
+  const parsed = createChatSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "projectName and firstMessage are required" },
+      { error: parsed.error.issues[0]?.message ?? "projectName and firstMessage are required" },
       { status: 400 },
     );
   }
@@ -44,6 +39,7 @@ export const POST = withAuth(async (user, request: Request) => {
     const { chat, stream } = await createChat(chatDeps, {
       projectName: parsed.data.projectName,
       firstMessage: parsed.data.firstMessage,
+      ...(parsed.data.images ? { images: parsed.data.images } : {}),
       userEmail: user.email,
       signal: abortController.signal,
     });

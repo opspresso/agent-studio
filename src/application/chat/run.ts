@@ -2,8 +2,8 @@ import type { Project, Version } from "@/domain/project/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type { Chat, ChatMessageImage } from "@/domain/chat/types";
 import { isTopLevelChunk } from "@/domain/llm/types";
-import type { EngineChunk } from "@/domain/llm/types";
-import type { ChatDeps } from "./deps";
+import type { ContentPart, EngineChunk } from "@/domain/llm/types";
+import type { AttachedImage, ChatDeps } from "./deps";
 
 /**
  * Chat is an interactive surface, so it may fall back to the newest draft
@@ -14,6 +14,51 @@ export async function resolveVersion(
   project: Project,
 ): Promise<Version | null> {
   return resolveRunnableVersion(deps.versions, project, { allowDraftFallback: true });
+}
+
+/**
+ * The engine body for a user turn. Attachments travel as inline data URLs, so
+ * this turn works whether or not object storage is configured — and the engine
+ * gets real bytes, which is what makes an attachment editable.
+ */
+export function userTurnContent(
+  content: string,
+  images: AttachedImage[],
+): string | ContentPart[] {
+  if (images.length === 0) {
+    return content;
+  }
+  return [
+    ...(content ? [{ type: "text" as const, text: content }] : []),
+    ...images.map((image) => ({
+      type: "image_url" as const,
+      image_url: { url: `data:${image.mimeType};base64,${image.b64}` },
+    })),
+  ];
+}
+
+/**
+ * Upload images for persistence and keep only their URLs — a b64 payload is far
+ * beyond the DynamoDB item size limit. Without `storeImage` nothing is stored
+ * (live rendering only); a failed upload drops that image, never the message.
+ */
+export async function storeMessageImages(
+  deps: ChatDeps,
+  images: Array<{ b64: string; mimeType: string; prompt?: string }>,
+): Promise<ChatMessageImage[]> {
+  const stored: ChatMessageImage[] = [];
+  if (!deps.storeImage) {
+    return stored;
+  }
+  for (const image of images) {
+    try {
+      const url = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
+      stored.push(image.prompt === undefined ? { url } : { url, prompt: image.prompt });
+    } catch (error) {
+      console.error("[chat] image upload failed", error);
+    }
+  }
+  return stored;
 }
 
 /**
@@ -71,20 +116,7 @@ export async function* runAndPersist(
       return;
     }
     try {
-      // Upload images to object storage and keep only the URLs — the b64 payloads
-      // are far beyond the DynamoDB item size limit. A failed upload drops that
-      // image but never the message.
-      const images: ChatMessageImage[] = [];
-      if (deps.storeImage) {
-        for (const image of generatedImages) {
-          try {
-            const url = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
-            images.push(image.prompt === undefined ? { url } : { url, prompt: image.prompt });
-          } catch (error) {
-            console.error("[chat] image upload failed", error);
-          }
-        }
-      }
+      const images = await storeMessageImages(deps, generatedImages);
 
       const now = new Date().toISOString();
       for (const tool of toolMessages) {
