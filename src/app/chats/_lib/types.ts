@@ -11,6 +11,8 @@ export interface StreamChunk {
   author?: string;
   /** Transfer chain that produced the chunk, outermost first. */
   authorPath?: string[];
+  /** A binding the run could not use; the run still answers. */
+  warning?: string;
   error?: string;
 }
 
@@ -36,6 +38,8 @@ export interface LiveTurn {
   toolCalls: LiveToolCall[];
   tools: LiveToolResult[];
   images: LiveImage[];
+  /** Bindings this run could not use, reported before the answer starts. */
+  warnings: string[];
   /**
    * The chain currently producing chunks, outermost first — cleared when the
    * top-level agent takes over again, so the badge never claims a subagent is
@@ -50,4 +54,10 @@ export interface AgentProject {
   projectType: string;
 }
 
-export const EMPTY_TURN: LiveTurn = { text: "", toolCalls: [], tools: [], images: [] };
+export const EMPTY_TURN: LiveTurn = {
+  text: "",
+  toolCalls: [],
+  tools: [],
+  images: [],
+  warnings: [],
+};

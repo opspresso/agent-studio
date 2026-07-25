@@ -342,6 +342,11 @@ export async function handleSlackEvent(
         }
         continue;
       }
+      if (chunk.warning) {
+        // A binding the run could not use. It rides out with the answer rather
+        // than replacing it — the run still produced one.
+        warnings.push(chunk.warning);
+      }
       // Stream tool activity so the first (tool-heavy) turn shows progress.
       const toolCall = chunk.delta?.toolCalls?.[0] as
         | { function?: { name?: string } }

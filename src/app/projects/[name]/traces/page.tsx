@@ -92,6 +92,11 @@ export default function TracesPage() {
             )}
           </summary>
           {trace.error && <p className="mt-3 text-sm text-red-600">{trace.error}</p>}
+          {trace.warnings?.map((warning, index) => (
+            <p key={`warning-${index}`} className="mt-2 text-sm text-amber-600 dark:text-amber-400">
+              ⚠️ {warning}
+            </p>
+          ))}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase text-neutral-500">

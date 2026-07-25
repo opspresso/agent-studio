@@ -27,7 +27,7 @@ function toolResultName(toolResult: unknown): string | undefined {
  * results, and generated images all render live regardless of author.
  */
 export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
-  let { text, toolCalls, tools, images } = prev;
+  let { text, toolCalls, tools, images, warnings } = prev;
   // Follow the stream: an authored chunk names the chain that is running now, an
   // unauthored one means the top-level agent has control again.
   const authorPath = chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
@@ -46,5 +46,10 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   if (chunk.image) {
     images = [...images, chunk.image];
   }
-  return { text, toolCalls, tools, images, ...(authorPath ? { authorPath } : {}) };
+  if (typeof chunk.warning === "string" && !warnings.includes(chunk.warning)) {
+    // A nested run can report the same unusable binding as its parent; the
+    // reader only needs to be told once.
+    warnings = [...warnings, chunk.warning];
+  }
+  return { text, toolCalls, tools, images, warnings, ...(authorPath ? { authorPath } : {}) };
 }

@@ -119,6 +119,14 @@ export function MessageView({ message }: { message: ChatMessage }) {
 export function LiveAssistant({ turn }: { turn: LiveTurn }) {
   return (
     <div className="flex flex-col items-start gap-1">
+      {turn.warnings.map((warning, index) => (
+        <div
+          key={`warning-${index}`}
+          className="max-w-[80%] rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
+        >
+          ⚠️ {warning}
+        </div>
+      ))}
       {turn.toolCalls.map((call, index) => (
         <div key={`call-${index}`} className="w-full max-w-[80%]">
           <ToolResultBlock content={call.args} label={`🔧 tool call: ${call.name}`} />
