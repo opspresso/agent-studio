@@ -7,6 +7,11 @@ export interface SlackMessage {
   text?: string;
 }
 
+/** Per-page size for paginated reads; Slack's recommended maximum. */
+const PAGE_SIZE = 200;
+/** Page cap so a pathological thread cannot loop unbounded. */
+const MAX_THREAD_PAGES = 10;
+
 async function slackApi<T>(
   token: string,
   method: string,
@@ -77,23 +82,48 @@ export const slackClient = {
   ): Promise<{ ts: string }> {
     return slackApi(token, "chat.update", args);
   },
+  /**
+   * Every reply in a thread, oldest first. Slack paginates this endpoint and
+   * returns pages oldest-first, so reading a single page drops the *newest*
+   * messages — page through to the end instead (bounded by MAX_THREAD_PAGES).
+   */
   async threadReplies(
     token: string,
     args: { channel: string; ts: string; limit?: number },
   ): Promise<SlackMessage[]> {
-    // Read-family Web API methods reject JSON bodies; use GET with query params.
-    const params = new URLSearchParams({
-      channel: args.channel,
-      ts: args.ts,
-      limit: String(args.limit ?? 30),
-    });
-    const res = await fetch(`https://slack.com/api/conversations.replies?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = (await res.json()) as { ok: boolean; error?: string; messages?: SlackMessage[] };
-    if (!data.ok) {
-      throw new Error(`Slack conversations.replies failed: ${data.error ?? res.status}`);
+    const messages: SlackMessage[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_THREAD_PAGES; page += 1) {
+      // Read-family Web API methods reject JSON bodies; use GET with query params.
+      const params = new URLSearchParams({
+        channel: args.channel,
+        ts: args.ts,
+        limit: String(args.limit ?? PAGE_SIZE),
+      });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      const res = await fetch(`https://slack.com/api/conversations.replies?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        messages?: SlackMessage[];
+        response_metadata?: { next_cursor?: string };
+      };
+      if (!data.ok) {
+        throw new Error(`Slack conversations.replies failed: ${data.error ?? res.status}`);
+      }
+      messages.push(...(data.messages ?? []));
+      cursor = data.response_metadata?.next_cursor || undefined;
+      if (!cursor) {
+        return messages;
+      }
     }
-    return data.messages ?? [];
+    console.warn(
+      `[slack] thread ${args.ts} exceeds ${MAX_THREAD_PAGES} pages; newest replies were not read`,
+    );
+    return messages;
   },
 };
