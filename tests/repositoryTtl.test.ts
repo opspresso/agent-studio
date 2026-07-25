@@ -11,6 +11,8 @@ const { state, fakeClient } = vi.hoisted(() => {
     sent: [] as Captured[],
     getItem: undefined as Record<string, unknown> | undefined,
     queryItems: [] as Record<string, unknown>[],
+    /** When set, successive Query calls consume these pages instead of queryItems. */
+    queryPages: [] as Array<{ Items: Record<string, unknown>[]; LastEvaluatedKey?: unknown }>,
   };
   const fakeClient = {
     async send(command: Captured) {
@@ -20,6 +22,9 @@ const { state, fakeClient } = vi.hoisted(() => {
         return { Item: state.getItem };
       }
       if (name === "QueryCommand") {
+        if (state.queryPages.length > 0) {
+          return state.queryPages.shift();
+        }
         return { Items: state.queryItems, LastEvaluatedKey: undefined };
       }
       return {};
@@ -51,6 +56,7 @@ beforeEach(() => {
   state.sent = [];
   state.getItem = undefined;
   state.queryItems = [];
+  state.queryPages = [];
 });
 
 afterEach(() => {
@@ -99,6 +105,43 @@ describe("trace TTL", () => {
     ];
     const traces = await traceRepository.listByProject("p");
     expect(traces.map((t) => t.traceId)).toEqual(["fresh"]);
+  });
+
+  it("keeps paging until the requested limit is filled with live rows", async () => {
+    // DynamoDB applies Limit before the app-side TTL filter, so a page of
+    // not-yet-purged rows would otherwise return fewer traces than asked for.
+    state.queryPages = [
+      {
+        Items: [
+          { ...trace({ traceId: "a" }), expiresAt: freshSec },
+          { ...trace({ traceId: "gone1" }), expiresAt: expiredSec },
+        ],
+        LastEvaluatedKey: { PK: "cursor" },
+      },
+      {
+        Items: [{ ...trace({ traceId: "b" }), expiresAt: freshSec }],
+        LastEvaluatedKey: undefined,
+      },
+    ];
+
+    const traces = await traceRepository.listByProject("p", { limit: 2 });
+
+    expect(traces.map((t) => t.traceId)).toEqual(["a", "b"]);
+    expect(state.sent.filter((c) => c.constructor?.name === "QueryCommand")).toHaveLength(2);
+  });
+
+  it("stops paging once there is no cursor left", async () => {
+    state.queryPages = [
+      {
+        Items: [{ ...trace({ traceId: "only" }), expiresAt: freshSec }],
+        LastEvaluatedKey: undefined,
+      },
+    ];
+
+    const traces = await traceRepository.listByProject("p", { limit: 50 });
+
+    expect(traces.map((t) => t.traceId)).toEqual(["only"]);
+    expect(state.sent.filter((c) => c.constructor?.name === "QueryCommand")).toHaveLength(1);
   });
 });
 

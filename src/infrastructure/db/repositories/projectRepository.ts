@@ -3,7 +3,6 @@ import {
   DeleteCommand,
   GetCommand,
   PutCommand,
-  QueryCommand,
   TransactWriteCommand,
   UpdateCommand,
   type BatchWriteCommandInput,
@@ -114,28 +113,13 @@ export const projectRepository: ProjectRepository = {
   },
 
   async list(): Promise<Project[]> {
-    const client = getDocumentClient();
-    const table = getTableName();
-    const projects: Project[] = [];
-
-    let lastKey: Record<string, unknown> | undefined;
-    do {
-      const page = await client.send(
-        new QueryCommand({
-          TableName: table,
-          IndexName: "GSI1",
-          KeyConditionExpression: "GSI1PK = :pk",
-          ExpressionAttributeValues: { ":pk": keys.typePartition("PROJECT") },
-          ExclusiveStartKey: lastKey,
-        }),
-      );
-      for (const item of page.Items ?? []) {
-        projects.push(fromItem(item));
-      }
-      lastKey = page.LastEvaluatedKey;
-    } while (lastKey);
-
-    return projects;
+    const items = await queryAll({
+      TableName: getTableName(),
+      IndexName: "GSI1",
+      KeyConditionExpression: "GSI1PK = :pk",
+      ExpressionAttributeValues: { ":pk": keys.typePartition("PROJECT") },
+    });
+    return items.map(fromItem);
   },
 
   async create(project: Project): Promise<void> {

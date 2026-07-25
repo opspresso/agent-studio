@@ -6,6 +6,8 @@ import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 
 const MAX_SPANS = 100;
+/** Bound on extra pages fetched to refill a list thinned by expired rows. */
+const MAX_LIST_PAGES = 5;
 
 function fromItem(item: Record<string, unknown>): Trace {
   return {
@@ -102,17 +104,33 @@ export class DynamoTraceRepository implements TraceRepository {
       keyCondition += " AND GSI1SK <= :to";
       values[":to"] = `${to}￿`;
     }
-    const result = await getDocumentClient().send(
-      new QueryCommand({
-        TableName: getTableName(),
-        IndexName: "GSI1",
-        KeyConditionExpression: keyCondition,
-        ExpressionAttributeValues: values,
-        ScanIndexForward: false,
-        Limit: Math.min(Math.max(limit, 1), 100),
-      }),
-    );
-    return notExpired(result.Items ?? [], Date.now()).map(fromItem);
+    const pageLimit = Math.min(Math.max(limit, 1), 100);
+    const client = getDocumentClient();
+    const traces: Trace[] = [];
+    let lastKey: Record<string, unknown> | undefined;
+    // The TTL purge is only eventually consistent, so already-expired rows are
+    // filtered in code — after DynamoDB applied `Limit`. Keep pulling pages
+    // until the caller's limit is genuinely filled (bounded, so a partition of
+    // expired rows can't turn one list into an unbounded scan).
+    for (let page = 0; page < MAX_LIST_PAGES; page += 1) {
+      const result = await client.send(
+        new QueryCommand({
+          TableName: getTableName(),
+          IndexName: "GSI1",
+          KeyConditionExpression: keyCondition,
+          ExpressionAttributeValues: values,
+          ScanIndexForward: false,
+          Limit: pageLimit,
+          ExclusiveStartKey: lastKey,
+        }),
+      );
+      traces.push(...notExpired(result.Items ?? [], Date.now()).map(fromItem));
+      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+      if (traces.length >= pageLimit || !lastKey) {
+        break;
+      }
+    }
+    return traces.slice(0, pageLimit);
   }
 }
 
