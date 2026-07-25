@@ -63,6 +63,16 @@ export function toolCallChunk(
   };
 }
 
+/** A tool call the provider never gave an id — the shape some OpenAI-compatible
+ * gateways emit. The engine has to make the call addressable on its own. */
+export function toolCallChunkWithoutId(index: number, name: string, args: string): ChannelChunk {
+  return {
+    choices: [
+      { delta: { tool_calls: [{ index, type: "function", function: { name, arguments: args } }] } },
+    ],
+  };
+}
+
 /** A streaming continuation fragment for an in-progress tool call: only appended
  * argument text, no id/name (they arrived in an earlier fragment). */
 export function toolCallArgsChunk(index: number, args: string): ChannelChunk {

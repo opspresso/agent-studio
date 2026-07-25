@@ -714,13 +714,27 @@ class ToolCallAccumulator {
     }
   }
 
+  /**
+   * The response's calls in delta order, each carrying an id unique within the
+   * response. Dispatch keys results by id, so a provider that omits ids (some
+   * OpenAI-compatible gateways do) or repeats one would otherwise have a call
+   * served another call's result, and the follow-up turn would carry duplicate
+   * `tool_call_id`s the provider rejects.
+   */
   finalize(): AccumulatedCall[] {
     const calls: AccumulatedCall[] = [];
+    const used = new Set<string>();
     for (const index of this.order) {
       const entry = this.byIndex.get(index);
-      if (entry && entry.name) {
-        calls.push(entry);
+      if (!entry || !entry.name) {
+        continue;
       }
+      let id = entry.id;
+      for (let suffix = calls.length + 1; !id || used.has(id); suffix += 1) {
+        id = `call_${suffix}`;
+      }
+      used.add(id);
+      calls.push(id === entry.id ? entry : { ...entry, id });
     }
     return calls;
   }

@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChannelMessage, ChannelToolCall } from "@/domain/llm/channel";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
-import { contentChunk, FakeChannel, toolCallArgsChunk, toolCallChunk, usageChunk } from "./fakeChannel";
+import {
+  contentChunk,
+  FakeChannel,
+  toolCallArgsChunk,
+  toolCallChunk,
+  toolCallChunkWithoutId,
+  usageChunk,
+} from "./fakeChannel";
 
 async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
   const chunks: EngineChunk[] = [];
@@ -121,6 +128,82 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
     // The transfer's own tool message is the null-result placeholder.
     const transferToolMsg = block.find((m) => m.role === "tool" && m.tool_call_id === "call_t");
     expect(String(transferToolMsg?.content)).toContain("null");
+  });
+});
+
+describe("ToolCallAccumulator makes every call of a response addressable", () => {
+  it("gives calls the provider left without an id distinct ids, so neither reads the other's result", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunkWithoutId(0, "getWeather", '{"city":"Seoul"}'),
+        toolCallChunkWithoutId(1, "getTime", '{"tz":"KST"}'),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("done"), usageChunk(8, 4)],
+    ]);
+    const callMcpTool = vi.fn(async (name: string) => ({
+      text: name === "getWeather" ? "sunny" : "09:00",
+    }));
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "weather and time?" }],
+        mcpTools: [
+          { type: "function", function: { name: "getWeather", parameters: {} } },
+          { type: "function", function: { name: "getTime", parameters: {} } },
+        ],
+      }),
+    );
+
+    // Each call carries its OWN result — a shared id would cross them over.
+    expect(chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content)).toEqual([
+      "sunny",
+      "09:00",
+    ]);
+
+    const messages = followUpMessages(channel);
+    const ids = idsOf(assistantWithToolCalls(messages)?.tool_calls);
+    expect(ids).toHaveLength(2);
+    expect(ids.every((id) => typeof id === "string" && id !== "")).toBe(true);
+    expect(new Set(ids).size).toBe(2);
+    // The tool messages pair with those ids, in order and with no duplicates.
+    expect(toolMsgIdsOf(messages)).toEqual(ids);
+  });
+
+  it("keeps a provider's own ids when it supplies them", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_a", "getWeather", "{}"),
+        toolCallChunkWithoutId(1, "getTime", "{}"),
+        usageChunk(10, 5),
+      ],
+      [contentChunk("done"), usageChunk(8, 4)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: vi.fn(async () => ({ text: "ok" })),
+    };
+
+    await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "both" }],
+        mcpTools: [
+          { type: "function", function: { name: "getWeather", parameters: {} } },
+          { type: "function", function: { name: "getTime", parameters: {} } },
+        ],
+      }),
+    );
+
+    const ids = idsOf(assistantWithToolCalls(followUpMessages(channel))?.tool_calls);
+    expect(ids[0]).toBe("call_a");
+    expect(ids[1]).toBeTruthy();
+    expect(ids[1]).not.toBe("call_a");
   });
 });
 
