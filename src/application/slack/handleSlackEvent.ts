@@ -80,40 +80,56 @@ const MAX_IMAGE_ATTACHMENTS = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-/** Convert thread replies to engine messages: bot turns → assistant, human turns → user. */
-export function threadToMessages(replies: SlackMessage[], currentTs: string): ChatMessageInput[] {
+/** One thread turn: the mapped engine message plus the attachments it carried. */
+export interface ThreadTurn {
+  message: ChatMessageInput;
+  files: SlackEventFile[];
+}
+
+/**
+ * Convert thread replies to engine turns: bot turns → assistant, human turns →
+ * user. A message with no text is kept when it carried files — an image posted
+ * on its own is still part of the conversation.
+ */
+export function threadToTurns(replies: SlackMessage[], currentTs: string): ThreadTurn[] {
   return replies
-    .filter((m) => m.ts !== currentTs && (m.text ?? "").trim() !== "")
+    .filter(
+      (m) => m.ts !== currentTs && ((m.text ?? "").trim() !== "" || (m.files ?? []).length > 0),
+    )
     .map((m) => ({
-      role: m.bot_id ? ("assistant" as const) : ("user" as const),
-      content: (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim(),
+      message: {
+        role: m.bot_id ? ("assistant" as const) : ("user" as const),
+        content: (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim(),
+      },
+      files: m.files ?? [],
     }));
 }
 
 /**
- * Download the event's image attachments as content parts. Only the current
- * event's files are read — pulling every image out of a long thread would cost
- * far more in tokens and latency than the added context is worth.
+ * Download image attachments as content parts, up to `budget` images. Callers
+ * spend the budget on the current message first, then on the newest history.
  */
 async function collectImageParts(
   deps: SlackEventDeps,
   token: string,
   files: SlackEventFile[],
   warnings: string[],
+  budget = MAX_IMAGE_ATTACHMENTS,
 ): Promise<ContentPart[]> {
+  if (budget <= 0) {
+    return [];
+  }
   const images = files.filter((file) => (file.mimetype ?? "").startsWith("image/"));
   const others = files.length - images.length;
   if (others > 0) {
     warnings.push(`Ignored ${others} non-image attachment(s).`);
   }
-  if (images.length > MAX_IMAGE_ATTACHMENTS) {
-    warnings.push(
-      `Read only the first ${MAX_IMAGE_ATTACHMENTS} of ${images.length} attached images.`,
-    );
+  if (images.length > budget) {
+    warnings.push(`Read only ${budget} of ${images.length} attached images.`);
   }
 
   const parts: ContentPart[] = [];
-  for (const file of images.slice(0, MAX_IMAGE_ATTACHMENTS)) {
+  for (const file of images.slice(0, budget)) {
     const label = file.name ?? file.id ?? "attachment";
     const mimeType = file.mimetype ?? "";
     if (!SUPPORTED_IMAGE_TYPES.has(mimeType)) {
@@ -148,6 +164,50 @@ async function collectImageParts(
     }
   }
   return parts;
+}
+
+/**
+ * Attach the images of earlier thread turns to their own messages, newest turn
+ * first until the budget runs out. Without this an "edit the picture I sent
+ * earlier" request in a thread would reach the model as text alone.
+ */
+async function withHistoryImages(
+  deps: SlackEventDeps,
+  token: string,
+  turns: ThreadTurn[],
+  budget: number,
+  warnings: string[],
+): Promise<ChatMessageInput[]> {
+  const partsByIndex = new Map<number, ContentPart[]>();
+  let remaining = budget;
+  for (let index = turns.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    const turn = turns[index];
+    // Only image attachments are relevant here, and an older turn's unrelated
+    // files are not worth reporting on — the user is asking about this turn.
+    const imageFiles = (turn?.files ?? []).filter((file) =>
+      (file.mimetype ?? "").startsWith("image/"),
+    );
+    if (imageFiles.length === 0) {
+      continue;
+    }
+    const parts = await collectImageParts(deps, token, imageFiles, warnings, remaining);
+    if (parts.length > 0) {
+      partsByIndex.set(index, parts);
+      remaining -= parts.length;
+    }
+  }
+
+  return turns.map((turn, index) => {
+    const parts = partsByIndex.get(index);
+    if (!parts) {
+      return turn.message;
+    }
+    const text = typeof turn.message.content === "string" ? turn.message.content : "";
+    return {
+      ...turn.message,
+      content: [...(text ? [{ type: "text" as const, text }] : []), ...parts],
+    };
+  });
 }
 
 /** Credentials and project binding for a project-dedicated bot. */
@@ -193,14 +253,14 @@ export async function handleSlackEvent(
   const warnings: string[] = [];
   // Read the thread *before* posting the placeholder — otherwise our own
   // placeholder comes back as an assistant turn in this run's own context.
-  let history: ChatMessageInput[] = [];
+  let turns: ThreadTurn[] = [];
   if (event.thread_ts !== undefined) {
     try {
       const replies = await deps.slack.threadReplies(token, {
         channel: event.channel,
         ts: event.thread_ts,
       });
-      history = threadToMessages(replies, event.ts).slice(-MAX_HISTORY_MESSAGES);
+      turns = threadToTurns(replies, event.ts).slice(-MAX_HISTORY_MESSAGES);
     } catch (error) {
       console.error("[slack] thread history failed", error);
       warnings.push("Thread history unavailable; answered without prior context.");
@@ -226,6 +286,15 @@ export async function handleSlackEvent(
     imageParts.length > 0
       ? [...(message ? [{ type: "text" as const, text: message }] : []), ...imageParts]
       : message;
+  // Whatever budget the current message left goes to the newest thread images,
+  // so "make the picture I sent blue" still has the picture.
+  const history = await withHistoryImages(
+    deps,
+    token,
+    turns,
+    MAX_IMAGE_ATTACHMENTS - imageParts.length,
+    warnings,
+  );
   try {
     const messages: ChatMessageInput[] = [...history, { role: "user", content: userContent }];
     for await (const chunk of deps.runAgent({ project, version, messages, signal: deadline })) {

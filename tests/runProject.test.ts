@@ -319,7 +319,7 @@ describe("executeAgent EditImage", () => {
     );
 
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
-    expect(systemPrompt).toContain("## Editable Images");
+    expect(systemPrompt).toContain("## Available Images");
     expect(systemPrompt).toContain("| img_1 | sent by the user |");
   });
 
@@ -390,6 +390,147 @@ describe("executeAgent EditImage", () => {
       { model: DEFAULT_IMAGE_MODEL, prompt: "at night", sources: ["aW1n"] },
     ]);
     expect(chunks.filter((c) => c.image)).toHaveLength(2);
+  });
+});
+
+describe("executeAgent image transfer to a subagent", () => {
+  const ATTACHED = "data:image/png;base64,YXR0YWNoZWQ=";
+
+  function imageProjectDeps(channel: FakeChannel) {
+    const fixture = executionDepsFixture(channel);
+    // The parent has one image subagent, like sample-agent -> simple-image.
+    const parent = {
+      ...projectFixture(),
+      name: "sample-agent",
+    };
+    const child: Project = {
+      ...projectFixture(),
+      name: "simple-image",
+      projectType: "image",
+      publishedVersion: "1",
+    };
+    const childVersion: Version = {
+      ...versionFixture({ piiFiltering: false }),
+      projectName: "simple-image",
+      model: DEFAULT_IMAGE_MODEL ?? "openai/gpt-image-2",
+    };
+    const deps = {
+      ...fixture.deps,
+      projects: { get: async (name: string) => (name === "simple-image" ? child : parent) },
+      versions: {
+        get: async (project: string) => (project === "simple-image" ? childVersion : null),
+        list: async () => [childVersion],
+      },
+    } as unknown as ExecutionDeps;
+    return { ...fixture, deps, parent };
+  }
+
+  const transferScript = (args: string) => [
+    [toolCallChunk(0, "call_t", "transfer_to_agent", args), usageChunk(1, 1)],
+    [contentChunk("Done — the image is updated."), usageChunk(1, 1)],
+  ];
+
+  function parentVersion(): Version {
+    return {
+      ...versionFixture({ piiFiltering: false }),
+      model: "google/gemini-2.5-flash",
+      subagentList: [{ name: "simple-image", type: "local" }],
+    };
+  }
+
+  it("hands the named image to an image subagent, which edits instead of drawing", async () => {
+    const channel = new FakeChannel(
+      transferScript('{"agent_name":"simple-image","message":"make it blue","image_ids":["img_1"]}'),
+    );
+    const { deps, edits, imageModels, parent } = imageProjectDeps(channel);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: parent,
+        version: parentVersion(),
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "make this blue" },
+              { type: "image_url", image_url: { url: ATTACHED } },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(edits).toEqual([
+      { model: DEFAULT_IMAGE_MODEL, prompt: "make it blue", sources: ["YXR0YWNoZWQ="] },
+    ]);
+    expect(imageModels).toEqual([]); // the generate endpoint was never used
+    expect(chunks.find((c) => c.image)?.image).toMatchObject({ b64: "ZWRpdA==" });
+  });
+
+  it("draws from scratch when no image is named", async () => {
+    const channel = new FakeChannel(
+      transferScript('{"agent_name":"simple-image","message":"draw a fox"}'),
+    );
+    const { deps, edits, imageModels, parent } = imageProjectDeps(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: parent,
+        version: parentVersion(),
+        messages: [{ role: "user", content: "draw a fox" }],
+      }),
+    );
+
+    expect(edits).toEqual([]);
+    expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
+  });
+
+  it("reports an unknown image id without transferring", async () => {
+    const channel = new FakeChannel(
+      transferScript('{"agent_name":"simple-image","message":"edit","image_ids":["img_7"]}'),
+    );
+    const { deps, edits, imageModels, parent } = imageProjectDeps(channel);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: parent,
+        version: parentVersion(),
+        messages: [
+          { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
+        ],
+      }),
+    );
+
+    expect(edits).toEqual([]);
+    expect(imageModels).toEqual([]);
+    const result = chunks.find((c) => c.toolResult?.name === "transfer_to_agent")?.toolResult;
+    expect(result?.content).toContain("unknown image id");
+    expect(result?.content).toContain("img_1");
+  });
+
+  it("offers image_ids and lists the images in the system prompt", async () => {
+    const channel = new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]);
+    const { deps, parent } = imageProjectDeps(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: parent,
+        version: parentVersion(),
+        messages: [
+          { role: "user", content: [{ type: "image_url", image_url: { url: ATTACHED } }] },
+        ],
+      }),
+    );
+
+    const transfer = channel.seenParams[0]?.tools?.find(
+      (t) => t.function.name === "transfer_to_agent",
+    );
+    const properties = transfer?.function.parameters?.properties as Record<string, unknown>;
+    expect(properties).toHaveProperty("image_ids");
+    const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(systemPrompt).toContain("## Available Images");
+    expect(systemPrompt).toContain("| img_1 | sent by the user |");
+    expect(systemPrompt).toContain("image_ids");
   });
 });
 

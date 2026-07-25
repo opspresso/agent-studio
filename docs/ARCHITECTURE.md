@@ -261,11 +261,15 @@ Two deliberate strategies coexist:
     provider implements the edit endpoint is only known at dispatch, so a refusal comes back
     as a tool-result error rather than hiding the tool
   - image handles: a per-run registry ids the inline `data:` images of the input messages and
-    every image the run produced (`img_1`, `img_2`, …). `EditImage` takes an id, so the engine
-    resolves bytes and the dep stays pure I/O. An `https://` image part gets no handle — the
-    provider fetches those itself, so the bytes are not in hand
-  - subagent transfer passes ONLY the model-written `message` (no parent history);
-    child's final text returns as a "For context: ..." user message
+    every image the run produced (`img_1`, `img_2`, …). `EditImage` and `transfer_to_agent`'s
+    `image_ids` take an id, so the engine resolves bytes and the deps stay pure I/O. An
+    `https://` image part gets no handle — the provider fetches those itself, so the bytes are
+    not in hand. The registry is filled when a run can edit or can transfer; otherwise skipped
+  - subagent transfer passes ONLY the model-written `message` (no parent history) plus the
+    bytes of any `image_ids` it named — an image-project child then *edits* those instead of
+    drawing anew, and an agent child sees them as image content parts. A remote (A2A) child
+    cannot take images and says so rather than dropping them. The child's final text returns
+    as a "For context: ..." user message
   - local transfers carry an ancestry chain (`src/application/execution/runProject.ts`):
     transferring to a project already on the chain, or nesting past
     `MAX_SUBAGENT_DEPTH` (5), is refused as an authored error chunk. Turn accounting
