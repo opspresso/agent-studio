@@ -93,6 +93,38 @@ describe("runAgent tool loop", () => {
     });
   });
 
+  it("dispatches a builtin's name to MCP when that builtin is not offered", async () => {
+    // `loadSkillContent` is injected on every agent run, so the dep alone cannot
+    // decide who serves a call named `Skill`. With no skills connected the
+    // builtin is not offered, and the name belongs to whoever declared it.
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "Skill", '{"skill_name":"x"}'), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const called: string[] = [];
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      loadSkillContent: async () => "# never reached",
+      callMcpTool: async (name) => {
+        called.push(name);
+        return "mcp answered";
+      },
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: MODEL,
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: [{ type: "function", function: { name: "Skill", parameters: {} } }],
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    expect(called).toEqual(["Skill"]);
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toBe("mcp answered");
+  });
+
   it("runs a tool call that arrives in the same delta as assistant content", async () => {
     // Gateways (vLLM/LiteLLM) and reasoning shims put content and tool_calls in
     // ONE delta. Treating the delta fields as mutually exclusive silently drops

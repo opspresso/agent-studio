@@ -41,6 +41,18 @@ export const SKILL_TOOL_NAME = "Skill";
 export const TRANSFER_TOOL_NAME = "transfer_to_agent";
 export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
+/**
+ * Every name a builtin may claim. An MCP tool that arrives under one of these
+ * must be aliased even when that builtin is inactive for the run: whether a
+ * builtin is offered depends on the version, while the alias must be stable and
+ * decided before the run's tool set is built.
+ */
+export const BUILTIN_TOOL_NAMES: readonly string[] = [
+  SKILL_TOOL_NAME,
+  TRANSFER_TOOL_NAME,
+  IMAGE_TOOL_NAME,
+  EDIT_IMAGE_TOOL_NAME,
+];
 const DEFAULT_MAX_TURN = 50;
 
 /** An image this run can edit, addressed by a short id the model can quote. */
@@ -753,6 +765,9 @@ function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
         properties: {
           skill_name: {
             type: "string",
+            // Enumerated like the transfer tool's `agent_name`: a free-text name
+            // is the main source of "skill is not connected" round trips.
+            enum: skills.map((s) => s.name),
             description: `The name of the skill to load. Available skills: ${names}`,
           },
           file_path: {
@@ -926,21 +941,29 @@ function buildAgentTools(
   withImageTool: boolean,
   withEditTool: boolean,
   withImageTransfer: boolean,
-): ChannelToolDef[] {
+): { tools: ChannelToolDef[]; builtinNames: Set<string> } {
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
+  // The names of the builtins actually offered. The tool loop intercepts a call
+  // only when its name is in here, so "offered" and "intercepted" cannot drift
+  // apart — an MCP tool named like an inactive builtin stays reachable.
+  const builtinNames = new Set<string>();
   if (skills.length > 0) {
     tools.push(skillToolDef(skills));
+    builtinNames.add(SKILL_TOOL_NAME);
   }
   if (subagents.length > 0) {
     tools.push(transferToolDef(subagents, withImageTransfer));
+    builtinNames.add(TRANSFER_TOOL_NAME);
   }
   if (withImageTool) {
     tools.push(IMAGE_TOOL_DEF);
+    builtinNames.add(IMAGE_TOOL_NAME);
   }
   if (withEditTool) {
     tools.push(EDIT_IMAGE_TOOL_DEF);
+    builtinNames.add(EDIT_IMAGE_TOOL_NAME);
   }
-  return tools;
+  return { tools, builtinNames };
 }
 
 async function loadSkillSafe(
@@ -990,7 +1013,7 @@ export async function* runAgent(
     input.mcpServers ?? [],
     { handles: images.list(), canEdit, canTransfer },
   );
-  const tools = buildAgentTools(
+  const { tools, builtinNames } = buildAgentTools(
     input.mcpTools,
     skills,
     subagents,
@@ -1111,7 +1134,9 @@ export async function* runAgent(
         : args;
       yield { author, delta: { toolCalls: [toWireToolCall(call.id, call.name, displayArgs)] } };
 
-      if (hasSubagents && call.name === TRANSFER_TOOL_NAME) {
+      // Gated on the offered set, not on the dep: an MCP tool that arrived under
+      // a builtin's name is only shadowed when that builtin is actually offered.
+      if (builtinNames.has(call.name) && call.name === TRANSFER_TOOL_NAME) {
         // Child runs at turn+1 and the parent resumes at turn+2, so two turns
         // must remain or the resume would trip the initial guard.
         if (turn + 2 >= maxTurn) {
@@ -1170,7 +1195,7 @@ export async function* runAgent(
         continue;
       }
 
-      if (call.name === IMAGE_TOOL_NAME && deps.generateImage) {
+      if (builtinNames.has(call.name) && call.name === IMAGE_TOOL_NAME && deps.generateImage) {
         const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
         const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
         const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
@@ -1206,7 +1231,7 @@ export async function* runAgent(
         continue;
       }
 
-      if (call.name === EDIT_IMAGE_TOOL_NAME && deps.editImage) {
+      if (builtinNames.has(call.name) && call.name === EDIT_IMAGE_TOOL_NAME && deps.editImage) {
         const maskedPrompt = typeof args.prompt === "string" ? args.prompt : "";
         const displayPrompt = typeof displayArgs.prompt === "string" ? displayArgs.prompt : "";
         const imageId = typeof displayArgs.image_id === "string" ? displayArgs.image_id : "";
@@ -1252,7 +1277,7 @@ export async function* runAgent(
 
       let content: string;
       let resultName = call.name;
-      if (call.name === SKILL_TOOL_NAME && deps.loadSkillContent) {
+      if (builtinNames.has(call.name) && call.name === SKILL_TOOL_NAME && deps.loadSkillContent) {
         const skillName = typeof displayArgs.skill_name === "string" ? displayArgs.skill_name : "";
         const filePath =
           typeof displayArgs.file_path === "string" ? displayArgs.file_path : undefined;

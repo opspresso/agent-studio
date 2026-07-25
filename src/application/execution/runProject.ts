@@ -535,15 +535,11 @@ async function buildMcpTools(
     descriptionByName.set(mcp.name, mcp.description ?? "");
   }
 
-  const reserved = new Set<string>();
-  if ((version.skillList ?? []).length > 0) {
-    reserved.add(engine.SKILL_TOOL_NAME);
-  }
-  if ((version.subagentList ?? []).length > 0) {
-    reserved.add(engine.TRANSFER_TOOL_NAME);
-  }
-
-  const toolManager = new ToolManager(servers, reserved, signal);
+  // Every builtin name is reserved, not just the ones this version activates:
+  // aliases are allocated here, before the engine decides which builtins to
+  // offer, and a name that a builtin *may* claim must never resolve to an MCP
+  // tool the engine would then shadow.
+  const toolManager = new ToolManager(servers, engine.BUILTIN_TOOL_NAMES, signal);
   await toolManager.init();
   const mcpServers: engine.McpServerInfo[] = [];
   for (const [serverName, toolNames] of toolManager.toolNamesByServer) {
