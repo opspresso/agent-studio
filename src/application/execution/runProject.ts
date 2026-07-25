@@ -1078,23 +1078,24 @@ async function* runLocalSubagent(
     readSkill,
     signal,
   );
-  const childDeps = await buildAgentDeps(
-    deps,
-    version,
-    project.name,
-    recordUsageFn,
-    ancestry,
-    readSkill,
-    signal,
-  );
-  childDeps.callMcpTool = mcp.callMcpTool;
 
   let text = "";
   let thrown: unknown;
   let completed = false;
   try {
-    // Inside the try: a consumer that stops reading here must still release the
-    // sessions the resolve above opened.
+    // Everything past the resolve is inside the try: a consumer that stops
+    // reading here — or a dependency assembly that throws before the first
+    // chunk — must still release the sessions the resolve above opened.
+    const childDeps = await buildAgentDeps(
+      deps,
+      version,
+      project.name,
+      recordUsageFn,
+      ancestry,
+      readSkill,
+      signal,
+    );
+    childDeps.callMcpTool = mcp.callMcpTool;
     for (const warning of warnings) {
       const chunk: EngineChunk = { warning, ...(recorder ? { traceId: recorder.traceId } : {}) };
       recorder?.observe(chunk);
