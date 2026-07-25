@@ -38,6 +38,11 @@ export interface AssistantChatMessage extends ChatMessageBase {
   role: "assistant";
   /** Present when the turn requested tool calls (persisted for display only). */
   toolCalls?: ChannelToolCall[];
+  /**
+   * Bindings the run could not use, history it could not carry. Stored so a
+   * reloaded chat still explains why an answer came out the shape it did.
+   */
+  warnings?: string[];
   /** Present when the run generated images. */
   images?: ChatMessageImage[];
 }

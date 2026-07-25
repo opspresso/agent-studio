@@ -1,4 +1,9 @@
-import type { AssistantChatMessage, ChatMessage, UserChatMessage } from "@/domain/chat/types";
+import type {
+  AssistantChatMessage,
+  ChatMessage,
+  ToolChatMessage,
+  UserChatMessage,
+} from "@/domain/chat/types";
 import type { ChannelToolCall, ChatMessageInput } from "@/domain/llm/types";
 
 /**
@@ -17,6 +22,18 @@ const DEFAULT_TOOL_REPLAY_TURNS = 3;
  * whole context window.
  */
 const MAX_REPLAYED_TOOL_CHARS = 20_000;
+
+/**
+ * How much of the conversation itself replays. A chat is stored in full and
+ * grows without limit, so an old enough one eventually exceeds what a request
+ * can carry and every further message fails — after the bill for resending the
+ * whole history has already been paid, turn after turn.
+ *
+ * Generous on purpose: an ordinary chat never reaches either bound, and what is
+ * dropped is reported rather than silently lost.
+ */
+const MAX_HISTORY_CHARS = 200_000;
+const MAX_HISTORY_MESSAGES = 200;
 
 /**
  * A stored user turn: text, or content parts when the turn carried attachments.
@@ -41,61 +58,152 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
   };
 }
 
+/** One stored call and the result stored for it, already matched. */
+interface ToolPair {
+  call: ChannelToolCall;
+  content: string;
+}
+
+/**
+ * Split storage into runs. A user message starts one and everything written
+ * until the next user message belongs to it — which is exactly one run, since a
+ * run is what a user message triggers.
+ *
+ * The split is what makes id matching safe: a tool-call id is only unique
+ * within the run that produced it (a provider that omits ids has them
+ * synthesized, and the counter restarts each run), so matching across the whole
+ * chat would let a later run's result answer an earlier run's call.
+ */
+function toRuns(messages: ChatMessage[]): ChatMessage[][] {
+  const runs: ChatMessage[][] = [];
+  let current: ChatMessage[] = [];
+  for (const message of messages) {
+    if (message.role === "user" && current.length > 0) {
+      runs.push(current);
+      current = [];
+    }
+    current.push(message);
+  }
+  if (current.length > 0) {
+    runs.push(current);
+  }
+  return runs;
+}
+
+/**
+ * Keep the newest runs that fit the history bounds. Whole runs, so a kept
+ * assistant message never loses the user turn it answered or the tool rows it
+ * declared. The newest run is always kept, even alone over budget: a request
+ * without the question is worse than a long one.
+ */
+function withinHistoryBudget(runs: ChatMessage[][]): { kept: ChatMessage[][]; dropped: number } {
+  const kept: ChatMessage[][] = [];
+  let chars = 0;
+  let count = 0;
+  let dropped = 0;
+  let full = false;
+  for (const run of [...runs].reverse()) {
+    const size = run.reduce((total, message) => total + message.content.length, 0);
+    if (full || (kept.length > 0 && (chars + size > MAX_HISTORY_CHARS || count + run.length > MAX_HISTORY_MESSAGES))) {
+      full = true;
+      dropped += 1;
+      continue;
+    }
+    chars += size;
+    count += run.length;
+    kept.unshift(run);
+  }
+  return { kept, dropped };
+}
+
+/**
+ * Match one run's stored calls to its stored results. Order-tolerant: storage
+ * writes `tool… → assistant`, the reverse of the wire format, and a row is
+ * claimed by the first unmatched call carrying its id — so even a run that
+ * synthesized the same id twice pairs each call with its own result.
+ */
+function pairWithinRun(run: ChatMessage[], into: Map<ChatMessage, ToolPair[]>): void {
+  const available = run.filter((message): message is ToolChatMessage => message.role === "tool");
+  for (const message of run) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+    const pairs: ToolPair[] = [];
+    for (const call of message.toolCalls ?? []) {
+      if (!call.id) {
+        continue;
+      }
+      const index = available.findIndex((row) => row.toolCallId === call.id);
+      if (index < 0) {
+        continue;
+      }
+      const [row] = available.splice(index, 1);
+      if (!row) {
+        continue;
+      }
+      pairs.push({ call, content: row.content });
+    }
+    if (pairs.length > 0) {
+      into.set(message, pairs);
+    }
+  }
+}
+
 export interface ToEngineMessagesOptions {
   /** Assistant turns whose tool calls replay. 0 replays none. */
   toolReplayTurns?: number;
 }
 
+export interface EngineMessages {
+  messages: ChatMessageInput[];
+  /** What the history could not carry; the run reports these to the user. */
+  warnings: string[];
+}
+
 /**
  * Convert stored chat messages to OpenAI-shaped engine messages.
  *
- * Storage order within a turn is `tool…` then `assistant` (the tool rows are
- * written as they arrive, the answer once it is complete), which is the reverse
- * of what the wire format requires. So tool rows are not emitted where they sit:
- * each is paired with the assistant message that declared its call and emitted
- * right after it. A row with no matching call — a subagent's tool result, or one
- * from a turn too old to replay — is kept in storage for display and dropped
- * here, and a call whose result is missing is dropped from the assistant message
- * rather than left as an orphan the provider would reject.
+ * Tool rows are not emitted where they sit: each is paired with the assistant
+ * message that declared its call, within the run both belong to, and emitted
+ * right after it. A row with no matching call — a subagent's, or one from a run
+ * too old to replay — is kept in storage for display and dropped here, and a
+ * call whose result is missing is dropped from the assistant message rather
+ * than left as an orphan the provider would reject.
  */
 export function toEngineMessages(
   messages: ChatMessage[],
   options: ToEngineMessagesOptions = {},
-): ChatMessageInput[] {
+): EngineMessages {
   const replayTurns = options.toolReplayTurns ?? DEFAULT_TOOL_REPLAY_TURNS;
-  const resultByCallId = new Map<string, string>();
-  for (const message of messages) {
-    if (message.role === "tool" && message.toolCallId) {
-      resultByCallId.set(message.toolCallId, message.content);
-    }
+  const { kept, dropped } = withinHistoryBudget(toRuns(messages));
+  const history = kept.flat();
+
+  const pairedByMessage = new Map<ChatMessage, ToolPair[]>();
+  for (const run of kept) {
+    pairWithinRun(run, pairedByMessage);
   }
 
-  const replayable = messages.filter(
-    (message): message is AssistantChatMessage =>
-      message.role === "assistant" && (message.toolCalls?.length ?? 0) > 0,
-  );
   // Newest-first so the budget is spent on the turns a follow-up is most likely
   // about; a call that no longer fits is dropped with its result.
-  const replayed = new Map<ChatMessage, Array<{ call: ChannelToolCall; content: string }>>();
-  let budget = MAX_REPLAYED_TOOL_CHARS;
-  const claimed = new Set<string>();
+  const replayable = history.filter(
+    (message): message is AssistantChatMessage => pairedByMessage.has(message),
+  );
   // Guarded rather than `slice(-replayTurns)`: `slice(-0)` is `slice(0)`, which
   // would replay everything for the one option value that means "replay none".
   const recent = replayTurns > 0 ? replayable.slice(-replayTurns) : [];
+  const replayed = new Map<ChatMessage, ToolPair[]>();
+  let budget = MAX_REPLAYED_TOOL_CHARS;
   for (const message of [...recent].reverse()) {
-    const pairs: Array<{ call: ChannelToolCall; content: string }> = [];
-    for (const call of message.toolCalls ?? []) {
-      const id = call.id;
-      const content = id ? resultByCallId.get(id) : undefined;
-      if (!id || content === undefined || claimed.has(id) || budget <= 0) {
-        continue;
+    const pairs: ToolPair[] = [];
+    for (const pair of pairedByMessage.get(message) ?? []) {
+      if (budget <= 0) {
+        break;
       }
-      claimed.add(id);
-      const kept = content.slice(0, budget);
-      budget -= kept.length;
+      const text = pair.content.slice(0, budget);
+      budget -= text.length;
       pairs.push({
-        call,
-        content: kept.length < content.length ? `${kept}\n…[truncated]` : kept,
+        call: pair.call,
+        content: text.length < pair.content.length ? `${text}\n…[truncated]` : text,
       });
     }
     if (pairs.length > 0) {
@@ -104,7 +212,7 @@ export function toEngineMessages(
   }
 
   const out: ChatMessageInput[] = [];
-  for (const message of messages) {
+  for (const message of history) {
     if (message.role === "user") {
       out.push(userMessage(message));
       continue;
@@ -123,5 +231,13 @@ export function toEngineMessages(
     }
   }
 
-  return out;
+  return {
+    messages: out,
+    warnings:
+      dropped > 0
+        ? [
+            `${dropped} earlier turn(s) were left out of this answer's context: the chat is longer than one request can carry.`,
+          ]
+        : [],
+  };
 }

@@ -21,19 +21,32 @@ into `ChatDeps.runAgent`.
   (the port resolves the pointer) and falls back to the newest version by `createdAt`.
 - **Persistence is flattened, but tool traffic is replayed.** After a run, `runAndPersist`
   writes tool results (`EngineChunk.toolResult` → `{ toolCallId, toolName, content }`) as
-  `tool` messages followed by ONE `assistant` message holding the accumulated visible text
-  **and the run's top-level `delta.toolCalls`**. Per-turn assistant messages are still not
-  reconstructed — every turn's calls hang off the single flattened assistant message.
-  - Only top-level calls are stored (`isTopLevelChunk`): a subagent's belong to its own
-    conversation, and declaring them here would claim results this turn never produced.
+  `tool` messages followed by ONE `assistant` message holding the accumulated visible text,
+  **the run's top-level `delta.toolCalls`** and any `warning` chunks it saw. Per-turn
+  assistant messages are still not reconstructed — every turn's calls hang off the single
+  flattened assistant message.
+  - Both sides are top-level only (`isTopLevelChunk`): a subagent's calls *and* its results
+    belong to its own conversation. Storing either would claim traffic this turn never
+    declared — and a child's synthesized id can collide with the parent's.
   - `toEngineMessages` pairs each stored `tool` row with the call that declared it and emits
     it *after* that assistant message — storage order within a turn is `tool… → assistant`,
-    the reverse of what the wire format accepts. A call with no stored result (a transfer's,
-    which persists none) is dropped rather than left as an orphan the provider rejects, and a
-    row with no matching call stays display-only.
+    the reverse of what the wire format accepts. Pairing is scoped to one **run** (the
+    messages a user turn delimits) and matches in order, because a tool-call id is only
+    unique within the run that produced it: the engine synthesizes ids for providers that
+    omit them, and the counter restarts each run. A chat-wide id map would let a later run's
+    result answer an earlier run's call. A call with no stored result (a transfer's, which
+    persists none) is dropped rather than left as an orphan the provider rejects, and a row
+    with no matching call stays display-only.
   - Replay is bounded twice: the last `toolReplayTurns` assistant turns (default 3) and
     `MAX_REPLAYED_TOOL_CHARS` of text spent newest-first, truncating with a marker. Tool
     output is the bulkiest thing in a chat; unbounded replay would crowd out the conversation.
+- **History is bounded, and says when it was.** A chat is stored in full and grows without
+  limit, so replaying all of it first costs a resend of the whole conversation every turn and
+  then fails outright once the provider's context limit is passed. `toEngineMessages` keeps
+  the newest whole runs within `MAX_HISTORY_CHARS`/`MAX_HISTORY_MESSAGES` (the newest run
+  always survives, even alone over budget) and returns `warnings` describing what it left
+  out. `sendMessage` prepends those through `withLeadingWarnings`, so a trimmed context
+  reaches the reader on the same channel an unusable binding does — never silently.
 - **Images** (generated `EngineChunk.image`, and the user's attachments) are uploaded
   through the optional `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set)
   by `storeMessageImages` and persisted as `images: [{ url, prompt? }]` on the message —
@@ -47,7 +60,7 @@ into `ChatDeps.runAgent`.
   A turn with attachments and no text is a content-parts message with no text part, never
   an empty user turn.
 - **Subagent chunks** (`author` set) stream to the client but are excluded from the
-  persisted assistant content.
+  persisted assistant content, tool calls and tool rows alike.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return
   a generator; the LLM call only starts when the route's `sseResponse` iterates it.
 - **chatId delivery**: `POST /api/chats` streams SSE, so the route prepends a

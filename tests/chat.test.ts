@@ -156,7 +156,7 @@ describe("toEngineMessages", () => {
       toEngineMessages([
         message({ seq: 0, role: "user", content: "hi" }),
         message({ seq: 1, role: "assistant", content: "hello" }),
-      ]),
+      ]).messages,
     ).toEqual([
       { role: "user", content: "hi" },
       { role: "assistant", content: "hello" },
@@ -169,7 +169,7 @@ describe("toEngineMessages", () => {
         message({ seq: 0, role: "user", content: "hi" }),
         message({ seq: 1, role: "tool", content: "result", toolCallId: "call_1" }),
         message({ seq: 2, role: "assistant", content: "answer" }),
-      ]),
+      ]).messages,
     ).toEqual([
       { role: "user", content: "hi" },
       { role: "assistant", content: "answer" },
@@ -184,7 +184,7 @@ describe("toEngineMessages", () => {
         message({ seq: 0, role: "user", content: "hi" }),
         message({ seq: 1, role: "tool", content: "42", toolCallId: "call_1" }),
         message({ seq: 2, role: "assistant", content: "", toolCalls: [{ id: "call_1" }] }),
-      ]),
+      ]).messages,
     ).toEqual([
       { role: "user", content: "hi" },
       { role: "assistant", content: "", tool_calls: [{ id: "call_1" }] },
@@ -205,7 +205,7 @@ describe("toEngineMessages", () => {
           toolCalls: [{ id: "call_1" }, { id: "call_missing" }],
         }),
         message({ seq: 2, role: "tool", content: "42", toolCallId: "call_1" }),
-      ]),
+      ]).messages,
     ).toEqual([
       { role: "user", content: "hi" },
       { role: "assistant", content: "done", tool_calls: [{ id: "call_1" }] },
@@ -225,7 +225,7 @@ describe("toEngineMessages", () => {
       }),
     ]);
 
-    const mapped = toEngineMessages(history, { toolReplayTurns: 2 });
+    const mapped = toEngineMessages(history, { toolReplayTurns: 2 }).messages;
 
     // Every turn's text survives; only the last two carry their tool traffic.
     expect(mapped.filter((m) => m.role === "assistant")).toHaveLength(4);
@@ -241,7 +241,7 @@ describe("toEngineMessages", () => {
         message({ seq: 2, role: "assistant", content: "done", toolCalls: [{ id: "call_1" }] }),
       ],
       { toolReplayTurns: 0 },
-    );
+    ).messages;
 
     expect(mapped).toEqual([
       { role: "user", content: "hi" },
@@ -255,7 +255,7 @@ describe("toEngineMessages", () => {
       message({ seq: 0, role: "user", content: "hi" }),
       message({ seq: 1, role: "tool", content: huge, toolCallId: "call_1" }),
       message({ seq: 2, role: "assistant", content: "done", toolCalls: [{ id: "call_1" }] }),
-    ]);
+    ]).messages;
 
     const replayed = mapped.find((m) => m.role === "tool");
     expect(String(replayed?.content).length).toBeLessThan(huge.length);
@@ -286,7 +286,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     const assistant = stored.find((m) => m.role === "assistant");
     expect(assistant).toMatchObject({ content: "The answer is 42." });
 
-    expect(toEngineMessages(stored)).toEqual([
+    expect(toEngineMessages(stored).messages).toEqual([
       { role: "user", content: "hi" },
       {
         role: "assistant",
@@ -313,7 +313,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
 
     const stored = await repo.listMessages("c1");
     expect(stored.find((m) => m.role === "assistant")).not.toHaveProperty("toolCalls");
-    expect(toEngineMessages(stored)).toEqual([
+    expect(toEngineMessages(stored).messages).toEqual([
       { role: "user", content: "hi" },
       { role: "assistant", content: "Done." },
     ]);
@@ -335,6 +335,111 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     const stored = await repo.listMessages("c1");
     expect(stored.some((m) => m.role === "assistant" && m.content === "Top answer.")).toBe(true);
     expect(stored.some((m) => m.content.includes("nested"))).toBe(false);
+  });
+
+  it("does not store a subagent's tool results either", async () => {
+    // The call is already excluded, so a stored row could never be paired — it
+    // is a write per subagent tool call that only ever gets dropped again, and
+    // an id it happens to share with a top-level call would cross the two over.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { author: "child", toolResult: { toolCallId: "call_1", name: "x", content: "child" } };
+      yield { delta: { toolCalls: [{ id: "call_1", function: { name: "lookup" } }] } };
+      yield { toolResult: { toolCallId: "call_1", name: "lookup", content: "parent" } };
+      yield { delta: { content: "Done." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.filter((m) => m.role === "tool").map((m) => m.content)).toEqual(["parent"]);
+    expect(toEngineMessages(stored).messages).toContainEqual({
+      role: "tool",
+      content: "parent",
+      tool_call_id: "call_1",
+    });
+  });
+
+  it("keeps each run's results with its own calls when ids repeat across runs", async () => {
+    // Ids are only unique within the run that made them — a gateway that omits
+    // them has `call_1` synthesized every run. Matching chat-wide would let the
+    // newest result answer the oldest call.
+    const stored = [
+      message({ seq: 0, role: "user", content: "first" }),
+      message({ seq: 1, role: "tool", content: "old result", toolCallId: "call_1" }),
+      message({ seq: 2, role: "assistant", content: "a1", toolCalls: [{ id: "call_1" }] }),
+      message({ seq: 3, role: "user", content: "second" }),
+      message({ seq: 4, role: "tool", content: "new result", toolCallId: "call_1" }),
+      message({ seq: 5, role: "assistant", content: "a2", toolCalls: [{ id: "call_1" }] }),
+    ];
+
+    const mapped = toEngineMessages(stored).messages;
+
+    expect(mapped.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
+      "old result",
+      "new result",
+    ]);
+  });
+
+  it("persists a run's warnings so a reloaded chat still explains itself", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { warning: "MCP server 'crm' is unreachable." };
+      yield { warning: "MCP server 'crm' is unreachable." }; // deduplicated
+      yield { delta: { content: "Answered without it." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.find((m) => m.role === "assistant")).toMatchObject({
+      warnings: ["MCP server 'crm' is unreachable."],
+    });
+  });
+});
+
+describe("history bounds", () => {
+  /** `turns` complete runs, each carrying `chars` of assistant text. */
+  function history(turns: number, chars: number) {
+    return Array.from({ length: turns }, (_, turn) => [
+      message({ seq: turn * 2, role: "user", content: `q${turn}` }),
+      message({ seq: turn * 2 + 1, role: "assistant", content: "x".repeat(chars) }),
+    ]).flat();
+  }
+
+  it("replays a whole ordinary chat untouched", () => {
+    const { messages, warnings } = toEngineMessages(history(20, 500));
+
+    expect(messages).toHaveLength(40);
+    expect(warnings).toEqual([]);
+  });
+
+  it("drops the oldest runs once the chat outgrows one request, and says so", () => {
+    // Unbounded replay first costs a resend of the whole chat every turn, then
+    // fails outright once the provider's context limit is passed.
+    const { messages, warnings } = toEngineMessages(history(40, 20_000));
+
+    expect(messages.length).toBeLessThan(80);
+    // Whole runs only: never an assistant without the question it answered.
+    expect(messages.filter((m) => m.role === "user")).toHaveLength(
+      messages.filter((m) => m.role === "assistant").length,
+    );
+    // The newest turn always survives, and the drop is reported.
+    expect(messages.at(-2)).toMatchObject({ role: "user", content: "q39" });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("left out");
+  });
+
+  it("keeps the newest run even when it alone exceeds the budget", () => {
+    const { messages } = toEngineMessages(history(1, 500_000));
+
+    expect(messages).toHaveLength(2);
   });
 });
 
@@ -529,7 +634,7 @@ describe("chat image attachments", () => {
       { url: "https://bucket.s3.example.com/images/a.png" },
     ];
 
-    expect(toEngineMessages([stored])).toEqual([
+    expect(toEngineMessages([stored]).messages).toEqual([
       {
         role: "user",
         content: [
@@ -547,7 +652,7 @@ describe("chat image attachments", () => {
     const stored = message({ seq: 0, role: "user", content: "" });
     (stored as { images?: Array<{ url: string }> }).images = [{ url: "https://x/y.png" }];
 
-    expect(toEngineMessages([stored])).toEqual([
+    expect(toEngineMessages([stored]).messages).toEqual([
       {
         role: "user",
         content: [{ type: "image_url", image_url: { url: "https://x/y.png" } }],

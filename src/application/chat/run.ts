@@ -78,6 +78,25 @@ function truncateForPersist(content: string): string {
 }
 
 /**
+ * Warnings the mapping layer produced, ahead of the engine's own. They ride the
+ * same chunk channel so every consumer — live UI, Slack, persistence — handles
+ * one kind of warning, and `yield*` still forwards a client disconnect to the
+ * run underneath.
+ */
+export async function* withLeadingWarnings(
+  warnings: string[],
+  source: AsyncGenerator<EngineChunk>,
+): AsyncGenerator<EngineChunk> {
+  for (const warning of warnings) {
+    yield { warning };
+  }
+  yield* source;
+}
+
+/** A run reports one warning per unusable binding; the item stays bounded. */
+const MAX_PERSISTED_WARNINGS = 20;
+
+/**
  * Tee an engine stream to the client while accumulating the assistant answer and
  * tool results, then persist them.
  *
@@ -90,11 +109,13 @@ function truncateForPersist(content: string): string {
  * A persistence failure is logged, never thrown: throwing on the return path
  * would reject the SSE `cancel()`, and the client already saw the answer.
  *
- * The turn's top-level tool calls are stored on the assistant message, which is
- * what lets `toEngineMessages` pair them with their tool rows and replay the
- * recent ones — without it a follow-up question reaches a model that cannot see
- * what the tools returned and calls them again. Keep both sides of this contract
- * in sync (see the round-trip test in tests/chat.test.ts).
+ * The turn's top-level tool calls AND their results are stored, which is what
+ * lets `toEngineMessages` pair them and replay the recent ones — without it a
+ * follow-up question reaches a model that cannot see what the tools returned and
+ * calls them again. Both sides are filtered by `isTopLevelChunk`: a subagent's
+ * tool traffic belongs to its own conversation, and a row stored here would
+ * claim a result this turn never declared. Keep both sides of this contract in
+ * sync (see the round-trip test in tests/chat.test.ts).
  */
 export async function* runAndPersist(
   deps: ChatDeps,
@@ -109,6 +130,9 @@ export async function* runAndPersist(
   // never produced.
   const toolCalls: ChannelToolCall[] = [];
   const generatedImages: { b64: string; mimeType: string; prompt?: string }[] = [];
+  // Why the run came out the shape it did — a binding it could not use, history
+  // it could not carry. Persisted so reloading the chat still explains it.
+  const warnings: string[] = [];
   let persisted = false;
 
   async function persist(): Promise<void> {
@@ -116,7 +140,12 @@ export async function* runAndPersist(
       return;
     }
     persisted = true;
-    if (!content && toolMessages.length === 0 && generatedImages.length === 0) {
+    if (
+      !content &&
+      toolMessages.length === 0 &&
+      generatedImages.length === 0 &&
+      warnings.length === 0
+    ) {
       return;
     }
     try {
@@ -140,6 +169,7 @@ export async function* runAndPersist(
         role: "assistant",
         content: truncateForPersist(content),
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
+        ...(warnings.length > 0 ? { warnings } : {}),
         ...(images.length > 0 ? { images } : {}),
         createdAt: now,
       });
@@ -158,12 +188,19 @@ export async function* runAndPersist(
       if (chunk.delta?.toolCalls && isTopLevelChunk(chunk)) {
         toolCalls.push(...chunk.delta.toolCalls);
       }
-      if (chunk.toolResult) {
+      if (chunk.toolResult && isTopLevelChunk(chunk)) {
         toolMessages.push({
           content: chunk.toolResult.content,
           toolCallId: chunk.toolResult.toolCallId,
           toolName: chunk.toolResult.name,
         });
+      }
+      if (
+        chunk.warning &&
+        warnings.length < MAX_PERSISTED_WARNINGS &&
+        !warnings.includes(chunk.warning)
+      ) {
+        warnings.push(chunk.warning);
       }
       if (chunk.image) {
         generatedImages.push(chunk.image);

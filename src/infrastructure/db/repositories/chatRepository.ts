@@ -93,6 +93,7 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
       ...base,
       role,
       toolCalls: item.toolCalls as ChannelToolCall[] | undefined,
+      warnings: item.warnings as string[] | undefined,
       images: item.images as ChatMessageImage[] | undefined,
     };
   }

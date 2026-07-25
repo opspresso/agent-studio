@@ -2,7 +2,13 @@ import type { ChatMessage } from "@/domain/chat/types";
 import type { AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { toEngineMessages } from "./messageMapping";
-import { resolveVersion, runAndPersist, storeMessageImages, userTurnContent } from "./run";
+import {
+  resolveVersion,
+  runAndPersist,
+  storeMessageImages,
+  userTurnContent,
+  withLeadingWarnings,
+} from "./run";
 import { claimChatRun } from "./runLease";
 
 export interface SendMessageInput {
@@ -59,20 +65,22 @@ export async function sendMessage(
     };
     await deps.chats.appendMessage(userMessage);
 
+    const history = toEngineMessages(existing);
     const source = deps.runAgent({
       project,
       version,
       // History replays from storage; this turn carries the attachment bytes
       // themselves, which is what lets the agent edit what was just sent.
       messages: [
-        ...toEngineMessages(existing),
+        ...history.messages,
         { role: "user", content: userTurnContent(input.content, attachments) },
       ],
       userEmail: input.userEmail,
       signal: input.signal,
     });
 
-    return runAndPersist(deps, chat, source, runId);
+    // A chat too long to replay in full is told so, ahead of the answer.
+    return runAndPersist(deps, chat, withLeadingWarnings(history.warnings, source), runId);
   } catch (error) {
     await deps.chats.releaseRun(input.chatId, runId);
     throw error;

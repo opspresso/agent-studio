@@ -69,6 +69,15 @@ export function AuthorBadge({ path }: { path: string[] }) {
   );
 }
 
+/** A binding the run could not use — shown live and again on reload. */
+function WarningNote({ text }: { text: string }) {
+  return (
+    <div className="max-w-[80%] rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+      ⚠️ {text}
+    </div>
+  );
+}
+
 export function MessageView({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
@@ -101,6 +110,9 @@ export function MessageView({ message }: { message: ChatMessage }) {
 
   return (
     <div className="flex flex-col items-start gap-1">
+      {(message.warnings ?? []).map((warning, index) => (
+        <WarningNote key={`warning-${index}`} text={warning} />
+      ))}
       {(message.images ?? []).map((image, index) => (
         <GeneratedImage
           key={`image-${index}`}
@@ -120,12 +132,7 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
   return (
     <div className="flex flex-col items-start gap-1">
       {turn.warnings.map((warning, index) => (
-        <div
-          key={`warning-${index}`}
-          className="max-w-[80%] rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
-        >
-          ⚠️ {warning}
-        </div>
+        <WarningNote key={`warning-${index}`} text={warning} />
       ))}
       {turn.toolCalls.map((call, index) => (
         <div key={`call-${index}`} className="w-full max-w-[80%]">

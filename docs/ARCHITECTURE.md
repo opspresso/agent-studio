@@ -379,11 +379,13 @@ Two deliberate strategies coexist:
 - `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`) —
   a tool row always carries `toolCallId`, an assistant row may carry
   `toolCalls`/`images`, and illegal combinations are unrepresentable.
-- A run persists one flattened assistant message holding the accumulated text and the run's
-  **top-level** `toolCalls`, preceded by its tool rows. Replay pairs each row with the call
-  that declared it and re-emits it after that message, bounded by the last N assistant turns
-  and a total character budget — so a follow-up question can see what the tools returned
-  without letting tool output crowd out the conversation.
+- A run persists one flattened assistant message holding the accumulated text, the run's
+  **top-level** `toolCalls` and any `warnings` it reported, preceded by its **top-level**
+  tool rows (a subagent's tool traffic stays out of the parent's conversation). Replay pairs
+  each row with the call that declared it — within the run a user message delimits, since
+  ids are only unique there — and re-emits it after that message, bounded by the last N
+  assistant turns and a total character budget. The conversation itself is bounded too, by
+  whole runs; what does not fit is reported as a `warning`, not dropped in silence.
 
 ### Usage / Cost
 - Daily per-project per-model aggregates (see table design). Dashboard reads

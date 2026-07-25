@@ -152,9 +152,12 @@ registries are shared: reads are open to any signed-in user; mutations go throug
 - Chat persistence is flattened but tool traffic **is** replayed: the stored assistant
   message carries the run's top-level `tool_calls`, and `toEngineMessages` pairs each tool
   row with its call and re-emits it *after* that message (storage order within a turn is the
-  reverse of the wire order). Bounded by the last N turns and a total character budget; a
-  call with no stored result is dropped rather than orphaned. See
-  `src/application/chat/AGENTS.md` before changing `run.ts`/`messageMapping.ts`.
+  reverse of the wire order). Pairing is scoped to the run a user message delimits, because
+  a tool-call id is only unique within the run that made it. Bounded three ways — the last N
+  turns, a tool-text budget, and a history budget over whole runs — and every drop is
+  reported as a `warning` chunk rather than made silently. A call with no stored result is
+  dropped rather than orphaned. See `src/application/chat/AGENTS.md` before changing
+  `run.ts`/`messageMapping.ts`.
 - User-image limits and encoding have single owners: caps in
   `src/domain/llm/imageLimits.ts` (client composers, API bodies, Slack all read them) and the
   `data:` encoding in `imageDataUrl`/`parseImageDataUrl` (`src/domain/llm/types.ts`). Copies of
