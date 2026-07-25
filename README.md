@@ -113,9 +113,11 @@ in place of the session cookie. See [docs/API.md](docs/API.md) for the full cont
 
 **Input.** A message body may carry OpenAI content parts, so a run can be given images to
 look at: `chat/completions` accepts them inline as `data:image/…;base64,…` (or an `https://`
-url the provider fetches), and a Slack mention or DM's image attachments are downloaded and
-sent the same way. The version's model must have the `imageInput` capability, otherwise the
-request is rejected rather than quietly losing the picture.
+url the provider fetches), a Slack mention or DM's image attachments are downloaded and sent
+the same way, and the console's chat composer takes up to 4 images (5MB each,
+`png`/`jpeg`/`gif`/`webp`) per turn — attach-only turns included. The version's model must
+have the `imageInput` capability, otherwise the request is rejected rather than quietly
+losing the picture.
 
 **Generation and editing.** `image` projects generate images directly, and agent runs can
 draw with the builtin `GenerateImage` tool and change an existing image with `EditImage` —

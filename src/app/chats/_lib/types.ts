@@ -28,6 +28,13 @@ export interface LiveImage {
   prompt?: string;
 }
 
+/** An image staged in the composer, before the turn is sent. */
+export interface Attachment {
+  b64: string;
+  mimeType: string;
+  name: string;
+}
+
 /** In-progress assistant turn rendered while a stream is active. */
 export interface LiveTurn {
   text: string;

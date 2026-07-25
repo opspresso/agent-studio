@@ -11,7 +11,11 @@ export interface Chat {
 
 export type ChatRole = "user" | "assistant" | "tool";
 
-/** Generated image attached to an assistant message (uploaded to object storage). */
+/**
+ * An image attached to a message, uploaded to object storage — a picture the run
+ * generated, or one the user sent. Only the URL is stored; a b64 payload is far
+ * beyond the item size limit.
+ */
 export interface ChatMessageImage {
   url: string;
   prompt?: string;
@@ -26,6 +30,8 @@ interface ChatMessageBase {
 
 export interface UserChatMessage extends ChatMessageBase {
   role: "user";
+  /** Present when the user attached images to the turn. */
+  images?: ChatMessageImage[];
 }
 
 export interface AssistantChatMessage extends ChatMessageBase {

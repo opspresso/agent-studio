@@ -1,5 +1,28 @@
-import type { ChatMessage } from "@/domain/chat/types";
+import type { ChatMessage, UserChatMessage } from "@/domain/chat/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
+
+/**
+ * A stored user turn: text, or content parts when the turn carried attachments.
+ * The stored images are object-storage URLs (the provider fetches them), so a
+ * replayed attachment is visible to the model but not editable — only the turn
+ * that uploaded it had the bytes in hand.
+ */
+function userMessage(message: UserChatMessage): ChatMessageInput {
+  const images = message.images ?? [];
+  if (images.length === 0) {
+    return { role: "user", content: message.content };
+  }
+  return {
+    role: "user",
+    content: [
+      ...(message.content ? [{ type: "text" as const, text: message.content }] : []),
+      ...images.map((image) => ({
+        type: "image_url" as const,
+        image_url: { url: image.url },
+      })),
+    ],
+  };
+}
 
 /**
  * Convert stored chat messages to OpenAI-shaped engine messages.
@@ -14,7 +37,7 @@ export function toEngineMessages(messages: ChatMessage[]): ChatMessageInput[] {
 
   for (const message of messages) {
     if (message.role === "user") {
-      out.push({ role: "user", content: message.content });
+      out.push(userMessage(message));
     } else if (message.role === "assistant") {
       const mapped: ChatMessageInput = { role: "assistant", content: message.content };
       if (message.toolCalls && message.toolCalls.length > 0) {

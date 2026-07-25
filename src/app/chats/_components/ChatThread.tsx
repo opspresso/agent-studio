@@ -3,14 +3,25 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
-import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
+import { attachmentSrc, toRequestImages } from "../_lib/attachments";
+import {
+  EMPTY_TURN,
+  type Attachment,
+  type Chat,
+  type ChatMessage,
+  type LiveImage,
+  type LiveTurn,
+} from "../_lib/types";
 import { Composer, GeneratedImage, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 
 export function ChatThread({ chatId }: { chatId: string }) {
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [pendingUser, setPendingUser] = useState<string | null>(null);
+  const [pendingUser, setPendingUser] = useState<{
+    content: string;
+    attachments: Attachment[];
+  } | null>(null);
   const [live, setLive] = useState<LiveTurn | null>(null);
   // Fallback when image persistence is unconfigured (no S3 bucket): keep the
   // images streamed this session and pin them to the message they arrived with.
@@ -44,17 +55,17 @@ export function ChatThread({ chatId }: { chatId: string }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, live, pendingUser]);
 
-  async function handleSend(content: string) {
+  async function handleSend(content: string, attachments: Attachment[]) {
     setSending(true);
     setError(null);
-    setPendingUser(content);
+    setPendingUser({ content, attachments });
     setLive(EMPTY_TURN);
     const streamedImages: LiveImage[] = [];
     try {
       const res = await fetch(`/api/chats/${chatId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, images: toRequestImages(attachments) }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -125,7 +136,10 @@ export function ChatThread({ chatId }: { chatId: string }) {
               chatId,
               seq: -1,
               role: "user",
-              content: pendingUser,
+              content: pendingUser.content,
+              images: pendingUser.attachments.map((attachment) => ({
+                url: attachmentSrc(attachment),
+              })),
               createdAt: "",
             }}
           />

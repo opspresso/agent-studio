@@ -142,16 +142,21 @@ Chats are private to their owner and run only against agent projects.
 
 ```
 GET    /api/chats                         → { chats }
-POST   /api/chats                         { projectName, firstMessage } → SSE
+POST   /api/chats                         { projectName, firstMessage, images? } → SSE
 GET    /api/chats/{chatId}                → { chat, messages }
 DELETE /api/chats/{chatId}                → 204
-POST   /api/chats/{chatId}/messages       { content } → SSE
+POST   /api/chats/{chatId}/messages       { content, images? } → SSE
 ```
 
 The create stream starts with `{ "chat": {…} }` so clients learn the new `chatId` before
 assistant deltas. Message streams use the standard SSE framing and persist user, assistant,
-tool, and generated-image display data. A project with neither a published version nor a
-runnable draft is rejected with `400`.
+tool, and image display data. A project with neither a published version nor a runnable
+draft is rejected with `400`.
+
+`images` are the user's attachments as inline bytes — `[ { b64, mimeType } ]`, at most 4 per
+turn, 5MB each, `image/png|jpeg|gif|webp`. A turn needs text or at least one image (both
+empty → `400`). They reach the model as content parts and are stored (when object storage is
+configured) as URLs on the user message.
 
 ## Registry and integration operations
 

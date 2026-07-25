@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
-import { EMPTY_TURN, type AgentProject, type LiveTurn } from "../_lib/types";
-import { LiveAssistant, MessageView } from "./parts";
+import { attachmentSrc, toRequestImages } from "../_lib/attachments";
+import { EMPTY_TURN, type AgentProject, type Attachment, type LiveTurn } from "../_lib/types";
+import { AttachButton, AttachmentBar, LiveAssistant, MessageView, useAttachments } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 
 export function NewChatPanel() {
@@ -14,7 +15,13 @@ export function NewChatPanel() {
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [message, setMessage] = useState("");
-  const [sentMessage, setSentMessage] = useState<string | null>(null);
+  const [sentMessage, setSentMessage] = useState<{
+    content: string;
+    attachments: Attachment[];
+  } | null>(null);
+  // Staged attachments survive an error for a retry, the same way the typed
+  // message does; a successful start navigates away and unmounts them.
+  const { attachments, attachError, addFiles, removeAt } = useAttachments();
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,19 +47,23 @@ export function NewChatPanel() {
 
   async function start() {
     const trimmed = message.trim();
-    if (!projectName || !trimmed || starting) {
+    if (!projectName || (!trimmed && attachments.length === 0) || starting) {
       return;
     }
     setStarting(true);
     setError(null);
-    setSentMessage(trimmed);
+    setSentMessage({ content: trimmed, attachments });
     setLive(EMPTY_TURN);
     let newChatId: string | undefined;
     try {
       const res = await fetch("/api/chats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, firstMessage: trimmed }),
+        body: JSON.stringify({
+          projectName,
+          firstMessage: trimmed,
+          images: toRequestImages(attachments),
+        }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -109,7 +120,16 @@ export function NewChatPanel() {
         ) : (
           <>
             <MessageView
-              message={{ chatId: "", seq: 0, role: "user", content: sentMessage, createdAt: "" }}
+              message={{
+                chatId: "",
+                seq: 0,
+                role: "user",
+                content: sentMessage.content,
+                images: sentMessage.attachments.map((attachment) => ({
+                  url: attachmentSrc(attachment),
+                })),
+                createdAt: "",
+              }}
             />
             {live && <LiveAssistant turn={live} />}
           </>
@@ -138,7 +158,9 @@ export function NewChatPanel() {
             ))}
           </select>
         </div>
+        <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
         <div className="flex items-end gap-2">
+          <AttachButton onPick={(files) => void addFiles(files)} disabled={starting} />
           <textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}
@@ -156,7 +178,7 @@ export function NewChatPanel() {
           <button
             type="button"
             onClick={() => void start()}
-            disabled={starting || !message.trim() || !projectName}
+            disabled={starting || (!message.trim() && attachments.length === 0) || !projectName}
             className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
           >
             Start

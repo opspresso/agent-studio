@@ -29,11 +29,18 @@ into `ChatDeps.runAgent`.
   assistant turns; tool messages are kept only for UI display. To enable full tool replay
   later, accumulate `delta.toolCalls` onto the persisted assistant message — the mapper
   already pairs them by id.
-- **Generated images** (`EngineChunk.image`) are uploaded through the optional
-  `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set) and persisted as
-  `images: [{ url, prompt? }]` on the assistant message — the b64 payload itself is far
-  beyond the DynamoDB item size limit. A failed upload drops that image, never the
-  message. Without `storeImage`, images render only during the live stream.
+- **Images** (generated `EngineChunk.image`, and the user's attachments) are uploaded
+  through the optional `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set)
+  by `storeMessageImages` and persisted as `images: [{ url, prompt? }]` on the message —
+  the b64 payload itself is far beyond the DynamoDB item size limit. A failed upload drops
+  that image, never the message. Without `storeImage`, images render only during the live
+  stream.
+- **Attachments are sent twice over, deliberately.** The turn being run carries the
+  attachment *bytes* as inline `data:` content parts (`userTurnContent`) — that is what
+  gives the engine a handle it can edit. Replayed history carries the *stored URL*
+  (`toEngineMessages`), which the provider fetches: visible to the model, not editable.
+  A turn with attachments and no text is a content-parts message with no text part, never
+  an empty user turn.
 - **Subagent chunks** (`author` set) stream to the client but are excluded from the
   persisted assistant content.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return

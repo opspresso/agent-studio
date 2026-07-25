@@ -18,6 +18,12 @@ export type AgentRunner = (params: AgentRunParams) => AsyncGenerator<EngineChunk
 /** Upload a generated image and return its public URL. */
 export type ImageStore = (image: { b64: string; mimeType: string }) => Promise<string>;
 
+/** An image the user attached to a turn, as inline bytes. */
+export interface AttachedImage {
+  b64: string;
+  mimeType: string;
+}
+
 export interface ChatDeps {
   chats: ChatRepository;
   projects: ProjectRepository;
