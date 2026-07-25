@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { EngineChunk } from "@/domain/llm/types";
+import type { ContentPart, EngineChunk } from "@/domain/llm/types";
 import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
 import {
   contentChunk,
@@ -434,6 +434,108 @@ describe("runAgent MCP server system prompt", () => {
       .split("\n")
       .filter((line) => line.startsWith("| ") && !line.startsWith("|--"));
     expect(tableLines).toHaveLength(3); // header + 2 servers
+  });
+});
+
+describe("runAgent image input", () => {
+  const DATA_URL = "data:image/png;base64,aGVsbG8=";
+  const IMAGE_MESSAGE: RunAgentInput["messages"] = [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "what is in this picture?" },
+        { type: "image_url", image_url: { url: DATA_URL } },
+      ],
+    },
+  ];
+
+  it("passes content parts through to the channel untouched", async () => {
+    const channel = new FakeChannel([[contentChunk("a cat"), usageChunk(1, 1)]]);
+
+    await collect(
+      runAgent(
+        { channel },
+        { projectName: "p", model: MODEL, messages: IMAGE_MESSAGE },
+      ),
+    );
+
+    // messages[0] is the system prompt; the user turn keeps its parts as-is.
+    expect(channel.seenParams[0]?.messages.at(-1)?.content).toEqual(IMAGE_MESSAGE[0]?.content);
+  });
+
+  it("rejects a model that does not accept image input", async () => {
+    const channel = new FakeChannel([[contentChunk("never"), usageChunk(1, 1)]]);
+
+    await expect(
+      collect(
+        runAgent(
+          { channel },
+          { projectName: "p", model: "xai/grok-code-fast-1", messages: IMAGE_MESSAGE },
+        ),
+      ),
+    ).rejects.toThrow("does not accept image input");
+    expect(channel.calls).toBe(0);
+  });
+
+  it("rejects a model missing from the registry", async () => {
+    const channel = new FakeChannel([[contentChunk("never"), usageChunk(1, 1)]]);
+
+    await expect(
+      collect(
+        runAgent({ channel }, { projectName: "p", model: "who/knows", messages: IMAGE_MESSAGE }),
+      ),
+    ).rejects.toThrow("not in the registry");
+  });
+
+  it("drops a fallback model that cannot read the images", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // First script rejects with a retryable error so a live fallback would be used.
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+
+    await collect(
+      runAgent(
+        { channel },
+        {
+          projectName: "p",
+          model: MODEL,
+          fallbackModel: "xai/grok-code-fast-1",
+          messages: IMAGE_MESSAGE,
+        },
+      ),
+    );
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("fallback skipped"));
+    warn.mockRestore();
+  });
+
+  it("keeps the image payload out of PII masking", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+
+    await collect(
+      runAgent(
+        { channel },
+        {
+          projectName: "p",
+          model: MODEL,
+          parameters: { piiFiltering: true },
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "mail me at a@b.com" },
+                { type: "image_url", image_url: { url: DATA_URL } },
+              ],
+            },
+          ],
+        },
+      ),
+    );
+
+    const parts = channel.seenParams[0]?.messages.at(-1)?.content;
+    expect(Array.isArray(parts)).toBe(true);
+    const [text, image] = parts as ContentPart[];
+    expect(JSON.stringify(text)).not.toContain("a@b.com");
+    expect(image).toEqual({ type: "image_url", image_url: { url: DATA_URL } });
   });
 });
 

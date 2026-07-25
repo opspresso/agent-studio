@@ -405,6 +405,21 @@ export interface CostTokens {
  * `reasoningWithTools: false` reject `tools` + `reasoning_effort` on
  * chat/completions, so the effort is forced to the provider's remedy, "none".
  */
+/**
+ * Why a model cannot accept image input, or `null` when it can. A model missing
+ * from the registry is rejected: sending images to an unknown model fails at
+ * the provider with a far less legible error.
+ */
+export function describeImageInputReject(modelId: string): string | null {
+  const cfg = getModelConfig(modelId);
+  if (!cfg) {
+    return `Model is not in the registry, so image input cannot be used: ${modelId}`;
+  }
+  return cfg.capabilities.imageInput
+    ? null
+    : `Model does not accept image input: ${modelId}`;
+}
+
 export function applyModelConstraints(params: ChannelParams): ChannelParams {
   const cfg = getModelConfig(params.model);
   if (
