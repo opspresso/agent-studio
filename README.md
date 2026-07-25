@@ -141,6 +141,13 @@ the response (streaming included) — the model never sees the real values.
 Detection is regex-based (emails and phone numbers only), so treat it as
 best-effort masking, not a guarantee.
 
+The boundary is the **LLM channel and the engine's own context**, not every
+outbound call. When the model invokes an MCP tool, that tool receives the real
+argument values — a tool asked to email `a@b.com` needs the address, not a token
+— so a connected MCP server still sees the PII it is passed. (A subagent transfer
+is the opposite: the child agent receives the masked message.) Review MCP server
+registrations on their own terms; `piiFiltering` does not cover them.
+
 ## Skills Repository
 
 Skills can sync from a GitHub repository (`SKILLS_REPO=owner/repo`,

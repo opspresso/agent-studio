@@ -292,8 +292,10 @@ Two deliberate strategies coexist:
   `[[PII:…]]` tokens before dispatch (`src/application/llm/pii.ts`); originals are
   restored in responses — streaming included (token-boundary buffering) — and the mapping
   carries across subagent transfers, while tool args/results re-entering engine context
-  stay masked. Best-effort (regex; emails + phones only). Off = byte-identical to the
-  unfiltered path.
+  stay masked. **Outbound MCP dispatch is not masked**: `callMcpTool` gets the restored
+  arguments (a tool needs the real address), so the toggle bounds what the LLM and the engine
+  context see, not what a third-party MCP server sees. Best-effort (regex; emails + phones
+  only). Off = byte-identical to the unfiltered path.
 - Cost: computed from registry pricing at the call site (`calculateCost` /
   `calculateImageCost` in `src/domain/llm/models.ts`) and passed to `recordUsage`, which
   hands it to the usage repository's atomic ADD into the daily usage row. Single-shot runs

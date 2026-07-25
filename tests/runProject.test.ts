@@ -700,6 +700,80 @@ describe("executeAgent nested transfer identity", () => {
   });
 });
 
+describe("executeAgent registry bindings that no longer resolve", () => {
+  it("does not offer a skill whose registry entry is gone, and reads each one once", async () => {
+    // A deleted skill used to be advertised with an empty description and then
+    // failed on load — a wasted turn. And the description read fetched the whole
+    // item (body plus attachments) once per skill, then again on every load.
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "Skill", '{"skill_name":"alive"}'), usageChunk(1, 1)],
+      [contentChunk("loaded"), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    const reads: string[] = [];
+    deps.skills.get = (async (name: string) => {
+      reads.push(name);
+      return name === "alive"
+        ? { name, description: "still here", content: "# alive", createdAt: "", updatedAt: "" }
+        : null;
+    }) as ExecutionDeps["skills"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          skillList: ["alive", "deleted"],
+        },
+        messages: [{ role: "user", content: "use a skill" }],
+      }),
+    );
+
+    const skillTool = channel.seenParams[0]?.tools?.find((t) => t.function.name === "Skill");
+    const properties = skillTool?.function.parameters?.properties as
+      | { skill_name?: { enum?: string[]; description?: string } }
+      | undefined;
+    expect(properties?.skill_name?.enum).toEqual(["alive"]);
+    expect(properties?.skill_name?.description).not.toContain("deleted");
+    const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
+    expect(systemPrompt).toContain("| alive | still here |");
+    expect(systemPrompt).not.toContain("deleted");
+    // The load reused the description's read instead of fetching again.
+    expect(reads).toEqual(["alive", "deleted"]);
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toBe("# alive");
+  });
+
+  it("does not offer a transfer to a project that no longer exists", async () => {
+    const channel = new FakeChannel([[contentChunk("answered myself"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) =>
+      name === "alive-agent" ? { ...projectFixture(), name } : null) as ExecutionDeps["projects"]["get"];
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [
+            { name: "alive-agent", type: "local" },
+            { name: "deleted-agent", type: "local" },
+          ],
+        },
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    const transfer = channel.seenParams[0]?.tools?.find(
+      (t) => t.function.name === "transfer_to_agent",
+    );
+    const agentName = (
+      transfer?.function.parameters?.properties as { agent_name?: { enum?: string[] } } | undefined
+    )?.agent_name;
+    expect(agentName?.enum).toEqual(["alive-agent"]);
+    expect(String(channel.seenParams[0]?.messages[0]?.content)).not.toContain("deleted-agent");
+  });
+});
+
 describe("executeAgent PII filtering", () => {
   it("passes the version toggle to the engine", async () => {
     const channel = new FakeChannel([[contentChunk("Contact the masked value."), usageChunk(1, 1)]]);

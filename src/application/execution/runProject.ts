@@ -16,6 +16,7 @@ import type { McpRepository } from "@/domain/mcp/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { SkillRepository } from "@/domain/skill/repository";
+import type { Skill } from "@/domain/skill/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
@@ -233,16 +234,18 @@ export async function* executeAgent(
     // catch stays keyed on `input.signal` so a deadline reads as error, a
     // caller abort as cancelled.
     const runSignal = withRunDeadline(input.signal);
+    const readSkill = createSkillReader(deps);
     const agentDeps = await buildAgentDeps(
       deps,
       input.version,
       input.project.name,
       usage.record,
       [input.project.name],
+      readSkill,
       runSignal,
     );
     const [skills, subagents, mcp] = await Promise.all([
-      resolveSkills(deps, input.version.skillList),
+      resolveSkills(readSkill, input.version.skillList),
       resolveSubagents(deps, input.version.subagentList),
       buildMcpTools(deps, input.version, runSignal),
     ]);
@@ -335,13 +338,14 @@ async function buildAgentDeps(
   recordUsageFn: engine.RecordUsageFn,
   /** Transfer chain this run sits on; the top-level run starts with itself. */
   ancestry: readonly string[],
+  readSkill: SkillReader,
   signal?: AbortSignal,
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel;
   return {
     channel,
     recordUsage: recordUsageFn,
-    loadSkillContent: buildSkillLoader(deps),
+    loadSkillContent: buildSkillLoader(readSkill),
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, ancestry, signal),
     generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
     editImage: buildImageEditor(deps, version, projectName, recordUsageFn, signal),
@@ -451,38 +455,77 @@ function buildImageEditor(
   };
 }
 
-async function resolveSkills(
-  deps: ExecutionDeps,
-  skillList: string[] | undefined,
-): Promise<engine.SkillInfo[]> {
-  return Promise.all(
-    (skillList ?? []).map(async (name) => {
-      const skill = await deps.skills.get(name);
-      return { name, description: skill?.description ?? "" };
-    }),
-  );
+/**
+ * One read per skill per run, shared by the prompt's skill table and the `Skill`
+ * tool. Without it a run fetched every connected skill's whole item (body plus
+ * attachments) just to render a description, then fetched it again on each load.
+ * A skill edited mid-run is not picked up, which is what consistency wants.
+ */
+type SkillReader = (name: string) => Promise<Skill | null>;
+
+function createSkillReader(deps: ExecutionDeps): SkillReader {
+  const cache = new Map<string, Promise<Skill | null>>();
+  return (name) => {
+    const hit = cache.get(name);
+    if (hit) {
+      return hit;
+    }
+    const pending = deps.skills.get(name);
+    cache.set(name, pending);
+    return pending;
+  };
 }
 
+/**
+ * Skills the run can actually load. A binding whose skill was deleted from the
+ * registry is dropped instead of advertised with an empty description: telling
+ * the model about a skill that always fails to load only buys a wasted turn.
+ */
+async function resolveSkills(
+  readSkill: SkillReader,
+  skillList: string[] | undefined,
+): Promise<engine.SkillInfo[]> {
+  const resolved = await Promise.all(
+    (skillList ?? []).map(async (name) => {
+      const skill = await readSkill(name);
+      if (!skill) {
+        console.warn(`[run] skill '${name}' is not in the registry; not offering it this run`);
+        return null;
+      }
+      return { name, description: skill.description ?? "" };
+    }),
+  );
+  return resolved.filter((skill): skill is engine.SkillInfo => skill !== null);
+}
+
+/** Same for subagents: an unresolvable target is not offered as a transfer. */
 async function resolveSubagents(
   deps: ExecutionDeps,
   subagentList: SubagentRef[] | undefined,
 ): Promise<engine.SubagentInfo[]> {
-  return Promise.all(
+  const resolved = await Promise.all(
     (subagentList ?? []).map(async (ref) => {
-      const description =
+      const target =
         ref.type === "remote"
-          ? ((await deps.externalAgents.get(ref.name))?.description ?? "")
-          : ((await deps.projects.get(ref.name))?.description ?? "");
-      return { name: ref.name, description, type: ref.type };
+          ? await deps.externalAgents.get(ref.name)
+          : await deps.projects.get(ref.name);
+      if (!target) {
+        console.warn(
+          `[run] ${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
+        );
+        return null;
+      }
+      return { name: ref.name, description: target.description ?? "", type: ref.type };
     }),
   );
+  return resolved.filter((agent): agent is engine.SubagentInfo => agent !== null);
 }
 
 function buildSkillLoader(
-  deps: ExecutionDeps,
+  readSkill: SkillReader,
 ): (skillName: string, filePath?: string) => Promise<string> {
   return async (skillName, filePath) =>
-    loadSkillFileContent(await deps.skills.get(skillName), skillName, filePath);
+    loadSkillFileContent(await readSkill(skillName), skillName, filePath);
 }
 
 async function buildMcpTools(
@@ -819,11 +862,12 @@ async function* runLocalSubagent(
     );
   }
 
+  const readSkill = createSkillReader(deps);
   const [skills, subagents, mcp, childDeps] = await Promise.all([
-    resolveSkills(deps, version.skillList),
+    resolveSkills(readSkill, version.skillList),
     resolveSubagents(deps, version.subagentList),
     buildMcpTools(deps, version, signal),
-    buildAgentDeps(deps, version, project.name, recordUsageFn, ancestry, signal),
+    buildAgentDeps(deps, version, project.name, recordUsageFn, ancestry, readSkill, signal),
   ]);
   childDeps.callMcpTool = mcp.callMcpTool;
   const recorder = deps.traces

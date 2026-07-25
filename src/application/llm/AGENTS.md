@@ -69,8 +69,15 @@ actually served the call (`modelUsed`), at that model's rate.
 When `parameters.piiFiltering` is on, a per-run `PiiFilter` maps originals ⇄
 format-preserving `[[PII:…]]` tokens:
 
-- **Masked on the way out**: system prompt, history messages, tool arguments — everything
-  entering the channel or re-entering engine context stays masked.
+- **Masked on the way out**: system prompt, history messages, and the tool-call arguments
+  recorded on the assistant message — everything entering the channel or re-entering engine
+  context stays masked.
+- **Not masked on outbound tool dispatch**: `callMcpTool` is handed the *restored* arguments,
+  because a tool asked to mail `a@b.com` needs the address, not a token. A subagent transfer is
+  the opposite: the child receives the masked message and the parent's filter restores its
+  output. So `piiFiltering` bounds what the LLM and the engine context see — **not** what a
+  third-party MCP server sees. Keep it that way deliberately, or make it a per-server choice;
+  do not change it by accident.
 - **Restored on the way in**: every yielded `delta` is restored through a
   `PiiStreamRestorer`, which buffers the longest suffix that could be a partial
   replacement token across chunk boundaries. Flush restorers on error paths too.
