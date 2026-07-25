@@ -8,6 +8,7 @@ import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/lib/runDeadline";
+import { beginRun, endRun } from "@/lib/runMetrics";
 
 export interface ImageGenerationDeps {
   imageChannel: ImageChannel;
@@ -74,6 +75,7 @@ export async function generateImage(
           messageCount: 1,
         })
       : undefined;
+  beginRun();
   try {
     const result: ImageGenerationResult = await deps.imageChannel.generateImage({
       model,
@@ -116,5 +118,7 @@ export async function generateImage(
   } catch (error) {
     await finishTrace(recorder, error);
     throw error;
+  } finally {
+    endRun();
   }
 }

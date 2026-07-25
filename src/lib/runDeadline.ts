@@ -35,6 +35,16 @@ export function parseMaxRunDuration(raw: string | undefined): number {
 
 export const MAX_RUN_DURATION_MS = parseMaxRunDuration(process.env.MAX_RUN_DURATION_MS);
 
+/**
+ * How long one instance holds a claim on work it is running (a chat's active
+ * run, a Slack event being processed). Derived from the run deadline so the two
+ * can never drift apart: a lease outlives the longest possible run by the margin
+ * below and no more, so an instance that dies mid-run frees its claim shortly
+ * after the work could have finished rather than blocking it for an unrelated
+ * fixed window.
+ */
+export const RUN_LEASE_SECONDS = Math.ceil(MAX_RUN_DURATION_MS / 1000) + 60;
+
 export function withRunDeadline(signal: AbortSignal | undefined): AbortSignal {
   const deadline = AbortSignal.timeout(MAX_RUN_DURATION_MS);
   return signal ? AbortSignal.any([signal, deadline]) : deadline;

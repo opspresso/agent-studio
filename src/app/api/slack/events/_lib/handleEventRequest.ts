@@ -6,6 +6,7 @@ import { executionDeps, projectRepository, versionRepository } from "@/lib/conta
 import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import { BodyTooLargeError, readBodyText } from "@/lib/httpBody";
+import { RUN_LEASE_SECONDS } from "@/lib/runDeadline";
 import type {
   SlackBotBinding,
   SlackEventBody,
@@ -69,15 +70,31 @@ export async function handleSlackEventRequest(
     return Response.json({ ok: true });
   }
 
-  if (payload.event_id && !(await slackEventRepository.claim(payload.event_id))) {
-    return Response.json({ ok: true, duplicate: true });
+  const eventId = payload.event_id;
+  if (eventId) {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (!(await slackEventRepository.claim(eventId, nowSeconds, nowSeconds + RUN_LEASE_SECONDS))) {
+      return Response.json({ ok: true, duplicate: true });
+    }
   }
 
   after(async () => {
+    let outcome: "done" | "failed" = "done";
     try {
       await handleSlackEvent(slackEventDeps, payload, opts.binding);
     } catch (error) {
+      outcome = "failed";
       console.error(`[slack] ${opts.logLabel} event handling failed`, error);
+    }
+    if (!eventId) {
+      return;
+    }
+    // Settling is bookkeeping for a response that already went out; a failure
+    // here leaves the claim to expire on its own rather than escalating.
+    try {
+      await slackEventRepository.settle(eventId, outcome);
+    } catch (error) {
+      console.error(`[slack] ${opts.logLabel} event settle failed`, error);
     }
   });
 

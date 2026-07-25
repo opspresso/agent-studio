@@ -381,10 +381,12 @@ POST /api/slack/events/[project]              project Slack webhook
 GET|POST /api/auth/[...all]                  Better Auth login flow (Google OAuth)
 GET  /api/health                            liveness (static 200)
 GET  /api/ready                             readiness (DynamoDB + LLM reachability)
+GET  /api/metrics                           Prometheus scrape (in-flight runs)
 ```
 
 All routes require a Better Auth session except the unauthenticated endpoints:
 `/api/auth/*` (the Better Auth login flow itself), `/api/health`, `/api/ready`,
+`/api/metrics`,
 `/api/slack/events/*` (verified by signing secret), `POST /api/a2a/[name]`
 (gated by `A2A_API_KEY`), and the public Agent Card GET. The three execution endpoints
 (`predict`, `chat/completions`, `agent`) also accept a per-project API token via
@@ -397,7 +399,20 @@ is readiness — it probes DynamoDB and the LLM channel for reachability (short 
 details not surfaced) and returns 503 when a downstream is unreachable or the instance is
 draining after SIGTERM (`src/lib/lifecycle.ts`), so the load balancer deregisters it while
 in-flight work drains. Point the LB health check at `/api/ready`, restart checks at
-`/api/health`. Projects are a shared catalog: any signed-in user may read and run any
+`/api/health`.
+
+On a horizontally-scaled deployment, readiness is the wrong place for the LLM check: the
+provider is shared by every instance, so one provider blip would mark the whole fleet
+unready at once — including the console, chats and dashboards, none of which need the
+provider. There, point readiness at `/api/health` too and let the platform's own
+deregistration handle draining (a `preStop` pause covers the endpoint-propagation window).
+
+`/api/metrics` is the Prometheus scrape endpoint. It reports the number of top-level runs
+in flight on this instance (`src/lib/runMetrics.ts`), which is the signal to autoscale on:
+runs are I/O bound, so an instance saturated with them still reads as idle CPU. Counters
+are per-process and name no project, user, or model.
+
+Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) are
 owner-only — `assertProjectOwner` returns 403 for non-owners. Two project sub-resources
 that expose other users' data are owner-only *reads* as well: traces (runtime
@@ -411,10 +426,12 @@ Runtime settings: the admin-only `/settings` page stores overrides for selected 
 (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
 A2A key, public base URL) in the `SETTINGS#app` item.
 `src/lib/runtime-settings.ts` resolves effective values — DB override → env fallback —
-through a process-local in-memory cache (30s TTL, invalidated on write). On a
-horizontally-scaled deployment a settings change (e.g. A2A-key rotation, admin demotion)
-propagates to other instances only as their own cache entries expire — up to the 30s TTL;
-immediate cross-instance revocation would need a shared invalidation signal.
+through a process-local in-memory cache (`SETTINGS_CACHE_TTL_MS`, default 5s, invalidated
+on write). On a horizontally-scaled deployment a settings change (e.g. A2A-key rotation,
+admin demotion) propagates to other instances only as their own cache entries expire, so
+the TTL bounds how long a revoked credential keeps working somewhere in the fleet — hence
+the short default. Immediate cross-instance revocation would need a shared invalidation
+signal.
 Secret overrides are AES-encrypted at rest and decrypted for outbound dispatch (and at read
 only to reveal the edge characters of long values in the admin masked view); a stored
 provider list replaces the whole `LLM_PROVIDER_*` env set. Bootstrap env (`AES_ENCRYPTION_KEY`,

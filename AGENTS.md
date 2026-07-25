@@ -110,8 +110,9 @@ registries are shared: reads are open to any signed-in user; mutations go throug
 - **Runtime settings**: the admin-only `/settings` page stores env-var overrides
   (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
   A2A key, public base URL) in the `SETTINGS#app` item. Read via
-  `src/lib/runtime-settings.ts` — DB override → env fallback, cached in memory (30s TTL,
-  invalidated on write, single-instance assumption). Never read those env vars directly at
+  `src/lib/runtime-settings.ts` — DB override → env fallback, cached in memory
+  (`SETTINGS_CACHE_TTL_MS`, default 5s, invalidated on write — the invalidation is
+  process-local, so the TTL bounds cross-instance staleness). Never read those env vars directly at
   dispatch; go through runtime-settings.
 - **Secrets**: stored headers/tokens are AES-256-GCM encrypted (`enc:v1:` prefix), masked
   on read (length-preserving; values ≥20 chars reveal their first/last 2 chars, which
@@ -127,7 +128,9 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   `src/infrastructure/net/ssrfGuard.ts` (reject non-http(s) and private/loopback/link-local/
   metadata addresses) at both registration and dispatch.
 - **Slack**: signature verified (HMAC + `timingSafeEqualString`, 5-min replay window);
-  events are deduplicated exactly-once via `slackEventRepository.claim` (conditional put).
+  events are deduplicated exactly-once via `slackEventRepository.claim` (conditional put),
+  whose claim is a lease settled by `settle` — an instance that dies mid-processing leaves a
+  reclaimable claim rather than an event recorded as handled by nobody.
   Per-project bots and one workspace-default bot coexist.
 - **A2A**: inbound endpoints gated by `A2A_API_KEY` (constant-time compare); task state is
   persisted per-project in the single table (`createA2aTaskStore`), TTL-expired, with a

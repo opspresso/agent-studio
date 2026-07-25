@@ -33,6 +33,7 @@ import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import * as engine from "@/application/llm/engine";
 import { TraceRecorder } from "@/application/trace/recorder";
 import { withRunDeadline } from "@/lib/runDeadline";
+import { beginRun, endRun } from "@/lib/runMetrics";
 
 export interface ExecutionDeps {
   versions: VersionRepository;
@@ -102,6 +103,7 @@ export async function executeVersion(
 ): Promise<RunResult> {
   const channel = deps.channel;
   const recorder = sampledTraceRecorder(deps, input);
+  beginRun();
   try {
     const result = await engine.runPrompt(
       { channel, recordUsage: bindUsage(deps) },
@@ -123,6 +125,8 @@ export async function executeVersion(
   } catch (error) {
     await finishTrace(recorder, error);
     throw error;
+  } finally {
+    endRun();
   }
 }
 
@@ -134,6 +138,7 @@ export async function* executeVersionStream(
   const recorder = sampledTraceRecorder(deps, input);
   let thrown: unknown;
   let completed = false;
+  beginRun();
   try {
     for await (const chunk of engine.runPromptStream(
       { channel, recordUsage: bindUsage(deps) },
@@ -159,6 +164,7 @@ export async function* executeVersionStream(
     }
     throw error;
   } finally {
+    endRun();
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
 }
@@ -217,6 +223,7 @@ export async function* executeAgent(
   let thrown: unknown;
   let completed = false;
   let closeMcpSessions: (() => Promise<void>) | undefined;
+  beginRun();
   try {
     input.signal?.throwIfAborted();
     // Compose the caller's signal with a hard deadline; classification in the
@@ -262,6 +269,7 @@ export async function* executeAgent(
     }
     throw error;
   } finally {
+    endRun();
     await closeMcp(closeMcpSessions);
     await usage.flush();
     await finishTrace(recorder, thrown, !completed && thrown === undefined);

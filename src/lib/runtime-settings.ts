@@ -3,12 +3,15 @@
  * /settings page) take precedence over environment variables. Secrets are
  * decrypted here, at the point of use only.
  *
- * The DB read is cached in memory (TTL below) and invalidated on write, but the
- * invalidation is process-local. On a horizontally-scaled deployment a change
- * made on one instance (rotating the A2A key, demoting an admin, tightening the
- * allowed sign-in domains) is observed by other instances only once their own
- * cache entry expires — up to the TTL below. Immediate cross-instance revocation
- * would need a shared invalidation signal, which is deliberately out of scope.
+ * The DB read is cached in memory and invalidated on write, but the invalidation
+ * is process-local. On a horizontally-scaled deployment a change made on one
+ * instance (rotating the A2A key, demoting an admin, tightening the allowed
+ * sign-in domains) is observed by other instances only once their own cache
+ * entry expires, so the TTL is the bound on how long a revoked credential keeps
+ * working somewhere in the fleet. It is short by default for that reason: the
+ * cached item is a single small row, so the reads it saves are worth far less
+ * than the staleness they buy. Immediate cross-instance revocation would need a
+ * shared invalidation signal, which is deliberately out of scope.
  */
 
 import type { AppSettings } from "@/domain/settings/types";
@@ -18,7 +21,26 @@ import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config } from "./config";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
-const TTL_MS = 30_000;
+const DEFAULT_TTL_MS = 5_000;
+
+/**
+ * `SETTINGS_CACHE_TTL_MS` override. A non-positive or unparseable value would
+ * either disable caching entirely or (negative) make every read a cache hit
+ * forever, so anything outside the domain falls back to the default.
+ */
+function parseTtlMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_TTL_MS;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    console.warn(`[settings] ignoring invalid SETTINGS_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`);
+    return DEFAULT_TTL_MS;
+  }
+  return value;
+}
+
+const TTL_MS = parseTtlMs(process.env.SETTINGS_CACHE_TTL_MS);
 
 let cache: { value: AppSettings | null; fetchedAt: number } | undefined;
 
