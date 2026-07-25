@@ -239,19 +239,23 @@ token (`Authorization: Bearer <token>`). A token authenticates as the project ow
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 
-Single-shot run. `{version}` may be `published`.
+Runs the version. `{version}` may be `published`.
 
-**Regardless of `projectType`** this endpoint runs one completion: an `agent`
-project's MCP tools, skills, and subagents do **not** run here. That is what makes
-`variables` (server-side `{{var}}` template rendering) available on this endpoint.
-For the multi-turn tool loop use `chat/completions` or `agent` below.
+The endpoint dispatches on `projectType`, like `chat/completions`: an `llm` project runs one
+completion with server-side `{{var}}` template rendering, and an **`agent` project runs its
+multi-turn tool loop** with the version's MCP tools, skills and subagents. `variables` are
+therefore ignored for an agent project — an agent run has no prompt template to render.
 
 ```json
-// request (llm/agent project)
+// request (llm project)
 { "variables": { "topic": "otters" }, "messages": [ … ]?, "stream": false }
+// request (agent project)
+{ "messages": [ { "role": "user", "content": "hi" } ], "stream": false }
 // response
 { "result": "…assistant text…", "model": "openai/gpt-5-mini",
-  "usage": { "inputTokens": 12, "outputTokens": 34, … } }
+  "usage": { "inputTokens": 12, "outputTokens": 34, … },
+  "images": [ { "b64": "…", "mimeType": "image/png" } ]?  // only when the run drew something
+}
 ```
 
 For an `image` project, send `{ "prompt", "size?", "quality?", "images?" }` → `{ imageBase64,

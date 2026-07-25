@@ -37,6 +37,12 @@ export function VersionEditor({
   const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<PickerOption[]>([]);
   const [subagentOptions, setSubagentOptions] = useState<SubagentOption[]>([]);
+  // Only agent projects run the tool loop. The inputs below stay visible on the
+  // other types when something is already bound, so a version stored before
+  // this rule can still be cleaned up instead of holding dead configuration.
+  const runsTools = projectType === "agent";
+  const hasToolBindings =
+    value.mcpList.length > 0 || value.skillList.length > 0 || value.subagentList.length > 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -293,7 +299,7 @@ export function VersionEditor({
         </div>
       )}
 
-      {projectType !== "image" && (
+      {(runsTools || value.parameters.imageGeneration) && (
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -332,23 +338,34 @@ export function VersionEditor({
         </div>
       )}
 
-      <McpBindingInput
-        values={value.mcpList}
-        onChange={(mcpList) => patch({ mcpList })}
-        options={mcpOptions}
-      />
-      <SearchSelectInput
-        label="Skills"
-        values={value.skillList}
-        onChange={(skillList) => patch({ skillList })}
-        options={skillOptions}
-        placeholder="Search registered skills"
-      />
-      <SubagentInput
-        values={value.subagentList}
-        onChange={(subagentList) => patch({ subagentList })}
-        options={subagentOptions}
-      />
+      {(runsTools || hasToolBindings) && (
+        <div className="space-y-3">
+          {!runsTools && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+              ⚠️ A &quot;{projectType}&quot; project runs a single completion, which offers no
+              tools — the bindings below are stored but never used. Remove them here; new ones
+              cannot be added.
+            </p>
+          )}
+          <McpBindingInput
+            values={value.mcpList}
+            onChange={(mcpList) => patch({ mcpList })}
+            options={mcpOptions}
+          />
+          <SearchSelectInput
+            label="Skills"
+            values={value.skillList}
+            onChange={(skillList) => patch({ skillList })}
+            options={skillOptions}
+            placeholder="Search registered skills"
+          />
+          <SubagentInput
+            values={value.subagentList}
+            onChange={(subagentList) => patch({ subagentList })}
+            options={subagentOptions}
+          />
+        </div>
+      )}
     </div>
   );
 }

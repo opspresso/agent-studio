@@ -362,12 +362,68 @@ describe("createVersion naming", () => {
   });
 });
 
+describe("tool bindings on a project type that cannot run them", () => {
+  // Only agent projects run the tool loop; every other type is dispatched to a
+  // single-shot completion. A binding stored on one of those used to be
+  // accepted, shown in the editor, and then silently ignored at run time.
+  it("rejects an MCP server, skill or subagent added to a non-agent project", async () => {
+    for (const input of [
+      { mcpList: [{ name: "real-mcp" }] },
+      { skillList: ["real-skill"] },
+      { subagentList: [{ name: "real-project", type: "local" as const }] },
+    ]) {
+      await expect(
+        createVersion(
+          makeVersionRepo(),
+          makeProjectRepo([projectFixture("p", { projectType: "llm" })]),
+          "p",
+          { ...versionInput(), ...input },
+          OWNER,
+        ),
+      ).rejects.toThrow(/does not run tools/);
+    }
+  });
+
+  it("still lets an existing binding be edited away", async () => {
+    // A version stored before the rule must stay saveable, or the dead
+    // configuration can never be removed.
+    const existing = {
+      ...versionFixture("p", "1"),
+      mcpList: [{ name: "legacy-mcp" }],
+      skillList: ["legacy-skill"],
+    };
+    const updated = await updateVersion(
+      makeVersionRepo([existing]),
+      makeProjectRepo([projectFixture("p", { projectType: "llm" })]),
+      "p",
+      "1",
+      { mcpList: [{ name: "legacy-mcp" }], skillList: [] },
+      OWNER,
+    );
+
+    expect(updated.skillList).toEqual([]);
+    expect(updated.mcpList).toEqual([{ name: "legacy-mcp" }]);
+  });
+
+  it("accepts them on an agent project", async () => {
+    const created = await createVersion(
+      makeVersionRepo(),
+      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+      "p",
+      { ...versionInput(), skillList: ["real-skill"] },
+      OWNER,
+    );
+
+    expect(created.skillList).toEqual(["real-skill"]);
+  });
+});
+
 describe("version reference validation", () => {
   it("rejects a create that names an MCP server, skill, or subagent that does not exist", async () => {
     await expect(
       createVersion(
         makeVersionRepo(),
-        makeProjectRepo([projectFixture("p")]),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
         "p",
         { ...versionInput(), mcpList: [{ name: "ghost-mcp" }] },
         OWNER,
@@ -378,7 +434,7 @@ describe("version reference validation", () => {
     await expect(
       createVersion(
         makeVersionRepo(),
-        makeProjectRepo([projectFixture("p")]),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
         "p",
         { ...versionInput(), skillList: ["ghost-skill"] },
         OWNER,
@@ -389,7 +445,7 @@ describe("version reference validation", () => {
     await expect(
       createVersion(
         makeVersionRepo(),
-        makeProjectRepo([projectFixture("p")]),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
         "p",
         { ...versionInput(), subagentList: [{ name: "ghost-agent", type: "remote" }] },
         OWNER,
@@ -402,7 +458,7 @@ describe("version reference validation", () => {
     await expect(
       createVersion(
         makeVersionRepo(),
-        makeProjectRepo([projectFixture("p")]),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
         "p",
         { ...versionInput(), mcpList: [{ name: "m1" }], skillList: ["s1"] },
         OWNER,
@@ -417,7 +473,7 @@ describe("version reference validation", () => {
     const existing = { ...versionFixture("p", "1"), mcpList: [{ name: "deleted-mcp" }] };
     const updated = await updateVersion(
       makeVersionRepo([existing]),
-      makeProjectRepo([projectFixture("p")]),
+      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
       "p",
       "1",
       { systemPrompt: "edited" },
@@ -433,7 +489,7 @@ describe("version reference validation", () => {
     await expect(
       updateVersion(
         makeVersionRepo([existing]),
-        makeProjectRepo([projectFixture("p")]),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
         "p",
         "1",
         { mcpList: [{ name: "deleted-mcp" }, { name: "ghost-mcp" }] },
@@ -446,7 +502,7 @@ describe("version reference validation", () => {
   it("accepts references that resolve", async () => {
     const created = await createVersion(
       makeVersionRepo(),
-      makeProjectRepo([projectFixture("p")]),
+      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
       "p",
       {
         ...versionInput(),
@@ -468,7 +524,7 @@ describe("MCP binding header overrides", () => {
   it("encrypts override values at rest and never stores plaintext", async () => {
     const created = await createVersion(
       makeVersionRepo(),
-      makeProjectRepo([projectFixture("p")]),
+      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
       "p",
       { ...versionInput(), mcpList: bindingWith({ Authorization: "Bearer project-secret" }) },
       OWNER,
@@ -482,7 +538,7 @@ describe("MCP binding header overrides", () => {
   it("masks override values on the API view but keeps removals visible", async () => {
     const created = await createVersion(
       makeVersionRepo(),
-      makeProjectRepo([projectFixture("p")]),
+      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
       "p",
       {
         ...versionInput(),
@@ -503,7 +559,7 @@ describe("MCP binding header overrides", () => {
   });
 
   it("keeps the stored secret when the masked view is submitted back", async () => {
-    const projects = makeProjectRepo([projectFixture("p")]);
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
     const versions = makeVersionRepo();
     const created = await createVersion(
       versions,
@@ -529,7 +585,7 @@ describe("MCP binding header overrides", () => {
   it("drops a masked value under a header with no stored counterpart", async () => {
     const created = await createVersion(
       makeVersionRepo(),
-      makeProjectRepo([projectFixture("p")]),
+      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
       "p",
       { ...versionInput(), mcpList: bindingWith({ "X-New": "******" }) },
       OWNER,
@@ -541,7 +597,7 @@ describe("MCP binding header overrides", () => {
   it("stores no headers field when a binding has no overrides", async () => {
     const created = await createVersion(
       makeVersionRepo(),
-      makeProjectRepo([projectFixture("p")]),
+      makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
       "p",
       { ...versionInput(), mcpList: [{ name: "shared-mcp" }] },
       OWNER,
@@ -550,7 +606,7 @@ describe("MCP binding header overrides", () => {
   });
 
   it("refuses a non-owner editing another project's overrides", async () => {
-    const projects = makeProjectRepo([projectFixture("p")]);
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
     const versions = makeVersionRepo([versionFixture("p", "1")]);
 
     await expect(

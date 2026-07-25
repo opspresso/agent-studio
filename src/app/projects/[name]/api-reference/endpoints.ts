@@ -223,19 +223,27 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         path: predictPath,
         title: "Predict",
         description:
-          'Single-shot run against the published version. Set "stream": true for an SSE response.',
+          projectType === "agent"
+            ? 'Runs the published version — for an agent project that is the multi-turn tool loop, with its skills, MCP servers and subagents. Set "stream": true for an SSE response.'
+            : 'Single-shot run against the published version. Set "stream": true for an SSE response.',
         auth: "token",
         streaming: false,
         requestFields: [
           {
             name: "variables",
             type: "object",
-            description: "Values substituted into {{var}} placeholders in the prompt template.",
+            description:
+              projectType === "agent"
+                ? "Ignored by agent projects — an agent run has no prompt template to render."
+                : "Values substituted into {{var}} placeholders in the prompt template.",
           },
           {
             name: "messages",
             type: "array[object]",
-            description: "Optional OpenAI-style messages appended after the rendered prompt.",
+            description:
+              projectType === "agent"
+                ? "OpenAI-style messages the agent runs against."
+                : "Optional OpenAI-style messages appended after the rendered prompt.",
           },
           { name: "stream", type: "boolean", description: "Return an SSE stream instead of one JSON body." },
         ],

@@ -1,7 +1,12 @@
 import { sseResponse } from "@/lib/sse";
 import { executionDeps, imageDeps, projectRepository, versionRepository } from "@/lib/container";
 import { generateImage } from "@/application/image/generateImage";
-import { executeVersion, executeVersionStream } from "@/application/execution/runProject";
+import {
+  executeAgent,
+  executeProjectStream,
+  executeVersion,
+} from "@/application/execution/runProject";
+import { collectRun } from "@/app/api/projects/_lib/openai";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
@@ -41,15 +46,36 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       project,
       version: versionEntity,
       variables: parsed.data.variables,
-      messages: parsed.data.messages,
+      messages: parsed.data.messages ?? [],
       userEmail: principal.email,
     };
+    // Dispatch on projectType like /chat/completions does: an agent project run
+    // through the single-shot path would silently lose every skill, MCP server
+    // and subagent its version declares.
     if (parsed.data.stream) {
       const abortController = new AbortController();
       return sseResponse(
-        executeVersionStream(executionDeps, { ...params, signal: abortController.signal }),
+        executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
         abortController,
       );
+    }
+    if (project.projectType === "agent") {
+      const run = await collectRun(
+        executeAgent(executionDeps, {
+          project,
+          version: versionEntity,
+          messages: params.messages,
+          userEmail: principal.email,
+          signal: request.signal,
+        }),
+        versionEntity.model,
+      );
+      return Response.json({
+        result: run.content,
+        model: run.model,
+        usage: run.usage,
+        ...(run.images.length > 0 ? { images: run.images } : {}),
+      });
     }
     const result = await executeVersion(executionDeps, { ...params, signal: request.signal });
     return Response.json({ result: result.content, model: result.model, usage: result.usage });

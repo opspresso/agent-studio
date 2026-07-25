@@ -42,6 +42,50 @@ interface VersionRefs {
 const subagentKey = (ref: SubagentRef): string => `${ref.type}:${ref.name}`;
 
 /**
+ * What the version already referenced. Both checks below look only at what an
+ * edit *adds*, so a version stays editable after the world around it changed.
+ */
+function alreadyReferenced(existing?: VersionRefs) {
+  return {
+    mcps: new Set((existing?.mcpList ?? []).map((binding) => binding.name)),
+    skills: new Set(existing?.skillList ?? []),
+    subagents: new Set((existing?.subagentList ?? []).map(subagentKey)),
+  };
+}
+
+/**
+ * Reject tool bindings on a project type that cannot run them. Only agent
+ * projects run the tool loop — `executeProjectStream` sends every other type to
+ * a single-shot completion that offers no tools — so a binding stored on one of
+ * them is accepted, displayed, and then silently ignored at run time. Project
+ * type is fixed at creation, so this can never become true later.
+ */
+function assertToolBindingsRunnable(
+  project: Project,
+  next: VersionRefs,
+  existing?: VersionRefs,
+): void {
+  if (project.projectType === "agent") {
+    return;
+  }
+  const known = alreadyReferenced(existing);
+  const added = [
+    ...(next.mcpList ?? [])
+      .filter((binding) => !known.mcps.has(binding.name))
+      .map((binding) => `MCP server "${binding.name}"`),
+    ...(next.skillList ?? []).filter((name) => !known.skills.has(name)).map((name) => `skill "${name}"`),
+    ...(next.subagentList ?? [])
+      .filter((ref) => !known.subagents.has(subagentKey(ref)))
+      .map((ref) => `agent "${ref.name}"`),
+  ];
+  if (added.length > 0) {
+    throw new ValidationError(
+      `A "${project.projectType}" project does not run tools, so ${added.join(", ")} would never be used. Only agent projects can use MCP servers, skills and subagents.`,
+    );
+  }
+}
+
+/**
  * Reject references that do not resolve. Only entries absent from `existing`
  * are checked: a version whose skill or MCP server was deleted afterwards must
  * still be editable, otherwise deleting a registry entry would strand every
@@ -52,9 +96,8 @@ async function assertReferencesExist(
   next: VersionRefs,
   existing?: VersionRefs,
 ): Promise<void> {
-  const knownMcps = new Set((existing?.mcpList ?? []).map((binding) => binding.name));
-  const knownSkills = new Set(existing?.skillList ?? []);
-  const knownSubagents = new Set((existing?.subagentList ?? []).map(subagentKey));
+  const { mcps: knownMcps, skills: knownSkills, subagents: knownSubagents } =
+    alreadyReferenced(existing);
 
   const checks: Array<Promise<string | null>> = [
     ...(next.mcpList ?? [])
@@ -218,6 +261,7 @@ export async function createVersion(
   assertValidImageModel(input.parameters);
   assertModelSupports(project, input.model, input.parameters);
   warnUnknownCatalogModel(projectName, input.model);
+  assertToolBindingsRunnable(project, input);
   await assertReferencesExist(refs, input);
   const existing = await versions.list(projectName);
 
@@ -271,6 +315,7 @@ export async function updateVersion(
     warnUnknownCatalogModel(projectName, input.model);
   }
   const existing = await getVersion(versions, projectName, versionName);
+  assertToolBindingsRunnable(project, input, existing);
   await assertReferencesExist(refs, input, existing);
   const updated: Version = {
     ...existing,
