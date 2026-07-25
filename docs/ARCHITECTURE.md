@@ -127,7 +127,7 @@ records usage. To trace any request, start there.
 
 | Entry point | Caller | Facade used |
 |---|---|---|
-| Predict | `POST …/predict` | `executeVersion` / `executeVersionStream` (single-shot for **every** projectType — an agent project's tools/skills/subagents do not run here, which is what lets this path render `variables`); image projects → `generateImage` |
+| Predict | `POST …/predict` | `executeVersion` / `executeVersionStream` (single-shot for **every** projectType — an agent project's tools/skills/subagents do not run here, which is what lets this path render `variables`); image projects → `generateImage`, which edits the request's source `images` when any are sent and generates otherwise |
 | OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream); `executeVersion` / `collectRun(executeAgent)` (non-stream) |
 | Agent SSE | `POST …/agent` | `executeAgent` |
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent` in `app/api/chats/_deps.ts`) |

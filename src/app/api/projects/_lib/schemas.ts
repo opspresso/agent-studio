@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attachedImagesSchema } from "@/app/api/_lib/attachments";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/project/types";
 
@@ -124,6 +125,8 @@ export const predictSchema = z.object({
   prompt: z.string().optional(),
   size: z.string().optional(),
   quality: z.string().optional(),
+  /** Source images for an `image` project: present means edit, absent means draw. */
+  images: attachedImagesSchema,
 });
 
 export const chatCompletionsSchema = z.object({

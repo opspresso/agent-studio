@@ -211,7 +211,13 @@ export interface ImageResult {
 export async function predictImage(
   name: string,
   version: string,
-  body: { prompt: string; size?: string; quality?: string },
+  body: {
+    prompt: string;
+    size?: string;
+    quality?: string;
+    /** Source images to edit; omit to generate from the prompt alone. */
+    images?: Array<{ b64: string; mimeType: string }>;
+  },
 ): Promise<ImageResult> {
   const res = await fetch(`/api/projects/${name}/versions/${version}/predict`, {
     method: "POST",

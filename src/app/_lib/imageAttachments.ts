@@ -1,6 +1,11 @@
-import type { Attachment } from "./types";
+/** An image staged in a composer or run panel, before the turn is sent. */
+export interface Attachment {
+  b64: string;
+  mimeType: string;
+  name: string;
+}
 
-/** Mirrors the server caps in `src/app/api/chats/_lib/schemas.ts`. */
+/** Mirrors the server caps in `src/app/api/_lib/attachments.ts`. */
 export const MAX_ATTACHMENTS = 4;
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];

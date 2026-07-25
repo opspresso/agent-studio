@@ -241,8 +241,10 @@ For the multi-turn tool loop use `chat/completions` or `agent` below.
   "usage": { "inputTokens": 12, "outputTokens": 34, … } }
 ```
 
-For an `image` project, send `{ "prompt", "size?", "quality?" }` → `{ imageBase64, mimeType,
-model, usage }`.
+For an `image` project, send `{ "prompt", "size?", "quality?", "images?" }` → `{ imageBase64,
+mimeType, model, usage }`. `images` are source pictures as inline bytes
+(`[ { b64, mimeType } ]`, same caps as a chat attachment): with any present the prompt
+**edits** them, with none it draws from scratch.
 With `"stream": true`, the response is SSE.
 
 ### `POST /api/projects/{name}/versions/{version}/chat/completions`

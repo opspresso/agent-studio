@@ -3,15 +3,8 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
-import { attachmentSrc, toRequestImages } from "../_lib/attachments";
-import {
-  EMPTY_TURN,
-  type Attachment,
-  type Chat,
-  type ChatMessage,
-  type LiveImage,
-  type LiveTurn,
-} from "../_lib/types";
+import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
+import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
 import { Composer, GeneratedImage, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 

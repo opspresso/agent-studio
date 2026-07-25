@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { toRequestImages } from "@/app/_lib/imageAttachments";
+import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { isTopLevelChunk } from "@/domain/llm/types";
 import { inputClass } from "./inputs";
 
@@ -69,6 +71,7 @@ export function RunPanel({
   >([]);
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("medium");
+  const { attachments, attachError, addFiles, removeAt } = useAttachments();
 
   const needsMessage = projectType === "agent" || projectType === "image";
   const canRun = versionName !== null && !running && (!needsMessage || message.trim() !== "");
@@ -94,6 +97,7 @@ export function RunPanel({
           prompt: message,
           size,
           quality,
+          images: toRequestImages(attachments),
         });
         setImage(result);
         setCost(result.usage.costUsd);
@@ -158,12 +162,24 @@ export function RunPanel({
 
       {needsMessage ? (
         <label className="block">
-          <span className="text-sm font-medium">{projectType === "image" ? "Image prompt" : "Message"}</span>
+          <span className="text-sm font-medium">
+            {projectType === "image"
+              ? attachments.length > 0
+                ? "Edit instruction"
+                : "Image prompt"
+              : "Message"}
+          </span>
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             rows={4}
-            placeholder={projectType === "image" ? "Describe the image to generate…" : "Ask the agent…"}
+            placeholder={
+              projectType === "image"
+                ? attachments.length > 0
+                  ? "Describe the edited result…"
+                  : "Describe the image to generate…"
+                : "Ask the agent…"
+            }
             className={`${inputClass} mt-1`}
           />
         </label>
@@ -183,6 +199,27 @@ export function RunPanel({
         </div>
       ) : (
         <p className="text-xs text-neutral-400">No template variables detected.</p>
+      )}
+
+      {projectType === "image" && (
+        <div className="space-y-1">
+          <span className="text-sm font-medium">Source images</span>
+          <p className="text-xs text-neutral-400">
+            {attachments.length > 0
+              ? "The prompt edits these images."
+              : "Attach an image to edit it instead of generating a new one."}
+          </p>
+          <AttachmentBar
+            attachments={attachments}
+            attachError={attachError}
+            onRemove={removeAt}
+          />
+          <AttachButton
+            onPick={(files) => void addFiles(files)}
+            disabled={running}
+            label="📎 Attach"
+          />
+        </div>
       )}
 
       {projectType === "image" && (

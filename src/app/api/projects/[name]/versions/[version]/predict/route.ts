@@ -29,6 +29,8 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         version: versionEntity,
         variables: parsed.data.variables,
         prompt: parsed.data.prompt,
+        // With source images the prompt edits them instead of drawing anew.
+        images: parsed.data.images,
         size: parsed.data.size,
         quality: parsed.data.quality,
         signal: request.signal,
