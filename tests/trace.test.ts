@@ -55,15 +55,105 @@ describe("TraceRecorder", () => {
       versionName: "3",
       status: "completed",
     });
-    expect(traces[0]?.spans.map((span) => span.kind)).toEqual([
-      "tool",
-      "model",
-      "subagent",
-    ]);
+    // A subagent's tokens do NOT become a model span here: this run does not know
+    // the child's model, so they roll up onto the subagent span instead.
+    expect(traces[0]?.spans.map((span) => span.kind)).toEqual(["tool", "subagent"]);
     expect(traces[0]?.spans.find((span) => span.kind === "subagent")?.output).toEqual({
       subagentTraceId: "child-trace",
+      inputTokens: 10,
+      outputTokens: 5,
+      costUsd: 0.001,
     });
     expect(JSON.stringify(traces[0])).not.toContain("full message");
+  });
+
+  it("keeps two transfers to the same agent as two spans", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "parent",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({ author: "child", traceId: "run-1", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 } });
+    recorder.observe({ author: "child", traceId: "run-2", usage: { inputTokens: 2, outputTokens: 2, costUsd: 0.002 } });
+    await recorder.finish();
+
+    const subagentSpans = traces[0]?.spans.filter((span) => span.kind === "subagent") ?? [];
+    expect(subagentSpans).toHaveLength(2);
+    expect(subagentSpans.map((span) => span.output?.subagentTraceId)).toEqual(["run-1", "run-2"]);
+  });
+
+  it("rolls a nested chain into the transfer that started it", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "bruce-bot",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({ author: "sample-agent", authorPath: ["sample-agent"], traceId: "t-mid", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 } });
+    recorder.observe({
+      author: "simple-image",
+      authorPath: ["sample-agent", "simple-image"],
+      traceId: "t-mid",
+      usage: { inputTokens: 5, outputTokens: 50, costUsd: 0.02 },
+    });
+    await recorder.finish();
+
+    const spans = traces[0]?.spans.filter((span) => span.kind === "subagent") ?? [];
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.name).toBe("sample-agent");
+    expect(spans[0]?.output).toMatchObject({
+      chain: "sample-agent → simple-image",
+      subagentTraceId: "t-mid",
+      // Everything the transfer cost this run, both levels together.
+      inputTokens: 6,
+      outputTokens: 51,
+    });
+  });
+
+  it("fails the subagent span, not the run, when a transfer errors", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "parent",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({ author: "child", traceId: "t", error: "Unknown agent 'nope'." });
+    await recorder.finish();
+
+    // The parent saw a tool error and can still answer, so the run is not failed.
+    expect(traces[0]?.status).toBe("completed");
+    const span = traces[0]?.spans.find((s) => s.kind === "subagent");
+    expect(span?.status).toBe("error");
+    expect(span?.output?.error).toBe("Unknown agent 'nope'.");
+  });
+
+  it("counts spans dropped past the cap instead of hiding them", async () => {
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "p",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    for (let i = 0; i < 105; i += 1) {
+      recorder.observe({ usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } });
+    }
+    await recorder.finish();
+
+    expect(traces[0]?.spans).toHaveLength(100);
+    expect(traces[0]?.spansDropped).toBe(5);
   });
 
   it("marks a trace failed when an error chunk is observed", async () => {

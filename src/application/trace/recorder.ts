@@ -12,6 +12,23 @@ export interface TraceContext {
   projectType: string;
   model: string;
   messageCount: number;
+  /** Transfer chain that reached this run, outermost first. */
+  ancestry?: string[];
+}
+
+/** What one transfer contributed, accumulated while its chunks stream by. */
+interface SubagentEntry {
+  /** The agent THIS run transferred to — one span per transfer, not per depth. */
+  child: string;
+  /** Deepest chain observed under that transfer, e.g. "sample-agent → simple-image". */
+  deepestChain: string[];
+  traceId?: string;
+  startedAt: Date;
+  lastSeenAt: Date;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  error?: string;
 }
 
 function preview(value: string): string {
@@ -25,8 +42,14 @@ export class TraceRecorder {
   private readonly startedAt = new Date();
   private modelStartedAt = this.startedAt;
   private readonly spans: TraceSpan[] = [];
+  private spansDropped = 0;
   private readonly pendingTools = new Map<string, { name: string; startedAt: Date; inputChars: number }>();
-  private readonly subagentStarted = new Map<string, { startedAt: Date; traceId?: string }>();
+  /**
+   * Keyed by the direct child + its trace id: one span per transfer this run
+   * made (a deeper hop rolls into it), and two transfers to the same agent stay
+   * two spans because each child run has its own trace id.
+   */
+  private readonly subagents = new Map<string, SubagentEntry>();
   private error: string | undefined;
 
   constructor(
@@ -53,6 +76,7 @@ export class TraceRecorder {
         spanId: chunk.toolResult.toolCallId,
         kind: "tool",
         name: pending?.name ?? chunk.toolResult.name,
+        ...(chunk.author ? { author: chunk.author } : {}),
         startedAt: started.toISOString(),
         endedAt: now.toISOString(),
         durationMs: Math.max(0, now.getTime() - started.getTime()),
@@ -62,37 +86,50 @@ export class TraceRecorder {
       });
       this.pendingTools.delete(chunk.toolResult.toolCallId);
     }
-    if (chunk.author) {
-      const existing = this.subagentStarted.get(chunk.author);
-      this.subagentStarted.set(chunk.author, {
-        startedAt: existing?.startedAt ?? now,
-        traceId: existing?.traceId ?? chunk.traceId,
-      });
-    }
+
+    const subagent = chunk.author ? this.trackSubagent(chunk, now) : undefined;
+
     if (chunk.usage) {
-      const modelStartedAt = this.modelStartedAt;
-      this.addSpan({
-        spanId: randomUUID(),
-        kind: "model",
-        name: this.context.model,
-        author: chunk.author,
-        startedAt: modelStartedAt.toISOString(),
-        endedAt: now.toISOString(),
-        durationMs: Math.max(0, now.getTime() - modelStartedAt.getTime()),
-        status: "ok",
-        input: {
-          messages: this.context.messageCount,
-          inputTokens: chunk.usage.inputTokens,
-        },
-        output: {
-          outputTokens: chunk.usage.outputTokens,
-          costUsd: chunk.usage.costUsd,
-        },
-      });
-      this.modelStartedAt = now;
+      if (subagent) {
+        // The tokens belong to the child's model, which this run does not know —
+        // recording them as a model span here would attribute them to the parent's
+        // model. They roll up onto the subagent span instead; the child's own
+        // trace holds the per-model detail.
+        subagent.inputTokens += chunk.usage.inputTokens;
+        subagent.outputTokens += chunk.usage.outputTokens;
+        subagent.costUsd += chunk.usage.costUsd;
+      } else {
+        const modelStartedAt = this.modelStartedAt;
+        this.addSpan({
+          spanId: randomUUID(),
+          kind: "model",
+          name: this.context.model,
+          startedAt: modelStartedAt.toISOString(),
+          endedAt: now.toISOString(),
+          durationMs: Math.max(0, now.getTime() - modelStartedAt.getTime()),
+          status: "ok",
+          input: {
+            messages: this.context.messageCount,
+            inputTokens: chunk.usage.inputTokens,
+          },
+          output: {
+            outputTokens: chunk.usage.outputTokens,
+            costUsd: chunk.usage.costUsd,
+          },
+        });
+        // Only this run's own calls move the window; otherwise a long transfer
+        // would be billed to the next model span's duration.
+        this.modelStartedAt = now;
+      }
     }
     if (chunk.error) {
-      this.error = chunk.error;
+      if (subagent) {
+        // A failed transfer is reported to the parent as a tool error and the
+        // parent may still answer, so it fails the span, not the whole run.
+        subagent.error = chunk.error;
+      } else {
+        this.error = chunk.error;
+      }
     }
   }
 
@@ -123,17 +160,29 @@ export class TraceRecorder {
     if (thrown !== undefined) {
       this.error = thrown instanceof Error ? thrown.message : String(thrown);
     }
-    for (const [author, subagent] of this.subagentStarted) {
+    for (const subagent of this.subagents.values()) {
+      const deeper = subagent.deepestChain.length > 1;
       this.addSpan({
         spanId: randomUUID(),
         kind: "subagent",
-        name: author,
-        author,
+        name: subagent.child,
+        author: subagent.child,
         startedAt: subagent.startedAt.toISOString(),
-        endedAt: endedAt.toISOString(),
-        durationMs: Math.max(0, endedAt.getTime() - subagent.startedAt.getTime()),
-        status: this.error ? "error" : "ok",
-        output: subagent.traceId ? { subagentTraceId: subagent.traceId } : undefined,
+        // The last chunk seen from this agent — the parent's own end time would
+        // stretch the span over everything that ran after the transfer returned.
+        endedAt: subagent.lastSeenAt.toISOString(),
+        durationMs: Math.max(0, subagent.lastSeenAt.getTime() - subagent.startedAt.getTime()),
+        status: subagent.error ? "error" : "ok",
+        output: {
+          ...(subagent.traceId ? { subagentTraceId: subagent.traceId } : {}),
+          // How deep the transfer actually went — the run that answered is the
+          // last name, which is what "who ran this" asks for.
+          ...(deeper ? { chain: subagent.deepestChain.join(" → ") } : {}),
+          inputTokens: subagent.inputTokens,
+          outputTokens: subagent.outputTokens,
+          costUsd: subagent.costUsd,
+          ...(subagent.error ? { error: preview(subagent.error) } : {}),
+        },
       });
     }
     const trace: Trace = {
@@ -141,8 +190,12 @@ export class TraceRecorder {
       projectName: this.context.projectName,
       versionName: this.context.versionName,
       projectType: this.context.projectType,
+      ...(this.context.ancestry && this.context.ancestry.length > 1
+        ? { ancestry: this.context.ancestry }
+        : {}),
       status: this.error ? "failed" : cancelled ? "cancelled" : "completed",
       spans: this.spans,
+      ...(this.spansDropped > 0 ? { spansDropped: this.spansDropped } : {}),
       startedAt: this.startedAt.toISOString(),
       endedAt: endedAt.toISOString(),
       durationMs: Math.max(0, endedAt.getTime() - this.startedAt.getTime()),
@@ -152,9 +205,41 @@ export class TraceRecorder {
     await this.repository.put(trace);
   }
 
+  /** Open or update the entry for the transfer this chunk came from. */
+  private trackSubagent(chunk: EngineChunk, now: Date): SubagentEntry {
+    const author = chunk.author as string;
+    const path = chunk.authorPath ?? [author];
+    // The hop this run made; anything below it belongs to the same transfer.
+    const child = path[0] ?? author;
+    const key = `${child}#${chunk.traceId ?? "-"}`;
+    const existing = this.subagents.get(key);
+    if (existing) {
+      existing.lastSeenAt = now;
+      if (path.length > existing.deepestChain.length) {
+        existing.deepestChain = path;
+      }
+      return existing;
+    }
+    const entry: SubagentEntry = {
+      child,
+      deepestChain: path,
+      ...(chunk.traceId ? { traceId: chunk.traceId } : {}),
+      startedAt: now,
+      lastSeenAt: now,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    };
+    this.subagents.set(key, entry);
+    return entry;
+  }
+
   private addSpan(span: TraceSpan): void {
     if (this.spans.length < MAX_SPANS) {
       this.spans.push(span);
+      return;
     }
+    // Counted, not silently dropped: a truncated trace must not read as complete.
+    this.spansDropped += 1;
   }
 }

@@ -38,6 +38,19 @@ function toolCallView(raw: unknown, author?: string): ToolCallView {
   return { ...parseWireToolCall(raw), author };
 }
 
+/**
+ * Keep only the deepest chains seen: a run that reached
+ * `sample-agent → simple-image` also produced `sample-agent` chunks, and listing
+ * both reads as two separate agents.
+ */
+function mergePath(seen: string[][], path: string[]): string[][] {
+  const key = (p: string[]) => p.join(">");
+  if (seen.some((existing) => key(existing).startsWith(key(path)))) {
+    return seen;
+  }
+  return [...seen.filter((existing) => !key(path).startsWith(key(existing))), path];
+}
+
 export function RunPanel({
   projectName,
   versionName,
@@ -65,7 +78,10 @@ export function RunPanel({
   const [text, setText] = useState("");
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([]);
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
-  const [author, setAuthor] = useState<string | undefined>(undefined);
+  // The chain currently producing chunks (outermost first), or undefined while the
+  // top-level agent itself is answering.
+  const [activePath, setActivePath] = useState<string[] | undefined>(undefined);
+  const [visitedPaths, setVisitedPaths] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cost, setCost] = useState<number | null>(null);
   const [image, setImage] = useState<ImageResult | null>(null);
@@ -97,7 +113,8 @@ export function RunPanel({
     setText("");
     setToolCalls([]);
     setToolResults([]);
-    setAuthor(undefined);
+    setActivePath(undefined);
+    setVisitedPaths([]);
     setError(null);
     setCost(null);
     setImage(null);
@@ -145,8 +162,12 @@ export function RunPanel({
           setError(chunk.error);
           break;
         }
-        if (chunk.author) {
-          setAuthor(chunk.author);
+        // Track who is running: an authored chunk names the innermost agent (and
+        // its chain); an unauthored one means control is back at the top level.
+        const path = chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
+        setActivePath(path);
+        if (path) {
+          setVisitedPaths((prev) => mergePath(prev, path));
         }
         const content = chunk.delta?.content;
         if (content && isTopLevelChunk(chunk)) {
@@ -289,10 +310,28 @@ export function RunPanel({
         </div>
       )}
 
-      {author && (
-        <span className="inline-block rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
-          author: {author}
-        </span>
+      {(activePath || visitedPaths.length > 0) && (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-1 text-xs">
+            <span className="text-neutral-500">{running ? "running:" : "ran:"}</span>
+            <span className="rounded bg-neutral-100 px-2 py-0.5 font-mono dark:bg-neutral-800">
+              {projectName}
+            </span>
+            {(activePath ?? []).map((agent, index) => (
+              <span key={`active-${index}`} className="flex items-center gap-1">
+                <span className="text-neutral-400">→</span>
+                <span className="rounded bg-violet-100 px-2 py-0.5 font-mono text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+                  {agent}
+                </span>
+              </span>
+            ))}
+          </div>
+          {visitedPaths.length > 0 && (
+            <p className="text-xs text-neutral-400">
+              agents involved: {visitedPaths.map((path) => path.join(" → ")).join(", ")}
+            </p>
+          )}
+        </div>
       )}
 
       {projectType === "image" ? (

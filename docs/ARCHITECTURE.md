@@ -182,7 +182,8 @@ predicate — consumers must use it instead of re-deriving author semantics.
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
 | `error` | engine on failure (mid-stream — no retry) | every consumer surfaces it and stops |
 | `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | OpenAI `finish_reason` (`stop` with `done`, `length` without), client finalize |
-| `author` | subagent chunks only | consumers filter via `isTopLevelChunk`; client shows an author badge |
+| `author` | subagent chunks only — the **innermost** agent | consumers filter via `isTopLevelChunk`; client shows the running agent |
+| `authorPath` | subagent chunks only — the chain, outermost first | client renders `sample-agent → simple-image`; the trace recorder groups a transfer by its first element |
 | `traceId` | subagent chunks (stamped by `runProject`) | client correlates a chunk to its subagent's trace |
 
 ## Error Handling

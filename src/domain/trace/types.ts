@@ -19,8 +19,16 @@ export interface Trace {
   projectName: string;
   versionName: string;
   projectType: string;
+  /**
+   * Transfer chain that reached this run, outermost first — the last element is
+   * this run's own project. Present on nested runs so a trace can be read
+   * upwards, not only downwards through `subagentTraceId`.
+   */
+  ancestry?: string[];
   status: TraceStatus;
   spans: TraceSpan[];
+  /** Spans dropped after the per-trace cap; absent when nothing was dropped. */
+  spansDropped?: number;
   startedAt: string;
   endedAt: string;
   durationMs: number;

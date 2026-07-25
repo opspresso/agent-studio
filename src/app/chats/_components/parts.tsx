@@ -60,10 +60,10 @@ export function liveImageSrc(image: LiveImage): string {
   return `data:${image.mimeType};base64,${image.b64}`;
 }
 
-export function AuthorBadge({ author }: { author: string }) {
+export function AuthorBadge({ path }: { path: string[] }) {
   return (
     <span className="mb-1 inline-block rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand">
-      via {author}
+      via {path.join(" → ")}
     </span>
   );
 }
@@ -139,7 +139,7 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
         />
       ))}
       <div className="max-w-[80%]">
-        {turn.author && <AuthorBadge author={turn.author} />}
+        {turn.authorPath && <AuthorBadge path={turn.authorPath} />}
         <div className="rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
           {turn.text ? (
             <MarkdownContent content={turn.text} />

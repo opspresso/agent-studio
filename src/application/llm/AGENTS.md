@@ -28,11 +28,17 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 ## Author contract
 
 Top-level chunks are **unauthored** (`author === undefined`); only subagent chunks carry
-`author` (stamped by the `runSubagent` wrapper, re-stamped at every recursion level).
-`isTopLevelChunk()` in `src/domain/llm/types.ts` is the single owned predicate — every
-consumer (chat persistence, Slack, OpenAI reshaping, A2A, browser client) filters with it.
-Do not tag top-level chunks with an author; three consumers persist/accumulate only
+`author`. `isTopLevelChunk()` in `src/domain/llm/types.ts` is the single owned predicate —
+every consumer (chat persistence, Slack, OpenAI reshaping, A2A, browser client) filters with
+it. Do not tag top-level chunks with an author; three consumers persist/accumulate only
 unauthored content.
+
+`author` is the **innermost** agent and `authorPath` is the chain that produced the chunk,
+outermost first — `["sample-agent", "simple-image"]` for a depth-3 run. The `authored()`
+wrapper in `runProject.ts` stamps both once per transfer level: it preserves an existing
+author (a middle hop must not claim a grandchild's output) and prepends its own name to the
+path. `traceId` is the opposite — each level overwrites it with its own, because a parent's
+trace links one step down, not to the deepest run.
 
 ## Fallback semantics
 
