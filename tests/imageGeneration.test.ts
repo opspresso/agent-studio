@@ -138,6 +138,24 @@ describe("generateImage", () => {
       generateImage(deps, { project, version: version("openai/gpt-image-2", "") }),
     ).rejects.toThrow(/prompt is empty/);
   });
+
+  it("still returns the image when usage recording fails", async () => {
+    // The provider already generated and billed the image; a telemetry write
+    // failure must not discard it.
+    const { deps } = fakeDeps();
+    deps.usage.record = async () => {
+      throw new Error("dynamodb throttled");
+    };
+
+    const result = await generateImage(deps, {
+      project,
+      version: version("openai/gpt-image-2"),
+      prompt: "a cat",
+    });
+
+    expect(result.imageBase64).toBe("aGVsbG8=");
+    expect(result.usage.outputTokens).toBe(4160);
+  });
 });
 
 describe("calculateImageCost", () => {

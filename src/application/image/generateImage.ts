@@ -6,6 +6,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
+import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/lib/runDeadline";
 
 export interface ImageGenerationDeps {
@@ -85,15 +86,20 @@ export async function generateImage(
     const costUsd = calculateImageCost(model, result.usage);
     const inputTokens = result.usage.textInputTokens + result.usage.imageInputTokens;
     const outputTokens = result.usage.imageOutputTokens;
-    await deps.usage.record({
-      projectName: input.project.name,
-      date: new Date().toISOString().slice(0, 10),
-      model,
-      calls: 1,
-      inputTokens,
-      outputTokens,
-      costUsd,
-    });
+    // Usage recording is telemetry: the provider has already generated (and
+    // billed) the image, so a write failure must not turn that into a 500 and
+    // discard the result. Same policy as the engine's recordUsageIfPossible.
+    try {
+      await recordUsage(deps.usage, {
+        projectName: input.project.name,
+        model,
+        inputTokens,
+        outputTokens,
+        costUsd,
+      });
+    } catch (error) {
+      console.error("[image] usage recording failed", error);
+    }
     recorder?.observeResult({
       content: "",
       model,
