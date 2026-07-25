@@ -334,3 +334,102 @@ describe("ToolManager toolNamesByServer", () => {
     expect(manager.toolNamesByServer.has("down")).toBe(false);
   });
 });
+
+describe("ToolManager init concurrency", () => {
+  it("connects to every server in parallel so one slow server does not serialize the rest", async () => {
+    // `a` hangs until we release it. `b` must still get its requests out —
+    // sequential init would leave b untouched while a is pending.
+    let releaseA: (() => void) | undefined;
+    const aBlocked = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const reached: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        reached.push(url);
+        if (url.includes("slow")) {
+          await aBlocked;
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+        if (body.method === "notifications/initialized") {
+          return new Response("", { status: 202 });
+        }
+        const result = body.method === "tools/list" ? { tools: [{ name: "t" }] } : {};
+        return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const manager = new ToolManager([
+      server("slow", "https://slow.test/mcp"),
+      server("fast", "https://fast.test/mcp"),
+    ]);
+    const init = manager.init();
+    // Yield to the microtask queue: both servers' first request must be in
+    // flight even though `slow` has not answered.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(reached.some((url) => url.includes("fast"))).toBe(true);
+
+    releaseA?.();
+    await init;
+    expect(manager.toolNamesByServer.get("slow")).toEqual(["t"]);
+    expect(manager.toolNamesByServer.get("fast")).toEqual(["t_1"]);
+  });
+});
+
+describe("ToolManager session teardown", () => {
+  it("releases each server session with a DELETE carrying its session id", async () => {
+    const requests: Array<{ url: string; method: string; sessionId: string | null }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const headers = new Headers(init?.headers);
+        requests.push({
+          url,
+          method: init?.method ?? "GET",
+          sessionId: headers.get("Mcp-Session-Id"),
+        });
+        if (init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+        if (body.method === "notifications/initialized") {
+          return new Response("", { status: 202 });
+        }
+        const result = body.method === "tools/list" ? { tools: [{ name: "t" }] } : {};
+        return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+          headers: { "content-type": "application/json", "Mcp-Session-Id": "sess-a" },
+        });
+      }),
+    );
+
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    await manager.close();
+
+    const deletes = requests.filter((r) => r.method === "DELETE");
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]?.sessionId).toBe("sess-a");
+    // Idempotent: a second close is a no-op, not another DELETE.
+    await manager.close();
+    expect(requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
+  });
+
+  it("does not throw when a server rejects the teardown request", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { sessionId: "s1", listTools: [{ name: "t" }] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("server gone");
+    }));
+
+    await expect(manager.close()).resolves.toBeUndefined();
+  });
+});

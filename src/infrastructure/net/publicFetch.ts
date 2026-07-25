@@ -3,6 +3,49 @@ import { resolvePublicUrl, SsrfError } from "./ssrfGuard";
 
 const MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_CACHED_AGENTS = 64;
+
+/**
+ * Dispatchers keyed by `origin|pinned address`. Reusing one keeps the
+ * connection pool warm — an agent run making many MCP tool calls would
+ * otherwise pay a TCP+TLS handshake per call.
+ *
+ * This caches transport only. `resolvePublicUrl` still runs on every request
+ * and every redirect hop, so a host that starts resolving to a private address
+ * is rejected before a cached dispatcher is ever reached, and a host that
+ * resolves to a different address gets a different key.
+ */
+const agentCache = new Map<string, Agent>();
+
+function pinnedAgent(origin: string, address: string, family: 4 | 6): Agent {
+  const key = `${origin}|${address}`;
+  const cached = agentCache.get(key);
+  if (cached) {
+    return cached;
+  }
+  const agent = new Agent({
+    connect: {
+      lookup(_hostname, options, callback) {
+        if (typeof options === "object" && options.all) {
+          callback(null, [{ address, family }]);
+          return;
+        }
+        callback(null, address, family);
+      },
+    },
+  });
+  if (agentCache.size >= MAX_CACHED_AGENTS) {
+    // Map preserves insertion order: drop the oldest entry.
+    const oldestKey = agentCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      const evicted = agentCache.get(oldestKey);
+      agentCache.delete(oldestKey);
+      void evicted?.close();
+    }
+  }
+  agentCache.set(key, agent);
+  return agent;
+}
 
 export class PublicFetchError extends SsrfError {
   constructor(message: string) {
@@ -52,26 +95,11 @@ export async function fetchPublicUrl(
       throw new PublicFetchError(`Cannot resolve host: ${url.hostname}`);
     }
     const family = address.includes(":") ? 6 : 4;
-    const dispatcher = new Agent({
-      connect: {
-        lookup(_hostname, options, callback) {
-          if (typeof options === "object" && options.all) {
-            callback(null, [{ address, family }]);
-            return;
-          }
-          callback(null, address, family);
-        },
-      },
-    });
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        ...requestInit,
-        dispatcher,
-      } as RequestInit & { dispatcher: Agent });
-    } finally {
-      void dispatcher.close();
-    }
+    const dispatcher = pinnedAgent(url.origin, address, family);
+    const response = await fetch(url, {
+      ...requestInit,
+      dispatcher,
+    } as RequestInit & { dispatcher: Agent });
     if (!REDIRECT_STATUSES.has(response.status)) {
       return response;
     }

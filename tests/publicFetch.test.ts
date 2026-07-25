@@ -21,12 +21,25 @@ vi.mock("undici", () => ({
   },
 }));
 
+const { dnsResults } = vi.hoisted(() => ({ dnsResults: [] as string[][] }));
+
+vi.mock("node:dns/promises", () => ({
+  lookup: async () => {
+    const next = dnsResults.shift();
+    if (!next) {
+      throw new Error("no scripted DNS result");
+    }
+    return next.map((address) => ({ address, family: address.includes(":") ? 6 : 4 }));
+  },
+}));
+
 import { fetchPublicUrl, PublicFetchError } from "@/infrastructure/net/publicFetch";
 import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   agentOptions.length = 0;
+  dnsResults.length = 0;
 });
 
 describe("fetchPublicUrl", () => {
@@ -92,5 +105,47 @@ describe("fetchPublicUrl", () => {
     expect(await response.text()).toBe("ok");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe("https://93.184.216.34/next");
+  });
+});
+
+describe("fetchPublicUrl dispatcher reuse", () => {
+  const dispatcherOf = (call: unknown[] | undefined) =>
+    (call?.[1] as { dispatcher?: unknown } | undefined)?.dispatcher;
+
+  it("reuses one dispatcher for repeated requests to the same origin and address", async () => {
+    const fetchMock = vi.fn(async () => new Response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchPublicUrl("https://93.184.216.40/one");
+    await fetchPublicUrl("https://93.184.216.40/two");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(dispatcherOf(fetchMock.mock.calls[0])).toBe(dispatcherOf(fetchMock.mock.calls[1]));
+  });
+
+  it("uses a distinct dispatcher per resolved address", async () => {
+    const fetchMock = vi.fn(async () => new Response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchPublicUrl("https://93.184.216.41/x");
+    await fetchPublicUrl("https://93.184.216.42/x");
+
+    expect(dispatcherOf(fetchMock.mock.calls[0])).not.toBe(dispatcherOf(fetchMock.mock.calls[1]));
+  });
+
+  it("re-checks DNS every request: a host that starts resolving privately is blocked even when its dispatcher is cached", async () => {
+    // The whole point of the cache being transport-only. First request warms
+    // the cache for this origin; then the host flips to loopback (DNS
+    // rebinding) and the guard must still reject it.
+    const fetchMock = vi.fn(async () => new Response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+    dnsResults.push(["93.184.216.43"], ["127.0.0.1"]);
+
+    await fetchPublicUrl("https://rebind.test/first");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await expect(fetchPublicUrl("https://rebind.test/second")).rejects.toBeInstanceOf(SsrfError);
+    // Never dispatched — rejected before the cached dispatcher was reached.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

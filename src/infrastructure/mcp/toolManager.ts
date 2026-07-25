@@ -15,6 +15,8 @@ import { readBodyText } from "@/lib/httpBody";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 const MCP_REQUEST_TIMEOUT_MS = 120_000;
+/** Cleanup runs after the answer is delivered; keep it short. */
+const SESSION_END_TIMEOUT_MS = 5_000;
 const MAX_MCP_RESPONSE_BYTES = 2_000_000;
 const PROTOCOL_VERSION = "2025-06-18";
 
@@ -125,6 +127,29 @@ class McpSession {
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     return this.request("tools/call", { name, arguments: args });
   }
+
+  /**
+   * Release the server-side session (streamable HTTP `DELETE`). Best-effort:
+   * servers may not implement it, and a run must never fail on cleanup.
+   */
+  async end(): Promise<void> {
+    if (!this.sessionId) {
+      return;
+    }
+    try {
+      const response = await fetchPublicUrl(this.url, {
+        method: "DELETE",
+        headers: this.baseHeaders(),
+        signal: AbortSignal.timeout(SESSION_END_TIMEOUT_MS),
+      });
+      await response.body?.cancel();
+    } catch {
+      // Session teardown is best-effort.
+    } finally {
+      this.sessionId = undefined;
+      this.initialized = false;
+    }
+  }
 }
 
 /** Read a JSON-RPC response body, handling both JSON and SSE framing. */
@@ -159,6 +184,8 @@ export class ToolManager {
   private readonly reservedToolNames: Set<string>;
   private readonly sessionByToolName = new Map<string, McpSession>();
   private readonly originalNameByAlias = new Map<string, string>();
+  /** One entry per reachable server, for teardown. */
+  private readonly sessions: McpSession[] = [];
   private _tools: ChannelToolDef[] = [];
   private _toolNamesByServer = new Map<string, string[]>();
 
@@ -180,27 +207,40 @@ export class ToolManager {
     return this._toolNamesByServer;
   }
 
+  /**
+   * Connect to every server and build the tool set. Discovery runs in parallel
+   * — servers are independent, and a single unreachable one would otherwise add
+   * its full 120s timeout to the time-to-first-token. Alias allocation stays
+   * sequential in the configured server order so names are deterministic.
+   */
   async init(): Promise<void> {
     this.signal?.throwIfAborted();
     if (this.servers.length === 0) {
       return;
     }
+    const discovered = await Promise.all(
+      this.servers.map(async (server) => {
+        const session = new McpSession(server.url, server.headers, this.signal);
+        try {
+          return { server, session, tools: await session.listTools() };
+        } catch {
+          // A single broken MCP must not abort the whole tool set.
+          return null;
+        }
+      }),
+    );
+    this.signal?.throwIfAborted();
+
     const usedNames = new Set<string>(this.reservedToolNames);
     const aliasIndexByName = new Map<string, number>();
     const tools: ChannelToolDef[] = [];
-
-    for (const server of this.servers) {
-      const session = new McpSession(server.url, server.headers, this.signal);
-      let serverTools: McpTool[];
-      try {
-        serverTools = await session.listTools();
-      } catch {
-        this.signal?.throwIfAborted();
-        // A single broken MCP must not abort the whole tool set.
+    for (const entry of discovered) {
+      if (!entry) {
         continue;
       }
+      this.sessions.push(entry.session);
       const aliases: string[] = [];
-      for (const tool of serverTools) {
+      for (const tool of entry.tools) {
         const alias = allocateToolName(tool.name, usedNames, aliasIndexByName);
         tools.push({
           type: "function",
@@ -210,13 +250,22 @@ export class ToolManager {
             parameters: tool.inputSchema ?? { type: "object", properties: {} },
           },
         });
-        this.sessionByToolName.set(alias, session);
+        this.sessionByToolName.set(alias, entry.session);
         this.originalNameByAlias.set(alias, tool.name);
         aliases.push(alias);
       }
-      this._toolNamesByServer.set(server.name, aliases);
+      this._toolNamesByServer.set(entry.server.name, aliases);
     }
     this._tools = tools;
+  }
+
+  /**
+   * Release every server-side session. Call once the run is over (in a
+   * `finally`); best-effort, never throws.
+   */
+  async close(): Promise<void> {
+    const sessions = this.sessions.splice(0);
+    await Promise.all(sessions.map((session) => session.end()));
   }
 
   async callTool(aliasName: string, args: Record<string, unknown>): Promise<string> {
