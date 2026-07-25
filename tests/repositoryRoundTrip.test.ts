@@ -318,9 +318,20 @@ describe("chatRepository message round-trip", () => {
     ).resolves.toEqual([4, 5]);
   });
 
-  it("preserves tool and assistant fields through appendMessage + listMessages", async () => {
+  it("preserves every role's fields through appendMessage + listMessages", async () => {
     const chatKey = keys.chat("c1");
     store.set(`${chatKey.PK}|${chatKey.SK}`, { ...chatKey, entityType: "Chat" });
+    // A user turn carries the images it attached. Reading them back is what
+    // makes an attachment survive a reload — dropping them here left the upload
+    // succeeding, the item holding the urls, and the chat showing nothing.
+    const userMessage: ChatMessage = {
+      chatId: "c1",
+      seq: 2,
+      role: "user",
+      content: "what is this?",
+      images: [{ url: "https://img.example/attached.png" }],
+      createdAt: NOW,
+    };
     const toolMessage: ChatMessage = {
       chatId: "c1",
       seq: 3,
@@ -328,6 +339,8 @@ describe("chatRepository message round-trip", () => {
       content: "result text",
       toolCallId: "call_1",
       toolName: "search",
+      author: "child",
+      displayOnly: true,
       createdAt: NOW,
     };
     const assistantMessage: ChatMessage = {
@@ -337,13 +350,16 @@ describe("chatRepository message round-trip", () => {
       content: "The answer.",
       toolCalls: [{ id: "call_1", function: { name: "search", arguments: "{}" } }],
       images: [{ url: "https://img.example/1.png", prompt: "a fox" }],
+      warnings: ["MCP server 'crm' is unreachable."],
       createdAt: NOW,
     };
+    await chatRepository.appendMessage(userMessage);
     await chatRepository.appendMessage(toolMessage);
     await chatRepository.appendMessage(assistantMessage);
 
     const messages = await chatRepository.listMessages("c1");
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(3);
+    expect(messages.find((m) => m.role === "user")).toEqual(userMessage);
     expect(messages.find((m) => m.role === "tool")).toEqual(toolMessage);
     expect(messages.find((m) => m.role === "assistant")).toEqual(assistantMessage);
   });

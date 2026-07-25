@@ -99,7 +99,10 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
       images: item.images as ChatMessageImage[] | undefined,
     };
   }
-  return { ...base, role: "user" };
+  // A user turn carries images too — what the user attached. Reading them back
+  // is what makes an attachment survive a reload; without it the upload
+  // succeeds, the item holds the urls, and the chat still shows nothing.
+  return { ...base, role: "user", images: item.images as ChatMessageImage[] | undefined };
 }
 
 export const chatRepository: ChatRepository = {
