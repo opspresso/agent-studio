@@ -337,10 +337,11 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     expect(stored.some((m) => m.content.includes("nested"))).toBe(false);
   });
 
-  it("does not store a subagent's tool results either", async () => {
-    // The call is already excluded, so a stored row could never be paired — it
-    // is a write per subagent tool call that only ever gets dropped again, and
-    // an id it happens to share with a top-level call would cross the two over.
+  it("keeps a subagent's tool results for the reader but never replays them", async () => {
+    // Reading a finished chat has to show which agent, skill and tool produced
+    // the answer. Replaying those rows is the other error: the matching calls
+    // belong to the child's conversation, and an id shared with a top-level
+    // call would hand the parent the child's result.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "hi" }),
     ]);
@@ -355,12 +356,46 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     }
 
     const stored = await repo.listMessages("c1");
-    expect(stored.filter((m) => m.role === "tool").map((m) => m.content)).toEqual(["parent"]);
-    expect(toEngineMessages(stored).messages).toContainEqual({
-      role: "tool",
-      content: "parent",
-      tool_call_id: "call_1",
+    const rows = stored.filter((m) => m.role === "tool");
+    expect(rows.map((m) => m.content)).toEqual(["child", "parent"]);
+    // The child's row names who ran it and is fenced off from replay.
+    expect(rows[0]).toMatchObject({ author: "child", displayOnly: true });
+    expect(rows[1]).not.toHaveProperty("displayOnly");
+
+    const replayed = toEngineMessages(stored).messages.filter((m) => m.role === "tool");
+    expect(replayed).toEqual([{ role: "tool", content: "parent", tool_call_id: "call_1" }]);
+  });
+
+  it("records a successful transfer without replaying it as the answer", async () => {
+    // A transfer used to leave no trace at all — only its failures produced a
+    // result — so a finished chat could not say which agent had answered.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "hi" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { toolCalls: [{ id: "call_1", function: { name: "transfer_to_agent" } }] } };
+      yield {
+        toolResult: {
+          toolCallId: "call_1",
+          name: "transfer_to_agent: painter",
+          content: "Transferred to 'painter'; its answer follows.",
+          displayOnly: true,
+        },
+      };
+      yield { delta: { content: "Done." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const stored = await repo.listMessages("c1");
+    expect(stored.find((m) => m.role === "tool")).toMatchObject({
+      toolName: "transfer_to_agent: painter",
+      displayOnly: true,
     });
+    // The child's answer is not persisted, so replaying this marker in its place
+    // would tell the model the delegation came back empty.
+    expect(toEngineMessages(stored).messages.filter((m) => m.role === "tool")).toEqual([]);
   });
 
   it("keeps each run's results with its own calls when ids repeat across runs", async () => {
@@ -382,6 +417,47 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       "old result",
       "new result",
     ]);
+  });
+
+  it("says why a generated image is missing instead of dropping it in silence", async () => {
+    // An image that was never stored looks exactly like one that was never made,
+    // and the run reads as though it ignored the request.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "draw a cat" }),
+    ]);
+    const deps = makeDeps(repo, {
+      storeImage: async () => {
+        throw new Error("AccessDenied");
+      },
+    });
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { author: "painter", image: { b64: "aW1n", mimeType: "image/png" } };
+      yield { delta: { content: "Here it is." } };
+    }
+    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = await repo.listMessages("c1").then((m) => m.find((x) => x.role === "assistant"));
+    expect(assistant).not.toHaveProperty("images");
+    expect((assistant as { warnings?: string[] }).warnings?.[0]).toContain("AccessDenied");
+  });
+
+  it("says when images are shown for this turn only", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "draw a cat" }),
+    ]);
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { image: { b64: "aW1n", mimeType: "image/png" } };
+      yield { delta: { content: "Here it is." } };
+    }
+    // No storeImage configured at all.
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = await repo.listMessages("c1").then((m) => m.find((x) => x.role === "assistant"));
+    expect((assistant as { warnings?: string[] }).warnings?.[0]).toContain("not configured");
   });
 
   it("persists a run's warnings so a reloaded chat still explains itself", async () => {

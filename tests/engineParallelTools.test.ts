@@ -128,6 +128,12 @@ describe("runAgent aggregates multiple tool calls from one response", () => {
     // The transfer's own tool message is the null-result placeholder.
     const transferToolMsg = block.find((m) => m.role === "tool" && m.tool_call_id === "call_t");
     expect(String(transferToolMsg?.content)).toContain("null");
+
+    // A successful transfer reports itself, so a finished conversation can say
+    // which agent answered — but marked so nothing replays it as the answer.
+    const transferResult = chunks.find((c) => c.toolResult?.toolCallId === "call_t")?.toolResult;
+    expect(transferResult?.name).toBe("transfer_to_agent: child");
+    expect(transferResult?.displayOnly).toBe(true);
   });
 });
 

@@ -71,6 +71,12 @@ export interface EngineChunk {
     /** Display name; Skill loads include the loaded skill ("Skill: <name>"). */
     name: string;
     content: string;
+    /**
+     * Report what ran, but never stand in for the call's result in context. A
+     * transfer's real answer comes back as its own message, so replaying this
+     * marker instead would tell the model the delegation returned nothing.
+     */
+    displayOnly?: boolean;
   };
   usage?: UsageInfo;
   /**

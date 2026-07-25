@@ -383,8 +383,9 @@ Two deliberate strategies coexist:
   a tool row always carries `toolCallId`, an assistant row may carry
   `toolCalls`/`images`, and illegal combinations are unrepresentable.
 - A run persists one flattened assistant message holding the accumulated text, the run's
-  **top-level** `toolCalls` and any `warnings` it reported, preceded by its **top-level**
-  tool rows (a subagent's tool traffic stays out of the parent's conversation). Replay pairs
+  **top-level** `toolCalls` and any `warnings` it reported, preceded by its tool rows —
+  including a subagent's and a transfer's, which carry `author`/`displayOnly` so a reader
+  sees what ran while replay refuses them. Replay pairs
   each row with the call that declared it — within the run a user message delimits, since
   ids are only unique there — and re-emits it after that message, bounded by the last N
   assistant turns and a total character budget. The conversation itself is bounded too, by

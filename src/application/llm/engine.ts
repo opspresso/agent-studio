@@ -1336,6 +1336,20 @@ export async function* runAgent(
               childImages,
             )
           : yield* deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages);
+        // A successful transfer used to leave no trace at all: only its failures
+        // yielded a result, so a reader of the finished conversation could not
+        // tell which agent had answered. Marked display-only — the child's
+        // answer returns as its own message, and replaying this marker in its
+        // place would say the delegation came back empty.
+        yield {
+          author,
+          toolResult: {
+            toolCallId: call.id,
+            name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
+            content: `Transferred to '${agentName}'; its answer follows.`,
+            displayOnly: true,
+          },
+        };
         toolMessages.push({
           role: "tool",
           tool_call_id: call.id,

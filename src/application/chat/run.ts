@@ -41,24 +41,45 @@ export function userTurnContent(
  * Upload images for persistence and keep only their URLs — a b64 payload is far
  * beyond the DynamoDB item size limit. Without `storeImage` nothing is stored
  * (live rendering only); a failed upload drops that image, never the message.
+ *
+ * A drop is reported rather than only logged: to the reader an image that was
+ * never stored is indistinguishable from one that was never made, and the run
+ * looks like it ignored the request. The warnings ride the same channel an
+ * unusable binding does, so they reach the live view and the stored message.
  */
 export async function storeMessageImages(
   deps: ChatDeps,
   images: Array<{ b64: string; mimeType: string; prompt?: string }>,
-): Promise<ChatMessageImage[]> {
+): Promise<{ stored: ChatMessageImage[]; warnings: string[] }> {
   const stored: ChatMessageImage[] = [];
-  if (!deps.storeImage) {
-    return stored;
+  const warnings: string[] = [];
+  if (images.length === 0) {
+    return { stored, warnings };
   }
+  if (!deps.storeImage) {
+    return {
+      stored,
+      warnings: [
+        `${images.length} image(s) are shown for this turn only: image storage is not configured, so they are not kept with the chat.`,
+      ],
+    };
+  }
+  let failed = 0;
+  let reason = "";
   for (const image of images) {
     try {
       const url = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
       stored.push(image.prompt === undefined ? { url } : { url, prompt: image.prompt });
     } catch (error) {
+      failed += 1;
+      reason = error instanceof Error ? error.message : String(error);
       console.error("[chat] image upload failed", error);
     }
   }
-  return stored;
+  if (failed > 0) {
+    warnings.push(`${failed} image(s) could not be stored and will not survive a reload: ${reason}`);
+  }
+  return { stored, warnings };
 }
 
 /**
@@ -112,10 +133,14 @@ const MAX_PERSISTED_WARNINGS = 20;
  * The turn's top-level tool calls AND their results are stored, which is what
  * lets `toEngineMessages` pair them and replay the recent ones — without it a
  * follow-up question reaches a model that cannot see what the tools returned and
- * calls them again. Both sides are filtered by `isTopLevelChunk`: a subagent's
- * tool traffic belongs to its own conversation, and a row stored here would
- * claim a result this turn never declared. Keep both sides of this contract in
- * sync (see the round-trip test in tests/chat.test.ts).
+ * calls them again. Keep both sides of this contract in sync (see the round-trip
+ * test in tests/chat.test.ts).
+ *
+ * A subagent's results are stored too, but as `displayOnly` rows carrying the
+ * author: reading a chat means seeing which agent, skill and tool produced the
+ * answer, while replay must still refuse them — the matching calls belong to the
+ * child's conversation, so a replayed row would claim a result this turn never
+ * declared. Only the top-level calls are stored on the assistant message.
  */
 export async function* runAndPersist(
   deps: ChatDeps,
@@ -124,7 +149,13 @@ export async function* runAndPersist(
   runId?: string,
 ): AsyncGenerator<EngineChunk> {
   let content = "";
-  const toolMessages: { content: string; toolCallId: string; toolName: string }[] = [];
+  const toolMessages: {
+    content: string;
+    toolCallId: string;
+    toolName: string;
+    author?: string;
+    displayOnly?: boolean;
+  }[] = [];
   // Only the top-level run's calls: a subagent's belong to its own conversation,
   // and hanging them off this assistant message would claim results this turn
   // never produced.
@@ -149,7 +180,15 @@ export async function* runAndPersist(
       return;
     }
     try {
-      const images = await storeMessageImages(deps, generatedImages);
+      const uploaded = await storeMessageImages(deps, generatedImages);
+      const images = uploaded.stored;
+      for (const warning of uploaded.warnings) {
+        // Too late to stream — the run is over — but it survives on the message,
+        // which is exactly where a reader wonders where the picture went.
+        if (warnings.length < MAX_PERSISTED_WARNINGS && !warnings.includes(warning)) {
+          warnings.push(warning);
+        }
+      }
 
       const now = new Date().toISOString();
       for (const tool of toolMessages) {
@@ -160,6 +199,8 @@ export async function* runAndPersist(
           content: truncateForPersist(tool.content),
           toolCallId: tool.toolCallId,
           toolName: tool.toolName,
+          ...(tool.author ? { author: tool.author } : {}),
+          ...(tool.displayOnly ? { displayOnly: true } : {}),
           createdAt: now,
         });
       }
@@ -188,11 +229,16 @@ export async function* runAndPersist(
       if (chunk.delta?.toolCalls && isTopLevelChunk(chunk)) {
         toolCalls.push(...chunk.delta.toolCalls);
       }
-      if (chunk.toolResult && isTopLevelChunk(chunk)) {
+      if (chunk.toolResult) {
+        // A subagent's row, and a transfer's marker, are kept for the reader but
+        // never replayed — see `toEngineMessages`.
+        const displayOnly = !isTopLevelChunk(chunk) || chunk.toolResult.displayOnly === true;
         toolMessages.push({
           content: chunk.toolResult.content,
           toolCallId: chunk.toolResult.toolCallId,
           toolName: chunk.toolResult.name,
+          ...(chunk.author ? { author: chunk.author } : {}),
+          ...(displayOnly ? { displayOnly: true } : {}),
         });
       }
       if (

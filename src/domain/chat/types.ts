@@ -53,6 +53,15 @@ export interface ToolChatMessage extends ChatMessageBase {
   toolCallId: string;
   /** The tool that produced the result, for display. */
   toolName?: string;
+  /** The subagent that ran the tool, when it was not this conversation's own run. */
+  author?: string;
+  /**
+   * Kept to show the reader what the run did, never replayed into context — a
+   * subagent's result belongs to the child's conversation, and a transfer's is
+   * a marker rather than the answer (which returns as a separate message).
+   * Replaying either would claim a result this turn never produced.
+   */
+  displayOnly?: boolean;
 }
 
 /**

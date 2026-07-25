@@ -25,9 +25,15 @@ into `ChatDeps.runAgent`.
   **the run's top-level `delta.toolCalls`** and any `warning` chunks it saw. Per-turn
   assistant messages are still not reconstructed — every turn's calls hang off the single
   flattened assistant message.
-  - Both sides are top-level only (`isTopLevelChunk`): a subagent's calls *and* its results
-    belong to its own conversation. Storing either would claim traffic this turn never
-    declared — and a child's synthesized id can collide with the parent's.
+  - Only **top-level calls** are stored on the assistant message (`isTopLevelChunk`). A
+    subagent's *results* are stored, because reading a finished chat has to show which
+    agent, skill and tool produced the answer — but tagged with their `author` and
+    `displayOnly`, so replay refuses them: the matching calls belong to the child's
+    conversation, and a child's synthesized id can collide with the parent's.
+  - A **successful transfer** emits a `displayOnly` result naming the target agent. It used
+    to emit nothing at all (only failures did), so a finished conversation could not say
+    which agent had answered. It is never replayed: the child's answer returns as its own
+    message, so this marker in its place would say the delegation came back empty.
   - `toEngineMessages` pairs each stored `tool` row with the call that declared it and emits
     it *after* that assistant message — storage order within a turn is `tool… → assistant`,
     the reverse of what the wire format accepts. Pairing is scoped to one **run** (the
@@ -51,8 +57,9 @@ into `ChatDeps.runAgent`.
   through the optional `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set)
   by `storeMessageImages` and persisted as `images: [{ url, prompt? }]` on the message —
   the b64 payload itself is far beyond the DynamoDB item size limit. A failed upload drops
-  that image, never the message. Without `storeImage`, images render only during the live
-  stream.
+  that image, never the message — and says so through the warning channel, because an image
+  that was never stored is indistinguishable from one that was never made. Without
+  `storeImage`, images render only during the live stream, which is also reported.
 - **Attachments are sent twice over, deliberately.** The turn being run carries the
   attachment *bytes* as inline `data:` content parts (`userTurnContent`) — that is what
   gives the engine a handle it can edit. Replayed history carries the *stored URL*

@@ -86,6 +86,8 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
       role,
       toolCallId: item.toolCallId as string,
       toolName: item.toolName as string | undefined,
+      author: item.author as string | undefined,
+      displayOnly: item.displayOnly as boolean | undefined,
     };
   }
   if (role === "assistant") {

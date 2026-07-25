@@ -54,13 +54,13 @@ export async function sendMessage(
     const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
     const now = new Date().toISOString();
     const attachments = input.images ?? [];
-    const storedImages = await storeMessageImages(deps, attachments);
+    const uploaded = await storeMessageImages(deps, attachments);
     const userMessage: ChatMessage = {
       chatId: input.chatId,
       seq: userSeq,
       role: "user",
       content: input.content,
-      ...(storedImages.length > 0 ? { images: storedImages } : {}),
+      ...(uploaded.stored.length > 0 ? { images: uploaded.stored } : {}),
       createdAt: now,
     };
     await deps.chats.appendMessage(userMessage);
@@ -79,8 +79,14 @@ export async function sendMessage(
       signal: input.signal,
     });
 
-    // A chat too long to replay in full is told so, ahead of the answer.
-    return runAndPersist(deps, chat, withLeadingWarnings(history.warnings, source), runId);
+    // Ahead of the answer: a chat too long to replay in full, and an attachment
+    // that could not be stored — the reader needs both before reading the reply.
+    return runAndPersist(
+      deps,
+      chat,
+      withLeadingWarnings([...uploaded.warnings, ...history.warnings], source),
+      runId,
+    );
   } catch (error) {
     await deps.chats.releaseRun(input.chatId, runId);
     throw error;

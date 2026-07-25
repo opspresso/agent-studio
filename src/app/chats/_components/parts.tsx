@@ -101,7 +101,11 @@ export function MessageView({ message }: { message: ChatMessage }) {
         <div className="w-full max-w-[80%]">
           <ToolResultBlock
             content={message.content}
-            label={message.toolName ? `✅ tool result: ${message.toolName}` : undefined}
+            label={
+              message.toolName
+                ? `✅ tool result: ${message.toolName}${message.author ? ` (via ${message.author})` : ""}`
+                : undefined
+            }
           />
         </div>
       </div>

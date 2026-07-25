@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { AttachedImage, ChatDeps } from "./deps";
 import { ChatValidationError } from "./errors";
-import { resolveVersion, runAndPersist, storeMessageImages, userTurnContent } from "./run";
+import {
+  resolveVersion,
+  runAndPersist,
+  storeMessageImages,
+  userTurnContent,
+  withLeadingWarnings,
+} from "./run";
 import { titleFromMessage } from "./title";
 import { claimChatRun } from "./runLease";
 
@@ -55,13 +61,13 @@ export async function createChat(
 
   try {
     const attachments = input.images ?? [];
-    const storedImages = await storeMessageImages(deps, attachments);
+    const uploaded = await storeMessageImages(deps, attachments);
     const userMessage: ChatMessage = {
       chatId: chat.chatId,
       seq: await deps.chats.reserveMessageSeq(chat.chatId),
       role: "user",
       content: input.firstMessage,
-      ...(storedImages.length > 0 ? { images: storedImages } : {}),
+      ...(uploaded.stored.length > 0 ? { images: uploaded.stored } : {}),
       createdAt: now,
     };
     await deps.chats.appendMessage(userMessage);
@@ -76,7 +82,11 @@ export async function createChat(
       signal: input.signal,
     });
 
-    return { chat, stream: runAndPersist(deps, chat, source, runId) };
+    return {
+      chat,
+      // An attachment that could not be stored is said so before the answer.
+      stream: runAndPersist(deps, chat, withLeadingWarnings(uploaded.warnings, source), runId),
+    };
   } catch (error) {
     await deps.chats.releaseRun(chat.chatId, runId);
     throw error;

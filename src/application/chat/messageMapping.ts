@@ -123,7 +123,12 @@ function withinHistoryBudget(runs: ChatMessage[][]): { kept: ChatMessage[][]; dr
  * synthesized the same id twice pairs each call with its own result.
  */
 function pairWithinRun(run: ChatMessage[], into: Map<ChatMessage, ToolPair[]>): void {
-  const available = run.filter((message): message is ToolChatMessage => message.role === "tool");
+  // `displayOnly` rows are excluded outright: a subagent's result and a
+  // transfer's marker are stored so a reader can see what ran, but neither is
+  // the answer to the call it sits next to.
+  const available = run.filter(
+    (message): message is ToolChatMessage => message.role === "tool" && !message.displayOnly,
+  );
   for (const message of run) {
     if (message.role !== "assistant") {
       continue;
