@@ -1,5 +1,5 @@
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { McpServer } from "@/domain/mcp/types";
+import type { McpServer, McpServerAuth } from "@/domain/mcp/types";
 import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
 
@@ -12,6 +12,7 @@ function fromItem(item: Record<string, unknown>): McpServer {
     description: item.description as string | undefined,
     content: item.content as string | undefined,
     headers: (item.headers as Record<string, string> | undefined) ?? {},
+    auth: item.auth as McpServerAuth | undefined,
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
   };
@@ -28,6 +29,8 @@ function toItem(server: McpServer): Record<string, unknown> {
     description: server.description,
     content: server.content,
     headers: server.headers,
+    // Absent for a static-header server; `clearAuth` relies on writing it away.
+    auth: server.auth,
     createdAt: server.createdAt,
     updatedAt: server.updatedAt,
   };

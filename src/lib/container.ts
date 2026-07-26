@@ -30,6 +30,7 @@ import { traceRepository } from "@/infrastructure/db/repositories/traceRepositor
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
+import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
@@ -38,6 +39,7 @@ import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
 import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
+import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
@@ -108,6 +110,11 @@ export {
  */
 export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy, remoteAgents);
 export const mcpUseCases = createMcpUseCases(mcpRepository, secretCipher, urlPolicy, mcpToolProbe);
+export const mcpAuthUseCases = createMcpAuthUseCases({
+  mcps: mcpRepository,
+  metadata: oauthMetadataClient,
+  urlPolicy,
+});
 export const skillUseCases = createSkillUseCases(skillRepository);
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
 
