@@ -13,6 +13,7 @@ import {
   beginMcpAuthorization,
   disconnectMcp,
   listMcpConnections,
+  listVersions,
   saveMcpClientCredentials,
   type McpConnectionView,
 } from "../../lib/api";
@@ -38,8 +39,25 @@ export function McpConnections({ projectName }: { projectName: string }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [allServers, existing] = await Promise.all([listMcps(), listMcpConnections(projectName)]);
-      setServers(allServers.filter((server) => server.auth));
+      const [allServers, existing, versions] = await Promise.all([
+        listMcps(),
+        listMcpConnections(projectName),
+        listVersions(projectName),
+      ]);
+      // Only what this project actually binds. The registry is shared, so
+      // listing every OAuth server here would ask each project to connect
+      // accounts for servers it never uses. Any version counts, not just the
+      // published one — a draft being prepared needs connecting before it ships.
+      const bound = new Set(versions.flatMap((v) => v.mcpList.map((binding) => binding.name)));
+      setServers(
+        allServers.filter(
+          (server) =>
+            server.auth &&
+            // A connection that outlived its binding stays visible so it can be
+            // disconnected; otherwise it would linger with no way to reach it.
+            (bound.has(server.name) || existing.some((c) => c.serverName === server.name)),
+        ),
+      );
       setConnections(existing);
       setError(null);
     } catch (loadError) {
@@ -89,7 +107,8 @@ export function McpConnections({ projectName }: { projectName: string }) {
   if (servers.length === 0) {
     return (
       <p className="text-sm text-neutral-500">
-        No registry MCP server requires OAuth yet. An admin configures that on the server itself.
+        None of this project&apos;s versions bind an MCP server that requires authorization. Bind
+        one in the version editor, and it will appear here to connect.
       </p>
     );
   }
