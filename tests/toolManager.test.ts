@@ -367,6 +367,20 @@ describe("ToolManager per-binding tool allowlist", () => {
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
   });
 
+  it("reports a server that connects but advertises nothing", async () => {
+    // The failure that used to be silent: a reachable server answering
+    // `tools/list` with an empty array left the run with no tools, no error and
+    // no server row, so there was nothing to diagnose it from.
+    stubMcpFetch({ "https://empty.test/mcp": { listTools: [] } });
+    const manager = new ToolManager([server("empty", "https://empty.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools).toHaveLength(0);
+    expect(manager.warnings).toHaveLength(1);
+    expect(manager.warnings[0]).toContain("offers no tools");
+  });
+
   it("reports a selected tool the server no longer exposes", async () => {
     stubMcpFetch({
       "https://a.test/mcp": { listTools: [{ name: "search" }] },

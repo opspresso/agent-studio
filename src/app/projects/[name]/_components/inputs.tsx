@@ -6,7 +6,7 @@ import type { McpBinding, SubagentRef } from "../../lib/api";
 import { listProjectMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
-import { McpBindingSettings } from "./McpBindingSettings";
+import { McpBindingSettings, type VersionSave } from "./McpBindingSettings";
 import { Badge } from "@/app/_components/Badge";
 import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
 import { controlClass } from "@/app/_components/formStyles";
@@ -382,11 +382,14 @@ export function McpBindingInput({
   values,
   onChange,
   options,
+  save,
 }: {
   projectName: string;
   values: McpBinding[];
   onChange: (values: McpBinding[]) => void;
   options: PickerOption[];
+  /** The page's version save, for the settings dialog's footer. */
+  save: VersionSave;
 }) {
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
@@ -474,8 +477,12 @@ export function McpBindingInput({
         if (binding.name !== name) {
           return binding;
         }
+        // Rebuild from the binding, not from its name: writing `{ name, headers }`
+        // dropped whatever else it carried, so editing a header silently reset
+        // the tool selection sitting in the same dialog.
+        const { headers: _previous, ...rest } = binding;
         const headers = rowsToOverrides(rows);
-        return headers ? { name, headers } : { name };
+        return headers ? { ...rest, headers } : rest;
       }),
     );
   }
@@ -528,6 +535,7 @@ export function McpBindingInput({
             projectName={projectName}
             serverName={settingsFor}
             onClose={() => setSettingsFor(null)}
+            save={save}
             tools={
               <ToolSelector
                 selected={values.find((v) => v.name === settingsFor)?.tools}

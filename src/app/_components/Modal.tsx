@@ -24,11 +24,18 @@ export function Modal({
   title,
   onClose,
   size = "lg",
+  footer,
   children,
 }: {
   title: string;
   onClose: () => void;
   size?: keyof typeof WIDTH;
+  /**
+   * Actions pinned below the scrolling body. A dialog that commits something
+   * needs its button reachable at any scroll position — a footer inside
+   * `children` scrolls away under a long list.
+   */
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
@@ -123,6 +130,11 @@ export function Modal({
           </button>
         </div>
         <div className="flex-1 space-y-5 overflow-y-auto p-4">{children}</div>
+        {footer && (
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

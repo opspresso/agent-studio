@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   createVersion,
@@ -18,6 +18,7 @@ import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { controlClass } from "@/app/_components/formStyles";
+import { buttonClass } from "@/app/_components/buttonStyles";
 
 /**
  * Whether the run's model can take the images the panel would attach — vision for
@@ -37,6 +38,10 @@ function runImageCapability(
     ? Boolean(model.capabilities.imageGeneration)
     : model.capabilities.imageInput;
 }
+
+/** How long "Saved" stays up. Longer than the copy buttons' flash, because it
+ *  confirms a write rather than a clipboard, and short enough to stay current. */
+const SAVED_NOTICE_MS = 3000;
 
 function toInput(version: Version): VersionInput {
   return {
@@ -79,6 +84,30 @@ export default function PlaygroundPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /**
+   * Which version the last save wrote. A save is fast enough that "Saving…" is
+   * gone before it registers, so the confirmation outlives it — but only for a
+   * moment, the way the copy buttons do it. It reads as stale the longer it
+   * sits, since the thing it confirms is already several actions back.
+   */
+  const [savedName, setSavedName] = useState<string | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current) {
+        clearTimeout(savedTimer.current);
+      }
+    };
+  }, []);
+
+  function clearSaved() {
+    if (savedTimer.current) {
+      clearTimeout(savedTimer.current);
+      savedTimer.current = null;
+    }
+    setSavedName(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -143,12 +172,14 @@ export default function PlaygroundPage() {
       setSelectedName(versionName);
       setDraft(input);
       setSnapshot(JSON.stringify(input));
+      clearSaved();
     }
   }
 
   async function save() {
     setSaving(true);
     setSaveError(null);
+    clearSaved();
     try {
       const saved =
         selectedName === ""
@@ -164,6 +195,8 @@ export default function PlaygroundPage() {
       const input = toInput(saved);
       setDraft(input);
       setSnapshot(JSON.stringify(input));
+      setSavedName(saved.versionName);
+      savedTimer.current = setTimeout(() => setSavedName(null), SAVED_NOTICE_MS);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Failed to save version");
     } finally {
@@ -200,12 +233,20 @@ export default function PlaygroundPage() {
             ))}
           </select>
           <div className="flex items-center gap-2">
-            {dirty && <span className="text-xs text-amber-600 dark:text-amber-400">unsaved</span>}
+            {dirty ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400">unsaved</span>
+            ) : (
+              savedName && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                  Saved v{savedName}
+                </span>
+              )
+            )}
             <button
               type="button"
               onClick={save}
               disabled={saving || !draft.model}
-              className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+              className={buttonClass("primary")}
             >
               {saving ? "Saving…" : selectedName === "" ? "Create version" : "Save"}
             </button>
@@ -225,6 +266,14 @@ export default function PlaygroundPage() {
           imageModels={models.filter((m) => m.capabilities.imageGeneration)}
           value={draft}
           onChange={setDraft}
+          save={{
+            run: save,
+            saving,
+            disabled: !draft.model,
+            error: saveError,
+            savedName: dirty ? null : savedName,
+            label: selectedName === "" ? "Create version" : "Save",
+          }}
         />
       </section>
 

@@ -136,6 +136,17 @@ export class ToolManager {
       if (!entry) {
         continue;
       }
+      if (entry.tools.length === 0) {
+        // The one outcome that would otherwise explain nothing: the handshake
+        // succeeded, `tools/list` answered, and the answer was empty. Left
+        // silent, the server vanishes from the run — no error, no tools, and no
+        // row in the system prompt's server table — with nothing to tell an
+        // operator apart a server that offers nothing from one this app
+        // dropped. Say it, so they go and look at the server.
+        this._warnings.push(
+          `MCP server '${entry.server.name}' is connected but offers no tools; a run has nothing to call on it.`,
+        );
+      }
       const offered = this.selectOffered(entry.server, entry.tools);
       const aliases: string[] = [];
       for (const tool of offered) {

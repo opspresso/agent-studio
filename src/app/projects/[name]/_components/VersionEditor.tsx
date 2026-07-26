@@ -16,6 +16,7 @@ import {
   inputClass,
 } from "./inputs";
 import type { PickerOption } from "./inputs";
+import type { VersionSave } from "./McpBindingSettings";
 
 type SubagentOption = PickerOption & { type: "local" | "remote" };
 
@@ -26,6 +27,7 @@ export function VersionEditor({
   imageModels,
   value,
   onChange,
+  save,
 }: {
   projectName: string;
   projectType: ProjectType;
@@ -33,6 +35,8 @@ export function VersionEditor({
   imageModels: ModelConfig[];
   value: VersionInput;
   onChange: (value: VersionInput) => void;
+  /** Passed through to the MCP settings dialog, which covers the page's Save. */
+  save: VersionSave;
 }) {
   const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<PickerOption[]>([]);
@@ -352,6 +356,7 @@ export function VersionEditor({
             values={value.mcpList}
             onChange={(mcpList) => patch({ mcpList })}
             options={mcpOptions}
+            save={save}
           />
           <SearchSelectInput
             label="Skills"
