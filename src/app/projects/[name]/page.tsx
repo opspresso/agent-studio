@@ -129,7 +129,6 @@ export default function PlaygroundPage() {
 
   const dirty = useMemo(() => JSON.stringify(draft) !== snapshot, [draft, snapshot]);
 
-
   function selectVersion(versionName: string) {
     if (versionName === "") {
       // New versions start as a copy of whatever is currently in the editor.
