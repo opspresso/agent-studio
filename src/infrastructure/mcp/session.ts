@@ -120,6 +120,12 @@ export class McpSession {
     }
     await assertOk(response, "initialize");
     const handshake = await parseJsonRpc(response, id);
+    if (!handshake) {
+      throw new Error(
+        `MCP server answered initialize with ${response.status} and no reply ` +
+          `(content-type: ${response.headers.get("content-type") ?? "none"})`,
+      );
+    }
     // What the server said it is. Kept so a server that offers no tools can say
     // which protocol version it agreed to — the difference between "it has none"
     // and "it would not talk to a client this old" is invisible otherwise.
@@ -167,7 +173,19 @@ export class McpSession {
     if (message?.error) {
       throw new Error(`MCP error (${message.error.code}): ${message.error.message}`);
     }
-    return message?.result;
+    if (!message) {
+      // A request must be answered. A 2xx that carries no reply — a bare 202,
+      // or a stream that held only notifications — used to fall through as
+      // `undefined`, which `tools/list` then read as a server with no tools:
+      // a wrong answer that looks like a legitimate one. Say what arrived
+      // instead, so the run reports an unreachable server rather than an empty
+      // one.
+      throw new Error(
+        `MCP server answered ${method} with ${response.status} and no reply ` +
+          `(content-type: ${response.headers.get("content-type") ?? "none"})`,
+      );
+    }
+    return message.result;
   }
 
   /**

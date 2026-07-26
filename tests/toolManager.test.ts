@@ -374,6 +374,34 @@ describe("ToolManager per-binding tool allowlist", () => {
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
   });
 
+  it("reports a 202 with no reply as unreachable, not as an empty catalogue", async () => {
+    // Streamable HTTP lets a server accept a request and answer elsewhere. Read
+    // as `undefined`, that used to become `tools ?? []` — a server with no tools
+    // rather than one this client could not read.
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
+      if (body.method === "initialize") {
+        return new Response(
+          JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18" } }),
+          { headers: { "content-type": "application/json" } },
+        );
+      }
+      if (body.method === "notifications/initialized") {
+        return new Response("", { status: 202 });
+      }
+      return new Response("", { status: 202 }); // accepted, answered nowhere we read
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new ToolManager([server("deferred", "https://deferred.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools).toHaveLength(0);
+    expect(manager.warnings).toHaveLength(1);
+    expect(manager.warnings[0]).toContain("unreachable");
+    expect(manager.warnings[0]).toContain("no reply");
+  });
+
   it("picks its own reply out of an SSE body carrying other frames", async () => {
     // A server may legally interleave notifications around the reply. Taking the
     // last frame picked the notification, which has no `result` — and a call
