@@ -137,6 +137,7 @@ export class ToolManager {
         continue;
       }
       if (entry.tools.length === 0) {
+        const described = entry.session.describedAs;
         // The one outcome that would otherwise explain nothing: the handshake
         // succeeded, `tools/list` answered, and the answer was empty. Left
         // silent, the server vanishes from the run — no error, no tools, and no
@@ -144,7 +145,8 @@ export class ToolManager {
         // operator apart a server that offers nothing from one this app
         // dropped. Say it, so they go and look at the server.
         this._warnings.push(
-          `MCP server '${entry.server.name}' is connected but offers no tools; a run has nothing to call on it.`,
+          `MCP server '${entry.server.name}' is connected but offers no tools; a run has nothing to call on it.` +
+            (described ? ` It identified itself as: ${described}.` : ""),
         );
       }
       const offered = this.selectOffered(entry.server, entry.tools);

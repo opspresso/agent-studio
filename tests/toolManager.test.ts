@@ -374,6 +374,35 @@ describe("ToolManager per-binding tool allowlist", () => {
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
   });
 
+  it("picks its own reply out of an SSE body carrying other frames", async () => {
+    // A server may legally interleave notifications around the reply. Taking the
+    // last frame picked the notification, which has no `result` — and a call
+    // that "succeeded with nothing" is the hardest failure to see.
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
+      if (body.method === "notifications/initialized") {
+        return new Response("", { status: 202 });
+      }
+      const reply =
+        body.method === "initialize"
+          ? { protocolVersion: "2025-06-18", capabilities: {}, serverInfo: { name: "chatty" } }
+          : { tools: [{ name: "search" }] };
+      const frames = [
+        `data: ${JSON.stringify({ jsonrpc: "2.0", id: body.id, result: reply })}\n\n`,
+        // arrives after the reply, and answers nothing
+        `data: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/message" })}\n\n`,
+      ].join("");
+      return new Response(frames, { headers: { "content-type": "text/event-stream" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new ToolManager([server("chatty", "https://chatty.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["search"]);
+    expect(manager.warnings).toEqual([]);
+  });
+
   it("follows tools/list pagination, including an empty first page", async () => {
     // The shape that made a full catalogue read as no tools at all: the first
     // page carries nothing but a cursor, and stopping there reports the server

@@ -45,6 +45,8 @@ export class McpSession {
   private sessionId: string | undefined;
   private nextId = 1;
   private initialized = false;
+  /** Name, version and negotiated protocol from the handshake; "" until then. */
+  private serverDescription = "";
   /** The handshake while it is in flight; see {@link ensureInitialized}. */
   private handshake: Promise<void> | undefined;
 
@@ -94,12 +96,13 @@ export class McpSession {
   }
 
   private async initialize(): Promise<void> {
+    const id = this.nextId++;
     const response = await fetchPublicUrl(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({
         jsonrpc: "2.0",
-        id: this.nextId++,
+        id,
         method: "initialize",
         params: {
           protocolVersion: PROTOCOL_VERSION,
@@ -116,7 +119,20 @@ export class McpSession {
       this.sessionId = sessionId;
     }
     await assertOk(response, "initialize");
-    await parseJsonRpc(response);
+    const handshake = await parseJsonRpc(response, id);
+    // What the server said it is. Kept so a server that offers no tools can say
+    // which protocol version it agreed to — the difference between "it has none"
+    // and "it would not talk to a client this old" is invisible otherwise.
+    const result = handshake?.result as
+      | { protocolVersion?: string; serverInfo?: { name?: string; version?: string } }
+      | undefined;
+    this.serverDescription = [
+      result?.serverInfo?.name,
+      result?.serverInfo?.version,
+      result?.protocolVersion ? `protocol ${result.protocolVersion}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     // Notify the server that initialization completed.
     await fetchPublicUrl(this.url, {
@@ -128,20 +144,26 @@ export class McpSession {
     this.initialized = true;
   }
 
+  /** How the server identified itself at handshake. Empty before it happens. */
+  get describedAs(): string {
+    return this.serverDescription;
+  }
+
   private async request(
     method: string,
     params: Record<string, unknown>,
     timeoutMs: number,
   ): Promise<unknown> {
     await this.ensureInitialized();
+    const id = this.nextId++;
     const response = await fetchPublicUrl(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
-      body: JSON.stringify({ jsonrpc: "2.0", id: this.nextId++, method, params }),
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
       signal: this.requestSignal(timeoutMs),
     });
     await assertOk(response, method);
-    const message = await parseJsonRpc(response);
+    const message = await parseJsonRpc(response, id);
     if (message?.error) {
       throw new Error(`MCP error (${message.error.code}): ${message.error.message}`);
     }
@@ -239,28 +261,51 @@ async function assertOk(response: Response, method: string): Promise<void> {
 }
 
 /** Read a JSON-RPC response body, handling both JSON and SSE framing. */
-export async function parseJsonRpc(response: Response): Promise<JsonRpcResponse | undefined> {
+/**
+ * The reply to one request.
+ *
+ * `expectedId` matters on an SSE body, which may legally carry more than one
+ * message: the server can interleave notifications and requests of its own
+ * around the reply. Taking the last frame therefore picks whatever the server
+ * happened to send last, and a notification has no `result` — which reads
+ * downstream as a successful call that returned nothing, the hardest possible
+ * failure to see. Matched by id, an extra frame is simply skipped.
+ */
+export async function parseJsonRpc(
+  response: Response,
+  expectedId?: number | string,
+): Promise<JsonRpcResponse | undefined> {
   const text = await readBodyText(response, MAX_MCP_RESPONSE_BYTES);
   if (!text) {
     return undefined;
   }
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("text/event-stream") || text.includes("data:")) {
-    let last: JsonRpcResponse | undefined;
+    let fallback: JsonRpcResponse | undefined;
     for (const line of text.split("\n")) {
       const trimmed = line.trim();
-      if (trimmed.startsWith("data:")) {
-        const payload = trimmed.slice("data:".length).trim();
-        if (payload && payload !== "[DONE]") {
-          try {
-            last = JSON.parse(payload) as JsonRpcResponse;
-          } catch {
-            // ignore keep-alive / non-JSON frames
-          }
-        }
+      if (!trimmed.startsWith("data:")) {
+        continue;
+      }
+      const payload = trimmed.slice("data:".length).trim();
+      if (!payload || payload === "[DONE]") {
+        continue;
+      }
+      let message: JsonRpcResponse;
+      try {
+        message = JSON.parse(payload) as JsonRpcResponse;
+      } catch {
+        continue; // keep-alive or non-JSON frame
+      }
+      if (expectedId !== undefined && message.id === expectedId) {
+        return message;
+      }
+      // Only frames that answer *something* stand in when no id is expected.
+      if (message.result !== undefined || message.error !== undefined) {
+        fallback = message;
       }
     }
-    return last;
+    return fallback;
   }
   return JSON.parse(text) as JsonRpcResponse;
 }
