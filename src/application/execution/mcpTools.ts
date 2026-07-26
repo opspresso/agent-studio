@@ -1,8 +1,8 @@
 /** A version's MCP bindings resolved into offered tools, and session cleanup. */
 
-import type { Project, SubagentRef, Version } from "@/domain/project/types";
-import type { McpServerConfig, McpSessionFactory } from "@/domain/mcp/toolSession";
-import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
+import type { Version } from "@/domain/project/types";
+import type { McpServerConfig } from "@/domain/mcp/toolSession";
+import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 

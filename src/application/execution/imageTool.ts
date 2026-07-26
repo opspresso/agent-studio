@@ -1,12 +1,12 @@
 /** The GenerateImage/EditImage builtins and the image-project subagent. */
 
-import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
-import type { Project, SubagentRef, Version } from "@/domain/project/types";
-import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
+import type { EngineChunk } from "@/domain/llm/types";
+import type { Project, Version } from "@/domain/project/types";
+import type { ImageBytes } from "@/domain/llm/imageChannel";
 import { getModelConfig, MODEL_CONFIGS, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
-import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
+import { createTraceRecorder, finishTrace } from "./traceLifecycle";
 
 /** Default image model: the first registry entry with the imageGeneration capability. */
 export const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;

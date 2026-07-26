@@ -6,14 +6,13 @@
  */
 
 import type { RepoSkillFile, SkillFile, SkillsRepoSnapshot } from "@/domain/skill/types";
-export type { RepoSkillFile, SkillsRepoSnapshot };
 import {
   selectSkillAttachments,
   type SkillRoot,
   type SkillTreeEntry,
-  type SkippedAttachment,
 } from "@/domain/skill/files";
 
+export type { RepoSkillFile, SkillsRepoSnapshot };
 
 const SLUG = /^[a-z0-9-]+$/;
 

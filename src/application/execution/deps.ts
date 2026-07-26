@@ -7,16 +7,16 @@
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { LlmChannel } from "@/domain/llm/channel";
-import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineParameters } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { Project, SubagentRef, Version } from "@/domain/project/types";
+import type { Project, Version } from "@/domain/project/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
-import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
-import type { McpServerConfig, McpSessionFactory } from "@/domain/mcp/toolSession";
-import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
+import type { ImageChannel } from "@/domain/llm/imageChannel";
+import type { McpSessionFactory } from "@/domain/mcp/toolSession";
+import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 
 export interface ExecutionDeps {

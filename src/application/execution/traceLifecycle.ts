@@ -1,6 +1,6 @@
 /** Trace recorder creation, sampling and termination for one run. */
 
-import type { Project, SubagentRef, Version } from "@/domain/project/types";
+import type { Project, Version } from "@/domain/project/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { ExecuteVersionInput, ExecutionDeps } from "./deps";

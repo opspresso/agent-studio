@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { generateImage } from "@/application/image/generateImage";
-import { secretCipher } from "@/infrastructure/crypto/secretCipher";
-import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { calculateImageCost } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
