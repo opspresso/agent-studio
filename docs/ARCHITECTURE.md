@@ -33,9 +33,15 @@ src/
                     # store, SSRF guard, AES, readiness probes
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
-  components/       # Shared React components
+    _components/    # The shared UI kit: Modal, Badge, CardGrid, HeaderRows, form styles,
+                    # code blocks, copy buttons. A piece of UI that repeats across pages
+                    # belongs here, with one owner
+  components/       # App chrome: the header the root layout mounts (carrying the theme
+                    # toggle and user menu), and the landing page's sign-in button
   lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
                     # config + runtime-settings, SSE helpers
+  shared/           # Dependency-free helpers (dates, slugs, timeouts, PKCE, constant-time
+                    # compare). The bottom of the graph: it imports nothing from `@/`
 ```
 
 Dependency rule: `app → application → domain ← infrastructure`. Route handlers and pages must
@@ -393,6 +399,14 @@ Two deliberate strategies coexist:
   them revoke the previous one, so the loser of a race uses the winner's token instead.
   Only a refused grant marks a connection `needs_reauth`; a 5xx or timeout leaves it alone.
   A 401 at discovery is reported as "reconnect", never as "unreachable".
+  A connection **supplies** credentials rather than gating the server. The resolved token is
+  applied last at dispatch — over the registry entry's headers and the binding's overrides —
+  so a version cannot substitute its own `Authorization` for the project's connection. And
+  when no connection is available (never made, or revoked), the server still runs on whatever
+  those headers hold; it is dropped with a warning only when they hold nothing. Discovering
+  OAuth on an entry adds a way to authenticate it and must not take away the one an operator
+  already configured, so one entry can serve a static-header project and an OAuth project
+  side by side.
 - A tool's **image** results (`image` blocks, and `resource` blobs with an image mime type)
   come back as bytes rather than being dropped. The engine registers them, streams them to
   the user, and attaches them to the turn as a follow-up user message — only when the model
@@ -443,8 +457,11 @@ GET  /api/projects/[name]/traces/[traceId]  trace detail (owner-only)
 POST /api/projects/[name]/versions/[version]/predict        (version = name | 'published')
 POST /api/projects/[name]/versions/[version]/chat/completions   OpenAI-compatible
 POST /api/projects/[name]/versions/[version]/agent          SSE stream
+POST /api/projects/[name]/preview           assemble an unsaved draft's prompt without running it, owner-only
 GET|POST|DELETE /api/projects/[name]/token  per-project API token, owner-only (POST returns raw token once)
+POST /api/projects/[name]/token/reveal      read that token back in plaintext, owner-only
 POST /api/settings/a2a-key                  issue/reissue the app-wide A2A key, admin-only
+POST /api/settings/a2a-key/reveal           read the effective A2A key in plaintext, admin-only
 GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner-only (+ POST …/slack/test)
 GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
