@@ -1,20 +1,20 @@
 /**
- * Layer boundary enforcement (M1).
+ * Layer boundary enforcement.
  *
  * The dependency rule `app → application → domain ← infrastructure` lived only
  * in docs/ARCHITECTURE.md, so nothing stopped it from eroding. This test makes
  * it mechanical: no new dependency, just `node:fs` and a regex.
  *
- * Existing violations are FROZEN in per-rule allowlists rather than fixed here.
- * That keeps CI green while M1–M3 remove them one group at a time, and any NEW
- * violation still fails immediately. The allowlists are exact (`toEqual` on a
- * sorted array) on purpose: comparing counts, or matching loosely, would let one
- * violation disappear while another appears and call it unchanged.
+ * Every rule's `allow` list is empty: the boundaries are enforced, not frozen.
+ * A list is compared exactly (`toEqual` on a sorted array) rather than by count,
+ * so one violation cannot disappear while another appears and read as unchanged.
+ * A boundary that ever has to be relaxed belongs in `allow` with its reason —
+ * `exempt` is only for the deliberate wiring sites named below.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, relative } from "node:path";
+import { join, posix, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -85,6 +85,21 @@ function targetLayer(spec: string): string | null {
   return /^@\/([^/]+)/.exec(spec)?.[1] ?? null;
 }
 
+/**
+ * Rewrite a relative specifier into the `@/…` form every rule matches on, so
+ * `../../infrastructure/db/client` is classified exactly like
+ * `@/infrastructure/db/client`. Without this the rules read a null target layer
+ * for any relative import and pass it — the whole dependency rule is one `../`
+ * away from being unenforced.
+ */
+function resolveSpec(spec: string, fromPath: string): string {
+  if (!spec.startsWith(".")) {
+    return spec;
+  }
+  const resolved = posix.join(posix.dirname(fromPath), spec);
+  return resolved.startsWith("src/") ? `@/${resolved.slice("src/".length)}` : resolved;
+}
+
 interface Rule {
   name: string;
   /** Which layer(s) the rule governs. */
@@ -103,8 +118,8 @@ interface Rule {
 /**
  * Deliberate wiring sites (docs/ARCHITECTURE.md): these compose adapters for a
  * route exactly as the composition root does. They are a rule EXCEPTION, not an
- * allowlist entry — folding permanent exceptions into the freeze list would
- * destroy "the list is empty" as a completion signal for M3.
+ * allowlist entry — folding a permanent exception into the allowlist would
+ * destroy "the list is empty" as the signal that the rule is fully enforced.
  */
 const APP_WIRING_SITES = ["src/app/api/chats/_deps.ts", "src/app/api/slack/events/_lib/"];
 
@@ -128,8 +143,8 @@ const RULES: Rule[] = [
     name: "application imports no infrastructure or app",
     from: "application",
     banned: (spec) => ["infrastructure", "app"].includes(targetLayer(spec) ?? ""),
-    // 28 → 21 → 10 → 0 across M1, M2 and M3. Fully enforced: application code
-    // holds ports only, and every adapter is injected by the composition root.
+    // Application code holds ports only; every adapter it uses is injected by
+    // the composition root rather than imported.
     allow: [],
   },
   {
@@ -141,9 +156,11 @@ const RULES: Rule[] = [
   {
     // src/shared is the bottom of the graph: pure helpers with no knowledge of
     // any layer. Anything needing a repository, a port or config belongs above it.
+    // A sibling helper is not "the app", so `@/shared/…` — which is also what a
+    // relative import inside this directory resolves to — stays allowed.
     name: "shared imports nothing from the app",
     from: "shared",
-    banned: (spec) => spec.startsWith("@/"),
+    banned: (spec) => spec.startsWith("@/") && targetLayer(spec) !== "shared",
     allow: [],
   },
   {
@@ -161,7 +178,6 @@ const RULES: Rule[] = [
     from: "app",
     banned: (spec) => targetLayer(spec) === "infrastructure",
     exempt: (relPath) => APP_WIRING_SITES.some((site) => relPath.startsWith(site)),
-    // Emptied by M3: the A2A exposure use case and the Slack test use case.
     allow: [],
   },
 ];
@@ -183,7 +199,7 @@ function violationsOf(rule: Rule): string[] {
     if (!governs(rule, file.path)) continue;
     if (rule.exempt?.(file.path)) continue;
     for (const { spec, typeOnly } of parseImports(file.text)) {
-      if (rule.banned(spec)) {
+      if (rule.banned(resolveSpec(spec, file.path))) {
         found.push(`${file.path} -> ${spec}${typeOnly ? " (type)" : ""}`);
       }
     }
@@ -220,6 +236,13 @@ interface SingleOwner {
   owner: string;
   /** Layers the pattern may legitimately also appear in (never the owner's). */
   alsoAllowedIn?: string[];
+  /**
+   * Path prefixes where a copy is legitimate. Prefer this to `alsoAllowedIn`
+   * whenever the exemption is really about a few directories: a layer exemption
+   * covers everything beneath it, and for `app` that includes the API route
+   * handlers, which are exactly where a re-derived decision does damage.
+   */
+  alsoAllowedUnder?: string[];
   /**
    * Restrict the check to files under this path prefix, for a decision that is
    * only a duplicate *inside* one subsystem. Narrower than `alsoAllowedIn`,
@@ -274,14 +297,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // Three call sites used to ask this for themselves, so a new project type
     // meant finding all three. They now ask the facade and only decide how to
-    // serialise its answer. The API-reference page is exempt: it documents each
-    // type's endpoints rather than dispatching a run.
+    // serialise its answer.
     what: "which project type runs which way",
     pattern: /projectType === "image"/,
     owner: "src/application/execution/deps.ts",
     // The console decides which panels and docs a project type gets, which is a
-    // separate question from how it runs.
-    alsoAllowedIn: ["app"],
+    // separate question from how it runs. Scoped to the console pages rather
+    // than the whole `app` layer: one of the copies this owner replaced lived in
+    // an API route handler, which a layer-wide exemption would let back in.
+    alsoAllowedUnder: ["src/app/projects/"],
   },
   {
     // The agent half of the same dispatch, which cannot be checked tree-wide:
@@ -305,7 +329,9 @@ describe("single owners", () => {
     const holders = scope.filter((file) => owner.pattern.test(file.text)).map((f) => f.path);
     const unexpected = holders.filter(
       (path) =>
-        path !== owner.owner && !(owner.alsoAllowedIn ?? []).includes(layerOf(path) ?? ""),
+        path !== owner.owner &&
+        !(owner.alsoAllowedIn ?? []).includes(layerOf(path) ?? "") &&
+        !(owner.alsoAllowedUnder ?? []).some((prefix) => path.startsWith(prefix)),
     );
     // Both directions matter: a second copy fails, and so does the owner losing
     // the definition (which would otherwise read as a pass).
@@ -378,5 +404,24 @@ describe("scanner", () => {
     const rule = RULES.find((r) => r.from === "domain")!;
     expect(rule.banned("@/infrastructure/db/client")).toBe(true);
     expect(rule.banned("@/domain/llm/types")).toBe(false);
+  });
+
+  it("resolves a relative specifier to the alias form the rules match on", () => {
+    // The escape hatch the rules would otherwise have: same target, no `@/`.
+    expect(resolveSpec("../../infrastructure/db/client", "src/domain/llm/types.ts")).toBe(
+      "@/infrastructure/db/client",
+    );
+    expect(resolveSpec("./types", "src/domain/llm/channel.ts")).toBe("@/domain/llm/types");
+    // Package specifiers are left alone; so is anything resolving outside src.
+    expect(resolveSpec("next/server", "src/app/page.tsx")).toBe("next/server");
+    expect(resolveSpec("../../scripts/x", "src/app/page.tsx")).toBe("scripts/x");
+  });
+
+  it("bans a relative cross-layer import exactly as it bans the alias form", () => {
+    const rule = RULES.find((r) => r.from === "domain")!;
+    const spec = resolveSpec("../../infrastructure/db/client", "src/domain/llm/types.ts");
+    expect(rule.banned(spec)).toBe(true);
+    // A sibling inside the same layer resolves too, and stays legal.
+    expect(rule.banned(resolveSpec("./types", "src/domain/llm/channel.ts"))).toBe(false);
   });
 });
