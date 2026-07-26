@@ -46,7 +46,8 @@ const SERVER: McpServer = {
 const cipher = {
   encrypt: (value: string) => (value.startsWith("enc:") ? value : `enc:${value}`),
   decrypt: (value: string) => (value.startsWith("enc:") ? value.slice(4) : value),
-  isMasked: (value: string) => value.startsWith("•"),
+  isMasked: (value: string) => value.startsWith("masked("),
+  mask: (value: string) => `masked(${value.startsWith("enc:") ? value.slice(4) : value})`,
   decryptHeadersForOutbound: (headers: Record<string, string>) =>
     Object.fromEntries(
       Object.entries(headers).map(([name, value]) => [
@@ -306,7 +307,14 @@ describe("saveClientCredentials", () => {
     const h = harness({ connection: { clientSecret: "enc:original" } });
     const uc = createMcpAuthUseCases(h.deps);
 
-    await uc.saveClientCredentials("p", "slack", { clientId: "client-1", clientSecret: "••••" }, OWNER);
+    // The console shows the stored secret masked and posts it back untouched;
+    // that echo must not overwrite the real value with its own mask.
+    await uc.saveClientCredentials(
+      "p",
+      "slack",
+      { clientId: "client-1", clientSecret: "masked(original)" },
+      OWNER,
+    );
 
     expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:original");
   });
@@ -345,11 +353,11 @@ describe("saveClientCredentials", () => {
 
     const serialized = JSON.stringify(await uc.listConnections("p", OWNER));
 
-    expect(JSON.parse(serialized)[0]).toMatchObject({
-      serverName: "slack",
-      hasClientSecret: true,
-    });
-    for (const secret of ["CLIENT-SECRET-VALUE", "ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
+    const view = JSON.parse(serialized)[0] as { clientSecret?: string };
+    expect(view.clientSecret).toBe("masked(CLIENT-SECRET-VALUE)");
+    // Tokens are absent outright — there is no reveal path and no reason to
+    // show them, so masking is not the question for those.
+    for (const secret of ["ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
       expect(serialized).not.toContain(secret);
     }
   });

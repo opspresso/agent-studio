@@ -383,7 +383,8 @@ export interface McpConnectionView {
   serverName: string;
   status: "needs_auth" | "connected" | "needs_reauth";
   clientId: string;
-  hasClientSecret: boolean;
+  /** Masked, same convention as every other stored secret; absent when none. */
+  clientSecret?: string;
   clientRegistered: boolean;
   scopes: string[];
   connectedBy?: string;

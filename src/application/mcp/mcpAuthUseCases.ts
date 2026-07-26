@@ -93,16 +93,20 @@ export const OAUTH_STATE_TTL_SECONDS = 600;
 export const MCP_OAUTH_CALLBACK_PATH = "/api/mcps/oauth/callback";
 
 /**
- * A connection as the console may see it. Deliberately carries no secret and no
- * token: the owner supplied the client secret and has it, and a token has no
- * reason to be displayed — so unlike the A2A key and the project API token,
- * there is no reveal path here at all.
+ * A connection as the console may see it.
+ *
+ * The client secret is masked the way every other stored secret in this codebase
+ * is — length-preserving, edges revealed in proportion to length — so an owner
+ * can recognise which credential is stored without it being readable. Tokens are
+ * absent entirely: unlike the A2A key and the project API token there is no
+ * reveal path here, and a token has no reason to be displayed at all.
  */
 export interface McpConnectionView {
   serverName: string;
   status: McpConnection["status"];
   clientId: string;
-  hasClientSecret: boolean;
+  /** Masked; absent for a public client that has none. */
+  clientSecret?: string;
   clientRegistered: boolean;
   scopes: string[];
   connectedBy?: string;
@@ -110,12 +114,12 @@ export interface McpConnectionView {
   expiresAt?: string;
 }
 
-function toConnectionView(connection: McpConnection): McpConnectionView {
+function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpConnectionView {
   return {
     serverName: connection.serverName,
     status: connection.status,
     clientId: connection.clientId,
-    hasClientSecret: Boolean(connection.clientSecret),
+    ...(connection.clientSecret ? { clientSecret: cipher.mask(connection.clientSecret) } : {}),
     clientRegistered: connection.clientRegistered === true,
     scopes: connection.scopes,
     ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
@@ -307,7 +311,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
 
     async listConnections(projectName, userEmail) {
       await assertProjectOwner(deps.projects, projectName, userEmail);
-      return (await deps.connections.listByProject(projectName)).map(toConnectionView);
+      return (await deps.connections.listByProject(projectName)).map((connection) =>
+        toConnectionView(deps.cipher, connection),
+      );
     },
 
     async saveClientCredentials(projectName, serverName, input, userEmail) {
@@ -337,7 +343,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         updatedAt: new Date().toISOString(),
       };
       await deps.connections.put(next);
-      return toConnectionView(next);
+      return toConnectionView(deps.cipher, next);
     },
 
     async beginAuthorization(projectName, serverName, userEmail) {
