@@ -13,7 +13,10 @@ import { createServer } from "node:http";
 
 process.env.STAGE ??= "local";
 process.env.DYNAMODB_ENDPOINT_URL ??= "http://localhost:8001";
-process.env.LLM_BASE_URL = "http://127.0.0.1:8002/v1";
+// Overridable so the check can run beside a `scripts/mock-llm.ts` already
+// holding the default port; CI leaves it unset.
+const MOCK_PORT = Number(process.env.INTEGRATION_MOCK_PORT ?? 8002);
+process.env.LLM_BASE_URL = `http://127.0.0.1:${MOCK_PORT}/v1`;
 process.env.LLM_API_KEY = "test";
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");
 
@@ -26,10 +29,18 @@ async function main() {
     "@/infrastructure/db/repositories/externalAgentRepository"
   );
   const { chatRepository } = await import("@/infrastructure/db/repositories/chatRepository");
+  const { mcpConnectionRepository } = await import(
+    "@/infrastructure/db/repositories/mcpConnectionRepository"
+  );
+  const { mcpOAuthStateRepository } = await import(
+    "@/infrastructure/db/repositories/mcpOAuthStateRepository"
+  );
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
   const { executionDeps } = await import("@/lib/container");
   const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
-  const { encryptHeaders, decryptHeadersForOutbound } = await import("@/infrastructure/crypto/secretEncryption");
+  const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
+    "@/infrastructure/crypto/secretEncryption"
+  );
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -103,7 +114,7 @@ async function main() {
       }
     });
   });
-  await new Promise<void>((resolve) => mock.listen(8002, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
 
   const suffix = Date.now().toString(36);
   const projectName = `it-proj-${suffix}`;
@@ -196,6 +207,99 @@ async function main() {
     });
     assert.ok(await externalAgentRepository.get(`it-agent-${suffix}`), "external agent get");
     pass("mcp + external agent with encrypted headers");
+
+    // ---------- mcp oauth connection + in-flight state ----------
+    const serverName = `it-mcp-${suffix}`;
+    await mcpConnectionRepository.put({
+      projectName,
+      serverName,
+      clientId: "client-abc",
+      clientSecret: encryptSecret("client-secret"),
+      scopes: ["chat:write"],
+      accessToken: encryptSecret("access-1"),
+      refreshToken: encryptSecret("refresh-1"),
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      status: "connected",
+      connectedBy: "owner@example.com",
+      connectedAt: now,
+      updatedAt: now,
+    });
+    const conn = await mcpConnectionRepository.get(projectName, serverName);
+    assert.ok(conn, "mcp connection get");
+    assert.equal(decryptSecret(conn.clientSecret ?? ""), "client-secret", "client secret round-trip");
+    assert.equal(
+      (await mcpConnectionRepository.listByProject(projectName)).length,
+      1,
+      "connection listed under its project partition",
+    );
+
+    // Compare-and-set on the refresh token: the second caller refreshed from a
+    // token that is no longer stored, which is the concurrent-refresh race.
+    const stored = conn.refreshToken;
+    assert.equal(
+      await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
+        accessToken: encryptSecret("access-2"),
+        refreshToken: encryptSecret("refresh-2"),
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        status: "connected",
+        updatedAt: new Date().toISOString(),
+      }),
+      true,
+      "refresh with the current refresh token wins",
+    );
+    assert.equal(
+      await mcpConnectionRepository.updateTokens(projectName, serverName, stored, {
+        accessToken: encryptSecret("access-3"),
+        refreshToken: encryptSecret("refresh-3"),
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        status: "connected",
+        updatedAt: new Date().toISOString(),
+      }),
+      false,
+      "refresh from a superseded refresh token is refused",
+    );
+    assert.equal(
+      decryptSecret((await mcpConnectionRepository.get(projectName, serverName))?.accessToken ?? ""),
+      "access-2",
+      "the winner's token survives the race",
+    );
+
+    // Absent values REMOVE rather than storing null, so `attribute_not_exists`
+    // stays a usable race condition afterwards. The expected value is read back
+    // rather than re-encrypted: ciphertext is randomized, so only the stored one
+    // can match.
+    const won = await mcpConnectionRepository.get(projectName, serverName);
+    assert.equal(
+      await mcpConnectionRepository.updateTokens(projectName, serverName, won?.refreshToken, {
+        status: "needs_reauth",
+        updatedAt: new Date().toISOString(),
+      }),
+      true,
+      "clearing tokens with the stored refresh token succeeds",
+    );
+    const revoked = await mcpConnectionRepository.get(projectName, serverName);
+    assert.equal(revoked?.refreshToken, undefined, "cleared refresh token is absent, not null");
+    assert.equal(revoked?.status, "needs_reauth", "status recorded");
+
+    await mcpOAuthStateRepository.put(
+      {
+        state: `it-state-${suffix}`,
+        projectName,
+        serverName,
+        codeVerifier: encryptSecret("verifier"),
+        userEmail: "owner@example.com",
+        createdAt: now,
+      },
+      600,
+    );
+    const consumed = await mcpOAuthStateRepository.consume(`it-state-${suffix}`);
+    assert.equal(consumed?.userEmail, "owner@example.com", "oauth state consumed once");
+    assert.equal(
+      await mcpOAuthStateRepository.consume(`it-state-${suffix}`),
+      null,
+      "a replayed state is gone",
+    );
+    pass("mcp oauth connection round-trip + single-use state");
 
     // ---------- chat ----------
     const chatId = `it-chat-${suffix}`;

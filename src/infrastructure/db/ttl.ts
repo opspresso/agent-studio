@@ -41,6 +41,16 @@ export function expiresAtSeconds(baseIso: string, retentionDays: number): number
   return Math.floor(baseMs / 1000) + retentionDays * SECONDS_PER_DAY;
 }
 
+/**
+ * Unix-seconds TTL a fixed number of seconds from `nowMs`. For rows whose life
+ * is measured in minutes — an OAuth authorization in flight — where the
+ * day-granular helper above cannot express the window. Kept here so every TTL
+ * this table writes is still computed in one place.
+ */
+export function expiresAtFromNow(seconds: number, nowMs: number = Date.now()): number {
+  return Math.floor(nowMs / 1000) + seconds;
+}
+
 /** True once the row's TTL has passed. Absent `expiresAt` never expires. */
 export function isExpired(expiresAt: unknown, nowMs: number): boolean {
   return typeof expiresAt === "number" && expiresAt * 1000 <= nowMs;
