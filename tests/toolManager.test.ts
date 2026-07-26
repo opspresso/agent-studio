@@ -374,6 +374,38 @@ describe("ToolManager per-binding tool allowlist", () => {
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
   });
 
+  it("gives up on a GET stream that never sends headers", async () => {
+    // The stream must not be able to hold discovery open: it sits on the
+    // critical path of a run's first token.
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        // never resolves on its own; only the abort ends it
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+      }
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
+      if (body.method === "initialize") {
+        return new Response(
+          JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18" } }),
+          { headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("", { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new ToolManager([server("stuck", "https://stuck.test/mcp")]);
+
+    const run = manager.init();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await run;
+
+    expect(manager.tools).toHaveLength(0);
+    expect(manager.warnings[0]).toContain("unreachable");
+    vi.useRealTimers();
+  });
+
   it("takes a reply the server delivers on the GET stream", async () => {
     // Slack's MCP server answers tools/list with 200 and an empty body, and
     // sends the result on the stream opened by GET. Reading only the POST

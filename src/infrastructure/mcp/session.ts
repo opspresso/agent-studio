@@ -239,12 +239,22 @@ export class McpSession {
     if (this.stream !== undefined) {
       return this.stream ?? undefined;
     }
+    // The deadline covers reaching the server, not the stream's life: this body
+    // stays open for the whole session, so a plain timeout signal would cut it
+    // off mid-session. The timer is cleared the moment headers arrive, leaving
+    // the stream under the run's own signal.
+    const controller = new AbortController();
+    const signal = this.signal
+      ? AbortSignal.any([this.signal, controller.signal])
+      : controller.signal;
+    const timer = setTimeout(() => controller.abort(), MCP_DISCOVERY_TIMEOUT_MS);
     try {
       const response = await fetchPublicUrl(this.url, {
         method: "GET",
         headers: { ...this.baseHeaders(), Accept: "text/event-stream" },
-        signal: this.signal,
+        signal,
       });
+      clearTimeout(timer);
       if (!response.ok || !response.body) {
         await response.body?.cancel();
         this.stream = null;
@@ -253,6 +263,7 @@ export class McpSession {
       this.stream = response.body.getReader();
       return this.stream;
     } catch {
+      clearTimeout(timer);
       // A server that refuses GET simply has no second channel.
       this.stream = null;
       return undefined;
