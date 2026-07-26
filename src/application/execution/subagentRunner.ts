@@ -5,11 +5,10 @@
  */
 
 import { imageDataUrl } from "@/domain/llm/types";
-import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
-import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
-import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
-import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
+import type { ImageBytes } from "@/domain/llm/imageChannel";
+import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
@@ -20,10 +19,9 @@ import {
   buildSkillLoader,
   createSkillReader,
   resolveRunTools,
-  resolveSkills,
   type SkillReader,
 } from "./bindings";
-import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
+import { createTraceRecorder, finishTrace } from "./traceLifecycle";
 
 /** Assemble the injected engine dependencies for an agent run. */
 export async function buildAgentDeps(
@@ -279,7 +277,7 @@ export async function* runLocalSubagent(
   // A prompt project's behaviour lives in its user prompt template, and the
   // tool loop has nowhere to put one — running it there answers from a bare
   // system prompt instead of from the project as configured.
-  if (project.projectType !== "agent") {
+  if (runStrategyFor(project) !== "agent") {
     return yield* runPromptSubagent(
       deps,
       project,
