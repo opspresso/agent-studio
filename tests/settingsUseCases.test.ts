@@ -6,7 +6,7 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 
 // The cipher is injected now; every call below is unchanged.
 const createSettingsUseCases = (repo: Parameters<typeof createSettingsUseCasesImpl>[0]) =>
-  createSettingsUseCasesImpl(repo, secretCipher);
+  createSettingsUseCasesImpl(repo, secretCipher, process.env);
 import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";

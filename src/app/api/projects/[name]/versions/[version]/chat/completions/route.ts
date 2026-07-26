@@ -1,4 +1,4 @@
-import { sseResponse } from "@/lib/sse";
+import { sseResponse } from "@/app/api/_lib/sse";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import {
   executeAgent,

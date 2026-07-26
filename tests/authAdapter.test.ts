@@ -18,7 +18,7 @@ vi.mock("@/infrastructure/db/client", () => ({
   getTableName: () => "test-table",
 }));
 
-import { dynamodbAdapter } from "@/lib/auth-adapter";
+import { dynamodbAdapter } from "@/infrastructure/db/authAdapter";
 
 describe("dynamodb auth adapter uniqueness", () => {
   it("creates a user and its email lock in one conditional transaction", async () => {

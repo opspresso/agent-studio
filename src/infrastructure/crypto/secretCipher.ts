@@ -20,7 +20,7 @@ import {
   mergeHeaderUpdate,
   mergeOutboundHeaders,
 } from "./secretEncryption";
-import { timingSafeEqualString } from "./timingSafe";
+import { timingSafeEqualString } from "@/shared/timingSafe";
 
 export const secretCipher: SecretCipher = {
   encrypt: encryptSecret,

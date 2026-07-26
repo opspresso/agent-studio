@@ -18,8 +18,9 @@ vi.mock("@/infrastructure/db/client", () => ({
   getTableName: () => "test-table",
 }));
 
+// The loader is injected now, so no module mock is needed for it.
+const loadChannelConfig = async () => ({ baseUrl: "http://llm.test/v1", apiKey: "k" });
 vi.mock("@/lib/runtime-settings", () => ({
-  getLlmChannelConfig: async () => ({ baseUrl: "http://llm.test/v1", apiKey: "k" }),
 }));
 
 const { dbReachable, llmReachable } = await import("@/infrastructure/health/probes");
@@ -44,7 +45,7 @@ describe("llmReachable", () => {
   it("resolves on any HTTP response and probes /models without a completion", async () => {
     const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(llmReachable()).resolves.toBeUndefined();
+    await expect(llmReachable(loadChannelConfig)).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith("http://llm.test/v1/models", expect.anything());
   });
 
@@ -55,6 +56,6 @@ describe("llmReachable", () => {
         throw new Error("ECONNREFUSED");
       }),
     );
-    await expect(llmReachable()).rejects.toThrow("ECONNREFUSED");
+    await expect(llmReachable(loadChannelConfig)).rejects.toThrow("ECONNREFUSED");
   });
 });

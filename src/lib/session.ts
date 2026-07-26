@@ -1,3 +1,4 @@
+import { unauthorized } from "@/shared/unauthorized";
 import { headers } from "next/headers";
 import { auth } from "./auth";
 import { getAdminEmails } from "./runtime-settings";
@@ -28,7 +29,7 @@ export function withAuth<T extends unknown[]>(
   return async (...args: T) => {
     const user = await getSessionUser();
     if (!user) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
+      return unauthorized();
     }
     return handler(user, ...args);
   };

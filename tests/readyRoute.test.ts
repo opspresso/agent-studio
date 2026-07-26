@@ -4,7 +4,7 @@ vi.mock("@/lib/container", () => ({ readinessReport: vi.fn() }));
 
 const { GET: readyGet } = await import("@/app/api/ready/route");
 const { GET: healthGet } = await import("@/app/api/health/route");
-const { beginShutdown } = await import("@/lib/lifecycle");
+const { beginShutdown } = await import("@/shared/lifecycle");
 const { readinessReport } = await import("@/lib/container");
 const readinessMock = readinessReport as ReturnType<typeof vi.fn>;
 

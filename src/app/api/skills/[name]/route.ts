@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { skillUseCases } from "@/application/skill";
+import { skillUseCases } from "@/lib/container";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 

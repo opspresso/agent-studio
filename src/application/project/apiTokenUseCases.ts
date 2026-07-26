@@ -1,6 +1,6 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import { NotFoundError, ValidationError } from "@/application/errors";
-import { generateSecretValue, hashSecret, secretHashEquals } from "@/lib/generatedSecret";
+import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { assertProjectOwner, getProject } from "./projectUseCases";
 

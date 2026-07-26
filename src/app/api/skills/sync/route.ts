@@ -1,8 +1,6 @@
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { getSkillsRepoConfig } from "@/lib/runtime-settings";
-import { skillRepository } from "@/application/skill";
-import { fetchSkillsRepoSnapshot } from "@/infrastructure/github/skillsRepoClient";
-import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
+import { syncSkillsFromRepo } from "@/lib/container";
 
 export const GET = withAuth(async () => {
   const { repo, branch, token } = await getSkillsRepoConfig();
@@ -22,9 +20,7 @@ export const POST = withAdminAuth(async () => {
     );
   }
   try {
-    const snapshot = await fetchSkillsRepoSnapshot();
-    const result = await syncSkillsFromSnapshot(skillRepository, snapshot);
-    return Response.json(result);
+    return Response.json(await syncSkillsFromRepo());
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";
     const status = message.includes("GitHub") ? 502 : 500;

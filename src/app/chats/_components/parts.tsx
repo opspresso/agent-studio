@@ -3,7 +3,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { formatShortDateTime } from "@/lib/date";
+import { formatShortDateTime } from "@/shared/date";
 import { imageDataUrl } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import type { Attachment } from "@/app/_lib/imageAttachments";

@@ -109,31 +109,19 @@ const RULES: Rule[] = [
     banned: (spec) => ["infrastructure", "app"].includes(targetLayer(spec) ?? ""),
     // 28 → 21 → 10 → 0 across M1, M2 and M3.
     //
-    // M1 removed 12 (secretEncryption 7, ssrfGuard 4, timingSafe 1) and added 5:
-    // each slice `index.ts` now imports the port implementations it injects. That
-    // trade is deliberate — a slice index is today's composition site for its
-    // singleton, and M2 removes all 11 of these index entries when those
-    // singletons move into `lib/container.ts`.
+    // M1 traded 12 direct crypto/SSRF imports for 5 in the slice `index.ts`
+    // files; M2 removed all 11 index entries by moving those singletons into
+    // `lib/container.ts`. What remains is outbound dispatch and two type-only
+    // imports — M3's scope.
     allow: [
       "src/application/agent/agentUseCases.ts -> @/infrastructure/a2a/client",
       "src/application/agent/agentUseCases.ts -> @/infrastructure/agent/agentClient",
-      "src/application/agent/index.ts -> @/infrastructure/agent/agentClient (type)",
-      "src/application/agent/index.ts -> @/infrastructure/crypto/secretCipher",
-      "src/application/agent/index.ts -> @/infrastructure/db/repositories/externalAgentRepository",
-      "src/application/agent/index.ts -> @/infrastructure/net/urlPolicy",
       "src/application/execution/runProject.ts -> @/infrastructure/a2a/client",
       "src/application/execution/runProject.ts -> @/infrastructure/mcp/toolManager",
       "src/application/execution/runProject.ts -> @/infrastructure/net/publicFetch",
-      "src/application/mcp/index.ts -> @/infrastructure/crypto/secretCipher",
-      "src/application/mcp/index.ts -> @/infrastructure/db/repositories/mcpRepository",
-      "src/application/mcp/index.ts -> @/infrastructure/mcp/mcpClient (type)",
-      "src/application/mcp/index.ts -> @/infrastructure/net/urlPolicy",
       "src/application/mcp/mcpUseCases.ts -> @/infrastructure/mcp/discoveryCache",
       "src/application/mcp/mcpUseCases.ts -> @/infrastructure/mcp/mcpClient",
-      "src/application/settings/index.ts -> @/infrastructure/crypto/secretCipher",
-      "src/application/settings/index.ts -> @/infrastructure/db/repositories/settingsRepository",
       "src/application/settings/settingsUseCases.ts -> @/infrastructure/llm/providers",
-      "src/application/skill/index.ts -> @/infrastructure/db/repositories/skillRepository",
       "src/application/skill/syncSkills.ts -> @/infrastructure/github/skillsRepoClient (type)",
       "src/application/slack/handleSlackEvent.ts -> @/infrastructure/slack/client (type)",
     ],
@@ -145,19 +133,35 @@ const RULES: Rule[] = [
     allow: [],
   },
   {
+    // src/shared is the bottom of the graph: pure helpers with no knowledge of
+    // any layer. Anything needing a repository, a port or config belongs above it.
+    name: "shared imports nothing from the app",
+    from: "shared",
+    banned: (spec) => spec.startsWith("@/"),
+    allow: [],
+  },
+  {
+    // The composition root wires everything, so an adapter importing it would
+    // close a cycle: container -> adapter -> container.
+    name: "infrastructure does not import the composition root",
+    from: "infrastructure",
+    banned: (spec) => spec === "@/lib/container",
+    allow: [],
+  },
+  {
     name: "app imports no infrastructure outside its wiring sites",
     from: "app",
     banned: (spec) => targetLayer(spec) === "infrastructure",
     exempt: (relPath) => APP_WIRING_SITES.some((site) => relPath.startsWith(site)),
+    // M2 removed two: the container assembles the skills sync, and timingSafe
+    // moved to src/shared.
     // Emptied by M3 (A2A exposure use case, slack test route).
     allow: [
       "src/app/api/a2a/[name]/.well-known/agent-card.json/route.ts -> @/infrastructure/a2a/cards",
       "src/app/api/a2a/[name]/route.ts -> @/infrastructure/a2a/cards",
-      "src/app/api/a2a/[name]/route.ts -> @/infrastructure/crypto/timingSafe",
       "src/app/api/a2a/route.ts -> @/infrastructure/a2a/cards",
       "src/app/api/projects/[name]/a2a/route.ts -> @/infrastructure/a2a/cards",
       "src/app/api/projects/[name]/slack/test/route.ts -> @/infrastructure/slack/client",
-      "src/app/api/skills/sync/route.ts -> @/infrastructure/github/skillsRepoClient",
     ],
   },
 ];

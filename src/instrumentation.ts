@@ -9,7 +9,7 @@ export async function register(): Promise<void> {
     const { assertRequiredConfig, assertAccessControlConfig } = await import("@/lib/config");
     assertRequiredConfig();
     assertAccessControlConfig();
-    const { registerShutdownSignals } = await import("@/lib/lifecycle");
+    const { registerShutdownSignals } = await import("@/shared/lifecycle");
     registerShutdownSignals();
   }
 }

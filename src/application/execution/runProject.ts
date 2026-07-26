@@ -32,7 +32,7 @@ import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import { renderTemplate } from "@/application/llm/template";
 import * as engine from "@/application/llm/engine";
 import { TraceRecorder } from "@/application/trace/recorder";
-import { withRunDeadline } from "@/lib/runDeadline";
+import { withRunDeadline } from "@/shared/runDeadline";
 import { beginRun, endRun } from "@/lib/runMetrics";
 
 export interface ExecutionDeps {

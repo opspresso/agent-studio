@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ChatRepository } from "@/domain/chat/repository";
-import { RUN_LEASE_SECONDS } from "@/lib/runDeadline";
+import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { ChatConflictError } from "./errors";
 
 export async function claimChatRun(chats: ChatRepository, chatId: string): Promise<string> {

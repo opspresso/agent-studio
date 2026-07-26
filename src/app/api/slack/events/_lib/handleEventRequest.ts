@@ -5,8 +5,8 @@ import { slackEventRepository } from "@/infrastructure/db/repositories/slackEven
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
-import { BodyTooLargeError, readBodyText } from "@/lib/httpBody";
-import { RUN_LEASE_SECONDS } from "@/lib/runDeadline";
+import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
+import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import type {
   SlackBotBinding,
   SlackEventBody,

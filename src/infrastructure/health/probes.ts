@@ -1,8 +1,7 @@
 import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
-import { getLlmChannelConfig } from "@/lib/runtime-settings";
-import { withTimeout } from "@/lib/withTimeout";
+import { withTimeout } from "@/shared/withTimeout";
 
 const DB_TIMEOUT_MS = 2000;
 const LLM_TIMEOUT_MS = 2000;
@@ -20,8 +19,10 @@ export async function dbReachable(): Promise<void> {
  * reachable; only a network error or timeout counts as unreachable. No
  * completion is issued — this probes connectivity, not completion health.
  */
-export async function llmReachable(): Promise<void> {
-  const { baseUrl, apiKey } = await getLlmChannelConfig();
+export async function llmReachable(
+  loadChannelConfig: () => Promise<{ baseUrl: string; apiKey: string }>,
+): Promise<void> {
+  const { baseUrl, apiKey } = await loadChannelConfig();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
   try {

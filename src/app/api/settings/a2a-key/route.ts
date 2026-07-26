@@ -1,6 +1,6 @@
-import { settingsUseCases } from "@/application/settings";
+import { settingsUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
-import { generateSecretValue } from "@/lib/generatedSecret";
+import { generateSecretValue } from "@/shared/generatedSecret";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
 

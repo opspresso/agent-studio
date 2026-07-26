@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/auth-client";
-import { toSlug } from "@/lib/slug";
+import { toSlug } from "@/shared/slug";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
 

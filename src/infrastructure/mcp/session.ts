@@ -10,7 +10,7 @@
  */
 
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
-import { readBodyText } from "@/lib/httpBody";
+import { readBodyText } from "@/shared/httpBody";
 
 export const PROTOCOL_VERSION = "2025-06-18";
 /** A tool may legitimately take minutes; the model is waiting on its answer. */

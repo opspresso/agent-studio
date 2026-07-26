@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { sseResponse } from "@/lib/sse";
+import { sseResponse } from "@/app/api/_lib/sse";
 import { createChat } from "@/application/chat/createChat";
 import { listChats } from "@/application/chat/listChats";
 import { ChatError } from "@/application/chat/errors";

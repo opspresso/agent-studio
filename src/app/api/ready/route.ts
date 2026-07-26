@@ -1,5 +1,5 @@
 import { readinessReport } from "@/lib/container";
-import { isShuttingDown } from "@/lib/lifecycle";
+import { isShuttingDown } from "@/shared/lifecycle";
 
 /**
  * Readiness probe for the load balancer / orchestrator. Reports whether this
