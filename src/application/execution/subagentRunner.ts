@@ -1,0 +1,419 @@
+/**
+ * Subagent transfer and the engine deps a run is assembled from. These live
+ * together because they are mutually recursive: a parent builds deps to run,
+ * and a local transfer builds the child's deps the same way.
+ */
+
+import { imageDataUrl } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
+import type { Project, SubagentRef, Version } from "@/domain/project/types";
+import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
+import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
+import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
+import * as engine from "@/application/llm/engine";
+import type { ExecutionDeps } from "./deps";
+import { toEngineParameters } from "./deps";
+import { buildImageEditor, buildImageGenerator, runImageSubagent } from "./imageTool";
+import { closeMcp } from "./mcpTools";
+import {
+  buildSkillLoader,
+  createSkillReader,
+  resolveRunTools,
+  resolveSkills,
+  type SkillReader,
+} from "./bindings";
+import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
+
+/** Assemble the injected engine dependencies for an agent run. */
+export async function buildAgentDeps(
+  deps: ExecutionDeps,
+  version: Version,
+  projectName: string,
+  recordUsageFn: engine.RecordUsageFn,
+  /** Transfer chain this run sits on; the top-level run starts with itself. */
+  ancestry: readonly string[],
+  readSkill: SkillReader,
+  signal?: AbortSignal,
+): Promise<engine.AgentDeps> {
+  const channel = deps.channel;
+  return {
+    channel,
+    recordUsage: recordUsageFn,
+    loadSkillContent: buildSkillLoader(readSkill),
+    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, ancestry, signal),
+    generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
+    editImage: buildImageEditor(deps, version, projectName, recordUsageFn, signal),
+  };
+}
+
+/**
+ * The child's first user turn: the transfer message, plus any images the parent
+ * handed over as inline parts so a vision-capable child can look at them.
+ */
+export function subagentContent(message: string, images?: ImageBytes[]): ChatMessageInput["content"] {
+  if (!images || images.length === 0) {
+    return message;
+  }
+  return [
+    { type: "text", text: message },
+    ...images.map((image) => ({
+      type: "image_url" as const,
+      image_url: { url: imageDataUrl(image) },
+    })),
+  ];
+}
+
+/**
+ * How deep a chain of local subagent transfers may go. Turn accounting alone
+ * does not bound it: a child version carries its own `maxTurn`, so a child can
+ * raise the ceiling its parent was running under.
+ */
+export const MAX_SUBAGENT_DEPTH = 5;
+
+export function buildSubagentRunner(
+  deps: ExecutionDeps,
+  subagentList: SubagentRef[] | undefined,
+  recordUsageFn: engine.RecordUsageFn,
+  /** Project names already on this transfer chain, outermost first. */
+  ancestry: readonly string[],
+  signal?: AbortSignal,
+): NonNullable<engine.AgentDeps["runSubagent"]> {
+  const refByName = new Map((subagentList ?? []).map((ref) => [ref.name, ref]));
+  async function* dispatch(
+    agentName: string,
+    message: string,
+    turn: number,
+    maxTurn: number,
+    images?: ImageBytes[],
+  ): AsyncGenerator<EngineChunk, string> {
+    signal?.throwIfAborted();
+    const ref = refByName.get(agentName);
+    if (!ref) {
+      yield { author: agentName, error: `Unknown agent '${agentName}'.` };
+      return "";
+    }
+    if (ref.type === "remote") {
+      if (images && images.length > 0) {
+        // The outbound A2A/agent clients send text parts only, so silently
+        // dropping the picture would look like a refusal to edit it.
+        yield {
+          author: agentName,
+          error: `Agent '${agentName}' is a remote agent; images cannot be transferred to it.`,
+        };
+        return "";
+      }
+      return yield* runRemoteSubagent(deps, agentName, message, signal);
+    }
+    // Refuse cycles and runaway nesting as tool errors, like an unknown agent:
+    // the parent sees the refusal and can answer, instead of the run burning
+    // tokens until the wall-clock deadline.
+    if (ancestry.includes(agentName)) {
+      yield {
+        author: agentName,
+        error: `Transfer to '${agentName}' would loop (already on this chain: ${ancestry.join(" -> ")}).`,
+      };
+      return "";
+    }
+    if (ancestry.length >= MAX_SUBAGENT_DEPTH) {
+      yield {
+        author: agentName,
+        error: `Subagent depth limit (${MAX_SUBAGENT_DEPTH}) reached; not transferring to '${agentName}'.`,
+      };
+      return "";
+    }
+    try {
+      return yield* runLocalSubagent(
+        deps,
+        agentName,
+        message,
+        turn,
+        maxTurn,
+        recordUsageFn,
+        [...ancestry, agentName],
+        signal,
+        images,
+      );
+    } catch (error) {
+      // A child that throws on entry (a model that cannot take the images it was
+      // handed, a broken dep) must not tear down the parent run: report it as a
+      // tool error like every other refusal above, so the parent still answers.
+      // Cancellation is not a refusal — it propagates.
+      if (signal?.aborted) {
+        throw error;
+      }
+      yield {
+        author: agentName,
+        error: `Agent '${agentName}' failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+      return "";
+    }
+  }
+
+  return (agentName, message, turn, maxTurn, images) =>
+    authored(agentName, dispatch(agentName, message, turn, maxTurn, images));
+}
+
+/**
+ * Stamp the chunks flowing out of one transfer with who produced them.
+ *
+ * `author` keeps the *innermost* agent — a chunk from `simple-image` two levels
+ * down must not surface as its middle hop — and `authorPath` accumulates the
+ * chain so a consumer can render `sample-agent → simple-image`. `traceId` is
+ * deliberately NOT touched here: each level stamps its own trace id on the way
+ * out (see runLocalSubagent) because a parent's trace links to the run one level
+ * down, not to the deepest one.
+ */
+export async function* authored(
+  agentName: string,
+  source: AsyncGenerator<EngineChunk, string>,
+): AsyncGenerator<EngineChunk, string> {
+  while (true) {
+    const step = await source.next();
+    if (step.done) {
+      return step.value;
+    }
+    const chunk = step.value;
+    yield {
+      ...chunk,
+      author: chunk.author ?? agentName,
+      authorPath: [agentName, ...(chunk.authorPath ?? [])],
+    };
+  }
+}
+
+/**
+ * A prompt project answering a transfer. Its version's user prompt template is
+ * the whole of its behaviour, so it runs through the single-shot path the
+ * project's own endpoint uses; the transfer message arrives as the user turn
+ * after the rendered template. The template renders with no variables — a
+ * transfer carries a written message, not a variable map — so a template that
+ * expects them collapses those placeholders to empty, exactly as a run with
+ * missing variables does.
+ */
+export async function* runPromptSubagent(
+  deps: ExecutionDeps,
+  project: Project,
+  version: Version,
+  message: string,
+  recordUsageFn: engine.RecordUsageFn,
+  ancestry: readonly string[],
+  signal?: AbortSignal,
+  images?: ImageBytes[],
+): AsyncGenerator<EngineChunk, string> {
+  const recorder = deps.traces
+    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
+    : undefined;
+  let text = "";
+  let thrown: unknown;
+  let completed = false;
+  try {
+    for await (const chunk of engine.runPromptStream(
+      { channel: deps.channel, recordUsage: recordUsageFn },
+      {
+        projectName: project.name,
+        model: version.model,
+        fallbackModel: version.fallbackModel,
+        systemPrompt: version.systemPrompt,
+        userPromptTemplate: version.userPromptTemplate,
+        extraMessages: [{ role: "user", content: subagentContent(message, images) }],
+        parameters: toEngineParameters(version),
+        signal,
+      },
+    )) {
+      recorder?.observe(chunk);
+      if (chunk.delta?.content) {
+        text += chunk.delta.content;
+      }
+      // Author is stamped by `authored`; this level only claims its trace id.
+      yield { ...chunk, ...(recorder ? { traceId: recorder.traceId } : {}) };
+    }
+    completed = true;
+  } catch (error) {
+    thrown = error;
+    throw error;
+  } finally {
+    await finishTrace(recorder, thrown, !completed && thrown === undefined);
+  }
+  return text;
+}
+
+export async function* runLocalSubagent(
+  deps: ExecutionDeps,
+  agentName: string,
+  message: string,
+  turn: number,
+  maxTurn: number,
+  recordUsageFn: engine.RecordUsageFn,
+  ancestry: readonly string[],
+  signal?: AbortSignal,
+  images?: ImageBytes[],
+): AsyncGenerator<EngineChunk, string> {
+  const project = await deps.projects.get(agentName);
+  if (!project) {
+    yield { author: agentName, error: `Agent project '${agentName}' not found.` };
+    return "";
+  }
+  // Subagent transfers run published versions only — drafts never leak.
+  const version = await resolveRunnableVersion(deps.versions, project);
+  if (!version) {
+    yield { author: agentName, error: `Agent '${agentName}' has no published version.` };
+    return "";
+  }
+
+  // Dispatch on the child's projectType, like the entry points do: an image
+  // project generates an image — its model must never hit chat/completions.
+  if (project.projectType === "image") {
+    return yield* runImageSubagent(
+      deps,
+      agentName,
+      project,
+      version,
+      message,
+      recordUsageFn,
+      ancestry,
+      signal,
+      images,
+    );
+  }
+  // A prompt project's behaviour lives in its user prompt template, and the
+  // tool loop has nowhere to put one — running it there answers from a bare
+  // system prompt instead of from the project as configured.
+  if (project.projectType !== "agent") {
+    return yield* runPromptSubagent(
+      deps,
+      project,
+      version,
+      message,
+      recordUsageFn,
+      ancestry,
+      signal,
+      images,
+    );
+  }
+
+  // Opened before the version's tools resolve, so the trace covers that work
+  // and can record what resolving lost.
+  const recorder = deps.traces
+    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
+    : undefined;
+  const readSkill = createSkillReader(deps);
+  const { skills, subagents, mcp, warnings } = await resolveRunTools(
+    deps,
+    version,
+    readSkill,
+    signal,
+  );
+
+  let text = "";
+  let thrown: unknown;
+  let completed = false;
+  try {
+    // Everything past the resolve is inside the try: a consumer that stops
+    // reading here — or a dependency assembly that throws before the first
+    // chunk — must still release the sessions the resolve above opened.
+    const childDeps = await buildAgentDeps(
+      deps,
+      version,
+      project.name,
+      recordUsageFn,
+      ancestry,
+      readSkill,
+      signal,
+    );
+    childDeps.callMcpTool = mcp.callMcpTool;
+    for (const warning of warnings) {
+      const chunk: EngineChunk = { warning, ...(recorder ? { traceId: recorder.traceId } : {}) };
+      recorder?.observe(chunk);
+      yield chunk;
+    }
+    for await (const chunk of engine.runAgent(childDeps, {
+      projectName: project.name,
+      model: version.model,
+      fallbackModel: version.fallbackModel,
+      systemPrompt: version.systemPrompt,
+      messages: [{ role: "user", content: subagentContent(message, images) }],
+      parameters: toEngineParameters(version),
+      // Clamped to the parent's ceiling: the child continues the parent's turn
+      // counter (`startTurn`), so a child version configured with a larger
+      // maxTurn would raise the limit the whole run was started under.
+      maxTurn: Math.min(version.maxTurn ?? maxTurn, maxTurn),
+      startTurn: turn,
+      skills,
+      subagents,
+      mcpTools: mcp.mcpTools,
+      mcpServers: mcp.mcpServers,
+      signal,
+    })) {
+      recorder?.observe(chunk);
+      if (chunk.delta?.content) {
+        text += chunk.delta.content;
+      }
+      // Stamp this level's trace id so the parent's trace links to *this* run;
+      // the author stays whatever produced the chunk (see `authored`).
+      yield {
+        ...chunk,
+        ...(recorder ? { traceId: recorder.traceId } : {}),
+      };
+    }
+    completed = true;
+  } catch (error) {
+    thrown = error;
+    throw error;
+  } finally {
+    await closeMcp(mcp.close);
+    await finishTrace(recorder, thrown, !completed && thrown === undefined);
+  }
+  return text;
+}
+
+export async function* runRemoteSubagent(
+  deps: ExecutionDeps,
+  agentName: string,
+  message: string,
+  signal?: AbortSignal,
+): AsyncGenerator<EngineChunk, string> {
+  const agent = await deps.externalAgents.get(agentName);
+  if (!agent) {
+    yield { author: agentName, error: `Remote agent '${agentName}' not found.` };
+    return "";
+  }
+  try {
+    await deps.urlPolicy.assertAllowed(agent.url);
+  } catch (error) {
+    yield {
+      author: agentName,
+      error: error instanceof BlockedUrlError ? error.message : "Blocked remote agent URL",
+    };
+    return "";
+  }
+  const target = {
+    url: agent.url,
+    protocol: agent.protocol,
+    headers: deps.cipher.decryptHeadersForOutbound(agent.headers),
+  };
+  let reply;
+  try {
+    reply = await deps.remoteAgents.send(target, message, signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    yield { author: agentName, error: error instanceof Error ? error.message : String(error) };
+    return "";
+  }
+  signal?.throwIfAborted();
+  if (!reply.ok) {
+    yield { author: agentName, error: reply.error };
+    return "";
+  }
+  for (const image of reply.images) {
+    yield {
+      author: agentName,
+      image: { b64: image.b64, mimeType: image.mimeType, prompt: message },
+    };
+  }
+  if (reply.text) {
+    yield { author: agentName, delta: { content: reply.text } };
+  }
+  // An image-only A2A answer still has to say something the parent can act on.
+  return reply.text || (reply.images.length ? `Received ${reply.images.length} generated image(s).` : "");
+}
