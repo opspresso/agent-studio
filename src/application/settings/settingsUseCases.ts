@@ -1,14 +1,16 @@
 import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
-import type { AppSettings, LlmProviderSetting } from "@/domain/settings/types";
+import type {
+  AppSettings,
+  LlmProviderSetting,
+  ProviderChannelConfig,
+} from "@/domain/settings/types";
+import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { parseList } from "@/shared/parseList";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 
 /** Reads `LLM_PROVIDER_*` env vars into channel configs. Injected. */
 export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelConfig[];
-import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
-import type { ProviderChannelConfig } from "@/domain/settings/types";
-import { config } from "@/lib/config";
-import { parseList } from "@/shared/parseList";
-import type { SecretCipher } from "@/domain/security/secretCipher";
 
 export type SettingKey = Exclude<keyof AppSettings, "updatedAt" | "llmProviders">;
 
@@ -22,9 +24,11 @@ interface FieldSpec {
 }
 
 /**
- * Env-overridable settings managed on the /settings page. `config.llmBaseUrl`
- * and `config.llmApiKey` getters throw when unset, so those read process.env
- * directly.
+ * Env-overridable settings managed on the /settings page. Every fallback reads
+ * the injected `env` rather than the `config` singleton: `config` resolves
+ * `process.env` at call time, so a spec reaching for it would make the settings
+ * view partly uncontrollable — and `config.llmBaseUrl`/`llmApiKey` additionally
+ * throw when unset, which a settings *view* must not do.
  */
 const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   { key: "adminEmails", secret: false, env: () => env.ADMIN_EMAILS || undefined },
@@ -35,16 +39,22 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   },
   { key: "llmBaseUrl", secret: false, env: () => env.LLM_BASE_URL || undefined },
   { key: "llmApiKey", secret: true, env: () => env.LLM_API_KEY || undefined },
-  { key: "skillsRepo", secret: false, env: () => config.skillsRepo },
+  { key: "skillsRepo", secret: false, env: () => env.SKILLS_REPO || undefined },
   {
     key: "skillsRepoBranch",
     secret: false,
     env: () => env.SKILLS_REPO_BRANCH || undefined,
     defaultValue: "main",
   },
-  { key: "githubToken", secret: true, env: () => config.githubToken },
-  { key: "a2aApiKey", secret: true, env: () => config.a2aApiKey },
-  { key: "publicBaseUrl", secret: false, env: () => config.publicBaseUrl },
+  { key: "githubToken", secret: true, env: () => env.GITHUB_TOKEN || undefined },
+  { key: "a2aApiKey", secret: true, env: () => env.A2A_API_KEY || undefined },
+  {
+    key: "publicBaseUrl",
+    secret: false,
+    // Same precedence as `config.publicBaseUrl`: the explicit setting wins,
+    // then the auth URL, which is set on every deployment that has OAuth.
+    env: () => env.PUBLIC_BASE_URL || env.BETTER_AUTH_URL || undefined,
+  },
 ];
 
 export interface SettingFieldView {
@@ -256,8 +266,7 @@ export function createSettingsUseCases(
         }
       }
 
-      const effectiveAdmins =
-        next.adminEmails !== undefined ? parseList(next.adminEmails) : config.adminEmails;
+      const effectiveAdmins = parseList(next.adminEmails ?? env.ADMIN_EMAILS ?? "");
       if (effectiveAdmins.length > 0 && !effectiveAdmins.includes(userEmail.toLowerCase())) {
         throw new ValidationError(
           `adminEmails must include your own email (${userEmail}) — otherwise you would lock yourself out`,
