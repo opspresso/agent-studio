@@ -348,6 +348,7 @@ export function VersionEditor({
             </p>
           )}
           <McpBindingInput
+            projectName={projectName}
             values={value.mcpList}
             onChange={(mcpList) => patch({ mcpList })}
             options={mcpOptions}
