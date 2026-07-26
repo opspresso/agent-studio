@@ -109,9 +109,7 @@ jobs:
         id: gitops-token
         uses: actions/create-github-app-token@v2
         with:
-          # GITOPS_APP_ID holds the app's Client ID (Iv23…), not the numeric app
-          # id, so this is `client-id` — `app-id` is the legacy input.
-          client-id: ${{ vars.GITOPS_APP_ID }}
+          app-id: ${{ vars.GITOPS_APP_ID }}
           private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
           owner: opspresso
           repositories: argocd-env-demo
