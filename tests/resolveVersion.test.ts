@@ -5,7 +5,9 @@ import type { ChatDeps } from "@/application/chat/deps";
 import type { VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
 
-const PROJECT = { name: "p" } as Project;
+const PROJECT = { name: "p", publishedVersion: "2" } as Project;
+/** Nothing published — the state every draft-fallback rule turns on. */
+const DRAFT_ONLY = { name: "p" } as Project;
 
 function versionFixture(versionName: string, createdAt: string): Version {
   return {
@@ -25,8 +27,10 @@ function versionFixture(versionName: string, createdAt: string): Version {
 function depsWith(published: Version | null, all: Version[]): ChatDeps {
   return {
     versions: {
+      // The published pointer comes off the project, so a lookup arrives under
+      // the concrete version name rather than the repository's sentinel.
       async get(_projectName: string, versionName: string) {
-        return versionName === "published" ? published : null;
+        return published && versionName === published.versionName ? published : null;
       },
       async list() {
         return all;
@@ -74,10 +78,30 @@ describe("resolveRunnableVersion policy", () => {
       },
     } as unknown as VersionRepository;
 
-    expect(await resolveRunnableVersion(versions, PROJECT)).toBeNull();
-    const withFallback = await resolveRunnableVersion(versions, PROJECT, {
+    expect(await resolveRunnableVersion(versions, DRAFT_ONLY)).toBeNull();
+    const withFallback = await resolveRunnableVersion(versions, DRAFT_ONLY, {
       allowDraftFallback: true,
     });
     expect(withFallback?.versionName).toBe("1");
+  });
+
+  it("resolves the pointer without a second read of the project item", async () => {
+    const asked: string[] = [];
+    const published = versionFixture("2", "2026-01-02T00:00:00.000Z");
+    const versions = {
+      async get(_projectName: string, versionName: string) {
+        asked.push(versionName);
+        return versionName === published.versionName ? published : null;
+      },
+      async list() {
+        return [];
+      },
+    } as unknown as VersionRepository;
+
+    expect((await resolveRunnableVersion(versions, PROJECT))?.versionName).toBe("2");
+    // Asking for the repository's "published" sentinel would make it re-read the
+    // project item to recover the pointer this project already carries — a wasted
+    // round trip on every A2A card fetch, Slack event and subagent transfer.
+    expect(asked).toEqual(["2"]);
   });
 });
