@@ -48,16 +48,23 @@ Clean Architecture with a strict dependency rule — **`app → application → 
 - `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack, A2A, GitHub, net/crypto helpers.
 - `src/app/` — Next.js App Router pages + API route handlers (presentation).
 - `src/lib/` — cross-cutting glue: the composition root, auth, session, config,
-  runtime-settings, sse. Application and infrastructure may import it; domain never does.
+  runtime-settings. Application and infrastructure may import it; domain never does.
+- `src/shared/` — dependency-free helpers (dates, slugs, timeouts, list parsing,
+  constant-time compare). The bottom of the graph: it imports nothing from `@/`.
 
 **Composition is distributed across a few deliberate wiring sites.** `src/lib/container.ts`
-wires repositories + `executionDeps`; each registry slice
-(`src/application/{agent,mcp,skill,settings}/index.ts`) instantiates its own
-`createXUseCases(repo)` singleton; chats wire `ChatDeps` in `src/app/api/chats/_deps.ts`;
+wires the repositories, the domain ports (`SecretCipher`, `UrlPolicy`,
+`RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`), the four registry-slice
+singletons and `executionDeps`; chats wire `ChatDeps` in `src/app/api/chats/_deps.ts`;
 Slack wires `SlackEventDeps` in `src/app/api/slack/events/_lib/`. Route handlers get
 repositories and `executionDeps` from these wiring sites — do not import `infrastructure/`
 directly from a route/page, and application code must not import `container.ts` (deps are
 injected, never pulled).
+
+`tests/architecture.test.ts` enforces all of the above mechanically: seven layer rules with
+empty allowlists, plus named single-owner invariants that fail when a second copy of a
+decision appears. Adding a violation is not quietly possible — fix the import, don't widen
+the rule.
 
 Read `docs/ARCHITECTURE.md` for the full single-table key map, domain semantics, and API surface.
 
@@ -96,7 +103,7 @@ per-project-per-model maps updated with atomic `ADD`; a run's per-turn usage is 
 
 ### Auth & authorization
 
-Better Auth 1.6 + Google OAuth, custom DynamoDB adapter (`src/lib/auth-adapter.ts`). Login is
+Better Auth 1.6 + Google OAuth, custom DynamoDB adapter (`src/infrastructure/db/authAdapter.ts`). Login is
 restricted to `ALLOWED_EMAIL_DOMAINS`. Route handlers wrap in `withAuth(...)`
 (`src/lib/session.ts`), which 401s without a session and passes `SessionUser` as the first arg.
 
@@ -143,7 +150,7 @@ registries are shared: reads are open to any signed-in user; mutations go throug
   finished task. Outbound A2A/agent registry.
 - **Errors**: shared `AppError` base carrying an HTTP status (`src/application/errors.ts`);
   `apiError` (`src/app/api/_lib/http.ts`) maps any of them, else a generic 500.
-- **SSE**: `src/lib/sse.ts` — `sseResponse` (OpenAI `[DONE]` terminator) vs `sseResponseRaw`
+- **SSE**: `src/app/api/_lib/sse.ts` — `sseResponse` (OpenAI `[DONE]` terminator) vs `sseResponseRaw`
   (A2A JSON-RPC framing).
 
 ## Conventions that bite
