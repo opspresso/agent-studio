@@ -88,7 +88,9 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
     },
     projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
     versions: {
-      get: async (_project: string, name: string) => (name === "published" ? versionFixture() : null),
+      // The pointer is read off the project, so the fake answers its concrete name.
+      get: async (_project: string, name: string) =>
+        name === projectFixture().publishedVersion ? versionFixture() : null,
       list: async () => [],
     } as unknown as VersionRepository,
     slack,

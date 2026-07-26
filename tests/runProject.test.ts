@@ -42,6 +42,7 @@ function projectFixture(): Project {
     description: "",
     projectType: "agent",
     ownerEmail: "owner@example.com",
+    publishedVersion: "v1",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -973,7 +974,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
         ? { ...projectFixture(), name: "painter-img", projectType: "image" }
         : null) as ExecutionDeps["projects"]["get"];
     deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "painter-img" && versionName === "published"
+      projectName === "painter-img" && versionName === "v1"
         ? {
             ...versionFixture({ piiFiltering: false }),
             projectName: "painter-img",
@@ -1023,7 +1024,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
         ? { ...projectFixture(), name: "summarizer", projectType: "llm" }
         : null) as ExecutionDeps["projects"]["get"];
     deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "summarizer" && versionName === "published"
+      projectName === "summarizer" && versionName === "v1"
         ? {
             ...versionFixture({ piiFiltering: false }),
             projectName: "summarizer",
@@ -1080,7 +1081,7 @@ describe("executeAgent subagent turn budget", () => {
       name,
     })) as ExecutionDeps["projects"]["get"];
     deps.versions.get = (async (projectName: string, versionName: string) =>
-      projectName === "child" && versionName === "published"
+      projectName === "child" && versionName === "v1"
         ? {
             ...versionFixture({ piiFiltering: false }),
             projectName: "child",
