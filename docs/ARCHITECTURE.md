@@ -443,8 +443,9 @@ All routes require a Better Auth session except the unauthenticated endpoints:
 (`predict`, `chat/completions`, `agent`) also accept a per-project API token via
 `Authorization: Bearer <token>` in place of the session — resolved by
 `authenticateExecution` (`src/app/api/projects/_lib/executionAuth.ts`), which verifies the
-token's SHA-256 hash against the `PROJECT#{name}` `APITOKEN` item and runs as the project
-owner. Only the hash is stored; the raw token is shown once at generation.
+token against the `PROJECT#{name}` `APITOKEN` item and runs as the project owner. The stored
+token is AES-encrypted and compared in constant time after decryption; a token issued before
+tokens were revealable is stored as a SHA-256 hash and still verifies by hash.
 `/api/health` is liveness — a static 200 answering "is the process serving". `/api/ready`
 is readiness — it probes DynamoDB and the LLM channel for reachability (short timeout,
 details not surfaced) and returns 503 when a downstream is unreachable or the instance is
@@ -492,12 +493,20 @@ Better Auth, Google OAuth, DynamoDB, `STAGE`) stays env-only. SSE responses use
 Generated secrets: the two credentials Agent Studio issues itself carry a prefix naming
 product and kind (`src/shared/generatedSecret.ts`) — `asa_` for the app-wide A2A key, `ast_`
 for a project API token — so a leaked string is traceable to what it opens. Both are issued
-from the console and shown in full exactly once. The A2A key is an ordinary settings
-override: encrypted, then masked on every later read. A project API token is stored as a
-SHA-256 hash and is unrecoverable, so its display mask is computed at generation and stored
-beside the hash — it carries only the prefix and the edge characters a mask reveals, never
-enough to reconstruct the token. Verification compares hashes and ignores the prefix, so
-tokens issued under the older `sk_proj_` prefix keep working.
+from the console. The A2A key is an ordinary settings override: encrypted, then masked on
+every later read. A project API token is stored AES-encrypted for the same reason — the
+owner can read it back later through `POST /api/projects/[name]/token/reveal`, which is a
+POST rather than a GET because the body is a live credential, and every reveal is logged
+with the caller's email. Its display mask is computed at generation and stored beside the
+ciphertext so listing a token costs no decryption; the mask carries only the prefix and the
+edge characters it reveals, never enough to reconstruct the token.
+
+Because the token is encrypted rather than hashed, the datastore alone is not enough to use
+one, but the datastore plus `AES_ENCRYPTION_KEY` is — treat that key as the thing standing
+between a table dump and live project credentials. Tokens issued before revealing existed
+are stored as a SHA-256 hash instead: they still verify, but cannot be shown again, so the
+console offers regeneration. Verification ignores the prefix either way, so tokens issued
+under the older `sk_proj_` prefix keep working.
 
 ## Auth
 

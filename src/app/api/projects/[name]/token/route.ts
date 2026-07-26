@@ -21,7 +21,8 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
 export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    // Returns the raw token once; only its hash is stored.
+    // Returns the raw token. It is stored encrypted, not hashed, so the owner
+    // can read it back later through the sibling `reveal` route.
     return Response.json(await generateApiToken(projectRepository, name, user.email, secretCipher));
   } catch (error) {
     return apiError(error);
