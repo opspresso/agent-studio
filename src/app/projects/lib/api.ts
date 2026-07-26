@@ -260,7 +260,8 @@ export interface ProjectSlackView {
   signingSecret: string;
   eventsPath: string;
   eventsUrl: string;
-  manifest?: Record<string, unknown>;
+  /** Every verb returns it, so the settings page can always render the manifest. */
+  manifest: Record<string, unknown>;
 }
 
 export async function getProjectSlack(name: string): Promise<ProjectSlackView> {
