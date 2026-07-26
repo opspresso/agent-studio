@@ -16,6 +16,7 @@
  *     ({@link ./session McpSession} serializes it).
  */
 
+import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import type { McpToolResult } from "@/domain/llm/types";
@@ -24,14 +25,7 @@ import { McpSession, type McpTool } from "./session";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 
-export interface McpServerConfig {
-  name: string;
-  url: string;
-  /** Already-decrypted outbound headers. */
-  headers: Record<string, string>;
-  /** Offer only these of the server's tools; absent/empty means all of them. */
-  tools?: string[];
-}
+export type { McpServerConfig };
 
 export class ToolManager {
   private readonly servers: McpServerConfig[];

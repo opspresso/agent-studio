@@ -5,7 +5,8 @@
  * files beneath each skill root.
  */
 
-import type { SkillFile } from "@/domain/skill/types";
+import type { RepoSkillFile, SkillFile, SkillsRepoSnapshot } from "@/domain/skill/types";
+export type { RepoSkillFile, SkillsRepoSnapshot };
 import {
   selectSkillAttachments,
   type SkillRoot,
@@ -13,23 +14,6 @@ import {
   type SkippedAttachment,
 } from "@/domain/skill/files";
 
-export interface RepoSkillFile {
-  /** Skill slug — the SKILL.md parent directory name. */
-  name: string;
-  path: string;
-  content: string;
-  /** Supported attachment files under the skill root, by relative path. */
-  files: SkillFile[];
-}
-
-export interface SkillsRepoSnapshot {
-  repo: string;
-  branch: string;
-  commitSha: string;
-  files: RepoSkillFile[];
-  /** Attachment files skipped during collection, with reasons. */
-  skipped: SkippedAttachment[];
-}
 
 const SLUG = /^[a-z0-9-]+$/;
 

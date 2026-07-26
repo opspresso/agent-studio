@@ -1,14 +1,8 @@
 import { DefaultRequestHandler, JsonRpcTransportHandler } from "@a2a-js/sdk/server";
-import { buildAgentCard } from "@/infrastructure/a2a/cards";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
-import {
-  createA2aTaskStore,
-  executionDeps,
-  projectRepository,
-  versionRepository,
-} from "@/lib/container";
+import { a2aExposureDeps, createA2aTaskStore, executionDeps } from "@/lib/container";
+import { resolveExposedProject } from "@/application/a2a/exposure";
 import { getA2aApiKey } from "@/lib/runtime-settings";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { sseResponseRaw } from "@/app/api/_lib/sse";
 import { timingSafeEqualString } from "@/shared/timingSafe";
 
@@ -39,16 +33,15 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   }
 
   const { name } = await ctx.params;
-  const project = await projectRepository.get(name);
-  // External surface: published-only (resolveRunnableVersion policy).
-  const version = project ? await resolveRunnableVersion(versionRepository, project) : null;
-  if (!project || !version) {
+  const exposed = await resolveExposedProject(a2aExposureDeps, name);
+  if (!exposed) {
     return Response.json({ error: "Project not found or has no published version" }, { status: 404 });
   }
+  const { project, version, card } = exposed;
 
   const store = createA2aTaskStore(project.name);
   const requestHandler = new DefaultRequestHandler(
-    await buildAgentCard(project, version),
+    card,
     store,
     new ProjectA2aExecutor(executionDeps, project, version, store),
   );

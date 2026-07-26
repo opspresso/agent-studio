@@ -1,7 +1,7 @@
 import type { Skill, SkillFile } from "@/domain/skill/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { SkippedAttachment } from "@/domain/skill/files";
-import type { SkillsRepoSnapshot } from "@/infrastructure/github/skillsRepoClient";
+import type { SkillsRepoSnapshot } from "@/domain/skill/types";
 
 export interface ParsedSkillDoc {
   description: string;

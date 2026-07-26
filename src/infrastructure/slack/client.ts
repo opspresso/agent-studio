@@ -1,20 +1,7 @@
 /** Minimal Slack Web API client over fetch — no SDK dependency. */
 
-export interface SlackMessage {
-  ts: string;
-  user?: string;
-  bot_id?: string;
-  text?: string;
-  /** Attachments on a thread message; present when the bot has files:read. */
-  files?: Array<{
-    id?: string;
-    name?: string;
-    mimetype?: string;
-    size?: number;
-    url_private_download?: string;
-    url_private?: string;
-  }>;
-}
+import type { SlackMessage } from "@/domain/slack/types";
+export type { SlackMessage };
 
 /** Per-page size for paginated reads; Slack's recommended maximum. */
 const PAGE_SIZE = 200;

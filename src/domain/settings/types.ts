@@ -31,3 +31,12 @@ export interface AppSettings {
   publicBaseUrl?: string;
   updatedAt: string;
 }
+
+/** An LLM provider channel resolved from settings or the environment. */
+export interface ProviderChannelConfig {
+  /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  keepModelPrefix: boolean;
+}

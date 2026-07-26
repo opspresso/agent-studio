@@ -1,5 +1,6 @@
 "use client";
 
+import type { McpTool } from "@/domain/mcp/types";
 import { useEffect, useState } from "react";
 import type { McpBinding, SubagentRef } from "../../lib/api";
 import { testMcpConnection } from "@/app/tools/api";
@@ -202,9 +203,9 @@ function ToolSelector({
 }: {
   selected: string[] | undefined;
   onChange: (tools: string[]) => void;
-  load: () => Promise<Array<{ name: string; description: string }>>;
+  load: () => Promise<McpTool[]>;
 }) {
-  const [tools, setTools] = useState<Array<{ name: string; description: string }> | null>(null);
+  const [tools, setTools] = useState<McpTool[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

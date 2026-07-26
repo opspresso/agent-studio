@@ -1,6 +1,6 @@
 import type { AgentCard } from "@a2a-js/sdk";
-import { buildAgentCard, buildProjectAgentCardUrl } from "@/infrastructure/a2a/cards";
-import { projectRepository, versionRepository } from "@/lib/container";
+import { a2aExposureDeps } from "@/lib/container";
+import { describeProjectA2a } from "@/application/a2a/exposure";
 import { getA2aApiKey } from "@/lib/runtime-settings";
 import { withAuth } from "@/lib/session";
 
@@ -17,27 +17,10 @@ export interface ProjectA2aView {
 
 export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
-  const project = await projectRepository.get(name);
-  if (!project) {
+  const enabled = !!(await getA2aApiKey());
+  const view = await describeProjectA2a(a2aExposureDeps, name, enabled);
+  if (!view) {
     return Response.json({ error: "Project not found" }, { status: 404 });
   }
-  const enabled = !!(await getA2aApiKey());
-  const published = !!project.publishedVersion;
-
-  // Build the card for any published project so the console can preview it,
-  // independent of whether A2A_API_KEY is set on this deployment.
-  let card: AgentCard | null = null;
-  if (project.publishedVersion) {
-    const version = await versionRepository.get(project.name, project.publishedVersion);
-    if (version) {
-      card = await buildAgentCard(project, version);
-    }
-  }
-
-  return Response.json({
-    enabled,
-    published,
-    cardUrl: enabled && published ? await buildProjectAgentCardUrl(project.name) : null,
-    card,
-  } satisfies ProjectA2aView);
+  return Response.json({ enabled, ...view } satisfies ProjectA2aView);
 });

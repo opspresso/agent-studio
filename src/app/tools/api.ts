@@ -1,14 +1,9 @@
-import type { McpServer } from "@/domain/mcp/types";
+import type { McpServer, McpTool } from "@/domain/mcp/types";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
 // each end, 21+ reveal 4) header values — never the full plaintext or ciphertext.
-export type { McpServer };
-
-export interface McpTool {
-  name: string;
-  description: string;
-}
+export type { McpServer, McpTool };
 
 export interface CreateMcpInput {
   name: string;

@@ -9,6 +9,7 @@
  */
 
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
+import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { LlmChannel } from "@/domain/llm/channel";
 import { imageDataUrl } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
@@ -21,10 +22,8 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
 import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
-import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
-import { sendA2aMessage } from "@/infrastructure/a2a/client";
+import type { McpServerConfig, McpSessionFactory } from "@/domain/mcp/toolSession";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
-import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
@@ -50,6 +49,10 @@ export interface ExecutionDeps {
   cipher: SecretCipher;
   /** Outbound URL policy — wired by the composition root; tests inject a fake. */
   urlPolicy: UrlPolicy;
+  /** External-agent dispatch — wired by the composition root; tests inject a fake. */
+  remoteAgents: RemoteAgentDispatcher;
+  /** MCP tool sessions — wired by the composition root; tests inject a fake. */
+  mcpSessions: McpSessionFactory;
   traces?: TraceRepository;
   traceSampleRate?: number;
 }
@@ -825,15 +828,9 @@ async function buildMcpTools(
   // aliases are allocated here, before the engine decides which builtins to
   // offer, and a name that a builtin *may* claim must never resolve to an MCP
   // tool the engine would then shadow.
-  const toolManager = new ToolManager(servers, engine.BUILTIN_TOOL_NAMES, signal);
-  try {
-    await toolManager.init();
-  } catch (error) {
-    // Discovery may have opened sessions before it gave up (a run cancelled
-    // mid-init). Nobody else holds this manager, so release them here.
-    await closeMcp(() => toolManager.close());
-    throw error;
-  }
+  // The factory releases anything it opened if discovery fails, so a run
+  // cancelled mid-init leaks nothing.
+  const toolManager = await deps.mcpSessions.open(servers, engine.BUILTIN_TOOL_NAMES, signal);
   // Providers cap how many tools one request may declare, and a request over
   // that limit fails outright — losing the tail is strictly better than losing
   // the run. Builtins are added after this, so leave them room.
@@ -1274,8 +1271,6 @@ async function* runLocalSubagent(
   return text;
 }
 
-const REMOTE_SUBAGENT_TIMEOUT_MS = 120_000;
-
 async function* runRemoteSubagent(
   deps: ExecutionDeps,
   agentName: string,
@@ -1296,46 +1291,33 @@ async function* runRemoteSubagent(
     };
     return "";
   }
-  const headers = deps.cipher.decryptHeadersForOutbound(agent.headers);
-  if (agent.protocol === "a2a") {
-    const result = await sendA2aMessage(agent.url, headers, message, signal);
-    signal?.throwIfAborted();
-    if (!result.ok) {
-      yield { author: agentName, error: result.error };
-      return "";
-    }
-    for (const image of result.images) {
-      yield {
-        author: agentName,
-        image: { b64: image.b64, mimeType: image.mimeType, prompt: message },
-      };
-    }
-    if (result.text) {
-      yield { author: agentName, delta: { content: result.text } };
-    }
-    return result.text || `Received ${result.images.length} generated image(s).`;
-  }
-  let text = "";
+  const target = {
+    url: agent.url,
+    protocol: agent.protocol,
+    headers: deps.cipher.decryptHeadersForOutbound(agent.headers),
+  };
+  let reply;
   try {
-    const response = await fetchPublicUrl(agent.url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify({ messages: [{ role: "user", content: message }], stream: false }),
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(REMOTE_SUBAGENT_TIMEOUT_MS)])
-        : AbortSignal.timeout(REMOTE_SUBAGENT_TIMEOUT_MS),
-    });
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    text = data.choices?.[0]?.message?.content ?? "";
+    reply = await deps.remoteAgents.send(target, message, signal);
   } catch (error) {
     signal?.throwIfAborted();
     yield { author: agentName, error: error instanceof Error ? error.message : String(error) };
     return "";
   }
-  if (text) {
-    yield { author: agentName, delta: { content: text } };
+  signal?.throwIfAborted();
+  if (!reply.ok) {
+    yield { author: agentName, error: reply.error };
+    return "";
   }
-  return text;
+  for (const image of reply.images) {
+    yield {
+      author: agentName,
+      image: { b64: image.b64, mimeType: image.mimeType, prompt: message },
+    };
+  }
+  if (reply.text) {
+    yield { author: agentName, delta: { content: reply.text } };
+  }
+  // An image-only A2A answer still has to say something the parent can act on.
+  return reply.text || (reply.images.length ? `Received ${reply.images.length} generated image(s).` : "");
 }

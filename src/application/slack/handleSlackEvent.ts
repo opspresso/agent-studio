@@ -1,4 +1,4 @@
-import type { SlackMessage } from "@/infrastructure/slack/client";
+import type { SlackMessage } from "@/domain/slack/types";
 import type { ExecuteAgentInput } from "@/application/execution/runProject";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";

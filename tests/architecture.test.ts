@@ -107,24 +107,9 @@ const RULES: Rule[] = [
     name: "application imports no infrastructure or app",
     from: "application",
     banned: (spec) => ["infrastructure", "app"].includes(targetLayer(spec) ?? ""),
-    // 28 → 21 → 10 → 0 across M1, M2 and M3.
-    //
-    // M1 traded 12 direct crypto/SSRF imports for 5 in the slice `index.ts`
-    // files; M2 removed all 11 index entries by moving those singletons into
-    // `lib/container.ts`. What remains is outbound dispatch and two type-only
-    // imports — M3's scope.
-    allow: [
-      "src/application/agent/agentUseCases.ts -> @/infrastructure/a2a/client",
-      "src/application/agent/agentUseCases.ts -> @/infrastructure/agent/agentClient",
-      "src/application/execution/runProject.ts -> @/infrastructure/a2a/client",
-      "src/application/execution/runProject.ts -> @/infrastructure/mcp/toolManager",
-      "src/application/execution/runProject.ts -> @/infrastructure/net/publicFetch",
-      "src/application/mcp/mcpUseCases.ts -> @/infrastructure/mcp/discoveryCache",
-      "src/application/mcp/mcpUseCases.ts -> @/infrastructure/mcp/mcpClient",
-      "src/application/settings/settingsUseCases.ts -> @/infrastructure/llm/providers",
-      "src/application/skill/syncSkills.ts -> @/infrastructure/github/skillsRepoClient (type)",
-      "src/application/slack/handleSlackEvent.ts -> @/infrastructure/slack/client (type)",
-    ],
+    // 28 → 21 → 10 → 0 across M1, M2 and M3. Fully enforced: application code
+    // holds ports only, and every adapter is injected by the composition root.
+    allow: [],
   },
   {
     name: "infrastructure imports no application or app",
@@ -153,16 +138,8 @@ const RULES: Rule[] = [
     from: "app",
     banned: (spec) => targetLayer(spec) === "infrastructure",
     exempt: (relPath) => APP_WIRING_SITES.some((site) => relPath.startsWith(site)),
-    // M2 removed two: the container assembles the skills sync, and timingSafe
-    // moved to src/shared.
-    // Emptied by M3 (A2A exposure use case, slack test route).
-    allow: [
-      "src/app/api/a2a/[name]/.well-known/agent-card.json/route.ts -> @/infrastructure/a2a/cards",
-      "src/app/api/a2a/[name]/route.ts -> @/infrastructure/a2a/cards",
-      "src/app/api/a2a/route.ts -> @/infrastructure/a2a/cards",
-      "src/app/api/projects/[name]/a2a/route.ts -> @/infrastructure/a2a/cards",
-      "src/app/api/projects/[name]/slack/test/route.ts -> @/infrastructure/slack/client",
-    ],
+    // Emptied by M3: the A2A exposure use case and the Slack test use case.
+    allow: [],
   },
 ];
 

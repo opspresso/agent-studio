@@ -1,14 +1,9 @@
-import { buildProjectAgentCardUrl } from "@/infrastructure/a2a/cards";
-import { projectRepository } from "@/lib/container";
+import { a2aExposureDeps } from "@/lib/container";
+import { listExposedProjects, type A2aProjectListItem } from "@/application/a2a/exposure";
 import { getA2aApiKey } from "@/lib/runtime-settings";
 import { withAuth } from "@/lib/session";
 
-export interface A2aProjectListItem {
-  name: string;
-  displayName: string;
-  description: string;
-  cardUrl: string;
-}
+export type { A2aProjectListItem };
 
 export interface A2aProjectListView {
   /** A2A_API_KEY is configured on this deployment. */
@@ -20,15 +15,6 @@ export interface A2aProjectListView {
 /** Published projects exposed over A2A (derived — no registration involved). */
 export const GET = withAuth(async () => {
   const enabled = !!(await getA2aApiKey());
-  const projects = await Promise.all(
-    (await projectRepository.list())
-      .filter((project) => project.publishedVersion)
-      .map(async (project) => ({
-        name: project.name,
-        displayName: project.displayName,
-        description: project.description,
-        cardUrl: await buildProjectAgentCardUrl(project.name),
-      })),
-  );
+  const projects = await listExposedProjects(a2aExposureDeps);
   return Response.json({ enabled, projects } satisfies A2aProjectListView);
 });

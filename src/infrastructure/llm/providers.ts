@@ -1,3 +1,5 @@
+import type { ProviderChannelConfig } from "@/domain/settings/types";
+export type { ProviderChannelConfig };
 /**
  * Multi-provider channel registry, configured through environment variables.
  *
@@ -11,14 +13,6 @@
  * `provider/` prefix is stripped unless `LLM_PROVIDER_<PROVIDER>_KEEP_MODEL_PREFIX=true`
  * (useful when the channel is itself a router that expects full ids).
  */
-
-export interface ProviderChannelConfig {
-  /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
-  name: string;
-  baseUrl: string;
-  apiKey: string;
-  keepModelPrefix: boolean;
-}
 
 /** Resolves a model id to the channel that serves it. Injected into the adapters. */
 export type TargetResolver = (modelId: string) => Promise<ResolvedTarget>;

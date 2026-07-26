@@ -177,3 +177,41 @@ export function buildProjectSlackManifest(
     },
   };
 }
+
+/**
+ * Verify a project's stored bot token against Slack. Owner-gated by the caller;
+ * `authTest` is injected so this stays free of the Slack HTTP client.
+ */
+export async function testProjectSlack(
+  repo: ProjectRepository,
+  name: string,
+  userEmail: string,
+  cipher: SecretCipher,
+  authTest: (botToken: string) => Promise<{ team?: string; user?: string }>,
+): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }> {
+  const project = await assertProjectOwner(repo, name, userEmail);
+  const runtime = resolveProjectSlackRuntime(cipher, project);
+  if (!runtime) {
+    return { ok: false };
+  }
+  const identity = await authTest(runtime.botToken);
+  return { ok: true, team: identity.team, botUser: identity.user };
+}
+
+/**
+ * The credentials a Slack event on this project's endpoint must be verified
+ * with, or null when the project is missing or its bot is not enabled. No
+ * session is involved — the signature is the authentication.
+ */
+export async function resolveSlackEventBinding(
+  repo: ProjectRepository,
+  projectName: string,
+  cipher: SecretCipher,
+): Promise<{ projectName: string; botToken: string; signingSecret: string } | null> {
+  const project = await repo.get(projectName);
+  const runtime = project ? resolveProjectSlackRuntime(cipher, project) : null;
+  if (!project || !runtime) {
+    return null;
+  }
+  return { projectName: project.name, ...runtime };
+}

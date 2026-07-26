@@ -1,3 +1,11 @@
+/** A tool a bound MCP server offers. `inputSchema` is the JSON Schema the
+ * server advertises; absent when it declares none. */
+export interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
 export interface McpServer {
   name: string;
   url: string;

@@ -10,6 +10,8 @@ vi.mock("@/infrastructure/a2a/client", () => ({
 
 import { executeAgent, executeVersion } from "@/application/execution/runProject";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
+import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 
 // Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
@@ -104,6 +106,8 @@ function executionDepsFixture(channel: FakeChannel) {
     imageChannel,
     cipher: secretCipher,
     urlPolicy: testUrlPolicy,
+    remoteAgents: remoteAgentDispatcher,
+    mcpSessions: mcpSessionFactory,
   } as unknown as ExecutionDeps;
   return { deps, recorded, imageModels, edits };
 }
