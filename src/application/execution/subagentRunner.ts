@@ -13,7 +13,7 @@ import { createUsageAggregator, recordUsage } from "@/application/usage/recordUs
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
-import { toEngineParameters } from "./deps";
+import { runStrategyFor, toEngineParameters } from "./deps";
 import { buildImageEditor, buildImageGenerator, runImageSubagent } from "./imageTool";
 import { closeMcp } from "./mcpTools";
 import {
@@ -263,7 +263,7 @@ export async function* runLocalSubagent(
 
   // Dispatch on the child's projectType, like the entry points do: an image
   // project generates an image — its model must never hit chat/completions.
-  if (project.projectType === "image") {
+  if (runStrategyFor(project) === "image") {
     return yield* runImageSubagent(
       deps,
       agentName,

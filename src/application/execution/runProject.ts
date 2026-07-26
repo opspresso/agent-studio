@@ -28,6 +28,7 @@ export type {
 };
 export type { PromptPreview, PromptPreviewMessage } from "./deps";
 export { previewPrompt } from "./promptPreview";
+export { runStrategyFor, type RunStrategy } from "./deps";
 
 function bindUsage(deps: ExecutionDeps): engine.RecordUsageFn {
   return (record) => recordUsage(deps.usage, record);

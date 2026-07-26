@@ -1,3 +1,4 @@
+import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { executionDeps, imageDeps, projectRepository, versionRepository } from "@/lib/container";
 import { generateImage } from "@/application/image/generateImage";
@@ -28,7 +29,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
   try {
     const project = await getProject(projectRepository, name);
     const versionEntity = await getVersion(versionRepository, name, version);
-    if (project.projectType === "image") {
+    if (runStrategyFor(project) === "image") {
       const image = await generateImage(imageDeps, {
         project,
         version: versionEntity,
@@ -59,7 +60,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         abortController,
       );
     }
-    if (project.projectType === "agent") {
+    if (runStrategyFor(project) === "agent") {
       const run = await collectRun(
         executeAgent(executionDeps, {
           project,

@@ -10,6 +10,7 @@ import type { Project, Version } from "@/domain/project/types";
 import { isTopLevelChunk, messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
+import { runStrategyFor } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
 
 const RESULT_ARTIFACT_ID = "result";
@@ -59,7 +60,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
     const controller = new AbortController();
     const stopCancelWatch = this.watchForCancel(taskId, controller);
     try {
-      if (this.project.projectType === "image") {
+      if (runStrategyFor(this.project) === "image") {
         const image = await generateImage(this.deps, {
           project: this.project,
           version: this.version,
