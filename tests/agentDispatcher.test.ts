@@ -58,6 +58,19 @@ describe("remoteAgentDispatcher.send", () => {
     expect(reply.ok === false && reply.error).toContain("no credit");
   });
 
+  it("reports a 2xx that is not JSON as a failed reply", async () => {
+    // The shape a proxy interstitial arrives in: success status, HTML body.
+    stubFetch("<!DOCTYPE html><title>Gateway</title>", {
+      headers: { "Content-Type": "text/html" },
+    });
+
+    const reply = await remoteAgentDispatcher.send(TARGET, "do the thing");
+
+    expect(reply.ok).toBe(false);
+    expect(reply.ok === false && reply.error).toContain("malformed reply");
+    expect(reply.ok === false && reply.error).toContain("<!DOCTYPE html>");
+  });
+
   it("refuses to buffer an oversized body", async () => {
     stubFetch("x".repeat(2_000_001));
 

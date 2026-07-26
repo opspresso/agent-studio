@@ -126,10 +126,11 @@ function toView(
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
   parseProviderConfigs: ParseProviderConfigs,
+  specs: FieldSpec[],
   settings: AppSettings | null,
 ): SettingsView {
   const fields = {} as Record<SettingKey, SettingFieldView>;
-  for (const spec of fieldSpecs(env)) {
+  for (const spec of specs) {
     const stored = settings?.[spec.key];
     if (stored !== undefined) {
       fields[spec.key] = {
@@ -226,15 +227,18 @@ export function createSettingsUseCases(
   env: NodeJS.ProcessEnv,
   parseProviderConfigs: ParseProviderConfigs,
 ): SettingsUseCases {
+  // `env` is fixed for the process, so the specs and their fallback closures are
+  // built once here rather than rebuilt on every settings read and write.
+  const specs = fieldSpecs(env);
   return {
     async getView() {
-      return toView(cipher, env, parseProviderConfigs, await repo.get());
+      return toView(cipher, env, parseProviderConfigs, specs, await repo.get());
     },
 
     async update(patch, userEmail) {
       const stored = await repo.get();
       const next: AppSettings = { ...(stored ?? { updatedAt: "" }) };
-      for (const spec of fieldSpecs(env)) {
+      for (const spec of specs) {
         const raw = patch[spec.key];
         if (raw === undefined) {
           continue;
@@ -275,7 +279,7 @@ export function createSettingsUseCases(
 
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
-      return toView(cipher, env, parseProviderConfigs, next);
+      return toView(cipher, env, parseProviderConfigs, specs, next);
     },
   };
 }
