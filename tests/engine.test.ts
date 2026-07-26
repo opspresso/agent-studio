@@ -282,6 +282,89 @@ describe("runAgent tool loop", () => {
   });
 });
 
+describe("the conversation a transfer carries is bounded", () => {
+  /** Capture what the engine hands the runner as the transcript. */
+  function captureTranscript() {
+    const seen: { transcript?: string } = {};
+    const runSubagent = vi.fn(async function* (
+      _agentName: string,
+      _message: string,
+      _turn: number,
+      _maxTurn: number,
+      _images?: unknown,
+      transcript?: string,
+    ): AsyncGenerator<EngineChunk, string> {
+      seen.transcript = transcript;
+      return "done";
+    });
+    return { seen, runSubagent };
+  }
+
+  async function runWith(messages: RunAgentInput["messages"]) {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const { seen, runSubagent } = captureTranscript();
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async () => {}, runSubagent },
+        {
+          projectName: "parent",
+          model: MODEL,
+          messages,
+          subagents: [{ name: "child", description: "a child agent", type: "local" }],
+        },
+      ),
+    );
+    return { chunks, transcript: seen.transcript };
+  }
+
+  it("drops the oldest turns and says so, in the transcript and to the reader", async () => {
+    // A chain re-sends this at every hop, so the budget is far below what a
+    // top-level run carries — a long chat necessarily loses its oldest turns.
+    const long = "x".repeat(900);
+    const history = Array.from({ length: 20 }, (_, i) => ({
+      role: "user" as const,
+      content: `turn ${i} ${long}`,
+    }));
+    const { chunks, transcript } = await runWith([...history, { role: "user", content: "now go" }]);
+
+    expect(transcript).toBeDefined();
+    // Newest-first spending: the turns nearest the question survive.
+    expect(transcript).toContain("turn 19");
+    expect(transcript).not.toContain("turn 0 ");
+    // The child cannot see the run's warnings, so the gap is named in the text
+    // it does see — a gap it cannot see is one it will answer around.
+    expect(transcript).toMatch(/…\(\d+ earlier turn\(s\) omitted\)/);
+    expect(
+      chunks.some((c) => c.warning?.includes("left out of the context handed to other agents")),
+    ).toBe(true);
+  });
+
+  it("warns nobody when the whole conversation fits", async () => {
+    const { chunks, transcript } = await runWith([
+      { role: "user", content: "draw a cat" },
+      { role: "assistant", content: "Here is an orange cat." },
+      { role: "user", content: "now go" },
+    ]);
+
+    expect(transcript).toContain("User: draw a cat");
+    expect(transcript).not.toContain("omitted");
+    expect(chunks.some((c) => c.warning)).toBe(false);
+  });
+
+  it("hands over nothing when there is no conversation before the request", async () => {
+    const { chunks, transcript } = await runWith([{ role: "user", content: "now go" }]);
+
+    expect(transcript).toBeUndefined();
+    expect(chunks.some((c) => c.warning)).toBe(false);
+  });
+});
+
 describe("tools + reasoning_effort provider constraint", () => {
   const TOOL = { type: "function" as const, function: { name: "lookup", parameters: {} } };
 

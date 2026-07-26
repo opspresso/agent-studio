@@ -51,6 +51,21 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - A transfer passes the model-written message **and** the bytes of any `image_ids`, so a
   child edits the real picture instead of a description of it. An unknown id fails the
   transfer with the available ids listed, rather than silently transferring without it.
+- A transfer also carries the **conversation so far**, as text — never as messages. A
+  child is a different agent with its own system prompt: replayed turns would have it read
+  the parent's answers as its own, and the parent's `tool_calls` would name tools the child
+  never declared. `buildTransferTranscript` renders `input.messages` (not the loop's
+  growing array, which holds this run's own tool traffic and its synthesized "For context"
+  turns) newest-first within `MAX_TRANSFER_CONTEXT_CHARS`, masks it once with the run's PII
+  filter, and **excludes the turn being answered** — the message already is that request,
+  and a one-turn conversation would otherwise carry only itself. What was dropped is said
+  both in the transcript (the child sees nothing else) and once as a `warning` at the first
+  transfer that carries a clipped one. The transcript is handed to `runSubagent`
+  *separately* from the message because only the runner knows the child's kind:
+  `runLocalSubagent` folds it in for an agent or prompt child and passes it on so a
+  grandchild inherits the original conversation rather than a transcript of a transcript,
+  while an **image child gets the bare message** — that message is its image prompt, so a
+  conversation prepended to it would be drawn.
 - Turn guard: `turn >= maxTurn` (default 50) silently ends the loop. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
@@ -71,7 +86,7 @@ Two rules keep the halves from restating each other:
   byte-for-byte — no boundary is announced with nothing behind it.
 - **Precedence is stated once, in the framing, and names only what the run has.** Each
   section documents what is specific to it (an MCP table says where the tools come from;
-  the agent table says a `message` must stand on its own and must not be sent twice) and
+  the agent table says a `message` is the whole request and must not be sent twice) and
   never its own "use me when…" — several unranked policies leave the model no way to
   choose. The same rule governs the `## Available Images` empty state: it lists generate/
   edit only when the image tools are offered, and "a tool returns one" only when MCP tools
@@ -110,10 +125,11 @@ format-preserving `[[PII:…]]` tokens:
   context stays masked.
 - **Not masked on outbound tool dispatch**: `callMcpTool` is handed the *restored* arguments,
   because a tool asked to mail `a@b.com` needs the address, not a token. A subagent transfer is
-  the opposite: the child receives the masked message and the parent's filter restores its
-  output. So `piiFiltering` bounds what the LLM and the engine context see — **not** what a
-  third-party MCP server sees. Keep it that way deliberately, or make it a per-server choice;
-  do not change it by accident.
+  the opposite: the child receives the masked message **and a masked transcript** — the
+  conversation crosses that boundary the same way the message does — and the parent's filter
+  restores its output. So `piiFiltering` bounds what the LLM and the engine context see —
+  **not** what a third-party MCP server sees. Keep it that way deliberately, or make it a
+  per-server choice; do not change it by accident.
 - **Restored on the way in**: every yielded `delta` is restored through a
   `PiiStreamRestorer`, which buffers the longest suffix that could be a partial
   replacement token across chunk boundaries. Flush restorers on error paths too.

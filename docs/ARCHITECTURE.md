@@ -282,11 +282,18 @@ Two deliberate strategies coexist:
     `image_ids` take an id, so the engine resolves bytes and the deps stay pure I/O. An
     `https://` image part gets no handle — the provider fetches those itself, so the bytes are
     not in hand. The registry is filled when a run can edit or can transfer; otherwise skipped
-  - subagent transfer passes ONLY the model-written `message` (no parent history) plus the
-    bytes of any `image_ids` it named — an image-project child then *edits* those instead of
-    drawing anew, and an agent child sees them as image content parts. A remote (A2A) child
-    cannot take images and says so rather than dropping them. The child's final text returns
-    as a "For context: ..." user message
+  - subagent transfer passes the model-written `message` plus the bytes of any `image_ids` it
+    named — an image-project child then *edits* those instead of drawing anew, and an agent
+    child sees them as image content parts. A remote (A2A) child cannot take images and says
+    so rather than dropping them. The child's final text returns as a "For context: ..."
+    user message
+  - it also carries the conversation so far as a rendered, PII-masked transcript bounded by
+    `MAX_TRANSFER_CONTEXT_CHARS` (8,000) — text inside the child's user turn, never replayed
+    messages, so the child cannot read the parent's answers as its own. The turn being
+    answered is excluded (the `message` already is it), an agent child passes the same
+    transcript on so a grandchild inherits the original conversation, and an **image** child
+    receives the bare `message` because that message is its image prompt. See
+    `src/application/llm/AGENTS.md` for the full contract
   - local transfers carry an ancestry chain (`src/application/execution/runProject.ts`):
     transferring to a project already on the chain, or nesting past
     `MAX_SUBAGENT_DEPTH` (5), is refused as an authored error chunk. Turn accounting

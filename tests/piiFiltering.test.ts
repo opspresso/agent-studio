@@ -218,6 +218,49 @@ describe("PiiFilter", () => {
     expect(result).toBe(`Contact ${input}`);
   });
 
+  it("masks the conversation a transfer carries, not just the message", async () => {
+    // The transcript is history the parent's own context already has masked; it
+    // crosses the same boundary the message does and must cross it the same way.
+    const channel = new TransferChannel();
+    let childTranscript: string | undefined;
+    const runSubagent = async function* (
+      _agentName: string,
+      _message: string,
+      _turn: number,
+      _maxTurn: number,
+      _images?: unknown,
+      transcript?: string,
+    ): AsyncGenerator<EngineChunk, string> {
+      childTranscript = transcript;
+      return "ok";
+    };
+
+    await collectText(
+      runAgent(
+        { channel, runSubagent },
+        {
+          projectName: "parent",
+          model: "test/model",
+          messages: [
+            { role: "user", content: "reach me at email@example.com" },
+            { role: "assistant", content: "Noted, I will call 010-1234-5678." },
+            { role: "user", content: "go ahead" },
+          ],
+          parameters: { piiFiltering: true },
+          subagents: [{ name: "child", description: "", type: "remote" }],
+          maxTurn: 3,
+        },
+      ),
+    );
+
+    expect(childTranscript).toBeDefined();
+    expect(childTranscript).not.toContain("email@example.com");
+    expect(childTranscript).not.toContain("010-1234-5678");
+    // Masked, not dropped: the child still sees that a contact was mentioned.
+    expect(childTranscript).toContain("reach me at");
+    expect(childTranscript).toContain("[[PII:");
+  });
+
   it("keeps PII masked across a subagent boundary and restores child chunks", async () => {
     const channel = new TransferChannel();
     const input = "email@example.com or 010-1234-5678";

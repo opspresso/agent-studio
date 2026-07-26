@@ -157,6 +157,13 @@ export interface AgentDeps extends EngineDeps {
     maxTurn: number,
     /** Images the parent handed over; the child edits or looks at them. */
     images?: Array<{ b64: string; mimeType: string }>,
+    /**
+     * The conversation the child was not part of, already rendered and budgeted
+     * (see {@link buildTransferTranscript}). Passed separately from `message`
+     * because only the runner knows the child's type: an image child's message
+     * *is* its image prompt, so a transcript must never be folded into it.
+     */
+    transcript?: string,
   ) => AsyncGenerator<EngineChunk, string>;
   /** Generate an image for the builtin GenerateImage tool. */
   generateImage?: (
@@ -198,6 +205,13 @@ export interface RunAgentInput {
   maxTurn?: number;
   /** Starting turn, used when a subagent continues the parent's turn budget. */
   startTurn?: number;
+  /**
+   * The conversation to hand to anything this run transfers to. Set by a
+   * subagent runner so the *original* chat travels down the whole chain: a
+   * child's own `messages` are the one synthetic turn it was handed, and
+   * deriving from those would nest each hop's transcript inside the next.
+   */
+  transcript?: string;
   skills?: SkillInfo[];
   subagents?: SubagentInfo[];
   /** MCP tool definitions, already aliased for name collisions. */
@@ -487,8 +501,12 @@ async function* runSubagentWithPii(
   turn: number,
   maxTurn: number,
   images?: Array<{ b64: string; mimeType: string }>,
+  transcript?: string,
 ): AsyncGenerator<EngineChunk, string> {
-  const source = runSubagent(agentName, message, turn, maxTurn, images);
+  // The transcript arrives already masked — it is derived from the run's input
+  // messages and masked once at run start, like every other string that crosses
+  // into a child.
+  const source = runSubagent(agentName, message, turn, maxTurn, images, transcript);
   const contentRestorer = filter.createStreamRestorer();
   const reasoningRestorer = filter.createStreamRestorer();
   let author: string | undefined;
@@ -778,6 +796,81 @@ function subagentContextMessage(agentName: string, text: string): string {
 }
 
 /**
+ * Conversation text one transfer may carry. A chain re-sends it at every hop,
+ * so it is bounded far below the history budget a top-level run works with.
+ */
+const MAX_TRANSFER_CONTEXT_CHARS = 8_000;
+
+/** The readable text of one message; image parts are named, not inlined. */
+function messageText(content: ChatMessageInput["content"]): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((part) => (part.type === "text" ? part.text : "[image]"))
+    .join(" ")
+    .trim();
+}
+
+/**
+ * The conversation so far, as text a transferred agent can read.
+ *
+ * Deliberately NOT replayed as messages. A child is a different agent with its
+ * own system prompt: handed the parent's `assistant` turns it reads them as its
+ * own ("as I already said"), and the parent's `tool_calls` would arrive naming
+ * tools the child never declared. A labelled block inside the child's single
+ * user turn has neither problem, and it is the one form a remote/A2A child —
+ * which can only be sent text — can receive too.
+ *
+ * Spent newest-first, because a follow-up is usually about the turn just before
+ * it, then flipped back into reading order.
+ *
+ * The turn being answered is excluded: the transfer message the model wrote is
+ * already this request, so including it would hand the child the same thing
+ * twice — and a conversation of one turn would carry a "conversation so far"
+ * that is only itself. What remains is what the request cannot say on its own.
+ */
+export function buildTransferTranscript(
+  messages: ChatMessageInput[],
+  assistantLabel: string,
+): { text: string; dropped: number } {
+  const lines: string[] = [];
+  let budget = MAX_TRANSFER_CONTEXT_CHARS;
+  let dropped = 0;
+  const prior = messages.at(-1)?.role === "user" ? messages.length - 1 : messages.length;
+  for (let i = prior - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || (message.role !== "user" && message.role !== "assistant")) {
+      continue;
+    }
+    const text = messageText(message.content);
+    if (!text) {
+      continue;
+    }
+    const line = `${message.role === "user" ? "User" : assistantLabel}: ${text}`;
+    if (line.length > budget) {
+      dropped += 1;
+      continue;
+    }
+    budget -= line.length;
+    lines.push(line);
+  }
+  if (lines.length === 0) {
+    return { text: "", dropped };
+  }
+  lines.reverse();
+  // Said in the transcript itself, not only in the run's warnings: the child
+  // never sees those, and a gap it cannot see is one it will answer around.
+  if (dropped > 0) {
+    lines.unshift(`…(${dropped} earlier turn(s) omitted)`);
+  }
+  return { text: lines.join("\n"), dropped };
+}
+
+/**
  * `a`, `a and b`, `a, b, and c`. Used to build the sentences below from the
  * capabilities a run actually resolved, so neither the precedence rule nor the
  * image empty state ever names something this run cannot reach.
@@ -881,14 +974,15 @@ function subagentSystemPromptAddition(subagents: SubagentInfo[]): string {
   const rows = subagents
     .map((a) => `| ${a.name} | ${tableCell(a.description) || "No description"} |`)
     .join("\n");
-  // Only the two constraints the framing cannot state: the child is handed the
-  // `message` and nothing else (an agent's own description is given to whoever
-  // may transfer to it, never to itself), and a second transfer for one request
-  // re-does work the first already did.
+  // Only the constraints the framing cannot state. "Background" is deliberate
+  // and not "context you can rely on": the conversation rides along for an
+  // agent or prompt child, but an image child is handed the `message` alone
+  // (it is that child's image prompt), and the engine cannot tell them apart
+  // from here — so the request itself always has to be complete.
   return [
     "## Available Agents",
     "",
-    "A transferred `message` must stand on its own — the other agent cannot see this conversation. Once it has answered, do not transfer to it again for the same request.",
+    "`message` is the whole of the request: the other agent does not see your instructions, so say what it should do. The recent conversation is passed alongside as background. Once it has answered, do not transfer to it again for the same request.",
     "",
     "| Agent | Description |",
     "|-------|-------------|",
@@ -1218,6 +1312,22 @@ export async function* runAgent(
   );
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
 
+  // Derived once, from the messages the run was handed rather than the array
+  // below: that one keeps growing with this run's own tool traffic and the
+  // synthesized "For context" turns, none of which is the conversation the user
+  // had. Masked here so a child never receives PII the parent's own context is
+  // protected from. An inherited transcript is already both.
+  const derivedTranscript =
+    input.transcript === undefined && subagents.length > 0
+      ? buildTransferTranscript(input.messages, input.projectName)
+      : undefined;
+  const transcript =
+    input.transcript ??
+    (derivedTranscript?.text
+      ? (filter?.mask(derivedTranscript.text) ?? derivedTranscript.text)
+      : undefined);
+  let transcriptTruncationReported = (derivedTranscript?.dropped ?? 0) === 0;
+
   const messages: ChannelMessage[] = [];
   if (systemPrompt) {
     messages.push({
@@ -1405,8 +1515,19 @@ export async function* runAgent(
           continue;
         }
         const childImages = handedOver.map(({ b64, mimeType }) => ({ b64, mimeType }));
-        // Pass ONLY the model-written message (no parent history). The child's
-        // final text returns as a "For context" user message.
+        // Reported the first time a transfer actually carries a clipped
+        // transcript, not at run start: a run whose model never delegates lost
+        // nothing, and saying otherwise trains readers to ignore the warning.
+        if (!transcriptTruncationReported) {
+          transcriptTruncationReported = true;
+          yield {
+            author,
+            warning: `Earlier turns were left out of the context handed to other agents: a transfer carries at most ${MAX_TRANSFER_CONTEXT_CHARS} characters of this conversation.`,
+          };
+        }
+        // The model-written message plus the conversation it refers to. The
+        // runner decides where the transcript goes — a child's own kind governs
+        // that — and the child's final text returns as a "For context" message.
         const childText = filter
           ? yield* runSubagentWithPii(
               filter,
@@ -1416,8 +1537,16 @@ export async function* runAgent(
               turn + 1,
               maxTurn,
               childImages,
+              transcript,
             )
-          : yield* deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages);
+          : yield* deps.runSubagent(
+              agentName,
+              message,
+              turn + 1,
+              maxTurn,
+              childImages,
+              transcript,
+            );
         // A successful transfer used to leave no trace at all: only its failures
         // yielded a result, so a reader of the finished conversation could not
         // tell which agent had answered. Marked display-only — the child's

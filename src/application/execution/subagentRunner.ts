@@ -63,6 +63,31 @@ export function subagentContent(message: string, images?: ImageBytes[]): ChatMes
 }
 
 /**
+ * The conversation the child was not part of, then what it is being asked to do.
+ *
+ * Two labelled sections rather than one run-on turn: without the split a child
+ * reads the last line of the transcript as the request, and a transcript that
+ * ends in a question gets answered instead of the transfer message. The header
+ * says whose turns these are, because nothing else in the child's context does.
+ */
+export function withTranscript(message: string, transcript?: string): string {
+  if (!transcript) {
+    return message;
+  }
+  return [
+    "## Conversation so far",
+    "",
+    "Context only — you did not take part in this, and none of it is a request to you.",
+    "",
+    transcript,
+    "",
+    "## Request",
+    "",
+    message,
+  ].join("\n");
+}
+
+/**
  * How deep a chain of local subagent transfers may go. Turn accounting alone
  * does not bound it: a child version carries its own `maxTurn`, so a child can
  * raise the ceiling its parent was running under.
@@ -84,6 +109,7 @@ export function buildSubagentRunner(
     turn: number,
     maxTurn: number,
     images?: ImageBytes[],
+    transcript?: string,
   ): AsyncGenerator<EngineChunk, string> {
     signal?.throwIfAborted();
     const ref = refByName.get(agentName);
@@ -101,7 +127,9 @@ export function buildSubagentRunner(
         };
         return "";
       }
-      return yield* runRemoteSubagent(deps, agentName, message, signal);
+      // A remote agent takes one text message, which is exactly the shape the
+      // transcript was rendered into — so it carries the conversation too.
+      return yield* runRemoteSubagent(deps, agentName, withTranscript(message, transcript), signal);
     }
     // Refuse cycles and runaway nesting as tool errors, like an unknown agent:
     // the parent sees the refusal and can answer, instead of the run burning
@@ -131,6 +159,7 @@ export function buildSubagentRunner(
         [...ancestry, agentName],
         signal,
         images,
+        transcript,
       );
     } catch (error) {
       // A child that throws on entry (a model that cannot take the images it was
@@ -148,8 +177,8 @@ export function buildSubagentRunner(
     }
   }
 
-  return (agentName, message, turn, maxTurn, images) =>
-    authored(agentName, dispatch(agentName, message, turn, maxTurn, images));
+  return (agentName, message, turn, maxTurn, images, transcript) =>
+    authored(agentName, dispatch(agentName, message, turn, maxTurn, images, transcript));
 }
 
 /**
@@ -198,6 +227,7 @@ export async function* runPromptSubagent(
   ancestry: readonly string[],
   signal?: AbortSignal,
   images?: ImageBytes[],
+  transcript?: string,
 ): AsyncGenerator<EngineChunk, string> {
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
@@ -214,7 +244,9 @@ export async function* runPromptSubagent(
         fallbackModel: version.fallbackModel,
         systemPrompt: version.systemPrompt,
         userPromptTemplate: version.userPromptTemplate,
-        extraMessages: [{ role: "user", content: subagentContent(message, images) }],
+        extraMessages: [
+          { role: "user", content: subagentContent(withTranscript(message, transcript), images) },
+        ],
         parameters: toEngineParameters(version),
         signal,
       },
@@ -246,6 +278,7 @@ export async function* runLocalSubagent(
   ancestry: readonly string[],
   signal?: AbortSignal,
   images?: ImageBytes[],
+  transcript?: string,
 ): AsyncGenerator<EngineChunk, string> {
   const project = await deps.projects.get(agentName);
   if (!project) {
@@ -261,6 +294,10 @@ export async function* runLocalSubagent(
 
   // Dispatch on the child's projectType, like the entry points do: an image
   // project generates an image — its model must never hit chat/completions.
+  //
+  // No transcript here, deliberately: this child's message IS its image prompt,
+  // so prepending a conversation would draw the conversation. The parent is the
+  // one that must fold whatever context matters into the prompt it writes.
   if (runStrategyFor(project) === "image") {
     return yield* runImageSubagent(
       deps,
@@ -287,6 +324,7 @@ export async function* runLocalSubagent(
       ancestry,
       signal,
       images,
+      transcript,
     );
   }
 
@@ -330,7 +368,11 @@ export async function* runLocalSubagent(
       model: version.model,
       fallbackModel: version.fallbackModel,
       systemPrompt: version.systemPrompt,
-      messages: [{ role: "user", content: subagentContent(message, images) }],
+      messages: [{ role: "user", content: subagentContent(withTranscript(message, transcript), images) }],
+      // Handed on rather than re-derived: this child's only message is the
+      // synthetic turn above, so deriving from it would nest one hop's
+      // transcript inside the next and re-send the conversation twice over.
+      ...(transcript ? { transcript } : {}),
       parameters: toEngineParameters(version),
       // Clamped to the parent's ceiling: the child continues the parent's turn
       // counter (`startTurn`), so a child version configured with a larger

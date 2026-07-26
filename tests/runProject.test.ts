@@ -1061,6 +1061,175 @@ describe("executeAgent local subagent projectType dispatch", () => {
   });
 });
 
+describe("executeAgent hands the conversation to a transferred agent", () => {
+  /** A parent whose only subagent is a local agent project named `child`. */
+  function chainDeps(channel: FakeChannel) {
+    const { deps, ...rest } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) =>
+      name === "child" ? { ...projectFixture(), name: "child" } : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string) =>
+      projectName === "child"
+        ? { ...versionFixture({ piiFiltering: false }), projectName: "child" }
+        : null) as ExecutionDeps["versions"]["get"];
+    return { deps, ...rest };
+  }
+
+  const transferThenAnswer = (message: string) => [
+    [
+      toolCallChunk(0, "call_t", "transfer_to_agent", JSON.stringify({ agent_name: "child", message })),
+      usageChunk(1, 1),
+    ],
+    [contentChunk("Child answer."), usageChunk(1, 1)],
+    [contentChunk("Passed on."), usageChunk(1, 1)],
+  ];
+
+  function parentVersion() {
+    return {
+      ...versionFixture({ piiFiltering: false }),
+      subagentList: [{ name: "child", type: "local" as const }],
+    };
+  }
+
+  it("carries the earlier turns a follow-up refers to", async () => {
+    // "make it bigger" is meaningless to an agent that never saw what was made.
+    const channel = new FakeChannel(transferThenAnswer("make it bigger"));
+    const { deps } = chainDeps(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: parentVersion(),
+        messages: [
+          { role: "user", content: "draw a cat" },
+          { role: "assistant", content: "Here is an orange cat." },
+          { role: "user", content: "make it bigger" },
+        ],
+      }),
+    );
+
+    const childTurn = String(channel.seenParams[1]?.messages.at(-1)?.content);
+    expect(childTurn).toContain("## Conversation so far");
+    expect(childTurn).toContain("User: draw a cat");
+    // The parent's own turns are labelled with the parent, so the child can
+    // tell whose answers these were instead of reading them as its own.
+    expect(childTurn).toContain(`${projectFixture().name}: Here is an orange cat.`);
+    expect(childTurn).toContain("## Request\n\nmake it bigger");
+    // The turn being answered is the request, not context: sending it twice
+    // would double the child's input and say nothing new.
+    expect(childTurn.match(/make it bigger/g)).toHaveLength(1);
+  });
+
+  it("sends a first-turn transfer exactly as before, with no context block", async () => {
+    // A conversation of one turn has no "so far" — framing one would be noise.
+    const channel = new FakeChannel(transferThenAnswer("draw a cat"));
+    const { deps } = chainDeps(channel);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: parentVersion(),
+        messages: [{ role: "user", content: "draw a cat" }],
+      }),
+    );
+
+    expect(String(channel.seenParams[1]?.messages.at(-1)?.content)).toBe("draw a cat");
+  });
+
+  it("hands a grandchild the original conversation, not a transcript of a transcript", async () => {
+    // The child's own messages are the one synthetic turn it was handed, so a
+    // re-derived transcript would nest each hop's block inside the next.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "t1", "transfer_to_agent", '{"agent_name":"child","message":"first hop"}'),
+        usageChunk(1, 1),
+      ],
+      [
+        toolCallChunk(0, "t2", "transfer_to_agent", '{"agent_name":"child2","message":"second hop"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Grandchild answer."), usageChunk(1, 1)],
+      [contentChunk("Child wraps up."), usageChunk(1, 1)],
+      [contentChunk("Parent wraps up."), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) =>
+      name === "child" || name === "child2"
+        ? { ...projectFixture(), name }
+        : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string) =>
+      projectName === "child"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "child",
+            subagentList: [{ name: "child2", type: "local" as const }],
+          }
+        : projectName === "child2"
+          ? { ...versionFixture({ piiFiltering: false }), projectName: "child2" }
+          : null) as ExecutionDeps["versions"]["get"];
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: parentVersion(),
+        messages: [
+          { role: "user", content: "draw a cat" },
+          { role: "assistant", content: "Here is an orange cat." },
+          { role: "user", content: "make it bigger" },
+        ],
+      }),
+    );
+
+    const grandchildTurn = String(channel.seenParams[2]?.messages.at(-1)?.content);
+    expect(grandchildTurn).toContain("User: draw a cat");
+    expect(grandchildTurn).toContain("## Request\n\nsecond hop");
+    // One context block, holding the user's conversation — not the child's.
+    expect(grandchildTurn.match(/## Conversation so far/g)).toHaveLength(1);
+    expect(grandchildTurn).not.toContain("first hop");
+  });
+
+  it("leaves an image child's prompt alone", async () => {
+    // The message IS the image prompt here, so a conversation prepended to it
+    // would be drawn rather than read.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a bigger orange cat"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Here you go."), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) =>
+      name === "painter-img"
+        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
+        : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string) =>
+      projectName === "painter-img"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "painter-img",
+            model: "google/gemini-3-pro-image",
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "painter-img", type: "local" }],
+        },
+        messages: [
+          { role: "user", content: "draw a cat" },
+          { role: "assistant", content: "Here is an orange cat." },
+          { role: "user", content: "make it bigger" },
+        ],
+      }),
+    );
+
+    expect(chunks.find((c) => c.image)?.image?.prompt).toBe("a bigger orange cat");
+  });
+});
+
 describe("executeAgent subagent turn budget", () => {
   it("clamps a child's maxTurn to the parent's ceiling", async () => {
     // The child continues the parent's turn counter, so a child version with a
