@@ -11,7 +11,7 @@ import type { SkillRepository } from "@/domain/skill/repository";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
-import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
 import { assertProjectOwner } from "./projectUseCases";
 import { nextUpdatedAt } from "./timestamps";
 
@@ -289,10 +289,7 @@ export async function createVersion(
   try {
     await versions.create(version);
   } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.name === "ConditionalCheckFailedException" || error.name === "TransactionCanceledException")
-    ) {
+    if (isConditionalWriteFailure(error, { includeTransaction: true })) {
       throw new ConflictError(`Version "${versionName}" already exists in project "${projectName}"`);
     }
     throw error;
@@ -355,7 +352,7 @@ export async function deleteVersion(
   try {
     await versions.delete(projectName, versionName, project.updatedAt);
   } catch (error) {
-    if (error instanceof Error && error.name === "TransactionCanceledException") {
+    if (isTransactionCancelled(error)) {
       throw new ConflictError(`Version "${versionName}" changed while it was being deleted`);
     }
     throw error;
@@ -381,7 +378,7 @@ export async function publishVersion(
   try {
     await projects.publish(updated, versionName, project.updatedAt);
   } catch (error) {
-    if (error instanceof Error && error.name === "TransactionCanceledException") {
+    if (isTransactionCancelled(error)) {
       throw new ConflictError(`Project "${projectName}" changed while publishing version "${versionName}"`);
     }
     throw error;

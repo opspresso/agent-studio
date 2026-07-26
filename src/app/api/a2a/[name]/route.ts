@@ -3,6 +3,7 @@ import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import { a2aExposureDeps, createA2aTaskStore, executionDeps } from "@/lib/container";
 import { resolveExposedProject } from "@/application/a2a/exposure";
 import { getA2aApiKey } from "@/lib/runtime-settings";
+import { unauthorized } from "@/shared/unauthorized";
 import { sseResponseRaw } from "@/app/api/_lib/sse";
 import { timingSafeEqualString } from "@/shared/timingSafe";
 
@@ -29,7 +30,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     return Response.json({ error: "A2A is not configured" }, { status: 503 });
   }
   if (!timingSafeEqualString(request.headers.get("x-a2a-key") ?? "", apiKey)) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   const { name } = await ctx.params;

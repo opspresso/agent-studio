@@ -170,6 +170,92 @@ describe("layer boundaries", () => {
 });
 
 /**
+ * Single-owner invariants.
+ *
+ * The rules above enforce which direction an import may point. They say nothing
+ * about the same rule being written twice, which is the failure this codebase
+ * actually kept hitting: `McpTool` reached four definitions that had already
+ * drifted apart (one carried `inputSchema`, another made `description`
+ * required), the DynamoDB conditional-write name was spelled out at seven call
+ * sites — and only one of them handled the transactional form — and the image
+ * usage collapse was derived independently four times.
+ *
+ * Each entry below names a decision and the file that owns it. A second copy
+ * fails here, in the same spirit as the allowlists: the point is not to have a
+ * tidy list, it is that adding a copy is not quietly possible.
+ */
+interface SingleOwner {
+  /** The decision, phrased as what would be inconsistent if it were duplicated. */
+  what: string;
+  /** Matches the definition. Deliberately narrow — a loose pattern is noise. */
+  pattern: RegExp;
+  owner: string;
+  /** Layers the pattern may legitimately also appear in (never the owner's). */
+  alsoAllowedIn?: string[];
+}
+
+const SINGLE_OWNERS: SingleOwner[] = [
+  {
+    what: "the shape of an MCP tool",
+    pattern: /^export interface McpTool\b/m,
+    owner: "src/domain/mcp/types.ts",
+  },
+  {
+    what: "which storage errors mean a lost conditional write",
+    pattern: /ConditionalCheckFailedException/,
+    owner: "src/application/errors.ts",
+    // The adapters raise it; only the application layer must not re-derive it.
+    alsoAllowedIn: ["infrastructure"],
+  },
+  {
+    what: "collapsing an image model's three token counts into a usage row",
+    pattern: /textInputTokens \+/,
+    owner: "src/domain/llm/models.ts",
+  },
+  {
+    what: "constant-time secret comparison",
+    pattern: /timingSafeEqual\(/,
+    owner: "src/shared/timingSafe.ts",
+  },
+  {
+    what: "parsing a comma-separated config list",
+    pattern: /\.split\(","\)/,
+    owner: "src/shared/parseList.ts",
+  },
+  {
+    what: "the subagent nesting limit",
+    pattern: /MAX_SUBAGENT_DEPTH\s*=/,
+    owner: "src/application/execution/subagentRunner.ts",
+  },
+  {
+    what: "the per-run MCP tool cap",
+    pattern: /MAX_MCP_TOOLS_PER_RUN\s*=/,
+    owner: "src/application/execution/mcpTools.ts",
+  },
+  {
+    what: "the 401 response body",
+    pattern: /error: "Unauthorized"/,
+    owner: "src/shared/unauthorized.ts",
+  },
+];
+
+describe("single owners", () => {
+  it.each(SINGLE_OWNERS.map((o) => [o.what, o] as const))("%s", (_what, owner) => {
+    const holders = SOURCE_FILES.filter((file) => owner.pattern.test(file.text)).map((f) => f.path);
+    const unexpected = holders.filter(
+      (path) =>
+        path !== owner.owner && !(owner.alsoAllowedIn ?? []).includes(layerOf(path) ?? ""),
+    );
+    // Both directions matter: a second copy fails, and so does the owner losing
+    // the definition (which would otherwise read as a pass).
+    expect({ owner: holders.includes(owner.owner), copies: unexpected }).toEqual({
+      owner: true,
+      copies: [],
+    });
+  });
+});
+
+/**
  * The scanner is the thing every rule above trusts. A regex that silently stops
  * matching would report zero violations everywhere and read as a clean pass, so
  * its parsing and its reach are asserted directly.

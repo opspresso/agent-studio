@@ -1,4 +1,4 @@
-import { calculateImageCost, getModelConfig } from "@/domain/llm/models";
+import { getModelConfig, toImageUsageRecord } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
 import { renderTemplate } from "@/application/llm/template";
 import type { ImageBytes, ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
@@ -102,35 +102,23 @@ export async function generateImage(
             signal: withRunDeadline(input.signal),
           });
 
-    const costUsd = calculateImageCost(model, result.usage);
-    const inputTokens = result.usage.textInputTokens + result.usage.imageInputTokens;
-    const outputTokens = result.usage.imageOutputTokens;
+    const recorded = toImageUsageRecord(model, result.usage);
     // Usage recording is telemetry: the provider has already generated (and
     // billed) the image, so a write failure must not turn that into a 500 and
     // discard the result. Same policy as the engine's recordUsageIfPossible.
     try {
-      await recordUsage(deps.usage, {
-        projectName: input.project.name,
-        model,
-        inputTokens,
-        outputTokens,
-        costUsd,
-      });
+      await recordUsage(deps.usage, { projectName: input.project.name, model, ...recorded });
     } catch (error) {
       console.error("[image] usage recording failed", error);
     }
-    recorder?.observeResult({
-      content: "",
-      model,
-      usage: { inputTokens, outputTokens, costUsd },
-    });
+    recorder?.observeResult({ content: "", model, usage: recorded });
     await finishTrace(recorder);
 
     return {
       imageBase64: result.b64,
       mimeType: result.mimeType,
       model,
-      usage: { inputTokens, outputTokens, costUsd },
+      usage: recorded,
     };
   } catch (error) {
     await finishTrace(recorder, error);
