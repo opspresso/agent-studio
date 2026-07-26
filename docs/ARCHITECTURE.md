@@ -379,6 +379,23 @@ Two deliberate strategies coexist:
   every message. The window is short because a stale failure hides a recovery while a stale
   success only serves a slightly old tool list, and the stored reason is replayed verbatim so
   a cached failure explains itself exactly as the live one did.
+- **Managed servers** (`runtime: "managed"`, absent = `remote`). A container this
+  app starts on its own host through SSM Run Command, reached at
+  `127.0.0.1:<port>`. That address is one `UrlPolicy` rejects — correctly, for
+  anything an operator types — so trust rests on provenance instead: the
+  provisioner recorded the address after binding the port. `isManagedLoopback`
+  (`src/domain/mcp/types.ts`) is the only place that decides the bypass applies,
+  and it is narrow on purpose: the entry must claim `managed` *and* carry a
+  literal loopback address. A hostname resolving to 127.0.0.1 is refused (it can
+  resolve elsewhere between check and request), as is a `remote` entry pointing
+  at loopback — that address was typed. The registry refuses to move a managed
+  entry's url for the same reason, and the lifecycle use case refuses to store a
+  non-loopback address even when the provisioner reports one, stopping the
+  container it named. The provisioner takes an image reference and a port, never
+  a command, and the shell string is assembled only from values matched against
+  narrow patterns; images must come from the configured registry. Unset
+  `MANAGED_MCP_INSTANCE_ID`/`MANAGED_MCP_REGISTRY` means the routes answer 503
+  rather than half-enable the feature.
 - **OAuth** (MCP authorization spec, 2025-06-18). A registry entry may carry an `auth` block
   discovered once at registration (RFC 9728 protected-resource metadata → RFC 8414
   authorization-server metadata, both re-validated through `urlPolicy` and required to be
@@ -467,6 +484,8 @@ GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
 GET|POST /api/skills/sync                   skills-repo sync status / run
 POST /api/mcps/[name]/tools                 MCP connection test
+POST /api/mcps/managed                      start a managed MCP container + entry, admin-only
+GET|DELETE /api/mcps/managed/[name]         its running state / remove container and entry
 POST|DELETE /api/mcps/[name]/auth           OAuth discovery for a registry server (admin)
 GET  /api/projects/[name]/mcp-connections   this project's OAuth connections (owner)
 PUT|DELETE …/mcp-connections/[server]       save client credentials / disconnect (owner)

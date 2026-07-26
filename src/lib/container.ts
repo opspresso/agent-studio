@@ -30,6 +30,7 @@ import { traceRepository } from "@/infrastructure/db/repositories/traceRepositor
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
+import { config } from "./config";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
 import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
@@ -40,6 +41,8 @@ import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
 import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
+import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
+import { createSsmProvisioner } from "@/infrastructure/mcp/ssmProvisioner";
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
@@ -113,6 +116,25 @@ export {
  */
 export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy, remoteAgents);
 export const mcpUseCases = createMcpUseCases(mcpRepository, secretCipher, urlPolicy, mcpToolProbe);
+
+/**
+ * Managed MCP, when this deployment can start containers at all. Undefined
+ * where it cannot: the routes answer 503 rather than pretend the feature
+ * exists, which is honest about a half-configured environment.
+ */
+export const managedMcpUseCases =
+  config.managedMcpInstanceId && config.managedMcpRegistry
+    ? createManagedMcpUseCases({
+        repo: mcpRepository,
+        provisioner: createSsmProvisioner({
+          instanceId: config.managedMcpInstanceId,
+          region: config.awsRegion,
+          registry: config.managedMcpRegistry,
+        }),
+        probe: mcpToolProbe,
+        now: () => new Date().toISOString(),
+      })
+    : undefined;
 const mcpAuthProvider = createMcpAuthProvider({
   mcps: mcpRepository,
   connections: mcpConnectionRepository,

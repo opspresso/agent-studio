@@ -71,6 +71,18 @@ export const config = {
   get imageBucketName(): string | undefined {
     return process.env.S3_BUCKET_NAME || undefined;
   },
+  /**
+   * The instance managed MCP containers run on, and the registry their images
+   * must come from. Both unset means this deployment cannot start containers,
+   * and managed servers are simply unavailable — the feature is off rather
+   * than half-configured.
+   */
+  get managedMcpInstanceId(): string | undefined {
+    return process.env.MANAGED_MCP_INSTANCE_ID || undefined;
+  },
+  get managedMcpRegistry(): string | undefined {
+    return process.env.MANAGED_MCP_REGISTRY || undefined;
+  },
   get llmBaseUrl(): string {
     return required("LLM_BASE_URL");
   },
