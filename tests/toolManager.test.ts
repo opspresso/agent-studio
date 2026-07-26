@@ -374,74 +374,38 @@ describe("ToolManager per-binding tool allowlist", () => {
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
   });
 
-  it("gives up on a GET stream that never sends headers", async () => {
-    // The stream must not be able to hold discovery open: it sits on the
-    // critical path of a run's first token.
-    vi.useFakeTimers();
+  it("reads a JSON reply whose text happens to contain \"data:\"", async () => {
+    // The bug this locks down: the parser decided a body was an SSE stream if
+    // `data:` appeared anywhere in it. Slack's canvas tool documents `data:` as
+    // a URL scheme it strips, so its ordinary JSON tool list was scanned for
+    // frames, yielded none, and came back as a server with no tools at all.
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      if ((init?.method ?? "GET") === "GET") {
-        // never resolves on its own; only the abort ends it
-        return new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
-        });
-      }
       const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
-      if (body.method === "initialize") {
-        return new Response(
-          JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18" } }),
-          { headers: { "content-type": "application/json" } },
-        );
+      if (body.method === "notifications/initialized") {
+        return new Response("", { status: 202 });
       }
-      return new Response("", { status: 200, headers: { "content-type": "application/json" } });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const manager = new ToolManager([server("stuck", "https://stuck.test/mcp")]);
-
-    const run = manager.init();
-    await vi.advanceTimersByTimeAsync(60_000);
-    await run;
-
-    expect(manager.tools).toHaveLength(0);
-    expect(manager.warnings[0]).toContain("unreachable");
-    vi.useRealTimers();
-  });
-
-  it("takes a reply the server delivers on the GET stream", async () => {
-    // Slack's MCP server answers tools/list with 200 and an empty body, and
-    // sends the result on the stream opened by GET. Reading only the POST
-    // response leaves the catalogue unread.
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      if ((init?.method ?? "GET") === "GET") {
-        const frame = `data: ${JSON.stringify({
-          jsonrpc: "2.0",
-          id: 2,
-          result: { tools: [{ name: "search_messages" }, { name: "post_message" }] },
-        })}\n\n`;
-        return new Response(frame, { headers: { "content-type": "text/event-stream" } });
-      }
-      const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
-      if (body.method === "initialize") {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: body.id,
-            result: { protocolVersion: "2025-06-18", serverInfo: { name: "slack" } },
-          }),
-          { headers: { "content-type": "application/json" } },
-        );
-      }
-      // notifications and tools/list alike: accepted, answered on the stream
-      return new Response("", { status: 200, headers: { "content-type": "application/json" } });
+      const result =
+        body.method === "initialize"
+          ? { protocolVersion: "2025-06-18", serverInfo: { name: "Slack MCP" } }
+          : {
+              tools: [
+                {
+                  name: "canvas_edit",
+                  description: "Schemes like `javascript:`, `data:`, `file:` are removed.",
+                },
+                { name: "send_message" },
+              ],
+            };
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+        headers: { "content-type": "application/json" },
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
     const manager = new ToolManager([server("slack", "https://mcp.slack.test/mcp")]);
 
     await manager.init();
 
-    expect(manager.tools.map((t) => t.function.name)).toEqual([
-      "search_messages",
-      "post_message",
-    ]);
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["canvas_edit", "send_message"]);
     expect(manager.warnings).toEqual([]);
   });
 

@@ -47,12 +47,6 @@ export class McpSession {
   private initialized = false;
   /** Name, version and negotiated protocol from the handshake; "" until then. */
   private serverDescription = "";
-  /** The GET stream: `undefined` untried, `null` when the server offers none. */
-  private stream: ReadableStreamDefaultReader<Uint8Array> | null | undefined;
-  /** Replies read off the stream before the call that wanted them asked. */
-  private readonly pending = new Map<number | string, JsonRpcResponse>();
-  /** Partial SSE line left over between reads. */
-  private streamBuffer = "";
   /** The handshake while it is in flight; see {@link ensureInitialized}. */
   private handshake: Promise<void> | undefined;
 
@@ -161,115 +155,6 @@ export class McpSession {
     return this.serverDescription;
   }
 
-  /**
-   * Wait for a reply the server chose to deliver on the GET stream.
-   *
-   * Streamable HTTP has two channels: the POST response, and a stream the
-   * client opens with GET. A server may answer a request on either. This one is
-   * opened only after a POST came back without the reply, so servers that
-   * answer inline — most of them — never open a second connection at all.
-   */
-  private async awaitOnStream(
-    id: number,
-    timeoutMs: number,
-  ): Promise<JsonRpcResponse | undefined> {
-    const stream = await this.openStream();
-    if (!stream) {
-      return undefined;
-    }
-    const deadline = Date.now() + timeoutMs;
-    const decoder = new TextDecoder();
-    let buffer = this.streamBuffer;
-    while (Date.now() < deadline) {
-      // A frame for this id may already have arrived while another call waited.
-      const found = this.takePending(id);
-      if (found) {
-        return found;
-      }
-      const chunk = await Promise.race([
-        stream.read(),
-        new Promise<{ done: true; value: undefined }>((resolve) =>
-          setTimeout(() => resolve({ done: true, value: undefined }), Math.max(0, deadline - Date.now())),
-        ),
-      ]);
-      if (chunk.done || !chunk.value) {
-        break;
-      }
-      buffer += decoder.decode(chunk.value, { stream: true });
-      const frames = buffer.split("\n");
-      buffer = frames.pop() ?? "";
-      for (const line of frames) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) {
-          continue;
-        }
-        const payload = trimmed.slice("data:".length).trim();
-        if (!payload || payload === "[DONE]") {
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(payload) as JsonRpcResponse;
-          if (parsed.id !== undefined) {
-            this.pending.set(parsed.id, parsed);
-          }
-        } catch {
-          // keep-alive or non-JSON frame
-        }
-      }
-      this.streamBuffer = buffer;
-      const answered = this.takePending(id);
-      if (answered) {
-        return answered;
-      }
-    }
-    this.streamBuffer = buffer;
-    return this.takePending(id);
-  }
-
-  private takePending(id: number): JsonRpcResponse | undefined {
-    const message = this.pending.get(id);
-    if (message) {
-      this.pending.delete(id);
-    }
-    return message;
-  }
-
-  /** The GET stream, opened once. `undefined` when the server offers none. */
-  private async openStream(): Promise<ReadableStreamDefaultReader<Uint8Array> | undefined> {
-    if (this.stream !== undefined) {
-      return this.stream ?? undefined;
-    }
-    // The deadline covers reaching the server, not the stream's life: this body
-    // stays open for the whole session, so a plain timeout signal would cut it
-    // off mid-session. The timer is cleared the moment headers arrive, leaving
-    // the stream under the run's own signal.
-    const controller = new AbortController();
-    const signal = this.signal
-      ? AbortSignal.any([this.signal, controller.signal])
-      : controller.signal;
-    const timer = setTimeout(() => controller.abort(), MCP_DISCOVERY_TIMEOUT_MS);
-    try {
-      const response = await fetchPublicUrl(this.url, {
-        method: "GET",
-        headers: { ...this.baseHeaders(), Accept: "text/event-stream" },
-        signal,
-      });
-      clearTimeout(timer);
-      if (!response.ok || !response.body) {
-        await response.body?.cancel();
-        this.stream = null;
-        return undefined;
-      }
-      this.stream = response.body.getReader();
-      return this.stream;
-    } catch {
-      clearTimeout(timer);
-      // A server that refuses GET simply has no second channel.
-      this.stream = null;
-      return undefined;
-    }
-  }
-
   private async request(
     method: string,
     params: Record<string, unknown>,
@@ -284,14 +169,7 @@ export class McpSession {
       signal: this.requestSignal(timeoutMs),
     });
     await assertOk(response, method);
-    let message = await parseJsonRpc(response, id);
-    if (!message) {
-      // The POST carried no reply. Streamable HTTP allows the server to answer
-      // on the stream opened by GET instead — Slack's MCP server does exactly
-      // this, returning 200 with an empty body and delivering the result there.
-      // Opened lazily, so a server that answers inline never pays for it.
-      message = await this.awaitOnStream(id, timeoutMs);
-    }
+    const message = await parseJsonRpc(response, id);
     if (message?.error) {
       throw new Error(`MCP error (${message.error.code}): ${message.error.message}`);
     }
@@ -351,13 +229,6 @@ export class McpSession {
    * session that never initialized has nothing to release and returns at once.
    */
   async end(): Promise<void> {
-    // The GET stream stays open for the life of the session, so it has to be
-    // let go even when there is no session id to DELETE — otherwise a run that
-    // opened one leaks the connection.
-    if (this.stream) {
-      await this.stream.cancel().catch(() => {});
-      this.stream = null;
-    }
     if (!this.sessionId) {
       return;
     }
@@ -409,6 +280,34 @@ async function assertOk(response: Response, method: string): Promise<void> {
 
 /** Read a JSON-RPC response body, handling both JSON and SSE framing. */
 /**
+ * Is this body an SSE stream?
+ *
+ * The content type decides. Sniffing for `data:` anywhere in the body — which
+ * this used to do — reads a JSON document as a stream the moment any string
+ * inside it happens to contain those five characters. Slack's MCP server
+ * documents `data:` as a URL scheme its canvas tool strips, so its perfectly
+ * ordinary `tools/list` reply was parsed as a stream, yielded no frames, and
+ * came back as a server with no tools.
+ *
+ * The body is still consulted, but only where a stream could actually begin: a
+ * server that omits the header is recognised by its first line, and a body that
+ * opens with `{` or `[` is JSON no matter what it says further in.
+ */
+function isEventStream(contentType: string, text: string): boolean {
+  if (contentType.includes("text/event-stream")) {
+    return true;
+  }
+  if (contentType.includes("application/json")) {
+    return false;
+  }
+  const start = text.trimStart();
+  if (start.startsWith("{") || start.startsWith("[")) {
+    return false;
+  }
+  return /^(event|data|id|retry):/.test(start.split("\n", 1)[0] ?? "");
+}
+
+/**
  * The reply to one request.
  *
  * `expectedId` matters on an SSE body, which may legally carry more than one
@@ -427,7 +326,7 @@ export async function parseJsonRpc(
     return undefined;
   }
   const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("text/event-stream") || text.includes("data:")) {
+  if (isEventStream(contentType, text)) {
     let fallback: JsonRpcResponse | undefined;
     for (const line of text.split("\n")) {
       const trimmed = line.trim();
