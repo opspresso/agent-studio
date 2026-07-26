@@ -53,11 +53,22 @@ export async function buildMcpTools(
           console.warn(`Skipping MCP server '${mcp.name}': ${reason}`);
           return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
         }
+        const headers = deps.cipher.mergeOutboundHeaders(mcp.headers, binding.headers);
+        if (mcp.auth) {
+          // A per-project credential, resolved and refreshed by the auth
+          // provider. Applied last on purpose: a version must not be able to
+          // substitute its own Authorization for the project's connection.
+          const resolved = await deps.mcpAuth.headersFor(version.projectName, mcp.name);
+          if (resolved.warning) {
+            return { warning: resolved.warning };
+          }
+          Object.assign(headers, resolved.headers);
+        }
         return {
           server: {
             name: mcp.name,
             url: mcp.url,
-            headers: deps.cipher.mergeOutboundHeaders(mcp.headers, binding.headers),
+            headers,
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
           },
           description: mcp.description ?? "",
@@ -84,6 +95,14 @@ export async function buildMcpTools(
   // The factory releases anything it opened if discovery fails, so a run
   // cancelled mid-init leaks nothing.
   const toolManager = await deps.mcpSessions.open(servers, engine.BUILTIN_TOOL_NAMES, signal);
+  // A server that rejected the token is the one failure the project itself can
+  // fix. Recorded so the console offers a reconnect rather than leaving the
+  // owner to re-diagnose it from a warning on every future run.
+  for (const serverName of toolManager.unauthorizedServers) {
+    await deps.mcpAuth.markUnauthorized(version.projectName, serverName).catch((error: unknown) => {
+      console.warn(`[mcp] could not flag '${serverName}' as needing reauthorization`, error);
+    });
+  }
   // Providers cap how many tools one request may declare, and a request over
   // that limit fails outright — losing the tail is strictly better than losing
   // the run. Builtins are added after this, so leave them room.

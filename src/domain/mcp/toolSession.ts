@@ -25,6 +25,12 @@ export interface McpToolSession {
   readonly toolNamesByServer: Map<string, string[]>;
   /** Why a bound server contributed no tools; surfaced to the user by the run. */
   readonly warnings: readonly string[];
+  /**
+   * Servers that answered 401. Kept apart from `warnings` because it is the one
+   * failure the *project* can fix, by reconnecting — everything else points at
+   * the server.
+   */
+  readonly unauthorizedServers: readonly string[];
   callTool(aliasName: string, args: Record<string, unknown>): Promise<McpToolResult>;
   /** Releases every session. Always called from the facade's `finally`. */
   close(): Promise<void>;

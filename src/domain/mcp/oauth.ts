@@ -86,6 +86,27 @@ export interface TokenRequestTarget {
   resource: string;
 }
 
+/**
+ * Resolves the outbound `Authorization` for one project's connection to one
+ * server, refreshing when the stored token is close enough to expiry that a run
+ * could outlive it.
+ *
+ * A run asks this and nothing else about OAuth: whether a connection exists,
+ * whether it needs refreshing and whether refreshing failed are all questions
+ * with one answer shape — headers to send, or a reason there are none.
+ */
+export interface McpAuthProvider {
+  headersFor(
+    projectName: string,
+    serverName: string,
+  ): Promise<{ headers: Record<string, string>; warning?: string }>;
+  /**
+   * Record that the server rejected this connection's token, so the console can
+   * offer a reconnect instead of reporting the server as down.
+   */
+  markUnauthorized(projectName: string, serverName: string): Promise<void>;
+}
+
 export interface OAuthClient {
   /** RFC 7591 dynamic client registration. */
   register(params: {

@@ -16,6 +16,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
+import type { McpAuthProvider } from "@/domain/mcp/oauth";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 
@@ -38,6 +39,8 @@ export interface ExecutionDeps {
   remoteAgents: RemoteAgentDispatcher;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */
   mcpSessions: McpSessionFactory;
+  /** Per-project OAuth for registry servers that require it. */
+  mcpAuth: McpAuthProvider;
   traces?: TraceRepository;
   traceSampleRate?: number;
 }
