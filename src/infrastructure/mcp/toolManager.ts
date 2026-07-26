@@ -88,7 +88,7 @@ export class ToolManager {
     }
     const discovered = await Promise.all(
       this.servers.map(async (server) => {
-        const session = new McpSession(server.url, server.headers, this.signal);
+        const session = new McpSession(server.url, server.headers, this.signal, server.loopback);
         // Registered before the first request: a session that initializes and
         // then fails — or one abandoned when the run aborts mid-discovery —
         // must still be reachable by `close()`, or it is leaked server-side.

@@ -16,6 +16,13 @@ export interface McpServerConfig {
   headers: Record<string, string>;
   /** Narrows which of the server's tools this run offers; empty means all. */
   tools?: string[];
+  /**
+   * This address is a container on our own host, so the outbound SSRF guard is
+   * not the thing that makes it safe — provenance is, and that was decided once
+   * by `isManagedLoopback`. Carried as a flag rather than re-derived here: two
+   * places deciding the same thing is how they come to disagree.
+   */
+  loopback?: boolean;
 }
 
 export interface McpToolSession {

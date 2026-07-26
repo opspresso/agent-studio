@@ -3,6 +3,7 @@
 import type { Version } from "@/domain/project/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
+import { isManagedLoopback } from "@/domain/mcp/types";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 
@@ -43,15 +44,22 @@ export async function buildMcpTools(
             warning: `MCP server '${binding.name}' is no longer in the registry; its tools were not offered.`,
           };
         }
-        try {
-          // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
-          // window; a blocked server is skipped, not fatal to the run. The URL is
-          // always the registry's — a binding may redefine headers, never the host.
-          await deps.urlPolicy.assertAllowed(mcp.url);
-        } catch (error) {
-          const reason = error instanceof BlockedUrlError ? error.message : String(error);
-          console.warn(`Skipping MCP server '${mcp.name}': ${reason}`);
-          return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
+        // A managed server is a container on this host, and its address is
+        // loopback — which the guard rejects, correctly, for anything an
+        // operator could type. Trust comes from provenance instead, decided in
+        // one place. Everything else still faces the guard here.
+        const loopback = isManagedLoopback(mcp);
+        if (!loopback) {
+          try {
+            // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding
+            // window; a blocked server is skipped, not fatal to the run. The URL is
+            // always the registry's — a binding may redefine headers, never the host.
+            await deps.urlPolicy.assertAllowed(mcp.url);
+          } catch (error) {
+            const reason = error instanceof BlockedUrlError ? error.message : String(error);
+            console.warn(`Skipping MCP server '${mcp.name}': ${reason}`);
+            return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
+          }
         }
         const headers = deps.cipher.mergeOutboundHeaders(mcp.headers, binding.headers);
         if (mcp.auth) {
@@ -73,6 +81,7 @@ export async function buildMcpTools(
           server: {
             name: mcp.name,
             url: mcp.url,
+            ...(loopback ? { loopback: true } : {}),
             headers,
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
           },

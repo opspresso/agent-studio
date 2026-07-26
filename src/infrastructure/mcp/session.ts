@@ -54,7 +54,19 @@ export class McpSession {
     private readonly url: string,
     private readonly headers: Record<string, string>,
     private readonly signal?: AbortSignal,
+    /**
+     * Reaching a container on this host. `fetchPublicUrl` would reject the
+     * address on every request — correctly, for anything an operator typed —
+     * so a managed server uses plain fetch instead. Only ever set from
+     * `isManagedLoopback`; defaulting to the guarded path means a caller that
+     * forgets it loses tools rather than protection.
+     */
+    private readonly loopback = false,
   ) {}
+
+  private get send(): typeof fetch {
+    return this.loopback ? fetch : fetchPublicUrl;
+  }
 
   private requestSignal(timeoutMs: number): AbortSignal {
     const timeout = AbortSignal.timeout(timeoutMs);
@@ -97,7 +109,7 @@ export class McpSession {
 
   private async initialize(): Promise<void> {
     const id = this.nextId++;
-    const response = await fetchPublicUrl(this.url, {
+    const response = await this.send(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({
@@ -141,7 +153,7 @@ export class McpSession {
       .join(" ");
 
     // Notify the server that initialization completed.
-    await fetchPublicUrl(this.url, {
+    await this.send(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
@@ -162,7 +174,7 @@ export class McpSession {
   ): Promise<unknown> {
     await this.ensureInitialized();
     const id = this.nextId++;
-    const response = await fetchPublicUrl(this.url, {
+    const response = await this.send(this.url, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
@@ -233,7 +245,7 @@ export class McpSession {
       return;
     }
     try {
-      const response = await fetchPublicUrl(this.url, {
+      const response = await this.send(this.url, {
         method: "DELETE",
         headers: this.baseHeaders(),
         signal: AbortSignal.timeout(SESSION_END_TIMEOUT_MS),
