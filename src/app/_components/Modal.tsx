@@ -106,9 +106,12 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`w-full ${WIDTH[size]} rounded-lg border border-neutral-200 bg-white shadow-xl outline-none dark:border-neutral-800 dark:bg-neutral-900`}
+        // Capped at the viewport with the body scrolling inside it, so a long
+        // list — a server with fifty tools — scrolls under a title bar that
+        // stays put, instead of growing a dialog taller than the screen.
+        className={`flex max-h-full w-full flex-col ${WIDTH[size]} rounded-lg border border-neutral-200 bg-white shadow-xl outline-none dark:border-neutral-800 dark:bg-neutral-900`}
       >
-        <div className="flex items-center justify-between gap-4 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <h2 className="text-sm font-semibold">{title}</h2>
           <button
             type="button"
@@ -119,7 +122,7 @@ export function Modal({
             ✕
           </button>
         </div>
-        <div className="space-y-5 p-4">{children}</div>
+        <div className="flex-1 space-y-5 overflow-y-auto p-4">{children}</div>
       </div>
     </div>
   );

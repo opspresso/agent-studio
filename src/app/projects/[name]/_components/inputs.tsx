@@ -266,24 +266,24 @@ function ToolSelector({
     // reach or authorize a server drops it whole and offers *none* of its tools,
     // so advising an empty selection here would advise the opposite outcome.
     return (
-      <p className="px-2 pb-2 text-neutral-500">
+      <p className="text-sm text-neutral-500">
         {error}
         {" — a run would offer none of this server’s tools until it answers."}
       </p>
     );
   }
   if (!tools) {
-    return <p className="px-2 pb-2 text-neutral-500">Loading tools…</p>;
+    return <p className="text-sm text-neutral-500">Loading tools…</p>;
   }
   if (tools.length === 0) {
-    return <p className="px-2 pb-2 text-neutral-500">This server exposes no tools.</p>;
+    return <p className="text-sm text-neutral-500">This server exposes no tools.</p>;
   }
 
   const chosen = selected ?? [];
   // A stored name the server no longer exposes stays listed so it can be cleared.
   const missing = chosen.filter((name) => !tools.some((tool) => tool.name === name));
   return (
-    <div className="space-y-1 px-2 pb-2">
+    <div className="space-y-1 text-sm">
       <p className="text-neutral-500">
         {chosen.length === 0
           ? "Every tool is offered. Select some to narrow what the model sees."
