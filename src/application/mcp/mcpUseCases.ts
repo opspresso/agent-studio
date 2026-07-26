@@ -68,7 +68,12 @@ export function createMcpUseCases(
           `MCP server "${existing.name}" is managed: its address is set when the container starts and cannot be edited.`,
         );
       }
-      if (patch.url !== undefined) {
+      // A managed entry's address is loopback by construction, was vetted when
+      // the provisioner reported it, and cannot have moved — the check above
+      // refuses that. Re-running the public-URL guard over it fails the save of
+      // every *other* field, which is how editing a managed server's headers
+      // became impossible.
+      if (patch.url !== undefined && !isManagedLoopback(existing)) {
         await assertAllowedUrl(policy, patch.url);
       }
       const updated = {

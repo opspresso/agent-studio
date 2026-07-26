@@ -116,3 +116,17 @@ describe("managed entries are not editable through the registry", () => {
     expect(saved()?.runtime).toBe("managed");
   });
 });
+
+describe("editing a managed entry's other fields", () => {
+  it("saves when the form echoes back the unchanged loopback url", async () => {
+    // The edit form submits every field, so an unchanged address arrives as a
+    // patch — and re-guarding it blocked saves that never touched it.
+    const { useCases, saved } = useCasesWith(managedRow);
+    await useCases.update("image-fetch", {
+      url: managedRow.url,
+      headers: { Authorization: "Bearer x" },
+    });
+    expect(saved()?.url).toBe(managedRow.url);
+    expect(saved()?.runtime).toBe("managed");
+  });
+});
