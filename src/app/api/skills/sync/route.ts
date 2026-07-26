@@ -12,15 +12,15 @@ export const GET = withAuth(async () => {
 });
 
 export const POST = withAdminAuth(async () => {
-  const { repo, token } = await getSkillsRepoConfig();
-  if (!repo || !token) {
+  const repoConfig = await getSkillsRepoConfig();
+  if (!repoConfig.repo || !repoConfig.token) {
     return Response.json(
       { error: "SKILLS_REPO and GITHUB_TOKEN are not configured" },
       { status: 503 },
     );
   }
   try {
-    return Response.json(await syncSkillsFromRepo());
+    return Response.json(await syncSkillsFromRepo(repoConfig));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";
     const status = message.includes("GitHub") ? 502 : 500;

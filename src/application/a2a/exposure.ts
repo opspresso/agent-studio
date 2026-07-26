@@ -45,9 +45,14 @@ export async function resolveExposedProject(
   name: string,
 ): Promise<ExposedProject | null> {
   const project = await deps.projects.get(name);
-  if (!project) {
-    return null;
-  }
+  return project ? exposeProject(deps, project) : null;
+}
+
+/** The same rule applied to a project already in hand, so no caller reads twice. */
+async function exposeProject(
+  deps: A2aExposureDeps,
+  project: Project,
+): Promise<ExposedProject | null> {
   const version = await resolveRunnableVersion(deps.versions, project);
   if (!version) {
     return null;
@@ -83,7 +88,7 @@ export async function describeProjectA2a(
   const published = Boolean(project.publishedVersion);
   // The card is built for any published project so the console can preview it,
   // whether or not A2A_API_KEY is set on this deployment.
-  const exposed = published ? await resolveExposedProject(deps, name) : null;
+  const exposed = published ? await exposeProject(deps, project) : null;
   return {
     published,
     cardUrl: a2aEnabled && published ? await deps.cardUrlFor(project.name) : null,
