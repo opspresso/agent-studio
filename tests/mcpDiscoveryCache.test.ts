@@ -9,6 +9,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import {
   clearMcpDiscoveryCache,
+  getCachedDiscovery,
   getCachedTools,
   invalidateMcpDiscovery,
   setCachedTools,
@@ -135,18 +136,61 @@ describe("ToolManager discovery over the cache", () => {
     expect(methods.filter((method) => method === "tools/call")).toHaveLength(2);
   });
 
-  it("does not cache a failed discovery", async () => {
+  it("replays a recent failure instead of re-paying the handshake", async () => {
+    // Without this a server that is down — or a connection whose token was
+    // revoked — re-pays a failing handshake before the first token of *every*
+    // message, forever.
     const failing = stubMcpServer({ listFails: true });
-    await new ToolManager([server()]).init();
+    const first = new ToolManager([server()]);
+    await first.init();
     expect(failing).toContain("tools/list");
+    const liveWarning = first.warnings[0];
     vi.unstubAllGlobals();
 
     const retry = stubMcpServer();
     const manager = new ToolManager([server()]);
     await manager.init();
 
-    // A server that was briefly broken must be retried, not written off.
+    expect(retry).toHaveLength(0);
+    // The reason is the live one, so a cached failure explains itself exactly as
+    // the failure that produced it did.
+    expect(manager.warnings[0]).toBe(liveWarning);
+    expect(manager.tools).toHaveLength(0);
+  });
+
+  it("forgets a failure quickly, so a server that comes back is retried", async () => {
+    // The original concern this cache had to preserve: a server that was briefly
+    // broken must not be written off. It is remembered for seconds, not for the
+    // full success TTL, because a stale failure hides a recovery while a stale
+    // success only serves a slightly old tool list.
+    const failing = stubMcpServer({ listFails: true });
+    await new ToolManager([server()]).init();
+    expect(failing).toContain("tools/list");
+    vi.unstubAllGlobals();
+
+    // Read past the failure TTL rather than waiting it out; the cache takes the
+    // clock as a parameter precisely so this stays deterministic.
+    expect(getCachedDiscovery(URL_A, {}, Date.now() + 60_000)).toBeUndefined();
+
+    const retry = stubMcpServer();
+    const manager = new ToolManager([server()]);
+    await manager.init();
     expect(retry).toContain("tools/list");
     expect(manager.tools.map((tool) => tool.function.name)).toEqual(["search"]);
+  });
+
+  it("retries at once when the registry entry is repaired", async () => {
+    // An operator who fixes a server must not have to wait out even the short
+    // failure window on the instance they are working against.
+    const failing = stubMcpServer({ listFails: true });
+    await new ToolManager([server()]).init();
+    expect(failing).toContain("tools/list");
+    vi.unstubAllGlobals();
+
+    invalidateMcpDiscovery(URL_A);
+
+    const retry = stubMcpServer();
+    await new ToolManager([server()]).init();
+    expect(retry).toContain("tools/list");
   });
 });

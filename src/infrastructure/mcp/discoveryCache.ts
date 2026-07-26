@@ -48,10 +48,30 @@ function parseTtlMs(raw: string | undefined): number {
 
 const TTL_MS = parseTtlMs(process.env.MCP_DISCOVERY_CACHE_TTL_MS);
 
+/**
+ * Failures are remembered too, and for much less time.
+ *
+ * Without this a server that is down — or a connection whose token has been
+ * revoked — re-pays a failing handshake on *every* message, before the first
+ * token, forever. One that accepts the connection and never answers costs the
+ * full discovery timeout each time.
+ *
+ * Short because the cost of being wrong is asymmetric: a stale failure hides a
+ * server that has come back, while a stale success only offers a tool list that
+ * is a few seconds out of date. Capped by the success TTL so disabling the
+ * cache disables this too.
+ */
+const FAILURE_TTL_MS = Math.min(TTL_MS, 30_000);
+
+/** A remembered discovery: what the server offered, or why it offered nothing. */
+export type CachedDiscovery =
+  | { kind: "tools"; tools: McpTool[] }
+  | { kind: "failure"; reason: string; unauthorized: boolean };
+
 interface CacheEntry {
   /** Kept alongside the hashed key so a registry edit can evict by server. */
   url: string;
-  tools: McpTool[];
+  value: CachedDiscovery;
   expiresAt: number;
 }
 
@@ -67,11 +87,11 @@ function cacheKey(url: string, headers: Record<string, string>): string {
   return createHash("sha256").update(`${url}\n${canonicalHeaders}`).digest("hex");
 }
 
-export function getCachedTools(
+export function getCachedDiscovery(
   url: string,
   headers: Record<string, string>,
   now: number = Date.now(),
-): McpTool[] | undefined {
+): CachedDiscovery | undefined {
   const entry = cache.get(cacheKey(url, headers));
   if (!entry) {
     return undefined;
@@ -80,17 +100,27 @@ export function getCachedTools(
     cache.delete(cacheKey(url, headers));
     return undefined;
   }
-  return entry.tools;
+  return entry.value;
 }
 
-/** Remember a successful discovery. Failures are never cached. */
-export function setCachedTools(
+/** The tool list a warm entry holds, or undefined for a miss or a cached failure. */
+export function getCachedTools(
   url: string,
   headers: Record<string, string>,
-  tools: McpTool[],
   now: number = Date.now(),
+): McpTool[] | undefined {
+  const cached = getCachedDiscovery(url, headers, now);
+  return cached?.kind === "tools" ? cached.tools : undefined;
+}
+
+function remember(
+  url: string,
+  headers: Record<string, string>,
+  value: CachedDiscovery,
+  ttlMs: number,
+  now: number,
 ): void {
-  if (TTL_MS === 0) {
+  if (ttlMs <= 0) {
     return;
   }
   if (cache.size >= MAX_ENTRIES) {
@@ -100,7 +130,32 @@ export function setCachedTools(
       cache.delete(oldest);
     }
   }
-  cache.set(cacheKey(url, headers), { url, tools, expiresAt: now + TTL_MS });
+  cache.set(cacheKey(url, headers), { url, value, expiresAt: now + ttlMs });
+}
+
+/** Remember a successful discovery. */
+export function setCachedTools(
+  url: string,
+  headers: Record<string, string>,
+  tools: McpTool[],
+  now: number = Date.now(),
+): void {
+  remember(url, headers, { kind: "tools", tools }, TTL_MS, now);
+}
+
+/**
+ * Remember that discovery failed, and why. The reason is replayed verbatim as
+ * the run's warning, so a cached failure explains itself exactly as the live one
+ * did rather than degrading into "no tools".
+ */
+export function setCachedFailure(
+  url: string,
+  headers: Record<string, string>,
+  reason: string,
+  unauthorized: boolean,
+  now: number = Date.now(),
+): void {
+  remember(url, headers, { kind: "failure", reason, unauthorized }, FAILURE_TTL_MS, now);
 }
 
 /**
