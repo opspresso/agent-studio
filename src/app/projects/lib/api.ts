@@ -369,3 +369,53 @@ export async function getProjectA2a(name: string): Promise<ProjectA2aView> {
   }
   return (await res.json()) as ProjectA2aView;
 }
+
+// --- MCP OAuth connections -------------------------------------------------
+
+/**
+ * A project's connection to an OAuth-required registry server. Carries no
+ * secret and no token — there is no reveal path for either, so this is the whole
+ * of what the console can know.
+ */
+export interface McpConnectionView {
+  serverName: string;
+  status: "needs_auth" | "connected" | "needs_reauth";
+  clientId: string;
+  hasClientSecret: boolean;
+  clientRegistered: boolean;
+  scopes: string[];
+  connectedBy?: string;
+  connectedAt?: string;
+  expiresAt?: string;
+}
+
+export function listMcpConnections(name: string): Promise<McpConnectionView[]> {
+  return fetch(`/api/projects/${name}/mcp-connections`)
+    .then((r) => readJson<{ connections: McpConnectionView[] }>(r))
+    .then((data) => data.connections);
+}
+
+export function saveMcpClientCredentials(
+  name: string,
+  server: string,
+  input: { clientId: string; clientSecret?: string; scopes?: string[] },
+): Promise<McpConnectionView> {
+  return fetch(`/api/projects/${name}/mcp-connections/${server}`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<McpConnectionView>(r));
+}
+
+/** Returns the provider URL to open; the callback finishes the flow. */
+export function beginMcpAuthorization(name: string, server: string): Promise<string> {
+  return fetch(`/api/projects/${name}/mcp-connections/${server}/authorize`, { method: "POST" })
+    .then((r) => readJson<{ authorizeUrl: string }>(r))
+    .then((data) => data.authorizeUrl);
+}
+
+export async function disconnectMcp(name: string, server: string): Promise<void> {
+  await assertOk(
+    await fetch(`/api/projects/${name}/mcp-connections/${server}`, { method: "DELETE" }),
+  );
+}
