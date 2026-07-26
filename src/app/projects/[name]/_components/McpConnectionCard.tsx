@@ -56,6 +56,10 @@ export function McpConnectionCard({
       setServer(entry);
       setConnection(found);
       setClientId(found?.clientId ?? "");
+      // The stored secret is shown masked, like every other secret in this
+      // console. Echoing the mask back on save keeps what is stored; typing over
+      // it replaces it.
+      setClientSecret(found?.clientSecret ?? "");
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -146,9 +150,8 @@ export function McpConnectionCard({
           <input
             value={clientSecret}
             onChange={(e) => setClientSecret(e.target.value)}
-            placeholder={connection?.hasClientSecret ? "Client secret (unchanged)" : "Client secret"}
-            type="password"
-            className="rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+            placeholder="Client secret"
+            className="rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm dark:border-neutral-700"
           />
         </div>
       )}
@@ -172,9 +175,6 @@ export function McpConnectionCard({
                   clientId: clientId.trim(),
                   clientSecret: clientSecret || undefined,
                 });
-                // Cleared so a second save does not re-submit what was typed;
-                // an empty field keeps whatever is stored.
-                setClientSecret("");
               })
             }
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
