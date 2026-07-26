@@ -58,6 +58,26 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   child's ceiling is clamped to the parent's in `runProject.ts`, so a child version with a
   larger `maxTurn` cannot raise the limit the run started under.
 
+## System prompt assembly (`buildAgentSystemPrompt`)
+
+The version's own text comes first, then — only when the run resolved at least one
+capability — a `---` break and a `# Runtime capabilities` block holding the `##` sections.
+Two rules keep the halves from restating each other:
+
+- **The block is the authority on what exists, the version's text on who the agent is.**
+  The break exists because the generated `##` headings are otherwise indistinguishable
+  from the author's own, and because the precedence rule below needs "your own
+  instructions" to have a referent. A run that reaches nothing gets the author's text
+  byte-for-byte — no boundary is announced with nothing behind it.
+- **Precedence is stated once, in the framing, and names only what the run has.** Each
+  section documents what is specific to it (an MCP table says where the tools come from;
+  the agent table says a `message` must stand on its own and must not be sent twice) and
+  never its own "use me when…" — several unranked policies leave the model no way to
+  choose. The same rule governs the `## Available Images` empty state: it lists generate/
+  edit only when the image tools are offered, and "a tool returns one" only when MCP tools
+  exist, because promising an id from a source the run does not have is the same defect as
+  advertising a skill that can never load.
+
 ## Author contract
 
 Top-level chunks are **unauthored** (`author === undefined`); only subagent chunks carry

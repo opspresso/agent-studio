@@ -777,16 +777,70 @@ function subagentContextMessage(agentName: string, text: string): string {
   return `For context: the '${agentName}' agent responded with:\n${text}`;
 }
 
+/**
+ * `a`, `a and b`, `a, b, and c`. Used to build the sentences below from the
+ * capabilities a run actually resolved, so neither the precedence rule nor the
+ * image empty state ever names something this run cannot reach.
+ */
+function joinClauses(items: string[], conjunction: string): string {
+  if (items.length <= 1) {
+    return items[0] ?? "";
+  }
+  const last = items[items.length - 1] ?? "";
+  const head = items.slice(0, -1);
+  return items.length === 2
+    ? `${head[0] ?? ""} ${conjunction} ${last}`
+    : `${head.join(", ")}, ${conjunction} ${last}`;
+}
+
+/**
+ * The boundary between the version's own prompt and what the engine appends.
+ *
+ * The sections below are generated per run and use `##` headings, which are
+ * indistinguishable from headings the prompt author wrote — so the split is
+ * marked explicitly. It also gives the precedence rule a referent: "your own
+ * instructions" is everything above this line, and nothing else.
+ */
+function capabilityFraming(
+  withSkills: boolean,
+  withMcp: boolean,
+  withSubagents: boolean,
+): string {
+  // Stated once, here. Each section below documents only what is specific to
+  // it; three sections that each also said "use me when…" would leave the model
+  // with unranked policies and no way to choose between them.
+  const rules = [
+    ...(withSkills ? ["load a skill when you need guidance on how to carry it out"] : []),
+    ...(withMcp
+      ? ["call a tool when you need data or an action from outside this conversation"]
+      : []),
+    ...(withSubagents
+      ? ["transfer to an agent whose description covers the request better than your instructions do"]
+      : []),
+  ];
+  const lines = [
+    "# Runtime capabilities",
+    "",
+    "The instructions above define your role. This section is generated for this run and lists only what you can actually reach right now — treat it, not your instructions, as the truth about what is available.",
+  ];
+  if (rules.length > 0) {
+    lines.push(
+      "",
+      `Answer from your own instructions whenever they cover the request; otherwise ${joinClauses(rules, "or")}.`,
+    );
+  }
+  return lines.join("\n");
+}
+
 function skillSystemPromptAddition(skills: SkillInfo[]): string {
   const rows = skills
     .map((s) => `| ${s.name} | ${tableCell(s.description) || "No description"} |`)
     .join("\n");
+  // No usage line: when to load one is the framing's job and which one to load
+  // is the description's, while reaching a file inside a skill is documented on
+  // the tool's own `file_path` parameter, which the model reads anyway.
   return [
     "## Available Skills",
-    "",
-    // Reaching a file inside a skill is documented on the tool's own `file_path`
-    // parameter, which the model reads anyway.
-    "Load a skill with the `Skill` tool when its description matches what you are about to do.",
     "",
     "| Skill | Description |",
     "|-------|-------------|",
@@ -803,10 +857,11 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
   const rows = servers
     .map((s) => `| ${s.name} | ${tableCell(s.description)} | ${s.toolNames.join(", ")} |`)
     .join("\n");
+  // Says what the table *is*; when to reach for it is the framing's job.
   return [
     "## Connected MCP Servers",
     "",
-    "The tools listed below come from external MCP servers. Use a server's description to decide when its tools are relevant.",
+    "These tools come from external MCP servers.",
     "",
     "| Server | Description | Tools |",
     "|--------|-------------|-------|",
@@ -826,13 +881,14 @@ function subagentSystemPromptAddition(subagents: SubagentInfo[]): string {
   const rows = subagents
     .map((a) => `| ${a.name} | ${tableCell(a.description) || "No description"} |`)
     .join("\n");
+  // Only the two constraints the framing cannot state: the child is handed the
+  // `message` and nothing else (an agent's own description is given to whoever
+  // may transfer to it, never to itself), and a second transfer for one request
+  // re-does work the first already did.
   return [
     "## Available Agents",
     "",
-    // An agent's own description is given to whoever may transfer to it, never
-    // to itself, so the routing rule points at the instructions above instead —
-    // the only statement of its role the model actually receives.
-    "Answer directly when the request fits your own instructions above. When another agent's description fits it better, call the `transfer_to_agent` function with a self-contained `message`; once that agent has answered, do not call it again for the same request.",
+    "A transferred `message` must stand on its own — the other agent cannot see this conversation. Once it has answered, do not transfer to it again for the same request.",
     "",
     "| Agent | Description |",
     "|-------|-------------|",
@@ -907,15 +963,21 @@ function transferToolDef(subagents: SubagentInfo[], withImages: boolean): Channe
 function imageSystemPromptAddition(
   handles: readonly ImageHandle[],
   uses: { canEdit: boolean; canTransfer: boolean },
+  withMcpTools: boolean,
 ): string {
   // Listed even when empty: the image tools' only documentation is a pointer to
-  // this section, so it has to exist before the first picture does. What the
-  // empty state promises follows what this run can actually do — the image
-  // tools are offered together, so a run that cannot edit cannot generate
-  // either, and its ids can only arrive from a tool result or the user.
-  const emptyState = uses.canEdit
-    ? "No images yet — an image you generate or edit gets an id you can use here."
-    : "No images yet — an image a tool returns, or one the user sends, gets an id you can use here.";
+  // this section, so it has to exist before the first picture does. The empty
+  // state names only the routes an id can actually arrive by — the image tools
+  // are offered together, so a run that cannot edit cannot generate either, and
+  // a run with no MCP tools has nothing that could return a picture. Promising
+  // an id from a source this run does not have is the same defect as listing a
+  // skill that can never load.
+  const arrivals = [
+    ...(uses.canEdit ? ["from what you generate or edit"] : []),
+    ...(withMcpTools ? ["from what a tool returns"] : []),
+    "from what the user sends",
+  ];
+  const emptyState = `No images yet. Ids appear here as images arrive — ${joinClauses(arrivals, "and")}.`;
   const table =
     handles.length > 0
       ? [
@@ -939,10 +1001,13 @@ function imageSystemPromptAddition(
 }
 
 /**
- * The system prompt an agent run actually sends: the version's own text plus
- * the sections the engine appends for what this run can reach. Exported for the
- * Playground preview — the assembled prompt is what a reader needs to see, and
- * a second implementation of it would drift.
+ * The system prompt an agent run actually sends: the version's own text, then a
+ * marked block of the sections the engine appends for what this run can reach.
+ * Exported for the Playground preview — the assembled prompt is what a reader
+ * needs to see, and a second implementation of it would drift.
+ *
+ * A run that reaches nothing gets the version's text unchanged: framing an
+ * empty capability block would announce a boundary with nothing behind it.
  */
 export function buildAgentSystemPrompt(
   base: string | undefined,
@@ -951,22 +1016,31 @@ export function buildAgentSystemPrompt(
   mcpServers: McpServerInfo[],
   images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean },
 ): string {
-  const parts: string[] = [];
-  if (base) {
-    parts.push(base);
-  }
+  const withMcp = mcpServers.length > 0;
+  const sections: string[] = [];
   if (skills.length > 0) {
-    parts.push(skillSystemPromptAddition(skills));
+    sections.push(skillSystemPromptAddition(skills));
   }
-  if (mcpServers.length > 0) {
-    parts.push(mcpSystemPromptAddition(mcpServers));
+  if (withMcp) {
+    sections.push(mcpSystemPromptAddition(mcpServers));
   }
   if (subagents.length > 0) {
-    parts.push(subagentSystemPromptAddition(subagents));
+    sections.push(subagentSystemPromptAddition(subagents));
   }
   if (images.canEdit || images.canTransfer) {
-    parts.push(imageSystemPromptAddition(images.handles, images));
+    sections.push(imageSystemPromptAddition(images.handles, images, withMcp));
   }
+  if (sections.length === 0) {
+    return base ?? "";
+  }
+  const parts: string[] = [];
+  if (base) {
+    // A thematic break, not a heading: it separates without competing with the
+    // author's own headings, and the blank line `join` adds keeps it from being
+    // read as a setext underline for the line above.
+    parts.push(base, "---");
+  }
+  parts.push(capabilityFraming(skills.length > 0, withMcp, subagents.length > 0), ...sections);
   return parts.join("\n\n");
 }
 

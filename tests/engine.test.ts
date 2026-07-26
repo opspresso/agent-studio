@@ -392,6 +392,71 @@ describe("runAgent GenerateImage builtin", () => {
   });
 });
 
+describe("runAgent separates the version's prompt from what the engine appends", () => {
+  async function systemPromptFor(input: Partial<Parameters<typeof runAgent>[1]>): Promise<string> {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        { channel, runSubagent: async function* () {
+            return "";
+          } },
+        {
+          projectName: "p",
+          model: MODEL,
+          systemPrompt: "You are the front desk.",
+          messages: [{ role: "user", content: "hi" }],
+          ...input,
+        },
+      ),
+    );
+    return String(channel.seenParams[0]?.messages[0]?.content);
+  }
+
+  it("marks where the version's prompt ends and the generated block begins", async () => {
+    // Without the break the generated `##` sections are indistinguishable from
+    // headings the prompt author wrote, and "your own instructions" — which the
+    // routing rule is anchored to — has no referent.
+    const content = await systemPromptFor({
+      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+    });
+    expect(content).toContain("You are the front desk.\n\n---\n\n# Runtime capabilities");
+    expect(content.indexOf("# Runtime capabilities")).toBeLessThan(
+      content.indexOf("## Available Agents"),
+    );
+  });
+
+  it("states when to use a capability exactly once, naming only what the run has", async () => {
+    const content = await systemPromptFor({
+      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+    });
+    // One precedence sentence, in the framing — not one per section.
+    expect(content).toContain(
+      "Answer from your own instructions whenever they cover the request; otherwise transfer to an agent whose description covers the request better than your instructions do.",
+    );
+    // This run has no skills and no MCP servers, so neither is offered as an option.
+    expect(content).not.toContain("load a skill when");
+    expect(content).not.toContain("call a tool when");
+  });
+
+  it("ranks every capability the run does have in that one sentence", async () => {
+    const content = await systemPromptFor({
+      skills: [{ name: "writing", description: "how to write" }],
+      subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
+      mcpTools: [{ type: "function", function: { name: "search_repos", parameters: {} } }],
+      mcpServers: [{ name: "github", description: "repos", toolNames: ["search_repos"] }],
+    });
+    expect(content).toContain(
+      "otherwise load a skill when you need guidance on how to carry it out, call a tool when you need data or an action from outside this conversation, or transfer to an agent whose description covers the request better than your instructions do.",
+    );
+  });
+
+  it("leaves a version that reaches nothing exactly as its author wrote it", async () => {
+    // No capabilities means no block, so there is no boundary to announce and
+    // the prompt the author sees in the editor is the prompt that is sent.
+    expect(await systemPromptFor({})).toBe("You are the front desk.");
+  });
+});
+
 describe("runAgent MCP server system prompt", () => {
   it("appends a Connected MCP Servers table when mcpServers are provided", async () => {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);

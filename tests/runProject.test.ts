@@ -611,10 +611,12 @@ describe("executeAgent image transfer to a subagent", () => {
 
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
     expect(systemPrompt).toContain("## Available Images");
-    // This version has no image tools of its own, so the empty state names the
-    // sources it does have rather than promising a picture it cannot make.
-    expect(systemPrompt).toContain("an image a tool returns, or one the user sends");
-    expect(systemPrompt).not.toContain("an image you generate");
+    // This version has no image tools of its own AND no MCP tools, so the only
+    // way an id can appear is the user attaching a picture. Naming either of the
+    // other two routes would promise the model something this run cannot do.
+    expect(systemPrompt).toContain("Ids appear here as images arrive — from what the user sends.");
+    expect(systemPrompt).not.toContain("you generate or edit");
+    expect(systemPrompt).not.toContain("a tool returns");
   });
 
   it("promises generated ids only to a version that can generate", async () => {
@@ -630,7 +632,7 @@ describe("executeAgent image transfer to a subagent", () => {
     );
 
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
-    expect(systemPrompt).toContain("an image you generate or edit");
+    expect(systemPrompt).toContain("from what you generate or edit");
   });
 });
 
