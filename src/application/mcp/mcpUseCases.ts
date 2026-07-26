@@ -8,8 +8,7 @@ import {
 } from "@/application/registry/registryUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
-import { listMcpTools, type ListToolsResult } from "@/infrastructure/mcp/mcpClient";
-import { invalidateMcpDiscovery } from "@/infrastructure/mcp/discoveryCache";
+import type { ListToolsResult, McpToolProbe } from "@/domain/mcp/toolProbe";
 
 export interface CreateMcpInput {
   name: string;
@@ -40,6 +39,7 @@ export function createMcpUseCases(
   repo: McpRepository,
   cipher: SecretCipher,
   policy: UrlPolicy,
+  probe: McpToolProbe,
 ): McpUseCases {
   const registry = createRegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput>({
     label: "MCP server",
@@ -75,8 +75,8 @@ export function createMcpUseCases(
       // A new url or new credentials can mean a different tool list, so an
       // operator fixing a server must not have to wait out the discovery TTL on
       // the instance they are working against.
-      invalidateMcpDiscovery(existing.url);
-      invalidateMcpDiscovery(updated.url);
+      probe.invalidateDiscovery(existing.url);
+      probe.invalidateDiscovery(updated.url);
       return updated;
     },
   });
@@ -94,7 +94,7 @@ export function createMcpUseCases(
       } catch (error) {
         return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
       }
-      return listMcpTools(existing.url, cipher.decryptHeadersForOutbound(existing.headers));
+      return probe.listTools(existing.url, cipher.decryptHeadersForOutbound(existing.headers));
     },
   };
 }

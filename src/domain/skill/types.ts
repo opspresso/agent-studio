@@ -1,3 +1,5 @@
+import type { SkippedAttachment } from "./files";
+
 export interface SkillFile {
   /** Path relative to the skill root (the SKILL.md directory), e.g. "references/api.md". */
   path: string;
@@ -17,4 +19,24 @@ export interface Skill {
   source?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One SKILL.md found in the skills repo, with its collected attachments. */
+export interface RepoSkillFile {
+  /** Skill slug — the SKILL.md parent directory name. */
+  name: string;
+  path: string;
+  content: string;
+  /** Supported attachment files under the skill root, by relative path. */
+  files: SkillFile[];
+}
+
+/** One pull of the skills repo: what it held and what was skipped. */
+export interface SkillsRepoSnapshot {
+  repo: string;
+  branch: string;
+  commitSha: string;
+  files: RepoSkillFile[];
+  /** Attachment files skipped during collection, with reasons. */
+  skipped: SkippedAttachment[];
 }

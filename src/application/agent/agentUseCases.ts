@@ -6,10 +6,9 @@ import {
   createRegistryUseCases,
   type RegistryUseCases,
 } from "@/application/registry/registryUseCases";
-import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import { sendAgentMessage, type SendMessageResult } from "@/infrastructure/agent/agentClient";
+import type { RemoteAgentDispatcher, RemoteAgentProbeReply } from "@/domain/agent/dispatcher";
 
 export interface CreateAgentInput {
   name: string;
@@ -29,7 +28,7 @@ export interface UpdateAgentInput {
 export interface AgentUseCases
   extends RegistryUseCases<ExternalAgent, CreateAgentInput, UpdateAgentInput> {
   /** Sends one message with decrypted headers. Throws {@link NotFoundError} when the agent does not exist. */
-  sendMessage(name: string, message: string): Promise<SendMessageResult>;
+  sendMessage(name: string, message: string): Promise<RemoteAgentProbeReply>;
 }
 
 /** Client-safe projection: encrypted header values are replaced with a mask. */
@@ -41,6 +40,7 @@ export function createAgentUseCases(
   repo: ExternalAgentRepository,
   cipher: SecretCipher,
   policy: UrlPolicy,
+  dispatcher: RemoteAgentDispatcher,
 ): AgentUseCases {
   const registry = createRegistryUseCases<ExternalAgent, CreateAgentInput, UpdateAgentInput>({
     label: "External agent",
@@ -89,11 +89,14 @@ export function createAgentUseCases(
       } catch (error) {
         return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
       }
-      const headers = cipher.decryptHeadersForOutbound(existing.headers);
-      if ((existing.protocol ?? "openai") === "a2a") {
-        return sendA2aMessage(existing.url, headers, message);
-      }
-      return sendAgentMessage(existing.url, headers, message);
+      return dispatcher.probe(
+        {
+          url: existing.url,
+          protocol: existing.protocol,
+          headers: cipher.decryptHeadersForOutbound(existing.headers),
+        },
+        message,
+      );
     },
   };
 }

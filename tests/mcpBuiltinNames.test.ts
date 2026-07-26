@@ -3,6 +3,7 @@ process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef")
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 
 // Allow every URL: these tests are about the run loop, not the SSRF policy.
@@ -84,6 +85,7 @@ function depsFixture(channel: FakeChannel) {
     imageChannel,
     cipher: secretCipher,
     urlPolicy: testUrlPolicy,
+    mcpSessions: mcpSessionFactory,
   } as unknown as ExecutionDeps;
 }
 

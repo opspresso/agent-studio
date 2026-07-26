@@ -7,6 +7,7 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
 }));
 import type { Message, Task } from "@a2a-js/sdk";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import type { AgentExecutionEvent, ExecutionEventBus, TaskStore } from "@a2a-js/sdk/server";
 import { RequestContext } from "@a2a-js/sdk/server";
 import { buildAgentCard, buildProjectA2aRpcUrl } from "@/infrastructure/a2a/cards";

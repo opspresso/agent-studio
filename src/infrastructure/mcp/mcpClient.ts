@@ -5,16 +5,13 @@
  * an agent actually calls it. The session is always released.
  */
 
+import type { McpTool } from "@/domain/mcp/types";
+import type { ListToolsResult } from "@/domain/mcp/toolProbe";
+export type { ListToolsResult };
 import { McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
 
-export interface McpTool {
-  name: string;
-  description: string;
-}
+export type { McpTool };
 
-export type ListToolsResult =
-  | { ok: true; tools: McpTool[] }
-  | { ok: false; error: string };
 
 export async function listMcpTools(
   url: string,

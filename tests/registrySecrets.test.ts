@@ -3,14 +3,23 @@ process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef")
 
 import { describe, expect, it, vi } from "vitest";
 
-const listMcpToolsMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, tools: [] })));
-vi.mock("@/infrastructure/mcp/mcpClient", () => ({ listMcpTools: listMcpToolsMock }));
+const listMcpToolsMock = vi.hoisted(() =>
+  vi.fn(async (_url: string, _headers: Record<string, string>) => ({ ok: true as const, tools: [] })),
+);
 
-const sendAgentMessageMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, text: "hi" })));
-vi.mock("@/infrastructure/agent/agentClient", () => ({ sendAgentMessage: sendAgentMessageMock }));
+const sendAgentMessageMock = vi.hoisted(() =>
+  vi.fn(async (_url: string, _headers: Record<string, string>, _message: string) => ({
+    ok: true as const,
+    text: "hi",
+  })),
+);
 
-const sendA2aMessageMock = vi.hoisted(() => vi.fn(async () => ({ ok: true, text: "hi" })));
-vi.mock("@/infrastructure/a2a/client", () => ({ sendA2aMessage: sendA2aMessageMock }));
+const sendA2aMessageMock = vi.hoisted(() =>
+  vi.fn(async (_url: string, _headers: Record<string, string>, _message: string) => ({
+    ok: true as const,
+    text: "hi",
+  })),
+);
 
 import { createAgentUseCases as createAgentUseCasesImpl } from "@/application/agent/agentUseCases";
 import { createMcpUseCases as createMcpUseCasesImpl } from "@/application/mcp/mcpUseCases";
@@ -29,9 +38,18 @@ const testPolicy: UrlPolicy = {
 
 // The cipher and policy are injected now; every call below is unchanged.
 const createMcpUseCases = (repo: Parameters<typeof createMcpUseCasesImpl>[0]) =>
-  createMcpUseCasesImpl(repo, secretCipher, testPolicy);
+  createMcpUseCasesImpl(repo, secretCipher, testPolicy, {
+    listTools: listMcpToolsMock,
+    invalidateDiscovery: () => {},
+  });
 const createAgentUseCases = (repo: Parameters<typeof createAgentUseCasesImpl>[0]) =>
-  createAgentUseCasesImpl(repo, secretCipher, testPolicy);
+  createAgentUseCasesImpl(repo, secretCipher, testPolicy, {
+    send: async () => ({ ok: true as const, text: "hi", images: [] }),
+    probe: async (target, message) =>
+      (target.protocol ?? "openai") === "a2a"
+        ? sendA2aMessageMock(target.url, target.headers, message)
+        : sendAgentMessageMock(target.url, target.headers, message),
+  });
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";

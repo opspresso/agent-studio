@@ -8,6 +8,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 
 import { executeAgent, previewPrompt } from "@/application/execution/runProject";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 
 // Allow every URL: these tests are about the run loop, not the SSRF policy.
@@ -80,6 +81,7 @@ function executionDepsFixture(channel: FakeChannel) {
     imageChannel,
     cipher: secretCipher,
     urlPolicy: testUrlPolicy,
+    mcpSessions: mcpSessionFactory,
   } as unknown as ExecutionDeps;
 }
 

@@ -1,5 +1,5 @@
 import { projectRepository, secretCipher } from "@/lib/container";
-import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
+import { resolveSlackEventBinding } from "@/application/slack/projectSlack";
 import { handleSlackEventRequest } from "../_lib/handleEventRequest";
 
 type RouteContext = { params: Promise<{ project: string }> };
@@ -12,14 +12,13 @@ type RouteContext = { params: Promise<{ project: string }> };
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
   const { project: projectName } = await ctx.params;
-  const project = await projectRepository.get(projectName);
-  const runtime = project ? resolveProjectSlackRuntime(secretCipher, project) : null;
-  if (!project || !runtime) {
+  const bound = await resolveSlackEventBinding(projectRepository, projectName, secretCipher);
+  if (!bound) {
     return Response.json({ error: "Slack is not configured for this project" }, { status: 404 });
   }
   return handleSlackEventRequest(request, {
-    signingSecret: runtime.signingSecret,
-    binding: { projectName: project.name, botToken: runtime.botToken },
-    logLabel: `project ${project.name}`,
+    signingSecret: bound.signingSecret,
+    binding: { projectName: bound.projectName, botToken: bound.botToken },
+    logLabel: `project ${bound.projectName}`,
   });
 }

@@ -13,12 +13,16 @@ import { externalAgentRepository } from "@/infrastructure/db/repositories/extern
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { createChannel } from "@/infrastructure/llm/channel";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
-import { resolveProviderTarget } from "@/infrastructure/llm/providers";
+import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
+import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
+import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
+import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
+import { buildAgentCard, buildProjectAgentCardUrl } from "@/infrastructure/a2a/cards";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { fetchSkillsRepoSnapshot } from "@/infrastructure/github/skillsRepoClient";
 import { checkReadiness } from "@/application/health/readiness";
@@ -27,6 +31,8 @@ import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
+import type { A2aExposureDeps } from "@/application/a2a/exposure";
+import { slackClient } from "@/infrastructure/slack/client";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -66,10 +72,10 @@ export {
  * factory; the instance is composed here so a repository or port implementation
  * has exactly one wiring site.
  */
-export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy);
-export const mcpUseCases = createMcpUseCases(mcpRepository, secretCipher, urlPolicy);
+export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy, remoteAgentDispatcher);
+export const mcpUseCases = createMcpUseCases(mcpRepository, secretCipher, urlPolicy, mcpToolProbe);
 export const skillUseCases = createSkillUseCases(skillRepository);
-export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env);
+export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
 
 /**
  * Pull the skills repo and upsert every SKILL.md. Assembled here so the route
@@ -80,6 +86,17 @@ export const syncSkillsFromRepo = async () =>
     skillRepository,
     await fetchSkillsRepoSnapshot(await getSkillsRepoConfig()),
   );
+
+/** A2A exposure: repositories plus the card renderer. */
+export const a2aExposureDeps: A2aExposureDeps = {
+  projects: projectRepository,
+  versions: versionRepository,
+  buildCard: buildAgentCard,
+  cardUrlFor: buildProjectAgentCardUrl,
+};
+
+/** Slack Web API access for the per-project bot test. */
+export const slackAuthTest = (botToken: string) => slackClient.authTest(botToken);
 
 /** Registry lookups a version's mcp/skill/subagent references are validated against. */
 export const versionRefRepos = {
@@ -110,6 +127,8 @@ export const executionDeps = {
   imageChannel,
   cipher: secretCipher,
   urlPolicy,
+  remoteAgents: remoteAgentDispatcher,
+  mcpSessions: mcpSessionFactory,
   traces: traceRepository,
   traceSampleRate,
 };

@@ -1,8 +1,11 @@
 import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings, LlmProviderSetting } from "@/domain/settings/types";
+
+/** Reads `LLM_PROVIDER_*` env vars into channel configs. Injected. */
+export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelConfig[];
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
-import { parseProviderConfigs } from "@/infrastructure/llm/providers";
+import type { ProviderChannelConfig } from "@/domain/settings/types";
 import { config } from "@/lib/config";
 import { parseList } from "@/shared/parseList";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -83,6 +86,7 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
 function toProviderViews(
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
+  parseProviderConfigs: ParseProviderConfigs,
   settings: AppSettings | null,
 ): SettingsView["llmProviders"] {
   const stored = settings?.llmProviders;
@@ -111,6 +115,7 @@ function toProviderViews(
 function toView(
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
+  parseProviderConfigs: ParseProviderConfigs,
   settings: AppSettings | null,
 ): SettingsView {
   const fields = {} as Record<SettingKey, SettingFieldView>;
@@ -141,7 +146,7 @@ function toView(
   }
   return {
     fields,
-    llmProviders: toProviderViews(cipher, env, settings),
+    llmProviders: toProviderViews(cipher, env, parseProviderConfigs, settings),
     updatedAt: settings?.updatedAt,
   };
 }
@@ -154,6 +159,7 @@ function toView(
 function toProviderSetting(
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
+  parseProviderConfigs: ParseProviderConfigs,
   input: LlmProviderInput,
   stored: LlmProviderSetting[] | undefined,
 ): LlmProviderSetting {
@@ -208,10 +214,11 @@ export function createSettingsUseCases(
   repo: SettingsRepository,
   cipher: SecretCipher,
   env: NodeJS.ProcessEnv,
+  parseProviderConfigs: ParseProviderConfigs,
 ): SettingsUseCases {
   return {
     async getView() {
-      return toView(cipher, env, await repo.get());
+      return toView(cipher, env, parseProviderConfigs, await repo.get());
     },
 
     async update(patch, userEmail) {
@@ -239,7 +246,7 @@ export function createSettingsUseCases(
           delete next.llmProviders;
         } else {
           const providers = patch.llmProviders.map((input) =>
-            toProviderSetting(cipher, env, input, stored?.llmProviders),
+            toProviderSetting(cipher, env, parseProviderConfigs, input, stored?.llmProviders),
           );
           const names = new Set(providers.map((provider) => provider.name));
           if (names.size !== providers.length) {
@@ -259,7 +266,7 @@ export function createSettingsUseCases(
 
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
-      return toView(cipher, env, next);
+      return toView(cipher, env, parseProviderConfigs, next);
     },
   };
 }

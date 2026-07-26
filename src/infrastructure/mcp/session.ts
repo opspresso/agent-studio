@@ -9,6 +9,8 @@
  * this one on headers, framing and timeouts.
  */
 
+import type { McpTool } from "@/domain/mcp/types";
+export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
 
@@ -24,12 +26,6 @@ export const MCP_DISCOVERY_TIMEOUT_MS = 10_000;
 /** Cleanup runs after the answer is delivered; keep it short. */
 const SESSION_END_TIMEOUT_MS = 5_000;
 const MAX_MCP_RESPONSE_BYTES = 2_000_000;
-
-export interface McpTool {
-  name: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
-}
 
 interface JsonRpcResponse {
   jsonrpc: string;
