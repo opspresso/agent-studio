@@ -16,7 +16,6 @@ import {
 import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
-import { McpConnections } from "./_components/McpConnections";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 
 /**
@@ -130,6 +129,7 @@ export default function PlaygroundPage() {
 
   const dirty = useMemo(() => JSON.stringify(draft) !== snapshot, [draft, snapshot]);
 
+
   function selectVersion(versionName: string) {
     if (versionName === "") {
       // New versions start as a copy of whatever is currently in the editor.
@@ -231,10 +231,6 @@ export default function PlaygroundPage() {
       <section className="space-y-4">
         <CollapsibleSection title="Preview">
           <PromptPreview projectName={name} draft={draft} />
-        </CollapsibleSection>
-
-        <CollapsibleSection title="MCP connections">
-          <McpConnections projectName={name} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Run">

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { McpBinding, SubagentRef } from "../../lib/api";
 import { testMcpConnection } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
+import { McpBindingSettings } from "./McpBindingSettings";
 
 const inputClass =
   "w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700";
@@ -352,17 +353,20 @@ function OverrideEditor({
  * this version only; the URL always stays the registry's.
  */
 export function McpBindingInput({
+  projectName,
   values,
   onChange,
   options,
 }: {
+  projectName: string;
   values: McpBinding[];
   onChange: (values: McpBinding[]) => void;
   options: PickerOption[];
 }) {
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState<string[]>([]);
+  /** Which binding's settings modal is open; one at a time. */
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   /**
    * Rows being edited, per server. The saved binding cannot hold them: a row
    * whose header name is still blank has no place in an override map, so
@@ -371,7 +375,6 @@ export function McpBindingInput({
    * its rows in the form and only projects them on submit.
    */
   const [rowsByName, setRowsByName] = useState<Record<string, OverrideRow[]>>({});
-  const [toolsOpen, setToolsOpen] = useState<string[]>([]);
 
   const available = options.filter(
     (o) => !values.some((v) => v.name === o.value) && matches(o, draft),
@@ -387,16 +390,7 @@ export function McpBindingInput({
   function remove(name: string) {
     onChange(values.filter((v) => v.name !== name));
     setRowsByName(({ [name]: _dropped, ...rest }) => rest);
-    setExpanded((prev) => prev.filter((n) => n !== name));
-    setToolsOpen((prev) => prev.filter((n) => n !== name));
-  }
-
-  function toggle(
-    set: (update: (prev: string[]) => string[]) => void,
-    current: string[],
-    name: string,
-  ) {
-    set(() => (current.includes(name) ? current.filter((n) => n !== name) : [...current, name]));
+    setSettingsFor((current) => (current === name ? null : current));
   }
 
   /** An empty selection is stored as "all tools", the shape a binding had before. */
@@ -434,7 +428,6 @@ export function McpBindingInput({
       <div className="space-y-1.5">
         {values.map((binding) => {
           const count = Object.keys(binding.headers ?? {}).length;
-          const isOpen = expanded.includes(binding.name);
           return (
             <div
               key={binding.name}
@@ -455,17 +448,10 @@ export function McpBindingInput({
                 <span className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => toggle(setToolsOpen, toolsOpen, binding.name)}
+                    onClick={() => setSettingsFor(binding.name)}
                     className="text-neutral-500 hover:text-brand"
                   >
-                    {toolsOpen.includes(binding.name) ? "Hide tools" : "Tools"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggle(setExpanded, expanded, binding.name)}
-                    className="text-neutral-500 hover:text-brand"
-                  >
-                    {isOpen ? "Hide headers" : "Headers"}
+                    Settings
                   </button>
                   <button
                     type="button"
@@ -477,22 +463,29 @@ export function McpBindingInput({
                   </button>
                 </span>
               </div>
-              {toolsOpen.includes(binding.name) && (
-                <ToolSelector
-                  selected={binding.tools}
-                  onChange={(tools) => setTools(binding.name, tools)}
-                  load={() => testMcpConnection(binding.name)}
-                />
-              )}
-              {isOpen && (
-                <OverrideEditor
-                  rows={rowsFor(binding)}
-                  onChange={(rows) => setRows(binding.name, rows)}
-                />
-              )}
             </div>
           );
         })}
+        {settingsFor && (
+          <McpBindingSettings
+            projectName={projectName}
+            serverName={settingsFor}
+            onClose={() => setSettingsFor(null)}
+            tools={
+              <ToolSelector
+                selected={values.find((v) => v.name === settingsFor)?.tools}
+                onChange={(tools) => setTools(settingsFor, tools)}
+                load={() => testMcpConnection(settingsFor)}
+              />
+            }
+            headers={
+              <OverrideEditor
+                rows={rowsFor(values.find((v) => v.name === settingsFor) ?? { name: settingsFor })}
+                onChange={(rows) => setRows(settingsFor, rows)}
+              />
+            }
+          />
+        )}
       </div>
       <div className="relative mt-1.5">
         <input

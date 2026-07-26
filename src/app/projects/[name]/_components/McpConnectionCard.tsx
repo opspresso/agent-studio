@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * A project's OAuth connections to shared registry servers.
+ * This project's OAuth connection to one shared registry server.
  *
- * Lives on the project rather than in the version editor because a connection
- * is per project: every version that binds the server uses the same one, and a
- * token turning over must not look like a version edit.
+ * Scoped to the project, not the version: every version binding this server
+ * uses the same connection, and a token turning over must not read as a version
+ * edit. It therefore saves on its own buttons rather than riding the version's
+ * Save — which is why the modal it sits in says so.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -13,11 +14,10 @@ import {
   beginMcpAuthorization,
   disconnectMcp,
   listMcpConnections,
-  listVersions,
   saveMcpClientCredentials,
   type McpConnectionView,
 } from "../../lib/api";
-import { listMcps, type McpServer } from "@/app/tools/api";
+import { getMcp, type McpServer } from "@/app/tools/api";
 
 const STATUS_LABEL: Record<McpConnectionView["status"], string> = {
   connected: "Connected",
@@ -31,45 +31,44 @@ const STATUS_CLASS: Record<McpConnectionView["status"], string> = {
   needs_reauth: "text-amber-600 dark:text-amber-400",
 };
 
-export function McpConnections({ projectName }: { projectName: string }) {
-  const [servers, setServers] = useState<McpServer[]>([]);
-  const [connections, setConnections] = useState<McpConnectionView[]>([]);
+export function McpConnectionCard({
+  projectName,
+  serverName,
+}: {
+  projectName: string;
+  serverName: string;
+}) {
+  const [server, setServer] = useState<McpServer | null>(null);
+  const [connection, setConnection] = useState<McpConnectionView | undefined>();
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
 
   const refresh = useCallback(async () => {
     try {
-      const [allServers, existing, versions] = await Promise.all([
-        listMcps(),
+      const [entry, connections] = await Promise.all([
+        getMcp(serverName),
         listMcpConnections(projectName),
-        listVersions(projectName),
       ]);
-      // Only what this project actually binds. The registry is shared, so
-      // listing every OAuth server here would ask each project to connect
-      // accounts for servers it never uses. Any version counts, not just the
-      // published one — a draft being prepared needs connecting before it ships.
-      const bound = new Set(versions.flatMap((v) => v.mcpList.map((binding) => binding.name)));
-      setServers(
-        allServers.filter(
-          (server) =>
-            server.auth &&
-            // A connection that outlived its binding stays visible so it can be
-            // disconnected; otherwise it would linger with no way to reach it.
-            (bound.has(server.name) || existing.some((c) => c.serverName === server.name)),
-        ),
-      );
-      setConnections(existing);
+      const found = connections.find((c) => c.serverName === serverName);
+      setServer(entry);
+      setConnection(found);
+      setClientId(found?.clientId ?? "");
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoaded(true);
     }
-  }, [projectName]);
+  }, [projectName, serverName]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // The callback runs in a popup and reports back before closing, so the list
+  // The callback runs in a popup and reports back before closing, so the status
   // reflects a finished authorization without the user reloading the page.
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -91,8 +90,8 @@ export function McpConnections({ projectName }: { projectName: string }) {
     return () => window.removeEventListener("message", onMessage);
   }, [refresh]);
 
-  async function run(key: string, action: () => Promise<void>) {
-    setBusy(key);
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
     setError(null);
     try {
       await action();
@@ -100,95 +99,34 @@ export function McpConnections({ projectName }: { projectName: string }) {
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : String(actionError));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  if (servers.length === 0) {
+  if (!loaded) {
+    return <p className="text-xs text-neutral-500">Loading…</p>;
+  }
+  if (!server?.auth) {
     return (
-      <p className="text-sm text-neutral-500">
-        None of this project&apos;s versions bind an MCP server that requires authorization. Bind
-        one in the version editor, and it will appear here to connect.
+      <p className="text-xs text-neutral-500">
+        This server does not require authorization. Whatever credentials it needs come from the
+        registry entry&apos;s own headers, plus any override above.
       </p>
     );
   }
 
-  return (
-    <div className="space-y-4">
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      {servers.map((server) => {
-        const connection = connections.find((c) => c.serverName === server.name);
-        const canRegister = Boolean(server.auth?.registrationEndpoint);
-        return (
-          <ServerRow
-            key={server.name}
-            server={server}
-            connection={connection}
-            canRegister={canRegister}
-            busy={busy === server.name}
-            onSave={(input) =>
-              run(server.name, async () => {
-                await saveMcpClientCredentials(projectName, server.name, input);
-              })
-            }
-            onAuthorize={() =>
-              run(server.name, async () => {
-                const url = await beginMcpAuthorization(projectName, server.name);
-                // A popup rather than a redirect: the console keeps its unsaved
-                // state, and the callback page reports back to this window.
-                window.open(url, "mcp-oauth", "width=600,height=760");
-              })
-            }
-            onDisconnect={() =>
-              run(server.name, async () => {
-                await disconnectMcp(projectName, server.name);
-              })
-            }
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function ServerRow({
-  server,
-  connection,
-  canRegister,
-  busy,
-  onSave,
-  onAuthorize,
-  onDisconnect,
-}: {
-  server: McpServer;
-  connection?: McpConnectionView;
-  canRegister: boolean;
-  busy: boolean;
-  onSave: (input: { clientId: string; clientSecret?: string }) => void;
-  onAuthorize: () => void;
-  onDisconnect: () => void;
-}) {
-  const [clientId, setClientId] = useState(connection?.clientId ?? "");
-  const [clientSecret, setClientSecret] = useState("");
-
-  useEffect(() => {
-    setClientId(connection?.clientId ?? "");
-  }, [connection?.clientId]);
-
   const status = connection?.status ?? "needs_auth";
-  // With dynamic registration the provider issues the client, so there is
-  // nothing for the owner to paste in first.
+  const canRegister = Boolean(server.auth.registrationEndpoint);
   const needsManualClient = !canRegister && !connection?.clientId;
 
   return (
-    <div className="space-y-3 rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
+    <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">{server.name}</p>
-          <p className="text-xs text-neutral-500">{server.auth?.resource}</p>
-        </div>
+        <p className="font-mono text-xs text-neutral-500">{server.auth.resource}</p>
         <span className={`text-xs ${STATUS_CLASS[status]}`}>{STATUS_LABEL[status]}</span>
       </div>
+
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
       {needsManualClient && (
         <p className="text-xs text-neutral-500">
@@ -228,7 +166,17 @@ function ServerRow({
           <button
             type="button"
             disabled={busy || !clientId.trim()}
-            onClick={() => onSave({ clientId: clientId.trim(), clientSecret: clientSecret || undefined })}
+            onClick={() =>
+              run(async () => {
+                await saveMcpClientCredentials(projectName, serverName, {
+                  clientId: clientId.trim(),
+                  clientSecret: clientSecret || undefined,
+                });
+                // Cleared so a second save does not re-submit what was typed;
+                // an empty field keeps whatever is stored.
+                setClientSecret("");
+              })
+            }
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
           >
             Save credentials
@@ -237,7 +185,14 @@ function ServerRow({
         <button
           type="button"
           disabled={busy || needsManualClient}
-          onClick={onAuthorize}
+          onClick={() =>
+            run(async () => {
+              const url = await beginMcpAuthorization(projectName, serverName);
+              // A popup rather than a redirect: the editor keeps its unsaved
+              // state, and the callback page reports back to this window.
+              window.open(url, "mcp-oauth", "width=600,height=760");
+            })
+          }
           className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
         >
           {status === "connected" ? "Reauthorize" : "Connect"}
@@ -246,7 +201,7 @@ function ServerRow({
           <button
             type="button"
             disabled={busy}
-            onClick={onDisconnect}
+            onClick={() => run(async () => disconnectMcp(projectName, serverName))}
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-neutral-700 dark:text-red-400 dark:hover:bg-red-950/30"
           >
             Disconnect
