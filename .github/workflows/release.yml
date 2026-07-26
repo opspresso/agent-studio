@@ -109,8 +109,8 @@ jobs:
         id: gitops-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.GITOPS_APP_ID }}
-          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.GITOPS_CLIENT_ID }}
+          private-key: ${{ secrets.GITOPS_PRIVATE_KEY }}
           owner: opspresso
           repositories: argocd-env-demo
 
