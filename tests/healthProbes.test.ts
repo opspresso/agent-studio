@@ -18,10 +18,8 @@ vi.mock("@/infrastructure/db/client", () => ({
   getTableName: () => "test-table",
 }));
 
-// The loader is injected now, so no module mock is needed for it.
+// The channel config is injected, so the probe reaches no settings module.
 const loadChannelConfig = async () => ({ baseUrl: "http://llm.test/v1", apiKey: "k" });
-vi.mock("@/lib/runtime-settings", () => ({
-}));
 
 const { dbReachable, llmReachable } = await import("@/infrastructure/health/probes");
 

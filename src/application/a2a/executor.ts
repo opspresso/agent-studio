@@ -9,8 +9,11 @@ import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from
 import type { Project, Version } from "@/domain/project/types";
 import { isTopLevelChunk, messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
-import { executeProjectStream, type ExecutionDeps } from "@/application/execution/runProject";
-import { runStrategyFor } from "@/application/execution/runProject";
+import {
+  executeProjectStream,
+  runStrategyFor,
+  type ExecutionDeps,
+} from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
 
 const RESULT_ARTIFACT_ID = "result";

@@ -1,6 +1,6 @@
 /** Resolving a version's skills, subagents and MCP tools for one run. */
 
-import type { Project, SubagentRef, Version } from "@/domain/project/types";
+import type { SubagentRef, Version } from "@/domain/project/types";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import * as engine from "@/application/llm/engine";
