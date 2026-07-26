@@ -179,6 +179,22 @@ export class McpSession {
 }
 
 /**
+ * A transport-level failure, carrying the status so callers can tell the one
+ * that means something specific from the rest. A 401 is "this connection needs
+ * authorization", which asks the operator for something entirely different than
+ * "this server is down".
+ */
+export class McpHttpError extends Error {
+  constructor(
+    readonly status: number,
+    method: string,
+  ) {
+    super(`${method} failed: HTTP ${status}`);
+    this.name = "McpHttpError";
+  }
+}
+
+/**
  * Fail on a transport-level error before the body is parsed: an error page is
  * not JSON-RPC, and parsing it would report a JSON syntax error instead of the
  * status the server actually sent.
@@ -188,7 +204,7 @@ async function assertOk(response: Response, method: string): Promise<void> {
     return;
   }
   await response.body?.cancel();
-  throw new Error(`${method} failed: HTTP ${response.status}`);
+  throw new McpHttpError(response.status, method);
 }
 
 /** Read a JSON-RPC response body, handling both JSON and SSE framing. */

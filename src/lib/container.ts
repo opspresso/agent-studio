@@ -41,6 +41,7 @@ import { checkReadiness } from "@/application/health/readiness";
 import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
+import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
@@ -123,6 +124,12 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   urlPolicy,
   publicBaseUrl: getPublicBaseUrl,
 });
+const mcpAuthProvider = createMcpAuthProvider({
+  mcps: mcpRepository,
+  connections: mcpConnectionRepository,
+  oauth: oauthClient,
+  cipher: secretCipher,
+});
 export const skillUseCases = createSkillUseCases(skillRepository);
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
 
@@ -185,6 +192,7 @@ export const executionDeps = {
   urlPolicy,
   remoteAgents,
   mcpSessions,
+  mcpAuth: mcpAuthProvider,
   traces: traceRepository,
   traceSampleRate,
 };

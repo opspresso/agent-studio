@@ -21,7 +21,7 @@ import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import type { McpToolResult } from "@/domain/llm/types";
 import { getCachedTools, setCachedTools } from "./discoveryCache";
-import { McpSession, type McpTool } from "./session";
+import { McpHttpError, McpSession, type McpTool } from "./session";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 
@@ -37,6 +37,7 @@ export class ToolManager {
   private _tools: ChannelToolDef[] = [];
   private _toolNamesByServer = new Map<string, string[]>();
   private readonly _warnings: string[] = [];
+  private readonly _unauthorizedServers: string[] = [];
 
   constructor(
     servers: McpServerConfig[],
@@ -63,6 +64,15 @@ export class ToolManager {
    */
   get warnings(): readonly string[] {
     return this._warnings;
+  }
+
+  /**
+   * Servers that answered 401. Separate from {@link warnings} because it asks
+   * for something specific — the project must re-authorize — while every other
+   * discovery failure asks the operator to look at the server.
+   */
+  get unauthorizedServers(): readonly string[] {
+    return this._unauthorizedServers;
   }
 
   /**
@@ -102,6 +112,15 @@ export class ToolManager {
             `[mcp] discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
             reason,
           );
+          if (error instanceof McpHttpError && error.status === 401) {
+            // Naming this "unreachable" would send the operator to check a
+            // server that is working fine and answering exactly as it should.
+            this._unauthorizedServers.push(server.name);
+            this._warnings.push(
+              `MCP server '${server.name}' rejected this project's credentials; it needs to be reconnected before its tools are available.`,
+            );
+            return null;
+          }
           this._warnings.push(`MCP server '${server.name}' is unreachable (${reason}); its tools are unavailable this run.`);
           return null;
         }
