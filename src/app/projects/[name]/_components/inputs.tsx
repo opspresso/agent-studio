@@ -4,6 +4,7 @@ import type { McpTool } from "@/domain/mcp/types";
 import { useEffect, useId, useState } from "react";
 import type { McpBinding, SubagentRef } from "../../lib/api";
 import { listProjectMcpTools } from "../../lib/api";
+import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
 import { McpBindingSettings } from "./McpBindingSettings";
 
@@ -318,19 +319,50 @@ function ToolSelector({
 function OverrideEditor({
   rows,
   onChange,
+  inherited,
 }: {
   rows: OverrideRow[];
   onChange: (rows: OverrideRow[]) => void;
+  /** The registry entry's own headers, masked, that this version layers over. */
+  inherited: Record<string, string>;
 }) {
   function update(index: number, patch: Partial<OverrideRow>) {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
+  // Header names are case-insensitive, and so is the merge at dispatch, so a row
+  // for `authorization` already covers an inherited `Authorization`.
+  const overridden = new Set(rows.map((row) => row.key.trim().toLowerCase()).filter(Boolean));
+  const inheritedNames = Object.keys(inherited);
+
   return (
     <div className="space-y-1.5 border-t border-neutral-200 px-2 py-2 dark:border-neutral-700">
-      {rows.length === 0 && (
+      {inheritedNames.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs text-neutral-400">
+            Inherited from the registry entry — select one to override it here.
+          </p>
+          {inheritedNames.map((name) => {
+            const taken = overridden.has(name.toLowerCase());
+            return (
+              <button
+                key={name}
+                type="button"
+                disabled={taken}
+                onClick={() => onChange([...rows, { key: name, value: "", remove: false }])}
+                className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-neutral-800"
+              >
+                <span className="font-mono">{name}</span>
+                <span className="truncate font-mono text-neutral-400">{inherited[name]}</span>
+                {taken && <span className="ml-auto shrink-0 text-neutral-400">overridden</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {rows.length === 0 && inheritedNames.length === 0 && (
         <p className="text-xs text-neutral-400">
-          No overrides — this version uses the server&apos;s registry headers.
+          No overrides, and this server&apos;s registry entry defines no headers either.
         </p>
       )}
       {rows.map((row, index) => (
@@ -407,6 +439,38 @@ export function McpBindingInput({
    * its rows in the form and only projects them on submit.
    */
   const [rowsByName, setRowsByName] = useState<Record<string, OverrideRow[]>>({});
+
+  /**
+   * The registry entry's own headers, masked, for the server whose dialog is
+   * open. Without them an owner has to know a header's name by heart before
+   * they can override it — the editor gave no way to see what it was layering
+   * over.
+   */
+  const [inherited, setInherited] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!settingsFor) {
+      setInherited({});
+      return;
+    }
+    let cancelled = false;
+    getMcp(settingsFor).then(
+      (entry) => {
+        if (!cancelled) {
+          setInherited(entry.headers ?? {});
+        }
+      },
+      () => {
+        // The dialog still works without them; the connection card below reports
+        // whatever went wrong with the same read.
+        if (!cancelled) {
+          setInherited({});
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsFor]);
 
   const available = options.filter(
     (o) => !values.some((v) => v.name === o.value) && matches(o, draft),
@@ -520,6 +584,7 @@ export function McpBindingInput({
               <OverrideEditor
                 rows={rowsFor(values.find((v) => v.name === settingsFor) ?? { name: settingsFor })}
                 onChange={(rows) => setRows(settingsFor, rows)}
+                inherited={inherited}
               />
             }
           />

@@ -65,7 +65,10 @@ export default function ToolsPage() {
                 href={`/tools/${server.name}`}
                 className="block h-full rounded-lg border border-neutral-200 bg-white p-4 transition hover:border-brand hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
               >
-                <div className="font-medium">{server.name}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{server.name}</span>
+                  <CredentialBadges server={server} />
+                </div>
                 <p className="mt-1 line-clamp-2 text-sm text-neutral-500">
                   {server.description || <span className="text-neutral-400">No description</span>}
                 </p>
@@ -86,6 +89,34 @@ export default function ToolsPage() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * How an entry can be authenticated, at a glance.
+ *
+ * Both badges can appear at once, and the order is the order they are tried at
+ * dispatch: a project's OAuth connection first, the entry's own headers as the
+ * fallback for projects that have not connected. Neither badge means the entry
+ * sends no credential at all, which is worth seeing on a list.
+ */
+function CredentialBadges({ server }: { server: McpServer }) {
+  const headerCount = Object.keys(server.headers ?? {}).length;
+  const badges: string[] = [
+    ...(server.auth ? ["OAuth"] : []),
+    ...(headerCount > 0 ? [`${headerCount} header${headerCount === 1 ? "" : "s"}`] : []),
+  ];
+  return (
+    <>
+      {(badges.length === 0 ? ["no credential"] : badges).map((badge) => (
+        <span
+          key={badge}
+          className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+        >
+          {badge}
+        </span>
+      ))}
+    </>
   );
 }
 
