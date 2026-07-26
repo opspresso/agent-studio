@@ -20,7 +20,7 @@ import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import type { McpToolResult } from "@/domain/llm/types";
-import { getCachedTools, setCachedTools } from "./discoveryCache";
+import { getCachedDiscovery, setCachedFailure, setCachedTools } from "./discoveryCache";
 import { McpHttpError, McpSession, type McpTool } from "./session";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
@@ -93,11 +93,19 @@ export class ToolManager {
         // then fails — or one abandoned when the run aborts mid-discovery —
         // must still be reachable by `close()`, or it is leaked server-side.
         this.sessions.push(session);
-        const cached = getCachedTools(server.url, server.headers);
-        if (cached) {
+        const cached = getCachedDiscovery(server.url, server.headers);
+        if (cached?.kind === "tools") {
           // The session stays uninitialized; it handshakes on its first actual
           // tool call, so a run that calls nothing makes no request at all.
-          return { server, session, tools: cached };
+          return { server, session, tools: cached.tools };
+        }
+        if (cached?.kind === "failure") {
+          // Replayed rather than re-attempted: without this a server that is
+          // down re-pays a failing handshake before the first token of every
+          // message. The reason is the live one, so the run explains itself the
+          // same way it did when the failure actually happened.
+          this.recordFailure(server.name, cached.reason, cached.unauthorized);
+          return null;
         }
         try {
           const tools = await session.listTools();
@@ -112,16 +120,9 @@ export class ToolManager {
             `[mcp] discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
             reason,
           );
-          if (error instanceof McpHttpError && error.status === 401) {
-            // Naming this "unreachable" would send the operator to check a
-            // server that is working fine and answering exactly as it should.
-            this._unauthorizedServers.push(server.name);
-            this._warnings.push(
-              `MCP server '${server.name}' rejected this project's credentials; it needs to be reconnected before its tools are available.`,
-            );
-            return null;
-          }
-          this._warnings.push(`MCP server '${server.name}' is unreachable (${reason}); its tools are unavailable this run.`);
+          const unauthorized = error instanceof McpHttpError && error.status === 401;
+          setCachedFailure(server.url, server.headers, reason, unauthorized);
+          this.recordFailure(server.name, reason, unauthorized);
           return null;
         }
       }),
@@ -154,6 +155,25 @@ export class ToolManager {
       this._toolNamesByServer.set(entry.server.name, aliases);
     }
     this._tools = tools;
+  }
+
+  /**
+   * One place turns a discovery failure into what the run reports, so a cached
+   * failure and a live one are indistinguishable to the caller. A 401 is kept
+   * apart: naming it "unreachable" would send the operator to check a server
+   * that is working fine and answering exactly as it should.
+   */
+  private recordFailure(serverName: string, reason: string, unauthorized: boolean): void {
+    if (unauthorized) {
+      this._unauthorizedServers.push(serverName);
+      this._warnings.push(
+        `MCP server '${serverName}' rejected this project's credentials; it needs to be reconnected before its tools are available.`,
+      );
+      return;
+    }
+    this._warnings.push(
+      `MCP server '${serverName}' is unreachable (${reason}); its tools are unavailable this run.`,
+    );
   }
 
   /**
