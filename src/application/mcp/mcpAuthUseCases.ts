@@ -8,11 +8,25 @@
  */
 
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { McpServerAuth, TokenEndpointAuthMethod } from "@/domain/mcp/types";
-import type { AuthorizationServerMetadata, OAuthMetadataClient } from "@/domain/mcp/oauth";
+import type { McpServer, McpServerAuth, TokenEndpointAuthMethod } from "@/domain/mcp/types";
+import type {
+  AuthorizationServerMetadata,
+  OAuthClient,
+  OAuthMetadataClient,
+  TokenRequestTarget,
+} from "@/domain/mcp/oauth";
+import type {
+  McpConnection,
+  McpConnectionRepository,
+  McpOAuthStateRepository,
+} from "@/domain/mcp/connection";
+import type { ProjectRepository } from "@/domain/project/repository";
+import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
-import { NotFoundError, ValidationError } from "@/application/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
+import { assertProjectOwner } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
+import { createOAuthState, createPkcePair } from "@/shared/pkce";
 
 /**
  * Discovery either finishes, or stops to ask which authorization server to use.
@@ -70,10 +84,62 @@ async function assertAuthEndpoint(policy: UrlPolicy, url: string, label: string)
   await assertAllowedUrl(policy, url);
 }
 
+/** How long a user has to finish an authorization before the state expires. */
+export const OAUTH_STATE_TTL_SECONDS = 600;
+
+/** Where the authorization server sends the browser back. */
+export const MCP_OAUTH_CALLBACK_PATH = "/api/mcps/oauth/callback";
+
+/**
+ * A connection as the console may see it. Deliberately carries no secret and no
+ * token: the owner supplied the client secret and has it, and a token has no
+ * reason to be displayed — so unlike the A2A key and the project API token,
+ * there is no reveal path here at all.
+ */
+export interface McpConnectionView {
+  serverName: string;
+  status: McpConnection["status"];
+  clientId: string;
+  hasClientSecret: boolean;
+  clientRegistered: boolean;
+  scopes: string[];
+  connectedBy?: string;
+  connectedAt?: string;
+  expiresAt?: string;
+}
+
+function toConnectionView(connection: McpConnection): McpConnectionView {
+  return {
+    serverName: connection.serverName,
+    status: connection.status,
+    clientId: connection.clientId,
+    hasClientSecret: Boolean(connection.clientSecret),
+    clientRegistered: connection.clientRegistered === true,
+    scopes: connection.scopes,
+    ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
+    ...(connection.connectedAt ? { connectedAt: connection.connectedAt } : {}),
+    ...(connection.expiresAt ? { expiresAt: connection.expiresAt } : {}),
+  };
+}
+
+export interface SaveClientCredentialsInput {
+  clientId: string;
+  /** Omitted for a public client; a masked echo keeps what is stored. */
+  clientSecret?: string;
+  scopes?: string[];
+}
+
 export interface McpAuthUseCasesDeps {
   mcps: McpRepository;
+  projects: ProjectRepository;
+  connections: McpConnectionRepository;
+  states: McpOAuthStateRepository;
   metadata: OAuthMetadataClient;
+  oauth: OAuthClient;
+  cipher: SecretCipher;
   urlPolicy: UrlPolicy;
+  /** Absolute base of this deployment; the redirect URI is built from it. */
+  publicBaseUrl: () => Promise<string | undefined>;
 }
 
 export interface McpAuthUseCases {
@@ -84,6 +150,26 @@ export interface McpAuthUseCases {
   discover(name: string, opts?: { authorizationServer?: string }): Promise<DiscoverAuthResult>;
   /** Drop the OAuth block, returning the entry to static-header behaviour. */
   clearAuth(name: string): Promise<void>;
+
+  listConnections(projectName: string, userEmail: string): Promise<McpConnectionView[]>;
+  saveClientCredentials(
+    projectName: string,
+    serverName: string,
+    input: SaveClientCredentialsInput,
+    userEmail: string,
+  ): Promise<McpConnectionView>;
+  /** Returns the URL to send the browser to. */
+  beginAuthorization(
+    projectName: string,
+    serverName: string,
+    userEmail: string,
+  ): Promise<{ authorizeUrl: string }>;
+  completeAuthorization(params: {
+    state: string;
+    code: string;
+    userEmail: string;
+  }): Promise<{ projectName: string; serverName: string }>;
+  disconnect(projectName: string, serverName: string, userEmail: string): Promise<void>;
 }
 
 export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCases {
@@ -93,6 +179,42 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       throw new NotFoundError(`MCP server not found: ${name}`);
     }
     return server;
+  }
+
+  /** A registry entry that actually has an OAuth block to act on. */
+  async function requireOAuthServer(name: string): Promise<McpServer & { auth: McpServerAuth }> {
+    const server = await requireServer(name);
+    if (!server.auth) {
+      throw new ValidationError(
+        `MCP server "${name}" has no OAuth configuration. An admin must run discovery on it first.`,
+      );
+    }
+    return server as McpServer & { auth: McpServerAuth };
+  }
+
+  async function redirectUri(): Promise<string> {
+    const base = await deps.publicBaseUrl();
+    if (!base) {
+      throw new ValidationError(
+        "A public base URL must be configured before an OAuth connection can be authorized.",
+      );
+    }
+    // Built here, never from the request: a redirect target taken from caller
+    // input is the open-redirect this flow would otherwise hand out.
+    return `${base.replace(/\/+$/, "")}${MCP_OAUTH_CALLBACK_PATH}`;
+  }
+
+  async function requireConnection(
+    projectName: string,
+    serverName: string,
+  ): Promise<McpConnection> {
+    const connection = await deps.connections.get(projectName, serverName);
+    if (!connection) {
+      throw new NotFoundError(
+        `Project "${projectName}" has no connection to MCP server "${serverName}".`,
+      );
+    }
+    return connection;
   }
 
   return {
@@ -169,6 +291,166 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const server = await requireServer(name);
       const { auth: _dropped, ...rest } = server;
       await deps.mcps.put({ ...rest, updatedAt: new Date().toISOString() });
+    },
+
+    async listConnections(projectName, userEmail) {
+      await assertProjectOwner(deps.projects, projectName, userEmail);
+      return (await deps.connections.listByProject(projectName)).map(toConnectionView);
+    },
+
+    async saveClientCredentials(projectName, serverName, input, userEmail) {
+      await assertProjectOwner(deps.projects, projectName, userEmail);
+      const server = await requireOAuthServer(serverName);
+      const existing = await deps.connections.get(projectName, serverName);
+
+      // A masked or empty secret keeps what is stored, matching how every other
+      // stored secret in this codebase behaves on update.
+      const submitted = input.clientSecret;
+      const clientSecret =
+        submitted === undefined || submitted === "" || deps.cipher.isMasked(submitted)
+          ? existing?.clientSecret
+          : deps.cipher.encrypt(submitted);
+
+      const next: McpConnection = {
+        projectName,
+        serverName,
+        clientId: input.clientId,
+        ...(clientSecret ? { clientSecret } : {}),
+        clientRegistered: false,
+        scopes: input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [],
+        // Credentials changing invalidates whatever they authorized. Keeping the
+        // old tokens would leave a connection that reports `connected` while
+        // holding tokens issued to a different client.
+        status: "needs_auth",
+        updatedAt: new Date().toISOString(),
+      };
+      await deps.connections.put(next);
+      return toConnectionView(next);
+    },
+
+    async beginAuthorization(projectName, serverName, userEmail) {
+      await assertProjectOwner(deps.projects, projectName, userEmail);
+      const server = await requireOAuthServer(serverName);
+      const callback = await redirectUri();
+      let connection = await deps.connections.get(projectName, serverName);
+
+      // No client yet: register one if the server offers it, otherwise the owner
+      // has to bring credentials from a manually registered app.
+      if (!connection?.clientId) {
+        if (!server.auth.registrationEndpoint) {
+          throw new ValidationError(
+            `MCP server "${serverName}" does not support dynamic client registration. Register an app with the provider and save its client ID and secret first.`,
+          );
+        }
+        const scopes = connection?.scopes ?? server.auth.scopesSupported ?? [];
+        const registered = await deps.oauth.register({
+          registrationEndpoint: server.auth.registrationEndpoint,
+          clientName: `Agent Studio — ${projectName}`,
+          redirectUri: callback,
+          scopes,
+        });
+        connection = {
+          projectName,
+          serverName,
+          clientId: registered.clientId,
+          ...(registered.clientSecret
+            ? { clientSecret: deps.cipher.encrypt(registered.clientSecret) }
+            : {}),
+          clientRegistered: true,
+          scopes,
+          status: "needs_auth",
+          updatedAt: new Date().toISOString(),
+        };
+        await deps.connections.put(connection);
+      }
+
+      const pkce = createPkcePair();
+      const state = createOAuthState();
+      await deps.states.put(
+        {
+          state,
+          projectName,
+          serverName,
+          codeVerifier: deps.cipher.encrypt(pkce.verifier),
+          userEmail,
+          createdAt: new Date().toISOString(),
+        },
+        OAUTH_STATE_TTL_SECONDS,
+      );
+
+      const url = new URL(server.auth.authorizationEndpoint);
+      url.searchParams.set("response_type", "code");
+      url.searchParams.set("client_id", connection.clientId);
+      url.searchParams.set("redirect_uri", callback);
+      url.searchParams.set("state", state);
+      url.searchParams.set("code_challenge", pkce.challenge);
+      url.searchParams.set("code_challenge_method", pkce.method);
+      // RFC 8707. Sent whether or not this server acts on it, per the MCP spec:
+      // it is what binds the token to this server and stops it being replayed
+      // against another.
+      url.searchParams.set("resource", server.auth.resource);
+      if (connection.scopes.length > 0) {
+        url.searchParams.set("scope", connection.scopes.join(" "));
+      }
+      return { authorizeUrl: url.toString() };
+    },
+
+    async completeAuthorization({ state, code, userEmail }) {
+      // Consumed first and unconditionally: a replayed state must not be able to
+      // bind a second token, whatever else about the request turns out to be
+      // wrong.
+      const pending = await deps.states.consume(state);
+      if (!pending) {
+        throw new ValidationError("This authorization link has expired or was already used.");
+      }
+      if (pending.userEmail !== userEmail) {
+        throw new ForbiddenError("This authorization was started by a different user.");
+      }
+      // Re-checked here, not only at authorize time: ownership can change while
+      // the user is away at the provider.
+      await assertProjectOwner(deps.projects, pending.projectName, userEmail);
+
+      const server = await requireOAuthServer(pending.serverName);
+      const connection = await requireConnection(pending.projectName, pending.serverName);
+      const target: TokenRequestTarget = {
+        tokenEndpoint: server.auth.tokenEndpoint,
+        clientId: connection.clientId,
+        ...(connection.clientSecret
+          ? { clientSecret: deps.cipher.decrypt(connection.clientSecret) }
+          : {}),
+        tokenEndpointAuthMethod: server.auth.tokenEndpointAuthMethod,
+        resource: server.auth.resource,
+      };
+      const tokens = await deps.oauth.exchangeCode(target, {
+        code,
+        redirectUri: await redirectUri(),
+        codeVerifier: deps.cipher.decrypt(pending.codeVerifier),
+      });
+
+      const now = new Date();
+      await deps.connections.put({
+        ...connection,
+        accessToken: deps.cipher.encrypt(tokens.accessToken),
+        ...(tokens.refreshToken
+          ? { refreshToken: deps.cipher.encrypt(tokens.refreshToken) }
+          : {}),
+        ...(tokens.expiresInSeconds !== undefined
+          ? { expiresAt: new Date(now.getTime() + tokens.expiresInSeconds * 1000).toISOString() }
+          : {}),
+        // What the server actually granted, which may be narrower than asked.
+        scopes: tokens.scope ? tokens.scope.split(" ").filter(Boolean) : connection.scopes,
+        status: "connected",
+        connectedBy: userEmail,
+        connectedAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      });
+      return { projectName: pending.projectName, serverName: pending.serverName };
+    },
+
+    async disconnect(projectName, serverName, userEmail) {
+      await assertProjectOwner(deps.projects, projectName, userEmail);
+      await requireConnection(projectName, serverName);
+      await deps.connections.delete(projectName, serverName);
     },
   };
 }
