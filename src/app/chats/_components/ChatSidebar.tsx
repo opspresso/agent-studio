@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { Chat } from "../_lib/types";
+import { roundedPrimaryClass } from "@/app/_components/buttonStyles";
 
 const REFRESH_EVENT = "chats:refresh";
 
@@ -52,7 +53,7 @@ export function ChatSidebar() {
     <aside className="flex max-h-40 w-full shrink-0 flex-col gap-3 overflow-hidden md:max-h-none md:w-64">
       <Link
         href="/chats"
-        className="rounded-xl bg-brand px-3 py-2 text-center text-sm font-medium text-white hover:bg-brand-strong"
+        className={`text-center ${roundedPrimaryClass}`}
       >
         + New chat
       </Link>

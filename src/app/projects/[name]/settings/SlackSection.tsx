@@ -12,6 +12,7 @@ import {
 } from "../../lib/api";
 import type { ProjectSlackView } from "../../lib/api";
 import { monoFieldClass as inputClass } from "@/app/_components/formStyles";
+import { buttonClass } from "@/app/_components/buttonStyles";
 
 
 export function SlackSection({ projectName }: { projectName: string }) {
@@ -157,7 +158,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
           type="button"
           onClick={save}
           disabled={busy}
-          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+          className={buttonClass("primary")}
         >
           Save
         </button>
@@ -165,7 +166,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
           type="button"
           onClick={test}
           disabled={busy || !view.configured}
-          className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className={buttonClass("secondary")}
         >
           Test connection
         </button>
@@ -174,7 +175,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
             type="button"
             onClick={disconnect}
             disabled={busy}
-            className="ml-auto rounded-md border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
+            className={`ml-auto ${buttonClass("danger")}`}
           >
             Disconnect
           </button>

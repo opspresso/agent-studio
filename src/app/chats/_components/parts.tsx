@@ -8,6 +8,7 @@ import { imageDataUrl } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import type { Attachment } from "@/app/_lib/imageAttachments";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
+import { roundedPrimaryClass } from "@/app/_components/buttonStyles";
 
 function MessageTimestamp({ createdAt }: { createdAt: string }) {
   const formatted = formatShortDateTime(createdAt);
@@ -220,7 +221,7 @@ export function Composer({
         <button
           type="submit"
           disabled={disabled || (!value.trim() && attachments.length === 0)}
-          className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
+          className={roundedPrimaryClass}
         >
           Send
         </button>

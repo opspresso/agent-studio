@@ -9,6 +9,7 @@ import { createProject, listProjects, type Project, type ProjectType } from "./l
 import { Modal } from "@/app/_components/Modal";
 import { fieldClass } from "@/app/_components/formStyles";
 import { CardGrid, linkCardClass } from "@/app/_components/CardGrid";
+import { buttonClass } from "@/app/_components/buttonStyles";
 
 function TypeBadge({ type }: { type: ProjectType }) {
   const styles =
@@ -192,14 +193,14 @@ function CreateProjectModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            className={buttonClass("secondary")}
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {submitting ? "Creating…" : "Create"}
           </button>

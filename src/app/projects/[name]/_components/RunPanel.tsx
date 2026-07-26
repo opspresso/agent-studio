@@ -8,6 +8,7 @@ import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import { inputClass } from "./inputs";
+import { buttonClass } from "@/app/_components/buttonStyles";
 
 interface ToolResultView {
   name: string;
@@ -306,7 +307,7 @@ export function RunPanel({
         type="button"
         onClick={run}
         disabled={!canRun}
-        className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+        className={buttonClass("primary")}
       >
         {running ? "Running…" : "Run"}
       </button>

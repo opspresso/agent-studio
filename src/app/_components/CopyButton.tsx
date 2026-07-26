@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { buttonClass } from "@/app/_components/buttonStyles";
 
 /** Shared clipboard button with transient "Copied" feedback. */
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
@@ -28,7 +29,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
     <button
       type="button"
       onClick={copy}
-      className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+      className={`shrink-0 ${buttonClass("secondary", "xs")}`}
     >
       {copied ? "Copied" : label}
     </button>

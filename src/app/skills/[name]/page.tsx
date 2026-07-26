@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
 import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
+import { buttonClass, textButtonClass } from "@/app/_components/buttonStyles";
 
 export default function SkillDetailPage() {
   const params = useParams<{ name: string }>();
@@ -84,14 +85,14 @@ export default function SkillDetailPage() {
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              className={buttonClass("secondary")}
             >
               Edit
             </button>
             <button
               type="button"
               onClick={onDelete}
-              className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+              className={buttonClass("danger")}
             >
               Delete
             </button>
@@ -128,7 +129,7 @@ export default function SkillDetailPage() {
 
 function BackLink() {
   return (
-    <Link href="/skills" className="text-sm text-neutral-500 hover:text-brand">
+    <Link href="/skills" className={textButtonClass}>
       ← Back to skills
     </Link>
   );
@@ -189,14 +190,14 @@ function EditSkillForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className={buttonClass("secondary")}
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+          className={buttonClass("primary")}
         >
           {submitting ? "Saving…" : "Save"}
         </button>

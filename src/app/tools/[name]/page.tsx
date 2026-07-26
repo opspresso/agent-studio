@@ -16,6 +16,7 @@ import {
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
+import { buttonClass, textButtonClass } from "@/app/_components/buttonStyles";
 
 export default function McpDetailPage() {
   const params = useParams<{ name: string }>();
@@ -109,14 +110,14 @@ export default function McpDetailPage() {
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              className={buttonClass("secondary")}
             >
               Edit
             </button>
             <button
               type="button"
               onClick={onDelete}
-              className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+              className={buttonClass("danger")}
             >
               Delete
             </button>
@@ -178,7 +179,7 @@ export default function McpDetailPage() {
                 type="button"
                 onClick={runTest}
                 disabled={testing}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                className={buttonClass("secondary", "sm")}
               >
                 {testing ? "Testing…" : "Test connection"}
               </button>
@@ -273,7 +274,7 @@ function OAuthSection({ server, onChanged }: { server: McpServer; onChanged: () 
           type="button"
           onClick={() => void discover()}
           disabled={busy}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className={buttonClass("secondary", "sm")}
         >
           {busy ? "Discovering…" : server.auth ? "Rediscover" : "Discover"}
         </button>
@@ -337,7 +338,7 @@ function OAuthSection({ server, onChanged }: { server: McpServer; onChanged: () 
 
 function BackLink() {
   return (
-    <Link href="/tools" className="text-sm text-neutral-500 hover:text-brand">
+    <Link href="/tools" className={textButtonClass}>
       ← Back to tools
     </Link>
   );
@@ -424,14 +425,14 @@ function EditMcpForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className={buttonClass("secondary")}
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+          className={buttonClass("primary")}
         >
           {submitting ? "Saving…" : "Save"}
         </button>

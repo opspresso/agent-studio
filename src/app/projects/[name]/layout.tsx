@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "@/lib/auth-client";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getProject } from "../lib/api";
+import { textButtonClass } from "@/app/_components/buttonStyles";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const params = useParams<{ name: string }>();
@@ -38,7 +39,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/projects" className="text-sm text-neutral-500 hover:text-brand">
+        <Link href="/projects" className={textButtonClass}>
           ← Projects
         </Link>
         <span className="font-mono text-sm font-medium">{name}</span>

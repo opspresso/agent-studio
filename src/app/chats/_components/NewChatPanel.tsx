@@ -9,6 +9,7 @@ import { EMPTY_TURN, type AgentProject, type LiveTurn } from "../_lib/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { LiveAssistant, MessageView } from "./parts";
 import { refreshChats } from "./ChatSidebar";
+import { roundedPrimaryClass } from "@/app/_components/buttonStyles";
 
 export function NewChatPanel() {
   const router = useRouter();
@@ -180,7 +181,7 @@ export function NewChatPanel() {
             type="button"
             onClick={() => void start()}
             disabled={starting || (!message.trim() && attachments.length === 0) || !projectName}
-            className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50"
+            className={roundedPrimaryClass}
           >
             Start
           </button>

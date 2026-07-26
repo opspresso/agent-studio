@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { monoFieldClass as inputClass } from "@/app/_components/formStyles";
 import { monoControlClass } from "@/app/_components/formStyles";
+import { buttonClass } from "@/app/_components/buttonStyles";
 
 type SettingSource = "override" | "env" | "default" | "unset";
 
@@ -320,7 +321,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => issueA2aKey(view?.fields.a2aApiKey?.source !== "unset")}
                     disabled={issuingA2aKey}
-                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    className={buttonClass("secondary", "sm")}
                   >
                     {issuingA2aKey
                       ? "Working…"
@@ -333,7 +334,7 @@ export default function SettingsPage() {
                       type="button"
                       onClick={revealA2aKey}
                       disabled={issuingA2aKey}
-                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                      className={buttonClass("secondary", "sm")}
                     >
                       Reveal key
                     </button>
@@ -444,7 +445,7 @@ export default function SettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+            className={buttonClass("primary")}
           >
             {saving ? "Saving…" : "Save changes"}
           </button>
