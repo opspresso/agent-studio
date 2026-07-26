@@ -31,12 +31,19 @@ const project = (name: string, publishedVersion?: string): Project =>
     updatedAt: "2026-01-01T00:00:00.000Z",
   }) as Project;
 
-function makeDeps(projects: Project[]): A2aExposureDeps & { buildCard: ReturnType<typeof vi.fn> } {
+function makeDeps(
+  projects: Project[],
+): A2aExposureDeps & { buildCard: ReturnType<typeof vi.fn>; projectReads: () => number } {
   const byName = new Map(projects.map((p) => [p.name, p]));
   const buildCard = vi.fn(async (p: Project) => ({ name: p.name }) as unknown as AgentCard);
+  let reads = 0;
   return {
+    projectReads: () => reads,
     projects: {
-      get: async (name: string) => byName.get(name) ?? null,
+      get: async (name: string) => {
+        reads += 1;
+        return byName.get(name) ?? null;
+      },
       list: async () => projects,
     } as unknown as ProjectRepository,
     versions: {
@@ -99,6 +106,14 @@ describe("A2A exposure", () => {
     const described = await describeProjectA2a(deps, "live", false);
     expect(described).toMatchObject({ published: true, cardUrl: null });
     expect(described?.card).toEqual({ name: "live" });
+  });
+
+  it("reads the project once to describe it", async () => {
+    const deps = makeDeps([project("live", "3")]);
+    await describeProjectA2a(deps, "live", true);
+    // The console opens this tab on every visit; describing a project it has
+    // already loaded must not send a second GetItem for the same key.
+    expect(deps.projectReads()).toBe(1);
   });
 
   it("reports a missing project as null rather than unpublished", async () => {
