@@ -1,6 +1,6 @@
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer } from "@/domain/mcp/types";
-import { NotFoundError } from "@/application/errors";
+import { NotFoundError, ValidationError } from "@/application/errors";
 import {
   assertAllowedUrl,
   createRegistryUseCases,
@@ -58,6 +58,16 @@ export function createMcpUseCases(
       };
     },
     async apply(existing, patch, now) {
+      // A managed entry's address is the whole basis for trusting it: it was
+      // recorded after the provisioner bound the port, not typed by anyone. An
+      // edit that could move it would turn "we started this" back into "someone
+      // said so", which is exactly the claim the loopback bypass must not rest
+      // on. Managed rows are changed by the provisioner, not through here.
+      if (existing.runtime === "managed" && patch.url !== undefined && patch.url !== existing.url) {
+        throw new ValidationError(
+          `MCP server "${existing.name}" is managed: its address is set when the container starts and cannot be edited.`,
+        );
+      }
       if (patch.url !== undefined) {
         await assertAllowedUrl(policy, patch.url);
       }
