@@ -46,11 +46,11 @@ must never import it. Application code receives its dependencies — it must not
 composition root (`container.ts`) itself.
 
 Composition is distributed across a few deliberate wiring sites: `src/lib/container.ts`
-(repositories + `executionDeps`/`imageDeps` — including the required LLM/image channels, so
-a missing injection is a type error rather than a silent network call),
-`src/application/{agent,mcp,skill,settings}/index.ts` (each slice instantiates its
-`createXUseCases(repo)` singleton — agent/mcp/skill share the registry CRUD core,
-settings has its own use cases), `src/app/api/chats/_deps.ts` (the `ChatDeps` bag), and
+(repositories, the domain ports — `SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`,
+`McpToolProbe`, `McpSessionFactory` — the four registry-slice singletons, and
+`executionDeps`/`imageDeps`, including the required LLM/image channels, so a missing
+injection is a type error rather than a silent network call),
+`src/app/api/chats/_deps.ts` (the `ChatDeps` bag), and
 `src/app/api/slack/events/_lib/` (the `SlackEventDeps` bag: bound `runAgent` + the
 `SlackClientPort`, mirroring `ChatDeps`). Three DI styles are in use on purpose: factory
 `createXUseCases(repo)` for registry slices (their shared CRUD core lives in
@@ -448,7 +448,7 @@ owner. Only the hash is stored; the raw token is shown once at generation.
 `/api/health` is liveness — a static 200 answering "is the process serving". `/api/ready`
 is readiness — it probes DynamoDB and the LLM channel for reachability (short timeout,
 details not surfaced) and returns 503 when a downstream is unreachable or the instance is
-draining after SIGTERM (`src/lib/lifecycle.ts`), so the load balancer deregisters it while
+draining after SIGTERM (`src/shared/lifecycle.ts`), so the load balancer deregisters it while
 in-flight work drains. Point the LB health check at `/api/ready`, restart checks at
 `/api/health`.
 
@@ -490,7 +490,7 @@ Better Auth, Google OAuth, DynamoDB, `STAGE`) stays env-only. SSE responses use
 `text/event-stream` with `data: {json}\n\n` framing and a terminal `data: [DONE]`.
 
 Generated secrets: the two credentials Agent Studio issues itself carry a prefix naming
-product and kind (`src/lib/generatedSecret.ts`) — `asa_` for the app-wide A2A key, `ast_`
+product and kind (`src/shared/generatedSecret.ts`) — `asa_` for the app-wide A2A key, `ast_`
 for a project API token — so a leaked string is traceable to what it opens. Both are issued
 from the console and shown in full exactly once. The A2A key is an ordinary settings
 override: encrypted, then masked on every later read. A project API token is stored as a
@@ -502,7 +502,7 @@ tokens issued under the older `sk_proj_` prefix keep working.
 ## Auth
 
 Better Auth 1.6, Google OAuth only, custom DynamoDB adapter over the single table
-(`src/lib/auth-adapter.ts`). Session read helper `getSessionUser()` in `src/lib/session.ts`;
+(`src/infrastructure/db/authAdapter.ts`). Session read helper `getSessionUser()` in `src/lib/session.ts`;
 route handlers wrap themselves in `withAuth(...)`, which returns a 401 `Response` when
 there is no session and otherwise passes the `SessionUser` as the handler's first argument.
 
