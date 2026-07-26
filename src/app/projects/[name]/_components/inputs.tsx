@@ -1,7 +1,7 @@
 "use client";
 
 import type { McpTool } from "@/domain/mcp/types";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { McpBinding, SubagentRef } from "../../lib/api";
 import { listProjectMcpTools } from "../../lib/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
@@ -10,7 +10,36 @@ import { McpBindingSettings } from "./McpBindingSettings";
 const inputClass =
   "w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700";
 
+/**
+ * A named group of controls.
+ *
+ * Deliberately NOT a `<label>`. A label with no `for` binds to the first
+ * labelable element inside it, and the spec then makes hovering the label hover
+ * that control and clicking the label *activate* it. With several controls in
+ * one field that is silently destructive: clicking the words "MCP servers"
+ * opened the first server's settings, and clicking "Subagents" removed the first
+ * subagent. `aria-labelledby` names the group without binding it to one member.
+ *
+ * Use {@link LabeledField} when the field really does wrap a single control and
+ * click-to-focus is worth having.
+ */
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const id = useId();
+  return (
+    <div role="group" aria-labelledby={id} className="block">
+      <span id={id} className="text-sm font-medium">
+        {label}
+      </span>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * A label bound to exactly one control. Only for fields whose content is a
+ * single input — anything else belongs in {@link Field}.
+ */
+export function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
       <span className="text-sm font-medium">{label}</span>
@@ -37,7 +66,7 @@ export function NumberField({
   placeholder?: string;
 }) {
   return (
-    <Field label={label}>
+    <LabeledField label={label}>
       <input
         type="number"
         value={value ?? ""}
@@ -48,7 +77,7 @@ export function NumberField({
         onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
         className={inputClass}
       />
-    </Field>
+    </LabeledField>
   );
 }
 
