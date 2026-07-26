@@ -367,8 +367,32 @@ Two deliberate strategies coexist:
   default 60s, invalidated when the registry entry is edited). On a hit the session is left
   uninitialized and handshakes lazily on its first tool call, so a turn that calls no tool
   makes **no** MCP request at all — a chat used to pay the full handshake per message per
-  server. Failures are never cached; headers are part of the key so one tenant's tool list
-  never answers another's.
+  server. Headers are part of the key so one tenant's tool list never answers another's.
+  Failures are cached too, for at most 30s: without it a server that is down — or a
+  connection whose token was revoked — re-pays a failing handshake before the first token of
+  every message. The window is short because a stale failure hides a recovery while a stale
+  success only serves a slightly old tool list, and the stored reason is replayed verbatim so
+  a cached failure explains itself exactly as the live one did.
+- **OAuth** (MCP authorization spec, 2025-06-18). A registry entry may carry an `auth` block
+  discovered once at registration (RFC 9728 protected-resource metadata → RFC 8414
+  authorization-server metadata, both re-validated through `urlPolicy` and required to be
+  https); the run path never fetches a well-known document. Credentials are **per project**,
+  in their own `PROJECT#<name> / MCPCONN#<server>` item — not on the version (a snapshot of
+  configuration history) and not on the project item (whose `updatedAt` guards publish with
+  optimistic concurrency). That split is what lets one shared entry serve a different
+  provider app per project. Client credentials are entered by an owner or issued by RFC 7591
+  dynamic registration; a public client with no secret sends `none` whatever the server's
+  metadata preferred. Every authorization and token request carries the RFC 8707 `resource`
+  parameter — the spec makes it unconditional, and it is what stops a token issued for one
+  MCP server being replayed against another. PKCE S256 is mandatory, `state` is single-use
+  with a 10-minute TTL, and the callback re-checks project ownership because it can change
+  while the user is at the provider. Tokens refresh only within a margin derived from
+  `MAX_RUN_DURATION_MS`, so a token cannot expire mid-run *and* the header stays
+  byte-identical between runs — refreshing every run would change the discovery cache key
+  every run. Refresh is a compare-and-set on the stored refresh token: providers that rotate
+  them revoke the previous one, so the loser of a race uses the winner's token instead.
+  Only a refused grant marks a connection `needs_reauth`; a 5xx or timeout leaves it alone.
+  A 401 at discovery is reported as "reconnect", never as "unreachable".
 - A tool's **image** results (`image` blocks, and `resource` blobs with an image mime type)
   come back as bytes rather than being dropped. The engine registers them, streams them to
   the user, and attaches them to the turn as a follow-up user message — only when the model
@@ -426,6 +450,11 @@ GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
 GET|POST /api/skills/sync                   skills-repo sync status / run
 POST /api/mcps/[name]/tools                 MCP connection test
+POST|DELETE /api/mcps/[name]/auth           OAuth discovery for a registry server (admin)
+GET  /api/projects/[name]/mcp-connections   this project's OAuth connections (owner)
+PUT|DELETE …/mcp-connections/[server]       save client credentials / disconnect (owner)
+POST …/mcp-connections/[server]/authorize   returns the provider URL to open (owner)
+GET  /api/mcps/oauth/callback               the authorization server's redirect target
 POST /api/agents/[name]/message             external-agent test message
 GET|POST /api/chats, GET|DELETE /api/chats/[chatId]
 POST /api/chats/[chatId]/messages           streams SSE
