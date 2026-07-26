@@ -69,7 +69,7 @@ function fakeRepo(initial: Project): { repo: ProjectRepository; current: () => P
 describe("updateProjectSlack", () => {
   it("encrypts new secrets and masks the response", async () => {
     const { repo, current } = fakeRepo(makeProject());
-    const view = await updateProjectSlack(
+    const { view } = await updateProjectSlack(
       repo,
       "bot-proj",
       { botToken: "xoxb-secret", signingSecret: "shhh", enabled: true },
