@@ -374,6 +374,45 @@ describe("ToolManager per-binding tool allowlist", () => {
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
   });
 
+  it("takes a reply the server delivers on the GET stream", async () => {
+    // Slack's MCP server answers tools/list with 200 and an empty body, and
+    // sends the result on the stream opened by GET. Reading only the POST
+    // response leaves the catalogue unread.
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        const frame = `data: ${JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          result: { tools: [{ name: "search_messages" }, { name: "post_message" }] },
+        })}\n\n`;
+        return new Response(frame, { headers: { "content-type": "text/event-stream" } });
+      }
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
+      if (body.method === "initialize") {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: { protocolVersion: "2025-06-18", serverInfo: { name: "slack" } },
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      }
+      // notifications and tools/list alike: accepted, answered on the stream
+      return new Response("", { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new ToolManager([server("slack", "https://mcp.slack.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools.map((t) => t.function.name)).toEqual([
+      "search_messages",
+      "post_message",
+    ]);
+    expect(manager.warnings).toEqual([]);
+  });
+
   it("reports a 202 with no reply as unreachable, not as an empty catalogue", async () => {
     // Streamable HTTP lets a server accept a request and answer elsewhere. Read
     // as `undefined`, that used to become `tools ?? []` — a server with no tools
