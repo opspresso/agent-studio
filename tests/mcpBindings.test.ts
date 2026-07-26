@@ -67,14 +67,19 @@ function versionFixture(projectName: string, mcpList: McpBinding[]): Version {
   };
 }
 
-function depsFixture(channel: FakeChannel) {
+function depsFixture(
+  channel: FakeChannel,
+  overrides: { server?: typeof registryServer; mcpAuth?: unknown } = {},
+) {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const imageChannel = { generateImage: reject } as unknown as ImageChannel;
+  const server = overrides.server ?? registryServer;
   return {
+    ...(overrides.mcpAuth ? { mcpAuth: overrides.mcpAuth } : {}),
     projects: { get: reject, list: reject, put: reject, delete: reject },
     versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: { get: reject, list: reject, put: reject, delete: reject },
-    mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
+    mcps: { get: async () => server, list: reject, put: reject, delete: reject },
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
       record: async (_delta: UsageDelta) => {},
@@ -114,12 +119,13 @@ function stubMcpServer(toolNames: string[] = ["search"]): Array<Record<string, s
 async function dispatchHeaders(
   projectName: string,
   mcpList: McpBinding[],
+  overrides: Parameters<typeof depsFixture>[1] = {},
 ): Promise<Record<string, string>> {
   const seen = stubMcpServer();
   try {
     const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
     const chunks: EngineChunk[] = [];
-    for await (const chunk of executeAgent(depsFixture(channel), {
+    for await (const chunk of executeAgent(depsFixture(channel, overrides), {
       project: projectFixture(projectName),
       version: versionFixture(projectName, mcpList),
       messages: [{ role: "user", content: "hi" }],
@@ -145,6 +151,51 @@ describe("per-project MCP header overrides at dispatch", () => {
     const headers = await dispatchHeaders("plain", [{ name: "shared-mcp" }]);
 
     expect(headers.authorization).toBe("Bearer registry-default");
+    expect(headers["x-shared"]).toBe("shared-value");
+  });
+
+  it("still sends the registry headers when the entry has OAuth the project has not connected", async () => {
+    // Discovering OAuth on an entry adds a way to authenticate it. It used to
+    // take one away: any `auth` block made the run drop the server outright,
+    // so an entry that had been working on a static Authorization header went
+    // dark the moment an admin pressed Discover on it.
+    const oauthServer = {
+      ...registryServer,
+      auth: { type: "oauth2", resource: "https://shared-mcp.test" },
+    } as unknown as typeof registryServer;
+
+    const headers = await dispatchHeaders("no-connection", [{ name: "shared-mcp" }], {
+      server: oauthServer,
+      mcpAuth: {
+        headersFor: async () => ({
+          headers: {},
+          unavailable: "MCP server 'shared-mcp' requires authorization and this project has not connected it.",
+        }),
+        markUnauthorized: async () => {},
+      },
+    });
+
+    expect(headers.authorization).toBe("Bearer registry-default");
+    expect(headers["x-shared"]).toBe("shared-value");
+  });
+
+  it("prefers the project's connection over the entry's own header", async () => {
+    // The connection is the more specific credential, so it wins where both
+    // exist — the fallback is for projects that have not connected.
+    const oauthServer = {
+      ...registryServer,
+      auth: { type: "oauth2", resource: "https://shared-mcp.test" },
+    } as unknown as typeof registryServer;
+
+    const headers = await dispatchHeaders("connected", [{ name: "shared-mcp" }], {
+      server: oauthServer,
+      mcpAuth: {
+        headersFor: async () => ({ headers: { Authorization: "Bearer project-oauth" } }),
+        markUnauthorized: async () => {},
+      },
+    });
+
+    expect(headers.authorization).toBe("Bearer project-oauth");
     expect(headers["x-shared"]).toBe("shared-value");
   });
 

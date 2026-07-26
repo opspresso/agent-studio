@@ -96,7 +96,7 @@ function harness(
     owner?: string;
     connection?: Partial<McpConnection>;
     tokens?: TokenSet;
-    authHeaders?: { headers: Record<string, string>; warning?: string };
+    authHeaders?: { headers: Record<string, string>; unavailable?: string };
     probeResult?: ListToolsResult;
   } = {},
 ): Harness {
@@ -478,15 +478,30 @@ describe("listing a server's tools as the project", () => {
     // One answer to "why are there no tools", wherever it is asked.
     const h = harness({
       connection: {},
-      authHeaders: { headers: {}, warning: "slack needs to be reconnected" },
+      authHeaders: { headers: {}, unavailable: "slack needs to be reconnected." },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
     expect(await uc.listTools("p", "slack", OWNER)).toEqual({
       ok: false,
-      error: "slack needs to be reconnected",
+      error: "slack needs to be reconnected. Its tools were not offered.",
     });
     expect(h.probes).toHaveLength(0);
+  });
+
+  it("falls back to the entry's own headers when the project has not connected", async () => {
+    // Discovering OAuth on an entry adds a way to authenticate it, not a veto on
+    // the one already configured: an entry carrying a static credential kept
+    // working for every project until an admin pressed Discover on it.
+    const h = harness({
+      connection: {},
+      server: { ...SERVER, headers: { Authorization: "enc:Bearer registry-pat" } },
+      authHeaders: { headers: {}, unavailable: "slack has not been connected by this project." },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    expect(await uc.listTools("p", "slack", OWNER)).toEqual({ ok: true, tools: [{ name: "search" }] });
+    expect(h.probes[0]?.headers.Authorization).toBe("Bearer registry-pat");
   });
 
   it("layers the binding's header overrides the way a run does", async () => {

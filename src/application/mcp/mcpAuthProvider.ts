@@ -9,7 +9,12 @@
  */
 
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
-import type { McpAuthProvider, OAuthClient, TokenRequestTarget } from "@/domain/mcp/oauth";
+import type {
+  McpAuthProvider,
+  McpAuthResolution,
+  OAuthClient,
+  TokenRequestTarget,
+} from "@/domain/mcp/oauth";
 import { OAuthGrantError } from "@/domain/mcp/oauth";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -60,12 +65,12 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
   async function refresh(
     connection: McpConnection,
     target: TokenRequestTarget,
-  ): Promise<{ headers: Record<string, string>; warning?: string }> {
+  ): Promise<McpAuthResolution> {
     const stored = connection.refreshToken;
     if (!stored) {
       return {
         headers: {},
-        warning: `MCP server '${connection.serverName}' needs to be reconnected for this project: its access has expired and the provider issued no refresh token.`,
+        unavailable: `MCP server '${connection.serverName}' needs to be reconnected for this project: its access has expired and the provider issued no refresh token.`,
       };
     }
     try {
@@ -101,7 +106,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       }
       return {
         headers: {},
-        warning: `MCP server '${connection.serverName}' could not be authorized for this project: its credentials changed while this run was starting.`,
+        unavailable: `MCP server '${connection.serverName}' could not be authorized for this project: its credentials changed while this run was starting.`,
       };
     } catch (error) {
       if (error instanceof OAuthGrantError) {
@@ -116,14 +121,14 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         );
         return {
           headers: {},
-          warning: `MCP server '${connection.serverName}' needs to be reconnected for this project (${error.code}); its tools were not offered.`,
+          unavailable: `MCP server '${connection.serverName}' needs to be reconnected for this project (${error.code}).`,
         };
       }
       // A 5xx, a timeout, a proxy page: transient, and must not cost anyone
       // their connection. The run loses this server's tools and says so.
       return {
         headers: {},
-        warning: `MCP server '${connection.serverName}' could not be authorized for this project: ${error instanceof Error ? error.message : String(error)}`,
+        unavailable: `MCP server '${connection.serverName}' could not be authorized for this project: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
@@ -134,19 +139,19 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
       if (!connection) {
         return {
           headers: {},
-          warning: `MCP server '${serverName}' requires authorization and this project has not connected it; its tools were not offered.`,
+          unavailable: `MCP server '${serverName}' requires authorization and this project has not connected it.`,
         };
       }
       if (connection.status === "needs_reauth") {
         return {
           headers: {},
-          warning: `MCP server '${serverName}' needs to be reconnected for this project; its tools were not offered.`,
+          unavailable: `MCP server '${serverName}' needs to be reconnected for this project.`,
         };
       }
       if (!connection.accessToken) {
         return {
           headers: {},
-          warning: `MCP server '${serverName}' has not been authorized for this project yet; its tools were not offered.`,
+          unavailable: `MCP server '${serverName}' has not been authorized for this project yet.`,
         };
       }
       if (!needsRefresh(connection, Date.now())) {
@@ -159,7 +164,7 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         // pointed at it; there is nowhere to refresh against.
         return {
           headers: {},
-          warning: `MCP server '${serverName}' no longer has an OAuth configuration; its tools were not offered.`,
+          unavailable: `MCP server '${serverName}' no longer has an OAuth configuration.`,
         };
       }
       return refresh(connection, {

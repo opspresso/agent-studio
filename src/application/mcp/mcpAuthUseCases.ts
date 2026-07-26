@@ -536,12 +536,14 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const headers = deps.cipher.mergeOutboundHeaders(server.headers, headerOverrides);
       if (server.auth) {
         const resolved = await deps.authProvider.headersFor(projectName, serverName);
-        if (resolved.warning) {
+        if (!resolved.unavailable) {
+          Object.assign(headers, resolved.headers);
+        } else if (Object.keys(headers).length === 0) {
           // The same sentence a run would report, so "why are there no tools"
-          // has one answer wherever it is asked.
-          return { ok: false, error: resolved.warning };
+          // has one answer wherever it is asked. Only when there is nothing else
+          // to authenticate with — an entry with headers of its own still works.
+          return { ok: false, error: `${resolved.unavailable} Its tools were not offered.` };
         }
-        Object.assign(headers, resolved.headers);
       }
       const result = await deps.probe.listTools(server.url, headers);
       if (!result.ok && result.unauthorized && server.auth) {

@@ -59,10 +59,15 @@ export async function buildMcpTools(
           // provider. Applied last on purpose: a version must not be able to
           // substitute its own Authorization for the project's connection.
           const resolved = await deps.mcpAuth.headersFor(version.projectName, mcp.name);
-          if (resolved.warning) {
-            return { warning: resolved.warning };
+          if (!resolved.unavailable) {
+            Object.assign(headers, resolved.headers);
+          } else if (Object.keys(headers).length === 0) {
+            // Nothing else to authenticate with, so the server really is out of
+            // reach. With headers of its own it is not: discovering OAuth on an
+            // entry adds a way to authenticate it, and must not take away the
+            // one the operator already configured.
+            return { warning: `${resolved.unavailable} Its tools were not offered.` };
           }
-          Object.assign(headers, resolved.headers);
         }
         return {
           server: {

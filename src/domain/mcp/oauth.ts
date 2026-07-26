@@ -95,11 +95,22 @@ export interface TokenRequestTarget {
  * whether it needs refreshing and whether refreshing failed are all questions
  * with one answer shape — headers to send, or a reason there are none.
  */
+/**
+ * The outbound headers this project's OAuth connection contributes, or why it
+ * contributes none.
+ *
+ * `unavailable` is deliberately not called a warning: OAuth is one way to
+ * authenticate a registry entry, not the only one, and an entry that carries its
+ * own headers still works without a connection. Only the caller knows what else
+ * it holds, so only the caller can decide whether this is fatal.
+ */
+export interface McpAuthResolution {
+  headers: Record<string, string>;
+  unavailable?: string;
+}
+
 export interface McpAuthProvider {
-  headersFor(
-    projectName: string,
-    serverName: string,
-  ): Promise<{ headers: Record<string, string>; warning?: string }>;
+  headersFor(projectName: string, serverName: string): Promise<McpAuthResolution>;
   /**
    * Record that the server rejected this connection's token, so the console can
    * offer a reconnect instead of reporting the server as down.

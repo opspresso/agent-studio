@@ -118,7 +118,7 @@ describe("resolving the Authorization for a project's connection", () => {
     const result = await h.provider.headersFor("p", "slack");
 
     expect(result.headers).toEqual({ Authorization: "Bearer live-token" });
-    expect(result.warning).toBeUndefined();
+    expect(result.unavailable).toBeUndefined();
     expect(h.refreshCalls).toHaveLength(0);
   });
 
@@ -185,7 +185,7 @@ describe("resolving the Authorization for a project's connection", () => {
       },
     });
     const result = await refused.provider.headersFor("p", "slack");
-    expect(result.warning).toMatch(/reconnected/);
+    expect(result.unavailable).toMatch(/reconnected/);
     expect(refused.updates[0]).toMatchObject({ status: "needs_reauth" });
   });
 
@@ -198,7 +198,7 @@ describe("resolving the Authorization for a project's connection", () => {
       },
     });
     const result = await transient.provider.headersFor("p", "slack");
-    expect(result.warning).toMatch(/503/);
+    expect(result.unavailable).toMatch(/503/);
     expect(transient.updates).toHaveLength(0);
     expect(transient.current()?.status).toBe("connected");
   });
@@ -207,13 +207,13 @@ describe("resolving the Authorization for a project's connection", () => {
     const h = providerHarness({ connection: null });
     const result = await h.provider.headersFor("p", "slack");
     expect(result.headers).toEqual({});
-    expect(result.warning).toMatch(/has not connected it/);
+    expect(result.unavailable).toMatch(/has not connected it/);
   });
 
   it("explains a connection already known to need reauthorization", async () => {
     const h = providerHarness({ connection: connectionFixture({ status: "needs_reauth" }) });
     const result = await h.provider.headersFor("p", "slack");
-    expect(result.warning).toMatch(/needs to be reconnected/);
+    expect(result.unavailable).toMatch(/needs to be reconnected/);
     expect(h.refreshCalls).toHaveLength(0);
   });
 });
@@ -340,13 +340,15 @@ describe("a run against an OAuth-required server", () => {
       const channel = new FakeChannel([[contentChunk("answered anyway"), usageChunk(1, 1)]]);
       const chunks = await runOnce(
         runDeps(channel, {
-          headersFor: async () => ({ headers: {}, warning: "slack is not connected" }),
+          headersFor: async () => ({ headers: {}, unavailable: "slack is not connected." }),
           markUnauthorized: async () => {},
         }),
       );
 
       expect(chunks.some((c) => c.error)).toBe(false);
-      expect(chunks.some((c) => c.warning === "slack is not connected")).toBe(true);
+      expect(
+        chunks.some((c) => c.warning === "slack is not connected. Its tools were not offered."),
+      ).toBe(true);
       // No session was opened, so the model was offered no tools at all.
       expect(seen).toHaveLength(0);
       expect(channel.seenParams[0]?.tools ?? []).toHaveLength(0);
