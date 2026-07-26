@@ -8,7 +8,7 @@
 import type { McpTool } from "@/domain/mcp/types";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 export type { ListToolsResult };
-import { McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
+import { McpHttpError, McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
 
 export type { McpTool };
 
@@ -28,7 +28,12 @@ export async function listMcpTools(
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       return { ok: false, error: `Connection timed out after ${MCP_DISCOVERY_TIMEOUT_MS / 1000}s` };
     }
-    return { ok: false, error: error instanceof Error ? error.message : "Connection failed" };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Connection failed",
+      // The same 401 the run loop treats as "this connection needs redoing".
+      ...(error instanceof McpHttpError && error.status === 401 ? { unauthorized: true } : {}),
+    };
   } finally {
     // A probe that leaves the session open would strand one per button press.
     await session.end();

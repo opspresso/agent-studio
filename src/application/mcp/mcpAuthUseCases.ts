@@ -23,7 +23,7 @@ import type {
   McpOAuthStateRepository,
 } from "@/domain/mcp/connection";
 import type { ProjectRepository } from "@/domain/project/repository";
-import type { SecretCipher } from "@/domain/security/secretCipher";
+import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectOwner } from "@/application/project/projectUseCases";
@@ -130,9 +130,18 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
 
 export interface SaveClientCredentialsInput {
   clientId: string;
-  /** Omitted for a public client; a masked echo keeps what is stored. */
+  /**
+   * An omitted or masked-echo value keeps what is stored; an empty one clears
+   * it, which is the only way back from a confidential client to a public one.
+   * Unlike the console's other secret fields this one arrives prefilled with the
+   * mask, so emptying it is a deliberate act rather than "I typed nothing".
+   */
   clientSecret?: string;
   scopes?: string[];
+}
+
+function sameScopes(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((scope, index) => scope === b[index]);
 }
 
 export interface McpAuthUseCasesDeps {
@@ -184,8 +193,17 @@ export interface McpAuthUseCases {
    * What this server offers *this project*. The registry's own probe carries
    * only the entry's static headers, so against an OAuth server it can do
    * nothing but 401 — the credential that would answer belongs to the project.
+   *
+   * `headerOverrides` is the binding's own layer, passed so the answer matches
+   * what a run would offer. Owner-gated like the rest of this use case: it
+   * spends the project's connection and sends the caller's headers with it.
    */
-  listTools(projectName: string, serverName: string, userEmail: string): Promise<ListToolsResult>;
+  listTools(
+    projectName: string,
+    serverName: string,
+    userEmail: string,
+    headerOverrides?: HeaderOverrides,
+  ): Promise<ListToolsResult>;
 }
 
 export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCases {
@@ -321,13 +339,30 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const server = await requireOAuthServer(serverName);
       const existing = await deps.connections.get(projectName, serverName);
 
-      // A masked or empty secret keeps what is stored, matching how every other
-      // stored secret in this codebase behaves on update.
+      // An omitted or masked secret keeps what is stored, matching how every
+      // other stored secret in this codebase behaves on update. An empty one
+      // clears it — see SaveClientCredentialsInput for why this field differs.
       const submitted = input.clientSecret;
       const clientSecret =
-        submitted === undefined || submitted === "" || deps.cipher.isMasked(submitted)
+        submitted === undefined || deps.cipher.isMasked(submitted)
           ? existing?.clientSecret
-          : deps.cipher.encrypt(submitted);
+          : submitted === ""
+            ? undefined
+            : deps.cipher.encrypt(submitted);
+      const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
+
+      // Saving credentials that did not change is a no-op, not a reset. Both
+      // boxes arrive prefilled from the stored connection, so pressing Save
+      // without editing anything is the likeliest press there is — and it must
+      // not cost the project the tokens those very credentials authorized.
+      if (
+        existing &&
+        existing.clientId === input.clientId &&
+        existing.clientSecret === clientSecret &&
+        sameScopes(existing.scopes, scopes)
+      ) {
+        return toConnectionView(deps.cipher, existing);
+      }
 
       const next: McpConnection = {
         projectName,
@@ -335,7 +370,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         clientId: input.clientId,
         ...(clientSecret ? { clientSecret } : {}),
         clientRegistered: false,
-        scopes: input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [],
+        scopes,
         // Credentials changing invalidates whatever they authorized. Keeping the
         // old tokens would leave a connection that reports `connected` while
         // holding tokens issued to a different client.
@@ -471,7 +506,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       await deps.connections.delete(projectName, serverName);
     },
 
-    async listTools(projectName, serverName, userEmail) {
+    async listTools(projectName, serverName, userEmail, headerOverrides) {
       await assertProjectOwner(deps.projects, projectName, userEmail);
       const server = await requireServer(serverName);
       try {
@@ -481,7 +516,11 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : "Blocked URL" };
       }
-      const headers = deps.cipher.decryptHeadersForOutbound(server.headers);
+      // Assembled exactly as a run assembles it (see execution/mcpTools) — the
+      // binding's overrides layered over the entry, then the project's
+      // Authorization last so a version cannot substitute its own. A list built
+      // any other way would be answering a question nobody asked.
+      const headers = deps.cipher.mergeOutboundHeaders(server.headers, headerOverrides);
       if (server.auth) {
         const resolved = await deps.authProvider.headersFor(projectName, serverName);
         if (resolved.warning) {
@@ -491,7 +530,15 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         }
         Object.assign(headers, resolved.headers);
       }
-      return deps.probe.listTools(server.url, headers);
+      const result = await deps.probe.listTools(server.url, headers);
+      if (!result.ok && result.unauthorized && server.auth) {
+        // What a run does with the same 401: record it, so the console offers a
+        // reconnect instead of leaving the owner to re-diagnose the message.
+        await deps.authProvider.markUnauthorized(projectName, serverName).catch((error: unknown) => {
+          console.warn(`[mcp] could not flag '${serverName}' as needing reauthorization`, error);
+        });
+      }
+      return result;
     },
   };
 }

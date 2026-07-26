@@ -454,6 +454,7 @@ POST|DELETE /api/mcps/[name]/auth           OAuth discovery for a registry serve
 GET  /api/projects/[name]/mcp-connections   this project's OAuth connections (owner)
 PUT|DELETE …/mcp-connections/[server]       save client credentials / disconnect (owner)
 POST …/mcp-connections/[server]/authorize   returns the provider URL to open (owner)
+POST …/mcp-connections/[server]/tools       tools as this project sees them (owner)
 GET  /api/mcps/oauth/callback               the authorization server's redirect target
 POST /api/agents/[name]/message             external-agent test message
 GET|POST /api/chats, GET|DELETE /api/chats/[chatId]

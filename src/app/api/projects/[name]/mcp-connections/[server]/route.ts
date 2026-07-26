@@ -7,7 +7,7 @@ type RouteContext = { params: Promise<{ name: string; server: string }> };
 
 const saveSchema = z.object({
   clientId: z.string().min(1),
-  /** Omitted or masked keeps the stored secret; absent entirely means public client. */
+  /** Omitted or masked keeps the stored secret; empty clears it (public client). */
   clientSecret: z.string().optional(),
   scopes: z.array(z.string().min(1)).optional(),
 });

@@ -12,6 +12,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { UsageRow } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
+import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
@@ -424,12 +425,26 @@ export async function disconnectMcp(name: string, server: string): Promise<void>
 }
 
 /**
- * A server's tools as this project sees them — the registry entry's headers plus
- * the project's OAuth token. The registry-level probe cannot answer for an OAuth
- * server, since the credential belongs here.
+ * A server's tools as this project sees them — the registry entry's headers, the
+ * binding's overrides, and the project's OAuth token. The registry-level probe
+ * cannot answer for an OAuth server, since the credential belongs here.
+ *
+ * Only the owner may spend that credential, and projects are a shared catalog
+ * anyone may read, so a non-owner falls back to the registry probe: no project
+ * credential and no overrides, but a tool list rather than a permission error.
  */
-export function listProjectMcpTools(name: string, server: string): Promise<McpTool[]> {
-  return fetch(`/api/projects/${name}/mcp-connections/${server}/tools`, { method: "POST" })
-    .then((r) => readJson<{ tools: McpTool[] }>(r))
-    .then((data) => data.tools);
+export async function listProjectMcpTools(
+  name: string,
+  server: string,
+  headerOverrides?: Record<string, string | null>,
+): Promise<McpTool[]> {
+  const response = await fetch(`/api/projects/${name}/mcp-connections/${server}/tools`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(headerOverrides ? { headerOverrides } : {}),
+  });
+  if (response.status === 403) {
+    return testMcpConnection(server);
+  }
+  return (await readJson<{ tools: McpTool[] }>(response)).tools;
 }
