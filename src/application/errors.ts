@@ -42,3 +42,43 @@ export class ForbiddenError extends AppError {
 export function statusForError(error: unknown): number | null {
   return error instanceof AppError ? error.status : null;
 }
+
+/**
+ * Names the storage adapter raises when a conditional write loses its
+ * precondition — someone else wrote first, or the transaction carrying it was
+ * cancelled.
+ *
+ * They are DynamoDB's, and this is the ONE place the application layer names
+ * them. Seven call sites used to spell them out, which is how the two-name form
+ * ended up in exactly one of them: the repository port's contract is "a
+ * conditional write may fail", and each caller only decides what to say about it.
+ */
+const CONDITIONAL_WRITE_FAILED = "ConditionalCheckFailedException";
+const TRANSACTION_CANCELED = "TransactionCanceledException";
+
+/**
+ * True when `error` is a lost conditional write. Pass `includeTransaction` where
+ * the write went out inside a transaction, so its cancellation counts too.
+ */
+export function isConditionalWriteFailure(
+  error: unknown,
+  opts: { includeTransaction?: boolean } = {},
+): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    error.name === CONDITIONAL_WRITE_FAILED ||
+    (opts.includeTransaction === true && error.name === TRANSACTION_CANCELED)
+  );
+}
+
+/**
+ * True when a transactional write was cancelled — its own precondition failed,
+ * or a sibling operation in the same transaction did. Distinct from the
+ * predicate above because a transactional path never sees the bare conditional
+ * failure, and widening it would turn an unrelated fault into a 409.
+ */
+export function isTransactionCancelled(error: unknown): boolean {
+  return error instanceof Error && error.name === TRANSACTION_CANCELED;
+}

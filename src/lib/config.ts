@@ -1,3 +1,5 @@
+import { parseList } from "@/shared/parseList";
+
 export type Stage = "local" | "alpha" | "prod";
 
 function required(name: string): string {
@@ -84,10 +86,7 @@ export const config = {
    * by `assertAccessControlConfig`.
    */
   get allowedEmailDomains(): string[] {
-    return (process.env.ALLOWED_EMAIL_DOMAINS ?? "")
-      .split(",")
-      .map((domain) => domain.trim().toLowerCase())
-      .filter(Boolean);
+    return parseList(process.env.ALLOWED_EMAIL_DOMAINS ?? "");
   },
   /**
    * Emails allowed to mutate shared registries (ADMIN_EMAILS, comma-separated).
@@ -95,10 +94,7 @@ export const config = {
    * refused at boot in `alpha`/`prod` by `assertAccessControlConfig`.
    */
   get adminEmails(): string[] {
-    return (process.env.ADMIN_EMAILS ?? "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean);
+    return parseList(process.env.ADMIN_EMAILS ?? "");
   },
   /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
   get a2aApiKey(): string | undefined {

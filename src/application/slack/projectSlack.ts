@@ -1,4 +1,4 @@
-import { ConflictError, ValidationError } from "@/application/errors";
+import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
@@ -62,7 +62,7 @@ async function updateProject(
   try {
     await repo.update(updated, expectedUpdatedAt);
   } catch (error) {
-    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+    if (isConditionalWriteFailure(error)) {
       throw new ConflictError(`Project "${updated.name}" was modified by another request`);
     }
     throw error;

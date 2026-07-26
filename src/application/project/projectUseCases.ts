@@ -1,6 +1,6 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectType } from "@/domain/project/types";
-import { ConflictError, ForbiddenError, NotFoundError } from "@/application/errors";
+import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "./timestamps";
 
 export interface CreateProjectInput {
@@ -71,7 +71,7 @@ export async function createProject(
     await repo.create(project);
   } catch (error) {
     // The repository's conditional put loses a create race the pre-check missed.
-    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+    if (isConditionalWriteFailure(error)) {
       throw new ConflictError(`Project "${input.name}" already exists`);
     }
     throw error;
@@ -96,7 +96,7 @@ export async function updateProject(
   try {
     await repo.update(updated, existing.updatedAt);
   } catch (error) {
-    if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+    if (isConditionalWriteFailure(error)) {
       throw new ConflictError(`Project "${name}" was modified by another request`);
     }
     throw error;

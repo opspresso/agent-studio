@@ -3,7 +3,7 @@
 import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { ImageBytes, ImageChannel } from "@/domain/llm/imageChannel";
-import { calculateImageCost, getModelConfig, MODEL_CONFIGS } from "@/domain/llm/models";
+import { getModelConfig, MODEL_CONFIGS, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
@@ -52,14 +52,8 @@ export function buildImageGenerator(
       quality,
       signal,
     });
-    const costUsd = calculateImageCost(resolvedModel, result.usage);
-    await recordUsageFn({
-      projectName,
-      model: resolvedModel,
-      inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
-      outputTokens: result.usage.imageOutputTokens,
-      costUsd,
-    });
+    const recorded = toImageUsageRecord(resolvedModel, result.usage);
+    await recordUsageFn({ projectName, model: resolvedModel, ...recorded });
     return { b64: result.b64, mimeType: result.mimeType };
   };
 }
@@ -99,14 +93,8 @@ export function buildImageEditor(
       quality,
       signal,
     });
-    const costUsd = calculateImageCost(model, result.usage);
-    await recordUsageFn({
-      projectName,
-      model,
-      inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
-      outputTokens: result.usage.imageOutputTokens,
-      costUsd,
-    });
+    const recorded = toImageUsageRecord(model, result.usage);
+    await recordUsageFn({ projectName, model, ...recorded });
     return { b64: result.b64, mimeType: result.mimeType };
   };
 }
@@ -149,23 +137,9 @@ export async function* runImageSubagent(
       sources.length > 0
         ? await deps.imageChannel.editImage({ model, prompt: message, images: sources, signal })
         : await deps.imageChannel.generateImage({ model, prompt: message, signal });
-    const costUsd = calculateImageCost(model, result.usage);
-    await recordUsageFn({
-      projectName: project.name,
-      model,
-      inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
-      outputTokens: result.usage.imageOutputTokens,
-      costUsd,
-    });
-    recorder?.observeResult({
-      content: "",
-      model,
-      usage: {
-        inputTokens: result.usage.textInputTokens + result.usage.imageInputTokens,
-        outputTokens: result.usage.imageOutputTokens,
-        costUsd,
-      },
-    });
+    const recorded = toImageUsageRecord(model, result.usage);
+    await recordUsageFn({ projectName: project.name, model, ...recorded });
+    recorder?.observeResult({ content: "", model, usage: recorded });
     yield {
       author: agentName,
       ...(recorder ? { traceId: recorder.traceId } : {}),

@@ -6,7 +6,7 @@
  * sendMessage) stay in their slices, layered on top.
  */
 
-import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 
 /** Minimal repository shape shared by the registry slices. */
@@ -83,7 +83,7 @@ export function createRegistryUseCases<
       try {
         await opts.repo.create(entity);
       } catch (error) {
-        if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+        if (isConditionalWriteFailure(error)) {
           throw new ConflictError(`${opts.label} "${input.name}" already exists`);
         }
         throw error;
@@ -97,7 +97,7 @@ export function createRegistryUseCases<
       try {
         await opts.repo.update(updated);
       } catch (error) {
-        if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+        if (isConditionalWriteFailure(error)) {
           throw new NotFoundError(`${opts.label} not found: ${name}`);
         }
         throw error;
@@ -110,7 +110,7 @@ export function createRegistryUseCases<
       try {
         await opts.repo.delete(name);
       } catch (error) {
-        if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+        if (isConditionalWriteFailure(error)) {
           throw new NotFoundError(`${opts.label} not found: ${name}`);
         }
         throw error;

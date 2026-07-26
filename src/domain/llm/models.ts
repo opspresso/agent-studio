@@ -491,3 +491,21 @@ export function calculateImageCost(modelId: string, tokens: ImageCostTokens): nu
     1_000_000
   );
 }
+
+/**
+ * An image result's usage in the shape usage records and trace spans both take.
+ *
+ * Image models bill three separate token counts; the usage row carries two. Four
+ * call sites derived that collapse independently — this is the single owner of
+ * it, next to the pricing it is paired with.
+ */
+export function toImageUsageRecord(
+  modelId: string,
+  tokens: ImageCostTokens,
+): { inputTokens: number; outputTokens: number; costUsd: number } {
+  return {
+    inputTokens: tokens.textInputTokens + tokens.imageInputTokens,
+    outputTokens: tokens.imageOutputTokens,
+    costUsd: calculateImageCost(modelId, tokens),
+  };
+}
