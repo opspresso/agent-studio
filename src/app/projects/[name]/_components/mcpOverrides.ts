@@ -6,13 +6,14 @@
  */
 
 import type { McpBinding } from "@/domain/project/types";
+import type { HeaderRow } from "@/app/_components/HeaderRows";
 
-export interface OverrideRow {
-  key: string;
-  value: string;
-  /** Encodes the `null` marker: drop this header from the registry defaults. */
-  remove: boolean;
-}
+/**
+ * A header row that can also carry the `null` marker — drop this header from the
+ * registry defaults. The same row the shared editor renders; only the encoding
+ * below is specific to a binding.
+ */
+export type OverrideRow = HeaderRow;
 
 export function overridesToRows(headers: McpBinding["headers"]): OverrideRow[] {
   return Object.entries(headers ?? {}).map(([key, value]) =>
@@ -30,7 +31,7 @@ export function rowsToOverrides(rows: OverrideRow[]): McpBinding["headers"] {
   for (const row of rows) {
     const key = row.key.trim();
     if (key) {
-      headers[key] = row.remove ? null : row.value;
+      headers[key] = row.remove === true ? null : row.value;
     }
   }
   return Object.keys(headers).length > 0 ? headers : undefined;

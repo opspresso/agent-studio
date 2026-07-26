@@ -18,6 +18,7 @@ import {
   type McpConnectionView,
 } from "../../lib/api";
 import { getMcp, type McpServer } from "@/app/tools/api";
+import { controlClass, monoControlClass } from "@/app/_components/formStyles";
 
 const STATUS_LABEL: Record<McpConnectionView["status"], string> = {
   connected: "Connected",
@@ -164,13 +165,13 @@ export function McpConnectionCard({
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
             placeholder="Client ID"
-            className="rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+            className={controlClass}
           />
           <input
             value={clientSecret}
             onChange={(e) => setClientSecret(e.target.value)}
             placeholder="Client secret"
-            className="rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm dark:border-neutral-700"
+            className={monoControlClass}
           />
         </div>
       )}

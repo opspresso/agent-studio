@@ -1,9 +1,8 @@
 "use client";
 
 import { DATE_PRESETS, presetRange, type DateRange } from "@/app/_lib/dateRange";
+import { compactControlClass as inputClass } from "./formStyles";
 
-const inputClass =
-  "rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900";
 
 /**
  * Shared From/To date range picker with quick-select preset buttons. Used by the

@@ -17,13 +17,18 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
+/** Registration forms read better narrow; settings dialogs need the room. */
+const WIDTH = { md: "max-w-lg", lg: "max-w-2xl" } as const;
+
 export function Modal({
   title,
   onClose,
+  size = "lg",
   children,
 }: {
   title: string;
   onClose: () => void;
+  size?: keyof typeof WIDTH;
   children: React.ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
@@ -101,7 +106,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white shadow-xl outline-none dark:border-neutral-800 dark:bg-neutral-900"
+        className={`w-full ${WIDTH[size]} rounded-lg border border-neutral-200 bg-white shadow-xl outline-none dark:border-neutral-800 dark:bg-neutral-900`}
       >
         <div className="flex items-center justify-between gap-4 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <h2 className="text-sm font-semibold">{title}</h2>

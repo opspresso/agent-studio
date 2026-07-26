@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { monoFieldClass as inputClass } from "@/app/_components/formStyles";
+import { monoControlClass } from "@/app/_components/formStyles";
 
 type SettingSource = "override" | "env" | "default" | "unset";
 
@@ -91,8 +93,6 @@ const SOURCE_LABELS: Record<SettingSource, { text: string; className: string }> 
   },
 };
 
-const inputClass =
-  "mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700";
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView | null>(null);
@@ -367,7 +367,7 @@ export default function SettingsPage() {
                           prev.map((p, i) => (i === index ? { ...p, name: e.target.value } : p)),
                         )
                       }
-                      className="w-36 rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700 dark:bg-neutral-950"
+                      className={`w-36 ${monoControlClass} dark:bg-neutral-950`}
                     >
                       {provider.name === "" && <option value="">provider…</option>}
                       {PROVIDER_OPTIONS.map((name) => (
@@ -384,7 +384,7 @@ export default function SettingsPage() {
                         )
                       }
                       placeholder="base URL"
-                      className="min-w-48 flex-1 rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+                      className={`min-w-48 flex-1 ${monoControlClass}`}
                     />
                     <input
                       value={provider.apiKey}
@@ -394,7 +394,7 @@ export default function SettingsPage() {
                         )
                       }
                       placeholder="API key"
-                      className="w-44 rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+                      className={`w-44 ${monoControlClass}`}
                     />
                     <label className="flex items-center gap-1.5 text-xs text-neutral-500">
                       <input

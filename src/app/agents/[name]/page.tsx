@@ -12,6 +12,8 @@ import {
   type ExternalAgent,
 } from "../api";
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
+import { Badge } from "@/app/_components/Badge";
+import { controlClass, fieldClass } from "@/app/_components/formStyles";
 
 export default function AgentDetailPage() {
   const params = useParams<{ name: string }>();
@@ -81,9 +83,7 @@ export default function AgentDetailPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold">{agent.name}</h1>
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
-              {agent.protocol === "a2a" ? "A2A" : "OpenAI"}
-            </span>
+            <Badge>{agent.protocol === "a2a" ? "A2A" : "OpenAI"}</Badge>
           </div>
           <p className="mt-1 text-sm text-neutral-500">{agent.description}</p>
           <p className="mt-1 text-xs text-neutral-400">{agent.url}</p>
@@ -189,7 +189,7 @@ function MessageTester({ name }: { name: string }) {
           rows={3}
           required
           placeholder="Send one message to the agent…"
-          className="w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={`w-full ${controlClass}`}
         />
         <button
           type="submit"
@@ -255,7 +255,7 @@ function EditAgentForm({
         <select
           value={protocol}
           onChange={(e) => setProtocol(e.target.value as AgentProtocol)}
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={fieldClass}
         >
           <option value="openai">OpenAI-compatible</option>
           <option value="a2a">A2A</option>
@@ -268,7 +268,7 @@ function EditAgentForm({
           onChange={(e) => setUrl(e.target.value)}
           type="url"
           required
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={fieldClass}
         />
       </label>
       <label className="block">
@@ -277,7 +277,7 @@ function EditAgentForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           required
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={fieldClass}
         />
       </label>
 

@@ -7,9 +7,11 @@ import { listProjectMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
 import { McpBindingSettings } from "./McpBindingSettings";
+import { Badge } from "@/app/_components/Badge";
+import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
+import { controlClass } from "@/app/_components/formStyles";
 
-const inputClass =
-  "w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700";
+const inputClass = `w-full ${controlClass}`;
 
 /**
  * A named group of controls.
@@ -123,9 +125,7 @@ function OptionDropdown<T extends PickerOption>({
           >
             <span className="shrink-0">{option.value}</span>
             {option.badge && (
-              <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800">
-                {option.badge}
-              </span>
+              <Badge className="shrink-0">{option.badge}</Badge>
             )}
             {option.description && (
               <span className="min-w-0 truncate text-xs text-neutral-400">{option.description}</span>
@@ -267,7 +267,8 @@ function ToolSelector({
     // so advising an empty selection here would advise the opposite outcome.
     return (
       <p className="px-2 pb-2 text-neutral-500">
-        {error} — a run would offer none of this server&apos;s tools until it answers.
+        {error}
+        {" — a run would offer none of this server’s tools until it answers."}
       </p>
     );
   }
@@ -326,17 +327,13 @@ function OverrideEditor({
   /** The registry entry's own headers, masked, that this version layers over. */
   inherited: Record<string, string>;
 }) {
-  function update(index: number, patch: Partial<OverrideRow>) {
-    onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  }
-
   // Header names are case-insensitive, and so is the merge at dispatch, so a row
   // for `authorization` already covers an inherited `Authorization`.
   const overridden = new Set(rows.map((row) => row.key.trim().toLowerCase()).filter(Boolean));
   const inheritedNames = Object.keys(inherited);
 
   return (
-    <div className="space-y-1.5 border-t border-neutral-200 px-2 py-2 dark:border-neutral-700">
+    <div className="space-y-2 border-t border-neutral-200 px-2 py-2 dark:border-neutral-700">
       {inheritedNames.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs text-neutral-400">
@@ -360,54 +357,18 @@ function OverrideEditor({
           })}
         </div>
       )}
-      {rows.length === 0 && inheritedNames.length === 0 && (
-        <p className="text-xs text-neutral-400">
-          No overrides, and this server&apos;s registry entry defines no headers either.
-        </p>
-      )}
-      {rows.map((row, index) => (
-        <div key={index} className="flex items-center gap-1.5">
-          <input
-            value={row.key}
-            onChange={(e) => update(index, { key: e.target.value })}
-            placeholder="Header-Name"
-            className="w-2/5 rounded border border-neutral-300 bg-transparent px-2 py-1 text-xs focus:border-brand focus:outline-none dark:border-neutral-700"
-          />
-          <input
-            value={row.remove ? "" : row.value}
-            onChange={(e) => update(index, { value: e.target.value })}
-            disabled={row.remove}
-            placeholder={row.remove ? "(removed)" : "value"}
-            className="flex-1 rounded border border-neutral-300 bg-transparent px-2 py-1 text-xs focus:border-brand focus:outline-none disabled:opacity-50 dark:border-neutral-700"
-          />
-          <label
-            className="flex shrink-0 items-center gap-1 text-xs text-neutral-500"
-            title="Drop this header from the registry defaults for this version"
-          >
-            <input
-              type="checkbox"
-              checked={row.remove}
-              onChange={(e) => update(index, { remove: e.target.checked })}
-            />
-            remove
-          </label>
-          <button
-            type="button"
-            onClick={() => onChange(rows.filter((_, i) => i !== index))}
-            aria-label="Delete override row"
-            className="rounded border border-neutral-300 px-1.5 text-xs text-neutral-500 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-          >
-            ✕
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...rows, { key: "", value: "", remove: false }])}
-        className="text-xs text-brand hover:text-brand-strong"
-      >
-        + Add header override
-      </button>
+      <HeaderRowsEditor
+        rows={rows}
+        onChange={onChange}
+        caption={null}
+        addLabel="+ Add header override"
+        allowRemove
+        emptyHint={
+          inheritedNames.length === 0
+            ? "No overrides, and this server's registry entry defines no headers either."
+            : "No overrides — this version uses the headers above unchanged."
+        }
+      />
     </div>
   );
 }

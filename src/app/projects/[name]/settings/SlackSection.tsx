@@ -11,9 +11,8 @@ import {
   updateProjectSlack,
 } from "../../lib/api";
 import type { ProjectSlackView } from "../../lib/api";
+import { monoFieldClass as inputClass } from "@/app/_components/formStyles";
 
-const inputClass =
-  "mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700";
 
 export function SlackSection({ projectName }: { projectName: string }) {
   const [view, setView] = useState<ProjectSlackView | null>(null);

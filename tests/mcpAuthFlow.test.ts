@@ -484,7 +484,7 @@ describe("listing a server's tools as the project", () => {
 
     expect(await uc.listTools("p", "slack", OWNER)).toEqual({
       ok: false,
-      error: "slack needs to be reconnected. Its tools were not offered.",
+      error: "slack needs to be reconnected.",
     });
     expect(h.probes).toHaveLength(0);
   });

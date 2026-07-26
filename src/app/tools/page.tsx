@@ -6,6 +6,10 @@ import { toSlug } from "@/shared/slug";
 import { createMcp, listMcps, type McpServer } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
+import { Badge } from "@/app/_components/Badge";
+import { Modal } from "@/app/_components/Modal";
+import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
+import { CardGrid, linkCardClass } from "@/app/_components/CardGrid";
 
 export default function ToolsPage() {
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -53,31 +57,29 @@ export default function ToolsPage() {
         </div>
       )}
 
-      {loading ? (
-        <p className="text-sm text-neutral-500">Loading…</p>
-      ) : servers.length === 0 ? (
-        <p className="text-sm text-neutral-500">No MCP servers yet.</p>
-      ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {servers.map((server) => (
-            <li key={server.name}>
-              <Link
-                href={`/tools/${server.name}`}
-                className="block h-full rounded-lg border border-neutral-200 bg-white p-4 transition hover:border-brand hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{server.name}</span>
-                  <CredentialBadges server={server} />
-                </div>
-                <p className="mt-1 line-clamp-2 text-sm text-neutral-500">
-                  {server.description || <span className="text-neutral-400">No description</span>}
-                </p>
-                <p className="mt-2 truncate text-xs text-neutral-400">{server.url}</p>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      <CardGrid
+        loading={loading}
+        empty={servers.length === 0}
+        emptyText="No MCP servers yet."
+      >
+        {servers.map((server) => (
+          <li key={server.name}>
+            <Link
+              href={`/tools/${server.name}`}
+              className={linkCardClass}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{server.name}</span>
+                <CredentialBadges server={server} />
+              </div>
+              <p className="mt-1 line-clamp-2 text-sm text-neutral-500">
+                {server.description || <span className="text-neutral-400">No description</span>}
+              </p>
+              <p className="mt-2 truncate text-xs text-neutral-400">{server.url}</p>
+            </Link>
+          </li>
+        ))}
+      </CardGrid>
 
       {showModal && (
         <RegisterMcpModal
@@ -109,12 +111,7 @@ function CredentialBadges({ server }: { server: McpServer }) {
   return (
     <>
       {(badges.length === 0 ? ["no credential"] : badges).map((badge) => (
-        <span
-          key={badge}
-          className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-        >
-          {badge}
-        </span>
+        <Badge key={badge}>{badge}</Badge>
       ))}
     </>
   );
@@ -156,80 +153,77 @@ function RegisterMcpModal({
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-neutral-200 bg-white p-6 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
-        <h2 className="text-lg font-semibold">Register MCP server</h2>
-        <form onSubmit={submit} className="mt-4 space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium">Name</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => setName(toSlug(name))}
-              placeholder="my-mcp"
-              required
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
-            />
-            <span className="mt-1 block text-xs text-neutral-400">
-              Lowercase letters, digits, and hyphens only.
-            </span>
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium">URL</span>
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com/mcp"
-              type="url"
-              required
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium">Description</span>
-            <input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="One-line summary shown to the model"
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium">Content (markdown)</span>
-            <ResizableTextarea
-              value={content}
-              onChange={setContent}
-              rows={6}
-              placeholder="Setup steps, caveats, links…"
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
-            />
-            <span className="mt-1 block text-xs text-neutral-400">
-              Operator notes for the console. Not sent to the model — only the description is.
-            </span>
-          </label>
+    <Modal title="Register MCP server" onClose={onClose} size="md">
+      <form onSubmit={submit} className="space-y-4">
+        <label className="block">
+          <span className="text-sm font-medium">Name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => setName(toSlug(name))}
+            placeholder="my-mcp"
+            required
+            className={fieldClass}
+          />
+          <span className="mt-1 block text-xs text-neutral-400">
+            Lowercase letters, digits, and hyphens only.
+          </span>
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium">URL</span>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com/mcp"
+            type="url"
+            required
+            className={fieldClass}
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium">Description</span>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="One-line summary shown to the model"
+            className={fieldClass}
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium">Content (markdown)</span>
+          <ResizableTextarea
+            value={content}
+            onChange={setContent}
+            rows={6}
+            placeholder="Setup steps, caveats, links…"
+            className={monoFieldClass}
+          />
+          <span className="mt-1 block text-xs text-neutral-400">
+            Operator notes for the console. Not sent to the model — only the description is.
+          </span>
+        </label>
 
-          <HeaderRowsEditor rows={rows} onChange={setRows} />
+        <HeaderRowsEditor rows={rows} onChange={setRows} />
 
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
-            >
-              {submitting ? "Registering…" : "Register"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+          >
+            {submitting ? "Registering…" : "Register"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

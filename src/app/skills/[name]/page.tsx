@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
 import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
+import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
 
 export default function SkillDetailPage() {
   const params = useParams<{ name: string }>();
@@ -169,7 +170,7 @@ function EditSkillForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           required
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={fieldClass}
         />
       </label>
       <label className="block">
@@ -178,7 +179,7 @@ function EditSkillForm({
           value={content}
           onChange={setContent}
           rows={16}
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={monoFieldClass}
         />
       </label>
 

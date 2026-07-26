@@ -17,6 +17,7 @@ import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { controlClass } from "@/app/_components/formStyles";
 
 /**
  * Whether the run's model can take the images the panel would attach — vision for
@@ -188,7 +189,7 @@ export default function PlaygroundPage() {
           <select
             value={selectedName}
             onChange={(e) => selectVersion(e.target.value)}
-            className="rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+            className={controlClass}
           >
             <option value="">+ New version</option>
             {versions.map((version) => (

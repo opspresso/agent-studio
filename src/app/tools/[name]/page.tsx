@@ -15,6 +15,7 @@ import {
 } from "../api";
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
+import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
 
 export default function McpDetailPage() {
   const params = useParams<{ name: string }>();
@@ -386,7 +387,7 @@ function EditMcpForm({
           onChange={(e) => setUrl(e.target.value)}
           type="url"
           required
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={fieldClass}
         />
       </label>
       <label className="block">
@@ -395,7 +396,7 @@ function EditMcpForm({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="One-line summary shown to the model"
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={fieldClass}
         />
       </label>
       <label className="block">
@@ -405,7 +406,7 @@ function EditMcpForm({
           onChange={setContent}
           rows={8}
           placeholder="Setup steps, caveats, links…"
-          className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 font-mono text-sm focus:border-brand focus:outline-none dark:border-neutral-700"
+          className={monoFieldClass}
         />
         <span className="mt-1 block text-xs text-neutral-400">
           Operator notes for the console. Not sent to the model — only the description is.

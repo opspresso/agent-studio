@@ -9,9 +9,8 @@ import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { A2aSection } from "./A2aSection";
 import { SlackSection } from "./SlackSection";
 import { TokenSection } from "./TokenSection";
+import { fieldClass as inputClass } from "@/app/_components/formStyles";
 
-const inputClass =
-  "mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-brand focus:outline-none dark:border-neutral-700";
 
 export default function SettingsPage() {
   const params = useParams<{ name: string }>();

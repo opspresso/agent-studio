@@ -542,7 +542,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           // The same sentence a run would report, so "why are there no tools"
           // has one answer wherever it is asked. Only when there is nothing else
           // to authenticate with — an entry with headers of its own still works.
-          return { ok: false, error: `${resolved.unavailable} Its tools were not offered.` };
+          // The consequence clause is the caller's: a run says "its tools were
+          // not offered", the console says what an empty selection would mean.
+          return { ok: false, error: resolved.unavailable };
         }
       }
       const result = await deps.probe.listTools(server.url, headers);
