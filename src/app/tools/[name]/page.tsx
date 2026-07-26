@@ -5,6 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   deleteMcp,
+  getManagedMcpStatus,
+  removeManagedMcp,
+  type ManagedMcpStatus,
   getMcp,
   testMcpConnection,
   discoverMcpAuth,
@@ -30,13 +33,18 @@ export default function McpDetailPage() {
 
   const [tools, setTools] = useState<McpTool[] | null>(null);
   const [testing, setTesting] = useState(false);
+  const [managedStatus, setManagedStatus] = useState<ManagedMcpStatus | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      setServer(await getMcp(name));
+      const loaded = await getMcp(name);
+      setServer(loaded);
+      if (loaded.runtime === "managed") {
+        void refreshStatus();
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load MCP server");
     } finally {
@@ -62,12 +70,29 @@ export default function McpDetailPage() {
     }
   }
 
+  /** What the container is actually doing; the stored entry cannot say. */
+  async function refreshStatus() {
+    try {
+      setManagedStatus(await getManagedMcpStatus(name));
+    } catch {
+      // Status is informational: a deployment that cannot reach the provisioner
+      // still shows the entry rather than an error page.
+      setManagedStatus(null);
+    }
+  }
+
   async function onDelete() {
-    if (!confirm(`Delete MCP server "${name}"? This cannot be undone.`)) {
+    const managed = server?.runtime === "managed";
+    const question = managed
+      ? `Delete "${name}" and stop its container? This cannot be undone.`
+      : `Delete MCP server "${name}"? This cannot be undone.`;
+    if (!confirm(question)) {
       return;
     }
     try {
-      await deleteMcp(name);
+      // A managed entry and its container are one thing: removing the row
+      // alone would leave a container running that nothing points at.
+      await (managed ? removeManagedMcp(name) : deleteMcp(name));
       router.push("/tools");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete MCP server");
@@ -104,6 +129,23 @@ export default function McpDetailPage() {
           <h1 className="text-2xl font-semibold">{server.name}</h1>
           <p className="mt-1 text-sm text-neutral-500">{server.description}</p>
           <p className="mt-1 text-xs text-neutral-400">{server.url}</p>
+          {server.runtime === "managed" && (
+            <p className="mt-2 text-xs">
+              <span className="text-neutral-400">container</span>{" "}
+              {managedStatus === null ? (
+                <span className="text-neutral-400">unknown</span>
+              ) : managedStatus.running ? (
+                <span className="text-emerald-600 dark:text-emerald-400">running</span>
+              ) : (
+                <span className="text-red-600 dark:text-red-400">
+                  not running{managedStatus.detail ? ` — ${managedStatus.detail}` : ""}
+                </span>
+              )}
+              {server.image ? (
+                <span className="ml-2 font-mono text-neutral-400">{server.image}</span>
+              ) : null}
+            </p>
+          )}
         </div>
         {!editing && (
           <div className="flex shrink-0 gap-2">

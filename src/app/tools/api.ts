@@ -77,3 +77,42 @@ export function discoverMcpAuth(
 export async function clearMcpAuth(name: string): Promise<void> {
   await assertOk(await fetch(`/api/mcps/${name}/auth`, { method: "DELETE" }));
 }
+
+// --- managed servers ---------------------------------------------------------
+
+/**
+ * A managed entry names an image, never a url: the address is written by the
+ * provisioner once the container is listening, and cannot be typed.
+ */
+export interface CreateManagedMcpInput {
+  name: string;
+  image: string;
+  containerPort: number;
+  envRefs?: string[];
+  description?: string;
+}
+
+export interface ManagedMcpStatus {
+  name: string;
+  image?: string;
+  running: boolean;
+  address?: string;
+  detail?: string;
+}
+
+export function createManagedMcp(input: CreateManagedMcpInput): Promise<McpServer> {
+  return fetch("/api/mcps/managed", {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<McpServer>(r));
+}
+
+export function getManagedMcpStatus(name: string): Promise<ManagedMcpStatus> {
+  return fetch(`/api/mcps/managed/${name}`).then((r) => readJson<ManagedMcpStatus>(r));
+}
+
+/** Removes the container and the entry together. */
+export function removeManagedMcp(name: string): Promise<void> {
+  return fetch(`/api/mcps/managed/${name}`, { method: "DELETE" }).then(assertOk);
+}

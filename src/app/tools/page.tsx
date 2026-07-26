@@ -10,6 +10,7 @@ import { Badge } from "@/app/_components/Badge";
 import { Modal } from "@/app/_components/Modal";
 import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
 import { CardGrid, linkCardClass } from "@/app/_components/CardGrid";
+import { ManagedMcpModal } from "./_components/ManagedMcpModal";
 import { buttonClass } from "@/app/_components/buttonStyles";
 
 export default function ToolsPage() {
@@ -17,6 +18,7 @@ export default function ToolsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showManaged, setShowManaged] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -43,13 +45,22 @@ export default function ToolsPage() {
             MCP servers that expose tools to agents over streamable HTTP.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong"
-        >
-          Register MCP
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowManaged(true)}
+            className={buttonClass("secondary")}
+          >
+            Run managed
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className={buttonClass("primary")}
+          >
+            Register MCP
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -71,6 +82,7 @@ export default function ToolsPage() {
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{server.name}</span>
+                {server.runtime === "managed" && <Badge>managed</Badge>}
                 <CredentialBadges server={server} />
               </div>
               <p className="mt-1 line-clamp-2 text-sm text-neutral-500">
@@ -81,6 +93,16 @@ export default function ToolsPage() {
           </li>
         ))}
       </CardGrid>
+
+      {showManaged && (
+        <ManagedMcpModal
+          onClose={() => setShowManaged(false)}
+          onCreated={() => {
+            setShowManaged(false);
+            void refresh();
+          }}
+        />
+      )}
 
       {showModal && (
         <RegisterMcpModal
