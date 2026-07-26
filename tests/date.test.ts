@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatShortDateTime } from "@/lib/date";
+import { formatDateTime, formatShortDateTime } from "@/shared/date";
 
 // Rendered output is locale/timezone dependent, so assert shape, not exact strings.
 describe("formatShortDateTime", () => {

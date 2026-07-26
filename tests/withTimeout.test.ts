@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TimeoutError, withTimeout } from "@/lib/withTimeout";
+import { TimeoutError, withTimeout } from "@/shared/withTimeout";
 
 describe("withTimeout", () => {
   afterEach(() => {

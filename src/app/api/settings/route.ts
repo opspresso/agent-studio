@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { settingsUseCases } from "@/application/settings";
+import { settingsUseCases } from "@/lib/container";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { apiError } from "@/app/api/_lib/http";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";

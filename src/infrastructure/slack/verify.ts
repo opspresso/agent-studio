@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
+import { timingSafeEqualString } from "@/shared/timingSafe";
 
 const VERSION = "v0";
 const MAX_SKEW_SECONDS = 60 * 5;

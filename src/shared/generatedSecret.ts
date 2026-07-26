@@ -1,4 +1,5 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { timingSafeEqualString } from "./timingSafe";
 
 /**
  * Secrets Agent Studio issues itself, as opposed to credentials an operator
@@ -42,7 +43,5 @@ export function hashSecret(value: string): string {
 
 /** Constant-time comparison of two hashes. */
 export function secretHashEquals(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+  return timingSafeEqualString(a, b);
 }

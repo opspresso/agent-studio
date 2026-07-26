@@ -12,7 +12,6 @@ import {
   type SkillTreeEntry,
   type SkippedAttachment,
 } from "@/domain/skill/files";
-import { getSkillsRepoConfig } from "@/lib/runtime-settings";
 
 export interface RepoSkillFile {
   /** Skill slug — the SKILL.md parent directory name. */
@@ -58,8 +57,9 @@ async function fetchBlobText(repo: string, sha: string, token: string): Promise<
     : blob.content;
 }
 
-export async function fetchSkillsRepoSnapshot(): Promise<SkillsRepoSnapshot> {
-  const { repo, branch, token } = await getSkillsRepoConfig();
+export async function fetchSkillsRepoSnapshot(
+  { repo, branch, token }: { repo?: string; branch: string; token?: string },
+): Promise<SkillsRepoSnapshot> {
   if (!repo || !token) {
     throw new Error("SKILLS_REPO and GITHUB_TOKEN must be configured");
   }

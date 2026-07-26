@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { mcpUseCases } from "@/application/mcp";
+import { mcpUseCases } from "@/lib/container";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 

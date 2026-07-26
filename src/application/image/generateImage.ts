@@ -7,7 +7,7 @@ import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
 import { recordUsage } from "@/application/usage/recordUsage";
-import { withRunDeadline } from "@/lib/runDeadline";
+import { withRunDeadline } from "@/shared/runDeadline";
 import { beginRun, endRun } from "@/lib/runMetrics";
 
 export interface ImageGenerationDeps {

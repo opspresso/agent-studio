@@ -20,6 +20,9 @@ export interface ProviderChannelConfig {
   keepModelPrefix: boolean;
 }
 
+/** Resolves a model id to the channel that serves it. Injected into the adapters. */
+export type TargetResolver = (modelId: string) => Promise<ResolvedTarget>;
+
 export interface ResolvedTarget {
   /** null means the default channel. */
   providerName: string | null;

@@ -19,6 +19,7 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config } from "./config";
+import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
 const DEFAULT_TTL_MS = 5_000;
@@ -54,13 +55,6 @@ async function loadSettings(): Promise<AppSettings | null> {
 
 export function invalidateSettingsCache(): void {
   cache = undefined;
-}
-
-function parseList(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
 }
 
 export async function getAdminEmails(): Promise<string[]> {

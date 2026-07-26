@@ -28,7 +28,7 @@ import {
   hashSecret,
   secretHashEquals,
   secretPrefix,
-} from "@/lib/generatedSecret";
+} from "@/shared/generatedSecret";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { decryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
 

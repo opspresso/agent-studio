@@ -5,9 +5,7 @@
  */
 
 import OpenAI, { toFile } from "openai";
-import { getLlmChannelConfig, getLlmProviderConfigs } from "@/lib/runtime-settings";
-import { resolveProviderTarget } from "./providers";
-import type { ResolvedTarget } from "./providers";
+import type { ResolvedTarget, TargetResolver } from "./providers";
 import type {
   ImageChannel,
   ImageEditParams,
@@ -16,14 +14,6 @@ import type {
 } from "@/domain/llm/imageChannel";
 
 const clients = new Map<string, OpenAI>();
-
-async function resolveTarget(modelId: string): Promise<ResolvedTarget> {
-  const [providers, defaultChannel] = await Promise.all([
-    getLlmProviderConfigs(),
-    getLlmChannelConfig(),
-  ]);
-  return resolveProviderTarget(modelId, providers, defaultChannel);
-}
 
 /** Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client. */
 function getClient(target: ResolvedTarget): OpenAI {
@@ -65,49 +55,52 @@ function toImageResult(response: ImagesApiResponse, what: string): ImageGenerati
   };
 }
 
-export const imageChannel: ImageChannel = {
-  async generateImage(params: ImageGenerationParams): Promise<ImageGenerationResult> {
-    const target = await resolveTarget(params.model);
-    const response = (await getClient(target).images.generate({
-      model: target.model,
-      prompt: params.prompt,
-      ...(params.size ? { size: params.size as never } : {}),
-      ...(params.quality ? { quality: params.quality as never } : {}),
-    }, { signal: params.signal })) as unknown as ImagesApiResponse;
+/** The target resolver is injected; see `createChannel`. */
+export function createImageChannel(resolveTarget: TargetResolver): ImageChannel {
+  return {
+    async generateImage(params: ImageGenerationParams): Promise<ImageGenerationResult> {
+      const target = await resolveTarget(params.model);
+      const response = (await getClient(target).images.generate({
+        model: target.model,
+        prompt: params.prompt,
+        ...(params.size ? { size: params.size as never } : {}),
+        ...(params.quality ? { quality: params.quality as never } : {}),
+      }, { signal: params.signal })) as unknown as ImagesApiResponse;
 
-    return toImageResult(response, "generation");
-  },
+      return toImageResult(response, "generation");
+    },
 
-  async editImage(params: ImageEditParams): Promise<ImageGenerationResult> {
-    const target = await resolveTarget(params.model);
-    // The edit endpoint is multipart: the bytes go up as files, not base64 json.
-    const files = await Promise.all(
-      params.images.map((image, index) =>
-        toFile(Buffer.from(image.b64, "base64"), `image-${index + 1}${extensionFor(image.mimeType)}`, {
-          type: image.mimeType,
-        }),
-      ),
-    );
-    const mask = params.mask
-      ? await toFile(Buffer.from(params.mask.b64, "base64"), "mask.png", {
-          type: params.mask.mimeType,
-        })
-      : undefined;
-    // One source image goes up as a single file: the older edit models reject an
-    // array, and only the composing models accept several.
-    const [first] = files;
-    const response = (await getClient(target).images.edit({
-      model: target.model,
-      prompt: params.prompt,
-      image: first && files.length === 1 ? first : files,
-      ...(mask ? { mask } : {}),
-      ...(params.size ? { size: params.size as never } : {}),
-      ...(params.quality ? { quality: params.quality as never } : {}),
-    }, { signal: params.signal })) as unknown as ImagesApiResponse;
+    async editImage(params: ImageEditParams): Promise<ImageGenerationResult> {
+      const target = await resolveTarget(params.model);
+      // The edit endpoint is multipart: the bytes go up as files, not base64 json.
+      const files = await Promise.all(
+        params.images.map((image, index) =>
+          toFile(Buffer.from(image.b64, "base64"), `image-${index + 1}${extensionFor(image.mimeType)}`, {
+            type: image.mimeType,
+          }),
+        ),
+      );
+      const mask = params.mask
+        ? await toFile(Buffer.from(params.mask.b64, "base64"), "mask.png", {
+            type: params.mask.mimeType,
+          })
+        : undefined;
+      // One source image goes up as a single file: the older edit models reject an
+      // array, and only the composing models accept several.
+      const [first] = files;
+      const response = (await getClient(target).images.edit({
+        model: target.model,
+        prompt: params.prompt,
+        image: first && files.length === 1 ? first : files,
+        ...(mask ? { mask } : {}),
+        ...(params.size ? { size: params.size as never } : {}),
+        ...(params.quality ? { quality: params.quality as never } : {}),
+      }, { signal: params.signal })) as unknown as ImagesApiResponse;
 
-    return toImageResult(response, "edit");
-  },
-};
+      return toImageResult(response, "edit");
+    },
+  };
+}
 
 /** File extension matching a supported image mime type; providers key on it. */
 function extensionFor(mimeType: string): string {

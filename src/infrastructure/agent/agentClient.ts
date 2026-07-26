@@ -5,7 +5,7 @@
  */
 
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
-import { readBodyText } from "@/lib/httpBody";
+import { readBodyText } from "@/shared/httpBody";
 
 const TIMEOUT_MS = 60_000;
 const MAX_AGENT_RESPONSE_BYTES = 2_000_000;

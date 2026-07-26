@@ -9,8 +9,8 @@ import {
 } from "@/lib/container";
 import { getA2aApiKey } from "@/lib/runtime-settings";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
-import { sseResponseRaw } from "@/lib/sse";
-import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
+import { sseResponseRaw } from "@/app/api/_lib/sse";
+import { timingSafeEqualString } from "@/shared/timingSafe";
 
 type RouteContext = { params: Promise<{ name: string }> };
 

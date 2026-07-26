@@ -1,3 +1,4 @@
+import { unauthorized } from "@/shared/unauthorized";
 import { getSessionUser } from "@/lib/session";
 import { projectRepository, secretCipher } from "@/lib/container";
 import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
@@ -7,7 +8,6 @@ export interface ExecutionPrincipal {
   viaToken: boolean;
 }
 
-const unauthorized = (): Response => Response.json({ error: "Unauthorized" }, { status: 401 });
 
 /**
  * Authenticate an execution request scoped to `projectName`.

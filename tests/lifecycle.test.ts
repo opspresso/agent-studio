@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { beginShutdown, isShuttingDown, registerShutdownSignals } from "@/lib/lifecycle";
+import { beginShutdown, isShuttingDown, registerShutdownSignals } from "@/shared/lifecycle";
 
 afterAll(() => {
   process.removeListener("SIGTERM", beginShutdown);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sseResponse } from "@/lib/sse";
+import { sseResponse } from "@/app/api/_lib/sse";
 
 describe("sseResponse cancellation", () => {
   it("aborts in-flight work and closes the source generator", async () => {

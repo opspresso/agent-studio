@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { toSlug } from "@/lib/slug";
+import { toSlug } from "@/shared/slug";
 import { createSkill, listSkills, type Skill } from "./api";
 import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 

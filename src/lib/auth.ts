@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
-import { dynamodbAdapter } from "./auth-adapter";
+import { dynamodbAdapter } from "@/infrastructure/db/authAdapter";
 import { getAllowedEmailDomains } from "./runtime-settings";
 
 async function assertAllowedEmailDomain(email: string): Promise<void> {

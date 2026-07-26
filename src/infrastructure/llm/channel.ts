@@ -9,9 +9,7 @@
  */
 
 import OpenAI from "openai";
-import { getLlmChannelConfig, getLlmProviderConfigs } from "@/lib/runtime-settings";
-import { resolveProviderTarget } from "./providers";
-import type { ResolvedTarget } from "./providers";
+import type { ResolvedTarget, TargetResolver } from "./providers";
 import type {
   ChannelChunk,
   ChannelCompletion,
@@ -22,14 +20,6 @@ import type {
 } from "@/domain/llm/channel";
 
 const clients = new Map<string, OpenAI>();
-
-async function resolveTarget(modelId: string): Promise<ResolvedTarget> {
-  const [providers, defaultChannel] = await Promise.all([
-    getLlmProviderConfigs(),
-    getLlmChannelConfig(),
-  ]);
-  return resolveProviderTarget(modelId, providers, defaultChannel);
-}
 
 /** Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client. */
 function getClient(target: ResolvedTarget): OpenAI {
@@ -104,71 +94,78 @@ function toChannelToolCalls(toolCalls: unknown): ChannelToolCall[] | undefined {
   });
 }
 
-export const channel: LlmChannel = {
-  async chatCompletion(params: ChannelParams): Promise<ChannelCompletion> {
-    const target = await resolveTarget(params.model);
-    const response = (await getClient(target).chat.completions.create({
-      ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
-      stream: false,
-    }, { signal: params.signal })) as unknown as {
-      model?: string;
-      choices?: Array<{
-        finish_reason?: string | null;
-        message?: {
-          role?: string;
-          content?: string | null;
-          reasoning_content?: string | null;
-          tool_calls?: unknown;
-        };
-      }>;
-      usage?: unknown;
-    };
+/**
+ * The target resolver is injected: reading runtime settings is the composition
+ * root's job, so this adapter never reaches up into `lib/`. It is called per
+ * request, so a settings change still takes effect on the next TTL refresh.
+ */
+export function createChannel(resolveTarget: TargetResolver): LlmChannel {
+  return {
+    async chatCompletion(params: ChannelParams): Promise<ChannelCompletion> {
+      const target = await resolveTarget(params.model);
+      const response = (await getClient(target).chat.completions.create({
+        ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
+        stream: false,
+      }, { signal: params.signal })) as unknown as {
+        model?: string;
+        choices?: Array<{
+          finish_reason?: string | null;
+          message?: {
+            role?: string;
+            content?: string | null;
+            reasoning_content?: string | null;
+            tool_calls?: unknown;
+          };
+        }>;
+        usage?: unknown;
+      };
 
-    return {
-      model: response.model,
-      usage: toChannelUsage(response.usage),
-      choices: (response.choices ?? []).map((choice) => ({
-        finish_reason: choice.finish_reason ?? null,
-        message: {
-          role: choice.message?.role ?? "assistant",
-          content: choice.message?.content ?? null,
-          reasoning_content: choice.message?.reasoning_content ?? null,
-          tool_calls: toChannelToolCalls(choice.message?.tool_calls),
-        },
-      })),
-    };
-  },
-
-  async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
-    const target = await resolveTarget(params.model);
-    const stream = (await getClient(target).chat.completions.create({
-      ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
-      stream: true,
-      stream_options: { include_usage: true },
-    }, { signal: params.signal })) as unknown as AsyncIterable<{
-      choices?: Array<{
-        finish_reason?: string | null;
-        delta?: {
-          content?: string | null;
-          reasoning_content?: string | null;
-          tool_calls?: unknown;
-        };
-      }>;
-      usage?: unknown;
-    }>;
-
-    for await (const chunk of stream) {
-      yield {
-        usage: toChannelUsage(chunk.usage),
-        choices: (chunk.choices ?? []).map((choice) => ({
+      return {
+        model: response.model,
+        usage: toChannelUsage(response.usage),
+        choices: (response.choices ?? []).map((choice) => ({
           finish_reason: choice.finish_reason ?? null,
-          delta: {
-            content: choice.delta?.content ?? null,
-            reasoning_content: choice.delta?.reasoning_content ?? null,
-            tool_calls: toChannelToolCalls(choice.delta?.tool_calls),
+          message: {
+            role: choice.message?.role ?? "assistant",
+            content: choice.message?.content ?? null,
+            reasoning_content: choice.message?.reasoning_content ?? null,
+            tool_calls: toChannelToolCalls(choice.message?.tool_calls),
           },
         })),
       };
-    }
-  },
-};
+    },
+
+    async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
+      const target = await resolveTarget(params.model);
+      const stream = (await getClient(target).chat.completions.create({
+        ...(toRequestBody({ ...params, model: target.model }) as { model: string; messages: [] }),
+        stream: true,
+        stream_options: { include_usage: true },
+      }, { signal: params.signal })) as unknown as AsyncIterable<{
+        choices?: Array<{
+          finish_reason?: string | null;
+          delta?: {
+            content?: string | null;
+            reasoning_content?: string | null;
+            tool_calls?: unknown;
+          };
+        }>;
+        usage?: unknown;
+      }>;
+
+      for await (const chunk of stream) {
+        yield {
+          usage: toChannelUsage(chunk.usage),
+          choices: (chunk.choices ?? []).map((choice) => ({
+            finish_reason: choice.finish_reason ?? null,
+            delta: {
+              content: choice.delta?.content ?? null,
+              reasoning_content: choice.delta?.reasoning_content ?? null,
+              tool_calls: toChannelToolCalls(choice.delta?.tool_calls),
+            },
+          })),
+        };
+      }
+    },
+  };
+}

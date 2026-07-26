@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BodyTooLargeError, readBodyText } from "@/lib/httpBody";
+import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 
 describe("readBodyText", () => {
   it("rejects a declared body that exceeds the limit without reading it", async () => {

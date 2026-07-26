@@ -2,22 +2,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const runtime = vi.hoisted(() => ({ providerBaseUrl: "https://provider.example/v1" }));
 
-vi.mock("@/lib/runtime-settings", () => ({
-  getLlmProviderConfigs: async () => [
-    {
-      name: "openai",
-      baseUrl: runtime.providerBaseUrl,
-      apiKey: "provider-key",
-      keepModelPrefix: false,
-    },
-  ],
-  getLlmChannelConfig: async () => ({
-    baseUrl: "https://router.example/v1",
-    apiKey: "router-key",
-  }),
-}));
+import { createChannel } from "@/infrastructure/llm/channel";
+import { resolveProviderTarget } from "@/infrastructure/llm/providers";
 
-import { channel } from "@/infrastructure/llm/channel";
+// The resolver is injected now: settings resolution belongs to the composition
+// root, so this test supplies it directly instead of mocking runtime-settings.
+const channel = createChannel(async (modelId) =>
+  resolveProviderTarget(
+    modelId,
+    [
+      {
+        name: "openai",
+        baseUrl: runtime.providerBaseUrl,
+        apiKey: "provider-key",
+        keepModelPrefix: false,
+      },
+    ],
+    { baseUrl: "https://router.example/v1", apiKey: "router-key" },
+  ),
+);
 
 async function requestBody(input: string | URL | Request, init?: RequestInit): Promise<unknown> {
   const raw =

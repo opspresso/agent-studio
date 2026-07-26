@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
-import { toSlug } from "@/lib/slug";
+import { toSlug } from "@/shared/slug";
 import {
   createAgent,
   listA2aProjects,

@@ -22,7 +22,7 @@ const testUrlPolicy: UrlPolicy = {
   },
 };
 import type { ExecutionDeps } from "@/application/execution/runProject";
-import { withRunDeadline } from "@/lib/runDeadline";
+import { withRunDeadline } from "@/shared/runDeadline";
 import { MODEL_CONFIGS } from "@/domain/llm/models";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";

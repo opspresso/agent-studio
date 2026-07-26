@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { timingSafeEqualString } from "@/infrastructure/crypto/timingSafe";
+import { timingSafeEqualString } from "@/shared/timingSafe";
 
 describe("timingSafeEqualString", () => {
   it("returns true for identical strings", () => {

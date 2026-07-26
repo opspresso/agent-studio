@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseMaxRunDuration } from "@/lib/runDeadline";
+import { parseMaxRunDuration } from "@/shared/runDeadline";
 
 describe("parseMaxRunDuration", () => {
   it("defaults when unset or blank", () => {

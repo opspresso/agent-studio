@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
-import { formatDateTime } from "@/lib/date";
+import { formatDateTime } from "@/shared/date";
 import {
   deleteVersion,
   getProject,

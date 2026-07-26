@@ -102,23 +102,34 @@ infra→lib 12건의 양방향 의존이 성립한다. M5·M6이 새 실행 진�
 - 라우트 11곳의 import를 `@/application/{slice}` → `@/lib/container`로 교체한다.
   `api/skills/sync/route.ts`는 repository를 직접 다루지 않고 container가 조립한 함수를 쓴다.
 - `src/shared/` 신설 — 아무것도 import 하지 않는 leaf. `date`, `slug`, `withTimeout`,
-  `runDeadline`, `lifecycle`, `generatedSecret`, `public-url` 이동.
+  `runDeadline`, `lifecycle`, `generatedSecret` 이동. `public-url`은 `getPublicBaseUrl()`을
+  호출하므로 leaf가 아니다 — `lib`에 남긴다.
 - `lib/auth-adapter.ts`(347줄, DynamoDB 어댑터)를 `infrastructure/db/authAdapter.ts`로,
-  `lib/sse.ts`·`lib/httpBody.ts`를 `app/api/_lib/`로 옮긴다.
-- `lib/runtime-settings.ts`를 repository·cipher 주입 형태로 전환한다. 이 모듈을 그대로
-  application으로 옮기면 이를 쓰는 infrastructure 4곳(`channel`, `imageChannel`,
-  `probes`, `skillsRepoClient`)이 역방향 위반이 되므로, 해당 4곳이 container에서 설정을
-  주입받는 형태로 함께 바꾼다. 프로세스 로컬 TTL 캐시(`DEFAULT_TTL_MS = 5_000`,
-  `SETTINGS_CACHE_TTL_MS`로 재정의)와 `invalidateSettingsCache()` 동작은 유지한다.
-- `settingsUseCases`의 `process.env` 직접 참조 5곳을 주입으로 전환한다.
+  `lib/sse.ts`를 `app/api/_lib/`로 옮긴다. `lib/httpBody.ts`는 infrastructure 2곳
+  (`agentClient`, `mcp/session`)이 쓰므로 `app/api/_lib/`로 가면 역방향 위반이 된다 —
+  `src/shared/`로 옮긴다.
+- infrastructure 4곳(`channel`, `imageChannel`, `probes`, `skillsRepoClient`)이
+  `lib/runtime-settings`를 직접 읽지 않고 container에서 주입받게 바꾼다. 두 채널은
+  `TargetResolver`를, `probes`는 설정 로더를, `skillsRepoClient`는 해석된 설정 객체를
+  받는다. 조회는 여전히 요청 시점에 일어나므로 프로세스 로컬 TTL 캐시
+  (`DEFAULT_TTL_MS = 5_000`, `SETTINGS_CACHE_TTL_MS`로 재정의)와
+  `invalidateSettingsCache()` 동작은 그대로다.
+  `runtime-settings` 모듈 자체를 팩토리로 바꾸는 것은 하지 않는다 — export 시그니처가
+  바뀌면 완료 조건인 "`tests/runtimeSettings.test.ts` 무수정 통과"와 정면 충돌한다.
+  역방향 의존이 사라졌으므로 이 모듈은 `lib`에 남아도 경계를 깨지 않는다.
+- `settingsUseCases`의 `process.env` 직접 참조 7곳(필드 5 + `parseProviderConfigs` 2)을
+  주입으로 전환한다. `FIELD_SPECS`가 `fieldSpecs(env)`가 되고 팩토리가 env를 받는다.
 - 중복 정리: `parseList` 3벌(`runtime-settings`, `settingsUseCases`, `config` 인라인 2곳)을
   `src/shared/`의 1벌로, 401 응답 생성 2벌(`lib/session.ts`, `_lib/executionAuth.ts`)을
-  `app/api/_lib/http.ts`로 통합한다. 상수시간 비교도 2벌이다 —
+  통합한다. 통합 위치는 `src/shared/unauthorized.ts`다 — `app/api/_lib/http.ts`에 두면
+  `lib/session.ts`가 app을 import하게 된다. 상수시간 비교도 2벌이다 —
   `infrastructure/crypto/timingSafe.ts`와 `lib/generatedSecret.ts:47`의 인라인 구현이
   같은 로직이고, `apiTokenUseCases`는 두 경로를 모두 쓴다(암호화 토큰은 전자,
   레거시 해시는 후자). `generatedSecret`이 `src/shared/`로 옮겨오는 이 시점에 1벌로
   합친다. M1이 만든 `SecretCipher` 구현도 그 1벌을 쓴다.
-- `lib/`에는 `config.ts`와 `container/`만 남는다.
+- `lib/`에는 `config`, `container`와, 아직 옮길 자리가 없는 4개가 남는다:
+  `runtime-settings`(위 참조), `public-url`(그것에 의존), `session`·`auth`·`auth-client`
+  (Better Auth 배선). 이들의 재배치는 M2 범위 밖이다 — 경계를 깨는 의존은 이미 없다.
 - 아키텍처 테스트에 규칙 2개 추가: `src/shared`는 어떤 `@/` import도 금지,
   infrastructure → `@/lib/container` 금지.
 
@@ -128,8 +139,9 @@ infra→lib 12건의 양방향 의존이 성립한다. M5·M6이 새 실행 진�
 새 규칙 2개의 허용 목록은 비어 있다.
 `pnpm build`가 통과해 라우트 핸들러
 시그니처가 검증되며, 라우트의 응답 형태와 상태 코드가 그대로다(`api/skills/sync`의
-502/503/500 분기 포함). `tests/runtimeSettings.test.ts`·`tests/settingsUseCases.test.ts`·
-`tests/authAdapter.test.ts`·`tests/session.test.ts`가 수정 없이 통과한다.
+502/503/500 분기 포함). `tests/runtimeSettings.test.ts`·`tests/session.test.ts`는 수정 없이
+통과하고, `tests/authAdapter.test.ts`(import 경로)와 `tests/settingsUseCases.test.ts`
+(래퍼에 `process.env` 추가)는 각각 한 줄만 바뀐다 — 단언은 그대로다.
 
 ---
 

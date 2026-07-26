@@ -4,6 +4,7 @@ import type { AppSettings, LlmProviderSetting } from "@/domain/settings/types";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import { config } from "@/lib/config";
+import { parseList } from "@/shared/parseList";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 
 export type SettingKey = Exclude<keyof AppSettings, "updatedAt" | "llmProviders">;
@@ -22,20 +23,20 @@ interface FieldSpec {
  * and `config.llmApiKey` getters throw when unset, so those read process.env
  * directly.
  */
-const FIELD_SPECS: FieldSpec[] = [
-  { key: "adminEmails", secret: false, env: () => process.env.ADMIN_EMAILS || undefined },
+const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
+  { key: "adminEmails", secret: false, env: () => env.ADMIN_EMAILS || undefined },
   {
     key: "allowedEmailDomains",
     secret: false,
-    env: () => process.env.ALLOWED_EMAIL_DOMAINS || undefined,
+    env: () => env.ALLOWED_EMAIL_DOMAINS || undefined,
   },
-  { key: "llmBaseUrl", secret: false, env: () => process.env.LLM_BASE_URL || undefined },
-  { key: "llmApiKey", secret: true, env: () => process.env.LLM_API_KEY || undefined },
+  { key: "llmBaseUrl", secret: false, env: () => env.LLM_BASE_URL || undefined },
+  { key: "llmApiKey", secret: true, env: () => env.LLM_API_KEY || undefined },
   { key: "skillsRepo", secret: false, env: () => config.skillsRepo },
   {
     key: "skillsRepoBranch",
     secret: false,
-    env: () => process.env.SKILLS_REPO_BRANCH || undefined,
+    env: () => env.SKILLS_REPO_BRANCH || undefined,
     defaultValue: "main",
   },
   { key: "githubToken", secret: true, env: () => config.githubToken },
@@ -81,6 +82,7 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
 
 function toProviderViews(
   cipher: SecretCipher,
+  env: NodeJS.ProcessEnv,
   settings: AppSettings | null,
 ): SettingsView["llmProviders"] {
   const stored = settings?.llmProviders;
@@ -97,7 +99,7 @@ function toProviderViews(
   }
   return {
     source: "env",
-    items: parseProviderConfigs(process.env).map((provider) => ({
+    items: parseProviderConfigs(env).map((provider) => ({
       name: provider.name,
       baseUrl: provider.baseUrl,
       apiKey: cipher.mask(provider.apiKey),
@@ -106,9 +108,13 @@ function toProviderViews(
   };
 }
 
-function toView(cipher: SecretCipher, settings: AppSettings | null): SettingsView {
+function toView(
+  cipher: SecretCipher,
+  env: NodeJS.ProcessEnv,
+  settings: AppSettings | null,
+): SettingsView {
   const fields = {} as Record<SettingKey, SettingFieldView>;
-  for (const spec of FIELD_SPECS) {
+  for (const spec of fieldSpecs(env)) {
     const stored = settings?.[spec.key];
     if (stored !== undefined) {
       fields[spec.key] = {
@@ -135,7 +141,7 @@ function toView(cipher: SecretCipher, settings: AppSettings | null): SettingsVie
   }
   return {
     fields,
-    llmProviders: toProviderViews(cipher, settings),
+    llmProviders: toProviderViews(cipher, env, settings),
     updatedAt: settings?.updatedAt,
   };
 }
@@ -147,6 +153,7 @@ function toView(cipher: SecretCipher, settings: AppSettings | null): SettingsVie
  */
 function toProviderSetting(
   cipher: SecretCipher,
+  env: NodeJS.ProcessEnv,
   input: LlmProviderInput,
   stored: LlmProviderSetting[] | undefined,
 ): LlmProviderSetting {
@@ -169,7 +176,7 @@ function toProviderSetting(
     storedKey = cipher.encrypt(apiKey);
   } else {
     const existingStoredKey = stored?.find((provider) => provider.name === name)?.apiKey;
-    const envKey = parseProviderConfigs(process.env).find((provider) => provider.name === name)?.apiKey;
+    const envKey = parseProviderConfigs(env).find((provider) => provider.name === name)?.apiKey;
     if (existingStoredKey !== undefined) {
       return {
         name,
@@ -191,13 +198,6 @@ function toProviderSetting(
   };
 }
 
-function parseList(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 export interface SettingsUseCases {
   getView(): Promise<SettingsView>;
   /** Merge semantics: masked secret keeps the override; empty string removes it (env fallback). */
@@ -207,16 +207,17 @@ export interface SettingsUseCases {
 export function createSettingsUseCases(
   repo: SettingsRepository,
   cipher: SecretCipher,
+  env: NodeJS.ProcessEnv,
 ): SettingsUseCases {
   return {
     async getView() {
-      return toView(cipher, await repo.get());
+      return toView(cipher, env, await repo.get());
     },
 
     async update(patch, userEmail) {
       const stored = await repo.get();
       const next: AppSettings = { ...(stored ?? { updatedAt: "" }) };
-      for (const spec of FIELD_SPECS) {
+      for (const spec of fieldSpecs(env)) {
         const raw = patch[spec.key];
         if (raw === undefined) {
           continue;
@@ -238,7 +239,7 @@ export function createSettingsUseCases(
           delete next.llmProviders;
         } else {
           const providers = patch.llmProviders.map((input) =>
-            toProviderSetting(cipher, input, stored?.llmProviders),
+            toProviderSetting(cipher, env, input, stored?.llmProviders),
           );
           const names = new Set(providers.map((provider) => provider.name));
           if (names.size !== providers.length) {
@@ -258,7 +259,7 @@ export function createSettingsUseCases(
 
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
-      return toView(cipher, next);
+      return toView(cipher, env, next);
     },
   };
 }

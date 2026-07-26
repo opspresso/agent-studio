@@ -1,5 +1,5 @@
 import { runMetricsSnapshot } from "@/lib/runMetrics";
-import { isShuttingDown } from "@/lib/lifecycle";
+import { isShuttingDown } from "@/shared/lifecycle";
 
 /**
  * Prometheus scrape endpoint, for autoscaling on in-flight runs.

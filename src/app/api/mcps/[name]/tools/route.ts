@@ -1,4 +1,4 @@
-import { mcpUseCases } from "@/application/mcp";
+import { mcpUseCases } from "@/lib/container";
 import { withAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
 
