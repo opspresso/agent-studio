@@ -19,7 +19,16 @@ export type ListToolsResult =
 
 export interface McpToolProbe {
   /** One-shot tool listing with the given headers, already decrypted. */
-  listTools(url: string, headers: Record<string, string>): Promise<ListToolsResult>;
+  /**
+   * `loopback` says this address belongs to a container we started, so the
+   * outbound guard is not what makes it safe — the same flag the run path
+   * carries, from the same predicate. Absent means the guarded path.
+   */
+  listTools(
+    url: string,
+    headers: Record<string, string>,
+    loopback?: boolean,
+  ): Promise<ListToolsResult>;
   /**
    * Drop any cached tool list for this URL. A new url or new credentials can
    * mean a different tool list, so an operator fixing a server must not have to

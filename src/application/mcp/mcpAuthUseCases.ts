@@ -28,6 +28,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectOwner } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
+import { isManagedLoopback } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
 
 /**
@@ -522,12 +523,15 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     async listTools(projectName, serverName, userEmail, headerOverrides) {
       await assertProjectOwner(deps.projects, projectName, userEmail);
       const server = await requireServer(serverName);
-      try {
-        // Re-checked here as at dispatch: the registry entry may have been
-        // edited to a blocked host since it was stored.
-        await deps.urlPolicy.assertAllowed(server.url);
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : "Blocked URL" };
+      const loopback = isManagedLoopback(server);
+      if (!loopback) {
+        try {
+          // Re-checked here as at dispatch: the registry entry may have been
+          // edited to a blocked host since it was stored.
+          await deps.urlPolicy.assertAllowed(server.url);
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : "Blocked URL" };
+        }
       }
       // Assembled exactly as a run assembles it (see execution/mcpTools) — the
       // binding's overrides layered over the entry, then the project's
@@ -547,7 +551,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           return { ok: false, error: resolved.unavailable };
         }
       }
-      const result = await deps.probe.listTools(server.url, headers);
+      const result = await deps.probe.listTools(server.url, headers, loopback);
       if (!result.ok && result.unauthorized && server.auth) {
         // What a run does with the same 401: record it, so the console offers a
         // reconnect instead of leaving the owner to re-diagnose the message.

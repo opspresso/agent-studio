@@ -1,5 +1,5 @@
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { McpServer } from "@/domain/mcp/types";
+import { isManagedLoopback, type McpServer } from "@/domain/mcp/types";
 import { NotFoundError, ValidationError } from "@/application/errors";
 import {
   assertAllowedUrl,
@@ -99,12 +99,22 @@ export function createMcpUseCases(
       if (!existing) {
         throw new NotFoundError(`MCP server not found: ${name}`);
       }
-      try {
-        await policy.assertAllowed(existing.url);
-      } catch (error) {
-        return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
+      // Same decision as the run path, from the same predicate: the console's
+      // own test must reach what a run can, or a managed server looks broken in
+      // the one place an operator checks it.
+      const loopback = isManagedLoopback(existing);
+      if (!loopback) {
+        try {
+          await policy.assertAllowed(existing.url);
+        } catch (error) {
+          return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
+        }
       }
-      return probe.listTools(existing.url, cipher.decryptHeadersForOutbound(existing.headers));
+      return probe.listTools(
+        existing.url,
+        cipher.decryptHeadersForOutbound(existing.headers),
+        loopback,
+      );
     },
   };
 }

@@ -16,8 +16,9 @@ export type { McpTool };
 export async function listMcpTools(
   url: string,
   headers: Record<string, string>,
+  loopback?: boolean,
 ): Promise<ListToolsResult> {
-  const session = new McpSession(url, headers);
+  const session = new McpSession(url, headers, undefined, loopback);
   try {
     const tools = await session.listTools();
     return {

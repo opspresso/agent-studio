@@ -1,5 +1,5 @@
 import type { McpRepository } from "@/domain/mcp/repository";
-import type { McpServer, McpServerAuth } from "@/domain/mcp/types";
+import type { McpRuntime, McpServer, McpServerAuth } from "@/domain/mcp/types";
 import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
 
@@ -9,6 +9,11 @@ function fromItem(item: Record<string, unknown>): McpServer {
   return {
     name: item.name as string,
     url: item.url as string,
+    // Absent on every row written before managed servers existed, which reads
+    // back as `remote` — the shape those rows have always had.
+    runtime: item.runtime as McpRuntime | undefined,
+    image: item.image as string | undefined,
+    envRefs: item.envRefs as string[] | undefined,
     description: item.description as string | undefined,
     content: item.content as string | undefined,
     headers: (item.headers as Record<string, string> | undefined) ?? {},
@@ -26,6 +31,11 @@ function toItem(server: McpServer): Record<string, unknown> {
     entityType: ENTITY_TYPE,
     name: server.name,
     url: server.url,
+    // Managed only. `runtime` is what earns a loopback address its trust, so it
+    // has to survive the round trip or the entry silently becomes remote.
+    runtime: server.runtime,
+    image: server.image,
+    envRefs: server.envRefs,
     description: server.description,
     content: server.content,
     headers: server.headers,

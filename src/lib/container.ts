@@ -43,6 +43,7 @@ import { createAgentUseCases } from "@/application/agent/agentUseCases";
 import { createMcpUseCases } from "@/application/mcp/mcpUseCases";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
 import { createSsmProvisioner } from "@/infrastructure/mcp/ssmProvisioner";
+import { createDockerProvisioner } from "@/infrastructure/mcp/dockerProvisioner";
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
@@ -126,11 +127,17 @@ export const managedMcpUseCases =
   config.managedMcpInstanceId && config.managedMcpRegistry
     ? createManagedMcpUseCases({
         repo: mcpRepository,
-        provisioner: createSsmProvisioner({
-          instanceId: config.managedMcpInstanceId,
-          region: config.awsRegion,
-          registry: config.managedMcpRegistry,
-        }),
+        // `local` runs Docker here instead of reaching an instance through SSM:
+        // the app and the container share a loopback interface on a developer's
+        // machine, which is the only way to exercise this path without EC2.
+        provisioner:
+          config.managedMcpInstanceId === "local"
+            ? createDockerProvisioner()
+            : createSsmProvisioner({
+                instanceId: config.managedMcpInstanceId,
+                region: config.awsRegion,
+                registry: config.managedMcpRegistry,
+              }),
         probe: mcpToolProbe,
         now: () => new Date().toISOString(),
       })
