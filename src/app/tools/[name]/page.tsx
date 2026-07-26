@@ -7,6 +7,8 @@ import {
   deleteMcp,
   getMcp,
   testMcpConnection,
+  discoverMcpAuth,
+  clearMcpAuth,
   updateMcp,
   type McpServer,
   type McpTool,
@@ -147,6 +149,8 @@ export default function McpDetailPage() {
             </section>
           )}
 
+          <OAuthSection server={server} onChanged={() => void refresh()} />
+
           <section>
             <h2 className="mb-2 text-sm font-medium text-neutral-500">Headers</h2>
             {headerEntries.length === 0 ? (
@@ -211,6 +215,122 @@ export default function McpDetailPage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * OAuth configuration for this registry entry (admin-only).
+ *
+ * This half is operator configuration — where the authorization server is —
+ * shared by every project. The credentials that use it are per project and live
+ * on the project page, which is what lets one entry serve a different app per
+ * project.
+ */
+function OAuthSection({ server, onChanged }: { server: McpServer; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [choices, setChoices] = useState<string[] | null>(null);
+
+  async function discover(authorizationServer?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await discoverMcpAuth(server.name, authorizationServer);
+      if (result.status === "choose") {
+        // The resource advertises several; RFC 9728 puts the choice on us, and
+        // taking the first would bind every project's tokens to it silently.
+        setChoices(result.authorizationServers);
+        return;
+      }
+      setChoices(null);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Discovery failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clear() {
+    setBusy(true);
+    setError(null);
+    try {
+      await clearMcpAuth(server.name);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to clear OAuth configuration");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center gap-3">
+        <h2 className="text-sm font-medium text-neutral-500">OAuth</h2>
+        <button
+          type="button"
+          onClick={() => void discover()}
+          disabled={busy}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        >
+          {busy ? "Discovering…" : server.auth ? "Rediscover" : "Discover"}
+        </button>
+        {server.auth && (
+          <button
+            type="button"
+            onClick={() => void clear()}
+            disabled={busy}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-neutral-700 dark:text-red-400 dark:hover:bg-red-950/30"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+
+      {choices && (
+        <div className="mb-2 space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+          <p>This resource advertises more than one authorization server. Choose one:</p>
+          <div className="flex flex-wrap gap-2">
+            {choices.map((issuer) => (
+              <button
+                key={issuer}
+                type="button"
+                onClick={() => void discover(issuer)}
+                className="rounded-md border border-neutral-300 bg-white px-2 py-1 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900"
+              >
+                {issuer}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {server.auth ? (
+        <dl className="rounded-lg border border-neutral-200 bg-white p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+          {[
+            ["Resource", server.auth.resource],
+            ["Authorization server", server.auth.authorizationServer],
+            ["Authorize", server.auth.authorizationEndpoint],
+            ["Token", server.auth.tokenEndpoint],
+            ["Registration", server.auth.registrationEndpoint ?? "not offered — clients must be registered by hand"],
+            ["Client auth", server.auth.tokenEndpointAuthMethod],
+          ].map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-4 border-b border-neutral-100 py-1 last:border-b-0 dark:border-neutral-800">
+              <dt className="text-neutral-500">{label}</dt>
+              <dd className="break-all text-right font-mono text-xs">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="text-sm text-neutral-400">
+          Not configured. Discovery reads the server&apos;s published metadata; projects then
+          connect their own credentials from their project page.
+        </p>
+      )}
+    </section>
   );
 }
 

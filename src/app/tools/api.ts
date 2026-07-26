@@ -53,3 +53,27 @@ export function testMcpConnection(name: string): Promise<McpTool[]> {
     .then((r) => readJson<{ tools: McpTool[] }>(r))
     .then((data) => data.tools);
 }
+
+export type DiscoverAuthResult =
+  | { status: "discovered"; auth: NonNullable<McpServer["auth"]> }
+  | { status: "choose"; resource: string; authorizationServers: string[] };
+
+/**
+ * Read the server's published OAuth metadata and store it (admin-only). Pass an
+ * authorization server to answer a previous `choose` result — the choice is the
+ * client's to make when a resource advertises more than one.
+ */
+export function discoverMcpAuth(
+  name: string,
+  authorizationServer?: string,
+): Promise<DiscoverAuthResult> {
+  return fetch(`/api/mcps/${name}/auth`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(authorizationServer ? { authorizationServer } : {}),
+  }).then((r) => readJson<DiscoverAuthResult>(r));
+}
+
+export async function clearMcpAuth(name: string): Promise<void> {
+  await assertOk(await fetch(`/api/mcps/${name}/auth`, { method: "DELETE" }));
+}
