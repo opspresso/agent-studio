@@ -19,6 +19,8 @@ import { projectRepository } from "@/infrastructure/db/repositories/projectRepos
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
+import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
+import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAuthStateRepository";
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { createChannel } from "@/infrastructure/llm/channel";
@@ -95,6 +97,8 @@ export {
   createA2aTaskStore,
   secretCipher,
   urlPolicy,
+  mcpConnectionRepository,
+  mcpOAuthStateRepository,
 };
 
 /**

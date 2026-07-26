@@ -36,6 +36,15 @@ export const keys = {
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
   externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
 
+  /** A project's OAuth connection to one registry MCP server. */
+  mcpConnection: (projectName: string, serverName: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `MCPCONN#${serverName}`,
+  }),
+  mcpConnectionPrefix: () => "MCPCONN#",
+  /** An authorization in flight, keyed by the opaque `state` it was started with. */
+  mcpOAuthState: (state: string) => ({ PK: `MCPOAUTH#${state}`, SK: "META" }),
+
   usage: (projectName: string, date: string) => ({
     PK: `USAGE#${projectName}`,
     SK: `DATE#${date}`,
