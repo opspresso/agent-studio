@@ -7,6 +7,7 @@ import type {
   VersionParameters,
 } from "@/domain/project/types";
 import type { ModelConfig } from "@/domain/llm/models";
+import type { McpTool } from "@/domain/mcp/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { UsageRow } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
@@ -419,4 +420,15 @@ export async function disconnectMcp(name: string, server: string): Promise<void>
   await assertOk(
     await fetch(`/api/projects/${name}/mcp-connections/${server}`, { method: "DELETE" }),
   );
+}
+
+/**
+ * A server's tools as this project sees them — the registry entry's headers plus
+ * the project's OAuth token. The registry-level probe cannot answer for an OAuth
+ * server, since the credential belongs here.
+ */
+export function listProjectMcpTools(name: string, server: string): Promise<McpTool[]> {
+  return fetch(`/api/projects/${name}/mcp-connections/${server}/tools`, { method: "POST" })
+    .then((r) => readJson<{ tools: McpTool[] }>(r))
+    .then((data) => data.tools);
 }

@@ -11,10 +11,12 @@ import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpServer, McpServerAuth, TokenEndpointAuthMethod } from "@/domain/mcp/types";
 import type {
   AuthorizationServerMetadata,
+  McpAuthProvider,
   OAuthClient,
   OAuthMetadataClient,
   TokenRequestTarget,
 } from "@/domain/mcp/oauth";
+import type { ListToolsResult, McpToolProbe } from "@/domain/mcp/toolProbe";
 import type {
   McpConnection,
   McpConnectionRepository,
@@ -138,6 +140,10 @@ export interface McpAuthUseCasesDeps {
   oauth: OAuthClient;
   cipher: SecretCipher;
   urlPolicy: UrlPolicy;
+  /** One-shot tool listing, shared with the registry's own probe. */
+  probe: McpToolProbe;
+  /** Resolves (and refreshes) this project's outbound Authorization. */
+  authProvider: McpAuthProvider;
   /** Absolute base of this deployment; the redirect URI is built from it. */
   publicBaseUrl: () => Promise<string | undefined>;
 }
@@ -170,6 +176,12 @@ export interface McpAuthUseCases {
     userEmail: string;
   }): Promise<{ projectName: string; serverName: string }>;
   disconnect(projectName: string, serverName: string, userEmail: string): Promise<void>;
+  /**
+   * What this server offers *this project*. The registry's own probe carries
+   * only the entry's static headers, so against an OAuth server it can do
+   * nothing but 401 — the credential that would answer belongs to the project.
+   */
+  listTools(projectName: string, serverName: string, userEmail: string): Promise<ListToolsResult>;
 }
 
 export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCases {
@@ -451,6 +463,29 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       await assertProjectOwner(deps.projects, projectName, userEmail);
       await requireConnection(projectName, serverName);
       await deps.connections.delete(projectName, serverName);
+    },
+
+    async listTools(projectName, serverName, userEmail) {
+      await assertProjectOwner(deps.projects, projectName, userEmail);
+      const server = await requireServer(serverName);
+      try {
+        // Re-checked here as at dispatch: the registry entry may have been
+        // edited to a blocked host since it was stored.
+        await deps.urlPolicy.assertAllowed(server.url);
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "Blocked URL" };
+      }
+      const headers = deps.cipher.decryptHeadersForOutbound(server.headers);
+      if (server.auth) {
+        const resolved = await deps.authProvider.headersFor(projectName, serverName);
+        if (resolved.warning) {
+          // The same sentence a run would report, so "why are there no tools"
+          // has one answer wherever it is asked.
+          return { ok: false, error: resolved.warning };
+        }
+        Object.assign(headers, resolved.headers);
+      }
+      return deps.probe.listTools(server.url, headers);
     },
   };
 }

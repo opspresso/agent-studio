@@ -60,6 +60,8 @@ function useCases(metadata: Partial<OAuthMetadataClient>, opts: { blocked?: stri
     states: {} as never,
     oauth: {} as never,
     cipher: {} as never,
+    probe: {} as never,
+    authProvider: {} as never,
     publicBaseUrl: async () => undefined,
   };
   return { useCases: createMcpAuthUseCases(deps), stored };
