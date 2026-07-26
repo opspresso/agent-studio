@@ -34,12 +34,30 @@ function maskedView(cipher: SecretCipher, project: Project): ProjectSlackView {
   };
 }
 
+/**
+ * The masked view plus the project it was built from, as it stands *after* the
+ * call. Callers render more than the view — the Slack app manifest is derived
+ * from the project — and a mutation handing back the pre-write project would
+ * describe the configuration it just replaced.
+ */
+export interface ProjectSlackResult {
+  project: Project;
+  view: ProjectSlackView;
+}
+
+/**
+ * Owner-only, unlike the shared project catalog: this exposes the masked bot
+ * token and signing secret. Checked here rather than at the route so no verb can
+ * be added without it, and so one read answers both the check and the view.
+ */
 export async function getProjectSlack(
   repo: ProjectRepository,
   name: string,
+  userEmail: string,
   cipher: SecretCipher,
-): Promise<ProjectSlackView> {
-  return maskedView(cipher, await getProject(repo, name));
+): Promise<ProjectSlackResult> {
+  const project = await assertProjectOwner(repo, name, userEmail);
+  return { project, view: maskedView(cipher, project) };
 }
 
 /** Merge semantics: masked/empty input keeps the stored secret; plaintext replaces it. */
@@ -75,7 +93,7 @@ export async function updateProjectSlack(
   update: ProjectSlackUpdate,
   userEmail: string,
   cipher: SecretCipher,
-): Promise<ProjectSlackView> {
+): Promise<ProjectSlackResult> {
   const project = await assertProjectOwner(repo, name, userEmail);
   if (project.projectType !== "agent") {
     throw new ValidationError("Slack bots can only be attached to agent projects");
@@ -90,7 +108,7 @@ export async function updateProjectSlack(
   }
   const updated: Project = { ...project, slack, updatedAt: nextUpdatedAt(project.updatedAt) };
   await updateProject(repo, updated, project.updatedAt);
-  return maskedView(cipher, updated);
+  return { project: updated, view: maskedView(cipher, updated) };
 }
 
 export async function disconnectProjectSlack(
@@ -98,7 +116,7 @@ export async function disconnectProjectSlack(
   name: string,
   userEmail: string,
   cipher: SecretCipher,
-): Promise<ProjectSlackView> {
+): Promise<ProjectSlackResult> {
   const project = await assertProjectOwner(repo, name, userEmail);
   const updated: Project = {
     ...project,
@@ -106,7 +124,7 @@ export async function disconnectProjectSlack(
     updatedAt: nextUpdatedAt(project.updatedAt),
   };
   await updateProject(repo, updated, project.updatedAt);
-  return maskedView(cipher, updated);
+  return { project: updated, view: maskedView(cipher, updated) };
 }
 
 /** Decrypt credentials for runtime use. Only call at dispatch time. */
