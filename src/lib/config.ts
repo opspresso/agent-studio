@@ -83,6 +83,14 @@ export const config = {
   get managedMcpRegistry(): string | undefined {
     return process.env.MANAGED_MCP_REGISTRY || undefined;
   },
+  /**
+   * The container managed workloads share a network namespace with — this app's
+   * own. Every container has its own 127.0.0.1, so a loopback address only
+   * means anything if both ends are in the same namespace.
+   */
+  get managedMcpNetworkContainer(): string {
+    return process.env.MANAGED_MCP_NETWORK_CONTAINER || "agent-studio";
+  },
   get llmBaseUrl(): string {
     return required("LLM_BASE_URL");
   },

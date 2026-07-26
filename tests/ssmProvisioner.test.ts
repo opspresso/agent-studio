@@ -28,6 +28,7 @@ const provisioner = createSsmProvisioner({
   instanceId: "i-1",
   region: "ap-northeast-2",
   registry: REGISTRY,
+  networkContainer: "agent-studio",
 });
 
 /**
@@ -37,7 +38,7 @@ const provisioner = createSsmProvisioner({
  * just of the intent.
  */
 describe("ssm provisioner input handling", () => {
-  it("publishes the container on loopback only", async () => {
+  it("joins this app's network namespace instead of publishing a port", async () => {
     sent.length = 0;
     const workload = await provisioner.start({
       name: "image-fetch",
@@ -47,10 +48,14 @@ describe("ssm provisioner input handling", () => {
 
     expect(workload.address).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     const script = sent[0]?.commands.join("\n") ?? "";
-    expect(script).toContain("-p 127.0.0.1:");
-    // never published on every interface
-    expect(script).not.toMatch(/-p \d+:\d+/);
-    expect(script).toContain("--memory 512m");
+    // Joins this app's namespace rather than publishing a port: every container
+    // has its own 127.0.0.1, so a published host port would be unreachable from
+    // here — and an unpublished one is reachable from nowhere else.
+    const runLine = script.split("\n").find((line) => line.startsWith("docker run")) ?? "";
+    expect(runLine).toContain("--network container:agent-studio");
+    // no port publishing at all — not to the host, not to any interface
+    expect(runLine).not.toMatch(/-p \S+:\S+/);
+    expect(runLine).toContain("--memory 512m");
   });
 
   it("refuses a name or image carrying shell metacharacters", async () => {

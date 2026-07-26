@@ -137,6 +137,7 @@ export const managedMcpUseCases =
                 instanceId: config.managedMcpInstanceId,
                 region: config.awsRegion,
                 registry: config.managedMcpRegistry,
+                networkContainer: config.managedMcpNetworkContainer,
               }),
         probe: mcpToolProbe,
         now: () => new Date().toISOString(),

@@ -57,6 +57,16 @@ export interface SsmProvisionerConfig {
   region: string;
   /** Registry host used for `docker login`; images must come from it. */
   registry: string;
+  /**
+   * The container whose network namespace managed workloads join.
+   *
+   * "Same host" is not "same loopback": every container has its own 127.0.0.1,
+   * so publishing a managed server on the host's loopback leaves it unreachable
+   * from this app, which is itself in a container. Joining the namespace makes
+   * the address literally shared — and the port is then published nowhere at
+   * all, so nothing outside that namespace can reach it either.
+   */
+  networkContainer: string;
 }
 
 export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvisioner {
@@ -114,13 +124,15 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
           (ref) =>
             `aws ssm get-parameter --name ${ref} --with-decryption --region ${config.region} --query Parameter.Value --output text >> ${envFile}`,
         ),
-        // The container listens on its own port; only loopback is published, so
-        // nothing outside this host can reach it even by mistake.
-        `echo PORT=${spec.containerPort} >> ${envFile}`,
+        // In a shared namespace the container listens directly on the port the
+        // entry's address names; there is no mapping to translate it.
+        `echo PORT=${port} >> ${envFile}`,
         `aws ecr get-login-password --region ${config.region} | docker login --username AWS --password-stdin ${config.registry}`,
         `docker pull -q ${image}`,
         `docker rm -f ${name} >/dev/null 2>&1 || true`,
-        `docker run -d --name ${name} --restart unless-stopped --memory 512m --pids-limit 256 -p 127.0.0.1:${port}:${spec.containerPort} --env-file ${envFile} ${image} >/dev/null`,
+        // No `-p`: ports belong to the joined namespace, and this one is meant
+        // to be reachable from there and nowhere else.
+        `docker run -d --name ${name} --restart unless-stopped --memory 512m --pids-limit 256 --network container:${assertSafe(config.networkContainer, NAME, "network container")} --env-file ${envFile} ${image} >/dev/null`,
         `docker inspect -f '{{.Id}} {{.State.Running}}' ${name}`,
       ]);
       const [identity = "", running = "false"] = out.trim().split(/\s+/);
