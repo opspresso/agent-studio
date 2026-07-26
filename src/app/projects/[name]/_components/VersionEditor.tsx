@@ -8,7 +8,7 @@ import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { listProjects } from "../../lib/api";
 import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
 import {
-  Field,
+  LabeledField,
   McpBindingInput,
   NumberField,
   SearchSelectInput,
@@ -122,7 +122,7 @@ export function VersionEditor({
 
   return (
     <div className="space-y-4">
-      <Field label="Model">
+      <LabeledField label="Model">
         {models.length > 0 ? (
           <select
             value={value.model}
@@ -150,9 +150,9 @@ export function VersionEditor({
             Model is not in the catalog; usage will be recorded with $0 cost.
           </p>
         )}
-      </Field>
+      </LabeledField>
 
-      <Field label="Fallback model (optional)">
+      <LabeledField label="Fallback model (optional)">
         {models.length > 0 ? (
           <select
             value={value.fallbackModel ?? ""}
@@ -173,9 +173,9 @@ export function VersionEditor({
             className={inputClass}
           />
         )}
-      </Field>
+      </LabeledField>
 
-      <Field label="System prompt">
+      <LabeledField label="System prompt">
         <ResizableTextarea
           value={value.systemPrompt}
           onChange={(systemPrompt) => patch({ systemPrompt })}
@@ -183,9 +183,9 @@ export function VersionEditor({
           placeholder="You are a helpful assistant."
           className={`${inputClass} font-mono`}
         />
-      </Field>
+      </LabeledField>
 
-      <Field label="User prompt template">
+      <LabeledField label="User prompt template">
         <ResizableTextarea
           value={value.userPromptTemplate}
           onChange={(userPromptTemplate) => patch({ userPromptTemplate })}
@@ -213,7 +213,7 @@ export function VersionEditor({
             </button>
           }
         />
-      </Field>
+      </LabeledField>
 
       <div className="grid grid-cols-2 gap-3">
         <NumberField
@@ -236,7 +236,7 @@ export function VersionEditor({
       </div>
 
       {supportsReasoning && (
-        <Field label="Reasoning effort">
+        <LabeledField label="Reasoning effort">
           <select
             value={value.parameters.reasoningEffort ?? ""}
             onChange={(e) =>
@@ -251,7 +251,7 @@ export function VersionEditor({
             <option value="medium">medium</option>
             <option value="high">high</option>
           </select>
-        </Field>
+        </LabeledField>
       )}
 
       {projectType === "agent" && (
@@ -320,7 +320,7 @@ export function VersionEditor({
             attached, or one it drew earlier.
           </p>
           {value.parameters.imageGeneration && (
-            <Field label="Image model">
+            <LabeledField label="Image model">
               <select
                 value={value.parameters.imageModel ?? ""}
                 onChange={(e) => patchParams({ imageModel: e.target.value || undefined })}
@@ -333,7 +333,7 @@ export function VersionEditor({
                   </option>
                 ))}
               </select>
-            </Field>
+            </LabeledField>
           )}
         </div>
       )}
