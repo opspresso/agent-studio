@@ -101,12 +101,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # - name: Trigger for GitOps 🚀
-      #   uses: opspresso/action-builder@master
-      #   with:
-      #     args: --dispatch
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     GITOPS_REPO: "opspresso/argocd-env-demo"
-      #     PROJECT: ${{ github.event.repository.name }}
-      #     VERSION: ${{ github.ref_name }}
+      # A repository_dispatch to another repository cannot use GITHUB_TOKEN: it
+      # is scoped to the repository running the workflow. This mints a
+      # short-lived installation token instead, scoped to argocd-env-demo alone,
+      # so there is no long-lived PAT to rotate or over-scope.
+      - name: Mint a token for the GitOps repository
+        id: gitops-token
+        uses: actions/create-github-app-token@v2
+        with:
+          # GITOPS_APP_ID holds the app's Client ID (Iv23…), not the numeric app
+          # id, so this is `client-id` — `app-id` is the legacy input.
+          client-id: ${{ vars.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: opspresso
+          repositories: argocd-env-demo
+
+      # `phase: alpha` is the deployed one, not a staging step: the ApplicationSet
+      # in apps/agent-studio.yaml loads values.yaml + values-alpha.yaml, and
+      # nothing reads values-prod.yaml. `container: app` is the top-level key in
+      # that values file — helm.py matches it by name to find the image tag.
+      - name: Trigger GitOps 🚀
+        env:
+          GH_TOKEN: ${{ steps.gitops-token.outputs.token }}
+        run: |
+          gh api repos/opspresso/argocd-env-demo/dispatches \
+            -f event_type=gitops \
+            -f client_payload[username]=opspresso \
+            -f client_payload[project]=agent-studio \
+            -f client_payload[version]="${GITHUB_REF_NAME}" \
+            -f client_payload[container]=app \
+            -f client_payload[phase]=alpha \
+            -f client_payload[type]=helm
