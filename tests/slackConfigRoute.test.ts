@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // secret masking run. Guards against the Slack config leaking to non-owners.
 const { state, projectRepo } = vi.hoisted(() => ({
   state: { email: "owner@example.com" },
-  projectRepo: { get: vi.fn() },
+  projectRepo: { get: vi.fn(), update: vi.fn(async () => {}) },
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -22,14 +22,18 @@ vi.mock("@/lib/public-url", () => ({
   resolvePublicBaseUrl: async () => "https://studio.example.com",
 }));
 
-const { GET } = await import("@/app/api/projects/[name]/slack/route");
+const { GET, PUT, DELETE } = await import("@/app/api/projects/[name]/slack/route");
 
 const BOT_TOKEN = "xoxb-1234567890abcdef1234";
 const SIGNING_SECRET = "abcdef1234567890abcdef12";
 const project = {
   name: "proj",
   displayName: "Proj",
+  // A Slack bot only attaches to an agent project, so a fixture without a type
+  // is one the write path refuses.
+  projectType: "agent",
   ownerEmail: "owner@example.com",
+  updatedAt: "2026-01-01T00:00:00.000Z",
   slack: { enabled: true, botToken: BOT_TOKEN, signingSecret: SIGNING_SECRET },
 };
 
@@ -69,5 +73,42 @@ describe("GET /api/projects/[name]/slack (owner-gated)", () => {
     projectRepo.get.mockResolvedValue(undefined);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(404);
+  });
+});
+
+describe("every verb answers with the same shape", () => {
+  // The settings page keeps whatever a mutation returns and renders the manifest
+  // from it. A response that is a subset of the read is a crashed page one click
+  // later — which is exactly what shipped: only GET carried the manifest.
+  const mutate = (body: unknown) =>
+    new Request("https://studio.example.com/api/projects/proj/slack", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("returns the manifest after a save", async () => {
+    projectRepo.get.mockResolvedValue(project);
+    const res = await PUT(mutate({ enabled: false }), ctx());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.manifest).toBeTruthy();
+    expect(body.eventsUrl).toBe("https://studio.example.com/api/slack/events/proj");
+  });
+
+  it("returns the manifest after a disconnect", async () => {
+    projectRepo.get.mockResolvedValue(project);
+    const res = await DELETE(
+      new Request("https://studio.example.com/api/projects/proj/slack", { method: "DELETE" }),
+      ctx(),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).manifest).toBeTruthy();
+  });
+
+  it("still refuses a non-owner", async () => {
+    state.email = "intruder@example.com";
+    projectRepo.get.mockResolvedValue(project);
+    expect((await PUT(mutate({ enabled: false }), ctx())).status).toBe(403);
   });
 });
