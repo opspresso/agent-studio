@@ -3,7 +3,7 @@
 import type { McpTool } from "@/domain/mcp/types";
 import { useEffect, useState } from "react";
 import type { McpBinding, SubagentRef } from "../../lib/api";
-import { testMcpConnection } from "@/app/tools/api";
+import { listProjectMcpTools } from "../../lib/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
 import { McpBindingSettings } from "./McpBindingSettings";
 
@@ -475,7 +475,7 @@ export function McpBindingInput({
               <ToolSelector
                 selected={values.find((v) => v.name === settingsFor)?.tools}
                 onChange={(tools) => setTools(settingsFor, tools)}
-                load={() => testMcpConnection(settingsFor)}
+                load={() => listProjectMcpTools(projectName, settingsFor)}
               />
             }
             headers={

@@ -113,6 +113,12 @@ export {
  */
 export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy, remoteAgents);
 export const mcpUseCases = createMcpUseCases(mcpRepository, secretCipher, urlPolicy, mcpToolProbe);
+const mcpAuthProvider = createMcpAuthProvider({
+  mcps: mcpRepository,
+  connections: mcpConnectionRepository,
+  oauth: oauthClient,
+  cipher: secretCipher,
+});
 export const mcpAuthUseCases = createMcpAuthUseCases({
   mcps: mcpRepository,
   projects: projectRepository,
@@ -122,13 +128,9 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   oauth: oauthClient,
   cipher: secretCipher,
   urlPolicy,
+  probe: mcpToolProbe,
+  authProvider: mcpAuthProvider,
   publicBaseUrl: getPublicBaseUrl,
-});
-const mcpAuthProvider = createMcpAuthProvider({
-  mcps: mcpRepository,
-  connections: mcpConnectionRepository,
-  oauth: oauthClient,
-  cipher: secretCipher,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);

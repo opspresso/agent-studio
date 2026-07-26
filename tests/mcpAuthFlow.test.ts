@@ -47,6 +47,13 @@ const cipher = {
   encrypt: (value: string) => (value.startsWith("enc:") ? value : `enc:${value}`),
   decrypt: (value: string) => (value.startsWith("enc:") ? value.slice(4) : value),
   isMasked: (value: string) => value.startsWith("•"),
+  decryptHeadersForOutbound: (headers: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(headers).map(([name, value]) => [
+        name,
+        value.startsWith("enc:") ? value.slice(4) : value,
+      ]),
+    ),
 } as McpAuthUseCasesDeps["cipher"];
 
 interface Harness {
@@ -55,6 +62,7 @@ interface Harness {
   states: Map<string, McpOAuthState>;
   exchanges: Array<{ target: TokenRequestTarget; params: Record<string, string> }>;
   registrations: Array<Record<string, unknown>>;
+  probes: Array<{ url: string; headers: Record<string, string> }>;
 }
 
 function harness(
@@ -63,12 +71,14 @@ function harness(
     owner?: string;
     connection?: Partial<McpConnection>;
     tokens?: TokenSet;
+    authHeaders?: { headers: Record<string, string>; warning?: string };
   } = {},
 ): Harness {
   const connections = new Map<string, McpConnection>();
   const states = new Map<string, McpOAuthState>();
   const exchanges: Harness["exchanges"] = [];
   const registrations: Harness["registrations"] = [];
+  const probes: Array<{ url: string; headers: Record<string, string> }> = [];
   const server = overrides.server ?? SERVER;
   if (overrides.connection) {
     connections.set("p/slack", {
@@ -126,9 +136,20 @@ function harness(
     } as never,
     cipher,
     urlPolicy: { assertAllowed: async () => {} },
+    probe: {
+      listTools: async (url: string, headers: Record<string, string>) => {
+        probes.push({ url, headers });
+        return { ok: true as const, tools: [{ name: "search" }] };
+      },
+      invalidateDiscovery: () => {},
+    },
+    authProvider: {
+      headersFor: async () => overrides.authHeaders ?? { headers: { Authorization: "Bearer at" } },
+      markUnauthorized: async () => {},
+    },
     publicBaseUrl: async () => BASE_URL,
   };
-  return { deps, connections, states, exchanges, registrations };
+  return { deps, connections, states, exchanges, registrations, probes };
 }
 
 describe("beginAuthorization", () => {
@@ -331,5 +352,40 @@ describe("saveClientCredentials", () => {
     for (const secret of ["CLIENT-SECRET-VALUE", "ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
       expect(serialized).not.toContain(secret);
     }
+  });
+});
+
+describe("listing a server's tools as the project", () => {
+  it("sends the project's token, not just the registry entry's headers", async () => {
+    // The registry probe carries only the entry's static headers, so against an
+    // OAuth server it can do nothing but 401 — the credential is the project's.
+    const h = harness({ connection: {} });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    const result = await uc.listTools("p", "slack", OWNER);
+
+    expect(result).toEqual({ ok: true, tools: [{ name: "search" }] });
+    expect(h.probes[0]?.url).toBe("https://mcp.slack.com/mcp");
+    expect(h.probes[0]?.headers.Authorization).toBe("Bearer at");
+  });
+
+  it("reports the run's own reason when the connection cannot be used", async () => {
+    // One answer to "why are there no tools", wherever it is asked.
+    const h = harness({
+      connection: {},
+      authHeaders: { headers: {}, warning: "slack needs to be reconnected" },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    expect(await uc.listTools("p", "slack", OWNER)).toEqual({
+      ok: false,
+      error: "slack needs to be reconnected",
+    });
+    expect(h.probes).toHaveLength(0);
+  });
+
+  it("refuses a non-owner", async () => {
+    const uc = createMcpAuthUseCases(harness({ connection: {} }).deps);
+    await expect(uc.listTools("p", "slack", "someone@example.com")).rejects.toThrow(ForbiddenError);
   });
 });
