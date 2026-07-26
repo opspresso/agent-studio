@@ -8,7 +8,7 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import type { ChatMessageInput, EngineChunk, EngineParameters, RunResult } from "@/domain/llm/types";
+import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
@@ -18,7 +18,7 @@ import { createSkillReader, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
-import { toEngineParameters } from "./deps";
+import { runStrategyFor, toEngineParameters } from "./deps";
 
 export type {
   ExecutionDeps,
@@ -118,7 +118,7 @@ export function executeProjectStream(
   deps: ExecutionDeps,
   input: ExecuteProjectInput,
 ): AsyncGenerator<EngineChunk> {
-  if (input.project.projectType === "agent") {
+  if (runStrategyFor(input.project) === "agent") {
     return executeAgent(deps, {
       project: input.project,
       version: input.version,

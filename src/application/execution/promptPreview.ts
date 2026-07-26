@@ -1,6 +1,6 @@
 /** Rendering what a run would send, without dispatching it. */
 
-import type { Project, SubagentRef, Version } from "@/domain/project/types";
+import type { Project, Version } from "@/domain/project/types";
 import { renderTemplate } from "@/application/llm/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
@@ -53,7 +53,7 @@ export async function previewPrompt(
     };
   }
 
-  if (project.projectType !== "agent") {
+  if (runStrategyFor(project) !== "agent") {
     return {
       messages: toPreviewMessages(
         engine.buildPromptMessages({

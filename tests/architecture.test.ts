@@ -37,8 +37,21 @@ function walk(dir: string, out: string[] = []): string[] {
  * clauses. Re-exports count: `export type { T } from "@/infrastructure/…"`
  * propagates an infrastructure type to every consumer of the module, which is
  * exactly the coupling this rule exists to catch.
+ *
+ * The clause is `[^;]*?` rather than `[\s\S]*?` because an import clause never
+ * contains a semicolon, while an unbounded span happily runs from a from-less
+ * statement (`export type X = …;`) to the `from` of a *later* import — pinning
+ * the wrong keyword to it and reporting a value import as type-only.
  */
-const IMPORT_RE = /(?:^|\n)[ \t]*(?:import|export)\b([\s\S]*?)from[ \t]*["']([^"']+)["']/g;
+const STATIC_IMPORT_RE = /(?:^|\n)[ \t]*(?:import|export)\b([^;]*?)from[ \t]*["']([^"']+)["']/g;
+
+/**
+ * `import("x")`, which has no `from` for the pattern above to find: `await
+ * import("x")` at runtime and `import("x").T` in a type position. Either one
+ * binds the two modules exactly as a top-level import does, so a rule that
+ * could not see them would be trivial to step around.
+ */
+const INLINE_IMPORT_RE = /\bimport[ \t]*\([ \t]*["']([^"']+)["']/g;
 
 export interface ModuleImport {
   spec: string;
@@ -47,11 +60,19 @@ export interface ModuleImport {
 }
 
 export function parseImports(source: string): ModuleImport[] {
-  return [...source.matchAll(IMPORT_RE)].map((match) => ({
-    spec: match[2]!,
-    // `import { type A }` mixes a type in with value imports — not type-only.
-    typeOnly: /^type\b/.test((match[1] ?? "").trim()),
-  }));
+  return [
+    ...[...source.matchAll(STATIC_IMPORT_RE)].map((match) => ({
+      spec: match[2]!,
+      // `import { type A }` mixes a type in with value imports — not type-only.
+      typeOnly: /^type\b/.test((match[1] ?? "").trim()),
+    })),
+    ...[...source.matchAll(INLINE_IMPORT_RE)].map((match) => ({
+      spec: match[1]!,
+      // Separating a runtime `await import()` from a type-position one needs a
+      // parser. The stricter reading wins: a banned target is reported either way.
+      typeOnly: false,
+    })),
+  ];
 }
 
 /** `src/application/foo/bar.ts` → `application`. */
@@ -66,8 +87,8 @@ function targetLayer(spec: string): string | null {
 
 interface Rule {
   name: string;
-  /** Which files the rule governs. */
-  from: string;
+  /** Which layer(s) the rule governs. */
+  from: string | string[];
   /** True when importing `spec` from this layer is a violation. */
   banned: (spec: string) => boolean;
   /**
@@ -127,9 +148,11 @@ const RULES: Rule[] = [
   },
   {
     // The composition root wires everything, so an adapter importing it would
-    // close a cycle: container -> adapter -> container.
-    name: "infrastructure does not import the composition root",
-    from: "infrastructure",
+    // close a cycle: container -> adapter -> container. Use cases are the same
+    // rule seen from the other side — they are handed their dependencies and
+    // must never pull them, which is the coupling M2 and M3 removed.
+    name: "adapters and use cases do not import the composition root",
+    from: ["infrastructure", "application"],
     banned: (spec) => spec === "@/lib/container",
     allow: [],
   },
@@ -149,10 +172,15 @@ const SOURCE_FILES = walk(SRC).map((absolute) => ({
   text: readFileSync(absolute, "utf8"),
 }));
 
+function governs(rule: Rule, relPath: string): boolean {
+  const layer = layerOf(relPath);
+  return layer !== null && (Array.isArray(rule.from) ? rule.from : [rule.from]).includes(layer);
+}
+
 function violationsOf(rule: Rule): string[] {
   const found: string[] = [];
   for (const file of SOURCE_FILES) {
-    if (layerOf(file.path) !== rule.from) continue;
+    if (!governs(rule, file.path)) continue;
     if (rule.exempt?.(file.path)) continue;
     for (const { spec, typeOnly } of parseImports(file.text)) {
       if (rule.banned(spec)) {
@@ -192,6 +220,12 @@ interface SingleOwner {
   owner: string;
   /** Layers the pattern may legitimately also appear in (never the owner's). */
   alsoAllowedIn?: string[];
+  /**
+   * Restrict the check to files under this path prefix, for a decision that is
+   * only a duplicate *inside* one subsystem. Narrower than `alsoAllowedIn`,
+   * which works per layer and so cannot exempt siblings of the owner.
+   */
+  within?: string;
 }
 
 const SINGLE_OWNERS: SingleOwner[] = [
@@ -249,11 +283,26 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // separate question from how it runs.
     alsoAllowedIn: ["app"],
   },
+  {
+    // The agent half of the same dispatch, which cannot be checked tree-wide:
+    // `projectType !== "agent"` is also how several use cases validate what a
+    // project supports (a Slack bot, a chat, a tools capability), and that is a
+    // different question from how a run is dispatched. Inside the execution
+    // facade there is no second question, so the check is scoped to it — three
+    // modules there used to answer it for themselves.
+    what: "how the execution facade dispatches an agent project",
+    pattern: /projectType [!=]== "agent"/,
+    owner: "src/application/execution/deps.ts",
+    within: "src/application/execution/",
+  },
 ];
 
 describe("single owners", () => {
   it.each(SINGLE_OWNERS.map((o) => [o.what, o] as const))("%s", (_what, owner) => {
-    const holders = SOURCE_FILES.filter((file) => owner.pattern.test(file.text)).map((f) => f.path);
+    const scope = owner.within
+      ? SOURCE_FILES.filter((file) => file.path.startsWith(owner.within!))
+      : SOURCE_FILES;
+    const holders = scope.filter((file) => owner.pattern.test(file.text)).map((f) => f.path);
     const unexpected = holders.filter(
       (path) =>
         path !== owner.owner && !(owner.alsoAllowedIn ?? []).includes(layerOf(path) ?? ""),
@@ -302,6 +351,27 @@ describe("scanner", () => {
       // An inline `type` among value imports is still a value import.
       { spec: "@/domain/fg", typeOnly: false },
     ]);
+  });
+
+  it("parses dynamic and type-position import() forms", () => {
+    const parsed = parseImports(
+      [
+        `const { a } = await import("@/lib/config");`,
+        `type X = import("@/infrastructure/db/client").Foo;`,
+      ].join("\n"),
+    );
+    expect(parsed).toEqual([
+      { spec: "@/lib/config", typeOnly: false },
+      { spec: "@/infrastructure/db/client", typeOnly: false },
+    ]);
+  });
+
+  it("does not let a from-less statement swallow the next import", () => {
+    const parsed = parseImports(
+      [`export type A = () => number;`, `import { b } from "@/domain/b";`].join("\n"),
+    );
+    // One import, and a value one — not `A`'s `export type` pinned to `b`.
+    expect(parsed).toEqual([{ spec: "@/domain/b", typeOnly: false }]);
   });
 
   it("flags a banned import that is not on the allowlist", () => {
