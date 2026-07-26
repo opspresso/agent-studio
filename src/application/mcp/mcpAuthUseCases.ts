@@ -144,6 +144,19 @@ function sameScopes(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((scope, index) => scope === b[index]);
 }
 
+/**
+ * The scopes a token response says were granted.
+ *
+ * RFC 6749 §5.1 delimits `scope` with spaces, and Slack delimits it with commas
+ * — `channels:history,groups:history,…`. Splitting on spaces alone turns that
+ * whole list into one "scope" that no display can wrap and no comparison can
+ * match. A comma is technically legal inside a scope token, but no provider
+ * issues one, whereas comma-delimited lists are shipping today.
+ */
+function parseGrantedScopes(scope: string): string[] {
+  return scope.split(/[\s,]+/).filter(Boolean);
+}
+
 export interface McpAuthUseCasesDeps {
   mcps: McpRepository;
   projects: ProjectRepository;
@@ -491,7 +504,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           ? { expiresAt: new Date(now.getTime() + tokens.expiresInSeconds * 1000).toISOString() }
           : {}),
         // What the server actually granted, which may be narrower than asked.
-        scopes: tokens.scope ? tokens.scope.split(" ").filter(Boolean) : connection.scopes,
+        scopes: tokens.scope ? parseGrantedScopes(tokens.scope) : connection.scopes,
         status: "connected",
         connectedBy: userEmail,
         connectedAt: now.toISOString(),

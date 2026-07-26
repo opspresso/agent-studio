@@ -176,7 +176,10 @@ export function McpConnectionCard({
       )}
 
       {connection?.connectedAt && (
-        <p className="text-xs text-neutral-500">
+        // `break-words` because a granted scope list is unbounded and comes from
+        // the provider: one long token with nothing to wrap on must fold rather
+        // than push the dialog off the viewport.
+        <p className="text-xs break-words text-neutral-500">
           Authorized by {connection.connectedBy} on{" "}
           {new Date(connection.connectedAt).toLocaleString()}
           {connection.scopes.length > 0 ? ` · ${connection.scopes.join(", ")}` : ""}

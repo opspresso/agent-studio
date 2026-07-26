@@ -288,6 +288,21 @@ describe("completeAuthorization", () => {
     expect(h.connections.get("p/slack")?.scopes).toEqual(["chat:write", "users:read"]);
   });
 
+  it("splits a comma-delimited scope list, as Slack returns one", async () => {
+    // RFC 6749 delimits `scope` with spaces and Slack delimits it with commas.
+    // Splitting on spaces alone stored the whole list as a single "scope" — one
+    // token with nothing to wrap on, which ran the connection card off-screen.
+    const { h, uc, state } = await started({
+      tokens: { accessToken: "at-1", scope: "channels:history,groups:history,chat:write" },
+    });
+    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+    expect(h.connections.get("p/slack")?.scopes).toEqual([
+      "channels:history",
+      "groups:history",
+      "chat:write",
+    ]);
+  });
+
   it("refuses a replayed state", async () => {
     const { uc, state } = await started();
     await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
