@@ -1,7 +1,8 @@
 /**
  * {@link RemoteAgentDispatcher} over the A2A client and the OpenAI-compatible
- * client. `send` carries the transfer path that used to be inlined in the
- * execution facade — same request shape, same 120s bound, same error handling.
+ * client. `send` is the mid-run subagent transfer: a 120s bound, a size-bounded
+ * body read, and an error status reported as a failed reply — never as a
+ * successful one that happens to carry no text.
  */
 
 import type {
@@ -11,9 +12,12 @@ import type {
 } from "@/domain/agent/dispatcher";
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { readBodyText } from "@/shared/httpBody";
 import { sendAgentMessage } from "./agentClient";
 
 const TRANSFER_TIMEOUT_MS = 120_000;
+/** Matches the probe and the MCP session: no outbound body is read unbounded. */
+const MAX_TRANSFER_RESPONSE_BYTES = 2_000_000;
 
 async function transferOpenAi(
   target: RemoteAgentTarget,
@@ -28,7 +32,14 @@ async function transferOpenAi(
       ? AbortSignal.any([signal, AbortSignal.timeout(TRANSFER_TIMEOUT_MS)])
       : AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
   });
-  const data = (await response.json()) as {
+  const body = await readBodyText(response, MAX_TRANSFER_RESPONSE_BYTES);
+  // Without this an error status parses as a reply with no `choices`, and the
+  // parent model is told the transfer succeeded and returned nothing.
+  if (!response.ok) {
+    const detail = body.slice(0, 500);
+    return { ok: false, error: `HTTP ${response.status}${detail ? `: ${detail}` : ""}` };
+  }
+  const data = JSON.parse(body) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
   return { ok: true, text: data.choices?.[0]?.message?.content ?? "", images: [] };

@@ -7,12 +7,16 @@ const listMcpToolsMock = vi.hoisted(() =>
   vi.fn(async (_url: string, _headers: Record<string, string>) => ({ ok: true as const, tools: [] })),
 );
 
+// Mocked at the infrastructure boundary so the real dispatcher's protocol
+// routing is what runs. A fake dispatcher here would only assert its own copy
+// of the branch it is meant to be testing.
 const sendAgentMessageMock = vi.hoisted(() =>
   vi.fn(async (_url: string, _headers: Record<string, string>, _message: string) => ({
     ok: true as const,
     text: "hi",
   })),
 );
+vi.mock("@/infrastructure/agent/agentClient", () => ({ sendAgentMessage: sendAgentMessageMock }));
 
 const sendA2aMessageMock = vi.hoisted(() =>
   vi.fn(async (_url: string, _headers: Record<string, string>, _message: string) => ({
@@ -20,10 +24,12 @@ const sendA2aMessageMock = vi.hoisted(() =>
     text: "hi",
   })),
 );
+vi.mock("@/infrastructure/a2a/client", () => ({ sendA2aMessage: sendA2aMessageMock }));
 
 import { createAgentUseCases as createAgentUseCasesImpl } from "@/application/agent/agentUseCases";
 import { createMcpUseCases as createMcpUseCasesImpl } from "@/application/mcp/mcpUseCases";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 
 // Deterministic SSRF verdicts: block `.internal` hosts without real DNS lookups.
@@ -36,20 +42,15 @@ const testPolicy: UrlPolicy = {
   },
 };
 
-// The cipher and policy are injected now; every call below is unchanged.
+// Ports the use cases take; only the MCP probe is a stand-in, because there is
+// no real MCP server to reach. The agent dispatcher is the production one.
 const createMcpUseCases = (repo: Parameters<typeof createMcpUseCasesImpl>[0]) =>
   createMcpUseCasesImpl(repo, secretCipher, testPolicy, {
     listTools: listMcpToolsMock,
     invalidateDiscovery: () => {},
   });
 const createAgentUseCases = (repo: Parameters<typeof createAgentUseCasesImpl>[0]) =>
-  createAgentUseCasesImpl(repo, secretCipher, testPolicy, {
-    send: async () => ({ ok: true as const, text: "hi", images: [] }),
-    probe: async (target, message) =>
-      (target.protocol ?? "openai") === "a2a"
-        ? sendA2aMessageMock(target.url, target.headers, message)
-        : sendAgentMessageMock(target.url, target.headers, message),
-  });
+  createAgentUseCasesImpl(repo, secretCipher, testPolicy, remoteAgentDispatcher);
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { ExternalAgent } from "@/domain/agent/types";
 import type { McpRepository } from "@/domain/mcp/repository";
