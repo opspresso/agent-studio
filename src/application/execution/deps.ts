@@ -109,3 +109,23 @@ export function toEngineParameters(version: Version): EngineParameters {
   }
   return params;
 }
+
+/** How a project is executed. */
+export type RunStrategy = "image" | "agent" | "prompt";
+
+/**
+ * The single owner of "which project type runs which way".
+ *
+ * `executeProjectStream` already dispatches agent vs. single-shot internally,
+ * but the image path returns a value rather than a stream, so callers had to
+ * ask the question again — three of them did, each spelling out
+ * `projectType === "image"` and `=== "agent"` for itself. Adding a fourth
+ * project type meant finding all three. They now ask here and only decide how
+ * to serialise the answer.
+ */
+export function runStrategyFor(project: Project): RunStrategy {
+  if (project.projectType === "image") {
+    return "image";
+  }
+  return project.projectType === "agent" ? "agent" : "prompt";
+}

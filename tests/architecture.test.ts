@@ -237,6 +237,18 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /error: "Unauthorized"/,
     owner: "src/shared/unauthorized.ts",
   },
+  {
+    // Three call sites used to ask this for themselves, so a new project type
+    // meant finding all three. They now ask the facade and only decide how to
+    // serialise its answer. The API-reference page is exempt: it documents each
+    // type's endpoints rather than dispatching a run.
+    what: "which project type runs which way",
+    pattern: /projectType === "image"/,
+    owner: "src/application/execution/deps.ts",
+    // The console decides which panels and docs a project type gets, which is a
+    // separate question from how it runs.
+    alsoAllowedIn: ["app"],
+  },
 ];
 
 describe("single owners", () => {

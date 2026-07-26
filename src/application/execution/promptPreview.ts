@@ -4,6 +4,7 @@ import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import { renderTemplate } from "@/application/llm/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
+import { runStrategyFor } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
@@ -36,7 +37,7 @@ export async function previewPrompt(
     );
   }
 
-  if (project.projectType === "image") {
+  if (runStrategyFor(project) === "image") {
     // An image run has no system prompt — the rendered template *is* the prompt,
     // and the Playground's own prompt box overrides it at run time.
     const prompt = renderTemplate(version.userPromptTemplate, input.variables ?? {}).trim();

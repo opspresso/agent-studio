@@ -20,7 +20,11 @@ vi.mock("@/app/api/projects/_lib/executionAuth", () => ({
   authenticateExecution: async () => ({ email: "owner@example.com" }),
 }));
 
-vi.mock("@/application/execution/runProject", () => ({
+vi.mock("@/application/execution/runProject", async (importOriginal) => ({
+  // The dispatch decision itself is real — that is what this test exercises.
+  runStrategyFor: (
+    await importOriginal<typeof import("@/application/execution/runProject")>()
+  ).runStrategyFor,
   executeAgent: () => {
     calls.push("executeAgent");
     return (async function* (): AsyncGenerator<EngineChunk> {

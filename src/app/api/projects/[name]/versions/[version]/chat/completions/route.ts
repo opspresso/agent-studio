@@ -1,3 +1,4 @@
+import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import {
@@ -27,7 +28,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
   try {
     const project = await getProject(projectRepository, name);
     const versionEntity = await getVersion(versionRepository, name, version);
-    const isAgent = project.projectType === "agent";
+    const isAgent = runStrategyFor(project) === "agent";
     const versionParams = {
       project,
       version: versionEntity,
