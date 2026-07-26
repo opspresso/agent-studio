@@ -8,7 +8,6 @@ export interface ExecutionPrincipal {
   viaToken: boolean;
 }
 
-
 /**
  * Authenticate an execution request scoped to `projectName`.
  * - `Authorization: Bearer <token>` verifies against the project's API token

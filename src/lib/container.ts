@@ -7,7 +7,8 @@
  * Adapters that pull a heavy SDK are reached through `import()` rather than a
  * top-level import. Anything named at module scope is retained for every
  * consumer of this file, so a route that wanted one repository was also loading
- * the Slack client, the GitHub client, the A2A card renderer and `@a2a-js/sdk`.
+ * the Slack client, the GitHub client, the A2A card renderer, and — through the
+ * remote-agent dispatcher — the `@a2a-js/sdk` client.
  * Each of those is already awaited at its call site, so deferring costs nothing.
  * The one that stays eager is `mcpToolProbe`: its `invalidateDiscovery` is
  * synchronous, and making it async would let a later read win the race against

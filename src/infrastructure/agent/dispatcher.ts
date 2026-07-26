@@ -39,9 +39,16 @@ async function transferOpenAi(
     const detail = body.slice(0, 500);
     return { ok: false, error: `HTTP ${response.status}${detail ? `: ${detail}` : ""}` };
   }
-  const data = JSON.parse(body) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
+  // A 2xx carrying something other than JSON — a proxy interstitial, an HTML
+  // error page — is still a failed transfer. Reported in the same shape as the
+  // branch above, rather than as a raw SyntaxError the parent model would have
+  // to reason about.
+  let data: { choices?: Array<{ message?: { content?: string } }> };
+  try {
+    data = JSON.parse(body) as typeof data;
+  } catch {
+    return { ok: false, error: `malformed reply: ${body.slice(0, 500)}` };
+  }
   return { ok: true, text: data.choices?.[0]?.message?.content ?? "", images: [] };
 }
 
