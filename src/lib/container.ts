@@ -31,6 +31,7 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
+import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
@@ -47,6 +48,7 @@ import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
+  getPublicBaseUrl,
   getSkillsRepoConfig,
 } from "./runtime-settings";
 
@@ -112,8 +114,14 @@ export const agentUseCases = createAgentUseCases(externalAgentRepository, secret
 export const mcpUseCases = createMcpUseCases(mcpRepository, secretCipher, urlPolicy, mcpToolProbe);
 export const mcpAuthUseCases = createMcpAuthUseCases({
   mcps: mcpRepository,
+  projects: projectRepository,
+  connections: mcpConnectionRepository,
+  states: mcpOAuthStateRepository,
   metadata: oauthMetadataClient,
+  oauth: oauthClient,
+  cipher: secretCipher,
   urlPolicy,
+  publicBaseUrl: getPublicBaseUrl,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);

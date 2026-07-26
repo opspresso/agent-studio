@@ -53,6 +53,14 @@ function useCases(metadata: Partial<OAuthMetadataClient>, opts: { blocked?: stri
         }
       },
     },
+    // Discovery is an admin action on the shared entry; none of the per-project
+    // collaborators below are reachable from it.
+    projects: {} as never,
+    connections: {} as never,
+    states: {} as never,
+    oauth: {} as never,
+    cipher: {} as never,
+    publicBaseUrl: async () => undefined,
   };
   return { useCases: createMcpAuthUseCases(deps), stored };
 }
