@@ -91,34 +91,39 @@ version이 없는 프로젝트는 실행하지 않는다. 같은 `Idempotency-Ke
 
 ---
 
-## M7 — Managed local MCP
+## M7 — Managed local MCP (loopback)
 
 **이유**: 현재 Tools에는 이미 실행 중인 public streamable-HTTP MCP server만 등록할 수
-있다. 운영자가 승인한 MCP server를 Agent Studio가 배포하고 수명 주기를 관리하면 별도
-MCP 인프라를 수동으로 운영하지 않아도 된다.
+있다. 툴 하나짜리 내부 서버 하나를 붙이려고 EC2·도메인·인증서·릴리즈 파이프라인을 따로
+세워야 하고, 같은 호스트에 띄워도 `UrlPolicy`가 사설 주소를 거부하므로 공개 도메인으로
+나갔다 들어와야 한다. 그 hairpin 동안 인증서와 DNS가 내부 호출의 의존성이 되고, 임의
+URL을 가져오는 서버가 인터넷에 노출된 채 bearer 토큰 하나에 의존하게 된다.
 
-**선행**: M6. workload provisioner는 M6이 도입하는 durable worker 경계 위에서 동작한다.
-이 마일스톤을 먼저 하려면 그 경계를 여기서 함께 정해야 하며, 그 경우 규모가 두 배가 된다.
+**선행**: 없음. 대상을 **같은 호스트의 루프백**으로 좁혀 M6 의존성을 끊는다. 조정은
+운영자 행동 시점에만 일어나므로 주기적 reconciler가 필요 없고, 중복 생성은 조건부
+쓰기로 막는다(`slackEventRepository.claim`과 같은 패턴). 내부망 라우팅·서비스
+디스커버리·보안그룹은 범위 밖이다.
 
 **범위**
 
-- 이 마일스톤은 런타임 어댑터를 **하나만** 구현한다. 배포 환경에서 실제로 쓰는 것을
-  선택하고, 나머지는 어댑터 계약만 정의한 채 남긴다. 세 런타임을 동시에 구현하지 않는다.
-- MCP 유형을 `remote`와 `managed`로 구분하고 기존 원격 등록 동작은 유지.
-- managed MCP에는 승인된 artifact(image 또는 task definition), 실행 설정, resource limit,
-  health check, secret reference를 저장한다. 임의 command·image 실행은 허용하지 않는다.
-- 명시적 runtime 설정을 우선하고, 설정이 `auto`일 때만 실행 환경을 탐지한다.
-- desired/observed 상태와 workload identity를 영속화하고, 조건부 쓰기·lease 기반
-  reconciler로 여러 인스턴스의 중복 생성·삭제를 방지한다.
-- 생성·시작·중지·재시작·삭제와 health/status 조회를 지원하고, 실패 원인과 최근 상태
-  변경 시각을 콘솔에 표시한다.
-- managed endpoint는 provisioner가 반환한 workload identity로만 신뢰한다. 일반 remote
-  MCP의 SSRF 검증(`UrlPolicy` 포트)을 우회하거나 임의 private URL 등록을 허용하지 않는다.
-- 최소 권한 IAM/RBAC와 network policy를 적용하고, application container에 host Docker
-  socket을 직접 노출하지 않는다.
+- MCP 엔트리에 `runtime`을 도입한다: `remote`(기본, 기존 동작 그대로)와 `managed`.
+  기존 행은 필드가 없으므로 `remote`로 읽힌다.
+- managed 엔트리는 **주소를 갖지 않는다**. 운영자는 승인된 image와 실행 설정만 입력하고,
+  주소는 provisioner가 컨테이너를 띄운 뒤 기록한다. 임의 command·image 실행은 허용하지
+  않는다.
+- managed의 주소는 `127.0.0.1:<port>`만 될 수 있다. 신뢰의 근거를 "운영자가 그렇게 적었다"가
+  아니라 "같은 호스트에서 우리가 띄운 포트"로 옮긴다 — 규칙이 한 줄로 표현되고 검증
+  가능해야 한다. 임의의 사설 주소를 신뢰하는 것이 아니다.
+- `UrlPolicy` 우회는 managed에 한정하고, 그 판단을 내리는 곳은 **한 군데**여야 한다.
+  remote의 SSRF 검증은 등록·실행 양쪽에서 그대로 유지된다.
+- 런타임 어댑터는 **하나만** 구현한다. 배포 환경이 EC2 + SSM Run Command이므로 그것을
+  쓰고, application container에 host Docker socket을 노출하지 않는다.
+- 생성·시작·중지·삭제와 상태 조회를 지원한다. health는 조회 시점에 `tools/list`로 확인하며
+  (`McpSession`이 이미 하는 일), 별도 health 프로토콜을 만들지 않는다.
+- 시크릿은 값이 아니라 참조(SSM 파라미터 이름)로 저장한다.
 
-**완료 조건**: 구현한 어댑터의 계약 테스트와 실제 runtime 통합 테스트에서 managed MCP를
-생성해 `tools/list`와 `tools/call`을 수행하고 삭제할 수 있다. 두 Agent Studio 인스턴스가
-동시에 reconcile해도 workload가 하나만 생성되며, 재시작 후 기존 workload를 재발견한다.
-권한 부족·이미지 pull 실패·health check 실패·중복 요청·삭제 재시도를 검증하고,
-remote MCP 동작과 SSRF 보호가 그대로 유지된다.
+**완료 조건**: managed MCP를 콘솔에서 생성해 `tools/list`와 `tools/call`이 동작하고,
+삭제하면 컨테이너와 엔트리가 함께 사라진다. 운영자가 managed 엔트리에 주소를 직접
+입력할 수 없고, `127.0.0.1` 이외의 주소는 저장되지 않는다. remote 엔트리의 SSRF 보호가
+그대로 유지되는 것을 테스트가 강제한다 — 우회 경로가 remote로 새면 실패해야 한다.
+동시 요청이 컨테이너를 두 개 만들지 않으며, 재시작 후 기존 컨테이너를 재발견한다.

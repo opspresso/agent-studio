@@ -38,9 +38,63 @@ export interface McpServerAuth {
   discoveredAt: string;
 }
 
+/**
+ * How a server is reached, and therefore why its address may be trusted.
+ *
+ * `remote` is every entry that has ever existed: an operator typed a URL, and
+ * it earns trust by passing the SSRF guard at registration and again at
+ * dispatch. Absent means `remote`, so stored rows keep their meaning.
+ *
+ * `managed` is a container this app started on its own host. Its address is
+ * loopback — which the guard rejects, correctly, for anything an operator
+ * types — so trust comes from provenance instead: nobody named the address, we
+ * recorded it after binding the port.
+ */
+export type McpRuntime = "remote" | "managed";
+
+/**
+ * The one place that decides an entry may skip the public-URL guard.
+ *
+ * Deliberately narrow. Not "managed servers are trusted" and not "private
+ * addresses are allowed for managed servers", but: this entry says it is
+ * managed, and the address we recorded for it is loopback. A managed entry
+ * carrying anything else is a bug or tampering, and is refused like any other
+ * private address would be.
+ */
+export function isManagedLoopback(server: Pick<McpServer, "runtime" | "url">): boolean {
+  if (server.runtime !== "managed") {
+    return false;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(server.url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:") {
+    return false;
+  }
+  // Literal addresses only: a hostname would have to be resolved, and whatever
+  // it resolves to could change between the check and the request.
+  return parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]" || parsed.hostname === "::1";
+}
+
 export interface McpServer {
   name: string;
   url: string;
+  /** Absent on every row written before managed servers existed: those are `remote`. */
+  runtime?: McpRuntime;
+  /**
+   * Managed only: the image the provisioner runs. An image reference, never a
+   * command — an operator who can edit this entry must not thereby be able to
+   * run arbitrary code on the host.
+   */
+  image?: string;
+  /**
+   * Managed only: names of SSM parameters holding the container's environment.
+   * References, not values: the secrets never enter this table.
+   */
+  envRefs?: string[];
   /** Present when the server requires OAuth; absent for static-header servers. */
   auth?: McpServerAuth;
   /**
