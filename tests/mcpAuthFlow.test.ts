@@ -16,9 +16,11 @@ import {
   type McpAuthUseCasesDeps,
 } from "@/application/mcp/mcpAuthUseCases";
 import { ForbiddenError, ValidationError } from "@/application/errors";
+import { isMasked, maskSecret } from "@/infrastructure/crypto/secretEncryption";
 import type { McpConnection, McpOAuthState } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
 import type { TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
+import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 
 const OWNER = "owner@example.com";
 const BASE_URL = "https://studio.example.com";
@@ -42,19 +44,40 @@ const SERVER: McpServer = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-/** Reversible stand-in for AES so a test can assert on what was stored. */
+function decryptFake(value: string): string {
+  return value.startsWith("enc:") ? value.slice(4) : value;
+}
+
+/**
+ * Reversible stand-in for AES so a test can assert on what was stored — but the
+ * *real* mask and its detector, because the console prefills a stored secret
+ * with `mask()` and posts it straight back, and only the shipped pair proves
+ * that round trip keeps the secret. A fake pair would agree with itself while
+ * the two shipped halves drifted.
+ */
 const cipher = {
   encrypt: (value: string) => (value.startsWith("enc:") ? value : `enc:${value}`),
-  decrypt: (value: string) => (value.startsWith("enc:") ? value.slice(4) : value),
-  isMasked: (value: string) => value.startsWith("masked("),
-  mask: (value: string) => `masked(${value.startsWith("enc:") ? value.slice(4) : value})`,
+  decrypt: decryptFake,
+  isMasked,
+  mask: maskSecret,
   decryptHeadersForOutbound: (headers: Record<string, string>) =>
-    Object.fromEntries(
-      Object.entries(headers).map(([name, value]) => [
-        name,
-        value.startsWith("enc:") ? value.slice(4) : value,
-      ]),
-    ),
+    Object.fromEntries(Object.entries(headers).map(([name, value]) => [name, decryptFake(value)])),
+  mergeOutboundHeaders: (
+    registryHeaders: Record<string, string>,
+    overrides: Record<string, string | null> | undefined,
+  ) => {
+    const merged = Object.fromEntries(
+      Object.entries(registryHeaders).map(([name, value]) => [name, decryptFake(value)]),
+    );
+    for (const [name, value] of Object.entries(overrides ?? {})) {
+      if (value === null) {
+        delete merged[name];
+      } else {
+        merged[name] = decryptFake(value);
+      }
+    }
+    return merged;
+  },
 } as McpAuthUseCasesDeps["cipher"];
 
 interface Harness {
@@ -64,6 +87,7 @@ interface Harness {
   exchanges: Array<{ target: TokenRequestTarget; params: Record<string, string> }>;
   registrations: Array<Record<string, unknown>>;
   probes: Array<{ url: string; headers: Record<string, string> }>;
+  unauthorized: string[];
 }
 
 function harness(
@@ -73,6 +97,7 @@ function harness(
     connection?: Partial<McpConnection>;
     tokens?: TokenSet;
     authHeaders?: { headers: Record<string, string>; warning?: string };
+    probeResult?: ListToolsResult;
   } = {},
 ): Harness {
   const connections = new Map<string, McpConnection>();
@@ -80,6 +105,7 @@ function harness(
   const exchanges: Harness["exchanges"] = [];
   const registrations: Harness["registrations"] = [];
   const probes: Array<{ url: string; headers: Record<string, string> }> = [];
+  const unauthorized: string[] = [];
   const server = overrides.server ?? SERVER;
   if (overrides.connection) {
     connections.set("p/slack", {
@@ -140,17 +166,19 @@ function harness(
     probe: {
       listTools: async (url: string, headers: Record<string, string>) => {
         probes.push({ url, headers });
-        return { ok: true as const, tools: [{ name: "search" }] };
+        return overrides.probeResult ?? { ok: true as const, tools: [{ name: "search" }] };
       },
       invalidateDiscovery: () => {},
     },
     authProvider: {
       headersFor: async () => overrides.authHeaders ?? { headers: { Authorization: "Bearer at" } },
-      markUnauthorized: async () => {},
+      markUnauthorized: async (_project: string, serverName: string) => {
+        unauthorized.push(serverName);
+      },
     },
     publicBaseUrl: async () => BASE_URL,
   };
-  return { deps, connections, states, exchanges, registrations, probes };
+  return { deps, connections, states, exchanges, registrations, probes, unauthorized };
 }
 
 describe("beginAuthorization", () => {
@@ -308,15 +336,68 @@ describe("saveClientCredentials", () => {
     const uc = createMcpAuthUseCases(h.deps);
 
     // The console shows the stored secret masked and posts it back untouched;
-    // that echo must not overwrite the real value with its own mask.
+    // that echo must not overwrite the real value with its own mask. Masked with
+    // the shipped mask, since that is what the console actually sends back.
     await uc.saveClientCredentials(
       "p",
       "slack",
-      { clientId: "client-1", clientSecret: "masked(original)" },
+      { clientId: "client-1", clientSecret: maskSecret("enc:original") },
       OWNER,
     );
 
     expect(h.connections.get("p/slack")?.clientSecret).toBe("enc:original");
+  });
+
+  it("leaves a live connection alone when nothing was edited", async () => {
+    // Both boxes arrive prefilled from the stored connection, so Save without an
+    // edit is the likeliest press there is — and it used to reset the whole
+    // connection, costing the project the tokens those credentials authorized.
+    const h = harness({
+      connection: {
+        status: "connected",
+        clientSecret: "enc:original",
+        accessToken: "enc:at",
+        refreshToken: "enc:rt",
+        connectedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    const view = await uc.saveClientCredentials(
+      "p",
+      "slack",
+      { clientId: "client-1", clientSecret: maskSecret("enc:original") },
+      OWNER,
+    );
+
+    expect(view.status).toBe("connected");
+    const stored = h.connections.get("p/slack");
+    expect(stored?.accessToken).toBe("enc:at");
+    expect(stored?.refreshToken).toBe("enc:rt");
+    expect(stored?.status).toBe("connected");
+  });
+
+  it("clears the stored secret when the box is emptied", async () => {
+    // The only way back from a confidential client to a public one. Distinct
+    // from an omitted field precisely because this box arrives prefilled.
+    const h = harness({
+      connection: { status: "connected", clientSecret: "enc:original", accessToken: "enc:at" },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    const view = await uc.saveClientCredentials(
+      "p",
+      "slack",
+      { clientId: "client-1", clientSecret: "" },
+      OWNER,
+    );
+
+    expect(view.clientSecret).toBeUndefined();
+    const stored = h.connections.get("p/slack");
+    expect(stored?.clientSecret).toBeUndefined();
+    // Credentials really did change, so the tokens they authorized go with them.
+    expect(stored?.status).toBe("needs_auth");
+    expect(stored?.accessToken).toBeUndefined();
   });
 
   it("drops the tokens a previous client authorized", async () => {
@@ -354,10 +435,11 @@ describe("saveClientCredentials", () => {
     const serialized = JSON.stringify(await uc.listConnections("p", OWNER));
 
     const view = JSON.parse(serialized)[0] as { clientSecret?: string };
-    expect(view.clientSecret).toBe("masked(CLIENT-SECRET-VALUE)");
+    expect(view.clientSecret).toBe(maskSecret("enc:CLIENT-SECRET-VALUE"));
+    expect(isMasked(view.clientSecret ?? "")).toBe(true);
     // Tokens are absent outright — there is no reveal path and no reason to
     // show them, so masking is not the question for those.
-    for (const secret of ["ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
+    for (const secret of ["CLIENT-SECRET-VALUE", "ACCESS-TOKEN-VALUE", "REFRESH-TOKEN-VALUE"]) {
       expect(serialized).not.toContain(secret);
     }
   });
@@ -390,6 +472,57 @@ describe("listing a server's tools as the project", () => {
       error: "slack needs to be reconnected",
     });
     expect(h.probes).toHaveLength(0);
+  });
+
+  it("layers the binding's header overrides the way a run does", async () => {
+    // The override editor and this list sit in the same dialog. A list assembled
+    // from the registry entry alone would answer a question nobody asked — and
+    // the project's Authorization still goes on last, so a version cannot
+    // substitute its own.
+    const h = harness({
+      connection: {},
+      server: { ...SERVER, headers: { "X-Tenant": "enc:default", "X-Drop": "enc:gone" } },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.listTools("p", "slack", OWNER, {
+      "X-Tenant": "override",
+      "X-Drop": null,
+      Authorization: "Bearer version-token",
+    });
+
+    expect(h.probes[0]?.headers["X-Tenant"]).toBe("override");
+    expect(h.probes[0]?.headers["X-Drop"]).toBeUndefined();
+    expect(h.probes[0]?.headers.Authorization).toBe("Bearer at");
+  });
+
+  it("flags a rejected token so the console offers a reconnect", async () => {
+    // What a run does with the same 401. Without it the connection keeps
+    // reporting `connected` and the owner re-diagnoses the message by hand.
+    const h = harness({
+      connection: { status: "connected" },
+      probeResult: { ok: false, error: "HTTP 401", unauthorized: true },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    expect(await uc.listTools("p", "slack", OWNER)).toEqual({
+      ok: false,
+      error: "HTTP 401",
+      unauthorized: true,
+    });
+    expect(h.unauthorized).toEqual(["slack"]);
+  });
+
+  it("does not flag a server that was merely unreachable", async () => {
+    const h = harness({
+      connection: { status: "connected" },
+      probeResult: { ok: false, error: "Connection timed out after 10s" },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.listTools("p", "slack", OWNER);
+
+    expect(h.unauthorized).toEqual([]);
   });
 
   it("refuses a non-owner", async () => {

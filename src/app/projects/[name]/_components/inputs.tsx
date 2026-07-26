@@ -261,9 +261,12 @@ function ToolSelector({
   }, []);
 
   if (error) {
+    // Deliberately not "leaving this unset offers every tool": a run that cannot
+    // reach or authorize a server drops it whole and offers *none* of its tools,
+    // so advising an empty selection here would advise the opposite outcome.
     return (
       <p className="px-2 pb-2 text-neutral-500">
-        {error} — leaving this unset offers every tool the server exposes.
+        {error} — a run would offer none of this server&apos;s tools until it answers.
       </p>
     );
   }
@@ -504,7 +507,13 @@ export function McpBindingInput({
               <ToolSelector
                 selected={values.find((v) => v.name === settingsFor)?.tools}
                 onChange={(tools) => setTools(settingsFor, tools)}
-                load={() => listProjectMcpTools(projectName, settingsFor)}
+                load={() =>
+                  listProjectMcpTools(
+                    projectName,
+                    settingsFor,
+                    values.find((v) => v.name === settingsFor)?.headers,
+                  )
+                }
               />
             }
             headers={

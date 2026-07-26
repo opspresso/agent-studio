@@ -47,25 +47,36 @@ export function McpConnectionCard({
   const [clientSecret, setClientSecret] = useState("");
 
   const refresh = useCallback(async () => {
-    try {
-      const [entry, connections] = await Promise.all([
-        getMcp(serverName),
-        listMcpConnections(projectName),
-      ]);
-      const found = connections.find((c) => c.serverName === serverName);
-      setServer(entry);
+    // Settled independently on purpose. Only the registry entry can say whether
+    // this server needs authorization at all, so a failure to read the project's
+    // *connections* — which is what a non-owner gets — must never be able to
+    // leave the card claiming the server needs none.
+    const [entry, connections] = await Promise.allSettled([
+      getMcp(serverName),
+      listMcpConnections(projectName),
+    ]);
+    if (entry.status === "fulfilled") {
+      setServer(entry.value);
+    }
+    if (connections.status === "fulfilled") {
+      const found = connections.value.find((c) => c.serverName === serverName);
       setConnection(found);
       setClientId(found?.clientId ?? "");
       // The stored secret is shown masked, like every other secret in this
-      // console. Echoing the mask back on save keeps what is stored; typing over
-      // it replaces it.
+      // console. Echoing the mask back on save keeps what is stored, typing over
+      // it replaces it, and emptying it clears it.
       setClientSecret(found?.clientSecret ?? "");
-      setError(null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
-    } finally {
-      setLoaded(true);
     }
+    const failure = [entry, connections].find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      const reason: unknown = failure.reason;
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } else {
+      setError(null);
+    }
+    setLoaded(true);
   }, [projectName, serverName]);
 
   useEffect(() => {
@@ -110,7 +121,15 @@ export function McpConnectionCard({
   if (!loaded) {
     return <p className="text-xs text-neutral-500">Loading…</p>;
   }
-  if (!server?.auth) {
+  if (!server) {
+    // Nothing was read about the server, so nothing may be claimed about it.
+    return (
+      <p className="text-xs text-red-600 dark:text-red-400">
+        {error ?? "Could not read this server's registry entry."}
+      </p>
+    );
+  }
+  if (!server.auth) {
     return (
       <p className="text-xs text-neutral-500">
         This server does not require authorization. Whatever credentials it needs come from the
@@ -173,7 +192,9 @@ export function McpConnectionCard({
               run(async () => {
                 await saveMcpClientCredentials(projectName, serverName, {
                   clientId: clientId.trim(),
-                  clientSecret: clientSecret || undefined,
+                  // Sent verbatim, empty included: this box arrives prefilled,
+                  // so an empty one means "clear it", not "I typed nothing".
+                  clientSecret,
                 });
               })
             }

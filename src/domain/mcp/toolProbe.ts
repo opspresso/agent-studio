@@ -8,7 +8,14 @@
 
 import type { McpTool } from "./types";
 
-export type ListToolsResult = { ok: true; tools: McpTool[] } | { ok: false; error: string };
+export type ListToolsResult =
+  | { ok: true; tools: McpTool[] }
+  /**
+   * `unauthorized` marks the one failure a project can fix itself — the server
+   * rejected the credential rather than being unreachable. Callers that hold a
+   * per-project connection use it to flag a reconnect, the way the run loop does.
+   */
+  | { ok: false; error: string; unauthorized?: boolean };
 
 export interface McpToolProbe {
   /** One-shot tool listing with the given headers, already decrypted. */
