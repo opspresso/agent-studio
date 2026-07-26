@@ -30,6 +30,8 @@ interface ServerScript {
   sessionId?: string;
   /** Tools reported by tools/list. */
   listTools?: ToolShape[];
+  /** Pages of tools/list, keyed by the cursor that asks for them ("" = first). */
+  toolPages?: Record<string, { tools: ToolShape[]; nextCursor?: string }>;
   /** Content blocks returned by tools/call. */
   callContent?: unknown[];
   /** When set, fetch itself rejects for this server (network failure). */
@@ -98,9 +100,14 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     if (body.method === "initialize") {
       payload = { jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18", capabilities: {} } };
     } else if (body.method === "tools/list") {
-      payload = script.listError
-        ? { jsonrpc: "2.0", id: body.id, error: script.listError }
-        : { jsonrpc: "2.0", id: body.id, result: { tools: script.listTools ?? [] } };
+      if (script.listError) {
+        payload = { jsonrpc: "2.0", id: body.id, error: script.listError };
+      } else if (script.toolPages) {
+        const cursor = String(body.params?.cursor ?? "");
+        payload = { jsonrpc: "2.0", id: body.id, result: script.toolPages[cursor] ?? { tools: [] } };
+      } else {
+        payload = { jsonrpc: "2.0", id: body.id, result: { tools: script.listTools ?? [] } };
+      }
     } else if (body.method === "tools/call") {
       payload = {
         jsonrpc: "2.0",
@@ -365,6 +372,43 @@ describe("ToolManager per-binding tool allowlist", () => {
     await manager.init();
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "write"]);
+  });
+
+  it("follows tools/list pagination, including an empty first page", async () => {
+    // The shape that made a full catalogue read as no tools at all: the first
+    // page carries nothing but a cursor, and stopping there reports the server
+    // as offering nothing.
+    stubMcpFetch({
+      "https://paged.test/mcp": {
+        toolPages: {
+          "": { tools: [], nextCursor: "c1" },
+          c1: { tools: [{ name: "search" }, { name: "post" }], nextCursor: "c2" },
+          c2: { tools: [{ name: "react" }] },
+        },
+      },
+    });
+    const manager = new ToolManager([server("paged", "https://paged.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "post", "react"]);
+    expect(manager.warnings).toEqual([]);
+  });
+
+  it("stops paging when a server repeats its cursor", async () => {
+    stubMcpFetch({
+      "https://loop.test/mcp": {
+        toolPages: {
+          "": { tools: [{ name: "one" }], nextCursor: "same" },
+          same: { tools: [{ name: "two" }], nextCursor: "same" },
+        },
+      },
+    });
+    const manager = new ToolManager([server("loop", "https://loop.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["one", "two"]);
   });
 
   it("reports a server that connects but advertises nothing", async () => {

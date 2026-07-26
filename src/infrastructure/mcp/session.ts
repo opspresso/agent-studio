@@ -25,6 +25,13 @@ export const MCP_CALL_TIMEOUT_MS = 120_000;
 export const MCP_DISCOVERY_TIMEOUT_MS = 10_000;
 /** Cleanup runs after the answer is delivered; keep it short. */
 const SESSION_END_TIMEOUT_MS = 5_000;
+/**
+ * Pages of `tools/list` to follow. A bound rather than a `while (cursor)`: the
+ * cursor is opaque, so a server that keeps handing back a fresh one — by bug or
+ * by design — would spin here on the critical path of a run's first token. Well
+ * past any real catalogue, and a run declares at most 120 tools anyway.
+ */
+const MAX_TOOL_PAGES = 20;
 const MAX_MCP_RESPONSE_BYTES = 2_000_000;
 
 interface JsonRpcResponse {
@@ -141,11 +148,35 @@ export class McpSession {
     return message?.result;
   }
 
+  /**
+   * Every page of the server's catalogue, not just the first.
+   *
+   * `tools/list` is paginated: a response may carry `nextCursor`, and the page
+   * it came with can be empty. Reading only the first page therefore reports a
+   * server as offering nothing while it is holding a full catalogue behind the
+   * cursor — indistinguishable, from the outside, from a server that genuinely
+   * has no tools.
+   */
   async listTools(): Promise<McpTool[]> {
-    const result = (await this.request("tools/list", {}, MCP_DISCOVERY_TIMEOUT_MS)) as
-      | { tools?: McpTool[] }
-      | undefined;
-    return result?.tools ?? [];
+    const tools: McpTool[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_TOOL_PAGES; page++) {
+      const result = (await this.request(
+        "tools/list",
+        cursor === undefined ? {} : { cursor },
+        MCP_DISCOVERY_TIMEOUT_MS,
+      )) as { tools?: McpTool[]; nextCursor?: string } | undefined;
+      tools.push(...(result?.tools ?? []));
+      const next = result?.nextCursor;
+      // A server that repeats a cursor would otherwise re-read the same page
+      // until the bound, so stop on anything that is not forward progress.
+      if (typeof next !== "string" || next === "" || next === cursor) {
+        return tools;
+      }
+      cursor = next;
+    }
+    console.warn(`[mcp] ${this.url} paged past ${MAX_TOOL_PAGES} tool pages; the tail was dropped`);
+    return tools;
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
