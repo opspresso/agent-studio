@@ -243,9 +243,6 @@ docker compose up --build             # local container + DynamoDB Local
 
 - The `Release` workflow builds the image and pushes it to ECR on version tags
   (`v*`), authenticating via GitHub OIDC.
-- The `Deploy` workflow (manual `workflow_dispatch`) runs typecheck + tests, builds
-  and pushes the image to ECR, then forces a new ECS service deployment and waits
-  for it to stabilize.
 - `/api/ready` is the LB/orchestrator health check: it probes DynamoDB and the LLM
   channel and returns 503 when a downstream is unreachable or the instance is draining.
   `/api/health` is a static liveness probe (unauthenticated, dependency-free) for restart
