@@ -53,7 +53,8 @@ export interface ManagedMcpStatus {
 /** What one entry needed, for the caller that has to report a sweep. */
 export interface ReconcileOutcome {
   name: string;
-  action: "healthy" | "restarted" | "failed";
+  /** `skipped` means someone else already has it; the sweep left it alone. */
+  action: "healthy" | "restarted" | "failed" | "skipped";
   detail?: string;
 }
 
@@ -112,9 +113,14 @@ export interface ManagedMcpUseCases {
 
 export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCases {
   /**
-   * Names with a restart in flight. Two teardowns of one container racing is
-   * worse than refusing the second, and an operator watching an unreachable
-   * server is exactly the person who presses the button twice.
+   * Names with a restart in flight, held by whichever path is doing the work.
+   * Two teardowns of one container racing is worse than refusing the second, and
+   * an operator watching an unreachable server is exactly the person who presses
+   * the button twice — or presses it while the boot sweep is already on it.
+   *
+   * Both paths claim here, so `restart` and `reconcile` exclude each other as
+   * well as themselves. A claim is taken with no `await` between the check and
+   * the add, which is what makes it a claim rather than a suggestion.
    *
    * Process-local, like the settings cache — managed servers already assume one
    * app instance per host, because a container joins exactly one namespace.
@@ -185,8 +191,12 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     };
   }
 
-  async function restartEntry(entry: McpServer): Promise<McpServer> {
-    const workload = await deps.provisioner.start(specFor(entry));
+  /**
+   * The spec is passed in rather than derived here, so the caller can find out
+   * that an entry cannot be started *before* it commits to starting it.
+   */
+  async function restartEntry(entry: McpServer, spec: ManagedWorkloadSpec): Promise<McpServer> {
+    const workload = await deps.provisioner.start(spec);
     const restarted: McpServer = {
       ...entry,
       url: `${workload.address}${MCP_PATH}`,
@@ -299,8 +309,13 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       // get past the check and tear the same container down twice.
       restarting.add(name);
       let entry: McpServer;
+      let spec: ManagedWorkloadSpec;
       try {
         entry = await requireManaged(name);
+        // Built before the answer, not inside the background task. A row with
+        // no image can never be started, and a 202 for that leaves the console
+        // polling for minutes to learn what was knowable up front.
+        spec = specFor(entry);
       } catch (error) {
         restarting.delete(name);
         throw error;
@@ -314,7 +329,11 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           // The same grace the sweep gives, so a `status` poll that lands right
           // after this is looking at a settled container rather than one caught
           // mid-boot.
-          await settles(await restartEntry(entry));
+          if (!(await settles(await restartEntry(entry, spec)))) {
+            // The sweep reports this outcome; the button path has to as well, or
+            // a repair that did not work is evidenced nowhere on the server.
+            console.warn(`[managed-mcp] ${name}: restarted, still unreachable`);
+          }
         } catch (error) {
           // Nothing is waiting on this. The console learns the outcome from
           // `status`, the same place it learned there was a problem.
@@ -332,12 +351,26 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       // and a sweep that runs in the background has nothing to gain from racing
       // itself.
       for (const entry of entries) {
+        // Claimed for the whole of this entry's turn, probe included. An admin
+        // who presses Restart while the sweep has it gets a 409 rather than a
+        // second `docker rm -f` against the container this one is bringing up —
+        // and an entry already claimed by that button is left alone here for the
+        // same reason.
+        if (restarting.has(entry.name)) {
+          outcomes.push({
+            name: entry.name,
+            action: "skipped",
+            detail: "a restart was already running",
+          });
+          continue;
+        }
+        restarting.add(entry.name);
         try {
           if (await reaches(entry)) {
             outcomes.push({ name: entry.name, action: "healthy" });
             continue;
           }
-          const restarted = await restartEntry(entry);
+          const restarted = await restartEntry(entry, specFor(entry));
           // One restart per entry per sweep. If it still does not answer once
           // it has had time to come up, the problem is not the namespace it was
           // stranded in, and going round again would only take it down a second
@@ -359,6 +392,8 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
             action: "failed",
             detail: error instanceof Error ? error.message : "restart failed",
           });
+        } finally {
+          restarting.delete(entry.name);
         }
       }
       return outcomes;
