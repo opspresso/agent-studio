@@ -48,11 +48,34 @@ export interface ModelConfig {
   maxTokens: number;
   /** Hidden from the public model list but still usable. */
   hidden?: boolean;
+  /**
+   * Model name to send when the `provider/` prefix is stripped for a
+   * provider-direct channel, for the models whose provider names them
+   * differently from this registry.
+   *
+   * Registry ids follow the router convention (`anthropic/claude-opus-4.8`),
+   * which is what `LLM_BASE_URL` expects and what stored project versions
+   * already hold. Anthropic's own API spells the same model `claude-opus-4-8`
+   * and 404s on the dotted form, so stripping the prefix is not enough to
+   * reach it — hence a per-model override rather than a rename that would
+   * orphan every stored version. Omit it when the bare id already matches.
+   */
+  wireId?: string;
 }
 
-const ANTHROPIC_CONTEXT = 200_000;
-const ANTHROPIC_MAX_OUTPUT = 64_000;
+/**
+ * Every Claude model from the 4.6 generation on carries the same limits;
+ * Haiku 4.5 predates that and keeps the older ones. These were verified against
+ * Anthropic's `/v1/models`, which reports `max_input_tokens` and `max_tokens`
+ * per model — prefer it over the docs table when they disagree.
+ */
+const ANTHROPIC_CONTEXT = 1_000_000;
+const ANTHROPIC_MAX_OUTPUT = 128_000;
+const HAIKU_45_CONTEXT = 200_000;
+const HAIKU_45_MAX_OUTPUT = 64_000;
+/** GPT-5.1 through 5.4. The 5.6 family widened the window; 5.4 did not. */
 const OPENAI_CONTEXT = 400_000;
+const OPENAI_56_CONTEXT = 1_050_000;
 const OPENAI_MAX_OUTPUT = 128_000;
 const GEMINI_CONTEXT = 1_048_576;
 const GEMINI_MAX_OUTPUT = 65_536;
@@ -71,7 +94,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
       reasoning: true,
       reasoningWithTools: false,
     },
-    contextWindow: OPENAI_CONTEXT,
+    contextWindow: OPENAI_56_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
   },
   {
@@ -80,7 +103,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     displayName: "GPT-5.6 Terra",
     pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: OPENAI_CONTEXT,
+    contextWindow: OPENAI_56_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
   },
   {
@@ -89,7 +112,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     displayName: "GPT-5.6 Luna",
     pricing: { inputPer1M: 1.0, outputPer1M: 6.0, cachedInputPer1M: 0.1 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: OPENAI_CONTEXT,
+    contextWindow: OPENAI_56_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
   },
   {
@@ -141,25 +164,39 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     maxTokens: ANTHROPIC_MAX_OUTPUT,
   },
   {
+    id: "anthropic/claude-opus-5",
+    provider: "anthropic",
+    displayName: "Opus 5",
+    pricing: { inputPer1M: 5.0, outputPer1M: 25.0, cachedInputPer1M: 0.5 },
+    capabilities: { tools: true, structuredOutput: false, imageInput: true, reasoning: true },
+    contextWindow: ANTHROPIC_CONTEXT,
+    maxTokens: ANTHROPIC_MAX_OUTPUT,
+  },
+  {
     id: "anthropic/claude-sonnet-5",
     provider: "anthropic",
     displayName: "Sonnet 5",
+    // Introductory rate. It reverts to $3 / $15 per MTok on 2026-09-01 — the
+    // one entry here with a known expiry rather than a price that only changes
+    // when the provider announces it.
     pricing: { inputPer1M: 2.0, outputPer1M: 10.0, cachedInputPer1M: 0.2 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: 1_000_000,
-    maxTokens: 128_000,
+    contextWindow: ANTHROPIC_CONTEXT,
+    maxTokens: ANTHROPIC_MAX_OUTPUT,
   },
   {
     id: "anthropic/claude-opus-4.8",
+    wireId: "claude-opus-4-8",
     provider: "anthropic",
     displayName: "Opus 4.8",
     pricing: { inputPer1M: 5.0, outputPer1M: 25.0, cachedInputPer1M: 0.5 },
     capabilities: { tools: true, structuredOutput: false, imageInput: true, reasoning: true },
-    contextWindow: 1_000_000,
+    contextWindow: ANTHROPIC_CONTEXT,
     maxTokens: ANTHROPIC_MAX_OUTPUT,
   },
   {
     id: "anthropic/claude-opus-4.7",
+    wireId: "claude-opus-4-7",
     provider: "anthropic",
     displayName: "Opus 4.7",
     pricing: { inputPer1M: 5.0, outputPer1M: 25.0, cachedInputPer1M: 0.5 },
@@ -169,6 +206,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
   },
   {
     id: "anthropic/claude-sonnet-4.6",
+    wireId: "claude-sonnet-4-6",
     provider: "anthropic",
     displayName: "Sonnet 4.6",
     pricing: { inputPer1M: 3.0, outputPer1M: 15.0, cachedInputPer1M: 0.3 },
@@ -179,12 +217,13 @@ export const MODEL_CONFIGS: ModelConfig[] = [
   },
   {
     id: "anthropic/claude-haiku-4.5",
+    wireId: "claude-haiku-4-5",
     provider: "anthropic",
     displayName: "Haiku 4.5",
     pricing: { inputPer1M: 1.0, outputPer1M: 5.0, cachedInputPer1M: 0.1 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
-    contextWindow: ANTHROPIC_CONTEXT,
-    maxTokens: ANTHROPIC_MAX_OUTPUT,
+    contextWindow: HAIKU_45_CONTEXT,
+    maxTokens: HAIKU_45_MAX_OUTPUT,
   },
   // Google
   {
@@ -201,6 +240,24 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     provider: "google",
     displayName: "Gemini 3.6 Flash",
     pricing: { inputPer1M: 1.5, outputPer1M: 7.5, cachedInputPer1M: 0.15 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
+  {
+    id: "google/gemini-3.5-flash",
+    provider: "google",
+    displayName: "Gemini 3.5 Flash",
+    pricing: { inputPer1M: 1.5, outputPer1M: 9.0, cachedInputPer1M: 0.15 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
+  {
+    id: "google/gemini-3.5-flash-lite",
+    provider: "google",
+    displayName: "Gemini 3.5 Flash Lite",
+    pricing: { inputPer1M: 0.3, outputPer1M: 2.5, cachedInputPer1M: 0.03 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: GEMINI_CONTEXT,
     maxTokens: GEMINI_MAX_OUTPUT,
@@ -256,9 +313,22 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     id: "xai/grok-4.5",
     provider: "xai",
     displayName: "Grok 4.5",
-    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.5 },
+    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.3 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: 500_000,
+    maxTokens: 64_000,
+  },
+  {
+    // The reasoning-mode alias. xAI also publishes a non-reasoning mode and a
+    // multi-agent variant of 4.20 at the same price; neither is registered
+    // because only the dated snapshot ids are documented for them and their
+    // capability flags are not published.
+    id: "xai/grok-4.20",
+    provider: "xai",
+    displayName: "Grok 4.20",
+    pricing: { inputPer1M: 1.25, outputPer1M: 2.5, cachedInputPer1M: 0.2 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: 1_000_000,
     maxTokens: 64_000,
   },
   {
@@ -271,6 +341,23 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     maxTokens: 64_000,
   },
   {
+    id: "xai/grok-build-0.1",
+    provider: "xai",
+    displayName: "Grok Build 0.1",
+    pricing: { inputPer1M: 1.0, outputPer1M: 2.0, cachedInputPer1M: 0.2 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: 256_000,
+    maxTokens: 64_000,
+  },
+  /*
+   * Deprecated 2026-05-15, retired 2026-08-15. Until then the slugs still
+   * resolve, but xAI redirects them — grok-4.1-fast to grok-4.3 and
+   * grok-code-fast-1 to grok-build-0.1 — and bills at the target's rate, so the
+   * prices below now understate a call. Hidden rather than deleted: a stored
+   * version may still name one, and deleting the entry would price those runs
+   * at $0 instead of merely imprecisely.
+   */
+  {
     id: "xai/grok-4.1-fast",
     provider: "xai",
     displayName: "Grok 4.1 Fast",
@@ -278,6 +365,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: 2_000_000,
     maxTokens: 64_000,
+    hidden: true,
   },
   {
     id: "xai/grok-code-fast-1",
@@ -287,6 +375,7 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
     contextWindow: 256_000,
     maxTokens: 64_000,
+    hidden: true,
   },
   // Image generation
   {
@@ -325,6 +414,32 @@ export const MODEL_CONFIGS: ModelConfig[] = [
       structuredOutput: false,
       imageInput: true,
       reasoning: true,
+      imageGeneration: true,
+    },
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
+  {
+    id: "google/gemini-3.1-flash-lite-image",
+    provider: "google",
+    displayName: "Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+    pricing: {
+      inputPer1M: 0.25,
+      outputPer1M: 1.5,
+      imageOutputPer1M: 30.0,
+      perImage: 0.034,
+    },
+    capabilities: {
+      tools: false,
+      structuredOutput: false,
+      // Generation-only here on purpose: Google documents this variant as "not
+      // optimized for multiple reference inputs or multi-turn sequential
+      // editing" and demonstrates editing only on the non-Lite models. Claiming
+      // image input would offer EditImage on a model that may reject it; the
+      // cost of being wrong the other way is only that editing routes to
+      // Nano Banana 2.
+      imageInput: false,
+      reasoning: false,
       imageGeneration: true,
     },
     contextWindow: GEMINI_CONTEXT,
@@ -392,6 +507,18 @@ export function getVisibleModels(): ModelConfig[] {
   return MODEL_CONFIGS.filter((m) => !m.hidden);
 }
 
+/**
+ * The model name to send to a provider's own API, for a `provider/model` id
+ * whose prefix is being stripped for a provider-direct channel. Defaults to the
+ * bare id, which is also what an id missing from the registry gets — a model
+ * this app does not know is passed through rather than rewritten.
+ */
+export function wireModelId(modelId: string): string {
+  const slash = modelId.indexOf("/");
+  const bare = slash > 0 ? modelId.slice(slash + 1) : modelId;
+  return getModelConfig(modelId)?.wireId ?? bare;
+}
+
 /** Tokens observed on a single call, used for cost calculation. */
 export interface CostTokens {
   inputTokens: number;
@@ -436,14 +563,45 @@ export function applyModelConstraints(params: ChannelParams): ChannelParams {
 }
 
 const warnedUnknownModels = new Set<string>();
+let unknownModelCalls = 0;
 
-/** Warn once per process for a model id missing from the catalog. */
+/**
+ * Record a model id missing from the catalog.
+ *
+ * Every occurrence is counted, because every one of them books that call's
+ * usage at $0 — the count is the size of the under-reporting, not just a
+ * curiosity. The log line is emitted once per id so a hot loop cannot flood
+ * the log; the counter is what tells you the miss is still happening.
+ */
 function warnUnknownModel(modelId: string): void {
+  unknownModelCalls += 1;
   if (warnedUnknownModels.has(modelId)) {
     return;
   }
   warnedUnknownModels.add(modelId);
   console.warn(`[cost] unknown model id "${modelId}": usage is recorded with $0 cost`);
+}
+
+export interface UnknownModelSnapshot {
+  /** Cost calculations that fell back to $0 since process start. */
+  calls: number;
+  /** Distinct ids behind those calls. */
+  models: number;
+}
+
+/**
+ * Process-wide counts of registry misses, exposed by `/api/metrics`. Counts
+ * only: that endpoint is unauthenticated and names no model, so the ids stay
+ * in the log line above.
+ */
+export function unknownModelSnapshot(): UnknownModelSnapshot {
+  return { calls: unknownModelCalls, models: warnedUnknownModels.size };
+}
+
+/** Test seam — production code never resets counters. */
+export function resetUnknownModelMetrics(): void {
+  warnedUnknownModels.clear();
+  unknownModelCalls = 0;
 }
 
 /** Compute USD cost for one call from registry pricing. Unknown model → warn + 0. */
