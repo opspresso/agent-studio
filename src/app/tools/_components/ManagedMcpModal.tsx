@@ -120,8 +120,9 @@ export function ManagedMcpModal({
             className={fieldClass}
           />
           <span className="mt-1 block text-xs text-neutral-400">
-            What it listens on inside itself. The host port is chosen here and bound to
-            127.0.0.1.
+            What it listens on inside itself. The deployed runtime shares this app&apos;s
+            network namespace rather than mapping ports, so the container is told which
+            port to bind and has to honour <code>PORT</code>.
           </span>
         </label>
         <label className="block text-sm">

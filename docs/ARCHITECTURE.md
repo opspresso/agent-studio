@@ -402,7 +402,10 @@ Two deliberate strategies coexist:
   `MANAGED_MCP_INSTANCE_ID`/`MANAGED_MCP_REGISTRY` means the routes answer 503
   rather than half-enable the feature. The stored row carries `image`, `envRefs`
   and `containerPort` — everything a restart needs, because at restart time
-  there is no operator to ask again.
+  there is no operator to ask again. `containerPort` is a request, not a
+  guarantee: only an adapter that publishes a port mapping can honour it, and
+  the deployed one shares a network namespace instead, so it tells the container
+  which port to bind (`PORT`) and ignores the stored value.
 - **Surviving a redeploy.** A managed container joins this app's own network
   namespace (`--network container:<MANAGED_MCP_NETWORK_CONTAINER>`), which is the
   only way a loopback address means the same thing at both ends. Docker resolves
