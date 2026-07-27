@@ -352,16 +352,22 @@ export const MODEL_CONFIGS: ModelConfig[] = [
   /*
    * Deprecated 2026-05-15, retired 2026-08-15. Until then the slugs still
    * resolve, but xAI redirects them — grok-4.1-fast to grok-4.3 and
-   * grok-code-fast-1 to grok-build-0.1 — and bills at the target's rate, so the
-   * prices below now understate a call. Hidden rather than deleted: a stored
-   * version may still name one, and deleting the entry would price those runs
-   * at $0 instead of merely imprecisely.
+   * grok-code-fast-1 to grok-build-0.1 — and bills at the target's rate. So
+   * `pricing` below mirrors the target's, not the rate these models were
+   * published at: the number this app reports has to be the number that lands
+   * on the invoice, and a stale rate here reads as a discount nobody is
+   * getting. The other fields still describe the model as xAI documented it.
+   *
+   * Hidden rather than deleted: a stored version may still name one, and
+   * deleting the entry would price those runs at $0. After the retirement date
+   * the calls fail rather than redirect, and both entries can go.
    */
   {
     id: "xai/grok-4.1-fast",
     provider: "xai",
     displayName: "Grok 4.1 Fast",
-    pricing: { inputPer1M: 0.2, outputPer1M: 0.5, cachedInputPer1M: 0.05 },
+    // grok-4.3's rate — see above.
+    pricing: { inputPer1M: 1.25, outputPer1M: 2.5, cachedInputPer1M: 0.2 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: 2_000_000,
     maxTokens: 64_000,
@@ -371,7 +377,8 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     id: "xai/grok-code-fast-1",
     provider: "xai",
     displayName: "Grok Code Fast 1",
-    pricing: { inputPer1M: 0.2, outputPer1M: 1.5, cachedInputPer1M: 0.02 },
+    // grok-build-0.1's rate — see above.
+    pricing: { inputPer1M: 1.0, outputPer1M: 2.0, cachedInputPer1M: 0.2 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
     contextWindow: 256_000,
     maxTokens: 64_000,
@@ -432,12 +439,13 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     capabilities: {
       tools: false,
       structuredOutput: false,
-      // Generation-only here on purpose: Google documents this variant as "not
-      // optimized for multiple reference inputs or multi-turn sequential
-      // editing" and demonstrates editing only on the non-Lite models. Claiming
-      // image input would offer EditImage on a model that may reject it; the
-      // cost of being wrong the other way is only that editing routes to
-      // Nano Banana 2.
+      // Google documents this variant as "not optimized for multiple reference
+      // inputs or multi-turn sequential editing" and demonstrates editing only
+      // on the non-Lite models, so it is not something to hand a conversation's
+      // attachments to. That is all this flag decides — it does not keep
+      // EditImage off the model, which `buildImageEditor` offers on
+      // `imageGeneration` alone and on purpose, so a provider that refuses an
+      // edit says so in the tool result rather than being guessed at here.
       imageInput: false,
       reasoning: false,
       imageGeneration: true,
