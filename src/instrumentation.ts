@@ -24,8 +24,8 @@ import type { ManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
  * the container healthcheck (`GET /api/health`) would fail the very deployment
  * that was trying to fix things.
  */
-function reconcileManagedMcp(managed: ManagedMcpUseCases): void {
-  managed
+function reportReconcile(managed: ManagedMcpUseCases): Promise<void> {
+  return managed
     .reconcile()
     .then((outcomes) => {
       for (const outcome of outcomes) {
@@ -56,11 +56,19 @@ export async function register(): Promise<void> {
     assertAccessControlConfig();
     const { registerShutdownSignals } = await import("@/shared/lifecycle");
     registerShutdownSignals();
-    const { managedMcpUseCases } = await import("@/lib/container");
-    // Undefined where this deployment cannot start containers at all; there is
-    // then nothing managed to repair.
-    if (managedMcpUseCases) {
-      reconcileManagedMcp(managedMcpUseCases);
-    }
+    // The import is inside the guard so the edge build folds it away, and off
+    // the awaited path because evaluating the composition root constructs every
+    // AWS client — `register` is awaited before the server accepts connections,
+    // so anything left here lands in cold-start latency.
+    void (async () => {
+      const { managedMcpUseCases } = await import("@/lib/container");
+      // Undefined where this deployment cannot start containers at all; there
+      // is then nothing managed to repair.
+      if (managedMcpUseCases) {
+        await reportReconcile(managedMcpUseCases);
+      }
+    })().catch((error: unknown) => {
+      console.error("[managed-mcp] reconcile failed", error);
+    });
   }
 }

@@ -21,7 +21,12 @@ import { isManagedLoopback, type McpServer } from "@/domain/mcp/types";
 import type { McpProvisioner, ManagedWorkloadSpec } from "@/domain/mcp/provisioner";
 import type { McpToolProbe } from "@/domain/mcp/toolProbe";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+  isConditionalWriteFailure,
+} from "@/application/errors";
 
 export interface CreateManagedInput {
   name: string;
@@ -77,17 +82,45 @@ const MCP_PATH = "/mcp";
 const SETTLE_ATTEMPTS = 5;
 const SETTLE_INTERVAL_MS = 1_000;
 
+/**
+ * The deadline for "does anything answer".
+ *
+ * Short on purpose. This runs on every console page load for a managed entry and
+ * on every settle attempt, and the question is only whether the server is there
+ * — a container that accepts the connection and then says nothing is exactly the
+ * case this feature exists to surface, so it must not be the case that stalls
+ * the page for the full discovery timeout.
+ */
+const REACHABILITY_TIMEOUT_MS = 3_000;
+
 export interface ManagedMcpUseCases {
   create(input: CreateManagedInput): Promise<McpServer>;
   remove(name: string): Promise<void>;
   status(name: string): Promise<ManagedMcpStatus>;
-  /** Re-create one entry's container against the namespace this app has now. */
-  restart(name: string): Promise<McpServer>;
+  /**
+   * Re-create one entry's container against the namespace this app has now.
+   *
+   * Returns once the restart has been *accepted*, not once it is done: starting
+   * a container polls the runtime for minutes, and a caller that gave up
+   * waiting would retry into a second teardown of the same container. Poll
+   * `status` for the outcome.
+   */
+  restart(name: string): Promise<void>;
   /** Probe every managed entry and restart the ones that do not answer. */
   reconcile(): Promise<ReconcileOutcome[]>;
 }
 
 export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCases {
+  /**
+   * Names with a restart in flight. Two teardowns of one container racing is
+   * worse than refusing the second, and an operator watching an unreachable
+   * server is exactly the person who presses the button twice.
+   *
+   * Process-local, like the settings cache — managed servers already assume one
+   * app instance per host, because a container joins exactly one namespace.
+   */
+  const restarting = new Set<string>();
+
   async function requireManaged(name: string): Promise<McpServer> {
     const existing = await deps.repo.get(name);
     if (!existing) {
@@ -115,6 +148,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       entry.url,
       deps.cipher.decryptHeadersForOutbound(entry.headers),
       true,
+      REACHABILITY_TIMEOUT_MS,
     );
     return result.ok || result.unauthorized === true;
   }
@@ -167,7 +201,21 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         `The provisioner returned ${workload.address}, which is not a loopback address; the container was stopped rather than left behind an entry that cannot point at it.`,
       );
     }
-    await deps.repo.put(restarted);
+    // `update`, not `put`: conditional on the row still existing. A sweep runs
+    // for minutes, and an admin who deleted an entry in that window must not
+    // find it resurrected — with a container behind it. If the row is gone, the
+    // container we just started is the thing that should not exist.
+    try {
+      await deps.repo.update(restarted);
+    } catch (error) {
+      if (isConditionalWriteFailure(error)) {
+        await deps.provisioner.stop(entry.name).catch(() => {});
+        throw new NotFoundError(
+          `MCP server "${entry.name}" was removed while it was being restarted; its container was stopped.`,
+        );
+      }
+      throw error;
+    }
     // Both addresses: the old one so a moved entry leaves nothing cached behind,
     // the new one so a failure learned while it was unreachable does not outlive
     // the restart. The port is derived from the name, so they are usually equal.
@@ -244,11 +292,37 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     },
 
     async restart(name) {
-      const restarted = await restartEntry(await requireManaged(name));
-      // The same grace the sweep gives, so the status the console fetches next
-      // is a settled one rather than a container caught mid-boot.
-      await settles(restarted);
-      return restarted;
+      if (restarting.has(name)) {
+        throw new ConflictError(`A restart of "${name}" is already running.`);
+      }
+      // Claimed before the first await, or two clicks arriving together both
+      // get past the check and tear the same container down twice.
+      restarting.add(name);
+      let entry: McpServer;
+      try {
+        entry = await requireManaged(name);
+      } catch (error) {
+        restarting.delete(name);
+        throw error;
+      }
+      // Everything past this point runs after the caller has been answered. The
+      // work is measured in minutes; holding an HTTP response open for it means
+      // a client that times out and retries, and a retry here is a second
+      // teardown of the container the first one is still bringing up.
+      void (async () => {
+        try {
+          // The same grace the sweep gives, so a `status` poll that lands right
+          // after this is looking at a settled container rather than one caught
+          // mid-boot.
+          await settles(await restartEntry(entry));
+        } catch (error) {
+          // Nothing is waiting on this. The console learns the outcome from
+          // `status`, the same place it learned there was a problem.
+          console.error(`[managed-mcp] restart of ${name} failed`, error);
+        } finally {
+          restarting.delete(name);
+        }
+      })();
     },
 
     async reconcile() {

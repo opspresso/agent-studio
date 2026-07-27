@@ -24,10 +24,18 @@ export interface McpToolProbe {
    * outbound guard is not what makes it safe — the same flag the run path
    * carries, from the same predicate. Absent means the guarded path.
    */
+  /**
+   * `timeoutMs` overrides the discovery deadline. A liveness check runs on a
+   * console page load and only needs to know whether anything answers, so it
+   * does not deserve the patience a first discovery does — a server that
+   * accepts the connection and then says nothing would otherwise stall the page
+   * for the full discovery timeout.
+   */
   listTools(
     url: string,
     headers: Record<string, string>,
     loopback?: boolean,
+    timeoutMs?: number,
   ): Promise<ListToolsResult>;
   /**
    * Drop any cached tool list for this URL. A new url or new credentials can
