@@ -114,23 +114,53 @@ function parseReleasedAt(entry: Record<string, unknown>): number | null {
   return null;
 }
 
+/** A runaway `has_more` must not spin; far more pages than any catalog needs. */
+const MAX_PAGES = 25;
+
+/**
+ * Every model a channel serves.
+ *
+ * Anthropic paginates this endpoint (`has_more` plus a `last_id` cursor, twenty
+ * per page by default); OpenAI returns the lot. The first request is made the
+ * way it always was and the cursor is followed only when one is offered, so a
+ * channel that does not paginate behaves exactly as before. Reading page one and
+ * stopping would report a provider's own live models as retired — in the list
+ * whose whole purpose is to be trusted enough to delete from.
+ */
 async function fetchModels(channel: Channel): Promise<ServedModel[]> {
-  const url = `${channel.baseUrl.replace(/\/+$/, "")}/models`;
-  const response = await fetch(url, { headers: authHeaders(channel) });
-  if (!response.ok) {
-    throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
+  const endpoint = `${channel.baseUrl.replace(/\/+$/, "")}/models`;
+  const collected: ServedModel[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const url = cursor ? `${endpoint}?after_id=${encodeURIComponent(cursor)}` : endpoint;
+    const response = await fetch(url, { headers: authHeaders(channel) });
+    if (!response.ok) {
+      throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
+    }
+    const body = (await response.json()) as {
+      data?: unknown;
+      has_more?: unknown;
+      last_id?: unknown;
+    };
+    if (!Array.isArray(body.data)) {
+      throw new Error(`GET ${url} → no "data" array in the response`);
+    }
+    for (const entry of body.data) {
+      if (typeof entry !== "object" || entry === null) {
+        continue;
+      }
+      const record = entry as Record<string, unknown>;
+      if (typeof record.id !== "string" || record.id.length === 0) {
+        continue;
+      }
+      collected.push({ id: qualify(record.id, channel), releasedAt: parseReleasedAt(record) });
+    }
+    if (body.has_more !== true || typeof body.last_id !== "string" || body.last_id === "") {
+      return collected;
+    }
+    cursor = body.last_id;
   }
-  const body = (await response.json()) as { data?: unknown };
-  if (!Array.isArray(body.data)) {
-    throw new Error(`GET ${url} → no "data" array in the response`);
-  }
-  return body.data
-    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
-    .filter((entry) => typeof entry.id === "string" && entry.id.length > 0)
-    .map((entry) => ({
-      id: qualify(entry.id as string, channel),
-      releasedAt: parseReleasedAt(entry),
-    }));
+  throw new Error(`GET ${endpoint} → still paginating after ${MAX_PAGES} pages`);
 }
 
 /**
@@ -169,6 +199,21 @@ const DATED_SNAPSHOT = /^(.*)-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
 /** The undated alias a dated snapshot id belongs to, or null. */
 function aliasOf(id: string): string | null {
   return DATED_SNAPSHOT.exec(id)?.[1] ?? null;
+}
+
+/**
+ * The registry id a snapshot's alias stands for, or null if it is not a
+ * snapshot.
+ *
+ * The date comes off the provider's own spelling, so the alias is still in it —
+ * and `served` is keyed by registry ids, because `qualify` already mapped them.
+ * Comparing the two without this step reports every dated snapshot of a `wireId`
+ * model as missing: Anthropic serves `claude-haiku-4-5-20251001`, whose alias is
+ * `claude-haiku-4-5`, while the registry holds `claude-haiku-4.5`.
+ */
+function aliasRegistryId(id: string): string | null {
+  const alias = aliasOf(id);
+  return alias === null ? null : toRegistryId(alias);
 }
 
 function isSelectable(id: string): boolean {
@@ -210,9 +255,14 @@ async function main(): Promise<void> {
       const models = await fetchModels(channel);
       const selectable = models.filter((model) => isSelectable(model.id));
       for (const model of selectable) {
-        // Keep the earliest release seen; two channels may both serve an id.
+        // Two channels may both serve an id. Keep the earliest release, because
+        // a later date is a re-list rather than a new model — and because the
+        // alternative is a date decided by channel iteration order, which the
+        // `--since` cutoff would then act on.
         const existing = served.get(model.id);
-        if (existing === undefined || existing === null) {
+        if (existing === undefined) {
+          served.set(model.id, model.releasedAt);
+        } else if (model.releasedAt !== null && (existing === null || model.releasedAt < existing)) {
           served.set(model.id, model.releasedAt);
         }
       }
@@ -237,26 +287,29 @@ async function main(): Promise<void> {
   // models observed in their own right.
   const covered = new Set(served.keys());
   for (const id of served.keys()) {
-    const alias = aliasOf(id);
+    const alias = aliasRegistryId(id);
     if (alias !== null) {
-      // The alias is derived from the snapshot's own name, so it is still in the
-      // provider's spelling — map it back the way `qualify` maps a served id.
-      covered.add(toRegistryId(alias));
+      covered.add(alias);
     }
   }
 
   const unregistered = [...served.entries()].filter(([id]) => !registered.has(id));
-  // Report the alias, not each of its snapshots — `gpt-5.5` and
-  // `gpt-5.5-2026-04-23` are one decision, not two.
-  const collapsed = unregistered.filter(([id]) => {
-    const alias = aliasOf(id);
-    return alias !== null && served.has(alias);
-  }).length;
+  /**
+   * A snapshot is the model its alias names, not a second one to decide about.
+   *
+   * Folded when that alias is registered *or* served. Registered matters on its
+   * own because a provider may list only the dated form: Anthropic serves
+   * `claude-haiku-4-5-20251001` and no undated alias, so asking "is the alias
+   * served" leaves a model the registry already holds sitting in the list of
+   * models it lacks.
+   */
+  const foldsAway = (id: string): boolean => {
+    const alias = aliasRegistryId(id);
+    return alias !== null && (registered.has(alias) || served.has(alias));
+  };
+  const collapsed = unregistered.filter(([id]) => foldsAway(id)).length;
   const missing = unregistered
-    .filter(([id]) => {
-      const alias = aliasOf(id);
-      return alias === null || !served.has(alias);
-    })
+    .filter(([id]) => !foldsAway(id))
     .map(([id, releasedAt]) => ({ id, releasedAt }))
     .sort((a, b) => (b.releasedAt ?? 0) - (a.releasedAt ?? 0));
   const shown = since === null ? missing : missing.filter((m) => (m.releasedAt ?? 0) >= since);
@@ -292,9 +345,19 @@ async function main(): Promise<void> {
     "Pricing, context window, and capabilities come from the provider's docs — check them before adding an entry.",
   );
 
+  // What `--strict` is allowed to fail on.
+  //
+  // Not `missing`: that is the provider's entire catalog minus this app's
+  // curated selection — embeddings, realtime, moderation, internal codenames —
+  // so gating on it is an exit code that can never be green, which is the same
+  // as no gate at all. A registered model no channel serves is real drift and
+  // always counts. Newly released models count only once `--since` has narrowed
+  // them to a set someone meant to look at.
+  //
   // A channel that never answered means the check did not run, which must not
   // read as "all clear" to whatever is gating on the exit code.
-  if (strict && (anyChannelFailed || missing.length > 0 || unserved.length > 0)) {
+  const gated = unserved.length + (since === null ? 0 : shown.length);
+  if (strict && (anyChannelFailed || gated > 0)) {
     process.exit(1);
   }
 }

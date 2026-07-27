@@ -113,6 +113,27 @@ describe("model registry invariants", () => {
     }
   });
 
+  /**
+   * The invariant the 404 this file's `wireId` exists to fix came from.
+   *
+   * Anthropic names its models with hyphens and rejects the dotted form the
+   * registry and every stored version use, so a dotted `anthropic/` id is
+   * dispatchable only through a `wireId`. Without this, adding
+   * `anthropic/claude-opus-5.1` and forgetting the override ships the identical
+   * failure — silently, because `wireModelId` falls back to the bare id and the
+   * 404 only appears at dispatch.
+   */
+  it("gives every dotted Anthropic id the hyphenated name Anthropic serves", () => {
+    for (const model of MODEL_CONFIGS.filter(
+      (m) => m.provider === "anthropic" && m.id.includes("."),
+    )) {
+      const bare = model.id.slice(model.id.indexOf("/") + 1);
+      expect(model.wireId, `${model.id}: a dotted Anthropic id needs a wireId`).toBe(
+        bare.replaceAll(".", "-"),
+      );
+    }
+  });
+
   it("exposes exactly the non-hidden models", () => {
     expect(getVisibleModels().map((m) => m.id)).toEqual(
       MODEL_CONFIGS.filter((m) => !m.hidden).map((m) => m.id),

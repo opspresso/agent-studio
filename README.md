@@ -86,8 +86,16 @@ channels actually serve:
 ```bash
 pnpm check-models             # ids the channels serve but the registry lacks, and vice versa
 pnpm check-models --since=90d # ...only models released in the last 90 days
-pnpm check-models --strict    # exit 1 on a finding, or if a channel failed to answer
+pnpm check-models --strict    # exit 1 on drift, or if a channel failed to answer
 ```
+
+`--strict` fails on a registered model no channel serves, and on a channel that
+did not answer — a check that could not run must not read as all clear. It does
+*not* fail on the long list of served-but-unregistered ids: that is the
+provider's whole catalog minus this app's curated selection (embeddings,
+realtime, internal codenames), so gating on it would be an exit code that can
+never be green. Add `--since` to make newly released models count too, which is
+the form worth putting in CI.
 
 Registry ids follow the router convention (`anthropic/claude-opus-4.8`), which is
 also what stored project versions hold. When a provider's own API spells the same
