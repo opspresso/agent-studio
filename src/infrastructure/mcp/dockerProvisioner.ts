@@ -67,7 +67,10 @@ export function createDockerProvisioner(): McpProvisioner {
         "--memory",
         "512m",
         "-p",
-        `127.0.0.1:${port}:${spec.containerPort}`,
+        // No stored port means the entry predates persisting one. Mapping the
+        // port onto itself matches what the SSM adapter does, where the
+        // container is told to listen on exactly the port we bound.
+        `127.0.0.1:${port}:${spec.containerPort ?? port}`,
         ...(spec.envRefs ?? []).flatMap((ref) => ["--env-file", ref]),
         image,
       ]);

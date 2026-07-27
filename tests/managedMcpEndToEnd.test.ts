@@ -85,7 +85,9 @@ describe("managed MCP, end to end on loopback", () => {
       repo: repo as never,
       provisioner,
       probe: { invalidateDiscovery() {} } as never,
+      cipher: secretCipher,
       now: () => "2026-01-01T00:00:00.000Z",
+      sleep: async () => {},
     });
 
     const entry = await managed.create({

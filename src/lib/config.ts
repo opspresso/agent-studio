@@ -87,6 +87,12 @@ export const config = {
    * The container managed workloads share a network namespace with — this app's
    * own. Every container has its own 127.0.0.1, so a loopback address only
    * means anything if both ends are in the same namespace.
+   *
+   * Sharing a namespace means one app instance per host: a container joins
+   * exactly one, so a second instance would not see the managed servers at all.
+   * The name is also resolved to a container id when the workload starts, so a
+   * redeploy strands what is already running — see `reconcile` in
+   * `managedMcpUseCases`, which is what puts it back.
    */
   get managedMcpNetworkContainer(): string {
     return process.env.MANAGED_MCP_NETWORK_CONTAINER || "agent-studio";
