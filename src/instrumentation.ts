@@ -38,7 +38,8 @@ function reportReconcile(managed: ManagedMcpUseCases): Promise<void> {
       const count = (action: string) => outcomes.filter((o) => o.action === action).length;
       console.info(
         `[managed-mcp] reconciled ${outcomes.length} server(s): ` +
-          `${count("healthy")} healthy, ${count("restarted")} restarted, ${count("failed")} failed`,
+          `${count("healthy")} healthy, ${count("restarted")} restarted, ` +
+          `${count("failed")} failed, ${count("skipped")} skipped`,
       );
     })
     .catch((error: unknown) => {
@@ -68,7 +69,11 @@ export async function register(): Promise<void> {
         await reportReconcile(managedMcpUseCases);
       }
     })().catch((error: unknown) => {
-      console.error("[managed-mcp] reconcile failed", error);
+      // Not "reconcile failed": the sweep terminates its own errors above, so
+      // the only thing that reaches here is the composition root refusing to
+      // load — a different and much larger problem than an unreachable
+      // container, and one that would be misread under the other message.
+      console.error("[managed-mcp] could not load the composition root to reconcile", error);
     });
   }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
 import type { McpServer } from "@/domain/mcp/types";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
@@ -11,7 +11,17 @@ interface ProbeCall {
   url: string;
   headers: Record<string, string>;
   loopback?: boolean;
+  timeoutMs?: number;
 }
+
+/**
+ * The deadline `reaches` is expected to hand the probe. Restated here rather
+ * than imported, so a change to the constant has to be made twice on purpose —
+ * dropping it silently would put a ten-second discovery timeout on every
+ * console page load for a managed entry, which is the stall this argument was
+ * added to prevent.
+ */
+const EXPECTED_REACHABILITY_TIMEOUT_MS = 3_000;
 
 function fixture(
   opts: {
@@ -19,6 +29,12 @@ function fixture(
     existing?: McpServer;
     /** What the provisioner reports for `inspect`. */
     running?: boolean;
+    /**
+     * Make `start` block until `releaseStart()`. Starting a container really
+     * does run for minutes, and a test about what happens *while* one is in
+     * flight has to be able to hold it there rather than hope.
+     */
+    holdStart?: boolean;
   } = {},
 ) {
   const rows = new Map<string, McpServer>();
@@ -28,10 +44,19 @@ function fixture(
   const stopped: string[] = [];
   const started: string[] = [];
   const startedSpecs: ManagedWorkloadSpec[] = [];
+  let releaseStart = (): void => {};
+  const held = opts.holdStart
+    ? new Promise<void>((resolve) => {
+        releaseStart = resolve;
+      })
+    : null;
   const provisioner: McpProvisioner = {
     async start(spec) {
       started.push(spec.name);
       startedSpecs.push(spec);
+      if (held) {
+        await held;
+      }
       return {
         name: spec.name,
         address: opts.address ?? "http://127.0.0.1:3001",
@@ -83,8 +108,18 @@ function fixture(
   // answer "unreachable, then reachable after the restart".
   let answer: (url: string, call: number) => ListToolsResult = () => REACHABLE;
   const probe = {
-    listTools: async (url: string, headers: Record<string, string>, loopback?: boolean) => {
-      probeCalls.push({ url, headers, ...(loopback === undefined ? {} : { loopback }) });
+    listTools: async (
+      url: string,
+      headers: Record<string, string>,
+      loopback?: boolean,
+      timeoutMs?: number,
+    ) => {
+      probeCalls.push({
+        url,
+        headers,
+        ...(loopback === undefined ? {} : { loopback }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      });
       return answer(url, probeCalls.length);
     },
     invalidateDiscovery: (url: string) => invalidated.push(url),
@@ -113,6 +148,7 @@ function fixture(
     invalidated,
     probeCalls,
     sleeps,
+    releaseStart: () => releaseStart(),
     answerWith: (fn: (url: string, call: number) => ListToolsResult) => {
       answer = fn;
     },
@@ -234,7 +270,7 @@ describe("managed MCP status", () => {
     expect(f.probeCalls).toEqual([]);
   });
 
-  it("probes with decrypted headers, on the loopback path", async () => {
+  it("probes with decrypted headers, on the loopback path, under its own deadline", async () => {
     const f = fixture({ existing: managedRow({ headers: { Authorization: "enc:v1:secret" } }) });
     await f.useCases.status("image-fetch");
 
@@ -243,6 +279,7 @@ describe("managed MCP status", () => {
         url: "http://127.0.0.1:3001/mcp",
         headers: { Authorization: "secret" },
         loopback: true,
+        timeoutMs: EXPECTED_REACHABILITY_TIMEOUT_MS,
       },
     ]);
   });
@@ -404,11 +441,22 @@ describe("managed MCP reconcile", () => {
 });
 
 /**
- * `restart` answers when the work is accepted, not when it is finished.
- * Everything the fixture does resolves immediately, so one macrotask turn is
- * enough for the queued work to run to completion.
+ * `restart` answers when the work is accepted, not when it is finished, so an
+ * assertion about what it did has to let the queued work run first.
+ *
+ * Microtask turns rather than a timer: nothing in the fixture waits on the clock
+ * — `sleep` is injected and records instead of sleeping — so the queued chain
+ * finishes in a bounded number of turns, and the repo's rule against real timers
+ * in tests holds. The deepest chain here — a restart plus five settle attempts —
+ * needs fewer than twenty turns, so the bound has room to spare; falling short
+ * of it fails the assertions loudly rather than passing on unfinished work.
  */
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const FLUSH_TURNS = 500;
+const flush = async () => {
+  for (let turn = 0; turn < FLUSH_TURNS; turn += 1) {
+    await Promise.resolve();
+  }
+};
 
 describe("managed MCP restart", () => {
   it("re-creates the container and keeps the entry's address", async () => {
@@ -464,5 +512,72 @@ describe("managed MCP restart", () => {
 
     expect(f.rows.has("image-fetch")).toBe(false);
     expect(f.stopped).toEqual(["image-fetch"]);
+  });
+
+  it("refuses a restart it could never run, rather than accepting it and failing later", async () => {
+    // A row with no image cannot be started at all. Answering "accepted" to
+    // that leaves the console watching a container for minutes to learn what
+    // was knowable before the response was written.
+    const f = fixture({ existing: managedRow({ image: undefined }) });
+
+    await expect(f.useCases.restart("image-fetch")).rejects.toThrow(/no image recorded/);
+    expect(f.started).toEqual([]);
+    // and the claim went with it, so the entry is not blocked forever
+    await expect(f.useCases.restart("image-fetch")).rejects.toThrow(/no image recorded/);
+  });
+
+  it("says so when a restart comes back and still does not answer", async () => {
+    // The sweep reports this outcome. Nothing awaits the button's restart, so
+    // if it does not report it too, a repair that did not work leaves no
+    // evidence anywhere — which is how the original outage stayed invisible.
+    const f = fixture({ existing: managedRow() });
+    f.answerWith(() => REFUSED);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await f.useCases.restart("image-fetch");
+      await flush();
+      expect(warn).toHaveBeenCalledWith("[managed-mcp] image-fetch: restarted, still unreachable");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("managed MCP restart and reconcile exclude each other", () => {
+  it("leaves an entry alone while a restart of it is already running", async () => {
+    // Both paths do `docker rm -f` then `docker run` under one name. Running
+    // them together means the sweep's teardown kills the container the button
+    // just created, and neither one is reporting on the container it started.
+    const f = fixture({ existing: managedRow(), holdStart: true });
+    f.answerWith(() => REFUSED);
+    await f.useCases.restart("image-fetch");
+    await flush();
+    expect(f.started).toEqual(["image-fetch"]);
+
+    const outcomes = await f.useCases.reconcile();
+
+    expect(outcomes).toEqual([
+      { name: "image-fetch", action: "skipped", detail: "a restart was already running" },
+    ]);
+    // not started a second time, and not probed on the way to deciding that
+    expect(f.started).toEqual(["image-fetch"]);
+    f.releaseStart();
+    await flush();
+  });
+
+  it("refuses a manual restart while the sweep has the entry", async () => {
+    const f = fixture({ existing: managedRow(), holdStart: true });
+    f.answerWith(() => REFUSED);
+    const sweep = f.useCases.reconcile();
+    await flush();
+    expect(f.started).toEqual(["image-fetch"]);
+
+    await expect(f.useCases.restart("image-fetch")).rejects.toThrow(/already running/);
+
+    f.releaseStart();
+    await sweep;
+    expect(f.started).toEqual(["image-fetch"]);
+    // and the sweep's claim is released with it
+    await expect(f.useCases.restart("image-fetch")).resolves.toBeUndefined();
   });
 });
