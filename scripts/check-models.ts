@@ -14,7 +14,9 @@
  *   pnpm check-models                    # report; always exits 0
  *   pnpm check-models --since=90d        # only models released in the last 90 days
  *   pnpm check-models --since=2026-01-01 # ...or since a date
- *   pnpm check-models --strict           # exit 1 on a finding, or if a channel failed
+ *   pnpm check-models --strict           # exit 1 on a registered model nothing serves,
+ *                                        #   or on a channel that failed; with --since,
+ *                                        #   also on anything newly released
  *
  * The registry is a *curated* selection, not a mirror: a provider channel serves
  * its entire catalog — embeddings, speech, moderation, fine-tunes, every dated
@@ -92,9 +94,17 @@ async function resolveChannels(): Promise<Channel[]> {
  * authenticates with `x-api-key` and rejects a bearer token outright (401
  * "Invalid bearer token"). Every other channel, routers included, takes the
  * OpenAI form.
+ *
+ * Which one this is cannot be read off the provider name — a gateway may well
+ * be registered under `LLM_PROVIDER_ANTHROPIC_*`, and sending it `x-api-key`
+ * earns a 401 that this script would report as a dead channel, taking `--strict`
+ * red on a healthy configuration. `keepModelPrefix` is what actually says: a
+ * channel handed `anthropic/claude-…` cannot be Anthropic's API, which 404s on
+ * that spelling. So the `x-api-key` form is used only where the prefix is
+ * stripped — exactly where dispatch would be talking to Anthropic directly.
  */
 function authHeaders(channel: Channel): Record<string, string> {
-  if (channel.provider === "anthropic") {
+  if (channel.provider === "anthropic" && !channel.keepModelPrefix) {
     return { "x-api-key": channel.apiKey, "anthropic-version": ANTHROPIC_VERSION };
   }
   return { Authorization: `Bearer ${channel.apiKey}` };
