@@ -17,8 +17,14 @@ export interface ManagedWorkloadSpec {
   name: string;
   /** Image reference. An artifact, not a command. */
   image: string;
-  /** Port the container listens on inside itself. */
-  containerPort: number;
+  /**
+   * Port the container listens on inside itself. Optional because an entry
+   * created before it was persisted cannot supply one, and a restart must not
+   * be blocked by that: an adapter without a value falls back to the port it
+   * binds anyway, which is what a container told `PORT=<that port>` already
+   * listens on.
+   */
+  containerPort?: number;
   /**
    * SSM parameter names whose contents become the container's environment.
    * References, so secrets never pass through this app or its table.

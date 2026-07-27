@@ -95,6 +95,13 @@ export interface McpServer {
    * References, not values: the secrets never enter this table.
    */
   envRefs?: string[];
+  /**
+   * Managed only: the port the container listens on inside itself. Stored so a
+   * restart can rebuild the spec the entry was created from — an operator types
+   * this once, and nothing else remembers it. Absent on rows written before it
+   * was persisted; the provisioner falls back to the port it binds anyway.
+   */
+  containerPort?: number;
   /** Present when the server requires OAuth; absent for static-header servers. */
   auth?: McpServerAuth;
   /**

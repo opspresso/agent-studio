@@ -140,7 +140,11 @@ export const managedMcpUseCases =
                 networkContainer: config.managedMcpNetworkContainer,
               }),
         probe: mcpToolProbe,
+        // Reachability is checked with the entry's own headers, which are
+        // encrypted at rest — the probe needs them the way a dispatch does.
+        cipher: secretCipher,
         now: () => new Date().toISOString(),
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       })
     : undefined;
 const mcpAuthProvider = createMcpAuthProvider({

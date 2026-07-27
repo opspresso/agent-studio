@@ -65,6 +65,14 @@ export interface SsmProvisionerConfig {
    * from this app, which is itself in a container. Joining the namespace makes
    * the address literally shared — and the port is then published nowhere at
    * all, so nothing outside that namespace can reach it either.
+   *
+   * Two consequences, both load-bearing. Docker resolves this name to a
+   * container *id* at `docker run` and never re-resolves it, so replacing this
+   * app leaves managed containers running in a namespace that no longer exists;
+   * `reconcile` at boot is what repairs that, and removing it would make every
+   * deploy silently break every managed server. And because a container belongs
+   * to exactly one namespace, managed servers assume one app instance per host:
+   * a second instance would not see them.
    */
   networkContainer: string;
 }
