@@ -326,7 +326,12 @@ Two deliberate strategies coexist:
 - Model registry `src/domain/llm/models.ts`: `ModelConfig { id, provider, displayName,
   pricing { inputPer1M, outputPer1M, cachedInputPer1M?, imageInputPer1M?,
   imageOutputPer1M?, perImage? }, capabilities { tools, structuredOutput, imageInput,
-  reasoning, reasoningWithTools?, imageGeneration? }, contextWindow, maxTokens, hidden? }`.
+  reasoning, reasoningWithTools?, imageGeneration? }, contextWindow, maxTokens, hidden?,
+  wireId? }`. `wireId` is the name to send once a provider-direct channel strips the
+  `provider/` prefix, for a provider that spells the model differently from the router
+  convention the registry and every stored version use — Anthropic serves
+  `claude-opus-4-8` and 404s on `claude-opus-4.8`. Renaming the entry instead would
+  orphan stored versions, which would then price at $0.
 
 ### Skills
 - Skill = markdown behavior instructions (progressive disclosure): system prompt lists
@@ -395,7 +400,22 @@ Two deliberate strategies coexist:
   a command, and the shell string is assembled only from values matched against
   narrow patterns; images must come from the configured registry. Unset
   `MANAGED_MCP_INSTANCE_ID`/`MANAGED_MCP_REGISTRY` means the routes answer 503
-  rather than half-enable the feature.
+  rather than half-enable the feature. The stored row carries `image`, `envRefs`
+  and `containerPort` — everything a restart needs, because at restart time
+  there is no operator to ask again.
+- **Surviving a redeploy.** A managed container joins this app's own network
+  namespace (`--network container:<MANAGED_MCP_NETWORK_CONTAINER>`), which is the
+  only way a loopback address means the same thing at both ends. Docker resolves
+  that name to a container *id* when the workload starts and never re-resolves
+  it, so replacing this app leaves the container running in a namespace nothing
+  can address — healthy to `docker inspect`, reachable by nobody. `reconcile`
+  (`src/application/mcp/managedMcpUseCases.ts`), fired from `instrumentation.ts`
+  at boot and never awaited, probes every managed entry and restarts the ones
+  that do not answer; a 401 counts as an answer, since recreating a container
+  over a credential fixes nothing. `status` reports reachability separately from
+  liveness for the same reason — reporting only the latter is what made this
+  invisible. Sharing a namespace also means **one app instance per host**: a
+  container belongs to exactly one.
 - **OAuth** (MCP authorization spec, 2025-06-18). A registry entry may carry an `auth` block
   discovered once at registration (RFC 9728 protected-resource metadata → RFC 8414
   authorization-server metadata, both re-validated through `urlPolicy` and required to be
@@ -486,6 +506,7 @@ GET|POST /api/skills/sync                   skills-repo sync status / run
 POST /api/mcps/[name]/tools                 MCP connection test
 POST /api/mcps/managed                      start a managed MCP container + entry, admin-only
 GET|DELETE /api/mcps/managed/[name]         its running state / remove container and entry
+POST /api/mcps/managed/[name]/restart       re-create the container in this app's namespace (202; poll GET)
 POST|DELETE /api/mcps/[name]/auth           OAuth discovery for a registry server (admin)
 GET  /api/projects/[name]/mcp-connections   this project's OAuth connections (owner)
 PUT|DELETE …/mcp-connections/[server]       save client credentials / disconnect (owner)
@@ -505,7 +526,7 @@ POST /api/slack/events/[project]              project Slack webhook
 GET|POST /api/auth/[...all]                  Better Auth login flow (Google OAuth)
 GET  /api/health                            liveness (static 200)
 GET  /api/ready                             readiness (DynamoDB + LLM reachability)
-GET  /api/metrics                           Prometheus scrape (in-flight runs)
+GET  /api/metrics                           Prometheus scrape (in-flight runs, unknown-model calls)
 ```
 
 All routes require a Better Auth session except the unauthenticated endpoints:
@@ -534,8 +555,12 @@ deregistration handle draining (a `preStop` pause covers the endpoint-propagatio
 
 `/api/metrics` is the Prometheus scrape endpoint. It reports the number of top-level runs
 in flight on this instance (`src/lib/runMetrics.ts`), which is the signal to autoscale on:
-runs are I/O bound, so an instance saturated with them still reads as idle CPU. Counters
-are per-process and name no project, user, or model.
+runs are I/O bound, so an instance saturated with them still reads as idle CPU. It also
+reports `agent_studio_unknown_model_calls_total` and `agent_studio_unknown_models` — a
+correctness signal rather than a scaling one: a model id missing from the registry still
+runs, but its usage is booked at $0, so the miss is invisible in the cost dashboard it
+corrupts. Counters are per-process and name no project, user, or model, which is why the
+unknown ids are counted rather than labelled.
 
 Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) are

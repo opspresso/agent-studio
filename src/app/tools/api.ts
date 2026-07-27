@@ -115,13 +115,14 @@ export function getManagedMcpStatus(name: string): Promise<ManagedMcpStatus> {
 }
 
 /**
- * Re-creates the container against the network namespace this app has now.
- * The entry keeps its address: the port is derived from the name.
+ * Asks for the container to be re-created against the network namespace this
+ * app has now. The entry keeps its address: the port is derived from the name.
+ *
+ * Resolves when the restart is accepted, not when it is finished — it runs for
+ * as long as pulling an image takes. Poll `getManagedMcpStatus` for the outcome.
  */
-export function restartManagedMcp(name: string): Promise<McpServer> {
-  return fetch(`/api/mcps/managed/${name}/restart`, { method: "POST" }).then((r) =>
-    readJson<McpServer>(r),
-  );
+export function restartManagedMcp(name: string): Promise<void> {
+  return fetch(`/api/mcps/managed/${name}/restart`, { method: "POST" }).then(assertOk);
 }
 
 /** Removes the container and the entry together. */
