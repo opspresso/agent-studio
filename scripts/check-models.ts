@@ -1,0 +1,305 @@
+/**
+ * Diff the model registry against the models the configured LLM channels serve.
+ *
+ * The registry (`src/domain/llm/models.ts`) is hand-maintained and has to be:
+ * pricing, context windows, and capability flags exist only in each provider's
+ * documentation, so they cannot be synced from an API. Model *ids* can be, and
+ * that is the part that goes stale silently — a provider ships a model, nobody
+ * notices, and the first symptom is a run booked at $0. This reports the two
+ * lists and leaves every judgement to a human:
+ *
+ *   - served by a channel, absent from the registry  → candidate to add
+ *   - in the registry, served by no channel          → candidate to retire
+ *
+ *   pnpm check-models                    # report; always exits 0
+ *   pnpm check-models --since=90d        # only models released in the last 90 days
+ *   pnpm check-models --since=2026-01-01 # ...or since a date
+ *   pnpm check-models --strict           # exit 1 on a finding, or if a channel failed
+ *
+ * The registry is a *curated* selection, not a mirror: a provider channel serves
+ * its entire catalog — embeddings, speech, moderation, fine-tunes, every dated
+ * snapshot and superseded generation — and almost none of it is a model this app
+ * should offer. So the first list is long by nature and is sorted newest-first
+ * with each model's release date, which is the ordering that puts "they shipped
+ * something we missed" at the top. `--since` narrows it; nothing is ever dropped
+ * silently.
+ *
+ * Ids are compared in the `provider/model` form the registry uses. A provider
+ * channel serves bare ids, so its ids are re-prefixed the same way
+ * `resolveProviderTarget` strips them — otherwise every model behind a direct
+ * channel would read as missing. Ids outside `SUPPORTED_PROVIDERS` are ignored.
+ */
+import { MODEL_CONFIGS, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import type { ProviderChannelConfig } from "@/domain/settings/types";
+
+/** Anthropic requires an explicit API version on every request. */
+const ANTHROPIC_VERSION = "2023-06-01";
+
+interface Channel {
+  label: string;
+  baseUrl: string;
+  apiKey: string;
+  /** Provider whose bare ids need re-prefixing; null for the default channel. */
+  provider: string | null;
+  keepModelPrefix: boolean;
+}
+
+/** A model a channel serves, in registry id form. */
+interface ServedModel {
+  id: string;
+  /** Release time in epoch ms, or null when the channel does not report one. */
+  releasedAt: number | null;
+}
+
+/**
+ * Effective channel configuration. Runtime settings own the DB-override →
+ * env-fallback precedence, so this asks them rather than reading the env
+ * itself; when the settings row is unreachable (no AWS credentials, running
+ * against a laptop with no DynamoDB) it degrades to the env channels instead of
+ * refusing to run — a report from the env channels is still useful.
+ */
+async function resolveChannels(): Promise<Channel[]> {
+  const { config } = await import("@/lib/config");
+  let base: { baseUrl: string; apiKey: string };
+  let providers: ProviderChannelConfig[];
+  try {
+    const settings = await import("@/lib/runtime-settings");
+    base = await settings.getLlmChannelConfig();
+    providers = await settings.getLlmProviderConfigs();
+  } catch (error) {
+    console.warn(
+      `! stored settings unreachable (${error instanceof Error ? error.message : String(error)}); using environment channels only\n`,
+    );
+    const { parseProviderConfigs } = await import("@/infrastructure/llm/providers");
+    base = { baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey };
+    providers = parseProviderConfigs(process.env);
+  }
+
+  return [
+    { label: "default", baseUrl: base.baseUrl, apiKey: base.apiKey, provider: null, keepModelPrefix: true },
+    ...providers.map((provider) => ({
+      label: provider.name,
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      provider: provider.name,
+      keepModelPrefix: provider.keepModelPrefix === true,
+    })),
+  ];
+}
+
+/**
+ * Anthropic's own endpoint predates the OpenAI-compatible convention: it
+ * authenticates with `x-api-key` and rejects a bearer token outright (401
+ * "Invalid bearer token"). Every other channel, routers included, takes the
+ * OpenAI form.
+ */
+function authHeaders(channel: Channel): Record<string, string> {
+  if (channel.provider === "anthropic") {
+    return { "x-api-key": channel.apiKey, "anthropic-version": ANTHROPIC_VERSION };
+  }
+  return { Authorization: `Bearer ${channel.apiKey}` };
+}
+
+/** Release time in epoch ms: OpenAI reports unix seconds, Anthropic an ISO string. */
+function parseReleasedAt(entry: Record<string, unknown>): number | null {
+  if (typeof entry.created === "number" && Number.isFinite(entry.created)) {
+    return entry.created * 1000;
+  }
+  if (typeof entry.created_at === "string") {
+    const parsed = Date.parse(entry.created_at);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+async function fetchModels(channel: Channel): Promise<ServedModel[]> {
+  const url = `${channel.baseUrl.replace(/\/+$/, "")}/models`;
+  const response = await fetch(url, { headers: authHeaders(channel) });
+  if (!response.ok) {
+    throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
+  }
+  const body = (await response.json()) as { data?: unknown };
+  if (!Array.isArray(body.data)) {
+    throw new Error(`GET ${url} → no "data" array in the response`);
+  }
+  return body.data
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .filter((entry) => typeof entry.id === "string" && entry.id.length > 0)
+    .map((entry) => ({
+      id: qualify(entry.id as string, channel),
+      releasedAt: parseReleasedAt(entry),
+    }));
+}
+
+/**
+ * Registry ids keyed by the `provider/wireId` a provider-direct channel serves
+ * them under. Without this a model whose provider names it differently reads as
+ * both missing (under the provider's name) and retired (under the registry's) —
+ * two findings for a model that is registered and served.
+ */
+const BY_WIRE_ID = new Map(
+  MODEL_CONFIGS.filter((model) => model.wireId !== undefined).map((model) => [
+    `${model.provider}/${model.wireId}`,
+    model.id,
+  ]),
+);
+
+/** The registry id a served `provider/model` id belongs to, if it has one. */
+function toRegistryId(qualified: string): string {
+  return BY_WIRE_ID.get(qualified) ?? qualified;
+}
+
+/** Re-prefix a bare id from a provider channel into the registry's id form. */
+function qualify(id: string, channel: Channel): string {
+  if (channel.provider === null || channel.keepModelPrefix) {
+    return id;
+  }
+  return toRegistryId(id.startsWith(`${channel.provider}/`) ? id : `${channel.provider}/${id}`);
+}
+
+/**
+ * `<alias>-<date>`, the dated-snapshot form both OpenAI and Anthropic use.
+ * The date is required: a bare prefix match would let `gpt-5` be satisfied by
+ * `gpt-5-mini`.
+ */
+const DATED_SNAPSHOT = /^(.*)-(?:\d{8}|\d{4}-\d{2}-\d{2})$/;
+
+/** The undated alias a dated snapshot id belongs to, or null. */
+function aliasOf(id: string): string | null {
+  return DATED_SNAPSHOT.exec(id)?.[1] ?? null;
+}
+
+function isSelectable(id: string): boolean {
+  const slash = id.indexOf("/");
+  return slash > 0 && (SUPPORTED_PROVIDERS as readonly string[]).includes(id.slice(0, slash));
+}
+
+/** `--since=90d` or `--since=2026-01-01` → epoch ms cutoff. */
+function parseSince(argv: string[]): number | null {
+  const arg = argv.find((value) => value.startsWith("--since="));
+  if (!arg) {
+    return null;
+  }
+  const raw = arg.slice("--since=".length);
+  const days = /^(\d+)d$/.exec(raw);
+  if (days?.[1]) {
+    return Date.now() - Number(days[1]) * 86_400_000;
+  }
+  const parsed = Date.parse(raw);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`--since expects <N>d or a date, got "${raw}"`);
+  }
+  return parsed;
+}
+
+function formatDate(releasedAt: number | null): string {
+  return releasedAt === null ? "    ?     " : new Date(releasedAt).toISOString().slice(0, 10);
+}
+
+async function main(): Promise<void> {
+  const strict = process.argv.includes("--strict");
+  const since = parseSince(process.argv);
+  const channels = await resolveChannels();
+
+  const served = new Map<string, number | null>();
+  let anyChannelFailed = false;
+  for (const channel of channels) {
+    try {
+      const models = await fetchModels(channel);
+      const selectable = models.filter((model) => isSelectable(model.id));
+      for (const model of selectable) {
+        // Keep the earliest release seen; two channels may both serve an id.
+        const existing = served.get(model.id);
+        if (existing === undefined || existing === null) {
+          served.set(model.id, model.releasedAt);
+        }
+      }
+      console.log(
+        `${channel.label} channel (${channel.baseUrl}): ${models.length} models, ${selectable.length} selectable`,
+      );
+    } catch (error) {
+      anyChannelFailed = true;
+      console.log(
+        `${channel.label} channel (${channel.baseUrl}): FAILED — ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  const registered = new Map(MODEL_CONFIGS.map((model) => [model.id, model]));
+
+  // A provider that lists only dated snapshots still serves the undated alias:
+  // Anthropic's catalog names `claude-haiku-4-5-20251001`, yet dispatching
+  // `claude-haiku-4-5` succeeds. Without crediting the alias, every such model
+  // reads as retired — a false positive in the one list that invites deleting a
+  // live model. Aliases only satisfy registry entries; they are never treated as
+  // models observed in their own right.
+  const covered = new Set(served.keys());
+  for (const id of served.keys()) {
+    const alias = aliasOf(id);
+    if (alias !== null) {
+      // The alias is derived from the snapshot's own name, so it is still in the
+      // provider's spelling — map it back the way `qualify` maps a served id.
+      covered.add(toRegistryId(alias));
+    }
+  }
+
+  const unregistered = [...served.entries()].filter(([id]) => !registered.has(id));
+  // Report the alias, not each of its snapshots — `gpt-5.5` and
+  // `gpt-5.5-2026-04-23` are one decision, not two.
+  const collapsed = unregistered.filter(([id]) => {
+    const alias = aliasOf(id);
+    return alias !== null && served.has(alias);
+  }).length;
+  const missing = unregistered
+    .filter(([id]) => {
+      const alias = aliasOf(id);
+      return alias === null || !served.has(alias);
+    })
+    .map(([id, releasedAt]) => ({ id, releasedAt }))
+    .sort((a, b) => (b.releasedAt ?? 0) - (a.releasedAt ?? 0));
+  const shown = since === null ? missing : missing.filter((m) => (m.releasedAt ?? 0) >= since);
+  const unserved = [...registered.keys()].filter((id) => !covered.has(id)).sort();
+
+  console.log(`\nMissing from the registry (${shown.length}) — newest first:`);
+  for (const model of shown) {
+    console.log(`  ${formatDate(model.releasedAt)}  ${model.id}`);
+  }
+  if (shown.length < missing.length) {
+    console.log(`  … ${missing.length - shown.length} more released before the --since cutoff`);
+  }
+  if (collapsed > 0) {
+    console.log(`  … ${collapsed} dated snapshots folded into the aliases above`);
+  }
+
+  // A channel that failed to answer serves an unknown set, so every registry id
+  // it would have covered looks retired. Reporting that list would be worse than
+  // reporting nothing: it invites deleting a model that is very much alive.
+  if (anyChannelFailed) {
+    console.log("\nNot served by any channel: skipped — a channel failed to answer.");
+  } else {
+    console.log(`\nNot served by any channel (${unserved.length}):`);
+    for (const id of unserved) {
+      console.log(`  ${id}${registered.get(id)?.hidden ? "  (hidden)" : ""}`);
+    }
+  }
+
+  console.log(
+    "\nIds only, and the registry is a curated selection — most of the above is catalog this app should not offer.",
+  );
+  console.log(
+    "Pricing, context window, and capabilities come from the provider's docs — check them before adding an entry.",
+  );
+
+  // A channel that never answered means the check did not run, which must not
+  // read as "all clear" to whatever is gating on the exit code.
+  if (strict && (anyChannelFailed || missing.length > 0 || unserved.length > 0)) {
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  console.error("CHECK FAILED:", error);
+  process.exit(1);
+});
