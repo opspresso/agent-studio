@@ -1,15 +1,9 @@
 import { managedMcpUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
+import { managedMcpUnavailable as unavailable } from "../_unavailable";
 
 type RouteContext = { params: Promise<{ name: string }> };
-
-function unavailable(): Response {
-  return Response.json(
-    { error: "This deployment is not configured to run managed MCP servers." },
-    { status: 503 },
-  );
-}
 
 /** What is actually running, which the stored entry cannot say on its own. */
 export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {

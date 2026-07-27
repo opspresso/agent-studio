@@ -22,6 +22,10 @@ import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
 import { buttonClass, textButtonClass } from "@/app/_components/buttonStyles";
 
+/** How long the console watches a restart before it stops asking. */
+const RESTART_POLL_ATTEMPTS = 20;
+const RESTART_POLL_INTERVAL_MS = 3_000;
+
 export default function McpDetailPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
@@ -86,13 +90,26 @@ export default function McpDetailPage() {
   /**
    * Re-creates the container against the namespace this app has now. The
    * recovery for a container that a redeploy left running somewhere unreachable.
+   *
+   * The request only queues the work — pulling an image outlives any response —
+   * so the container itself is what gets watched, until it answers or the wait
+   * runs out.
    */
   async function onRestart() {
     setRestarting(true);
     setError(null);
     try {
-      setServer(await restartManagedMcp(name));
-      await refreshStatus();
+      await restartManagedMcp(name);
+      for (let attempt = 0; attempt < RESTART_POLL_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, RESTART_POLL_INTERVAL_MS));
+        const next = await getManagedMcpStatus(name).catch(() => null);
+        if (next) {
+          setManagedStatus(next);
+          if (next.reachable) {
+            return;
+          }
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to restart container");
     } finally {

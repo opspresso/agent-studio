@@ -2,6 +2,7 @@ import { z } from "zod";
 import { managedMcpUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { managedMcpUnavailable } from "./_unavailable";
 
 /**
  * Creating a managed MCP server starts a container on this app's host, so it
@@ -18,10 +19,7 @@ const bodySchema = z.object({
 
 export const POST = withAdminAuth(async (_user, request: Request) => {
   if (!managedMcpUseCases) {
-    return Response.json(
-      { error: "This deployment is not configured to run managed MCP servers." },
-      { status: 503 },
-    );
+    return managedMcpUnavailable();
   }
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
