@@ -78,6 +78,41 @@ describe("resolveProviderTarget", () => {
     });
   });
 
+  /**
+   * A registry id and the provider's own name for the same model can differ:
+   * `anthropic/claude-opus-4.8` is what the router and every stored version
+   * hold, but Anthropic serves `claude-opus-4-8` and 404s on the dotted form.
+   * Stripping the prefix alone would dispatch a name that does not exist.
+   */
+  it("sends the provider's own name for a model that has one", () => {
+    const anthropic = parseProviderConfigs({
+      LLM_PROVIDER_ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1",
+      LLM_PROVIDER_ANTHROPIC_API_KEY: "sk-ant",
+    });
+    const target = resolveProviderTarget("anthropic/claude-opus-4.8", anthropic, DEFAULT_CHANNEL);
+    expect(target.providerName).toBe("anthropic");
+    expect(target.model).toBe("claude-opus-4-8");
+  });
+
+  it("keeps the full id when the channel wants the prefix, wire id or not", () => {
+    const anthropic = parseProviderConfigs({
+      LLM_PROVIDER_ANTHROPIC_BASE_URL: "https://router.example/v1",
+      LLM_PROVIDER_ANTHROPIC_API_KEY: "sk-ant",
+      LLM_PROVIDER_ANTHROPIC_KEEP_MODEL_PREFIX: "true",
+    });
+    const target = resolveProviderTarget("anthropic/claude-opus-4.8", anthropic, DEFAULT_CHANNEL);
+    expect(target.model).toBe("anthropic/claude-opus-4.8");
+  });
+
+  it("passes a model missing from the registry through as the bare id", () => {
+    const anthropic = parseProviderConfigs({
+      LLM_PROVIDER_ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1",
+      LLM_PROVIDER_ANTHROPIC_API_KEY: "sk-ant",
+    });
+    const target = resolveProviderTarget("anthropic/claude-unreleased", anthropic, DEFAULT_CHANNEL);
+    expect(target.model).toBe("claude-unreleased");
+  });
+
   it("falls back to the default channel for models without a prefix", () => {
     const target = resolveProviderTarget("gemma4-31b", providers, DEFAULT_CHANNEL);
     expect(target.providerName).toBeNull();

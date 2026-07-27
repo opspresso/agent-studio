@@ -9,9 +9,12 @@
  * Provider-specific channels are assumed to be the provider's own
  * OpenAI-compatible endpoint, which expects the bare model name — the
  * `provider/` prefix is stripped unless `LLM_PROVIDER_<PROVIDER>_KEEP_MODEL_PREFIX=true`
- * (useful when the channel is itself a router that expects full ids).
+ * (useful when the channel is itself a router that expects full ids). Stripping
+ * the prefix is not always enough to name the model the way its own API does,
+ * so the bare id comes from `wireModelId` rather than from string surgery here.
  */
 
+import { wireModelId } from "@/domain/llm/models";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 export type { ProviderChannelConfig };
 
@@ -65,7 +68,7 @@ export function resolveProviderTarget(
         providerName: provider.name,
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
-        model: provider.keepModelPrefix ? modelId : modelId.slice(slash + 1),
+        model: provider.keepModelPrefix ? modelId : wireModelId(modelId),
       };
     }
   }
