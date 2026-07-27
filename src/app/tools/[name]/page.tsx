@@ -7,6 +7,7 @@ import {
   deleteMcp,
   getManagedMcpStatus,
   removeManagedMcp,
+  restartManagedMcp,
   type ManagedMcpStatus,
   getMcp,
   testMcpConnection,
@@ -34,6 +35,7 @@ export default function McpDetailPage() {
   const [tools, setTools] = useState<McpTool[] | null>(null);
   const [testing, setTesting] = useState(false);
   const [managedStatus, setManagedStatus] = useState<ManagedMcpStatus | null>(null);
+  const [restarting, setRestarting] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
 
   async function refresh() {
@@ -78,6 +80,23 @@ export default function McpDetailPage() {
       // Status is informational: a deployment that cannot reach the provisioner
       // still shows the entry rather than an error page.
       setManagedStatus(null);
+    }
+  }
+
+  /**
+   * Re-creates the container against the namespace this app has now. The
+   * recovery for a container that a redeploy left running somewhere unreachable.
+   */
+  async function onRestart() {
+    setRestarting(true);
+    setError(null);
+    try {
+      setServer(await restartManagedMcp(name));
+      await refreshStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to restart container");
+    } finally {
+      setRestarting(false);
     }
   }
 
@@ -134,15 +153,30 @@ export default function McpDetailPage() {
               <span className="text-neutral-400">container</span>{" "}
               {managedStatus === null ? (
                 <span className="text-neutral-400">unknown</span>
-              ) : managedStatus.running ? (
-                <span className="text-emerald-600 dark:text-emerald-400">running</span>
-              ) : (
+              ) : !managedStatus.running ? (
                 <span className="text-red-600 dark:text-red-400">
                   not running{managedStatus.detail ? ` — ${managedStatus.detail}` : ""}
                 </span>
+              ) : managedStatus.reachable ? (
+                <span className="text-emerald-600 dark:text-emerald-400">running · reachable</span>
+              ) : (
+                // The state this page used to call "running": the container is
+                // up and this app cannot address it. Restarting rejoins it to
+                // the network namespace we have now.
+                <span className="text-red-600 dark:text-red-400">running · unreachable</span>
               )}
               {server.image ? (
                 <span className="ml-2 font-mono text-neutral-400">{server.image}</span>
+              ) : null}
+              {managedStatus && !managedStatus.reachable ? (
+                <button
+                  type="button"
+                  onClick={onRestart}
+                  disabled={restarting}
+                  className={`${textButtonClass} ml-2`}
+                >
+                  {restarting ? "Restarting…" : "Restart container"}
+                </button>
               ) : null}
             </p>
           )}

@@ -96,6 +96,8 @@ export interface ManagedMcpStatus {
   name: string;
   image?: string;
   running: boolean;
+  /** The server answered. A running container can still be unreachable. */
+  reachable: boolean;
   address?: string;
   detail?: string;
 }
@@ -110,6 +112,16 @@ export function createManagedMcp(input: CreateManagedMcpInput): Promise<McpServe
 
 export function getManagedMcpStatus(name: string): Promise<ManagedMcpStatus> {
   return fetch(`/api/mcps/managed/${name}`).then((r) => readJson<ManagedMcpStatus>(r));
+}
+
+/**
+ * Re-creates the container against the network namespace this app has now.
+ * The entry keeps its address: the port is derived from the name.
+ */
+export function restartManagedMcp(name: string): Promise<McpServer> {
+  return fetch(`/api/mcps/managed/${name}/restart`, { method: "POST" }).then((r) =>
+    readJson<McpServer>(r),
+  );
 }
 
 /** Removes the container and the entry together. */
