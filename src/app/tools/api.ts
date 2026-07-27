@@ -121,8 +121,17 @@ export function getManagedMcpStatus(name: string): Promise<ManagedMcpStatus> {
  * Resolves when the restart is accepted, not when it is finished — it runs for
  * as long as pulling an image takes. Poll `getManagedMcpStatus` for the outcome.
  */
-export function restartManagedMcp(name: string): Promise<void> {
-  return fetch(`/api/mcps/managed/${name}/restart`, { method: "POST" }).then(assertOk);
+/**
+ * Queues a restart; the work outlives the response, so watch `status` for the
+ * outcome. A 409 means one was already in flight — for a caller that is about
+ * to watch the container that is the situation it asked for, not an error.
+ */
+export async function restartManagedMcp(name: string): Promise<void> {
+  const res = await fetch(`/api/mcps/managed/${name}/restart`, { method: "POST" });
+  if (res.status === 409) {
+    return;
+  }
+  await assertOk(res);
 }
 
 /** Removes the container and the entry together. */
