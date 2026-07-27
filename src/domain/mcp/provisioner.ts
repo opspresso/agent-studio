@@ -18,11 +18,18 @@ export interface ManagedWorkloadSpec {
   /** Image reference. An artifact, not a command. */
   image: string;
   /**
-   * Port the container listens on inside itself. Optional because an entry
-   * created before it was persisted cannot supply one, and a restart must not
-   * be blocked by that: an adapter without a value falls back to the port it
-   * binds anyway, which is what a container told `PORT=<that port>` already
-   * listens on.
+   * Port the container listens on inside itself — a request, and only an
+   * adapter that publishes a mapping can grant it.
+   *
+   * An adapter that instead puts the container in this app's network namespace
+   * has no mapping to translate with: the address is literally shared, so the
+   * container must bind the very port the entry's url names, and it is told so
+   * through `PORT`. There, this value cannot be honoured and is ignored.
+   *
+   * Optional because a restart has nobody to ask: an entry created before it
+   * was persisted carries none, and an adapter without a value falls back to
+   * the port it binds anyway — which is what a container told `PORT=<that
+   * port>` already listens on.
    */
   containerPort?: number;
   /**
