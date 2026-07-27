@@ -17,8 +17,18 @@ export async function listMcpTools(
   url: string,
   headers: Record<string, string>,
   loopback?: boolean,
+  timeoutMs?: number,
 ): Promise<ListToolsResult> {
-  const session = new McpSession(url, headers, undefined, loopback);
+  const deadline = timeoutMs ?? MCP_DISCOVERY_TIMEOUT_MS;
+  // Only wrapped when a caller asks. The session already gives each request the
+  // discovery deadline; imposing one signal across the whole exchange would turn
+  // two per-request budgets into a single shared one for every existing caller.
+  const session = new McpSession(
+    url,
+    headers,
+    timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
+    loopback,
+  );
   try {
     const tools = await session.listTools();
     return {
@@ -27,7 +37,7 @@ export async function listMcpTools(
     };
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      return { ok: false, error: `Connection timed out after ${MCP_DISCOVERY_TIMEOUT_MS / 1000}s` };
+      return { ok: false, error: `Connection timed out after ${deadline / 1000}s` };
     }
     return {
       ok: false,

@@ -52,6 +52,10 @@ export function createDockerProvisioner(): McpProvisioner {
       const name = assertSafe(spec.name, NAME, "name");
       const image = assertSafe(spec.image, IMAGE, "image");
       const port = portFor(name);
+      // What the container is expected to listen on. Absent means the entry
+      // predates persisting it, and then the only port anyone knows is the one
+      // being bound — so the mapping is onto itself.
+      const target = spec.containerPort ?? port;
       await docker(["pull", "-q", image]).catch(() => {
         // A locally built image has nothing to pull; the run below will say so
         // if it genuinely is not there.
@@ -67,10 +71,15 @@ export function createDockerProvisioner(): McpProvisioner {
         "--memory",
         "512m",
         "-p",
-        // No stored port means the entry predates persisting one. Mapping the
-        // port onto itself matches what the SSM adapter does, where the
-        // container is told to listen on exactly the port we bound.
-        `127.0.0.1:${port}:${spec.containerPort ?? port}`,
+        `127.0.0.1:${port}:${target}`,
+        // Say which port, rather than hope. The SSM adapter writes `PORT` into
+        // the container's environment and the image obeys it; without the same
+        // here, a mapping to a port nobody was told to bind publishes nothing —
+        // and a container that was merely stranded comes back definitively
+        // broken. `-e` beats `--env-file`, so an operator who set `PORT` there
+        // and a `containerPort` that disagrees gets the one the mapping uses.
+        "-e",
+        `PORT=${target}`,
         ...(spec.envRefs ?? []).flatMap((ref) => ["--env-file", ref]),
         image,
       ]);

@@ -59,7 +59,14 @@ function fixture(
     create: async (server: McpServer) => {
       rows.set(server.name, server);
     },
+    // Conditional on the row existing, like the real one — the restart path
+    // depends on that condition to refuse resurrecting a deleted entry.
     update: async (server: McpServer) => {
+      if (!rows.has(server.name)) {
+        throw Object.assign(new Error("The conditional request failed"), {
+          name: "ConditionalCheckFailedException",
+        });
+      }
       rows.set(server.name, server);
     },
     put: async (server: McpServer) => {
@@ -396,17 +403,40 @@ describe("managed MCP reconcile", () => {
   });
 });
 
+/**
+ * `restart` answers when the work is accepted, not when it is finished.
+ * Everything the fixture does resolves immediately, so one macrotask turn is
+ * enough for the queued work to run to completion.
+ */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 describe("managed MCP restart", () => {
   it("re-creates the container and keeps the entry's address", async () => {
     const f = fixture({ existing: managedRow() });
-    const restarted = await f.useCases.restart("image-fetch");
+    await f.useCases.restart("image-fetch");
+    await flush();
 
     expect(f.started).toEqual(["image-fetch"]);
-    expect(restarted.url).toBe("http://127.0.0.1:3001/mcp");
     expect(f.rows.get("image-fetch")?.url).toBe("http://127.0.0.1:3001/mcp");
   });
 
-  it("will not restart a remote entry", async () => {
+  it("refuses a second restart while one is still running", async () => {
+    // Starting a container runs for minutes, so the operator watching an
+    // unreachable server is exactly the person who presses the button again.
+    // Two teardowns of one container racing is worse than saying no.
+    const f = fixture({ existing: managedRow() });
+    const first = f.useCases.restart("image-fetch");
+
+    await expect(f.useCases.restart("image-fetch")).rejects.toThrow(/already running/);
+    await first;
+    await flush();
+
+    expect(f.started).toEqual(["image-fetch"]);
+    // and the claim is released, so the next one is allowed
+    await expect(f.useCases.restart("image-fetch")).resolves.toBeUndefined();
+  });
+
+  it("releases its claim when the entry cannot be restarted at all", async () => {
     const remote: McpServer = {
       name: "github",
       url: "https://api.githubcopilot.com/mcp/",
@@ -417,6 +447,22 @@ describe("managed MCP restart", () => {
     const f = fixture({ existing: remote });
 
     await expect(f.useCases.restart("github")).rejects.toThrow(/not managed/);
+    // Not left claimed forever by a validation failure.
+    await expect(f.useCases.restart("github")).rejects.toThrow(/not managed/);
     expect(f.started).toEqual([]);
+  });
+
+  it("stops the container it started when the entry was deleted meanwhile", async () => {
+    // A sweep runs for minutes. An admin who removed an entry in that window
+    // must not find it resurrected, with a container behind it.
+    const f = fixture({ existing: managedRow() });
+    f.answerWith(() => REFUSED);
+    const restarting = f.useCases.restart("image-fetch");
+    f.rows.delete("image-fetch");
+    await restarting;
+    await flush();
+
+    expect(f.rows.has("image-fetch")).toBe(false);
+    expect(f.stopped).toEqual(["image-fetch"]);
   });
 });
