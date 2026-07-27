@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteMcp,
   getManagedMcpStatus,
@@ -22,9 +22,16 @@ import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
 import { buttonClass, textButtonClass } from "@/app/_components/buttonStyles";
 
-/** How long the console watches a restart before it stops asking. */
-const RESTART_POLL_ATTEMPTS = 20;
-const RESTART_POLL_INTERVAL_MS = 3_000;
+/**
+ * How long the console watches a restart, and how often it asks.
+ *
+ * Sized against the work rather than against patience: starting a container
+ * pulls an image through SSM, which the provisioner allows five minutes for,
+ * and the settle probes add a few seconds after that. Watching for less would
+ * report every cold image pull as a restart that failed.
+ */
+const RESTART_WATCH_MS = 6 * 60_000;
+const RESTART_POLL_INTERVAL_MS = 5_000;
 
 export default function McpDetailPage() {
   const params = useParams<{ name: string }>();
@@ -41,6 +48,12 @@ export default function McpDetailPage() {
   const [managedStatus, setManagedStatus] = useState<ManagedMcpStatus | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
+  /**
+   * Set once this page is gone. The restart watch runs for minutes inside an
+   * event handler, and every poll costs a container inspect on the host — so it
+   * has to stop when the operator navigates away, not when its clock runs out.
+   */
+  const abandoned = useRef(false);
 
   async function refresh() {
     setLoading(true);
@@ -62,6 +75,15 @@ export default function McpDetailPage() {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name]);
+
+  useEffect(() => {
+    // Reset on mount as well as set on unmount: a remount reuses the ref, and a
+    // page that came back would otherwise be born unable to watch anything.
+    abandoned.current = false;
+    return () => {
+      abandoned.current = true;
+    };
+  }, []);
 
   async function runTest() {
     setTesting(true);
@@ -100,9 +122,16 @@ export default function McpDetailPage() {
     setError(null);
     try {
       await restartManagedMcp(name);
-      for (let attempt = 0; attempt < RESTART_POLL_ATTEMPTS; attempt += 1) {
+      const deadline = Date.now() + RESTART_WATCH_MS;
+      while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, RESTART_POLL_INTERVAL_MS));
+        if (abandoned.current) {
+          return;
+        }
         const next = await getManagedMcpStatus(name).catch(() => null);
+        if (abandoned.current) {
+          return;
+        }
         if (next) {
           setManagedStatus(next);
           if (next.reachable) {
@@ -110,10 +139,17 @@ export default function McpDetailPage() {
           }
         }
       }
+      // Running out of patience is not the same as the restart failing, and
+      // saying so is the difference between "try again" and "go look at it".
+      setError(
+        `Still no answer from "${name}" after ${RESTART_WATCH_MS / 60_000} minutes. The restart may yet be running; reload to see where it got to.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to restart container");
     } finally {
-      setRestarting(false);
+      if (!abandoned.current) {
+        setRestarting(false);
+      }
     }
   }
 
