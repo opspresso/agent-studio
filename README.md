@@ -211,7 +211,9 @@ project's own secret and always run that project — no selector needed.
 
 - Subscribe to `app_mention` and `message.im`; the generated manifest requests
   every bot scope the integration needs (mentions, DMs, files, reactions, user
-  profiles, …).
+  profiles, …). It also enables Slack's MCP server and lists this deployment's
+  `/api/mcps/oauth/callback` as a redirect URL, so the same app can be registered
+  here as an OAuth MCP server.
 - Replies stream into one message via `chat.update`; a mention inside a thread carries the
   thread (its 50 most recent turns) as multi-turn context.
 - Image attachments are downloaded with the bot token and analyzed — up to 4 images per run,

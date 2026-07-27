@@ -155,4 +155,14 @@ describe("buildProjectSlackManifest", () => {
     );
     expect(settings.event_subscriptions.bot_events).toContain("app_mention");
   });
+
+  it("enables MCP and points the redirect URL at the MCP OAuth callback", () => {
+    const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com");
+    const oauth = manifest.oauth_config as { redirect_urls: string[] };
+    const settings = manifest.settings as { is_mcp_enabled: boolean };
+    expect(oauth.redirect_urls).toEqual([
+      "https://studio.example.com/api/mcps/oauth/callback",
+    ]);
+    expect(settings.is_mcp_enabled).toBe(true);
+  });
 });

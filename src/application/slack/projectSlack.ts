@@ -1,4 +1,5 @@
 import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
+import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
 import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
@@ -163,6 +164,7 @@ export function buildProjectSlackManifest(
       agent_view: { suggested_prompts: [] },
     },
     oauth_config: {
+      redirect_urls: [`${baseUrl}${MCP_OAUTH_CALLBACK_PATH}`],
       scopes: {
         bot: [
           "emoji:read",
@@ -191,7 +193,7 @@ export function buildProjectSlackManifest(
       org_deploy_enabled: false,
       socket_mode_enabled: false,
       token_rotation_enabled: false,
-      is_mcp_enabled: false,
+      is_mcp_enabled: true,
     },
   };
 }
