@@ -76,6 +76,31 @@ LLM_PROVIDER_GOOGLE_API_KEY=...
 Set `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX=true` when the channel is itself a
 router that expects full `provider/model` ids.
 
+### Model registry
+
+Selectable models — pricing, context window, capability flags — live in
+`src/domain/llm/models.ts`, and are hand-maintained: those numbers exist only in
+each provider's documentation. Ids can be checked against what the configured
+channels actually serve:
+
+```bash
+pnpm check-models             # ids the channels serve but the registry lacks, and vice versa
+pnpm check-models --since=90d # ...only models released in the last 90 days
+pnpm check-models --strict    # exit 1 on a finding, or if a channel failed to answer
+```
+
+Registry ids follow the router convention (`anthropic/claude-opus-4.8`), which is
+also what stored project versions hold. When a provider's own API spells the same
+model differently — Anthropic serves `claude-opus-4-8` and 404s on the dotted
+form — set `wireId` on that entry; it is what gets sent once a provider-direct
+channel strips the prefix.
+
+A model that is missing from the registry still runs, but its usage is priced at
+$0 — so the gap is invisible in the cost dashboard it corrupts. Each miss logs
+`[cost] unknown model id` once and increments
+`agent_studio_unknown_model_calls_total` on `/api/metrics`; alert on a non-zero
+rate rather than waiting to notice the cost.
+
 ## Development
 
 ```bash
