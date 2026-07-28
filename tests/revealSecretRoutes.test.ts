@@ -34,7 +34,13 @@ vi.mock("@/lib/container", () => ({
     mask: () => "ast_••••wxyz",
   },
 }));
-vi.mock("@/lib/runtime-settings", () => ({ getA2aApiKey: async () => state.a2aKey }));
+vi.mock("@/lib/runtime-settings", () => ({
+  getA2aApiKey: async () => state.a2aKey,
+  // These routes are owner-gated; no admin list is configured here, so the
+  // owner check stands on its own.
+  isConfiguredAdmin: async () => false,
+  isAdminEmail: async () => true,
+}));
 vi.mock("@/infrastructure/crypto/secretEncryption", () => ({
   decryptSecret: (value: string) => value.replace("enc:v1:", ""),
   encryptSecret: (value: string) => `enc:v1:${value}`,

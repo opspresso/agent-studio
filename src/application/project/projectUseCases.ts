@@ -1,6 +1,7 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectType } from "@/domain/project/types";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
+import { isConfiguredAdmin } from "@/lib/runtime-settings";
 import { nextUpdatedAt } from "./timestamps";
 
 export interface CreateProjectInput {
@@ -31,9 +32,17 @@ export async function getProject(repo: ProjectRepository, name: string): Promise
 }
 
 /**
- * Load a project and assert `userEmail` owns it. Projects are a shared catalog —
- * any signed-in user may read and run them, but only the owner may mutate.
- * Mutation use cases call this before writing.
+ * Load a project and assert `userEmail` may mutate it. Projects are a shared
+ * catalog — any signed-in user may read and run them; writing is for the owner
+ * and for admins. Mutation use cases call this before writing.
+ *
+ * The admin case is checked here rather than threaded through the twenty-odd
+ * call sites as a flag: the rule is "owner or admin", and a flag that any one
+ * of those callers forgot to pass would silently narrow it back to owner-only
+ * for that path alone. `isConfiguredAdmin` reads the effective admin list, so
+ * demoting an admin on the settings page takes effect without a redeploy — and
+ * it is the *configured* check, so a deployment with no admin list keeps plain
+ * owner-only mutation rather than opening every project to everyone.
  */
 export async function assertProjectOwner(
   repo: ProjectRepository,
@@ -41,10 +50,13 @@ export async function assertProjectOwner(
   userEmail: string,
 ): Promise<Project> {
   const project = await getProject(repo, name);
-  if (project.ownerEmail !== userEmail) {
-    throw new ForbiddenError(`You do not have permission to modify project "${name}"`);
+  if (project.ownerEmail === userEmail) {
+    return project;
   }
-  return project;
+  if (await isConfiguredAdmin(userEmail)) {
+    return project;
+  }
+  throw new ForbiddenError(`You do not have permission to modify project "${name}"`);
 }
 
 export async function createProject(

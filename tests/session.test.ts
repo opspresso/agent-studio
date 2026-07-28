@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The auth wrapper is the enforcement point every route handler shares. Mock the
-// Better Auth session lookup and the effective admin list; run the real wrappers.
+// Better Auth session lookup and the admin decision; run the real wrappers. The
+// rule that turns a list into that decision is owned by `runtime-settings` and
+// covered in its own test — here the question is only what the wrappers do with
+// the answer.
 const { authMock, adminEmails } = vi.hoisted(() => ({
   authMock: { getSession: vi.fn() },
   adminEmails: { value: [] as string[] },
@@ -9,7 +12,11 @@ const { authMock, adminEmails } = vi.hoisted(() => ({
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: authMock.getSession } } }));
-vi.mock("@/lib/runtime-settings", () => ({ getAdminEmails: async () => adminEmails.value }));
+vi.mock("@/lib/runtime-settings", () => ({
+  getAdminEmails: async () => adminEmails.value,
+  isAdminEmail: async (email: string) =>
+    adminEmails.value.length === 0 || adminEmails.value.includes(email.toLowerCase()),
+}));
 
 const { withAuth, withAdminAuth, isAdmin } = await import("@/lib/session");
 

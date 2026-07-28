@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   buildProjectSlackManifest,
   resolveProjectSlackRuntime as resolveProjectSlackRuntimeImpl,
@@ -17,6 +17,17 @@ import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { ForbiddenError } from "@/application/errors";
 import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
+
+/**
+ * Project authorization now consults the effective admin list, because admins
+ * may mutate a project they do not own. These cases are about ownership, so
+ * they run with no admin configured — which is also the shape a deployment
+ * that never set ADMIN_EMAILS has.
+ */
+vi.mock("@/lib/runtime-settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/runtime-settings")>()),
+  isConfiguredAdmin: async () => false,
+}));
 
 const OWNER = "t@example.com";
 const OTHER = "intruder@example.com";

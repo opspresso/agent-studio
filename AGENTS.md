@@ -113,10 +113,17 @@ restricted to `ALLOWED_EMAIL_DOMAINS`. Route handlers wrap in `withAuth(...)`
 (`src/lib/session.ts`), which 401s without a session and passes `SessionUser` as the first arg.
 
 Authorization model: **projects are a shared catalog** — any signed-in user may read and run
-any project, but mutations (update/delete/publish, version create/update, Slack config) are
-owner-only via `assertProjectOwner` (→ 403). Chats are per-owner private. MCP/agent/skill
-registries are shared: reads are open to any signed-in user; mutations go through
-`withAdminAuth`, restricted to `ADMIN_EMAILS` when set (unset = any signed-in user).
+any project, but mutations (update/delete/publish, version create/update, Slack config) go
+through `assertProjectOwner`, which allows the owner and any configured admin and 403s
+everyone else. Chats are per-owner private. MCP/agent/skill registries are shared: reads
+are open to any signed-in user; mutations go through `withAdminAuth`, restricted to
+`ADMIN_EMAILS` when set (unset = any signed-in user).
+
+The two admin questions are deliberately different and both live in
+`src/lib/runtime-settings.ts`: `isAdminEmail` (registry mutations, app settings) treats an
+empty list as "no restriction", while `isConfiguredAdmin` (overriding project ownership)
+requires a non-empty list. Reusing the former for ownership would give every signed-in
+user write access to every project on a deployment that never set `ADMIN_EMAILS`.
 
 ### Other subsystems
 

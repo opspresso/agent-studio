@@ -1,7 +1,7 @@
 // A 32-byte key must be present before the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
 import {
@@ -31,6 +31,17 @@ import {
 } from "@/shared/generatedSecret";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { decryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
+
+/**
+ * Project authorization now consults the effective admin list, because admins
+ * may mutate a project they do not own. These cases are about ownership, so
+ * they run with no admin configured — which is also the shape a deployment
+ * that never set ADMIN_EMAILS has.
+ */
+vi.mock("@/lib/runtime-settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/runtime-settings")>()),
+  isConfiguredAdmin: async () => false,
+}));
 
 const OWNER = "owner@example.com";
 

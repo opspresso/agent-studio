@@ -2,7 +2,21 @@
 // the encryption module reads config.
 process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * Project mutation is "owner or admin", so these cases have to be able to say
+ * which. Default: no admin configured, which is what every ownership case below
+ * assumes and what a deployment that never set ADMIN_EMAILS has.
+ */
+const { admins } = vi.hoisted(() => ({ admins: { emails: [] as string[] } }));
+vi.mock("@/lib/runtime-settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/runtime-settings")>()),
+  isConfiguredAdmin: async (email: string) => admins.emails.includes(email.toLowerCase()),
+}));
+beforeEach(() => {
+  admins.emails = [];
+});
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type {
@@ -810,6 +824,24 @@ describe("updateProject ownership", () => {
   });
 
   it("rejects a non-owner with ForbiddenError (403)", async () => {
+    await expect(
+      updateProject(makeProjectRepo([projectFixture("p")]), "p", { displayName: "X" }, OTHER),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("lets a configured admin update a project they do not own", async () => {
+    admins.emails = [OTHER];
+    const updated = await updateProject(
+      makeProjectRepo([projectFixture("p")]),
+      "p",
+      { displayName: "Renamed by admin" },
+      OTHER,
+    );
+    expect(updated.displayName).toBe("Renamed by admin");
+  });
+
+  it("still rejects a non-owner while an unrelated admin is configured", async () => {
+    admins.emails = ["someone-else@example.com"];
     await expect(
       updateProject(makeProjectRepo([projectFixture("p")]), "p", { displayName: "X" }, OTHER),
     ).rejects.toBeInstanceOf(ForbiddenError);
