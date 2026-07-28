@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Anchor, Group, Stack, Tabs, Text } from "@mantine/core";
 import { useSession } from "@/lib/auth-client";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getProject } from "../lib/api";
-import { textButtonClass } from "@/app/_components/buttonStyles";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const params = useParams<{ name: string }>();
@@ -37,12 +37,14 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/projects" className={textButtonClass}>
+    <Stack gap="lg">
+      <Group gap="sm">
+        <Anchor component={Link} href="/projects" fz="sm" c="dimmed">
           ← Projects
-        </Link>
-        <span className="font-mono text-sm font-medium">{name}</span>
+        </Anchor>
+        <Text ff="monospace" fz="sm" fw={500}>
+          {name}
+        </Text>
         {ownerEmail && (
           <OwnerLine
             ownerEmail={ownerEmail}
@@ -50,26 +52,28 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
             prefix="owner: "
           />
         )}
-      </div>
-      <nav className="scrollbar-none flex gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
-        {tabs.map((tab) => {
-          const active = pathname === tab.href;
-          return (
-            <Link
+      </Group>
+
+      {/*
+       * `value` is the pathname rather than tab state: navigation is what
+       * changes the tab, so deriving it keeps the highlight correct on a
+       * direct load or a back button.
+       */}
+      <Tabs value={pathname} variant="default">
+        <Tabs.List style={{ flexWrap: "nowrap", overflowX: "auto" }}>
+          {tabs.map((tab) => (
+            <Tabs.Tab
               key={tab.href}
-              href={tab.href}
-              className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm ${
-                active
-                  ? "border-brand font-medium text-brand"
-                  : "border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-              }`}
+              value={tab.href}
+              renderRoot={(props) => <Link href={tab.href} {...props} />}
             >
               {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+      </Tabs>
+
       {children}
-    </div>
+    </Stack>
   );
 }

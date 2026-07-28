@@ -1,24 +1,29 @@
+import { Badge, Group, Text } from "@mantine/core";
+
 /** Shared owner line: owner email plus a brand-colored "you" badge for the viewer's own items. */
 export function OwnerLine({
   ownerEmail,
   isMine,
   prefix,
-  className,
+  mt,
 }: {
   ownerEmail: string;
   isMine: boolean;
   prefix?: string;
-  className?: string;
+  /** Spacing above, for the callers that need the line to sit under something. */
+  mt?: string | number;
 }) {
   return (
-    <span className={`flex items-center gap-1.5 text-xs text-neutral-400 ${className ?? ""}`}>
-      <span className="truncate">
+    <Group gap={6} wrap="nowrap" mt={mt}>
+      <Text fz="xs" c="dimmed" truncate>
         {prefix}
         {ownerEmail}
-      </span>
+      </Text>
       {isMine && (
-        <span className="rounded bg-brand/10 px-1 py-0.5 font-medium text-brand">you</span>
+        <Badge size="xs" color="brand" variant="light">
+          you
+        </Badge>
       )}
-    </span>
+    </Group>
   );
 }

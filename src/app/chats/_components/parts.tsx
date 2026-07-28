@@ -1,61 +1,78 @@
 "use client";
 
-import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useState } from "react";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Code,
+  Group,
+  Image,
+  Paper,
+  Stack,
+  Text,
+  Textarea,
+  Typography,
+  UnstyledButton,
+} from "@mantine/core";
+import { IconChevronDown, IconChevronRight, IconSend } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
 import { imageDataUrl } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import type { Attachment } from "@/app/_lib/imageAttachments";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
-import { roundedPrimaryClass } from "@/app/_components/buttonStyles";
+import classes from "./parts.module.css";
 
 function MessageTimestamp({ createdAt }: { createdAt: string }) {
   const formatted = formatShortDateTime(createdAt);
   if (!formatted) {
     return null;
   }
-  return <time className="mt-0.5 block text-[11px] text-neutral-400">{formatted}</time>;
+  return (
+    <Text component="time" fz={11} c="dimmed" mt={2}>
+      {formatted}
+    </Text>
+  );
 }
 
+/**
+ * Markdown inside a bubble. Mantine's `Typography` owns the element styles the
+ * `.chat-markdown` stylesheet used to hand-write; only the outer bubble's
+ * margin collapse and wrapping are ours.
+ */
 function MarkdownContent({ content }: { content: string }) {
   return (
-    <div className="chat-markdown break-words">
+    <Typography className={classes.markdown}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-    </div>
+    </Typography>
   );
 }
 
 export function ToolResultBlock({ content, label }: { content: string; label?: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="my-1 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center gap-2 bg-neutral-100 px-3 py-1.5 text-left text-xs font-medium text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
-      >
-        <span className="text-neutral-400">{open ? "▾" : "▸"}</span>
-        <span>{label ?? "Tool result"}</span>
-      </button>
+    <Paper withBorder radius="md" style={{ overflow: "hidden" }} my={4}>
+      <UnstyledButton onClick={() => setOpen((prev) => !prev)} className={classes.toolToggle}>
+        <Group gap="xs" wrap="nowrap">
+          {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          <Text fz="xs" fw={500}>
+            {label ?? "Tool result"}
+          </Text>
+        </Group>
+      </UnstyledButton>
       {open && (
-        <pre className="overflow-x-auto whitespace-pre-wrap break-words bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-700 dark:bg-neutral-950 dark:text-neutral-300">
+        <Code block fz="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
           {content}
-        </pre>
+        </Code>
       )}
-    </div>
+    </Paper>
   );
 }
 
 export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={alt}
-      className="max-w-[80%] rounded-md border border-neutral-200 dark:border-neutral-800"
-    />
-  );
+  return <Image src={src} alt={alt} radius="md" maw="80%" />;
 }
 
 export function liveImageSrc(image: LiveImage): string {
@@ -64,42 +81,53 @@ export function liveImageSrc(image: LiveImage): string {
 
 export function AuthorBadge({ path }: { path: string[] }) {
   return (
-    <span className="mb-1 inline-block rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand">
+    <Badge color="brand" radius="xl" mb={4}>
       via {path.join(" → ")}
-    </span>
+    </Badge>
   );
 }
 
 /** A binding the run could not use — shown live and again on reload. */
 function WarningNote({ text }: { text: string }) {
   return (
-    <div className="max-w-[80%] rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-      ⚠️ {text}
-    </div>
+    <Alert color="yellow" variant="light" py={6} px="sm" maw="80%" fz="xs">
+      {text}
+    </Alert>
+  );
+}
+
+/** The assistant's bubble, shared by the persisted and the streaming views. */
+function AssistantBubble({ children }: { children: React.ReactNode }) {
+  return (
+    <Paper withBorder radius="lg" px="md" py="xs" fz="sm">
+      {children}
+    </Paper>
   );
 }
 
 export function MessageView({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <Stack gap={4} align="flex-end">
         {(message.images ?? []).map((image, index) => (
           <GeneratedImage key={`attached-${index}`} src={image.url} alt="Attached image" />
         ))}
         {message.content && (
-          <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-brand px-4 py-2 text-sm text-white">
-            {message.content}
-          </div>
+          <Paper radius="lg" px="md" py="xs" bg="var(--mantine-primary-color-filled)" maw="80%">
+            <Text fz="sm" c="white" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {message.content}
+            </Text>
+          </Paper>
         )}
         <MessageTimestamp createdAt={message.createdAt} />
-      </div>
+      </Stack>
     );
   }
 
   if (message.role === "tool") {
     return (
-      <div className="flex justify-start">
-        <div className="w-full max-w-[80%]">
+      <Group justify="flex-start">
+        <div style={{ width: "100%", maxWidth: "80%" }}>
           <ToolResultBlock
             content={message.content}
             label={
@@ -109,12 +137,12 @@ export function MessageView({ message }: { message: ChatMessage }) {
             }
           />
         </div>
-      </div>
+      </Group>
     );
   }
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <Stack gap={4} align="flex-start">
       {(message.warnings ?? []).map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
@@ -125,27 +153,29 @@ export function MessageView({ message }: { message: ChatMessage }) {
           alt={image.prompt ?? "Generated image"}
         />
       ))}
-      <div className="max-w-[80%] rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
-        <MarkdownContent content={message.content} />
+      <div style={{ maxWidth: "80%" }}>
+        <AssistantBubble>
+          <MarkdownContent content={message.content} />
+        </AssistantBubble>
       </div>
       <MessageTimestamp createdAt={message.createdAt} />
-    </div>
+    </Stack>
   );
 }
 
 export function LiveAssistant({ turn }: { turn: LiveTurn }) {
   return (
-    <div className="flex flex-col items-start gap-1">
+    <Stack gap={4} align="flex-start">
       {turn.warnings.map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
       {turn.toolCalls.map((call, index) => (
-        <div key={`call-${index}`} className="w-full max-w-[80%]">
+        <div key={`call-${index}`} style={{ width: "100%", maxWidth: "80%" }}>
           <ToolResultBlock content={call.args} label={`🔧 tool call: ${call.name}`} />
         </div>
       ))}
       {turn.tools.map((tool, index) => (
-        <div key={`result-${index}`} className="w-full max-w-[80%]">
+        <div key={`result-${index}`} style={{ width: "100%", maxWidth: "80%" }}>
           <ToolResultBlock
             content={tool.content}
             label={tool.name ? `✅ tool result: ${tool.name}` : undefined}
@@ -159,17 +189,19 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
           alt={image.prompt ?? "Generated image"}
         />
       ))}
-      <div className="max-w-[80%]">
+      <div style={{ maxWidth: "80%" }}>
         {turn.authorPath && <AuthorBadge path={turn.authorPath} />}
-        <div className="rounded-2xl border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
+        <AssistantBubble>
           {turn.text ? (
             <MarkdownContent content={turn.text} />
           ) : (
-            <span className="text-neutral-400">Thinking…</span>
+            <Text fz="sm" c="dimmed">
+              Thinking…
+            </Text>
           )}
-        </div>
+        </AssistantBubble>
       </div>
-    </div>
+    </Stack>
   );
 }
 
@@ -203,29 +235,35 @@ export function Composer({
       }}
     >
       <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
-      <div className="flex items-end gap-2">
+      <Group gap="xs" align="flex-end" wrap="nowrap">
         <AttachButton onPick={(files) => void addFiles(files)} disabled={disabled} />
-        <textarea
+        <Textarea
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => setValue(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               submit();
             }
           }}
-          rows={1}
+          autosize
+          minRows={1}
+          maxRows={8}
+          radius="xl"
           placeholder={placeholder ?? "Send a message…"}
-          className="max-h-40 min-h-[42px] flex-1 resize-y rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-brand dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          style={{ flex: 1 }}
         />
-        <button
+        <ActionIcon
           type="submit"
+          variant="filled"
+          size="input-sm"
+          radius="xl"
           disabled={disabled || (!value.trim() && attachments.length === 0)}
-          className={roundedPrimaryClass}
+          aria-label="Send"
         >
-          Send
-        </button>
-      </div>
+          <IconSend size={18} />
+        </ActionIcon>
+      </Group>
     </form>
   );
 }

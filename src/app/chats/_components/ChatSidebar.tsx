@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ActionIcon, Button, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
+import { IconPlus, IconX } from "@tabler/icons-react";
 import type { Chat } from "../_lib/types";
-import { roundedPrimaryClass } from "@/app/_components/buttonStyles";
+import classes from "./ChatSidebar.module.css";
 
 const REFRESH_EVENT = "chats:refresh";
 
@@ -50,43 +52,45 @@ export function ChatSidebar() {
   }
 
   return (
-    <aside className="flex max-h-40 w-full shrink-0 flex-col gap-3 overflow-hidden md:max-h-none md:w-64">
-      <Link
-        href="/chats"
-        className={`text-center ${roundedPrimaryClass}`}
-      >
-        + New chat
-      </Link>
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-        {loaded && chats.length === 0 && (
-          <p className="px-2 py-4 text-xs text-neutral-500">No chats yet.</p>
-        )}
-        {chats.map((chat) => {
-          const active = chat.chatId === activeId;
-          return (
+    <Stack component="aside" gap="sm" className={classes.sidebar}>
+      <Button component={Link} href="/chats" radius="xl" leftSection={<IconPlus size={16} />}>
+        New chat
+      </Button>
+      <ScrollArea style={{ flex: 1, minHeight: 0 }} scrollbarSize={6} pr={4}>
+        <Stack gap={2}>
+          {loaded && chats.length === 0 && (
+            <Text fz="xs" c="dimmed" px="xs" py="md">
+              No chats yet.
+            </Text>
+          )}
+          {chats.map((chat) => (
             <div
               key={chat.chatId}
-              className={`group flex items-center gap-1 rounded-lg px-2 py-2 text-sm ${
-                active
-                  ? "bg-neutral-200 dark:bg-neutral-800"
-                  : "hover:bg-neutral-100 dark:hover:bg-neutral-900"
-              }`}
+              className={classes.row}
+              data-active={chat.chatId === activeId || undefined}
             >
-              <Link href={`/chats/${chat.chatId}`} className="min-w-0 flex-1 truncate">
+              <UnstyledButton
+                component={Link}
+                href={`/chats/${chat.chatId}`}
+                fz="sm"
+                className={classes.title}
+              >
                 {chat.title}
-              </Link>
-              <button
-                type="button"
+              </UnstyledButton>
+              <ActionIcon
+                size="sm"
+                variant="subtle"
+                color="red"
+                className={classes.delete}
                 onClick={() => void handleDelete(chat.chatId)}
                 aria-label="Delete chat"
-                className="shrink-0 rounded px-1 text-xs text-neutral-400 opacity-0 hover:text-red-500 group-hover:opacity-100"
               >
-                ✕
-              </button>
+                <IconX size={14} />
+              </ActionIcon>
             </div>
-          );
-        })}
-      </div>
-    </aside>
+          ))}
+        </Stack>
+      </ScrollArea>
+    </Stack>
   );
 }

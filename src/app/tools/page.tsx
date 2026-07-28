@@ -5,20 +5,30 @@ import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
 import { createMcp, listMcps, type McpServer } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
-import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
-import { Badge } from "@/app/_components/Badge";
-import { Modal } from "@/app/_components/Modal";
-import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
-import { CardGrid, linkCardClass } from "@/app/_components/CardGrid";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Group,
+  Modal,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
+import { useDisclosure } from "@mantine/hooks";
+import { CardGrid } from "@/app/_components/CardGrid";
 import { ManagedMcpModal } from "./_components/ManagedMcpModal";
-import { buttonClass } from "@/app/_components/buttonStyles";
 
 export default function ToolsPage() {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [showManaged, setShowManaged] = useState(false);
+  const [registerOpened, register] = useDisclosure(false);
+  const [managedOpened, managed] = useDisclosure(false);
 
   async function refresh() {
     setLoading(true);
@@ -37,83 +47,66 @@ export default function ToolsPage() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <Stack gap="lg">
+      <Group justify="space-between" align="flex-start">
         <div>
-          <h1 className="text-2xl font-semibold">Tools</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <Title order={1} fz="h2">
+            Tools
+          </Title>
+          <Text fz="sm" c="dimmed" mt={4}>
             MCP servers that expose tools to agents over streamable HTTP.
-          </p>
+          </Text>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowManaged(true)}
-            className={buttonClass("secondary")}
-          >
+        <Group gap="xs">
+          <Button variant="default" onClick={managed.open}>
             Run managed
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowModal(true)}
-            className={buttonClass("primary")}
-          >
-            Register MCP
-          </button>
-        </div>
-      </div>
+          </Button>
+          <Button onClick={register.open}>Register MCP</Button>
+        </Group>
+      </Group>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
-      <CardGrid
-        loading={loading}
-        empty={servers.length === 0}
-        emptyText="No MCP servers yet."
-      >
+      <CardGrid loading={loading} empty={servers.length === 0} emptyText="No MCP servers yet.">
         {servers.map((server) => (
-          <li key={server.name}>
-            <Link
-              href={`/tools/${server.name}`}
-              className={linkCardClass}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{server.name}</span>
-                {server.runtime === "managed" && <Badge>managed</Badge>}
-                <CredentialBadges server={server} />
-              </div>
-              <p className="mt-1 line-clamp-2 text-sm text-neutral-500">
-                {server.description || <span className="text-neutral-400">No description</span>}
-              </p>
-              <p className="mt-2 truncate text-xs text-neutral-400">{server.url}</p>
-            </Link>
-          </li>
+          <Card key={server.name} component={Link} href={`/tools/${server.name}`} h="100%">
+            <Group gap="xs" wrap="wrap">
+              <Text fw={500}>{server.name}</Text>
+              {server.runtime === "managed" && <Badge>managed</Badge>}
+              <CredentialBadges server={server} />
+            </Group>
+            <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+              {server.description || "No description"}
+            </Text>
+            <Text fz="xs" c="dimmed" mt="xs" truncate>
+              {server.url}
+            </Text>
+          </Card>
         ))}
       </CardGrid>
 
-      {showManaged && (
-        <ManagedMcpModal
-          onClose={() => setShowManaged(false)}
-          onCreated={() => {
-            setShowManaged(false);
-            void refresh();
-          }}
-        />
-      )}
+      <ManagedMcpModal
+        opened={managedOpened}
+        onClose={managed.close}
+        onCreated={() => {
+          managed.close();
+          void refresh();
+        }}
+      />
 
-      {showModal && (
-        <RegisterMcpModal
-          onClose={() => setShowModal(false)}
-          onCreated={() => {
-            setShowModal(false);
-            void refresh();
-          }}
-        />
-      )}
-    </div>
+      <RegisterMcpModal
+        opened={registerOpened}
+        onClose={register.close}
+        onCreated={() => {
+          register.close();
+          void refresh();
+        }}
+      />
+    </Stack>
   );
 }
 
@@ -141,9 +134,11 @@ function CredentialBadges({ server }: { server: McpServer }) {
 }
 
 function RegisterMcpModal({
+  opened,
   onClose,
   onCreated,
 }: {
+  opened: boolean;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -176,76 +171,63 @@ function RegisterMcpModal({
   }
 
   return (
-    <Modal title="Register MCP server" onClose={onClose} size="md">
-      <form onSubmit={submit} className="space-y-4">
-        <label className="block">
-          <span className="text-sm font-medium">Name</span>
-          <input
+    <Modal opened={opened} onClose={onClose} title="Register MCP server" size="lg">
+      <form onSubmit={submit}>
+        <Stack gap="md">
+          <TextInput
+            label="Name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(e.currentTarget.value)}
             onBlur={() => setName(toSlug(name))}
             placeholder="my-mcp"
             required
-            className={fieldClass}
+            description="Lowercase letters, digits, and hyphens only."
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            Lowercase letters, digits, and hyphens only.
-          </span>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">URL</span>
-          <input
+          <TextInput
+            label="URL"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => setUrl(e.currentTarget.value)}
             placeholder="https://example.com/mcp"
             type="url"
             required
-            className={fieldClass}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Description</span>
-          <input
+          <TextInput
+            label="Description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => setDescription(e.currentTarget.value)}
             placeholder="One-line summary shown to the model"
-            className={fieldClass}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Content (markdown)</span>
-          <ResizableTextarea
+          <Textarea
+            label="Content (markdown)"
             value={content}
-            onChange={setContent}
-            rows={6}
+            onChange={(e) => setContent(e.currentTarget.value)}
             placeholder="Setup steps, caveats, links…"
-            className={monoFieldClass}
+            autosize
+            minRows={6}
+            maxRows={24}
+            description="Operator notes for the console. Not sent to the model — only the description is."
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            styles={monoInput}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            Operator notes for the console. Not sent to the model — only the description is.
-          </span>
-        </label>
 
-        <HeaderRowsEditor rows={rows} onChange={setRows} />
+          <HeaderRowsEditor rows={rows} onChange={setRows} />
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && (
+            <Alert color="red" variant="light">
+              {error}
+            </Alert>
+          )}
 
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className={buttonClass("secondary")}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className={buttonClass("primary")}
-          >
-            {submitting ? "Registering…" : "Register"}
-          </button>
-        </div>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={submitting}>
+              Register
+            </Button>
+          </Group>
+        </Stack>
       </form>
     </Modal>
   );

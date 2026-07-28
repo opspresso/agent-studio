@@ -2,29 +2,45 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Group,
+  Modal,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+  Select,
+  Title,
+} from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { useSession } from "@/lib/auth-client";
 import { toSlug } from "@/shared/slug";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
-import { Modal } from "@/app/_components/Modal";
-import { fieldClass } from "@/app/_components/formStyles";
-import { CardGrid, linkCardClass } from "@/app/_components/CardGrid";
-import { buttonClass } from "@/app/_components/buttonStyles";
+import { CardGrid } from "@/app/_components/CardGrid";
 
-function TypeBadge({ type }: { type: ProjectType }) {
-  const styles =
-    type === "agent"
-      ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
-      : "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300";
-  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${styles}`}>{type}</span>;
-}
+const TYPE_COLOR: Record<ProjectType, string> = {
+  agent: "violet",
+  llm: "cyan",
+  image: "grape",
+};
+
+const TYPE_OPTIONS = [
+  { value: "llm", label: "llm — single-shot prompt" },
+  { value: "agent", label: "agent — multi-turn tool loop" },
+  { value: "image", label: "image — image generation" },
+];
 
 export default function ProjectsPage() {
   const { data: session } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [opened, { open, close }] = useDisclosure(false);
 
   async function refresh() {
     setLoading(true);
@@ -43,27 +59,23 @@ export default function ProjectsPage() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <Stack gap="lg">
+      <Group justify="space-between" align="flex-start">
         <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <Title order={1} fz="h2">
+            Projects
+          </Title>
+          <Text fz="sm" c="dimmed" mt={4}>
             Prompt and agent projects with versioned configuration.
-          </p>
+          </Text>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong"
-        >
-          New project
-        </button>
-      </div>
+        <Button onClick={open}>New project</Button>
+      </Group>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
       <CardGrid
@@ -72,49 +84,56 @@ export default function ProjectsPage() {
         emptyText="No projects yet. Create your first one."
       >
         {projects.map((project) => (
-          <li key={project.name}>
-            <Link
-              href={`/projects/${project.name}`}
-              className={linkCardClass}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{project.displayName || project.name}</span>
-                <TypeBadge type={project.projectType} />
-              </div>
-              <div className="mt-0.5 font-mono text-xs text-neutral-400">{project.name}</div>
-              <OwnerLine
-                ownerEmail={project.ownerEmail}
-                isMine={session?.user.email === project.ownerEmail}
-                className="mt-1"
-              />
-              <p className="mt-2 line-clamp-3 text-sm text-neutral-500">{project.description}</p>
-              {project.publishedVersion && (
-                <div className="mt-3 text-xs text-emerald-600 dark:text-emerald-400">
-                  published: v{project.publishedVersion}
-                </div>
-              )}
-            </Link>
-          </li>
+          <Card
+            key={project.name}
+            component={Link}
+            href={`/projects/${project.name}`}
+            h="100%"
+          >
+            <Group justify="space-between" gap="xs" wrap="nowrap">
+              <Text fw={500} truncate>
+                {project.displayName || project.name}
+              </Text>
+              <Badge color={TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
+            </Group>
+            <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
+              {project.name}
+            </Text>
+            <OwnerLine
+              ownerEmail={project.ownerEmail}
+              isMine={session?.user.email === project.ownerEmail}
+              mt={4}
+            />
+            <Text fz="sm" c="dimmed" mt="xs" lineClamp={3}>
+              {project.description}
+            </Text>
+            {project.publishedVersion && (
+              <Text fz="xs" c="teal" mt="sm">
+                published: v{project.publishedVersion}
+              </Text>
+            )}
+          </Card>
         ))}
       </CardGrid>
 
-      {showModal && (
-        <CreateProjectModal
-          onClose={() => setShowModal(false)}
-          onCreated={() => {
-            setShowModal(false);
-            void refresh();
-          }}
-        />
-      )}
-    </div>
+      <CreateProjectModal
+        opened={opened}
+        onClose={close}
+        onCreated={() => {
+          close();
+          void refresh();
+        }}
+      />
+    </Stack>
   );
 }
 
 function CreateProjectModal({
+  opened,
   onClose,
   onCreated,
 }: {
+  opened: boolean;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -140,71 +159,56 @@ function CreateProjectModal({
   }
 
   return (
-    <Modal title="New project" onClose={onClose} size="md">
-      <form onSubmit={submit} className="space-y-4">
-        <label className="block">
-          <span className="text-sm font-medium">Name</span>
-          <input
+    <Modal opened={opened} onClose={onClose} title="New project" size="lg">
+      <form onSubmit={submit}>
+        <Stack gap="md">
+          <TextInput
+            label="Name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(e.currentTarget.value)}
             onBlur={() => setName(toSlug(name))}
             placeholder="my-project"
             required
-            className={fieldClass}
+            description="Lowercase letters, digits, and hyphens only. Immutable identifier."
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            Lowercase letters, digits, and hyphens only. Immutable identifier.
-          </span>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Display name</span>
-          <input
+          <TextInput
+            label="Display name"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => setDisplayName(e.currentTarget.value)}
             placeholder="My Project"
-            className={fieldClass}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Description</span>
-          <textarea
+          <Textarea
+            label="Description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className={fieldClass}
+            onChange={(e) => setDescription(e.currentTarget.value)}
+            autosize
+            minRows={3}
+            maxRows={12}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Type</span>
-          <select
+          <Select
+            label="Type"
             value={projectType}
-            onChange={(e) => setProjectType(e.target.value as ProjectType)}
-            className={fieldClass}
-          >
-            <option value="llm">llm — single-shot prompt</option>
-            <option value="agent">agent — multi-turn tool loop</option>
-            <option value="image">image — image generation</option>
-          </select>
-        </label>
+            onChange={(value) => setProjectType((value ?? "llm") as ProjectType)}
+            data={TYPE_OPTIONS}
+            allowDeselect={false}
+          />
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && (
+            <Alert color="red" variant="light">
+              {error}
+            </Alert>
+          )}
 
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className={buttonClass("secondary")}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className={buttonClass("primary")}
-          >
-            {submitting ? "Creating…" : "Create"}
-          </button>
-        </div>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={submitting}>
+              Create
+            </Button>
+          </Group>
+        </Stack>
       </form>
     </Modal>
   );

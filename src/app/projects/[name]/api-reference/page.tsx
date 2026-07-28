@@ -2,9 +2,10 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useSession } from "@/lib/auth-client";
+import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { CodeBlock } from "@/app/_components/CodeBlock";
+import { Badge, Card, Code, Group, SegmentedControl, Stack, Table, Text } from "@mantine/core";
 import { getProject, getProjectA2a, getProjectSlack } from "../../lib/api";
 import {
   AUTH_LABEL,
@@ -15,9 +16,10 @@ import {
   type FieldSpec,
 } from "./endpoints";
 
-const METHOD_CLASS: Record<ApiEndpoint["method"], string> = {
-  GET: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  POST: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+/** Green reads "safe to call", blue "writes something" — the usual convention. */
+const METHOD_COLOR: Record<ApiEndpoint["method"], string> = {
+  GET: "teal",
+  POST: "blue",
 };
 
 function FieldRows({ fields, depth = 0 }: { fields: FieldSpec[]; depth?: number }) {
@@ -25,15 +27,28 @@ function FieldRows({ fields, depth = 0 }: { fields: FieldSpec[]; depth?: number 
     <>
       {fields.map((field) => (
         <Fragment key={`${depth}-${field.name}`}>
-          <tr className="align-top">
-            <td className="py-1.5 pr-4 font-mono" style={depth > 0 ? { paddingLeft: depth * 16 } : undefined}>
-              {depth > 0 && <span className="text-neutral-400">└ </span>}
+          <Table.Tr style={{ verticalAlign: "top" }}>
+            <Table.Td
+              ff="monospace"
+              style={depth > 0 ? { paddingLeft: depth * 16 } : undefined}
+            >
+              {depth > 0 && (
+                <Text component="span" c="dimmed">
+                  └{" "}
+                </Text>
+              )}
               {field.name}
-              {field.required && <span className="ml-1 text-red-500">*</span>}
-            </td>
-            <td className="py-1.5 pr-4 font-mono text-neutral-500">{field.type}</td>
-            <td className="py-1.5 text-neutral-500">{field.description}</td>
-          </tr>
+              {field.required && (
+                <Text component="span" c="red" ml={4}>
+                  *
+                </Text>
+              )}
+            </Table.Td>
+            <Table.Td ff="monospace" c="dimmed">
+              {field.type}
+            </Table.Td>
+            <Table.Td c="dimmed">{field.description}</Table.Td>
+          </Table.Tr>
           {field.children && <FieldRows fields={field.children} depth={depth + 1} />}
         </Fragment>
       ))}
@@ -43,23 +58,25 @@ function FieldRows({ fields, depth = 0 }: { fields: FieldSpec[]; depth?: number 
 
 function FieldTable({ label, fields }: { label: string; fields: FieldSpec[] }) {
   return (
-    <div className="space-y-1">
-      <span className="text-xs font-medium uppercase text-neutral-500">{label}</span>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead className="text-left text-neutral-400">
-            <tr>
-              <th className="py-1 pr-4 font-medium">Field</th>
-              <th className="py-1 pr-4 font-medium">Type</th>
-              <th className="py-1 font-medium">Description</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
+    <Stack gap={4}>
+      <Text fz="xs" fw={500} tt="uppercase" c="dimmed">
+        {label}
+      </Text>
+      <Table.ScrollContainer minWidth={420}>
+        <Table fz="xs" verticalSpacing={6} horizontalSpacing={0} withRowBorders>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th pr="md">Field</Table.Th>
+              <Table.Th pr="md">Type</Table.Th>
+              <Table.Th>Description</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             <FieldRows fields={fields} />
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    </Stack>
   );
 }
 
@@ -70,91 +87,98 @@ function CodeExamples({ examples }: { examples: CodeExample[] }) {
     return null;
   }
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-1">
-          {examples.map((example, index) => (
-            <button
-              key={example.label}
-              type="button"
-              onClick={() => setActive(index)}
-              className={`rounded-md px-2 py-1 text-xs ${
-                index === active
-                  ? "bg-neutral-200 font-medium text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100"
-                  : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-              }`}
-            >
-              {example.label}
-            </button>
-          ))}
-        </div>
+    <Stack gap={4}>
+      <Group justify="space-between" gap="xs" wrap="nowrap">
+        <SegmentedControl
+          size="xs"
+          value={String(active)}
+          onChange={(value) => setActive(Number(value))}
+          data={examples.map((example, index) => ({
+            value: String(index),
+            label: example.label,
+          }))}
+        />
         <CopyButton text={current.code} />
-      </div>
+      </Group>
       <CodeBlock language={current.language} code={current.code} />
-    </div>
+    </Stack>
   );
 }
 
 function ResponseExample({ code }: { code: string }) {
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase text-neutral-500">Response example</span>
+    <Stack gap={4}>
+      <Group justify="space-between">
+        <Text fz="xs" fw={500} tt="uppercase" c="dimmed">
+          Response example
+        </Text>
         <CopyButton text={code} />
-      </div>
+      </Group>
       <CodeBlock language="json" code={code} />
-    </div>
+    </Stack>
   );
 }
 
 function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            className={`rounded px-2 py-0.5 font-mono text-xs font-medium ${METHOD_CLASS[endpoint.method]}`}
-          >
-            {endpoint.method}
-          </span>
-          <code className="min-w-0 flex-1 truncate font-mono text-sm" title={endpoint.path}>
-            {endpoint.path}
-          </code>
-          {endpoint.streaming && (
-            <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800">
-              SSE
-            </span>
+    <Card>
+      <Stack gap="md">
+        <Stack gap="xs">
+          <Group gap="xs" wrap="wrap">
+            <Badge color={METHOD_COLOR[endpoint.method]} ff="monospace">
+              {endpoint.method}
+            </Badge>
+            <Code
+              title={endpoint.path}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {endpoint.path}
+            </Code>
+            {endpoint.streaming && <Badge radius="xl">SSE</Badge>}
+          </Group>
+          <Text fz="sm" fw={500}>
+            {endpoint.title}
+          </Text>
+          <Text fz="xs" c="dimmed" lh={1.6}>
+            {endpoint.description}
+          </Text>
+        </Stack>
+
+        <Group gap="xl" fz="xs" wrap="wrap">
+          <Text fz="xs" c="dimmed">
+            Auth:{" "}
+            <Text component="span" fz="xs" c="var(--mantine-color-text)">
+              {AUTH_LABEL[endpoint.auth]}
+            </Text>
+          </Text>
+          {endpoint.errorCodes.length > 0 && (
+            <Text fz="xs" c="dimmed">
+              Errors:{" "}
+              <Text component="span" fz="xs" ff="monospace" c="var(--mantine-color-text)">
+                {endpoint.errorCodes.join(" · ")}
+              </Text>
+            </Text>
           )}
-        </div>
-        <p className="text-sm font-medium">{endpoint.title}</p>
-        <p className="text-xs leading-relaxed text-neutral-500">{endpoint.description}</p>
-      </div>
+        </Group>
 
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-neutral-500">
-        <span>
-          Auth: <span className="text-neutral-700 dark:text-neutral-300">{AUTH_LABEL[endpoint.auth]}</span>
-        </span>
-        {endpoint.errorCodes.length > 0 && (
-          <span>
-            Errors:{" "}
-            <span className="font-mono text-neutral-700 dark:text-neutral-300">
-              {endpoint.errorCodes.join(" · ")}
-            </span>
-          </span>
-        )}
-      </div>
-
-      {endpoint.requestFields && <FieldTable label="Request" fields={endpoint.requestFields} />}
-      <CodeExamples examples={endpoint.codeExamples} />
-      {endpoint.responseFields && <FieldTable label="Response" fields={endpoint.responseFields} />}
-      {endpoint.responseExample && <ResponseExample code={endpoint.responseExample} />}
-    </div>
+        {endpoint.requestFields && <FieldTable label="Request" fields={endpoint.requestFields} />}
+        <CodeExamples examples={endpoint.codeExamples} />
+        {endpoint.responseFields && <FieldTable label="Response" fields={endpoint.responseFields} />}
+        {endpoint.responseExample && <ResponseExample code={endpoint.responseExample} />}
+      </Stack>
+    </Card>
   );
 }
 
 export default function ApiReferencePage() {
   const { name } = useParams<{ name: string }>();
-  const { data: session } = useSession();
+  const viewer = useViewer();
   const [endpoints, setEndpoints] = useState<ApiEndpoint[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,7 +188,7 @@ export default function ApiReferencePage() {
     async function load() {
       try {
         const project = await getProject(name);
-        const isOwner = session?.user.email === project.ownerEmail;
+        const isOwner = canEditProject(viewer, project.ownerEmail);
 
         const [a2a, slack] = await Promise.all([
           getProjectA2a(name).catch(() => null),
@@ -194,31 +218,38 @@ export default function ApiReferencePage() {
     return () => {
       cancelled = true;
     };
-  }, [name, session?.user.email]);
+  }, [name, viewer]);
 
   if (error) {
-    return <p className="text-sm text-red-600">{error}</p>;
+    return (
+      <Text fz="sm" c="red">
+        {error}
+      </Text>
+    );
   }
   if (!endpoints) {
-    return <p className="text-sm text-neutral-500">Loading…</p>;
+    return (
+      <Text fz="sm" c="dimmed">
+        Loading…
+      </Text>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-neutral-500">
+    <Stack gap="md">
+      <Text fz="sm" c="dimmed">
         Endpoints for calling this project from outside the console. Paths are filled in with the
-        project name and its published version; replace{" "}
-        <code className="font-mono text-xs">$PROJECT_API_TOKEN</code> and other{" "}
-        <code className="font-mono text-xs">$…</code> placeholders with your own credentials. Generate
-        a token under Settings → API token.
-      </p>
+        project name and its published version; replace <Code>$PROJECT_API_TOKEN</Code> and other{" "}
+        <Code>$…</Code> placeholders with your own credentials. Generate a token under Settings →
+        API token.
+      </Text>
       {endpoints.length === 0 ? (
-        <p className="text-sm text-neutral-500">
+        <Text fz="sm" c="dimmed">
           No callable endpoints yet — publish a version to expose this project.
-        </p>
+        </Text>
       ) : (
         endpoints.map((endpoint) => <EndpointCard key={endpoint.id} endpoint={endpoint} />)
       )}
-    </div>
+    </Stack>
   );
 }

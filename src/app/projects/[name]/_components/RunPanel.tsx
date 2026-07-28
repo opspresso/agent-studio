@@ -7,8 +7,22 @@ import { parseWireToolCall } from "@/app/_lib/toolCalls";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
-import { inputClass } from "./inputs";
-import { buttonClass } from "@/app/_components/buttonStyles";
+import {
+  Accordion,
+  Alert,
+  Badge,
+  Button,
+  Code,
+  Group,
+  Image,
+  Input,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+} from "@mantine/core";
 
 interface ToolResultView {
   name: string;
@@ -210,192 +224,230 @@ export function RunPanel({
   }
 
   return (
-    <div className="space-y-4">
+    <Stack gap="md">
       {versionName === null ? (
-        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+        <Alert color="yellow" variant="light" fz="xs">
           Save a version to run it.
-        </p>
+        </Alert>
       ) : (
-        <p className="text-xs text-neutral-400">
-          Running version <span className="font-mono">{versionName}</span>
-        </p>
+        <Text fz="xs" c="dimmed">
+          Running version{" "}
+          <Text component="span" ff="monospace" fz="xs">
+            {versionName}
+          </Text>
+        </Text>
       )}
 
       {needsMessage ? (
-        <label className="block">
-          <span className="text-sm font-medium">
-            {projectType === "image"
+        <Textarea
+          label={
+            projectType === "image"
               ? attachments.length > 0
                 ? "Edit instruction"
                 : "Image prompt"
-              : "Message"}
-          </span>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={4}
-            placeholder={
-              projectType === "image"
-                ? attachments.length > 0
-                  ? "Describe the edited result…"
-                  : "Describe the image to generate…"
-                : "Ask the agent…"
-            }
-            className={`${inputClass} mt-1`}
-          />
-        </label>
+              : "Message"
+          }
+          value={message}
+          onChange={(e) => setMessage(e.currentTarget.value)}
+          autosize
+          minRows={4}
+          maxRows={16}
+          placeholder={
+            projectType === "image"
+              ? attachments.length > 0
+                ? "Describe the edited result…"
+                : "Describe the image to generate…"
+              : "Ask the agent…"
+          }
+        />
       ) : varNames.length > 0 ? (
-        <div className="space-y-2">
-          <span className="text-sm font-medium">Variables</span>
-          {varNames.map((name) => (
-            <label key={name} className="flex items-center gap-2">
-              <span className="w-32 shrink-0 font-mono text-xs text-neutral-500">{name}</span>
-              <input
+        <Input.Wrapper label="Variables" labelElement="div">
+          <Stack gap="xs" mt={4}>
+            {varNames.map((name) => (
+              <TextInput
+                key={name}
                 value={variables[name] ?? ""}
-                onChange={(e) => setVariables((prev) => ({ ...prev, [name]: e.target.value }))}
-                className={inputClass}
+                onChange={(e) =>
+                  setVariables((prev) => ({ ...prev, [name]: e.currentTarget.value }))
+                }
+                leftSectionWidth={132}
+                leftSectionPointerEvents="none"
+                leftSection={
+                  <Text fz="xs" ff="monospace" c="dimmed" truncate px="xs">
+                    {name}
+                  </Text>
+                }
               />
-            </label>
-          ))}
-        </div>
+            ))}
+          </Stack>
+        </Input.Wrapper>
       ) : (
-        <p className="text-xs text-neutral-400">No template variables detected.</p>
+        <Text fz="xs" c="dimmed">
+          No template variables detected.
+        </Text>
       )}
 
-      <div className="space-y-1">
-        <span className="text-sm font-medium">
-          {projectType === "image" ? "Source images" : "Images"}
-        </span>
-        <p className="text-xs text-neutral-400">{attachHint}</p>
-        <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
-        <AttachButton
-          onPick={(files) => void addFiles(files)}
-          disabled={running}
-          label="📎 Attach"
-        />
-        {modelAcceptsImages === false && attachments.length > 0 && (
-          <p className="text-xs text-red-600">
-            {projectType === "image"
-              ? "This model cannot edit images; the run will be rejected."
-              : "This model does not accept image input; the run will be rejected."}
-          </p>
-        )}
-      </div>
+      <Input.Wrapper
+        label={projectType === "image" ? "Source images" : "Images"}
+        labelElement="div"
+        description={attachHint}
+        inputWrapperOrder={["label", "description", "input"]}
+      >
+        <Stack gap={4} mt={4}>
+          <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
+          <Group>
+            <AttachButton onPick={(files) => void addFiles(files)} disabled={running} />
+          </Group>
+          {modelAcceptsImages === false && attachments.length > 0 && (
+            <Text fz="xs" c="red">
+              {projectType === "image"
+                ? "This model cannot edit images; the run will be rejected."
+                : "This model does not accept image input; the run will be rejected."}
+            </Text>
+          )}
+        </Stack>
+      </Input.Wrapper>
 
       {projectType === "image" && (
-        <div className="flex gap-3">
-          <label className="block">
-            <span className="text-xs text-neutral-500">Size</span>
-            <select value={size} onChange={(e) => setSize(e.target.value)} className={`${inputClass} mt-1`}>
-              <option value="1024x1024">1024×1024</option>
-              <option value="1536x1024">1536×1024</option>
-              <option value="1024x1536">1024×1536</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs text-neutral-500">Quality</span>
-            <select value={quality} onChange={(e) => setQuality(e.target.value)} className={`${inputClass} mt-1`}>
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
-            </select>
-          </label>
-        </div>
+        <Group gap="sm" align="flex-end">
+          <Select
+            label="Size"
+            value={size}
+            onChange={(value) => setSize(value ?? "1024x1024")}
+            allowDeselect={false}
+            data={["1024x1024", "1536x1024", "1024x1536"]}
+          />
+          <Select
+            label="Quality"
+            value={quality}
+            onChange={(value) => setQuality(value ?? "medium")}
+            allowDeselect={false}
+            data={["low", "medium", "high"]}
+          />
+        </Group>
       )}
 
-      <button
-        type="button"
-        onClick={run}
-        disabled={!canRun}
-        className={buttonClass("primary")}
-      >
-        {running ? "Running…" : "Run"}
-      </button>
+      <Group>
+        <Button onClick={run} loading={running} disabled={!canRun}>
+          Run
+        </Button>
+      </Group>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
       {(activePath || visitedPaths.length > 0) && (
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-1 text-xs">
-            <span className="text-neutral-500">{running ? "running:" : "ran:"}</span>
-            <span className="rounded bg-neutral-100 px-2 py-0.5 font-mono dark:bg-neutral-800">
-              {projectName}
-            </span>
+        <Stack gap={4}>
+          <Group gap={6} wrap="wrap">
+            <Text fz="xs" c="dimmed">
+              {running ? "running:" : "ran:"}
+            </Text>
+            <Badge ff="monospace">{projectName}</Badge>
             {(activePath ?? []).map((agent, index) => (
-              <span key={`active-${index}`} className="flex items-center gap-1">
-                <span className="text-neutral-400">→</span>
-                <span className="rounded bg-violet-100 px-2 py-0.5 font-mono text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+              <Group key={`active-${index}`} gap={6} wrap="nowrap">
+                <Text fz="xs" c="dimmed">
+                  →
+                </Text>
+                <Badge color="violet" ff="monospace">
                   {agent}
-                </span>
-              </span>
+                </Badge>
+              </Group>
             ))}
-          </div>
+          </Group>
           {visitedPaths.length > 0 && (
-            <p className="text-xs text-neutral-400">
+            <Text fz="xs" c="dimmed">
               agents involved: {visitedPaths.map((path) => path.join(" → ")).join(", ")}
-            </p>
+            </Text>
           )}
-        </div>
+        </Stack>
       )}
 
       {projectType === "image" ? (
-        <div className="min-h-24 rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900">
+        <Paper withBorder p="sm" mih={96}>
           {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType })}
               alt="Generated image"
-              className="max-w-full rounded"
+              radius="sm"
             />
           ) : (
-            <span className="text-sm text-neutral-400">
-              {running ? "Generating image… this can take a minute." : "Generated image will appear here."}
-            </span>
+            <Text fz="sm" c="dimmed">
+              {running
+                ? "Generating image… this can take a minute."
+                : "Generated image will appear here."}
+            </Text>
           )}
-        </div>
+        </Paper>
       ) : (
-        <div className="min-h-24 whitespace-pre-wrap rounded-md border border-neutral-200 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
-          {text || <span className="text-neutral-400">Output will stream here.</span>}
-        </div>
+        <Paper withBorder p="sm" mih={96} style={{ whiteSpace: "pre-wrap" }}>
+          {text || (
+            <Text fz="sm" c="dimmed">
+              Output will stream here.
+            </Text>
+          )}
+        </Paper>
       )}
 
       {agentImages.map((img, i) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <Image
           key={`image-${i}`}
           src={imageDataUrl(img)}
           alt={img.prompt ?? "Generated image"}
-          className="max-w-full rounded-md border border-neutral-200 dark:border-neutral-800"
+          radius="md"
         />
       ))}
 
-      {toolCalls.map((call, i) => (
-        <details key={`call-${i}`} className="rounded-md border border-neutral-200 dark:border-neutral-800">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
-            🔧 tool call: {call.name}
-            {call.author && <span className="ml-1 text-neutral-400">({call.author})</span>}
-          </summary>
-          <pre className="overflow-x-auto px-3 pb-2 text-xs">{call.args}</pre>
-        </details>
-      ))}
-
-      {toolResults.map((result, i) => (
-        <details key={`result-${i}`} className="rounded-md border border-neutral-200 dark:border-neutral-800">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
-            ✅ tool result: {result.name}
-            {result.author && <span className="ml-1 text-neutral-400">({result.author})</span>}
-          </summary>
-          <pre className="overflow-x-auto px-3 pb-2 text-xs">{result.content}</pre>
-        </details>
-      ))}
+      {(toolCalls.length > 0 || toolResults.length > 0) && (
+        <Accordion variant="contained" chevronPosition="left" radius="md" multiple>
+          {toolCalls.map((call, i) => (
+            <Accordion.Item key={`call-${i}`} value={`call-${i}`}>
+              <Accordion.Control>
+                <Text fz="xs" fw={500}>
+                  🔧 tool call: {call.name}
+                  {call.author && (
+                    <Text component="span" c="dimmed" fz="xs" ml={4}>
+                      ({call.author})
+                    </Text>
+                  )}
+                </Text>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Code block fz="xs">
+                  {call.args}
+                </Code>
+              </Accordion.Panel>
+            </Accordion.Item>
+          ))}
+          {toolResults.map((result, i) => (
+            <Accordion.Item key={`result-${i}`} value={`result-${i}`}>
+              <Accordion.Control>
+                <Text fz="xs" fw={500}>
+                  ✅ tool result: {result.name}
+                  {result.author && (
+                    <Text component="span" c="dimmed" fz="xs" ml={4}>
+                      ({result.author})
+                    </Text>
+                  )}
+                </Text>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Code block fz="xs">
+                  {result.content}
+                </Code>
+              </Accordion.Panel>
+            </Accordion.Item>
+          ))}
+        </Accordion>
+      )}
 
       {cost !== null && (
-        <p className="text-xs text-neutral-400">est. cost: ${cost.toFixed(6)}</p>
+        <Text fz="xs" c="dimmed">
+          est. cost: ${cost.toFixed(6)}
+        </Text>
       )}
-    </div>
+    </Stack>
   );
 }

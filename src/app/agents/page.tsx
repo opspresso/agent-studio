@@ -13,18 +13,29 @@ import {
   type ExternalAgent,
 } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
-import { Badge } from "@/app/_components/Badge";
-import { Modal } from "@/app/_components/Modal";
-import { fieldClass } from "@/app/_components/formStyles";
-import { CardGrid, CardList, cardClass, linkCardClass } from "@/app/_components/CardGrid";
-import { buttonClass } from "@/app/_components/buttonStyles";
+import {
+  Alert,
+  Anchor,
+  Badge,
+  Button,
+  Card,
+  Group,
+  Modal,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { CardGrid, CardList } from "@/app/_components/CardGrid";
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
   const [a2aProjects, setA2aProjects] = useState<A2aProjectListView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [opened, { open, close }] = useDisclosure(false);
 
   async function refresh() {
     setLoading(true);
@@ -45,99 +56,95 @@ export default function AgentsPage() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <Stack gap="lg">
+      <Group justify="space-between" align="flex-start">
         <div>
-          <h1 className="text-2xl font-semibold">Agents</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <Title order={1} fz="h2">
+            Agents
+          </Title>
+          <Text fz="sm" c="dimmed" mt={4}>
             External OpenAI-compatible agent endpoints, usable as remote subagents.
-          </p>
+          </Text>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong"
-        >
-          Register agent
-        </button>
-      </div>
+        <Button onClick={open}>Register agent</Button>
+      </Group>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
-      <CardGrid
-        loading={loading}
-        empty={agents.length === 0}
-        emptyText="No external agents yet."
-      >
+      <CardGrid loading={loading} empty={agents.length === 0} emptyText="No external agents yet.">
         {agents.map((agent) => (
-          <li key={agent.name}>
-            <Link
-              href={`/agents/${agent.name}`}
-              className={linkCardClass}
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{agent.name}</span>
-                <Badge>{agent.protocol === "a2a" ? "A2A" : "OpenAI"}</Badge>
-              </div>
-              <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{agent.description}</p>
-              <p className="mt-2 truncate text-xs text-neutral-400">{agent.url}</p>
-            </Link>
-          </li>
+          <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
+            <Group gap="xs">
+              <Text fw={500}>{agent.name}</Text>
+              <Badge>{agent.protocol === "a2a" ? "A2A" : "OpenAI"}</Badge>
+            </Group>
+            <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+              {agent.description}
+            </Text>
+            <Text fz="xs" c="dimmed" mt="xs" truncate>
+              {agent.url}
+            </Text>
+          </Card>
         ))}
       </CardGrid>
 
       {!loading && a2aProjects && a2aProjects.projects.length > 0 && (
-        <section className="space-y-3">
+        <Stack component="section" gap="sm">
           <div>
-            <h2 className="text-lg font-semibold">Studio projects (A2A)</h2>
-            <p className="mt-1 text-sm text-neutral-500">
+            <Title order={2} fz="h4">
+              Studio projects (A2A)
+            </Title>
+            <Text fz="sm" c="dimmed" mt={4}>
               {a2aProjects.enabled
                 ? "Published projects, exposed as A2A agents — share the Agent Card URL, no registration needed."
                 : "Published projects. Set A2A_API_KEY on the server to expose them as A2A agents."}
-            </p>
+            </Text>
           </div>
           <CardList>
             {a2aProjects.projects.map((project) => (
-              <li key={project.name} className={`flex h-full flex-col ${cardClass}`}>
-                <div className="flex items-center gap-2">
-                  <Link href={`/projects/${project.name}`} className="font-medium hover:text-brand">
+              <Card key={project.name} h="100%">
+                <Group gap="xs">
+                  <Anchor component={Link} href={`/projects/${project.name}`} fw={500} c="inherit">
                     {project.displayName || project.name}
-                  </Link>
+                  </Anchor>
                   <Badge>A2A</Badge>
-                </div>
-                <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{project.description}</p>
+                </Group>
+                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                  {project.description}
+                </Text>
                 {a2aProjects.enabled && (
-                  <div className="mt-2">
+                  <div style={{ marginTop: "var(--mantine-spacing-xs)" }}>
                     <CopyableUrl url={project.cardUrl} />
                   </div>
                 )}
-              </li>
+              </Card>
             ))}
           </CardList>
-        </section>
+        </Stack>
       )}
 
-      {showModal && (
-        <RegisterAgentModal
-          onClose={() => setShowModal(false)}
-          onCreated={() => {
-            setShowModal(false);
-            void refresh();
-          }}
-        />
-      )}
-    </div>
+      <RegisterAgentModal
+        opened={opened}
+        onClose={close}
+        onCreated={() => {
+          close();
+          void refresh();
+        }}
+      />
+    </Stack>
   );
 }
 
 function RegisterAgentModal({
+  opened,
   onClose,
   onCreated,
 }: {
+  opened: boolean;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -164,38 +171,33 @@ function RegisterAgentModal({
   }
 
   return (
-    <Modal title="Register external agent" onClose={onClose} size="md">
-      <form onSubmit={submit} className="space-y-4">
-        <label className="block">
-          <span className="text-sm font-medium">Name</span>
-          <input
+    <Modal opened={opened} onClose={onClose} title="Register external agent" size="lg">
+      <form onSubmit={submit}>
+        <Stack gap="md">
+          <TextInput
+            label="Name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(e.currentTarget.value)}
             onBlur={() => setName(toSlug(name))}
             placeholder="my-agent"
             required
-            className={fieldClass}
+            description="Lowercase letters, digits, and hyphens only."
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            Lowercase letters, digits, and hyphens only.
-          </span>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Protocol</span>
-          <select
+          <Select
+            label="Protocol"
             value={protocol}
-            onChange={(e) => setProtocol(e.target.value as AgentProtocol)}
-            className={fieldClass}
-          >
-            <option value="openai">OpenAI-compatible</option>
-            <option value="a2a">A2A</option>
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">{protocol === "a2a" ? "Agent Card URL" : "URL"}</span>
-          <input
+            onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
+            allowDeselect={false}
+            data={[
+              { value: "openai", label: "OpenAI-compatible" },
+              { value: "a2a", label: "A2A" },
+            ]}
+          />
+          <TextInput
+            label={protocol === "a2a" ? "Agent Card URL" : "URL"}
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => setUrl(e.currentTarget.value)}
             placeholder={
               protocol === "a2a"
                 ? "https://example.com/.well-known/agent-card.json"
@@ -203,39 +205,35 @@ function RegisterAgentModal({
             }
             type="url"
             required
-            className={fieldClass}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Description</span>
-          <input
+          <TextInput
+            label="Description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => setDescription(e.currentTarget.value)}
             required
-            className={fieldClass}
           />
-        </label>
 
-        <HeaderRowsEditor rows={rows} onChange={setRows} emptyHint="No headers. Add one if the endpoint needs auth." />
+          <HeaderRowsEditor
+            rows={rows}
+            onChange={setRows}
+            emptyHint="No headers. Add one if the endpoint needs auth."
+          />
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && (
+            <Alert color="red" variant="light">
+              {error}
+            </Alert>
+          )}
 
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className={buttonClass("secondary")}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className={buttonClass("primary")}
-          >
-            {submitting ? "Registering…" : "Register"}
-          </button>
-        </div>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={submitting}>
+              Register
+            </Button>
+          </Group>
+        </Stack>
       </form>
     </Modal>
   );

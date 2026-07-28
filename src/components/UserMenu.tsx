@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button, Group, Skeleton, Text } from "@mantine/core";
 import { signOut, useSession } from "@/lib/auth-client";
 import { SignInButton } from "./SignInButton";
 
@@ -19,7 +20,7 @@ export function UserMenu() {
   }
 
   if (isPending) {
-    return <div className="h-8 w-8 animate-pulse rounded-full bg-neutral-200 dark:bg-neutral-800" />;
+    return <Skeleton height={32} circle />;
   }
 
   if (!session) {
@@ -27,19 +28,18 @@ export function UserMenu() {
   }
 
   return (
-    <div className="flex items-center gap-2 sm:gap-3">
-      <span className="hidden max-w-52 truncate text-sm text-neutral-600 lg:inline dark:text-neutral-300">
+    <Group gap="xs" wrap="nowrap">
+      <Text fz="sm" c="dimmed" truncate maw={210} visibleFrom="lg">
         {session.user.email}
-      </span>
-      <button
-        type="button"
+      </Text>
+      <Button
+        variant="default"
+        size="xs"
         onClick={() => void handleSignOut()}
-        disabled={signingOut}
-        aria-busy={signingOut}
-        className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm hover:bg-neutral-100 disabled:cursor-wait disabled:opacity-60 sm:px-3 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        loading={signingOut}
       >
-        {signingOut ? "Signing out…" : "Sign out"}
-      </button>
-    </div>
+        Sign out
+      </Button>
+    </Group>
   );
 }

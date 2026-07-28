@@ -1,0 +1,49 @@
+.sidebar {
+  flex-shrink: 0;
+  width: 100%;
+  max-height: 10rem;
+  overflow: hidden;
+}
+
+@media (min-width: $mantine-breakpoint-md) {
+  .sidebar {
+    width: 16rem;
+    max-height: none;
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-md);
+}
+
+.row:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.row[data-active] {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+
+/* Revealed on hover so a full sidebar is not a wall of delete buttons. */
+.delete {
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.row:hover .delete,
+.delete:focus-visible {
+  opacity: 1;
+}

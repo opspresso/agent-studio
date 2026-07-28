@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@mantine/core";
 import { signIn } from "@/lib/auth-client";
 
 export function SignInButton({
@@ -22,16 +23,12 @@ export function SignInButton({
   }
 
   return (
-    <button
-      type="button"
+    <Button
       onClick={() => void handleSignIn()}
-      disabled={pending}
-      aria-busy={pending}
-      className={`rounded-md bg-brand text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-wait disabled:opacity-70 ${
-        compact ? "px-3 py-1.5" : "px-5 py-2.5"
-      }`}
+      loading={pending}
+      size={compact ? "xs" : "md"}
     >
-      {pending ? "Signing in…" : label}
-    </button>
+      {label}
+    </Button>
   );
 }

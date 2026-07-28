@@ -6,6 +6,7 @@ import { CollapsibleCode } from "@/app/_components/CollapsibleCode";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { getProjectA2a } from "../../lib/api";
 import type { ProjectA2aView } from "../../lib/api";
+import { Badge, Code, Stack, Text } from "@mantine/core";
 
 export function A2aSection({ projectName }: { projectName: string }) {
   const [view, setView] = useState<ProjectA2aView | null>(null);
@@ -22,7 +23,11 @@ export function A2aSection({ projectName }: { projectName: string }) {
   }, [projectName]);
 
   if (!view) {
-    return error ? <p className="text-sm text-red-600">{error}</p> : null;
+    return error ? (
+      <Text fz="sm" c="red">
+        {error}
+      </Text>
+    ) : null;
   }
 
   const ready = view.enabled && view.published;
@@ -31,44 +36,45 @@ export function A2aSection({ projectName }: { projectName: string }) {
     <CollapsibleSection
       title="A2A"
       badge={
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs ${
-            ready
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "bg-neutral-200 text-neutral-500 dark:bg-neutral-800"
-          }`}
-        >
+        <Badge color={ready ? "teal" : "gray"} radius="xl">
           {ready ? "exposed" : view.enabled ? "not published" : "disabled"}
-        </span>
+        </Badge>
       }
     >
-      <p className="text-xs leading-relaxed text-neutral-500">
-        The published version is exposed as an A2A agent. Share the Agent Card URL with external
-        systems; callers authenticate with the <code className="font-mono">X-A2A-Key</code> header.
-      </p>
+      <Stack gap="sm">
+        <Text fz="xs" c="dimmed" lh={1.6}>
+          The published version is exposed as an A2A agent. Share the Agent Card URL with external
+          systems; callers authenticate with the <Code>X-A2A-Key</Code> header.
+        </Text>
 
-      {!view.enabled && (
-        <p className="text-sm text-neutral-500">
-          Set <code className="font-mono text-xs">A2A_API_KEY</code> on the server to enable A2A
-          endpoints.
-        </p>
-      )}
-      {view.enabled && !view.published && (
-        <p className="text-sm text-neutral-500">Publish a version to expose this project over A2A.</p>
-      )}
+        {!view.enabled && (
+          <Text fz="sm" c="dimmed">
+            Set <Code>A2A_API_KEY</Code> on the server to enable A2A endpoints.
+          </Text>
+        )}
+        {view.enabled && !view.published && (
+          <Text fz="sm" c="dimmed">
+            Publish a version to expose this project over A2A.
+          </Text>
+        )}
 
-      {view.cardUrl && <CopyableUrl url={view.cardUrl} />}
+        {view.cardUrl && <CopyableUrl url={view.cardUrl} />}
 
-      {view.card && (
-        <CollapsibleCode
-          title="Agent Card"
-          language="json"
-          code={JSON.stringify(view.card, null, 2)}
-          copyLabel="Copy card"
-        />
-      )}
+        {view.card && (
+          <CollapsibleCode
+            title="Agent Card"
+            language="json"
+            code={JSON.stringify(view.card, null, 2)}
+            copyLabel="Copy card"
+          />
+        )}
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && (
+          <Text fz="sm" c="red">
+            {error}
+          </Text>
+        )}
+      </Stack>
     </CollapsibleSection>
   );
 }

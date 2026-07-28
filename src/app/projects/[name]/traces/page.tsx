@@ -6,6 +6,7 @@ import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import Link from "next/link";
 import { listTraces, type Trace } from "../../lib/api";
+import { Accordion, Anchor, Group, Stack, Table, Text } from "@mantine/core";
 
 /** The nested trace a subagent span points at, when it has one. */
 function subagentLink(span: Trace["spans"][number]): { agent: string; traceId: string } | null {
@@ -52,100 +53,118 @@ export default function TracesPage() {
   }, [load]);
 
   return (
-    <div className="space-y-4">
+    <Stack gap="md">
       <DateRangePicker value={range} onChange={setRange} />
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Loading…</p>
+        <Text fz="sm" c="dimmed">
+          Loading…
+        </Text>
       ) : error ? (
-        <p className="text-sm text-red-600">{error}</p>
+        <Text fz="sm" c="red">
+          {error}
+        </Text>
       ) : traces.length === 0 ? (
-        <p className="text-sm text-neutral-500">No traces recorded in this range.</p>
+        <Text fz="sm" c="dimmed">
+          No traces recorded in this range.
+        </Text>
       ) : (
-        <div className="space-y-3">
+        <Accordion variant="separated" radius="md" multiple>
           {traces.map((trace) => (
-        <details
-          key={trace.traceId}
-          className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
-        >
-          <summary className="cursor-pointer list-none">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <span className="font-mono text-sm">{trace.traceId.slice(0, 8)}</span>
-                <span className="ml-2 text-sm text-neutral-500">
-                  version {trace.versionName} · {trace.spans.length} spans
-                  {trace.spansDropped ? ` (+${trace.spansDropped} dropped)` : ""}
-                </span>
-              </div>
-              <div className="text-sm">
-                <span className={trace.status === "completed" ? "text-green-600" : "text-red-600"}>
-                  {trace.status}
-                </span>
-                <span className="ml-3 text-neutral-500">{trace.durationMs} ms</span>
-              </div>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500">{trace.createdAt}</p>
-            {trace.ancestry && trace.ancestry.length > 1 && (
-              <p className="mt-1 text-xs text-neutral-500">
-                called via <span className="font-mono">{trace.ancestry.join(" → ")}</span>
-              </p>
-            )}
-          </summary>
-          {trace.error && <p className="mt-3 text-sm text-red-600">{trace.error}</p>}
-          {trace.warnings?.map((warning, index) => (
-            <p key={`warning-${index}`} className="mt-2 text-sm text-amber-600 dark:text-amber-400">
-              ⚠️ {warning}
-            </p>
+            <Accordion.Item key={trace.traceId} value={trace.traceId}>
+              <Accordion.Control>
+                <Group justify="space-between" gap="xs" wrap="wrap">
+                  <div>
+                    <Text component="span" ff="monospace" fz="sm">
+                      {trace.traceId.slice(0, 8)}
+                    </Text>
+                    <Text component="span" fz="sm" c="dimmed" ml="xs">
+                      version {trace.versionName} · {trace.spans.length} spans
+                      {trace.spansDropped ? ` (+${trace.spansDropped} dropped)` : ""}
+                    </Text>
+                  </div>
+                  <Group gap="md">
+                    <Text fz="sm" c={trace.status === "completed" ? "teal" : "red"}>
+                      {trace.status}
+                    </Text>
+                    <Text fz="sm" c="dimmed">
+                      {trace.durationMs} ms
+                    </Text>
+                  </Group>
+                </Group>
+                <Text fz="xs" c="dimmed" mt={4}>
+                  {trace.createdAt}
+                </Text>
+                {trace.ancestry && trace.ancestry.length > 1 && (
+                  <Text fz="xs" c="dimmed" mt={4}>
+                    called via{" "}
+                    <Text component="span" ff="monospace" fz="xs">
+                      {trace.ancestry.join(" → ")}
+                    </Text>
+                  </Text>
+                )}
+              </Accordion.Control>
+              <Accordion.Panel>
+                {trace.error && (
+                  <Text fz="sm" c="red" mb="xs">
+                    {trace.error}
+                  </Text>
+                )}
+                {trace.warnings?.map((warning, index) => (
+                  <Text key={`warning-${index}`} fz="sm" c="orange" mb={4}>
+                    ⚠️ {warning}
+                  </Text>
+                ))}
+                <Table.ScrollContainer minWidth={520}>
+                  <Table verticalSpacing="xs">
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Kind</Table.Th>
+                        <Table.Th>Name</Table.Th>
+                        <Table.Th>Tokens</Table.Th>
+                        <Table.Th>Status</Table.Th>
+                        <Table.Th ta="right">Duration</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {trace.spans.map((span) => {
+                        const nested = subagentLink(span);
+                        return (
+                          <Table.Tr key={span.spanId}>
+                            <Table.Td>{span.kind}</Table.Td>
+                            <Table.Td ff="monospace">
+                              {typeof span.output?.chain === "string"
+                                ? span.output.chain
+                                : span.name}
+                              {nested && (
+                                <Anchor
+                                  component={Link}
+                                  href={`/projects/${nested.agent}/traces`}
+                                  fz="xs"
+                                  ml="xs"
+                                >
+                                  trace {nested.traceId.slice(0, 8)} ↗
+                                </Anchor>
+                              )}
+                            </Table.Td>
+                            <Table.Td fz="xs" c="dimmed">
+                              {spanTokens(span)}
+                            </Table.Td>
+                            <Table.Td c={span.status === "error" ? "red" : undefined}>
+                              {span.status}
+                            </Table.Td>
+                            <Table.Td ta="right">{span.durationMs} ms</Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
+              </Accordion.Panel>
+            </Accordion.Item>
           ))}
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-neutral-500">
-                <tr>
-                  <th className="py-2 pr-4">Kind</th>
-                  <th className="py-2 pr-4">Name</th>
-                  <th className="py-2 pr-4">Tokens</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 text-right">Duration</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                {trace.spans.map((span) => {
-                  const nested = subagentLink(span);
-                  return (
-                    <tr key={span.spanId}>
-                      <td className="py-2 pr-4">{span.kind}</td>
-                      <td className="py-2 pr-4 font-mono">
-                        {typeof span.output?.chain === "string" ? span.output.chain : span.name}
-                        {nested && (
-                          <Link
-                            href={`/projects/${nested.agent}/traces`}
-                            className="ml-2 font-sans text-xs text-brand hover:underline"
-                          >
-                            trace {nested.traceId.slice(0, 8)} ↗
-                          </Link>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4 text-xs text-neutral-500">{spanTokens(span)}</td>
-                      <td
-                        className={
-                          span.status === "error"
-                            ? "py-2 pr-4 text-red-600"
-                            : "py-2 pr-4"
-                        }
-                      >
-                        {span.status}
-                      </td>
-                      <td className="py-2 text-right">{span.durationMs} ms</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </details>
-          ))}
-        </div>
+        </Accordion>
       )}
-    </div>
+    </Stack>
   );
 }

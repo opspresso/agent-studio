@@ -4,17 +4,27 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
 import { createSkill, listSkills, type Skill } from "./api";
-import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
-import { Modal } from "@/app/_components/Modal";
-import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
-import { CardGrid, linkCardClass } from "@/app/_components/CardGrid";
-import { buttonClass } from "@/app/_components/buttonStyles";
+import {
+  Alert,
+  Button,
+  Card,
+  Group,
+  Modal,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
+import { useDisclosure } from "@mantine/hooks";
+import { CardGrid } from "@/app/_components/CardGrid";
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [opened, { open, close }] = useDisclosure(false);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
@@ -35,19 +45,25 @@ export default function SkillsPage() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <Stack gap="lg">
+      <Group justify="space-between" align="flex-start">
         <div>
-          <h1 className="text-2xl font-semibold">Skills</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <Title order={1} fz="h2">
+            Skills
+          </Title>
+          <Text fz="sm" c="dimmed" mt={4}>
             Markdown behavior instructions loaded on demand by the agent engine.
-          </p>
+          </Text>
         </div>
-        <div className="flex items-center gap-3">
-          {syncStatus && <span className="text-xs text-neutral-500">{syncStatus}</span>}
-          <button
-            type="button"
-            disabled={syncing}
+        <Group gap="sm">
+          {syncStatus && (
+            <Text fz="xs" c="dimmed">
+              {syncStatus}
+            </Text>
+          )}
+          <Button
+            variant="default"
+            loading={syncing}
             onClick={async () => {
               setSyncing(true);
               setSyncStatus(null);
@@ -73,24 +89,17 @@ export default function SkillsPage() {
                 setSyncing(false);
               }
             }}
-            className={buttonClass("secondary")}
           >
-            {syncing ? "Syncing…" : "Sync from GitHub"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowModal(true)}
-            className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-strong"
-          >
-            New skill
-          </button>
-        </div>
-      </div>
+            Sync from GitHub
+          </Button>
+          <Button onClick={open}>New skill</Button>
+        </Group>
+      </Group>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
       <CardGrid
@@ -99,35 +108,33 @@ export default function SkillsPage() {
         emptyText="No skills yet. Create your first one."
       >
         {skills.map((skill) => (
-          <li key={skill.name}>
-            <Link
-              href={`/skills/${skill.name}`}
-              className={linkCardClass}
-            >
-              <div className="font-medium">{skill.name}</div>
-              <p className="mt-1 line-clamp-3 text-sm text-neutral-500">{skill.description}</p>
-            </Link>
-          </li>
+          <Card key={skill.name} component={Link} href={`/skills/${skill.name}`} h="100%">
+            <Text fw={500}>{skill.name}</Text>
+            <Text fz="sm" c="dimmed" mt={4} lineClamp={3}>
+              {skill.description}
+            </Text>
+          </Card>
         ))}
       </CardGrid>
 
-      {showModal && (
-        <CreateSkillModal
-          onClose={() => setShowModal(false)}
-          onCreated={() => {
-            setShowModal(false);
-            void refresh();
-          }}
-        />
-      )}
-    </div>
+      <CreateSkillModal
+        opened={opened}
+        onClose={close}
+        onCreated={() => {
+          close();
+          void refresh();
+        }}
+      />
+    </Stack>
   );
 }
 
 function CreateSkillModal({
+  opened,
   onClose,
   onCreated,
 }: {
+  opened: boolean;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -152,61 +159,52 @@ function CreateSkillModal({
   }
 
   return (
-    <Modal title="New skill" onClose={onClose} size="md">
-      <form onSubmit={submit} className="space-y-4">
-        <label className="block">
-          <span className="text-sm font-medium">Name</span>
-          <input
+    <Modal opened={opened} onClose={onClose} title="New skill" size="lg">
+      <form onSubmit={submit}>
+        <Stack gap="md">
+          <TextInput
+            label="Name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(e.currentTarget.value)}
             onBlur={() => setName(toSlug(name))}
             placeholder="my-skill"
             required
-            className={fieldClass}
+            description="Lowercase letters, digits, and hyphens only."
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            Lowercase letters, digits, and hyphens only.
-          </span>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Description</span>
-          <input
+          <TextInput
+            label="Description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => setDescription(e.currentTarget.value)}
             placeholder="One-line summary shown to the model"
             required
-            className={fieldClass}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Content (markdown)</span>
-          <ResizableTextarea
+          <Textarea
+            label="Content (markdown)"
             value={content}
-            onChange={setContent}
-            rows={8}
+            onChange={(e) => setContent(e.currentTarget.value)}
             placeholder="# Instructions…"
-            className={monoFieldClass}
+            autosize
+            minRows={8}
+            maxRows={30}
+            styles={monoInput}
           />
-        </label>
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && (
+            <Alert color="red" variant="light">
+              {error}
+            </Alert>
+          )}
 
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className={buttonClass("secondary")}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className={buttonClass("primary")}
-          >
-            {submitting ? "Creating…" : "Create"}
-          </button>
-        </div>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={submitting}>
+              Create
+            </Button>
+          </Group>
+        </Stack>
       </form>
     </Modal>
   );

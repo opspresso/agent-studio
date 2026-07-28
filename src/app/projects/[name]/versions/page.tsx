@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useSession } from "@/lib/auth-client";
+import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { formatDateTime } from "@/shared/date";
 import {
   deleteVersion,
@@ -11,12 +11,13 @@ import {
   publishVersion,
   type Version,
 } from "../../lib/api";
+import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
 
 export default function VersionsPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
 
-  const { data: session } = useSession();
+  const viewer = useViewer();
   const [versions, setVersions] = useState<Version[]>([]);
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
   const [published, setPublished] = useState<string | undefined>(undefined);
@@ -73,65 +74,78 @@ export default function VersionsPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-neutral-500">Loading…</p>;
+    return (
+      <Text fz="sm" c="dimmed">
+        Loading…
+      </Text>
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <Stack gap="md">
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
       {versions.length === 0 ? (
-        <p className="text-sm text-neutral-500">
+        <Text fz="sm" c="dimmed">
           No versions yet. Create one in the Playground tab.
-        </p>
+        </Text>
       ) : (
-        <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
-          {versions.map((version) => {
+        <Card padding={0}>
+          {versions.map((version, index) => {
             const isPublished = published === version.versionName;
             return (
-              <li key={version.versionName} className="flex items-center justify-between gap-4 px-4 py-3">
+              <Group
+                key={version.versionName}
+                justify="space-between"
+                gap="md"
+                px="md"
+                py="sm"
+                wrap="nowrap"
+                style={
+                  index > 0
+                    ? { borderTop: "1px solid var(--mantine-color-default-border)" }
+                    : undefined
+                }
+              >
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-medium">v{version.versionName}</span>
-                    {isPublished && (
-                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                        published
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 text-xs text-neutral-500">
+                  <Group gap="xs">
+                    <Text ff="monospace" fz="sm" fw={500}>
+                      v{version.versionName}
+                    </Text>
+                    {isPublished && <Badge color="teal">published</Badge>}
+                  </Group>
+                  <Text fz="xs" c="dimmed" mt={2}>
                     {version.model} · {formatDateTime(version.createdAt)}
-                  </div>
+                  </Text>
                 </div>
-                {ownerEmail !== null && session?.user.email === ownerEmail && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
+                {canEditProject(viewer, ownerEmail) && (
+                  <Group gap="xs" wrap="nowrap">
+                    <Button
+                      variant="default"
                       onClick={() => publish(version.versionName)}
                       disabled={busy !== null || isPublished}
-                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
                     >
                       {isPublished ? "Published" : "Publish"}
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      variant="default"
+                      color="red"
                       onClick={() => remove(version.versionName)}
                       disabled={busy !== null}
-                      className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
                       Delete
-                    </button>
-                  </div>
+                    </Button>
+                  </Group>
                 )}
-              </li>
+              </Group>
             );
           })}
-        </ul>
+        </Card>
       )}
-    </div>
+    </Stack>
   );
 }

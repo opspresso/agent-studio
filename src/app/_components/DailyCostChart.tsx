@@ -1,16 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Rectangle,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { BarChart, type ChartSeries } from "@mantine/charts";
+import { Divider, Group, Paper, Text } from "@mantine/core";
 import { OTHERS_KEY, type DailySeriesPoint } from "../_lib/usage";
 
 const SERIES_COLORS = [
@@ -23,7 +14,6 @@ const SERIES_COLORS = [
   "var(--chart-7)",
   "var(--chart-8)",
 ];
-const TOP_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
 
 function formatUsd(value: number): string {
   const fractionDigits = value !== 0 && Math.abs(value) < 0.01 ? 4 : 2;
@@ -43,116 +33,96 @@ interface TooltipEntry {
   color?: string;
 }
 
+/**
+ * Kept rather than left to Mantine's default tooltip for one reason: the stack
+ * total. On a stacked cost chart the per-series numbers are not the question
+ * anyone is asking — "what did that day cost" is — and the default renders the
+ * segments only.
+ */
 function ChartTooltip({
-  active,
-  payload,
   label,
+  payload,
 }: {
-  active?: boolean;
-  payload?: TooltipEntry[];
-  label?: string | number;
+  label?: React.ReactNode;
+  payload?: readonly unknown[];
 }) {
-  if (!active || !payload || payload.length === 0) {
+  if (!payload || payload.length === 0) {
     return null;
   }
-  const entries = payload.filter((entry) => typeof entry.value === "number" && entry.value > 0);
+  const entries = (payload as readonly TooltipEntry[]).filter(
+    (entry) => typeof entry.value === "number" && entry.value > 0,
+  );
+  if (entries.length === 0) {
+    return null;
+  }
   const total = entries.reduce((sum, entry) => sum + (entry.value as number), 0);
+
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-      <p className="mb-1 font-medium">{label}</p>
+    <Paper withBorder shadow="md" radius="md" px="sm" py="xs" fz="xs">
+      <Text fz="xs" fw={500} mb={4}>
+        {label}
+      </Text>
       {entries.map((entry, index) => (
-        <p key={index} className="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-300">
-          <span
-            className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-            style={{ backgroundColor: entry.color }}
+        <Group key={index} gap={6} wrap="nowrap">
+          <div
+            style={{
+              width: 10,
+              height: 10,
+              flexShrink: 0,
+              borderRadius: 2,
+              backgroundColor: entry.color,
+            }}
           />
-          <span className="max-w-56 truncate">{entry.name}</span>
-          <span className="ml-auto pl-3 tabular-nums">{formatUsd(entry.value as number)}</span>
-        </p>
+          <Text fz="xs" truncate maw={220}>
+            {entry.name}
+          </Text>
+          <Text fz="xs" ml="auto" pl="md" ff="monospace">
+            {formatUsd(entry.value as number)}
+          </Text>
+        </Group>
       ))}
       {entries.length > 1 && (
-        <p className="mt-1 flex items-center gap-1.5 border-t border-neutral-200 pt-1 font-medium dark:border-neutral-700">
-          <span className="inline-block h-2.5 w-2.5 shrink-0" />
-          <span>Total</span>
-          <span className="ml-auto pl-3 tabular-nums">{formatUsd(total)}</span>
-        </p>
+        <>
+          <Divider my={4} />
+          <Group gap={6} wrap="nowrap">
+            <div style={{ width: 10, flexShrink: 0 }} />
+            <Text fz="xs" fw={500}>
+              Total
+            </Text>
+            <Text fz="xs" fw={500} ml="auto" pl="md" ff="monospace">
+              {formatUsd(total)}
+            </Text>
+          </Group>
+        </>
       )}
-    </div>
+    </Paper>
   );
 }
 
 export function DailyCostChart({ data, keys }: { data: DailySeriesPoint[]; keys: string[] }) {
-  const colorOf = (key: string, index: number) =>
-    key === OTHERS_KEY ? "var(--chart-others)" : SERIES_COLORS[index % SERIES_COLORS.length];
-
-  // Only the topmost non-zero segment of each stack gets rounded corners.
-  const topKeyByDate = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const point of data) {
-      for (let i = keys.length - 1; i >= 0; i--) {
-        const key = keys[i];
-        if (key !== undefined && Number(point[key]) > 0) {
-          map.set(point.date, key);
-          break;
-        }
-      }
-    }
-    return map;
-  }, [data, keys]);
+  const series: ChartSeries[] = keys.map((key, index) => ({
+    name: key,
+    color: key === OTHERS_KEY ? "var(--chart-others)" : SERIES_COLORS[index % SERIES_COLORS.length],
+  }));
 
   return (
-    <div>
-      <ResponsiveContainer width="100%" height={288}>
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
-          <XAxis
-            dataKey="date"
-            tickFormatter={(value: string) => value.slice(5)}
-            tick={{ fill: "var(--chart-ink)", fontSize: 11 }}
-            axisLine={{ stroke: "var(--chart-grid)" }}
-            tickLine={false}
-            minTickGap={24}
-          />
-          <YAxis
-            tickFormatter={formatAxisUsd}
-            tick={{ fill: "var(--chart-ink)", fontSize: 11 }}
-            axisLine={false}
-            tickLine={false}
-            width={64}
-          />
-          <Tooltip content={<ChartTooltip />} cursor={{ fill: "var(--chart-cursor)" }} />
-          {keys.map((key, index) => (
-            <Bar
-              key={key}
-              dataKey={key}
-              stackId="cost"
-              fill={colorOf(key, index)}
-              stroke="var(--chart-surface)"
-              strokeWidth={1}
-              isAnimationActive={false}
-              shape={(props: React.ComponentProps<typeof Rectangle> & { payload?: DailySeriesPoint }) => (
-                <Rectangle
-                  {...props}
-                  radius={topKeyByDate.get(String(props.payload?.date)) === key ? TOP_RADIUS : 0}
-                />
-              )}
-            />
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
-      {keys.length > 1 && (
-        <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-300">
-          {keys.map((key, index) => (
-            <span key={key} className="flex items-center gap-1.5">
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-sm"
-                style={{ backgroundColor: colorOf(key, index) }}
-              />
-              <span className="max-w-48 truncate">{key}</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+    <BarChart
+      h={288}
+      data={data}
+      dataKey="date"
+      type="stacked"
+      series={series}
+      withLegend={keys.length > 1}
+      legendProps={{ verticalAlign: "bottom" }}
+      gridAxis="y"
+      withXAxis
+      withYAxis
+      xAxisProps={{ tickFormatter: (value: string) => value.slice(5), minTickGap: 24 }}
+      yAxisProps={{ tickFormatter: formatAxisUsd, width: 64 }}
+      valueFormatter={formatUsd}
+      tooltipProps={{ content: ChartTooltip }}
+      tooltipAnimationDuration={0}
+      barProps={{ isAnimationActive: false }}
+    />
   );
 }

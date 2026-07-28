@@ -1,15 +1,16 @@
-@import "tailwindcss";
-
-@custom-variant dark (&:where(.dark, .dark *));
-
-@theme {
-  --color-brand: oklch(0.59 0.2 259);
-  --color-brand-strong: oklch(0.51 0.22 263);
-}
+/*
+ * App styles that Mantine's theme cannot own. Imported after every
+ * `@mantine/*` stylesheet so these win where they overlap.
+ *
+ * Everything that used to live here and could be expressed as a component
+ * default now lives in `src/app/theme.ts` instead. What remains is the page
+ * backdrop, the chart palette (which Recharts reads as plain CSS values), and
+ * one animation.
+ */
 
 :root {
-  color-scheme: light;
-  --page-glow: color-mix(in oklab, var(--color-brand) 8%, transparent);
+  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 8%, transparent);
+
   /* Categorical chart palette — validated for CVD/contrast on the light surface. */
   --chart-1: #2a78d6;
   --chart-2: #eb6834;
@@ -26,9 +27,9 @@
   --chart-cursor: rgba(0, 0, 0, 0.06);
 }
 
-.dark {
-  color-scheme: dark;
-  --page-glow: color-mix(in oklab, var(--color-brand) 11%, transparent);
+[data-mantine-color-scheme="dark"] {
+  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 11%, transparent);
+
   /* Same hues re-stepped for the dark surface. */
   --chart-1: #3987e5;
   --chart-2: #d95926;
@@ -46,48 +47,21 @@
 }
 
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased selection:bg-brand/20;
   background-image: radial-gradient(circle at 50% -15rem, var(--page-glow), transparent 38rem);
   background-repeat: no-repeat;
+  background-attachment: fixed;
   min-width: 320px;
 }
 
-.dark body {
-  @apply bg-neutral-950 text-neutral-100;
-}
-
-button,
-a,
-input,
-textarea,
-select,
-summary {
-  @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
-}
-
-button:not(:disabled),
-select:not(:disabled),
-summary {
-  cursor: pointer;
-}
-
-input,
-textarea,
-select {
-  @apply transition-colors;
-}
-
-.scrollbar-none {
-  scrollbar-width: none;
-}
-
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
-}
-
 @keyframes trace-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .trace-cursor {
@@ -98,62 +72,4 @@ select {
   .trace-cursor {
     animation: none;
   }
-}
-
-/* Markdown rendering inside chat assistant bubbles. */
-.chat-markdown > :first-child {
-  margin-top: 0;
-}
-.chat-markdown > :last-child {
-  margin-bottom: 0;
-}
-.chat-markdown p,
-.chat-markdown ul,
-.chat-markdown ol,
-.chat-markdown pre,
-.chat-markdown blockquote,
-.chat-markdown table {
-  @apply my-2;
-}
-.chat-markdown h1,
-.chat-markdown h2 {
-  @apply mb-2 mt-3 text-base font-semibold;
-}
-.chat-markdown h3,
-.chat-markdown h4 {
-  @apply mb-2 mt-3 text-sm font-semibold;
-}
-.chat-markdown ul {
-  @apply list-disc pl-5;
-}
-.chat-markdown ol {
-  @apply list-decimal pl-5;
-}
-.chat-markdown li {
-  @apply my-0.5;
-}
-.chat-markdown a {
-  @apply text-brand underline;
-}
-.chat-markdown code {
-  @apply rounded bg-neutral-100 px-1 py-0.5 font-mono text-[13px] dark:bg-neutral-800;
-}
-.chat-markdown pre {
-  @apply whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 dark:bg-neutral-800;
-}
-.chat-markdown pre code {
-  @apply bg-transparent p-0;
-}
-.chat-markdown blockquote {
-  @apply border-l-2 border-neutral-300 pl-3 text-neutral-600 dark:border-neutral-700 dark:text-neutral-400;
-}
-.chat-markdown table {
-  @apply w-full border-collapse text-xs;
-}
-.chat-markdown th,
-.chat-markdown td {
-  @apply border border-neutral-200 px-2 py-1 dark:border-neutral-800;
-}
-.chat-markdown hr {
-  @apply my-3 border-neutral-200 dark:border-neutral-800;
 }

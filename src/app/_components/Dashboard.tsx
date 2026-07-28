@@ -2,6 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
+  Card,
+  Group,
+  Progress,
+  SegmentedControl,
+  SimpleGrid,
+  Stack,
+  Table,
+  Text,
+  Title,
+} from "@mantine/core";
+import {
   buildDailySeries,
   groupUsage,
   totalCalls,
@@ -20,6 +32,19 @@ function formatUsd(value: number, fractionDigits = 2): string {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   })}`;
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <Card>
+      <Text fz="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+        {label}
+      </Text>
+      <Text fz={28} fw={600} mt={4}>
+        {value}
+      </Text>
+    </Card>
+  );
 }
 
 export function Dashboard() {
@@ -73,10 +98,12 @@ export function Dashboard() {
   const maxCost = groups[0]?.cost ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end gap-4">
-        <h1 className="text-2xl font-semibold">Cost dashboard</h1>
-        <div className="ml-auto">
+    <Stack gap="lg">
+      <Group align="flex-end" gap="md" wrap="wrap">
+        <Title order={1} fz="h2">
+          Cost dashboard
+        </Title>
+        <Group ml="auto">
           <DateRangePicker
             value={{ from, to }}
             onChange={(range) => {
@@ -84,92 +111,96 @@ export function Dashboard() {
               setTo(range.to);
             }}
           />
-        </div>
-      </div>
+        </Group>
+      </Group>
 
       {error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/40">
+        <Alert color="red" variant="light">
           {error}
-        </p>
+        </Alert>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:max-w-md">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          <p className="text-xs uppercase tracking-wide text-neutral-500">Total cost</p>
-          <p className="mt-1 text-2xl font-semibold">{formatUsd(cost)}</p>
-        </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          <p className="text-xs uppercase tracking-wide text-neutral-500">Total calls</p>
-          <p className="mt-1 text-2xl font-semibold">{calls.toLocaleString()}</p>
-        </div>
-      </div>
+      <SimpleGrid cols={2} spacing="md" maw={420}>
+        <StatCard label="Total cost" value={formatUsd(cost)} />
+        <StatCard label="Total calls" value={calls.toLocaleString()} />
+      </SimpleGrid>
 
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-neutral-500">Group by</span>
-        <div className="flex gap-1">
-          {GROUP_OPTIONS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setGroupBy(option)}
-              className={`rounded-lg px-3 py-1 text-sm capitalize ${
-                groupBy === option
-                  ? "bg-brand text-white"
-                  : "border border-neutral-300 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-              }`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Group gap="sm">
+        <Text fz="sm" c="dimmed">
+          Group by
+        </Text>
+        <SegmentedControl
+          size="xs"
+          value={groupBy}
+          onChange={(value) => setGroupBy(value as GroupBy)}
+          data={GROUP_OPTIONS.map((option) => ({ value: option, label: option }))}
+        />
+      </Group>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-        <p className="mb-2 text-xs uppercase tracking-wide text-neutral-500">Daily cost</p>
+      <Card>
+        <Text fz="xs" tt="uppercase" c="dimmed" mb="xs" style={{ letterSpacing: "0.05em" }}>
+          Daily cost
+        </Text>
         {items.length === 0 ? (
-          <p className="py-6 text-sm text-neutral-500">
+          <Text fz="sm" c="dimmed" py="lg">
             {loading ? "Loading…" : "No usage in this range."}
-          </p>
+          </Text>
         ) : (
           <DailyCostChart data={daily.data} keys={daily.keys} />
         )}
-      </div>
+      </Card>
 
-      <div className="overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-neutral-200 bg-neutral-100 px-4 py-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900">
-          <span className="capitalize">{groupBy}</span>
-          <span className="text-right">Calls</span>
-          <span className="text-right">Cost</span>
-        </div>
-        {groups.length === 0 && !loading && (
-          <p className="px-4 py-6 text-sm text-neutral-500">No usage in this range.</p>
-        )}
-        {loading && groups.length === 0 && (
-          <p className="px-4 py-6 text-sm text-neutral-500">Loading…</p>
-        )}
-        {groups.map((group) => (
-          <div
-            key={group.key}
-            className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-neutral-100 px-4 py-2 last:border-b-0 dark:border-neutral-800/60"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{group.key}</p>
-              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
-                <div
-                  className="h-full rounded-full bg-brand"
-                  style={{ width: `${maxCost > 0 ? (group.cost / maxCost) * 100 : 0}%` }}
-                />
-              </div>
-            </div>
-            <span className="text-right text-sm tabular-nums text-neutral-500">
-              {group.calls.toLocaleString()}
-            </span>
-            <span className="text-right text-sm font-medium tabular-nums">
-              {formatUsd(group.cost, 4)}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
+      <Card padding={0}>
+        <Table verticalSpacing="xs" horizontalSpacing="md" layout="fixed">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th tt="capitalize">{groupBy}</Table.Th>
+              <Table.Th w={110} ta="right">
+                Calls
+              </Table.Th>
+              <Table.Th w={140} ta="right">
+                Cost
+              </Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {groups.length === 0 && (
+              <Table.Tr>
+                <Table.Td colSpan={3}>
+                  <Text fz="sm" c="dimmed" py="md">
+                    {loading ? "Loading…" : "No usage in this range."}
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            )}
+            {groups.map((group) => (
+              <Table.Tr key={group.key}>
+                <Table.Td>
+                  <Text fz="sm" fw={500} truncate>
+                    {group.key}
+                  </Text>
+                  <Progress
+                    mt={6}
+                    size="sm"
+                    value={maxCost > 0 ? (group.cost / maxCost) * 100 : 0}
+                    color="brand"
+                  />
+                </Table.Td>
+                <Table.Td ta="right">
+                  <Text fz="sm" c="dimmed" ff="monospace">
+                    {group.calls.toLocaleString()}
+                  </Text>
+                </Table.Td>
+                <Table.Td ta="right">
+                  <Text fz="sm" fw={500} ff="monospace">
+                    {formatUsd(group.cost, 4)}
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Card>
+    </Stack>
   );
 }

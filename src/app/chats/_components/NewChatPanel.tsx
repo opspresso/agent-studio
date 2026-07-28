@@ -9,7 +9,19 @@ import { EMPTY_TURN, type AgentProject, type LiveTurn } from "../_lib/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { LiveAssistant, MessageView } from "./parts";
 import { refreshChats } from "./ChatSidebar";
-import { roundedPrimaryClass } from "@/app/_components/buttonStyles";
+import {
+  ActionIcon,
+  Alert,
+  Box,
+  Flex,
+  Group,
+  ScrollArea,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+} from "@mantine/core";
+import { IconSend } from "@tabler/icons-react";
 
 export function NewChatPanel() {
   const router = useRouter();
@@ -98,29 +110,28 @@ export function NewChatPanel() {
 
   if (projectsLoaded && projects.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="max-w-md text-center text-sm text-neutral-500">
-          <p className="mb-2 text-base font-medium text-neutral-700 dark:text-neutral-200">
-            No agent projects yet
-          </p>
-          <p>
-            Chats run against an <span className="font-medium">agent</span> project. Create one from
-            Projects to start chatting.
-          </p>
-        </div>
-      </div>
+      <Flex h="100%" align="center" justify="center">
+        <Stack gap="xs" maw={420} ta="center">
+          <Text fw={500}>No agent projects yet</Text>
+          <Text fz="sm" c="dimmed">
+            Chats run against an <b>agent</b> project. Create one from Projects to start chatting.
+          </Text>
+        </Stack>
+      </Flex>
     );
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
+    <Flex direction="column" h="100%">
+      <ScrollArea style={{ flex: 1, minHeight: 0 }} pb="md">
         {sentMessage === null ? (
-          <div className="flex h-full items-center justify-center text-sm text-neutral-500">
-            Pick an agent project and send your first message.
-          </div>
+          <Flex h="100%" align="center" justify="center" py="xl">
+            <Text fz="sm" c="dimmed">
+              Pick an agent project and send your first message.
+            </Text>
+          </Flex>
         ) : (
-          <>
+          <Stack gap="sm">
             <MessageView
               message={{
                 chatId: "",
@@ -134,59 +145,67 @@ export function NewChatPanel() {
               }}
             />
             {live && <LiveAssistant turn={live} />}
-          </>
+          </Stack>
         )}
-      </div>
+      </ScrollArea>
 
       {error && (
-        <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40">
+        <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
           {error}
-        </p>
+        </Alert>
       )}
 
-      <div className="space-y-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-neutral-500">Project</label>
-          <select
-            value={projectName}
-            onChange={(event) => setProjectName(event.target.value)}
-            disabled={starting}
-            className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            {projects.map((project) => (
-              <option key={project.name} value={project.name}>
-                {project.displayName || project.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
-        <div className="flex items-end gap-2">
-          <AttachButton onPick={(files) => void addFiles(files)} disabled={starting} />
-          <textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void start();
-              }
-            }}
-            rows={1}
-            placeholder="Send your first message…"
-            disabled={starting}
-            className="max-h-40 min-h-[42px] flex-1 resize-y rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand dark:border-neutral-700 dark:bg-neutral-900"
-          />
-          <button
-            type="button"
-            onClick={() => void start()}
-            disabled={starting || (!message.trim() && attachments.length === 0) || !projectName}
-            className={roundedPrimaryClass}
-          >
-            Start
-          </button>
-        </div>
-      </div>
-    </div>
+      <Box pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
+        <Stack gap="xs">
+          <Group gap="xs" align="center">
+            <Text fz="xs" fw={500} c="dimmed">
+              Project
+            </Text>
+            <Select
+              value={projectName}
+              onChange={(value) => setProjectName(value ?? "")}
+              disabled={starting}
+              allowDeselect={false}
+              data={projects.map((project) => ({
+                value: project.name,
+                label: project.displayName || project.name,
+              }))}
+            />
+          </Group>
+          <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
+          <Group gap="xs" align="flex-end" wrap="nowrap">
+            <AttachButton onPick={(files) => void addFiles(files)} disabled={starting} />
+            <Textarea
+              value={message}
+              onChange={(event) => setMessage(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void start();
+                }
+              }}
+              autosize
+              minRows={1}
+              maxRows={8}
+              radius="xl"
+              placeholder="Send your first message…"
+              disabled={starting}
+              style={{ flex: 1 }}
+            />
+            <ActionIcon
+              variant="filled"
+              size="input-sm"
+              radius="xl"
+              onClick={() => void start()}
+              loading={starting}
+              disabled={(!message.trim() && attachments.length === 0) || !projectName}
+              aria-label="Start chat"
+            >
+              <IconSend size={18} />
+            </ActionIcon>
+          </Group>
+        </Stack>
+      </Box>
+    </Flex>
   );
 }

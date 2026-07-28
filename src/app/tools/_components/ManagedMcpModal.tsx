@@ -11,15 +11,27 @@
  */
 
 import { useState } from "react";
-import { Modal } from "@/app/_components/Modal";
-import { buttonClass } from "@/app/_components/buttonStyles";
-import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
+import {
+  Alert,
+  Button,
+  Code,
+  Group,
+  Modal,
+  NumberInput,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
 import { createManagedMcp } from "../api";
 
+
 export function ManagedMcpModal({
+  opened,
   onClose,
   onCreated,
 }: {
+  opened: boolean;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -56,96 +68,83 @@ export function ManagedMcpModal({
   }
 
   return (
-    <Modal
-      title="Run a managed MCP server"
-      onClose={onClose}
-      size="md"
-      footer={
-        <>
-          <p className="mr-auto text-xs text-neutral-400">
-            Starts a container on this host, reachable only from it.
-          </p>
-          <button type="button" onClick={onClose} className={buttonClass("secondary")}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="managed-mcp"
-            disabled={submitting || !name || !image}
-            className={buttonClass("primary")}
-          >
-            {submitting ? "Starting…" : "Start"}
-          </button>
-        </>
-      }
-    >
-      <form id="managed-mcp" onSubmit={submit} className="space-y-4">
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-        <label className="block text-sm">
-          Name
-          <input
+    <Modal opened={opened} onClose={onClose} title="Run a managed MCP server" size="lg">
+      <form onSubmit={submit}>
+        <Stack gap="md">
+          {error && (
+            <Alert color="red" variant="light">
+              {error}
+            </Alert>
+          )}
+          <TextInput
+            label="Name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(e.currentTarget.value)}
             placeholder="image-fetch"
             pattern="[a-z0-9][a-z0-9-]*"
             required
-            className={fieldClass}
+            description="Also the container's name, so the two stay findable together."
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            Also the container&apos;s name, so the two stay findable together.
-          </span>
-        </label>
-        <label className="block text-sm">
-          Image
-          <input
+          <TextInput
+            label="Image"
             value={image}
-            onChange={(e) => setImage(e.target.value)}
+            onChange={(e) => setImage(e.currentTarget.value)}
             placeholder="…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1"
             required
-            className={monoFieldClass}
+            description="Must come from this account's registry."
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            styles={monoInput}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            Must come from this account&apos;s registry.
-          </span>
-        </label>
-        <label className="block text-sm">
-          Container port
-          <input
-            type="number"
+          <NumberInput
+            label="Container port"
             value={containerPort}
-            onChange={(e) => setContainerPort(e.target.value)}
+            onChange={(value) => setContainerPort(String(value))}
             min={1}
             max={65535}
             required
-            className={fieldClass}
+            description={
+              <>
+                What it listens on inside itself. The deployed runtime shares this app&apos;s
+                network namespace rather than mapping ports, so the container is told which port
+                to bind and has to honour <Code>PORT</Code>.
+              </>
+            }
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            What it listens on inside itself. The deployed runtime shares this app&apos;s
-            network namespace rather than mapping ports, so the container is told which
-            port to bind and has to honour <code>PORT</code>.
-          </span>
-        </label>
-        <label className="block text-sm">
-          Environment
-          <input
+          <TextInput
+            label="Environment"
             value={envRefs}
-            onChange={(e) => setEnvRefs(e.target.value)}
+            onChange={(e) => setEnvRefs(e.currentTarget.value)}
             placeholder="/env/prod/mcp-image-fetch"
-            className={monoFieldClass}
+            description="SSM parameter names, not values — the secrets never pass through here."
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            styles={monoInput}
           />
-          <span className="mt-1 block text-xs text-neutral-400">
-            SSM parameter names, not values — the secrets never pass through here.
-          </span>
-        </label>
-        <label className="block text-sm">
-          Description
-          <input
+          <TextInput
+            label="Description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => setDescription(e.currentTarget.value)}
             placeholder="Fetches an image URL and returns its bytes"
-            className={fieldClass}
           />
-        </label>
+
+          <Group
+            justify="flex-end"
+            gap="sm"
+            pt="sm"
+            style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
+          >
+            <Text fz="xs" c="dimmed" mr="auto">
+              Starts a container on this host, reachable only from it.
+            </Text>
+            <Button variant="default" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={submitting} disabled={!name || !image}>
+              Start
+            </Button>
+          </Group>
+        </Stack>
       </form>
     </Modal>
   );

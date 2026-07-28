@@ -1,6 +1,19 @@
+import {
+  Card,
+  Grid,
+  GridCol,
+  Group,
+  Paper,
+  SimpleGrid,
+  Stack,
+  Text,
+  Title,
+  VisuallyHidden,
+} from "@mantine/core";
 import { SignInButton } from "@/components/SignInButton";
 import { getSessionUser } from "@/lib/session";
 import { Dashboard } from "./_components/Dashboard";
+import classes from "./page.module.css";
 
 const DOMAINS = [
   {
@@ -58,88 +71,115 @@ export default async function Home() {
   }
 
   return (
-    <div className="py-10">
-      <section className="grid items-center gap-10 lg:grid-cols-2">
-        <div className="min-w-0">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-brand">
+    <Stack gap={64} py="xl">
+      {/*
+        `GridCol`, not `Grid.Col`: this is a server component, and Mantine's
+        static sub-components do not survive the RSC boundary — the dotted form
+        arrives as `undefined` and the page 500s at render.
+      */}
+      <Grid gap={40} align="center">
+        <GridCol span={{ base: 12, lg: 6 }}>
+          <Text ff="monospace" fz="xs" tt="uppercase" c="brand" style={{ letterSpacing: "0.2em" }}>
             prompt → publish → call
-          </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+          </Text>
+          <Title order={1} mt="md" fz={{ base: 36, md: 48 }} lh={1.15}>
             One studio for prompts, agents, and what they cost.
-          </h1>
-          <p className="mt-5 max-w-xl text-base leading-relaxed text-neutral-600 dark:text-neutral-300">
-            Agent Studio is where a prompt becomes a published version, a version becomes an
-            agent with tools, and every call lands in a cost report. Built for teams that run
-            LLM workloads in production.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-4">
+          </Title>
+          <Text mt="lg" maw={560} c="dimmed" lh={1.6}>
+            Agent Studio is where a prompt becomes a published version, a version becomes an agent
+            with tools, and every call lands in a cost report. Built for teams that run LLM
+            workloads in production.
+          </Text>
+          <Group mt="xl" gap="md" wrap="wrap">
             <SignInButton />
-            <span className="text-sm text-neutral-500 dark:text-neutral-400">
+            <Text fz="sm" c="dimmed">
               Sign-in required for every workspace.
-            </span>
-          </div>
-        </div>
+            </Text>
+          </Group>
+        </GridCol>
 
-        <figure
-          aria-label="Example agent run stream"
-          className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900"
-        >
-          <figcaption className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-            <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
-              agent run · text/event-stream
-            </span>
-            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              live
-            </span>
-          </figcaption>
-          <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-6">
-            {TRACE_LINES.map((line, i) => (
-              <div
-                key={i}
-                className={
-                  line.kind === "tool"
-                    ? "text-brand"
-                    : line.kind === "author"
-                      ? "text-amber-600 dark:text-amber-400"
-                      : line.kind === "meta"
-                        ? "text-neutral-400 dark:text-neutral-500"
-                        : "text-neutral-700 dark:text-neutral-300"
-                }
-              >
-                {line.text}
-              </div>
-            ))}
-            <div className="text-neutral-400 dark:text-neutral-500">
-              data: [DONE]
-              <span className="trace-cursor ml-1 inline-block h-3 w-1.5 translate-y-0.5 bg-brand" />
-            </div>
-          </pre>
-        </figure>
-      </section>
-
-      <section className="mt-16">
-        <h2 className="sr-only">What Agent Studio covers</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {DOMAINS.map((domain) => (
-            <article
-              key={domain.label}
-              className="rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900"
+        <GridCol span={{ base: 12, lg: 6 }}>
+          <Paper
+            component="figure"
+            withBorder
+            radius="md"
+            m={0}
+            style={{ overflow: "hidden" }}
+            aria-label="Example agent run stream"
+          >
+            <Group
+              component="figcaption"
+              justify="space-between"
+              px="md"
+              py="xs"
+              style={{
+                borderBottom: "1px solid var(--mantine-color-default-border)",
+              }}
             >
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-neutral-400 dark:text-neutral-500">
+              <Text ff="monospace" fz="xs" c="dimmed">
+                agent run · text/event-stream
+              </Text>
+              <Text
+                ff="monospace"
+                fz={10}
+                tt="uppercase"
+                c="teal"
+                px={8}
+                py={2}
+                style={{
+                  letterSpacing: "0.1em",
+                  borderRadius: "var(--mantine-radius-xl)",
+                  backgroundColor: "var(--mantine-color-teal-light)",
+                }}
+              >
+                live
+              </Text>
+            </Group>
+            <pre className={classes.trace}>
+              {TRACE_LINES.map((line, i) => (
+                <div key={i} className={classes[line.kind]}>
+                  {line.text}
+                </div>
+              ))}
+              <div className={classes.meta}>
+                data: [DONE]
+                <span className={`trace-cursor ${classes.cursor}`} />
+              </div>
+            </pre>
+          </Paper>
+        </GridCol>
+      </Grid>
+
+      <section>
+        <VisuallyHidden>
+          <Title order={2}>What Agent Studio covers</Title>
+        </VisuallyHidden>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+          {DOMAINS.map((domain) => (
+            <Card key={domain.label} component="article" padding="lg">
+              <Text
+                ff="monospace"
+                fz={10}
+                tt="uppercase"
+                c="dimmed"
+                style={{ letterSpacing: "0.2em" }}
+              >
                 {domain.label}
-              </p>
-              <h3 className="mt-2 text-sm font-semibold">{domain.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+              </Text>
+              <Text fz="sm" fw={600} mt="xs">
+                {domain.title}
+              </Text>
+              <Text fz="sm" c="dimmed" mt={6} lh={1.6}>
                 {domain.body}
-              </p>
-            </article>
+              </Text>
+            </Card>
           ))}
-        </div>
+        </SimpleGrid>
       </section>
 
-      <p className="mt-12 text-center text-xs text-neutral-400 dark:text-neutral-500">
+      <Text ta="center" fz="xs" c="dimmed">
         Next.js · DynamoDB · one OpenAI-compatible channel for every model
-      </p>
-    </div>
+      </Text>
+    </Stack>
   );
 }
