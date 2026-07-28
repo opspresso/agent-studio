@@ -13,7 +13,7 @@ below is the map.
 
 - Node.js 24, pnpm 11 (`packageManager` pinned)
 - Next.js 16 App Router, React 19, TypeScript strict
-- Tailwind CSS v4 (CSS-first config via `@import "tailwindcss"` — no tailwind.config file)
+- Mantine 9 (`@mantine/core` + hooks/form/notifications/charts, `@tabler/icons-react`)
 - Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)
 - AWS DynamoDB Single Table Design
 
@@ -566,14 +566,21 @@ corrupts. Counters are per-process and name no project, user, or model, which is
 unknown ids are counted rather than labelled.
 
 Projects are a shared catalog: any signed-in user may read and run any
-project, but mutations (update/delete/publish, version create/update, Slack config) are
-owner-only — `assertProjectOwner` returns 403 for non-owners. Two project sub-resources
-that expose other users' data are owner-only *reads* as well: traces (runtime
-inputs/outputs) and the Slack config (masked bot token / signing secret + manifest).
-MCP/agent/skill registries are shared: reads are open to any signed-in user, while
-mutations go through
-`withAdminAuth` and are restricted to the effective admin list when set (unset allows any
-signed-in user).
+project, but mutations (update/delete/publish, version create/update, Slack config) go
+through `assertProjectOwner`, which returns 403 for anyone who is neither the owner nor a
+configured admin. Two project sub-resources that expose other users' data are gated the
+same way on *read*: traces (runtime inputs/outputs) and the Slack config (masked bot token
+/ signing secret + manifest). MCP/agent/skill registries are shared: reads are open to any
+signed-in user, while mutations go through `withAdminAuth` and are restricted to the
+effective admin list when set (unset allows any signed-in user).
+
+The admin override is checked inside `assertProjectOwner` rather than passed in by its
+twenty-odd callers: the rule is "owner or admin", and a flag one caller forgot to thread
+would silently narrow it back to owner-only on that path alone. It uses
+`isConfiguredAdmin`, not the `isAdminEmail` that `withAdminAuth` uses — the two agree
+except when no admin list is configured, where the registry check stays open ("no
+restriction") and the ownership override closes. Treating "no list" as "everyone is an
+admin" here would hand every signed-in user write access to every project.
 
 Runtime settings: the admin-only `/settings` page stores overrides for selected env vars
 (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
@@ -629,10 +636,17 @@ there is no session and otherwise passes the `SessionUser` as the handler's firs
 /settings             admin-only runtime env-var overrides
 ```
 
-UI text is in English. Tailwind v4 utilities provide the structural styling. The header
-offers system/light/dark themes backed by a root class and browser-local preference;
-system mode follows `prefers-color-scheme`. Inline styles are limited to runtime-derived
-chart colors and bar widths.
+UI text is in English. Mantine components provide the structure and the styling; the
+theme in `src/app/theme.ts` is the single owner of the brand palette and of the component
+defaults that used to be hand-written class constants, so a button or input is never
+styled at the call site. Anything Mantine cannot express — the chart palette, the code
+block's syntax colours, the chat bubble's edges — lives in a CSS module or in
+`globals.css` and reads Mantine's CSS variables, never a hardcoded neutral.
+
+The header offers system/light/dark themes through `useMantineColorScheme`, with
+`ColorSchemeScript` applying the stored preference before first paint. The control renders
+the default until mount: the preference exists only in the browser, so showing it during
+SSR would be a hydration mismatch.
 
 ## Glossary
 

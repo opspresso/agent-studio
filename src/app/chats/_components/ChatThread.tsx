@@ -7,6 +7,7 @@ import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imag
 import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
 import { Composer, GeneratedImage, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
+import { Alert, Badge, Box, Flex, Group, ScrollArea, Stack, Text } from "@mantine/core";
 
 export function ChatThread({ chatId }: { chatId: string }) {
   const [chat, setChat] = useState<Chat | null>(null);
@@ -94,60 +95,74 @@ export function ChatThread({ chatId }: { chatId: string }) {
 
   if (status === "not-found") {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-neutral-500">
-        Chat not found.
-      </div>
+      <Flex h="100%" align="center" justify="center">
+        <Text fz="sm" c="dimmed">
+          Chat not found.
+        </Text>
+      </Flex>
     );
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <Flex direction="column" h="100%">
       {chat?.projectName && (
-        <div className="mb-3 flex items-center gap-2 border-b border-neutral-200 pb-2 text-xs text-neutral-500 dark:border-neutral-800">
-          <span className="rounded-full bg-brand/10 px-2 py-0.5 font-medium text-brand">
+        <Group
+          gap="xs"
+          pb="xs"
+          mb="sm"
+          style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
+        >
+          <Badge color="brand" radius="xl">
             {chat.projectName}
-          </span>
-        </div>
+          </Badge>
+        </Group>
       )}
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-        {status === "loading" && (
-          <p className="text-sm text-neutral-500">Loading…</p>
-        )}
-        {messages.map((message) => (
-          <Fragment key={`${message.seq}`}>
-            <MessageView message={message} />
-            {(imagesBySeq[message.seq] ?? []).map((image, index) => (
-              <div key={`image-${message.seq}-${index}`} className="flex justify-start">
-                <GeneratedImage src={liveImageSrc(image)} alt={image.prompt ?? "Generated image"} />
-              </div>
-            ))}
-          </Fragment>
-        ))}
-        {pendingUser !== null && (
-          <MessageView
-            message={{
-              chatId,
-              seq: -1,
-              role: "user",
-              content: pendingUser.content,
-              images: pendingUser.attachments.map((attachment) => ({
-                url: attachmentSrc(attachment),
-              })),
-              createdAt: "",
-            }}
-          />
-        )}
-        {live && <LiveAssistant turn={live} />}
-        <div ref={bottomRef} />
-      </div>
+      <ScrollArea style={{ flex: 1, minHeight: 0 }} pb="md">
+        <Stack gap="sm">
+          {status === "loading" && (
+            <Text fz="sm" c="dimmed">
+              Loading…
+            </Text>
+          )}
+          {messages.map((message) => (
+            <Fragment key={`${message.seq}`}>
+              <MessageView message={message} />
+              {(imagesBySeq[message.seq] ?? []).map((image, index) => (
+                <Group key={`image-${message.seq}-${index}`} justify="flex-start">
+                  <GeneratedImage
+                    src={liveImageSrc(image)}
+                    alt={image.prompt ?? "Generated image"}
+                  />
+                </Group>
+              ))}
+            </Fragment>
+          ))}
+          {pendingUser !== null && (
+            <MessageView
+              message={{
+                chatId,
+                seq: -1,
+                role: "user",
+                content: pendingUser.content,
+                images: pendingUser.attachments.map((attachment) => ({
+                  url: attachmentSrc(attachment),
+                })),
+                createdAt: "",
+              }}
+            />
+          )}
+          {live && <LiveAssistant turn={live} />}
+          <div ref={bottomRef} />
+        </Stack>
+      </ScrollArea>
       {error && (
-        <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40">
+        <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
           {error}
-        </p>
+        </Alert>
       )}
-      <div className="border-t border-neutral-200 pt-3 dark:border-neutral-800">
+      <Box pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
         <Composer onSend={handleSend} disabled={sending} />
-      </div>
-    </div>
+      </Box>
+    </Flex>
   );
 }

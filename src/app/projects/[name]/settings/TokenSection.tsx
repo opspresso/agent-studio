@@ -10,7 +10,7 @@ import {
   revokeProjectToken,
   type ProjectTokenStatus,
 } from "../../lib/api";
-import { buttonClass } from "@/app/_components/buttonStyles";
+import { Alert, Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
 
 export function TokenSection({ projectName }: { projectName: string }) {
   const [status, setStatus] = useState<ProjectTokenStatus | null>(null);
@@ -81,115 +81,93 @@ export function TokenSection({ projectName }: { projectName: string }) {
   }
 
   if (!status) {
-    return error ? <p className="text-sm text-red-600">{error}</p> : null;
+    return error ? (
+      <Text fz="sm" c="red">
+        {error}
+      </Text>
+    ) : null;
   }
 
   return (
     <CollapsibleSection
       title="API token"
       badge={
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs ${
-            status.configured
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "bg-neutral-200 text-neutral-500 dark:bg-neutral-800"
-          }`}
-        >
+        <Badge color={status.configured ? "teal" : "gray"} radius="xl">
           {status.configured ? "set" : "none"}
-        </span>
+        </Badge>
       }
     >
-      <p className="text-xs leading-relaxed text-neutral-500">
-        A token lets external callers run this project&apos;s execution APIs (predict, chat
-        completions, agent) with an <code className="font-mono">Authorization: Bearer</code> header
-        instead of a browser session. It is scoped to this project and stored encrypted, so you
-        can read it back here.
-      </p>
+      <Stack gap="sm">
+        <Text fz="xs" c="dimmed" lh={1.6}>
+          A token lets external callers run this project&apos;s execution APIs (predict, chat
+          completions, agent) with an <Code>Authorization: Bearer</Code> header instead of a
+          browser session. It is scoped to this project and stored encrypted, so you can read it
+          back here.
+        </Text>
 
-      {rawToken && (
-        <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1.5 font-mono text-xs dark:bg-neutral-900">
-              {rawToken}
-            </code>
-            <CopyButton text={rawToken} />
-            <button
-              type="button"
-              onClick={() => setRawToken(null)}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-            >
-              Hide
-            </button>
-          </div>
-          <p className="text-xs text-amber-700 dark:text-amber-400">
-            {freshlyIssued
-              ? "This token is now live; the previous one stopped working."
-              : "Anyone holding this token can run this project's APIs."}
-          </p>
-        </div>
-      )}
-
-      {status.configured && !rawToken && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            {status.masked && (
-              <code className="min-w-0 flex-1 truncate rounded bg-neutral-100 px-2 py-1.5 font-mono text-xs dark:bg-neutral-800">
-                {status.masked}
-              </code>
-            )}
-            {status.revealable !== false && (
-              <button
-                type="button"
-                onClick={reveal}
-                disabled={busy}
-                className={buttonClass("secondary", "xs")}
-              >
-                Reveal
-              </button>
-            )}
-          </div>
-          <p className="text-sm text-neutral-500">
-            A token is set{status.createdAt ? ` (created ${status.createdAt.slice(0, 10)})` : ""}.
-            {status.revealable === false
-              ? " It was issued before tokens could be shown again, so only its hash is stored — regenerate to get one you can read back."
-              : ""}
-          </p>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {status.configured ? (
-          <>
-            <button
-              type="button"
-              onClick={() => generate(true)}
-              disabled={busy}
-              className={buttonClass("secondary", "sm")}
-            >
-              {busy ? "Working…" : "Regenerate"}
-            </button>
-            <button
-              type="button"
-              onClick={revoke}
-              disabled={busy}
-              className={buttonClass("danger", "sm")}
-            >
-              Revoke
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => generate(false)}
-            disabled={busy}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
-          >
-            {busy ? "Working…" : "Generate token"}
-          </button>
+        {rawToken && (
+          <Alert color="yellow" variant="light" p="sm">
+            <Group gap="xs" wrap="nowrap">
+              <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{rawToken}</Code>
+              <CopyButton text={rawToken} />
+              <Button variant="default" size="compact-xs" onClick={() => setRawToken(null)}>
+                Hide
+              </Button>
+            </Group>
+            <Text fz="xs" mt={4}>
+              {freshlyIssued
+                ? "This token is now live; the previous one stopped working."
+                : "Anyone holding this token can run this project's APIs."}
+            </Text>
+          </Alert>
         )}
-      </div>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {status.configured && !rawToken && (
+          <Stack gap={4}>
+            <Group gap="xs" wrap="nowrap">
+              {status.masked && (
+                <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                  {status.masked}
+                </Code>
+              )}
+              {status.revealable !== false && (
+                <Button variant="default" size="compact-xs" onClick={reveal} disabled={busy}>
+                  Reveal
+                </Button>
+              )}
+            </Group>
+            <Text fz="sm" c="dimmed">
+              A token is set{status.createdAt ? ` (created ${status.createdAt.slice(0, 10)})` : ""}.
+              {status.revealable === false
+                ? " It was issued before tokens could be shown again, so only its hash is stored — regenerate to get one you can read back."
+                : ""}
+            </Text>
+          </Stack>
+        )}
+
+        <Group gap="xs" wrap="wrap">
+          {status.configured ? (
+            <>
+              <Button variant="default" onClick={() => generate(true)} loading={busy}>
+                Regenerate
+              </Button>
+              <Button variant="default" color="red" onClick={revoke} disabled={busy}>
+                Revoke
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => generate(false)} loading={busy}>
+              Generate token
+            </Button>
+          )}
+        </Group>
+
+        {error && (
+          <Text fz="sm" c="red">
+            {error}
+          </Text>
+        )}
+      </Stack>
     </CollapsibleSection>
   );
 }

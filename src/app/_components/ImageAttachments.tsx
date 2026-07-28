@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { ActionIcon, Box, FileButton, Group, Image, Stack, Text } from "@mantine/core";
+import { IconPaperclip, IconX } from "@tabler/icons-react";
 import {
   ACCEPTED_IMAGE_TYPES,
   attachmentSrc,
@@ -18,14 +20,14 @@ export function useAttachments() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
 
-  const addFiles = useCallback(async (files: FileList | null) => {
-    if (!files || files.length === 0) {
+  const addFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) {
       return;
     }
     setAttachError(null);
     const added: Attachment[] = [];
     const failures: string[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       try {
         added.push(await readAttachment(file));
       } catch (error) {
@@ -72,68 +74,78 @@ export function AttachmentBar({
     return null;
   }
   return (
-    <div className="mb-2 space-y-1">
+    <Stack gap={4} mb="xs">
       {attachments.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <Group gap="xs">
           {attachments.map((attachment, index) => (
-            <div key={`${attachment.name}-${index}`} className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+            <Box key={`${attachment.name}-${index}`} pos="relative">
+              <Image
                 src={attachmentSrc(attachment)}
                 alt={attachment.name}
-                className="h-16 w-16 rounded-md border border-neutral-200 object-cover dark:border-neutral-800"
+                w={64}
+                h={64}
+                radius="md"
+                fit="cover"
               />
-              <button
-                type="button"
+              <ActionIcon
+                variant="filled"
+                color="dark"
+                radius="xl"
+                size="xs"
+                pos="absolute"
+                top={-6}
+                right={-6}
                 onClick={() => onRemove(index)}
                 aria-label={`Remove ${attachment.name}`}
-                className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-neutral-800 text-xs leading-5 text-white hover:bg-neutral-700"
               >
-                ×
-              </button>
-            </div>
+                <IconX size={12} />
+              </ActionIcon>
+            </Box>
           ))}
-        </div>
+        </Group>
       )}
-      {attachError && <p className="text-xs text-red-600">{attachError}</p>}
-    </div>
+      {attachError && (
+        <Text fz="xs" c="red">
+          {attachError}
+        </Text>
+      )}
+    </Stack>
   );
 }
 
 export function AttachButton({
   onPick,
   disabled,
-  label,
 }: {
-  onPick: (files: FileList | null) => void;
+  onPick: (files: File[]) => void;
   disabled?: boolean;
-  label?: string;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Clears the underlying input after each pick, so choosing the same file
+  // again still fires a change event.
+  const reset = useRef<() => void>(null);
+
   return (
-    <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept={ACCEPTED_IMAGE_TYPES.join(",")}
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          onPick(event.target.files);
-          // Reset so picking the same file again still fires a change event.
-          event.target.value = "";
-        }}
-      />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
-        aria-label="Attach images"
-        title="Attach images"
-        className="rounded-xl border border-neutral-300 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-      >
-        {label ?? "📎"}
-      </button>
-    </>
+    <FileButton
+      resetRef={reset}
+      onChange={(files) => {
+        onPick(files);
+        reset.current?.();
+      }}
+      accept={ACCEPTED_IMAGE_TYPES.join(",")}
+      multiple
+    >
+      {(props) => (
+        <ActionIcon
+          {...props}
+          variant="default"
+          size="input-sm"
+          disabled={disabled}
+          aria-label="Attach images"
+          title="Attach images"
+        >
+          <IconPaperclip size={18} />
+        </ActionIcon>
+      )}
+    </FileButton>
   );
 }

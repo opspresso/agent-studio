@@ -1,5 +1,7 @@
 "use client";
-import { controlClass } from "./formStyles";
+
+import { ActionIcon, Anchor, Badge, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import { IconX } from "@tabler/icons-react";
 
 export interface HeaderRow {
   key: string;
@@ -65,57 +67,58 @@ export function HeaderRowsEditor({
   }
 
   return (
-    <div className="space-y-2">
-      {caption !== null && <span className="text-sm font-medium">{caption}</span>}
-      {rows.length === 0 && <p className="text-xs text-neutral-400">{emptyHint}</p>}
+    <Stack gap="xs">
+      {caption !== null && (
+        <Text fz="sm" fw={500}>
+          {caption}
+        </Text>
+      )}
+      {rows.length === 0 && (
+        <Text fz="xs" c="dimmed">
+          {emptyHint}
+        </Text>
+      )}
       {rows.map((row, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <input
+        <Group key={index} gap="xs" wrap="nowrap" align="center">
+          <TextInput
             value={row.key}
-            onChange={(e) => update(index, { key: e.target.value })}
+            onChange={(event) => update(index, { key: event.currentTarget.value })}
             placeholder="Header-Name"
-            className={`w-2/5 ${controlClass}`}
+            w="40%"
           />
-          <input
+          <TextInput
             value={row.remove ? "" : row.value}
-            onChange={(e) => update(index, { value: e.target.value })}
+            onChange={(event) => update(index, { value: event.currentTarget.value })}
             disabled={row.remove === true}
             placeholder={row.remove ? "(removed)" : "value"}
-            className={`flex-1 ${controlClass} disabled:opacity-50`}
+            style={{ flex: 1 }}
           />
           {allowRemove ? (
-            <label
-              className="flex shrink-0 items-center gap-1 text-xs text-neutral-500"
+            <Checkbox
+              size="xs"
+              label="remove"
               title="Drop this header from the inherited defaults"
-            >
-              <input
-                type="checkbox"
-                checked={row.remove === true}
-                onChange={(e) => update(index, { remove: e.target.checked })}
-              />
-              remove
-            </label>
+              checked={row.remove === true}
+              onChange={(event) => update(index, { remove: event.currentTarget.checked })}
+              styles={{ label: { fontSize: "var(--mantine-font-size-xs)" } }}
+            />
           ) : (
-            <span
-              title="Stored encrypted at rest"
-              className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
-            >
+            <Badge color="yellow" title="Stored encrypted at rest">
               secret
-            </span>
+            </Badge>
           )}
-          <button
-            type="button"
+          <ActionIcon
+            variant="default"
             onClick={() => remove(index)}
             aria-label="Delete header row"
-            className="rounded-md border border-neutral-300 px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
           >
-            ✕
-          </button>
-        </div>
+            <IconX size={16} />
+          </ActionIcon>
+        </Group>
       ))}
-      <button type="button" onClick={add} className="text-sm text-brand hover:text-brand-strong">
+      <Anchor component="button" type="button" fz="sm" onClick={add} style={{ alignSelf: "start" }}>
         {addLabel}
-      </button>
-    </div>
+      </Anchor>
+    </Stack>
   );
 }

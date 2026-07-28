@@ -18,7 +18,8 @@ import {
   type McpConnectionView,
 } from "../../lib/api";
 import { getMcp, type McpServer } from "@/app/tools/api";
-import { controlClass, monoControlClass } from "@/app/_components/formStyles";
+import { Button, Group, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
 
 const STATUS_LABEL: Record<McpConnectionView["status"], string> = {
   connected: "Connected",
@@ -26,10 +27,10 @@ const STATUS_LABEL: Record<McpConnectionView["status"], string> = {
   needs_reauth: "Reconnect required",
 };
 
-const STATUS_CLASS: Record<McpConnectionView["status"], string> = {
-  connected: "text-emerald-600 dark:text-emerald-400",
-  needs_auth: "text-neutral-500",
-  needs_reauth: "text-amber-600 dark:text-amber-400",
+const STATUS_COLOR: Record<McpConnectionView["status"], string> = {
+  connected: "teal",
+  needs_auth: "dimmed",
+  needs_reauth: "orange",
 };
 
 export function McpConnectionCard({
@@ -120,22 +121,26 @@ export function McpConnectionCard({
   }
 
   if (!loaded) {
-    return <p className="text-xs text-neutral-500">Loading…</p>;
+    return (
+      <Text fz="xs" c="dimmed">
+        Loading…
+      </Text>
+    );
   }
   if (!server) {
     // Nothing was read about the server, so nothing may be claimed about it.
     return (
-      <p className="text-xs text-red-600 dark:text-red-400">
+      <Text fz="xs" c="red">
         {error ?? "Could not read this server's registry entry."}
-      </p>
+      </Text>
     );
   }
   if (!server.auth) {
     return (
-      <p className="text-xs text-neutral-500">
+      <Text fz="xs" c="dimmed">
         This server does not require authorization. Whatever credentials it needs come from the
         registry entry&apos;s own headers, plus any override above.
-      </p>
+      </Text>
     );
   }
 
@@ -144,53 +149,60 @@ export function McpConnectionCard({
   const needsManualClient = !canRegister && !connection?.clientId;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-mono text-xs text-neutral-500">{server.auth.resource}</p>
-        <span className={`text-xs ${STATUS_CLASS[status]}`}>{STATUS_LABEL[status]}</span>
-      </div>
+    <Stack gap="sm">
+      <Group justify="space-between" gap="xs" wrap="nowrap">
+        <Text ff="monospace" fz="xs" c="dimmed" truncate>
+          {server.auth.resource}
+        </Text>
+        <Text fz="xs" c={STATUS_COLOR[status]} style={{ flexShrink: 0 }}>
+          {STATUS_LABEL[status]}
+        </Text>
+      </Group>
 
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <Text fz="xs" c="red">
+          {error}
+        </Text>
+      )}
 
       {needsManualClient && (
-        <p className="text-xs text-neutral-500">
-          This provider does not offer dynamic registration. Register an app with it, then save
-          its client ID and secret here.
-        </p>
+        <Text fz="xs" c="dimmed">
+          This provider does not offer dynamic registration. Register an app with it, then save its
+          client ID and secret here.
+        </Text>
       )}
 
       {!canRegister && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <input
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+          <TextInput
             value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
+            onChange={(e) => setClientId(e.currentTarget.value)}
             placeholder="Client ID"
-            className={controlClass}
           />
-          <input
+          <TextInput
             value={clientSecret}
-            onChange={(e) => setClientSecret(e.target.value)}
+            onChange={(e) => setClientSecret(e.currentTarget.value)}
             placeholder="Client secret"
-            className={monoControlClass}
+            styles={monoInput}
           />
-        </div>
+        </SimpleGrid>
       )}
 
       {connection?.connectedAt && (
-        // `break-words` because a granted scope list is unbounded and comes from
-        // the provider: one long token with nothing to wrap on must fold rather
+        // Wrapped because a granted scope list is unbounded and comes from the
+        // provider: one long token with nothing to break on must fold rather
         // than push the dialog off the viewport.
-        <p className="text-xs break-words text-neutral-500">
+        <Text fz="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
           Authorized by {connection.connectedBy} on{" "}
           {new Date(connection.connectedAt).toLocaleString()}
           {connection.scopes.length > 0 ? ` · ${connection.scopes.join(", ")}` : ""}
-        </p>
+        </Text>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <Group gap="xs" wrap="wrap">
         {!canRegister && (
-          <button
-            type="button"
+          <Button
+            variant="default"
             disabled={busy || !clientId.trim()}
             onClick={() =>
               run(async () => {
@@ -202,13 +214,11 @@ export function McpConnectionCard({
                 });
               })
             }
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
           >
             Save credentials
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
           disabled={busy || needsManualClient}
           onClick={() =>
             run(async () => {
@@ -218,21 +228,20 @@ export function McpConnectionCard({
               window.open(url, "mcp-oauth", "width=600,height=760");
             })
           }
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
         >
           {status === "connected" ? "Reauthorize" : "Connect"}
-        </button>
+        </Button>
         {connection && (
-          <button
-            type="button"
+          <Button
+            variant="default"
+            color="red"
             disabled={busy}
             onClick={() => run(async () => disconnectMcp(projectName, serverName))}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-neutral-700 dark:text-red-400 dark:hover:bg-red-950/30"
           >
             Disconnect
-          </button>
+          </Button>
         )}
-      </div>
-    </div>
+      </Group>
+    </Stack>
   );
 }

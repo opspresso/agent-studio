@@ -9,7 +9,7 @@ skills, MCP tools, chats, cost/usage dashboard**.
 
 - Node.js 24, pnpm 11
 - Next.js 16 (App Router), React 19, TypeScript strict
-- Tailwind CSS v4
+- Mantine 9 (components + theme)
 - Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)
 - Clean Architecture (`domain` / `application` / `infrastructure` / `app`)
 - AWS DynamoDB Single Table Design

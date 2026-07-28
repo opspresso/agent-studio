@@ -1,0 +1,47 @@
+/*
+ * Syntax colours for `CodeBlock`. Kept as a stylesheet rather than inline
+ * styles so each token type has one light value and one dark value sitting
+ * next to each other — the pairing that drifted when these were Tailwind
+ * `text-x dark:text-y` pairs spread down a lookup table.
+ */
+
+.block {
+  overflow-x: auto;
+  padding: var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8));
+  color: light-dark(var(--mantine-color-gray-8), var(--mantine-color-gray-3));
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.625;
+}
+
+.comment {
+  color: light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-2));
+  font-style: italic;
+}
+
+.string {
+  color: light-dark(var(--mantine-color-teal-8), var(--mantine-color-teal-4));
+}
+
+.keyword {
+  color: light-dark(var(--mantine-color-violet-8), var(--mantine-color-violet-4));
+}
+
+.number {
+  color: light-dark(var(--mantine-color-orange-8), var(--mantine-color-orange-4));
+}
+
+.function {
+  color: light-dark(var(--mantine-color-blue-8), var(--mantine-color-blue-4));
+}
+
+.property {
+  color: light-dark(var(--mantine-color-cyan-8), var(--mantine-color-cyan-3));
+}
+
+.variable {
+  color: light-dark(var(--mantine-color-pink-7), var(--mantine-color-pink-4));
+}

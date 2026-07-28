@@ -1,13 +1,14 @@
 "use client";
 
+import { Accordion, Group, Stack, Text } from "@mantine/core";
 import { CodeBlock } from "./CodeBlock";
 import { CopyButton } from "./CopyButton";
 import type { HighlightLanguage } from "./highlight";
 
 /**
- * A titled, collapsed-by-default code block built on native <details>. Expanding
- * reveals the full syntax-highlighted content (no height clamp; wide content
- * scrolls horizontally).
+ * A titled, collapsed-by-default code block. Expanding reveals the full
+ * syntax-highlighted content (no height clamp; wide content scrolls
+ * horizontally).
  */
 export function CollapsibleCode({
   title,
@@ -21,24 +22,22 @@ export function CollapsibleCode({
   copyLabel?: string;
 }) {
   return (
-    <details className="group rounded-md border border-neutral-200 dark:border-neutral-800">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium [&::-webkit-details-marker]:hidden">
-        <svg
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-          className="h-3.5 w-3.5 text-neutral-400 transition-transform group-open:rotate-90"
-        >
-          <path d="M7 5l6 5-6 5V5z" />
-        </svg>
-        {title}
-      </summary>
-      <div className="space-y-2 px-3 pb-3">
-        <div className="flex justify-end">
-          <CopyButton text={code} label={copyLabel} />
-        </div>
-        <CodeBlock language={language} code={code} />
-      </div>
-    </details>
+    <Accordion variant="contained" chevronPosition="left" radius="md">
+      <Accordion.Item value="code">
+        <Accordion.Control>
+          <Text fz="xs" fw={500}>
+            {title}
+          </Text>
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Stack gap="xs">
+            <Group justify="flex-end">
+              <CopyButton text={code} label={copyLabel} />
+            </Group>
+            <CodeBlock language={language} code={code} />
+          </Stack>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
   );
 }

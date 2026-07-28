@@ -1,0 +1,35 @@
+/* The signed-out hero's example stream. Colours mark what each line is. */
+
+.trace {
+  overflow-x: auto;
+  padding: var(--mantine-spacing-md);
+  margin: 0;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.meta {
+  color: var(--mantine-color-dimmed);
+}
+
+.tool {
+  color: var(--mantine-primary-color-filled);
+}
+
+.author {
+  color: light-dark(var(--mantine-color-orange-8), var(--mantine-color-orange-4));
+}
+
+.text {
+  color: var(--mantine-color-text);
+}
+
+.cursor {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 4px;
+  transform: translateY(2px);
+  background-color: var(--mantine-primary-color-filled);
+}

@@ -1,0 +1,42 @@
+.brand {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-md);
+  color: inherit;
+}
+
+/*
+ * The header's own link style: an underline that marks the active section.
+ * `NavLink` is the drawer's affordance and reads too heavy in a 56px bar.
+ */
+.navLink {
+  position: relative;
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  padding: 0 var(--mantine-spacing-xs);
+  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-dimmed);
+  text-decoration: none;
+}
+
+.navLink:hover {
+  color: var(--mantine-color-text);
+}
+
+.navLink[data-active] {
+  color: var(--mantine-color-text);
+  font-weight: 500;
+}
+
+.navLink[data-active]::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--mantine-spacing-xs);
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background-color: var(--mantine-primary-color-filled);
+}

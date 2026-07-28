@@ -4,7 +4,19 @@ import { useEffect, useState } from "react";
 import { listAgents } from "@/app/agents/api";
 import { listSkills } from "@/app/skills/api";
 import { listMcps } from "@/app/tools/api";
-import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Group,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+} from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
 import { listProjects } from "../../lib/api";
 import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
 import {
@@ -13,7 +25,6 @@ import {
   NumberField,
   SearchSelectInput,
   SubagentInput,
-  inputClass,
 } from "./inputs";
 import type { PickerOption } from "./inputs";
 import type { VersionSave } from "./McpBindingSettings";
@@ -125,101 +136,100 @@ export function VersionEditor({
   }
 
   return (
-    <div className="space-y-4">
-      <LabeledField label="Model">
-        {models.length > 0 ? (
-          <select
-            value={value.model}
-            onChange={(e) => patch({ model: e.target.value })}
-            className={inputClass}
-          >
-            <option value="">Select a model…</option>
-            {value.model && !selectedModel && <option value={value.model}>{value.model}</option>}
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.displayName} ({model.id})
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            value={value.model}
-            onChange={(e) => patch({ model: e.target.value })}
-            placeholder="openai/gpt-5-mini"
-            className={inputClass}
-          />
-        )}
-        {value.model && models.length > 0 && !selectedModel && (
-          <p className="mt-1 text-xs text-red-500">
-            Model is not in the catalog; usage will be recorded with $0 cost.
-          </p>
-        )}
-      </LabeledField>
-
-      <LabeledField label="Fallback model (optional)">
-        {models.length > 0 ? (
-          <select
-            value={value.fallbackModel ?? ""}
-            onChange={(e) => patch({ fallbackModel: e.target.value || undefined })}
-            className={inputClass}
-          >
-            <option value="">None</option>
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.displayName}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            value={value.fallbackModel ?? ""}
-            onChange={(e) => patch({ fallbackModel: e.target.value || undefined })}
-            className={inputClass}
-          />
-        )}
-      </LabeledField>
-
-      <LabeledField label="System prompt">
-        <ResizableTextarea
-          value={value.systemPrompt}
-          onChange={(systemPrompt) => patch({ systemPrompt })}
-          rows={8}
-          placeholder="You are a helpful assistant."
-          className={`${inputClass} font-mono`}
+    <Stack gap="md">
+      {models.length > 0 ? (
+        <Select
+          label="Model"
+          value={value.model}
+          onChange={(model) => patch({ model: model ?? "" })}
+          placeholder="Select a model…"
+          searchable
+          data={[
+            // A stored model missing from the catalog stays selectable so a
+            // version can be saved without silently losing it.
+            ...(value.model && !selectedModel ? [{ value: value.model, label: value.model }] : []),
+            ...models.map((model) => ({
+              value: model.id,
+              label: `${model.displayName} (${model.id})`,
+            })),
+          ]}
+          error={
+            value.model && !selectedModel
+              ? "Model is not in the catalog; usage will be recorded with $0 cost."
+              : undefined
+          }
         />
-      </LabeledField>
+      ) : (
+        <TextInput
+          label="Model"
+          value={value.model}
+          onChange={(e) => patch({ model: e.currentTarget.value })}
+          placeholder="openai/gpt-5-mini"
+        />
+      )}
 
-      <LabeledField label="User prompt template">
-        <ResizableTextarea
+      {models.length > 0 ? (
+        <Select
+          label="Fallback model (optional)"
+          value={value.fallbackModel ?? null}
+          onChange={(fallbackModel) => patch({ fallbackModel: fallbackModel ?? undefined })}
+          placeholder="None"
+          clearable
+          searchable
+          data={models.map((model) => ({ value: model.id, label: model.displayName }))}
+        />
+      ) : (
+        <TextInput
+          label="Fallback model (optional)"
+          value={value.fallbackModel ?? ""}
+          onChange={(e) => patch({ fallbackModel: e.currentTarget.value || undefined })}
+        />
+      )}
+
+      <Textarea
+        label="System prompt"
+        value={value.systemPrompt}
+        onChange={(e) => patch({ systemPrompt: e.currentTarget.value })}
+        placeholder="You are a helpful assistant."
+        autosize
+        minRows={8}
+        maxRows={30}
+        styles={monoInput}
+      />
+
+      <div>
+        <Textarea
+          label="User prompt template"
           value={value.userPromptTemplate}
-          onChange={(userPromptTemplate) => patch({ userPromptTemplate })}
-          rows={4}
+          onChange={(e) => patch({ userPromptTemplate: e.currentTarget.value })}
           placeholder="Summarize: {{input}}"
-          className={`${inputClass} font-mono`}
-          footerLeft={
-            <span className="text-xs text-neutral-400">
-              Use {"{{variable}}"} placeholders rendered server-side at run time.
-            </span>
-          }
-          footerRight={
-            <button
-              type="button"
-              onClick={() =>
-                patch({
-                  userPromptTemplate: value.userPromptTemplate
-                    ? `${value.userPromptTemplate}{{input}}`
-                    : "{{input}}",
-                })
-              }
-              className="shrink-0 rounded bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-            >
-              + {"{{input}}"}
-            </button>
-          }
+          autosize
+          minRows={4}
+          maxRows={20}
+          styles={monoInput}
         />
-      </LabeledField>
+        <Group justify="space-between" gap="xs" mt={4} wrap="nowrap">
+          <Text fz="xs" c="dimmed">
+            Use {"{{variable}}"} placeholders rendered server-side at run time.
+          </Text>
+          <Button
+            variant="default"
+            size="compact-xs"
+            ff="monospace"
+            onClick={() =>
+              patch({
+                userPromptTemplate: value.userPromptTemplate
+                  ? `${value.userPromptTemplate}{{input}}`
+                  : "{{input}}",
+              })
+            }
+          >
+            + {"{{input}}"}
+          </Button>
+        </Group>
+      </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <SimpleGrid cols={2} spacing="sm">
         <NumberField
           label="Temperature"
           value={value.parameters.temperature}
@@ -237,25 +247,25 @@ export function VersionEditor({
           min={1}
           placeholder="default"
         />
-      </div>
+      </SimpleGrid>
 
       {supportsReasoning && (
-        <LabeledField label="Reasoning effort">
-          <select
-            value={value.parameters.reasoningEffort ?? ""}
-            onChange={(e) =>
-              patchParams({
-                reasoningEffort: (e.target.value || undefined) as VersionParameters["reasoningEffort"],
-              })
-            }
-            className={inputClass}
-          >
-            <option value="">Default</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-          </select>
-        </LabeledField>
+        <Select
+          label="Reasoning effort"
+          value={value.parameters.reasoningEffort ?? ""}
+          onChange={(effort) =>
+            patchParams({
+              reasoningEffort: (effort || undefined) as VersionParameters["reasoningEffort"],
+            })
+          }
+          allowDeselect={false}
+          data={[
+            { value: "", label: "Default" },
+            { value: "low", label: "low" },
+            { value: "medium", label: "medium" },
+            { value: "high", label: "high" },
+          ]}
+        />
       )}
 
       {projectType === "agent" && (
@@ -269,87 +279,77 @@ export function VersionEditor({
         />
       )}
 
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={value.parameters.piiFiltering}
-          onChange={(e) => patchParams({ piiFiltering: e.target.checked })}
-        />
-        PII filtering
-      </label>
+      <Checkbox
+        label="PII filtering"
+        checked={value.parameters.piiFiltering}
+        onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
+      />
 
       {supportsStructured && (
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={value.parameters.structuredOutput ?? false}
-              onChange={(e) => patchParams({ structuredOutput: e.target.checked })}
-            />
-            Structured output (JSON schema)
-          </label>
+        <Stack gap="xs">
+          <Checkbox
+            label="Structured output (JSON schema)"
+            checked={value.parameters.structuredOutput ?? false}
+            onChange={(e) => patchParams({ structuredOutput: e.currentTarget.checked })}
+          />
           {value.parameters.structuredOutput && (
-            <div>
-              <textarea
-                value={schemaText}
-                onChange={(e) => onSchemaChange(e.target.value)}
-                rows={5}
-                placeholder='{"type":"object","properties":{}}'
-                className={`${inputClass} font-mono`}
-              />
-              {schemaError && <p className="mt-1 text-xs text-red-500">{schemaError}</p>}
-            </div>
+            <Textarea
+              value={schemaText}
+              onChange={(e) => onSchemaChange(e.currentTarget.value)}
+              placeholder='{"type":"object","properties":{}}'
+              autosize
+              minRows={5}
+              maxRows={20}
+              error={schemaError}
+              styles={monoInput}
+            />
           )}
-        </div>
+        </Stack>
       )}
 
       {(runsTools || value.parameters.imageGeneration) && (
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={value.parameters.imageGeneration ?? false}
-              onChange={(e) =>
-                patchParams(
-                  e.target.checked
-                    ? { imageGeneration: true }
-                    : { imageGeneration: undefined, imageModel: undefined },
-                )
-              }
-            />
-            Images (GenerateImage + EditImage tools)
-          </label>
-          <p className="text-xs text-neutral-400">
-            Lets the agent draw a picture and change an existing one — an image the user
-            attached, or one it drew earlier.
-          </p>
+        <Stack gap="xs">
+          <Checkbox
+            label="Images (GenerateImage + EditImage tools)"
+            checked={value.parameters.imageGeneration ?? false}
+            onChange={(e) =>
+              patchParams(
+                e.currentTarget.checked
+                  ? { imageGeneration: true }
+                  : { imageGeneration: undefined, imageModel: undefined },
+              )
+            }
+          />
+          <Text fz="xs" c="dimmed">
+            Lets the agent draw a picture and change an existing one — an image the user attached,
+            or one it drew earlier.
+          </Text>
           {value.parameters.imageGeneration && (
-            <LabeledField label="Image model">
-              <select
-                value={value.parameters.imageModel ?? ""}
-                onChange={(e) => patchParams({ imageModel: e.target.value || undefined })}
-                className={inputClass}
-              >
-                <option value="">Default</option>
-                {imageModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.displayName} ({model.id})
-                  </option>
-                ))}
-              </select>
-            </LabeledField>
+            <Select
+              label="Image model"
+              value={value.parameters.imageModel ?? ""}
+              onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
+              allowDeselect={false}
+              data={[
+                { value: "", label: "Default" },
+                ...imageModels.map((model) => ({
+                  value: model.id,
+                  label: `${model.displayName} (${model.id})`,
+                })),
+              ]}
+            />
           )}
-        </div>
+        </Stack>
       )}
 
       {(runsTools || hasToolBindings) && (
-        <div className="space-y-3">
+        <Stack gap="sm">
           {!runsTools && (
-            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-              ⚠️ A &quot;{projectType}&quot; project runs a single completion, which offers no
-              tools — the bindings below are stored but never used. Remove them here; new ones
-              cannot be added.
-            </p>
+            <Alert color="yellow" variant="light" fz="xs">
+              A &quot;{projectType}&quot; project runs a single completion, which offers no tools —
+              the bindings below are stored but never used. Remove them here; new ones cannot be
+              added.
+            </Alert>
           )}
           <McpBindingInput
             projectName={projectName}
@@ -370,8 +370,8 @@ export function VersionEditor({
             onChange={(subagentList) => patch({ subagentList })}
             options={subagentOptions}
           />
-        </div>
+        </Stack>
       )}
-    </div>
+    </Stack>
   );
 }

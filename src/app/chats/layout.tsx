@@ -1,10 +1,17 @@
+import { Box, Flex } from "@mantine/core";
 import { ChatSidebar } from "./_components/ChatSidebar";
 
 export default function ChatsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-[calc(100dvh-10rem)] flex-col gap-4 md:h-[calc(100dvh-8rem)] md:flex-row">
+    <Flex
+      direction={{ base: "column", md: "row" }}
+      gap="md"
+      h={{ base: "calc(100dvh - 10rem)", md: "calc(100dvh - 8rem)" }}
+    >
       <ChatSidebar />
-      <section className="min-w-0 flex-1">{children}</section>
-    </div>
+      <Box component="section" style={{ flex: 1, minWidth: 0 }}>
+        {children}
+      </Box>
+    </Flex>
   );
 }

@@ -18,9 +18,19 @@ import {
   type McpTool,
 } from "../api";
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
-import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
-import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
-import { buttonClass, textButtonClass } from "@/app/_components/buttonStyles";
+import {
+  Alert,
+  Anchor,
+  Button,
+  Card,
+  Group,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
 
 /**
  * How long the console watches a restart, and how often it asks.
@@ -172,17 +182,21 @@ export default function McpDetailPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-neutral-500">Loading…</p>;
+    return (
+      <Text fz="sm" c="dimmed">
+        Loading…
+      </Text>
+    );
   }
 
   if (error && !server) {
     return (
-      <div className="space-y-4">
+      <Stack gap="md">
         <BackLink />
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
-      </div>
+        </Alert>
+      </Stack>
     );
   }
 
@@ -193,71 +207,80 @@ export default function McpDetailPage() {
   const headerEntries = Object.entries(server.headers);
 
   return (
-    <div className="space-y-6">
+    <Stack gap="lg">
       <BackLink />
 
-      <div className="flex items-start justify-between gap-4">
+      <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <h1 className="text-2xl font-semibold">{server.name}</h1>
-          <p className="mt-1 text-sm text-neutral-500">{server.description}</p>
-          <p className="mt-1 text-xs text-neutral-400">{server.url}</p>
+          <Title order={1} fz="h2">
+            {server.name}
+          </Title>
+          <Text fz="sm" c="dimmed" mt={4}>
+            {server.description}
+          </Text>
+          <Text fz="xs" c="dimmed" mt={4}>
+            {server.url}
+          </Text>
           {server.runtime === "managed" && (
-            <p className="mt-2 text-xs">
-              <span className="text-neutral-400">container</span>{" "}
+            <Group gap={6} mt="xs" fz="xs" wrap="wrap">
+              <Text fz="xs" c="dimmed">
+                container
+              </Text>
               {managedStatus === null ? (
-                <span className="text-neutral-400">unknown</span>
+                <Text fz="xs" c="dimmed">
+                  unknown
+                </Text>
               ) : !managedStatus.running ? (
-                <span className="text-red-600 dark:text-red-400">
+                <Text fz="xs" c="red">
                   not running{managedStatus.detail ? ` — ${managedStatus.detail}` : ""}
-                </span>
+                </Text>
               ) : managedStatus.reachable ? (
-                <span className="text-emerald-600 dark:text-emerald-400">running · reachable</span>
+                <Text fz="xs" c="teal">
+                  running · reachable
+                </Text>
               ) : (
                 // The state this page used to call "running": the container is
                 // up and this app cannot address it. Restarting rejoins it to
                 // the network namespace we have now.
-                <span className="text-red-600 dark:text-red-400">running · unreachable</span>
+                <Text fz="xs" c="red">
+                  running · unreachable
+                </Text>
               )}
-              {server.image ? (
-                <span className="ml-2 font-mono text-neutral-400">{server.image}</span>
-              ) : null}
-              {managedStatus && !managedStatus.reachable ? (
-                <button
+              {server.image && (
+                <Text fz="xs" ff="monospace" c="dimmed">
+                  {server.image}
+                </Text>
+              )}
+              {managedStatus && !managedStatus.reachable && (
+                <Anchor
+                  component="button"
                   type="button"
+                  fz="xs"
                   onClick={onRestart}
                   disabled={restarting}
-                  className={`${textButtonClass} ml-2`}
                 >
                   {restarting ? "Restarting…" : "Restart container"}
-                </button>
-              ) : null}
-            </p>
+                </Anchor>
+              )}
+            </Group>
           )}
         </div>
         {!editing && (
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className={buttonClass("secondary")}
-            >
+          <Group gap="xs" wrap="nowrap">
+            <Button variant="default" onClick={() => setEditing(true)}>
               Edit
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              className={buttonClass("danger")}
-            >
+            </Button>
+            <Button variant="default" color="red" onClick={onDelete}>
               Delete
-            </button>
-          </div>
+            </Button>
+          </Group>
         )}
-      </div>
+      </Group>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
       {editing ? (
@@ -273,79 +296,95 @@ export default function McpDetailPage() {
         <>
           {server.content && (
             <section>
-              <h2 className="mb-2 text-sm font-medium text-neutral-500">Content</h2>
-              <div className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 font-mono text-sm dark:border-neutral-800 dark:bg-neutral-900">
-                {server.content}
-              </div>
+              <Text fz="sm" fw={500} c="dimmed" mb="xs">
+                Content
+              </Text>
+              <Card>
+                <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
+                  {server.content}
+                </Text>
+              </Card>
             </section>
           )}
 
           <OAuthSection server={server} onChanged={() => void refresh()} />
 
           <section>
-            <h2 className="mb-2 text-sm font-medium text-neutral-500">Headers</h2>
+            <Text fz="sm" fw={500} c="dimmed" mb="xs">
+              Headers
+            </Text>
             {headerEntries.length === 0 ? (
-              <p className="text-sm text-neutral-400">None.</p>
+              <Text fz="sm" c="dimmed">
+                None.
+              </Text>
             ) : (
-              <ul className="rounded-lg border border-neutral-200 bg-white text-sm dark:border-neutral-800 dark:bg-neutral-900">
-                {headerEntries.map(([key, value]) => (
-                  <li
+              <Card padding={0}>
+                {headerEntries.map(([key, value], index) => (
+                  <Group
                     key={key}
-                    className="flex items-center justify-between border-b border-neutral-100 px-4 py-2 last:border-b-0 dark:border-neutral-800"
+                    justify="space-between"
+                    px="md"
+                    py="xs"
+                    wrap="nowrap"
+                    style={
+                      index > 0
+                        ? { borderTop: "1px solid var(--mantine-color-default-border)" }
+                        : undefined
+                    }
                   >
-                    <span className="font-mono">{key}</span>
-                    <span className="font-mono text-neutral-400">{value}</span>
-                  </li>
+                    <Text ff="monospace" fz="sm">
+                      {key}
+                    </Text>
+                    <Text ff="monospace" fz="sm" c="dimmed" truncate>
+                      {value}
+                    </Text>
+                  </Group>
                 ))}
-              </ul>
+              </Card>
             )}
           </section>
 
           <section>
-            <div className="mb-2 flex items-center gap-3">
-              <h2 className="text-sm font-medium text-neutral-500">Connection</h2>
-              <button
-                type="button"
-                onClick={runTest}
-                disabled={testing}
-                className={buttonClass("secondary", "sm")}
-              >
-                {testing ? "Testing…" : "Test connection"}
-              </button>
-            </div>
+            <Group gap="sm" mb="xs">
+              <Text fz="sm" fw={500} c="dimmed">
+                Connection
+              </Text>
+              <Button variant="default" size="compact-sm" onClick={runTest} loading={testing}>
+                Test connection
+              </Button>
+            </Group>
 
             {testError && (
-              <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+              <Alert color="red" variant="light">
                 {testError}
-              </div>
+              </Alert>
             )}
 
             {tools && (
               <div>
-                <p className="mb-2 text-sm text-neutral-500">
+                <Text fz="sm" c="dimmed" mb="xs">
                   {tools.length} tool{tools.length === 1 ? "" : "s"} discovered.
-                </p>
-                {tools.length > 0 && (
-                  <ul className="space-y-2">
-                    {tools.map((tool) => (
-                      <li
-                        key={tool.name}
-                        className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
-                      >
-                        <div className="font-mono text-sm font-medium">{tool.name}</div>
-                        {tool.description && (
-                          <p className="mt-1 text-sm text-neutral-500">{tool.description}</p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                </Text>
+                <Stack gap="xs">
+                  {tools.map((tool) => (
+                    <Card key={tool.name} padding="sm">
+                      <Text ff="monospace" fz="sm" fw={500}>
+                        {tool.name}
+                      </Text>
+                      {tool.description && (
+                        <Text fz="sm" c="dimmed" mt={4}>
+                          {tool.description}
+                        </Text>
+                      )}
+                    </Card>
+                  ))}
+                </Stack>
               </div>
             )}
           </section>
         </>
       )}
-    </div>
+    </Stack>
   );
 }
 
@@ -397,69 +436,107 @@ function OAuthSection({ server, onChanged }: { server: McpServer; onChanged: () 
 
   return (
     <section>
-      <div className="mb-2 flex items-center gap-3">
-        <h2 className="text-sm font-medium text-neutral-500">OAuth</h2>
-        <button
-          type="button"
+      <Group gap="sm" mb="xs">
+        <Text fz="sm" fw={500} c="dimmed">
+          OAuth
+        </Text>
+        <Button
+          variant="default"
+          size="compact-sm"
           onClick={() => void discover()}
-          disabled={busy}
-          className={buttonClass("secondary", "sm")}
+          loading={busy}
         >
-          {busy ? "Discovering…" : server.auth ? "Rediscover" : "Discover"}
-        </button>
+          {server.auth ? "Rediscover" : "Discover"}
+        </Button>
         {server.auth && (
-          <button
-            type="button"
+          <Button
+            variant="default"
+            color="red"
+            size="compact-sm"
             onClick={() => void clear()}
             disabled={busy}
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-neutral-700 dark:text-red-400 dark:hover:bg-red-950/30"
           >
             Clear
-          </button>
+          </Button>
         )}
-      </div>
+      </Group>
 
-      {error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <Text fz="sm" c="red" mb="xs">
+          {error}
+        </Text>
+      )}
 
       {choices && (
-        <div className="mb-2 space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
-          <p>This resource advertises more than one authorization server. Choose one:</p>
-          <div className="flex flex-wrap gap-2">
+        <Alert color="yellow" variant="light" mb="xs">
+          <Text fz="sm">
+            This resource advertises more than one authorization server. Choose one:
+          </Text>
+          <Group gap="xs" mt="xs">
             {choices.map((issuer) => (
-              <button
+              <Button
                 key={issuer}
-                type="button"
+                variant="default"
+                size="compact-xs"
+                ff="monospace"
                 onClick={() => void discover(issuer)}
-                className="rounded-md border border-neutral-300 bg-white px-2 py-1 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900"
               >
                 {issuer}
-              </button>
+              </Button>
             ))}
-          </div>
-        </div>
+          </Group>
+        </Alert>
       )}
 
       {server.auth ? (
-        <dl className="rounded-lg border border-neutral-200 bg-white p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900">
-          {[
-            ["Resource", server.auth.resource],
-            ["Authorization server", server.auth.authorizationServer],
-            ["Authorize", server.auth.authorizationEndpoint],
-            ["Token", server.auth.tokenEndpoint],
-            ["Registration", server.auth.registrationEndpoint ?? "not offered — clients must be registered by hand"],
-            ["Client auth", server.auth.tokenEndpointAuthMethod],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-4 border-b border-neutral-100 py-1 last:border-b-0 dark:border-neutral-800">
-              <dt className="text-neutral-500">{label}</dt>
-              <dd className="break-all text-right font-mono text-xs">{value}</dd>
-            </div>
+        <Card component="dl" m={0}>
+          {(
+            [
+              ["Resource", server.auth.resource],
+              ["Authorization server", server.auth.authorizationServer],
+              ["Authorize", server.auth.authorizationEndpoint],
+              ["Token", server.auth.tokenEndpoint],
+              [
+                "Registration",
+                server.auth.registrationEndpoint ??
+                  "not offered — clients must be registered by hand",
+              ],
+              ["Client auth", server.auth.tokenEndpointAuthMethod],
+            ] as const
+          ).map(([label, value], index) => (
+            <Group
+              key={label}
+              justify="space-between"
+              gap="md"
+              wrap="nowrap"
+              py={4}
+              style={
+                index > 0
+                  ? { borderTop: "1px solid var(--mantine-color-default-border)" }
+                  : undefined
+              }
+            >
+              <Text component="dt" fz="sm" c="dimmed" style={{ flexShrink: 0 }}>
+                {label}
+              </Text>
+              <Text
+                component="dd"
+                fz="xs"
+                ff="monospace"
+                ta="right"
+                m={0}
+                style={{ overflowWrap: "anywhere" }}
+              >
+                {value}
+              </Text>
+            </Group>
           ))}
-        </dl>
+        </Card>
       ) : (
-        <p className="text-sm text-neutral-400">
+        <Text fz="sm" c="dimmed">
           Not configured. Discovery reads the server&apos;s published metadata; projects then
           connect their own credentials from their project page.
-        </p>
+        </Text>
       )}
     </section>
   );
@@ -467,9 +544,9 @@ function OAuthSection({ server, onChanged }: { server: McpServer; onChanged: () 
 
 function BackLink() {
   return (
-    <Link href="/tools" className={textButtonClass}>
+    <Anchor component={Link} href="/tools" fz="sm" c="dimmed">
       ← Back to tools
-    </Link>
+    </Anchor>
   );
 }
 
@@ -509,63 +586,54 @@ function EditMcpForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
-      <label className="block">
-        <span className="text-sm font-medium">URL</span>
-        <input
+    <form onSubmit={submit}>
+      <Stack gap="md">
+        <TextInput
+          label="URL"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => setUrl(e.currentTarget.value)}
           type="url"
           required
-          className={fieldClass}
         />
-      </label>
-      <label className="block">
-        <span className="text-sm font-medium">Description</span>
-        <input
+        <TextInput
+          label="Description"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => setDescription(e.currentTarget.value)}
           placeholder="One-line summary shown to the model"
-          className={fieldClass}
         />
-      </label>
-      <label className="block">
-        <span className="text-sm font-medium">Content (markdown)</span>
-        <ResizableTextarea
+        <Textarea
+          label="Content (markdown)"
           value={content}
-          onChange={setContent}
-          rows={8}
+          onChange={(e) => setContent(e.currentTarget.value)}
           placeholder="Setup steps, caveats, links…"
-          className={monoFieldClass}
+          autosize
+          minRows={8}
+          maxRows={30}
+          description="Operator notes for the console. Not sent to the model — only the description is."
+          inputWrapperOrder={["label", "input", "description", "error"]}
+          styles={monoInput}
         />
-        <span className="mt-1 block text-xs text-neutral-400">
-          Operator notes for the console. Not sent to the model — only the description is.
-        </span>
-      </label>
 
-      <HeaderRowsEditor rows={rows} onChange={setRows} />
-      <p className="text-xs text-neutral-400">
-        Masked values keep the stored secret. Type a new value to replace it.
-      </p>
+        <HeaderRowsEditor rows={rows} onChange={setRows} />
+        <Text fz="xs" c="dimmed">
+          Masked values keep the stored secret. Type a new value to replace it.
+        </Text>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && (
+          <Alert color="red" variant="light">
+            {error}
+          </Alert>
+        )}
 
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className={buttonClass("secondary")}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={submitting}
-          className={buttonClass("primary")}
-        >
-          {submitting ? "Saving…" : "Save"}
-        </button>
-      </div>
+        <Group justify="flex-end" gap="xs">
+          <Button variant="default" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={submitting}>
+            Save
+          </Button>
+        </Group>
+      </Stack>
     </form>
   );
 }

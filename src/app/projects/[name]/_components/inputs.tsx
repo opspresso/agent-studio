@@ -1,17 +1,27 @@
 "use client";
 
 import type { McpTool } from "@/domain/mcp/types";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  ActionIcon,
+  Autocomplete,
+  Badge,
+  Anchor,
+  Checkbox,
+  Group,
+  Input,
+  NumberInput,
+  Stack,
+  Text,
+  UnstyledButton,
+} from "@mantine/core";
+import { IconX } from "@tabler/icons-react";
 import type { McpBinding, SubagentRef } from "../../lib/api";
 import { listProjectMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
 import { overridesToRows, rowsToOverrides, type OverrideRow } from "./mcpOverrides";
 import { McpBindingSettings, type VersionSave } from "./McpBindingSettings";
-import { Badge } from "@/app/_components/Badge";
 import { HeaderRowsEditor } from "@/app/_components/HeaderRows";
-import { controlClass } from "@/app/_components/formStyles";
-
-const inputClass = `w-full ${controlClass}`;
 
 /**
  * A named group of controls.
@@ -21,20 +31,17 @@ const inputClass = `w-full ${controlClass}`;
  * that control and clicking the label *activate* it. With several controls in
  * one field that is silently destructive: clicking the words "MCP servers"
  * opened the first server's settings, and clicking "Subagents" removed the first
- * subagent. `aria-labelledby` names the group without binding it to one member.
+ * subagent. `labelElement="div"` keeps `Input.Wrapper`'s caption from becoming
+ * that binding label.
  *
  * Use {@link LabeledField} when the field really does wrap a single control and
  * click-to-focus is worth having.
  */
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  const id = useId();
   return (
-    <div role="group" aria-labelledby={id} className="block">
-      <span id={id} className="text-sm font-medium">
-        {label}
-      </span>
-      <div className="mt-1">{children}</div>
-    </div>
+    <Input.Wrapper label={label} labelElement="div">
+      <div style={{ marginTop: 4 }}>{children}</div>
+    </Input.Wrapper>
   );
 }
 
@@ -44,10 +51,9 @@ export function Field({ label, children }: { label: string; children: React.Reac
  */
 export function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium">{label}</span>
-      <div className="mt-1">{children}</div>
-    </label>
+    <Input.Wrapper label={label}>
+      <div style={{ marginTop: 4 }}>{children}</div>
+    </Input.Wrapper>
   );
 }
 
@@ -69,18 +75,15 @@ export function NumberField({
   placeholder?: string;
 }) {
   return (
-    <LabeledField label={label}>
-      <input
-        type="number"
-        value={value ?? ""}
-        step={step}
-        min={min}
-        max={max}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-        className={inputClass}
-      />
-    </LabeledField>
+    <NumberInput
+      label={label}
+      value={value ?? ""}
+      step={step}
+      min={min}
+      max={max}
+      placeholder={placeholder}
+      onChange={(next) => onChange(next === "" ? undefined : Number(next))}
+    />
   );
 }
 
@@ -90,50 +93,109 @@ export interface PickerOption {
   badge?: string;
 }
 
-function matches(option: PickerOption, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) {
-    return true;
-  }
+/** Removable chip for a picked value. */
+function PickedChip({
+  label,
+  suffix,
+  onRemove,
+  action,
+}: {
+  label: string;
+  suffix?: React.ReactNode;
+  onRemove: () => void;
+  action?: React.ReactNode;
+}) {
   return (
-    option.value.toLowerCase().includes(q) ||
-    (option.description ?? "").toLowerCase().includes(q)
+    <Group
+      justify="space-between"
+      gap="xs"
+      wrap="nowrap"
+      px="xs"
+      py={4}
+      style={{
+        borderRadius: "var(--mantine-radius-sm)",
+        backgroundColor: "var(--mantine-color-default-hover)",
+      }}
+    >
+      <Text fz="xs" truncate>
+        {label}
+        {suffix}
+      </Text>
+      <Group gap="xs" wrap="nowrap">
+        {action}
+        <ActionIcon size="xs" variant="subtle" onClick={onRemove} aria-label={`Remove ${label}`}>
+          <IconX size={14} />
+        </ActionIcon>
+      </Group>
+    </Group>
   );
 }
 
-function OptionDropdown<T extends PickerOption>({
+/**
+ * Type-to-filter picker over registered options.
+ *
+ * `Autocomplete` rather than `MultiSelect` because the picked values are not
+ * plain strings at every call site — a bound MCP server carries header
+ * overrides and a tool selection, a subagent carries its type — and rendering
+ * those as `MultiSelect` pills would drop everything but the name.
+ */
+function OptionPicker<T extends PickerOption>({
   options,
-  emptyText,
+  placeholder,
   onPick,
 }: {
   options: T[];
-  emptyText: string;
+  placeholder?: string;
   onPick: (option: T) => void;
 }) {
+  const [draft, setDraft] = useState("");
+
   return (
-    <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-      {options.length === 0 ? (
-        <p className="px-3 py-2 text-xs text-neutral-400">{emptyText}</p>
-      ) : (
-        options.map((option) => (
-          <button
-            key={`${option.badge ?? ""}:${option.value}`}
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onPick(option)}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          >
-            <span className="shrink-0">{option.value}</span>
-            {option.badge && (
-              <Badge className="shrink-0">{option.badge}</Badge>
+    <Autocomplete
+      mt={6}
+      value={draft}
+      onChange={setDraft}
+      placeholder={placeholder}
+      data={options.map((option) => option.value)}
+      filter={({ options: items, search }) => {
+        const query = search.trim().toLowerCase();
+        if (!query) {
+          return items;
+        }
+        return items.filter((item) => {
+          const value = "value" in item ? item.value : "";
+          const option = options.find((candidate) => candidate.value === value);
+          return (
+            value.toLowerCase().includes(query) ||
+            (option?.description ?? "").toLowerCase().includes(query)
+          );
+        });
+      }}
+      renderOption={({ option }) => {
+        const meta = options.find((candidate) => candidate.value === option.value);
+        return (
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+            <Text fz="sm" style={{ flexShrink: 0 }}>
+              {option.value}
+            </Text>
+            {meta?.badge && <Badge size="xs">{meta.badge}</Badge>}
+            {meta?.description && (
+              <Text fz="xs" c="dimmed" truncate>
+                {meta.description}
+              </Text>
             )}
-            {option.description && (
-              <span className="min-w-0 truncate text-xs text-neutral-400">{option.description}</span>
-            )}
-          </button>
-        ))
-      )}
-    </div>
+          </Group>
+        );
+      }}
+      onOptionSubmit={(value) => {
+        const option = options.find((candidate) => candidate.value === value);
+        if (option) {
+          onPick(option);
+        }
+        setDraft("");
+      }}
+      comboboxProps={{ withinPortal: false }}
+    />
   );
 }
 
@@ -151,76 +213,45 @@ export function SearchSelectInput({
   options: PickerOption[];
   placeholder?: string;
 }) {
-  const [draft, setDraft] = useState("");
-  const [open, setOpen] = useState(false);
-
-  const available = options.filter((o) => !values.includes(o.value) && matches(o, draft));
-
-  function add(value: string) {
-    if (!values.includes(value)) {
-      onChange([...values, value]);
-    }
-    setDraft("");
-  }
+  const available = options.filter((option) => !values.includes(option.value));
 
   return (
     <Field label={label}>
-      <div className="flex flex-wrap gap-1.5">
+      <Group gap={6}>
         {values.map((value) => (
-          <span
+          <Badge
             key={value}
-            className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-800"
+            variant="light"
+            color="gray"
+            rightSection={
+              <ActionIcon
+                size={14}
+                variant="transparent"
+                color="gray"
+                onClick={() => onChange(values.filter((v) => v !== value))}
+                aria-label={`Remove ${value}`}
+              >
+                <IconX size={12} />
+              </ActionIcon>
+            }
           >
             {value}
-            <button
-              type="button"
-              onClick={() => onChange(values.filter((v) => v !== value))}
-              className="text-neutral-400 hover:text-red-500"
-              aria-label={`Remove ${value}`}
-            >
-              ×
-            </button>
-          </span>
+          </Badge>
         ))}
-      </div>
-      <div className="relative mt-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (available[0]) {
-                add(available[0].value);
-              }
-            }
-            if (e.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-          placeholder={placeholder}
-          className={inputClass}
-        />
-        {open && (
-          <OptionDropdown
-            options={available}
-            emptyText="No matching entries."
-            onPick={(option) => add(option.value)}
-          />
-        )}
-      </div>
+      </Group>
+      <OptionPicker
+        options={available}
+        placeholder={placeholder}
+        onPick={(option) => {
+          if (!values.includes(option.value)) {
+            onChange([...values, option.value]);
+          }
+        }}
+      />
     </Field>
   );
 }
 
-/**
- * Per-binding header overrides. A value replaces or adds a header on top of the
- * MCP server's registry headers; "remove" drops a registry default for this
- * version only. Values are stored encrypted, so existing ones arrive masked —
- * leaving a masked value keeps the stored secret.
- */
 /**
  * Pick which of a server's tools this version offers. The list is fetched from
  * the server itself (the same probe the registry's "Test connection" uses), so
@@ -266,57 +297,74 @@ function ToolSelector({
     // reach or authorize a server drops it whole and offers *none* of its tools,
     // so advising an empty selection here would advise the opposite outcome.
     return (
-      <p className="text-sm text-neutral-500">
+      <Text fz="sm" c="dimmed">
         {error}
         {" — a run would offer none of this server’s tools until it answers."}
-      </p>
+      </Text>
     );
   }
   if (!tools) {
-    return <p className="text-sm text-neutral-500">Loading tools…</p>;
+    return (
+      <Text fz="sm" c="dimmed">
+        Loading tools…
+      </Text>
+    );
   }
   if (tools.length === 0) {
-    return <p className="text-sm text-neutral-500">This server exposes no tools.</p>;
+    return (
+      <Text fz="sm" c="dimmed">
+        This server exposes no tools.
+      </Text>
+    );
   }
 
   const chosen = selected ?? [];
   // A stored name the server no longer exposes stays listed so it can be cleared.
   const missing = chosen.filter((name) => !tools.some((tool) => tool.name === name));
   return (
-    <div className="space-y-1 text-sm">
-      <p className="text-neutral-500">
+    <Stack gap={4}>
+      <Text fz="sm" c="dimmed">
         {chosen.length === 0
           ? "Every tool is offered. Select some to narrow what the model sees."
           : `${chosen.length} of ${tools.length} tools offered.`}
-      </p>
+      </Text>
       {[...tools, ...missing.map((name) => ({ name, description: "no longer exposed" }))].map(
         (tool) => (
-          <label key={tool.name} className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              checked={chosen.includes(tool.name)}
-              onChange={(e) =>
-                onChange(
-                  e.target.checked
-                    ? [...chosen, tool.name]
-                    : chosen.filter((name) => name !== tool.name),
-                )
-              }
-              className="mt-0.5"
-            />
-            <span>
-              <span className="font-mono">{tool.name}</span>
-              {tool.description && (
-                <span className="ml-1 text-neutral-400">{tool.description}</span>
-              )}
-            </span>
-          </label>
+          <Checkbox
+            key={tool.name}
+            checked={chosen.includes(tool.name)}
+            onChange={(event) =>
+              onChange(
+                event.currentTarget.checked
+                  ? [...chosen, tool.name]
+                  : chosen.filter((name) => name !== tool.name),
+              )
+            }
+            label={
+              <Text fz="sm" component="span">
+                <Text component="span" ff="monospace" fz="sm">
+                  {tool.name}
+                </Text>
+                {tool.description && (
+                  <Text component="span" c="dimmed" fz="sm" ml={4}>
+                    {tool.description}
+                  </Text>
+                )}
+              </Text>
+            }
+          />
         ),
       )}
-    </div>
+    </Stack>
   );
 }
 
+/**
+ * Per-binding header overrides. A value replaces or adds a header on top of the
+ * MCP server's registry headers; "remove" drops a registry default for this
+ * version only. Values are stored encrypted, so existing ones arrive masked —
+ * leaving a masked value keeps the stored secret.
+ */
 function OverrideEditor({
   rows,
   onChange,
@@ -333,29 +381,49 @@ function OverrideEditor({
   const inheritedNames = Object.keys(inherited);
 
   return (
-    <div className="space-y-2 border-t border-neutral-200 px-2 py-2 dark:border-neutral-700">
+    <Stack
+      gap="xs"
+      px="xs"
+      py="xs"
+      style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
+    >
       {inheritedNames.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-neutral-400">
+        <Stack gap={4}>
+          <Text fz="xs" c="dimmed">
             Inherited from the registry entry — select one to override it here.
-          </p>
+          </Text>
           {inheritedNames.map((name) => {
             const taken = overridden.has(name.toLowerCase());
             return (
-              <button
+              <UnstyledButton
                 key={name}
-                type="button"
                 disabled={taken}
                 onClick={() => onChange([...rows, { key: name, value: "", remove: false }])}
-                className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-neutral-800"
+                px={4}
+                py={2}
+                style={{
+                  borderRadius: "var(--mantine-radius-sm)",
+                  cursor: taken ? "default" : "pointer",
+                  opacity: taken ? 0.4 : 1,
+                }}
               >
-                <span className="font-mono">{name}</span>
-                <span className="truncate font-mono text-neutral-400">{inherited[name]}</span>
-                {taken && <span className="ml-auto shrink-0 text-neutral-400">overridden</span>}
-              </button>
+                <Group gap="xs" wrap="nowrap">
+                  <Text fz="xs" ff="monospace" c="dimmed">
+                    {name}
+                  </Text>
+                  <Text fz="xs" ff="monospace" c="dimmed" truncate>
+                    {inherited[name]}
+                  </Text>
+                  {taken && (
+                    <Text fz="xs" c="dimmed" ml="auto" style={{ flexShrink: 0 }}>
+                      overridden
+                    </Text>
+                  )}
+                </Group>
+              </UnstyledButton>
             );
           })}
-        </div>
+        </Stack>
       )}
       <HeaderRowsEditor
         rows={rows}
@@ -369,7 +437,7 @@ function OverrideEditor({
             : "No overrides — this version uses the headers above unchanged."
         }
       />
-    </div>
+    </Stack>
   );
 }
 
@@ -391,8 +459,6 @@ export function McpBindingInput({
   /** The page's version save, for the settings dialog's footer. */
   save: VersionSave;
 }) {
-  const [draft, setDraft] = useState("");
-  const [open, setOpen] = useState(false);
   /** Which binding's settings modal is open; one at a time. */
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   /**
@@ -436,16 +502,7 @@ export function McpBindingInput({
     };
   }, [settingsFor]);
 
-  const available = options.filter(
-    (o) => !values.some((v) => v.name === o.value) && matches(o, draft),
-  );
-
-  function add(value: string) {
-    if (!values.some((v) => v.name === value)) {
-      onChange([...values, { name: value }]);
-    }
-    setDraft("");
-  }
+  const available = options.filter((option) => !values.some((v) => v.name === option.value));
 
   function remove(name: string) {
     onChange(values.filter((v) => v.name !== name));
@@ -489,45 +546,32 @@ export function McpBindingInput({
 
   return (
     <Field label="MCP servers">
-      <div className="space-y-1.5">
+      <Stack gap={6}>
         {values.map((binding) => {
           const count = Object.keys(binding.headers ?? {}).length;
           return (
-            <div
+            <PickedChip
               key={binding.name}
-              className="rounded bg-neutral-100 text-xs dark:bg-neutral-800"
-            >
-              <div className="flex items-center justify-between px-2 py-1">
-                <span>
-                  {binding.name}
-                  {count > 0 && (
-                    <span className="ml-1 text-neutral-400">
-                      ({count} header override{count === 1 ? "" : "s"})
-                    </span>
-                  )}
-                  <span className="ml-1 text-neutral-400">
-                    ({binding.tools?.length ? `${binding.tools.length} tools` : "all tools"})
-                  </span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSettingsFor(binding.name)}
-                    className="text-neutral-500 hover:text-brand"
-                  >
-                    Settings
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(binding.name)}
-                    className="text-neutral-400 hover:text-red-500"
-                    aria-label={`Remove ${binding.name}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              </div>
-            </div>
+              label={binding.name}
+              suffix={
+                <Text component="span" c="dimmed" fz="xs">
+                  {count > 0 && ` (${count} header override${count === 1 ? "" : "s"})`}
+                  {` (${binding.tools?.length ? `${binding.tools.length} tools` : "all tools"})`}
+                </Text>
+              }
+              action={
+                <Anchor
+                  component="button"
+                  type="button"
+                  fz="xs"
+                  c="dimmed"
+                  onClick={() => setSettingsFor(binding.name)}
+                >
+                  Settings
+                </Anchor>
+              }
+              onRemove={() => remove(binding.name)}
+            />
           );
         })}
         {settingsFor && (
@@ -558,35 +602,16 @@ export function McpBindingInput({
             }
           />
         )}
-      </div>
-      <div className="relative mt-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (available[0]) {
-                add(available[0].value);
-              }
-            }
-            if (e.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-          placeholder="Search registered MCP servers"
-          className={inputClass}
-        />
-        {open && (
-          <OptionDropdown
-            options={available}
-            emptyText="No matching entries."
-            onPick={(option) => add(option.value)}
-          />
-        )}
-      </div>
+      </Stack>
+      <OptionPicker
+        options={available}
+        placeholder="Search registered MCP servers"
+        onPick={(option) => {
+          if (!values.some((v) => v.name === option.value)) {
+            onChange([...values, { name: option.value }]);
+          }
+        }}
+      />
     </Field>
   );
 }
@@ -601,68 +626,33 @@ export function SubagentInput({
   onChange: (values: SubagentRef[]) => void;
   options: Array<PickerOption & { type: "local" | "remote" }>;
 }) {
-  const [draft, setDraft] = useState("");
-  const [open, setOpen] = useState(false);
-
-  const available = options.filter(
-    (o) => !values.some((v) => v.name === o.value) && matches(o, draft),
-  );
-
-  function add(option: PickerOption & { type: "local" | "remote" }) {
-    if (!values.some((v) => v.name === option.value)) {
-      onChange([...values, { name: option.value, type: option.type }]);
-    }
-    setDraft("");
-  }
+  const available = options.filter((option) => !values.some((v) => v.name === option.value));
 
   return (
     <Field label="Subagents">
-      <div className="space-y-1.5">
+      <Stack gap={6}>
         {values.map((ref) => (
-          <div
+          <PickedChip
             key={ref.name}
-            className="flex items-center justify-between rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800"
-          >
-            <span>
-              {ref.name} <span className="text-neutral-400">({ref.type})</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => onChange(values.filter((v) => v.name !== ref.name))}
-              className="text-neutral-400 hover:text-red-500"
-              aria-label={`Remove ${ref.name}`}
-            >
-              ×
-            </button>
-          </div>
+            label={ref.name}
+            suffix={
+              <Text component="span" c="dimmed" fz="xs">
+                {` (${ref.type})`}
+              </Text>
+            }
+            onRemove={() => onChange(values.filter((v) => v.name !== ref.name))}
+          />
         ))}
-      </div>
-      <div className="relative mt-1.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (available[0]) {
-                add(available[0]);
-              }
-            }
-            if (e.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-          placeholder="Search projects and external agents"
-          className={inputClass}
-        />
-        {open && (
-          <OptionDropdown options={available} emptyText="No matching agents." onPick={add} />
-        )}
-      </div>
+      </Stack>
+      <OptionPicker
+        options={available}
+        placeholder="Search projects and external agents"
+        onPick={(option) => {
+          if (!values.some((v) => v.name === option.value)) {
+            onChange([...values, { name: option.value, type: option.type }]);
+          }
+        }}
+      />
     </Field>
   );
 }
-
-export { inputClass };

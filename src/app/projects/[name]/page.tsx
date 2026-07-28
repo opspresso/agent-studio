@@ -17,8 +17,7 @@ import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
-import { controlClass } from "@/app/_components/formStyles";
-import { buttonClass } from "@/app/_components/buttonStyles";
+import { Alert, Button, Grid, Group, Select, Stack, Text } from "@mantine/core";
 
 /**
  * Whether the run's model can take the images the panel would attach — vision for
@@ -205,94 +204,104 @@ export default function PlaygroundPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-neutral-500">Loading…</p>;
+    return (
+      <Text fz="sm" c="dimmed">
+        Loading…
+      </Text>
+    );
   }
   if (error || !project) {
     return (
-      <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+      <Alert color="red" variant="light">
         {error ?? "Project not found"}
-      </div>
+      </Alert>
     );
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <select
-            value={selectedName}
-            onChange={(e) => selectVersion(e.target.value)}
-            className={controlClass}
-          >
-            <option value="">+ New version</option>
-            {versions.map((version) => (
-              <option key={version.versionName} value={version.versionName}>
-                v{version.versionName}
-                {project.publishedVersion === version.versionName ? " (published)" : ""}
-              </option>
-            ))}
-          </select>
-          <div className="flex items-center gap-2">
-            {dirty ? (
-              <span className="text-xs text-amber-600 dark:text-amber-400">unsaved</span>
-            ) : (
-              savedName && (
-                <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                  Saved v{savedName}
-                </span>
-              )
-            )}
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving || !draft.model}
-              className={buttonClass("primary")}
-            >
-              {saving ? "Saving…" : selectedName === "" ? "Create version" : "Save"}
-            </button>
-          </div>
-        </div>
+    <Grid gap="lg">
+      <Grid.Col span={{ base: 12, lg: 6 }}>
+        <Stack gap="md">
+          <Group justify="space-between" gap="xs" wrap="nowrap">
+            <Select
+              value={selectedName}
+              onChange={(value) => selectVersion(value ?? "")}
+              allowDeselect={false}
+              data={[
+                { value: "", label: "+ New version" },
+                ...versions.map((version) => ({
+                  value: version.versionName,
+                  label: `v${version.versionName}${
+                    project.publishedVersion === version.versionName ? " (published)" : ""
+                  }`,
+                })),
+              ]}
+            />
+            <Group gap="xs" wrap="nowrap">
+              {dirty ? (
+                <Text fz="xs" c="orange">
+                  unsaved
+                </Text>
+              ) : (
+                savedName && (
+                  <Text fz="xs" c="teal">
+                    Saved v{savedName}
+                  </Text>
+                )
+              )}
+              <Button onClick={save} loading={saving} disabled={!draft.model}>
+                {selectedName === "" ? "Create version" : "Save"}
+              </Button>
+            </Group>
+          </Group>
 
-        {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
-
-        <VersionEditor
-          projectName={project.name}
-          projectType={project.projectType}
-          models={models.filter((m) =>
-            project.projectType === "image"
-              ? m.capabilities.imageGeneration
-              : !m.capabilities.imageGeneration,
+          {saveError && (
+            <Alert color="red" variant="light">
+              {saveError}
+            </Alert>
           )}
-          imageModels={models.filter((m) => m.capabilities.imageGeneration)}
-          value={draft}
-          onChange={setDraft}
-          save={{
-            run: save,
-            saving,
-            disabled: !draft.model,
-            error: saveError,
-            savedName: dirty ? null : savedName,
-            label: selectedName === "" ? "Create version" : "Save",
-          }}
-        />
-      </section>
 
-      <section className="space-y-4">
-        <CollapsibleSection title="Preview">
-          <PromptPreview projectName={name} draft={draft} />
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Run">
-          <RunPanel
-            projectName={name}
-            versionName={dirty && selectedName === "" ? null : selectedName || null}
+          <VersionEditor
+            projectName={project.name}
             projectType={project.projectType}
-            systemPrompt={draft.systemPrompt}
-            userPromptTemplate={draft.userPromptTemplate}
-            modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
+            models={models.filter((m) =>
+              project.projectType === "image"
+                ? m.capabilities.imageGeneration
+                : !m.capabilities.imageGeneration,
+            )}
+            imageModels={models.filter((m) => m.capabilities.imageGeneration)}
+            value={draft}
+            onChange={setDraft}
+            save={{
+              run: save,
+              saving,
+              disabled: !draft.model,
+              error: saveError,
+              savedName: dirty ? null : savedName,
+              label: selectedName === "" ? "Create version" : "Save",
+            }}
           />
-        </CollapsibleSection>
-      </section>
-    </div>
+        </Stack>
+      </Grid.Col>
+
+      <Grid.Col span={{ base: 12, lg: 6 }}>
+        <Stack gap="md">
+          <CollapsibleSection title="Preview">
+            <PromptPreview projectName={name} draft={draft} />
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Run">
+            <RunPanel
+              projectName={name}
+              versionName={dirty && selectedName === "" ? null : selectedName || null}
+              projectType={project.projectType}
+              systemPrompt={draft.systemPrompt}
+              userPromptTemplate={draft.userPromptTemplate}
+              modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
+            />
+          </CollapsibleSection>
+        </Stack>
+      </Grid.Col>
+    </Grid>
   );
 }

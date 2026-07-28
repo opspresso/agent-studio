@@ -11,9 +11,8 @@ import {
   updateProjectSlack,
 } from "../../lib/api";
 import type { ProjectSlackView } from "../../lib/api";
-import { monoFieldClass as inputClass } from "@/app/_components/formStyles";
-import { buttonClass } from "@/app/_components/buttonStyles";
-
+import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
 
 export function SlackSection({ projectName }: { projectName: string }) {
   const [view, setView] = useState<ProjectSlackView | null>(null);
@@ -42,7 +41,11 @@ export function SlackSection({ projectName }: { projectName: string }) {
   }, [projectName]);
 
   if (!view) {
-    return error ? <p className="text-sm text-red-600">{error}</p> : null;
+    return error ? (
+      <Text fz="sm" c="red">
+        {error}
+      </Text>
+    ) : null;
   }
 
   async function save() {
@@ -100,87 +103,73 @@ export function SlackSection({ projectName }: { projectName: string }) {
     <CollapsibleSection
       title="Slack bot"
       badge={
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs ${
-            view.enabled
-              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "bg-neutral-200 text-neutral-500 dark:bg-neutral-800"
-          }`}
-        >
+        <Badge color={view.enabled ? "teal" : "gray"} radius="xl">
           {view.enabled ? "enabled" : view.configured ? "configured (off)" : "not connected"}
-        </span>
+        </Badge>
       }
     >
-      <p className="text-xs leading-relaxed text-neutral-500">
-        Create a dedicated Slack app for this project from the manifest below
-        (api.slack.com/apps → Create New App → From a manifest), install it, then paste the
-        bot token and signing secret here.
-      </p>
+      <Stack gap="sm">
+        <Text fz="xs" c="dimmed" lh={1.6}>
+          Create a dedicated Slack app for this project from the manifest below (api.slack.com/apps
+          → Create New App → From a manifest), install it, then paste the bot token and signing
+          secret here.
+        </Text>
 
-      <CollapsibleCode
-        title="App manifest"
-        language="json"
-        code={JSON.stringify(view.manifest, null, 2)}
-        copyLabel="Copy manifest"
-      />
+        <CollapsibleCode
+          title="App manifest"
+          language="json"
+          code={JSON.stringify(view.manifest, null, 2)}
+          copyLabel="Copy manifest"
+        />
 
-      <label className="block">
-        <span className="text-sm font-medium">Bot token</span>
-        <input
+        <TextInput
+          label="Bot token"
           value={botToken}
-          onChange={(e) => setBotToken(e.target.value)}
+          onChange={(e) => setBotToken(e.currentTarget.value)}
           placeholder="xoxb-…"
-          className={inputClass}
+          styles={monoInput}
         />
-      </label>
-      <label className="block">
-        <span className="text-sm font-medium">Signing secret</span>
-        <input
+        <TextInput
+          label="Signing secret"
           value={signingSecret}
-          onChange={(e) => setSigningSecret(e.target.value)}
+          onChange={(e) => setSigningSecret(e.currentTarget.value)}
           placeholder="Signing secret from Basic Information"
-          className={inputClass}
+          styles={monoInput}
         />
-      </label>
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Enable event handling at
-        </label>
-        <CopyableUrl url={view.eventsUrl} />
-      </div>
+        <Stack gap="xs">
+          <Checkbox
+            label="Enable event handling at"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.currentTarget.checked)}
+          />
+          <CopyableUrl url={view.eventsUrl} />
+        </Stack>
 
-      {status && <p className="text-sm text-emerald-600 dark:text-emerald-400">{status}</p>}
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={save}
-          disabled={busy}
-          className={buttonClass("primary")}
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          onClick={test}
-          disabled={busy || !view.configured}
-          className={buttonClass("secondary")}
-        >
-          Test connection
-        </button>
-        {view.configured && (
-          <button
-            type="button"
-            onClick={disconnect}
-            disabled={busy}
-            className={`ml-auto ${buttonClass("danger")}`}
-          >
-            Disconnect
-          </button>
+        {status && (
+          <Text fz="sm" c="teal">
+            {status}
+          </Text>
         )}
-      </div>
+        {error && (
+          <Text fz="sm" c="red">
+            {error}
+          </Text>
+        )}
+
+        <Group gap="xs">
+          <Button onClick={save} loading={busy}>
+            Save
+          </Button>
+          <Button variant="default" onClick={test} disabled={busy || !view.configured}>
+            Test connection
+          </Button>
+          {view.configured && (
+            <Button variant="default" color="red" onClick={disconnect} disabled={busy} ml="auto">
+              Disconnect
+            </Button>
+          )}
+        </Group>
+      </Stack>
     </CollapsibleSection>
   );
 }

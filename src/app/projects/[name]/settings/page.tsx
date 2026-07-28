@@ -2,23 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSession } from "@/lib/auth-client";
+import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
-import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
 import { A2aSection } from "./A2aSection";
 import { SlackSection } from "./SlackSection";
 import { TokenSection } from "./TokenSection";
-import { fieldClass as inputClass } from "@/app/_components/formStyles";
-import { buttonClass } from "@/app/_components/buttonStyles";
-
+import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 
 export default function SettingsPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
 
-  const { data: session, isPending: sessionPending } = useSession();
+  const viewer = useViewer();
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
@@ -84,54 +81,55 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading || sessionPending) {
-    return <p className="text-sm text-neutral-500">Loading…</p>;
+  if (loading || viewer === null) {
+    return (
+      <Text fz="sm" c="dimmed">
+        Loading…
+      </Text>
+    );
   }
 
-  const isOwner = ownerEmail !== null && session?.user.email === ownerEmail;
-  if (!isOwner) {
+  if (!canEditProject(viewer, ownerEmail)) {
     return (
-      <div className="max-w-xl rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-        Only the project owner ({ownerEmail ?? "unknown"}) can change these settings.
-      </div>
+      <Alert variant="light" color="gray" maw={640}>
+        Only the project owner ({ownerEmail ?? "unknown"}) or an admin can change these settings.
+      </Alert>
     );
   }
 
   return (
-    <div className="max-w-xl space-y-8">
-      <form onSubmit={save} className="space-y-4">
-        {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-            {error}
-          </div>
-        )}
-        <label className="block">
-          <span className="text-sm font-medium">Display name</span>
-          <input
+    <Stack gap="xl" maw={640}>
+      <form onSubmit={save}>
+        <Stack gap="md">
+          {error && (
+            <Alert color="red" variant="light">
+              {error}
+            </Alert>
+          )}
+          <TextInput
+            label="Display name"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className={inputClass}
+            onChange={(e) => setDisplayName(e.currentTarget.value)}
           />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">Description</span>
-          <ResizableTextarea
+          <Textarea
+            label="Description"
             value={description}
-            onChange={setDescription}
-            rows={4}
-            className={inputClass}
+            onChange={(e) => setDescription(e.currentTarget.value)}
+            autosize
+            minRows={4}
+            maxRows={20}
           />
-        </label>
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className={buttonClass("primary")}
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-          {saved && <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved</span>}
-        </div>
+          <Group gap="sm">
+            <Button type="submit" loading={saving}>
+              Save changes
+            </Button>
+            {saved && (
+              <Text fz="sm" c="teal">
+                Saved
+              </Text>
+            )}
+          </Group>
+        </Stack>
       </form>
 
       <TokenSection projectName={name} />
@@ -140,25 +138,16 @@ export default function SettingsPage() {
 
       <A2aSection projectName={name} />
 
-      <CollapsibleSection
-        title="Danger zone"
-        titleClassName="text-sm font-semibold text-red-700 dark:text-red-400"
-        className="border-red-200 dark:border-red-900/60"
-      >
-        <p className="text-sm text-neutral-500">
-          Deleting a project removes all its versions and usage records.
-        </p>
-        <button
-          type="button"
-          onClick={remove}
-          disabled={deleting}
-          className={buttonClass("danger")}
-        >
-          {deleting ? "Deleting…" : "Delete project"}
-        </button>
+      <CollapsibleSection title="Danger zone">
+        <Stack gap="sm" align="flex-start">
+          <Text fz="sm" c="dimmed">
+            Deleting a project removes all its versions and usage records.
+          </Text>
+          <Button variant="default" color="red" onClick={remove} loading={deleting}>
+            Delete project
+          </Button>
+        </Stack>
       </CollapsibleSection>
-    </div>
+    </Stack>
   );
 }
-
-      

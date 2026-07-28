@@ -1,13 +1,16 @@
 "use client";
 
+import { Button, Group, TextInput } from "@mantine/core";
 import { DATE_PRESETS, presetRange, type DateRange } from "@/app/_lib/dateRange";
-import { compactControlClass as inputClass } from "./formStyles";
-
 
 /**
  * Shared From/To date range picker with quick-select preset buttons. Used by the
  * cost dashboard, project usage, and project traces so date search looks and
  * behaves the same everywhere.
+ *
+ * Native date inputs on purpose: the range is two plain ISO dates the API takes
+ * verbatim, and a calendar popover would add a package for no behaviour the
+ * three call sites use.
  */
 export function DateRangePicker({
   value,
@@ -19,41 +22,37 @@ export function DateRangePicker({
   presets?: readonly number[];
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <label className="flex items-center gap-1 text-sm text-neutral-500">
-        From
-        <input
-          type="date"
-          value={value.from}
-          max={value.to}
-          onChange={(e) => onChange({ ...value, from: e.target.value })}
-          className={inputClass}
-        />
-      </label>
-      <label className="flex items-center gap-1 text-sm text-neutral-500">
-        To
-        <input
-          type="date"
-          value={value.to}
-          min={value.from}
-          onChange={(e) => onChange({ ...value, to: e.target.value })}
-          className={inputClass}
-        />
-      </label>
+    <Group gap="xs" align="flex-end">
+      <TextInput
+        type="date"
+        label="From"
+        size="xs"
+        value={value.from}
+        max={value.to}
+        onChange={(event) => onChange({ ...value, from: event.currentTarget.value })}
+      />
+      <TextInput
+        type="date"
+        label="To"
+        size="xs"
+        value={value.to}
+        min={value.from}
+        onChange={(event) => onChange({ ...value, to: event.currentTarget.value })}
+      />
       {presets.length > 0 && (
-        <div className="flex gap-1">
+        <Button.Group>
           {presets.map((days) => (
-            <button
+            <Button
               key={days}
-              type="button"
+              variant="default"
+              size="compact-xs"
               onClick={() => onChange(presetRange(days))}
-              className="rounded-lg border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               {days}d
-            </button>
+            </Button>
           ))}
-        </div>
+        </Button.Group>
       )}
-    </div>
+    </Group>
   );
 }

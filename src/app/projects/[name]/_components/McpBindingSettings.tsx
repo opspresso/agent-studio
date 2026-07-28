@@ -11,9 +11,8 @@
  * so the footer names what it commits.
  */
 
-import { Modal } from "@/app/_components/Modal";
+import { Button, Group, Modal, Stack, Text } from "@mantine/core";
 import { McpConnectionCard } from "./McpConnectionCard";
-import { buttonClass } from "@/app/_components/buttonStyles";
 
 /**
  * The page's own version save, handed down so the two version-owned sections
@@ -57,57 +56,61 @@ export function McpBindingSettings({
 }) {
   return (
     <Modal
-      title={`${serverName} settings`}
+      opened
       onClose={onClose}
-      footer={
-        <>
-          {save.error ? (
-            <p className="mr-auto text-xs text-red-600 dark:text-red-400">{save.error}</p>
-          ) : save.savedName ? (
-            <p className="mr-auto text-xs text-emerald-600 dark:text-emerald-400">
-              Saved v{save.savedName}
-            </p>
-          ) : (
-            <p className="mr-auto text-xs text-neutral-400">
-              Saves the whole version, not just this server.
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-2 text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={save.run}
-            disabled={save.saving || save.disabled}
-            className={buttonClass("primary")}
-          >
-            {save.saving ? "Saving…" : save.label}
-          </button>
-        </>
-      }
+      title={`${serverName} settings`}
+      size="xl"
+      // A form that vanished because the pointer drifted over the edge would
+      // lose whatever was typed.
+      closeOnClickOutside={false}
     >
-      <Section
-        title="Tools"
-        note="Which of this server's tools this version offers the model. Saved with the version."
-      >
-        {tools}
-      </Section>
-      <Section
-        title="Header overrides"
-        note="Layered over the registry entry's headers, for this version only. Saved with the version."
-      >
-        {headers}
-      </Section>
-      <Section
-        title="Connection"
-        note="This project's own credentials for the server, shared by all its versions. Saved immediately, not with the version."
-      >
-        <McpConnectionCard projectName={projectName} serverName={serverName} />
-      </Section>
+      <Stack gap="lg">
+        <Section
+          title="Tools"
+          note="Which of this server's tools this version offers the model. Saved with the version."
+        >
+          {tools}
+        </Section>
+        <Section
+          title="Header overrides"
+          note="Layered over the registry entry's headers, for this version only. Saved with the version."
+        >
+          {headers}
+        </Section>
+        <Section
+          title="Connection"
+          note="This project's own credentials for the server, shared by all its versions. Saved immediately, not with the version."
+        >
+          <McpConnectionCard projectName={projectName} serverName={serverName} />
+        </Section>
+
+        <Group
+          justify="flex-end"
+          gap="sm"
+          pt="sm"
+          style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
+        >
+          {save.error ? (
+            <Text fz="xs" c="red" mr="auto">
+              {save.error}
+            </Text>
+          ) : save.savedName ? (
+            <Text fz="xs" c="teal" mr="auto">
+              Saved v{save.savedName}
+            </Text>
+          ) : (
+            <Text fz="xs" c="dimmed" mr="auto">
+              Saves the whole version, not just this server.
+            </Text>
+          )}
+          <Button variant="subtle" color="gray" onClick={onClose}>
+            Close
+          </Button>
+          <Button onClick={save.run} loading={save.saving} disabled={save.disabled}>
+            {save.label}
+          </Button>
+        </Group>
+      </Stack>
     </Modal>
   );
 }
@@ -122,12 +125,23 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-2">
+    <Stack component="section" gap="xs">
       <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
-        <p className="mt-0.5 text-xs text-neutral-400">{note}</p>
+        <Text
+          component="h3"
+          fz="xs"
+          fw={600}
+          tt="uppercase"
+          c="dimmed"
+          style={{ letterSpacing: "0.05em" }}
+        >
+          {title}
+        </Text>
+        <Text fz="xs" c="dimmed" mt={2}>
+          {note}
+        </Text>
       </div>
       {children}
-    </section>
+    </Stack>
   );
 }

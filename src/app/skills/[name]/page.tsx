@@ -4,9 +4,19 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
-import { ResizableTextarea } from "@/app/_components/ResizableTextarea";
-import { fieldClass, monoFieldClass } from "@/app/_components/formStyles";
-import { buttonClass, textButtonClass } from "@/app/_components/buttonStyles";
+import {
+  Alert,
+  Anchor,
+  Button,
+  Card,
+  Group,
+  Stack,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { monoInput } from "@/app/_components/monoInput";
 
 export default function SkillDetailPage() {
   const params = useParams<{ name: string }>();
@@ -48,17 +58,21 @@ export default function SkillDetailPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-neutral-500">Loading…</p>;
+    return (
+      <Text fz="sm" c="dimmed">
+        Loading…
+      </Text>
+    );
   }
 
   if (error && !skill) {
     return (
-      <div className="space-y-4">
+      <Stack gap="md">
         <BackLink />
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
-      </div>
+        </Alert>
+      </Stack>
     );
   }
 
@@ -67,43 +81,39 @@ export default function SkillDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <Stack gap="lg">
       <BackLink />
 
-      <div className="flex items-start justify-between gap-4">
+      <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <h1 className="text-2xl font-semibold">{skill.name}</h1>
-          <p className="mt-1 text-sm text-neutral-500">{skill.description}</p>
+          <Title order={1} fz="h2">
+            {skill.name}
+          </Title>
+          <Text fz="sm" c="dimmed" mt={4}>
+            {skill.description}
+          </Text>
           {skill.source && (
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            <Text fz="xs" c="orange" mt={4}>
               Synced from {skill.source} — local edits are overwritten on the next sync.
-            </p>
+            </Text>
           )}
         </div>
         {!editing && (
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className={buttonClass("secondary")}
-            >
+          <Group gap="xs" wrap="nowrap">
+            <Button variant="default" onClick={() => setEditing(true)}>
               Edit
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              className={buttonClass("danger")}
-            >
+            </Button>
+            <Button variant="default" color="red" onClick={onDelete}>
               Delete
-            </button>
-          </div>
+            </Button>
+          </Group>
         )}
-      </div>
+      </Group>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        <Alert color="red" variant="light">
           {error}
-        </div>
+        </Alert>
       )}
 
       {editing ? (
@@ -117,21 +127,29 @@ export default function SkillDetailPage() {
         />
       ) : (
         <section>
-          <h2 className="mb-2 text-sm font-medium text-neutral-500">Content</h2>
-          <div className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 font-mono text-sm dark:border-neutral-800 dark:bg-neutral-900">
-            {skill.content || <span className="text-neutral-400">No content.</span>}
-          </div>
+          <Text fz="sm" fw={500} c="dimmed" mb="xs">
+            Content
+          </Text>
+          <Card>
+            <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
+              {skill.content || (
+                <Text component="span" c="dimmed">
+                  No content.
+                </Text>
+              )}
+            </Text>
+          </Card>
         </section>
       )}
-    </div>
+    </Stack>
   );
 }
 
 function BackLink() {
   return (
-    <Link href="/skills" className={textButtonClass}>
+    <Anchor component={Link} href="/skills" fz="sm" c="dimmed">
       ← Back to skills
-    </Link>
+    </Anchor>
   );
 }
 
@@ -164,44 +182,39 @@ function EditSkillForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
-      <label className="block">
-        <span className="text-sm font-medium">Description</span>
-        <input
+    <form onSubmit={submit}>
+      <Stack gap="md">
+        <TextInput
+          label="Description"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => setDescription(e.currentTarget.value)}
           required
-          className={fieldClass}
         />
-      </label>
-      <label className="block">
-        <span className="text-sm font-medium">Content (markdown)</span>
-        <ResizableTextarea
+        <Textarea
+          label="Content (markdown)"
           value={content}
-          onChange={setContent}
-          rows={16}
-          className={monoFieldClass}
+          onChange={(e) => setContent(e.currentTarget.value)}
+          autosize
+          minRows={16}
+          maxRows={40}
+          styles={monoInput}
         />
-      </label>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && (
+          <Alert color="red" variant="light">
+            {error}
+          </Alert>
+        )}
 
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className={buttonClass("secondary")}
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={submitting}
-          className={buttonClass("primary")}
-        >
-          {submitting ? "Saving…" : "Save"}
-        </button>
-      </div>
+        <Group justify="flex-end" gap="xs">
+          <Button variant="default" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={submitting}>
+            Save
+          </Button>
+        </Group>
+      </Stack>
     </form>
   );
 }

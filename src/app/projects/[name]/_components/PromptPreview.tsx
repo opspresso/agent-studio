@@ -3,7 +3,18 @@
 import { useMemo, useState } from "react";
 import { findTemplateVariables } from "@/application/llm/template";
 import { previewPrompt, type PromptPreview, type VersionInput } from "../../lib/api";
-import { inputClass } from "./inputs";
+import {
+  Alert,
+  Button,
+  Code,
+  Group,
+  Input,
+  Spoiler,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
+import { CopyButton } from "@/app/_components/CopyButton";
 
 /** The whole assembled prompt as one block, for pasting elsewhere. */
 function promptText(preview: PromptPreview): string {
@@ -12,24 +23,6 @@ function promptText(preview: PromptPreview): string {
 
 function charCount(preview: PromptPreview): number {
   return preview.messages.reduce((total, message) => total + message.content.length, 0);
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-      className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-    >
-      {copied ? "Copied" : "Copy"}
-    </button>
-  );
 }
 
 /**
@@ -80,91 +73,117 @@ export function PromptPreview({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-neutral-500">
+    <Stack gap="sm">
+      <Group justify="space-between" gap="xs" wrap="nowrap">
+        <Group gap={6} fz="xs" c="dimmed">
           {preview && (
             <>
-              <span>{charCount(preview).toLocaleString()} chars</span>
-              {preview.toolNames.length > 0 && <span>· {preview.toolNames.length} tools</span>}
+              <Text fz="xs" c="dimmed">
+                {charCount(preview).toLocaleString()} chars
+              </Text>
+              {preview.toolNames.length > 0 && (
+                <Text fz="xs" c="dimmed">
+                  · {preview.toolNames.length} tools
+                </Text>
+              )}
             </>
           )}
-          {stale && <span className="text-amber-600 dark:text-amber-400">· stale</span>}
-        </div>
-        <div className="flex items-center gap-2">
+          {stale && (
+            <Text fz="xs" c="orange">
+              · stale
+            </Text>
+          )}
+        </Group>
+        <Group gap="xs" wrap="nowrap">
           {preview && <CopyButton text={promptText(preview)} />}
-          <button
-            type="button"
+          <Button
+            size="compact-sm"
             onClick={() => void refresh()}
-            disabled={loading || !draft.model}
-            className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+            loading={loading}
+            disabled={!draft.model}
           >
-            {loading ? "Building…" : preview ? "Refresh" : "Build preview"}
-          </button>
-        </div>
-      </div>
+            {preview ? "Refresh" : "Build preview"}
+          </Button>
+        </Group>
+      </Group>
 
       {varNames.length > 0 && (
-        <div className="space-y-2">
-          <span className="text-sm font-medium">Variables</span>
-          {varNames.map((name) => (
-            <label key={name} className="flex items-center gap-2">
-              <span className="w-32 shrink-0 font-mono text-xs text-neutral-500">{name}</span>
-              <input
+        <Input.Wrapper label="Variables" labelElement="div">
+          <Stack gap="xs" mt={4}>
+            {varNames.map((name) => (
+              <TextInput
+                key={name}
                 value={variables[name] ?? ""}
-                onChange={(e) => setVariables((prev) => ({ ...prev, [name]: e.target.value }))}
-                className={inputClass}
+                onChange={(e) =>
+                  setVariables((prev) => ({ ...prev, [name]: e.currentTarget.value }))
+                }
+                leftSectionWidth={132}
+                leftSectionPointerEvents="none"
+                leftSection={
+                  <Text fz="xs" ff="monospace" c="dimmed" truncate px="xs">
+                    {name}
+                  </Text>
+                }
               />
-            </label>
-          ))}
-        </div>
+            ))}
+          </Stack>
+        </Input.Wrapper>
       )}
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <Alert color="red" variant="light">
+          {error}
+        </Alert>
+      )}
 
       {preview?.warnings.map((warning, index) => (
-        <div
-          key={`warning-${index}`}
-          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
-        >
-          ⚠️ {warning}
-        </div>
+        <Alert key={`warning-${index}`} color="yellow" variant="light" fz="xs">
+          {warning}
+        </Alert>
       ))}
 
       {preview?.messages.map((message, index) => (
-        <div key={`message-${index}`} className="space-y-1">
-          <span className="font-mono text-xs uppercase tracking-wide text-neutral-500">
+        <Stack key={`message-${index}`} gap={4}>
+          <Text
+            ff="monospace"
+            fz="xs"
+            tt="uppercase"
+            c="dimmed"
+            style={{ letterSpacing: "0.05em" }}
+          >
             {message.role}
-          </span>
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs leading-relaxed dark:border-neutral-800 dark:bg-neutral-900">
+          </Text>
+          <Code block fz="xs" mah={384} style={{ overflow: "auto", whiteSpace: "pre-wrap" }}>
             {message.content}
-          </pre>
-        </div>
+          </Code>
+        </Stack>
       ))}
 
       {preview && preview.messages.length === 0 && (
-        <p className="text-xs text-neutral-400">
+        <Text fz="xs" c="dimmed">
           This version sends no prompt of its own; the conversation supplies everything.
-        </p>
+        </Text>
       )}
 
       {preview && preview.toolNames.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-neutral-500">
-            Tools offered ({preview.toolNames.length})
-          </summary>
-          <p className="mt-1 font-mono text-neutral-600 dark:text-neutral-400">
+        <Spoiler
+          maxHeight={0}
+          showLabel={`Tools offered (${preview.toolNames.length})`}
+          hideLabel="Hide tools"
+          fz="xs"
+        >
+          <Text ff="monospace" fz="xs" c="dimmed" mt={4}>
             {preview.toolNames.join(", ")}
-          </p>
-        </details>
+          </Text>
+        </Spoiler>
       )}
 
       {!preview && !error && (
-        <p className="text-xs text-neutral-400">
+        <Text fz="xs" c="dimmed">
           Builds the system prompt the way a run does — skill table, connected MCP servers and
           their tool names, transfer instructions — by contacting the bound MCP servers.
-        </p>
+        </Text>
       )}
-    </div>
+    </Stack>
   );
 }
