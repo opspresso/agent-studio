@@ -13,8 +13,17 @@ services:
     restart: unless-stopped
 
   # Development instance — what `pnpm dev` and `pnpm init-local-table` talk to.
+  # -sharedDb + -dbPath + the volume keep tables and sessions across restarts.
+  # user: root because Docker creates the mount point root-owned while the image
+  # runs as uid 1000, which fails silently — the container shows Up but SQLite
+  # can't open its file and clients hang.
   dynamodb-local:
     image: amazon/dynamodb-local:3.3.0
+    user: root
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "./data"]
+    working_dir: /home/dynamodblocal
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
     ports:
       - "8085:8000"
     restart: unless-stopped
@@ -28,3 +37,6 @@ services:
     ports:
       - "8086:8000"
     restart: unless-stopped
+
+volumes:
+  dynamodb-data:
