@@ -7,7 +7,7 @@ skills, MCP tools, chats, cost/usage dashboard**.
 
 ## Stack
 
-- Node.js 22, pnpm 11
+- Node.js 24, pnpm 11
 - Next.js 16 (App Router), React 19, TypeScript strict
 - Tailwind CSS v4
 - Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)
@@ -28,7 +28,7 @@ pnpm install
 # 2. Environment
 cp .env.example .env.local
 # Fill in GOOGLE_CLIENT_ID/SECRET, BETTER_AUTH_SECRET, LLM_BASE_URL, LLM_API_KEY,
-# AES_ENCRYPTION_KEY (32-byte base64: `openssl rand -base64 32`)
+# AES_ENCRYPTION_KEY (32-byte base64: `openssl rand -hex 32`)
 
 # 3. Local DynamoDB
 docker run -d -p 8000:8000 amazon/dynamodb-local

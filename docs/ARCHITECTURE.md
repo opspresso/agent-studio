@@ -11,7 +11,7 @@ below is the map.
 
 ## Stack
 
-- Node.js 22, pnpm 11 (`packageManager` pinned)
+- Node.js 24, pnpm 11 (`packageManager` pinned)
 - Next.js 16 App Router, React 19, TypeScript strict
 - Tailwind CSS v4 (CSS-first config via `@import "tailwindcss"` — no tailwind.config file)
 - Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)

@@ -16,7 +16,8 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  IMAGE: 396608815058.dkr.ecr.ap-northeast-2.amazonaws.com/agent-studio
+  AWS_ROLE_ARN: arn:aws:iam::396608815058:role/github--agent-studio-ecr
+  ECR_REPOSITORY: 396608815058.dkr.ecr.ap-northeast-2.amazonaws.com/agent-studio
 
 # amd64 only: the sole deployment target (eks-demo) runs amd64 nodes, and the
 # free arm64 hosted runners are not available on private repositories.
@@ -30,7 +31,7 @@ jobs:
           version: 11.10.0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
@@ -70,7 +71,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::396608815058:role/github--agent-studio-ecr
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
@@ -96,8 +97,8 @@ jobs:
           provenance: false
           sbom: false
           tags: |
-            ${{ env.IMAGE }}:${{ github.ref_name }}
-            ${{ env.IMAGE }}:latest
+            ${{ env.ECR_REPOSITORY }}:${{ github.ref_name }}
+            ${{ env.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

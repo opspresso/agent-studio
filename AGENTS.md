@@ -21,7 +21,7 @@ pnpm exec vitest run -t "streamWithFallback"
 ```
 
 There is **no lint step** (no ESLint config); `typecheck` + `test` are the checks.
-Node 22 (`engines >=22`), pnpm 11 (pinned via `packageManager`). CI (`.github/workflows/ci.yml`) runs typecheck → test → integration test → build.
+Node 24 (`engines >=24`), pnpm 11 (pinned via `packageManager`). CI (`.github/workflows/ci.yml`) runs typecheck → test → integration test → build.
 
 ### Local development
 
