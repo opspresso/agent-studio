@@ -30,8 +30,8 @@ cp .env.example .env.local
 # Fill in GOOGLE_CLIENT_ID/SECRET, BETTER_AUTH_SECRET, LLM_BASE_URL, LLM_API_KEY,
 # AES_ENCRYPTION_KEY (32-byte base64: `openssl rand -hex 32`)
 
-# 3. Local DynamoDB
-docker run -d -p 8000:8000 amazon/dynamodb-local
+# 3. Local DynamoDB (dev instance on :8085; :8086 is the integration-test one)
+docker compose up -d dynamodb-local
 pnpm init-local-table
 # Note: DynamoDB Local namespaces tables by access key + region; the init
 # script uses the same region as the app client (AWS_REGION, default
@@ -51,9 +51,12 @@ pnpm tsx scripts/mock-llm.ts
 # (bypasses the Google OAuth round-trip; local DynamoDB only)
 pnpm tsx --env-file=.env.local scripts/dev-session.ts
 
-# End-to-end integration check (repositories + engine against local DynamoDB)
-# CI runs the same script as `pnpm test:integration`
-pnpm tsx --env-file=.env.local scripts/integration-check.ts
+# End-to-end integration check (repositories + engine against local DynamoDB).
+# Runs against the :8086 instance, never the dev one — it cascade-deletes what
+# it writes, so do not pass --env-file=.env.local here (the script refuses).
+docker compose up -d dynamodb-local-test
+DYNAMODB_ENDPOINT_URL=http://localhost:8086 pnpm init-local-table
+pnpm test:integration
 
 # Seed sample skills (conversation, image-generation)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts

@@ -10,7 +10,7 @@ import {
   UpdateTimeToLiveCommand,
 } from "@aws-sdk/client-dynamodb";
 
-const endpoint = process.env.DYNAMODB_ENDPOINT_URL ?? "http://localhost:8000";
+const endpoint = process.env.DYNAMODB_ENDPOINT_URL ?? "http://localhost:8085";
 const tableName = process.env.DYNAMODB_TABLE_NAME ?? "agent-studio";
 
 if (!endpoint.includes("localhost") && !endpoint.includes("127.0.0.1")) {

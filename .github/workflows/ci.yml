@@ -10,9 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       dynamodb:
-        image: amazon/dynamodb-local:latest
+        image: amazon/dynamodb-local:3.3.0
         ports:
-          - 8001:8000
+          # 8086 is the integration-test port; 8085 is the dev instance.
+          - 8086:8000
     steps:
       - uses: actions/checkout@v7
 
@@ -39,7 +40,7 @@ jobs:
           pnpm init-local-table
           pnpm test:integration
         env:
-          DYNAMODB_ENDPOINT_URL: http://127.0.0.1:8001
+          DYNAMODB_ENDPOINT_URL: http://127.0.0.1:8086
 
       - name: Build
         run: pnpm build

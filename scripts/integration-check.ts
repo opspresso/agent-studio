@@ -3,16 +3,31 @@
  * Exercises every repository round-trip plus the execution engine (single-shot
  * and agent loop with the builtin Skill tool).
  *
- * Prerequisites: DynamoDB Local reachable at DYNAMODB_ENDPOINT_URL with the
- * table created (`pnpm init-local-table`).
+ * Runs against the *test* DynamoDB Local instance (8086), never the dev one
+ * (8085): this check writes fixtures and cascade-deletes them.
  *
- *   DYNAMODB_ENDPOINT_URL=http://localhost:8001 pnpm tsx scripts/integration-check.ts
+ *   docker compose up -d dynamodb-local-test
+ *   DYNAMODB_ENDPOINT_URL=http://localhost:8086 pnpm init-local-table
+ *   pnpm test:integration
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 
 process.env.STAGE ??= "local";
-process.env.DYNAMODB_ENDPOINT_URL ??= "http://localhost:8001";
+process.env.DYNAMODB_ENDPOINT_URL ??= "http://localhost:8086";
+
+// Refuse anything but the local test instance. This check cascade-deletes what
+// it writes, and `--env-file=.env.local` (which carries the dev endpoint) is an
+// easy way to aim it at 8085 by accident — where it would take the dev app's
+// data with it. `init-local-table.ts` guards the same way, one port over.
+const endpoint = new URL(process.env.DYNAMODB_ENDPOINT_URL);
+if (!["localhost", "127.0.0.1"].includes(endpoint.hostname) || endpoint.port !== "8086") {
+  console.error(
+    `Refusing to run against ${endpoint.origin}: this check writes and deletes, so it ` +
+      `only runs against the local test instance (http://localhost:8086).`,
+  );
+  process.exit(1);
+}
 // Overridable so the check can run beside a `scripts/mock-llm.ts` already
 // holding the default port; CI leaves it unset.
 const MOCK_PORT = Number(process.env.INTEGRATION_MOCK_PORT ?? 8002);

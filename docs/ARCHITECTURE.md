@@ -653,8 +653,9 @@ The word "agent" is overloaded; these are the distinct concepts:
 ## Environment
 
 See `.env.example`. `STAGE` = local | alpha | prod. Local DynamoDB via
-`DYNAMODB_ENDPOINT_URL=http://localhost:8000`; `scripts/init-local-table.ts` creates the
-table + GSIs.
+`DYNAMODB_ENDPOINT_URL=http://localhost:8085`; `scripts/init-local-table.ts` creates the
+table + GSIs. The integration check runs against a second instance on `8086` so it cannot
+cascade-delete data the dev app is using.
 
 ## Verification
 

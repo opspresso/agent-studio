@@ -3,10 +3,10 @@
  * signed session cookie for exercising authenticated API routes without the
  * Google OAuth round-trip. Local development only.
  *
- *   DYNAMODB_ENDPOINT_URL=http://localhost:8001 pnpm tsx scripts/dev-session.ts
+ *   pnpm tsx scripts/dev-session.ts        # dev instance on :8085
  */
 process.env.STAGE ??= "local";
-process.env.DYNAMODB_ENDPOINT_URL ??= "http://localhost:8001";
+process.env.DYNAMODB_ENDPOINT_URL ??= "http://localhost:8085";
 process.env.BETTER_AUTH_SECRET ??= "dev-secret";
 
 const endpoint = process.env.DYNAMODB_ENDPOINT_URL;

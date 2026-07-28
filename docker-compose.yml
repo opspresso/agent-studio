@@ -12,8 +12,19 @@ services:
       - dynamodb-local
     restart: unless-stopped
 
+  # Development instance — what `pnpm dev` and `pnpm init-local-table` talk to.
   dynamodb-local:
-    image: amazon/dynamodb-local
+    image: amazon/dynamodb-local:3.3.0
     ports:
-      - "8001:8000"
+      - "8085:8000"
+    restart: unless-stopped
+
+  # Integration-test instance, kept separate so `pnpm test:integration` — which
+  # writes and cascade-deletes — can never touch data the dev app is using. The
+  # image's default command is `-inMemory`, so every start is empty and
+  # `pnpm init-local-table` has to recreate the table.
+  dynamodb-local-test:
+    image: amazon/dynamodb-local:3.3.0
+    ports:
+      - "8086:8000"
     restart: unless-stopped

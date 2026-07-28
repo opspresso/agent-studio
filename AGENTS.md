@@ -26,13 +26,18 @@ Node 24 (`engines >=24`), pnpm 11 (pinned via `packageManager`). CI (`.github/wo
 ### Local development
 
 ```bash
-docker run -d -p 8000:8000 amazon/dynamodb-local   # local DynamoDB
-pnpm init-local-table                              # create table + GSIs (uses AWS_REGION, default ap-northeast-2)
+docker compose up -d dynamodb-local        # dev DynamoDB on :8085
+pnpm init-local-table                      # create table + GSIs (uses AWS_REGION, default ap-northeast-2)
 
 pnpm tsx scripts/mock-llm.ts                              # mock OpenAI-compatible LLM (set LLM_BASE_URL=http://127.0.0.1:8002/v1)
 pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses Google OAuth)
-pnpm tsx --env-file=.env.local scripts/integration-check.ts  # repos + engine against local DynamoDB (CI runs this as pnpm test:integration)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts    # seed sample skills
+
+# Integration check — a *separate* instance on :8086, because it cascade-deletes
+# what it writes. Never point it at :8085 (the script refuses).
+docker compose up -d dynamodb-local-test
+DYNAMODB_ENDPOINT_URL=http://localhost:8086 pnpm init-local-table
+pnpm test:integration                      # CI runs this same pair
 ```
 
 Required env for any real run (validated fail-fast at boot by `src/instrumentation.ts`):
