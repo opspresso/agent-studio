@@ -13,6 +13,7 @@ import {
 import type { ProjectSlackView } from "../../lib/api";
 import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
+import { stateColor } from "@/app/_components/badgeColors";
 
 export function SlackSection({ projectName }: { projectName: string }) {
   const [view, setView] = useState<ProjectSlackView | null>(null);
@@ -103,7 +104,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
     <CollapsibleSection
       title="Slack bot"
       badge={
-        <Badge color={view.enabled ? "teal" : "gray"} radius="xl">
+        <Badge color={stateColor(view.enabled)} radius="xl">
           {view.enabled ? "enabled" : view.configured ? "configured (off)" : "not connected"}
         </Badge>
       }

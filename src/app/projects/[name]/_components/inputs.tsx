@@ -91,6 +91,8 @@ export interface PickerOption {
   value: string;
   description?: string;
   badge?: string;
+  /** Colour for {@link badge}; from `badgeColors`, so the picker never picks one. */
+  badgeColor?: string;
 }
 
 /** Removable chip for a picked value. */
@@ -178,7 +180,11 @@ function OptionPicker<T extends PickerOption>({
             <Text fz="sm" style={{ flexShrink: 0 }}>
               {option.value}
             </Text>
-            {meta?.badge && <Badge size="xs">{meta.badge}</Badge>}
+            {meta?.badge && (
+              <Badge size="xs" color={meta.badgeColor}>
+                {meta.badge}
+              </Badge>
+            )}
             {meta?.description && (
               <Text fz="xs" c="dimmed" truncate>
                 {meta.description}

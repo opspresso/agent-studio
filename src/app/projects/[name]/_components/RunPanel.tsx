@@ -23,6 +23,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
+import { BADGE, SUBAGENT_COLOR } from "@/app/_components/badgeColors";
 
 interface ToolResultView {
   name: string;
@@ -345,13 +346,15 @@ export function RunPanel({
             <Text fz="xs" c="dimmed">
               {running ? "running:" : "ran:"}
             </Text>
-            <Badge ff="monospace">{projectName}</Badge>
+            <Badge color={BADGE.owned} ff="monospace">
+              {projectName}
+            </Badge>
             {(activePath ?? []).map((agent, index) => (
               <Group key={`active-${index}`} gap={6} wrap="nowrap">
                 <Text fz="xs" c="dimmed">
                   →
                 </Text>
-                <Badge color="violet" ff="monospace">
+                <Badge color={SUBAGENT_COLOR} ff="monospace">
                   {agent}
                 </Badge>
               </Group>

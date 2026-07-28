@@ -136,7 +136,7 @@ export interface PromptPreview {
 }
 
 /**
- * Assemble what the draft in the editor would send. Owner-only, and it contacts
+ * Assemble what the draft in the editor would send. Owner or admin, and it contacts
  * the bound MCP servers, so the panel calls it on demand rather than as the
  * editor changes.
  */
@@ -339,7 +339,7 @@ export async function generateProjectToken(
 }
 
 /**
- * Read the stored token back in plaintext (owner-only). A POST, not a GET: the
+ * Read the stored token back in plaintext (owner or admin). A POST, not a GET: the
  * response body is a live credential and must stay out of caches and history.
  */
 export async function revealProjectToken(name: string): Promise<string> {

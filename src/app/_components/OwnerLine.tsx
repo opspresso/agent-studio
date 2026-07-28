@@ -1,4 +1,5 @@
 import { Badge, Group, Text } from "@mantine/core";
+import { BADGE } from "./badgeColors";
 
 /** Shared owner line: owner email plus a brand-colored "you" badge for the viewer's own items. */
 export function OwnerLine({
@@ -20,7 +21,7 @@ export function OwnerLine({
         {ownerEmail}
       </Text>
       {isMine && (
-        <Badge size="xs" color="brand" variant="light">
+        <Badge size="xs" color={BADGE.owned} variant="light">
           you
         </Badge>
       )}

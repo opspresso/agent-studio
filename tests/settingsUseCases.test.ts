@@ -84,6 +84,45 @@ describe("settingsUseCases.getView", () => {
   });
 });
 
+describe("settingsUseCases.update access-control guards", () => {
+  /*
+   * The boot guard reads the env var once and never runs again, so these two
+   * lists are the one place an operator can make a deployed stage fail open
+   * after boot. "Present but parses to nothing" is the dangerous shape: unlike
+   * clearing the field, it does not fall back to the env var.
+   */
+  it.each([
+    ["adminEmails", ","],
+    ["adminEmails", "  ;  "],
+    ["allowedEmailDomains", ","],
+  ])("rejects a %s override that parses to nothing (%j)", async (key, value) => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    await expect(useCases.update({ [key]: value }, ADMIN)).rejects.toBeInstanceOf(ValidationError);
+    expect(current()).toBeNull();
+  });
+
+  it("still lets an empty string clear the override and fall back to env", async () => {
+    process.env.ADMIN_EMAILS = ADMIN;
+    const { repo, current } = fakeRepo({ adminEmails: ADMIN, updatedAt: "2026-01-01T00:00:00.000Z" });
+    const useCases = createSettingsUseCases(repo);
+
+    await useCases.update({ adminEmails: "" }, ADMIN);
+
+    expect(current()?.adminEmails).toBeUndefined();
+  });
+
+  it("refuses an admin list that would lock the caller out", async () => {
+    const { repo } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    await expect(
+      useCases.update({ adminEmails: "someone-else@example.com" }, ADMIN),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
 describe("settingsUseCases.update", () => {
   it("encrypts new secrets, keeps masked ones, and removes cleared overrides", async () => {
     const { repo, current } = fakeRepo();

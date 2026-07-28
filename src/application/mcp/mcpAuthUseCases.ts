@@ -26,7 +26,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
-import { assertProjectOwner } from "@/application/project/projectUseCases";
+import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
 import { isManagedLoopback } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
@@ -342,14 +342,14 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     },
 
     async listConnections(projectName, userEmail) {
-      await assertProjectOwner(deps.projects, projectName, userEmail);
+      await assertProjectWritable(deps.projects, projectName, userEmail);
       return (await deps.connections.listByProject(projectName)).map((connection) =>
         toConnectionView(deps.cipher, connection),
       );
     },
 
     async saveClientCredentials(projectName, serverName, input, userEmail) {
-      await assertProjectOwner(deps.projects, projectName, userEmail);
+      await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireOAuthServer(serverName);
       const existing = await deps.connections.get(projectName, serverName);
 
@@ -396,7 +396,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     },
 
     async beginAuthorization(projectName, serverName, userEmail) {
-      await assertProjectOwner(deps.projects, projectName, userEmail);
+      await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireOAuthServer(serverName);
       const callback = await redirectUri();
       let connection = await deps.connections.get(projectName, serverName);
@@ -475,7 +475,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       }
       // Re-checked here, not only at authorize time: ownership can change while
       // the user is away at the provider.
-      await assertProjectOwner(deps.projects, pending.projectName, userEmail);
+      await assertProjectWritable(deps.projects, pending.projectName, userEmail);
 
       const server = await requireOAuthServer(pending.serverName);
       const connection = await requireConnection(pending.projectName, pending.serverName);
@@ -515,13 +515,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     },
 
     async disconnect(projectName, serverName, userEmail) {
-      await assertProjectOwner(deps.projects, projectName, userEmail);
+      await assertProjectWritable(deps.projects, projectName, userEmail);
       await requireConnection(projectName, serverName);
       await deps.connections.delete(projectName, serverName);
     },
 
     async listTools(projectName, serverName, userEmail, headerOverrides) {
-      await assertProjectOwner(deps.projects, projectName, userEmail);
+      await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireServer(serverName);
       const loopback = isManagedLoopback(server);
       if (!loopback) {

@@ -24,6 +24,7 @@ import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/I
 import type { Attachment } from "@/app/_lib/imageAttachments";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
 import classes from "./parts.module.css";
+import { SUBAGENT_COLOR } from "@/app/_components/badgeColors";
 
 function MessageTimestamp({ createdAt }: { createdAt: string }) {
   const formatted = formatShortDateTime(createdAt);
@@ -81,7 +82,7 @@ export function liveImageSrc(image: LiveImage): string {
 
 export function AuthorBadge({ path }: { path: string[] }) {
   return (
-    <Badge color="brand" radius="xl" mb={4}>
+    <Badge color={SUBAGENT_COLOR} radius="xl" mb={4}>
       via {path.join(" → ")}
     </Badge>
   );

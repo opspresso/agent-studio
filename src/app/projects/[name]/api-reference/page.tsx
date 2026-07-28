@@ -15,12 +15,7 @@ import {
   type CodeExample,
   type FieldSpec,
 } from "./endpoints";
-
-/** Green reads "safe to call", blue "writes something" — the usual convention. */
-const METHOD_COLOR: Record<ApiEndpoint["method"], string> = {
-  GET: "teal",
-  POST: "blue",
-};
+import { HTTP_METHOD_COLOR, STREAMING_COLOR } from "@/app/_components/badgeColors";
 
 function FieldRows({ fields, depth = 0 }: { fields: FieldSpec[]; depth?: number }) {
   return (
@@ -125,7 +120,7 @@ function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
       <Stack gap="md">
         <Stack gap="xs">
           <Group gap="xs" wrap="wrap">
-            <Badge color={METHOD_COLOR[endpoint.method]} ff="monospace">
+            <Badge color={HTTP_METHOD_COLOR[endpoint.method]} ff="monospace">
               {endpoint.method}
             </Badge>
             <Code
@@ -140,7 +135,11 @@ function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
             >
               {endpoint.path}
             </Code>
-            {endpoint.streaming && <Badge radius="xl">SSE</Badge>}
+            {endpoint.streaming && (
+              <Badge color={STREAMING_COLOR} radius="xl">
+                SSE
+              </Badge>
+            )}
           </Group>
           <Text fz="sm" fw={500}>
             {endpoint.title}

@@ -21,6 +21,7 @@ import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/
 import {
   Alert,
   Anchor,
+  Badge,
   Button,
   Card,
   Group,
@@ -31,6 +32,8 @@ import {
   Title,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
+import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
+import { CredentialBadges } from "../_components/CredentialBadges";
 
 /**
  * How long the console watches a restart, and how often it asks.
@@ -212,9 +215,16 @@ export default function McpDetailPage() {
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <Title order={1} fz="h2">
-            {server.name}
-          </Title>
+          {/* The same two badges the list shows; the detail page had neither. */}
+          <Group gap="xs" wrap="wrap">
+            <Title order={1} fz="h2">
+              {server.name}
+            </Title>
+            {server.runtime === "managed" && (
+              <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
+            )}
+            <CredentialBadges server={server} />
+          </Group>
           <Text fz="sm" c="dimmed" mt={4}>
             {server.description}
           </Text>

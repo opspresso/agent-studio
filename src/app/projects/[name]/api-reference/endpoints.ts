@@ -66,7 +66,7 @@ export interface ApiReferenceContext {
   origin: string;
   /** A2A exposure status, or null when unknown. */
   a2a: { enabled: boolean; published: boolean } | null;
-  /** Slack integration status (owner-only), or null when not visible to the viewer. */
+  /** Slack integration status (owner or admin), or null when not visible to the viewer. */
   slack: { configured: boolean } | null;
 }
 

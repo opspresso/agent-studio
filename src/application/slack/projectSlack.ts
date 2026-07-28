@@ -1,6 +1,6 @@
 import { ConflictError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { MCP_OAUTH_CALLBACK_PATH } from "@/application/mcp/mcpAuthUseCases";
-import { assertProjectOwner, getProject } from "@/application/project/projectUseCases";
+import { assertProjectWritable, getProject } from "@/application/project/projectUseCases";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
@@ -47,7 +47,7 @@ export interface ProjectSlackResult {
 }
 
 /**
- * Owner-only, unlike the shared project catalog: this exposes the masked bot
+ * Owner or admin, unlike the shared project catalog: this exposes the masked bot
  * token and signing secret. Checked here rather than at the route so no verb can
  * be added without it, and so one read answers both the check and the view.
  */
@@ -57,7 +57,7 @@ export async function getProjectSlack(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<ProjectSlackResult> {
-  const project = await assertProjectOwner(repo, name, userEmail);
+  const project = await assertProjectWritable(repo, name, userEmail);
   return { project, view: maskedView(cipher, project) };
 }
 
@@ -95,7 +95,7 @@ export async function updateProjectSlack(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<ProjectSlackResult> {
-  const project = await assertProjectOwner(repo, name, userEmail);
+  const project = await assertProjectWritable(repo, name, userEmail);
   if (project.projectType !== "agent") {
     throw new ValidationError("Slack bots can only be attached to agent projects");
   }
@@ -118,7 +118,7 @@ export async function disconnectProjectSlack(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<ProjectSlackResult> {
-  const project = await assertProjectOwner(repo, name, userEmail);
+  const project = await assertProjectWritable(repo, name, userEmail);
   const updated: Project = {
     ...project,
     slack: undefined,
@@ -209,7 +209,7 @@ export async function testProjectSlack(
   cipher: SecretCipher,
   authTest: (botToken: string) => Promise<{ team?: string; user?: string }>,
 ): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }> {
-  const project = await assertProjectOwner(repo, name, userEmail);
+  const project = await assertProjectWritable(repo, name, userEmail);
   const runtime = resolveProjectSlackRuntime(cipher, project);
   if (!runtime) {
     return { ok: false };

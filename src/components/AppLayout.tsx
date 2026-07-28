@@ -13,6 +13,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
+import { useSession } from "@/lib/auth-client";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 import classes from "./AppLayout.module.css";
@@ -40,6 +41,16 @@ export function AppLayout({
   const pathname = usePathname();
   const [opened, { toggle, close }] = useDisclosure(false);
 
+  /*
+   * Every nav target is behind the sign-in gate, so offering them to a
+   * signed-out visitor is a row of links that only bounce back to /login.
+   * `isPending` counts as signed in: on a gated page the user always is, and
+   * treating the initial fetch as signed-out would blink the whole nav out and
+   * back on every page load.
+   */
+  const { data: session, isPending } = useSession();
+  const showNav = isPending || session !== null;
+
   return (
     <AppShell
       header={{ height: 56 }}
@@ -48,14 +59,16 @@ export function AppLayout({
         breakpoint: "sm",
         // Desktop keeps the links in the header, so the navbar exists only as
         // the small-screen drawer.
-        collapsed: { mobile: !opened, desktop: true },
+        collapsed: { mobile: !opened || !showNav, desktop: true },
       }}
       padding={0}
     >
       <AppShell.Header>
         <Container size="xl" h="100%" px="md">
           <Group h="100%" gap="md" wrap="nowrap">
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            {showNav && (
+              <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            )}
             <UnstyledButton component={Link} href="/" className={classes.brand}>
               <Image src="/logo.png" alt="" width={28} height={28} priority />
               <Text fw={600} fz="lg" visibleFrom="xs">
@@ -63,17 +76,18 @@ export function AppLayout({
               </Text>
             </UnstyledButton>
             <Group gap={4} h="100%" visibleFrom="sm" wrap="nowrap" component="nav">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={classes.navLink}
-                  data-active={isActive(pathname, item.href) || undefined}
-                  aria-current={isActive(pathname, item.href) ? "page" : undefined}
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {showNav &&
+                NAV_ITEMS.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={classes.navLink}
+                    data-active={isActive(pathname, item.href) || undefined}
+                    aria-current={isActive(pathname, item.href) ? "page" : undefined}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
             </Group>
             <Group gap="xs" ml="auto" wrap="nowrap">
               <ThemeToggle />

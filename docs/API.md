@@ -21,7 +21,7 @@ auth, and error cases for the non-obvious endpoints.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner may mutate one (update/delete/publish, version create/update, Slack
   config), otherwise `403 { "error": "You do not have permission to modify project \"…\"" }`.
-  Two project sub-resources are owner-only to *read* as well — traces and the Slack config —
+  Two project sub-resources are limited to the owner and to admins for *reading* as well — traces and the Slack config —
   because they expose other users' runtime data / masked secrets (403 for non-owners).
   Chats are per-owner private (non-owner reads return 404). MCP/agent/skill registries are
   shared for reads; mutations require membership in `ADMIN_EMAILS` when set (unset allows
@@ -104,7 +104,7 @@ credentials from different projects without registering it twice.
   headers); a masked or empty value on update preserves the stored secret, and a masked
   value under a header with no stored counterpart is dropped. `null` markers are returned
   as-is — a removal is not a secret.
-- Editing overrides is owner-only, like every other version write.
+- Editing overrides is limited to the owner and to admins, like every other version write.
 
 ## App settings
 
@@ -199,7 +199,7 @@ POST   /api/projects/{name}/slack/test
 ```
 
 Slack reads return masked credential state plus `eventsUrl` and a generated app manifest.
-All four endpoints are owner-only (403 for non-owners) — the masked view still exposes the
+All four endpoints are limited to the owner and to configured admins (403 for anyone else) — the masked view still exposes the
 bot token / signing secret edges. Masked or omitted secrets are preserved on update. The test endpoint returns
 `{ ok: true, team, botUser }` or `502` for a Slack API failure.
 
@@ -222,7 +222,7 @@ way the console can show *which* token is set without decrypting. It is absent o
 issued before masks were recorded; those keep working, since verification never looks at
 the prefix.
 
-All four are owner-only (403 for non-owners). `POST` generates or regenerates the token —
+All four are limited to the owner and to configured admins (403 for anyone else). `POST` generates or regenerates the token —
 regeneration overwrites the previous one, which stops working immediately. The token is
 scoped to its project (validated against the `{name}` in the request path).
 
@@ -321,7 +321,7 @@ GET /api/projects/{name}/traces/{traceId}
 
 `from`/`to` (YYYY-MM-DD, inclusive) filter the list by trace date via the GSI1 date key.
 
-Both endpoints are owner-only (403 for non-owners) — traces hold other users' runtime
+Both endpoints are limited to the owner and to configured admins (403 for anyone else) — traces hold other users' runtime
 inputs/outputs. Agent runs are always traced. Text and image predict runs are sampled
 according to `TRACE_SAMPLE_RATE` (0–1, default `0.1`). Trace spans contain model token/cost
 summaries, tool input/output sizes, and local subagent trace links; raw prompts and tool

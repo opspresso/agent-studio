@@ -63,16 +63,6 @@ export async function getAdminEmails(): Promise<string[]> {
 }
 
 /**
- * Whether an address may perform admin-gated actions — registry mutations and
- * app settings. An empty list means "no restriction", which is what an unset
- * `ADMIN_EMAILS` has always meant here.
- */
-export async function isAdminEmail(email: string): Promise<boolean> {
-  const admins = await getAdminEmails();
-  return admins.length === 0 || admins.includes(email.toLowerCase());
-}
-
-/**
  * Whether an address is on an *explicitly configured* admin list.
  *
  * Deliberately not {@link isAdminEmail}, and the difference is the whole point:
@@ -85,6 +75,19 @@ export async function isAdminEmail(email: string): Promise<boolean> {
 export async function isConfiguredAdmin(email: string): Promise<boolean> {
   const admins = await getAdminEmails();
   return admins.length > 0 && admins.includes(email.toLowerCase());
+}
+
+/**
+ * Whether an address may perform admin-gated actions — registry mutations and
+ * app settings. An empty list means "no restriction", which is what an unset
+ * `ADMIN_EMAILS` has always meant here.
+ *
+ * Written on top of {@link isConfiguredAdmin} so the membership test itself has
+ * one spelling: the two questions differ *only* in what an empty list means, and
+ * that is what the expression should show.
+ */
+export async function isAdminEmail(email: string): Promise<boolean> {
+  return (await getAdminEmails()).length === 0 || (await isConfiguredAdmin(email));
 }
 
 export async function getAllowedEmailDomains(): Promise<string[]> {

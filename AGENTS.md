@@ -112,9 +112,18 @@ Better Auth 1.6 + Google OAuth, custom DynamoDB adapter (`src/infrastructure/db/
 restricted to `ALLOWED_EMAIL_DOMAINS`. Route handlers wrap in `withAuth(...)`
 (`src/lib/session.ts`), which 401s without a session and passes `SessionUser` as the first arg.
 
+**Pages** are gated separately, in `src/middleware.ts` — the single owner of which pages are
+public (`/` and `/login`; everything else the matcher reaches needs a session, so a new route
+defaults to protected). A signed-out visitor is redirected to `/login?next=…` before the route
+renders, rather than being handed the console and an error box once the API 401s. The check is
+cookie *presence*, not validity — the authorization decision stays server-side in `withAuth`
+and `assertProjectWritable`, which see the request that touches data. `next` is read back through
+`safeNextPath` (`src/shared/safeNextPath.ts`); it arrives from the address bar, so `//host` and
+`/\host` have to be rejected or the sign-in flow becomes an open redirect.
+
 Authorization model: **projects are a shared catalog** — any signed-in user may read and run
 any project, but mutations (update/delete/publish, version create/update, Slack config) go
-through `assertProjectOwner`, which allows the owner and any configured admin and 403s
+through `assertProjectWritable`, which allows the owner and any configured admin and 403s
 everyone else. Chats are per-owner private. MCP/agent/skill registries are shared: reads
 are open to any signed-in user; mutations go through `withAdminAuth`, restricted to
 `ADMIN_EMAILS` when set (unset = any signed-in user).
@@ -141,7 +150,7 @@ user write access to every project on a deployment that never set `ADMIN_EMAILS`
   preserves the stored secret; a masked value under a key with no stored counterpart is
   dropped. Two app-issued secrets can be read back in plaintext through a dedicated
   `POST …/reveal` (never a GET — the body is a live credential): the app-wide A2A key
-  (admin-only) and a project's API token (owner-only). The project token is therefore
+  (admin-only) and a project's API token (owner or admin). The project token is therefore
   stored encrypted rather than hashed; tokens predating that still verify by hash but
   cannot be revealed. Every reveal is logged with the caller's email.
 - **PII filtering**: opt-in per version (`parameters.piiFiltering`) — emails/phone numbers

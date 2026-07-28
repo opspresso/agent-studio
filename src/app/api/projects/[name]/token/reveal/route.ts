@@ -6,7 +6,7 @@ import { apiError } from "@/app/api/_lib/http";
 type RouteContext = { params: Promise<{ name: string }> };
 
 /**
- * Return the project's API token in plaintext. Owner-only (enforced by the use
+ * Return the project's API token in plaintext. Owner or admin (enforced by the use
  * case). A POST rather than a GET even though it reads: the response body is a
  * live credential, and POST keeps it out of prefetches, history and caches.
  */

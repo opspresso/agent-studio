@@ -12,6 +12,7 @@ import {
   type Version,
 } from "../../lib/api";
 import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
+import { BADGE } from "@/app/_components/badgeColors";
 
 export default function VersionsPage() {
   const params = useParams<{ name: string }>();
@@ -116,7 +117,7 @@ export default function VersionsPage() {
                     <Text ff="monospace" fz="sm" fw={500}>
                       v{version.versionName}
                     </Text>
-                    {isPublished && <Badge color="teal">published</Badge>}
+                    {isPublished && <Badge color={BADGE.on}>published</Badge>}
                   </Group>
                   <Text fz="xs" c="dimmed" mt={2}>
                     {version.model} · {formatDateTime(version.createdAt)}

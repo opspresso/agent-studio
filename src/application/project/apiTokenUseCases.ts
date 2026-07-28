@@ -2,7 +2,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import { NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import { assertProjectOwner, getProject } from "./projectUseCases";
+import { assertProjectWritable, getProject } from "./projectUseCases";
 
 export interface ApiTokenStatus {
   configured: boolean;
@@ -14,7 +14,7 @@ export interface ApiTokenStatus {
 }
 
 /**
- * Generate (or regenerate) the project's API token. Owner-only. Returns the raw
+ * Generate (or regenerate) the project's API token. Owner or admin. Returns the raw
  * token and stores it encrypted, so the owner can read it back later.
  *
  * The mask is stored alongside it so listing a token costs no decryption, and so
@@ -26,7 +26,7 @@ export async function generateApiToken(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<{ token: string; masked: string; createdAt: string }> {
-  await assertProjectOwner(repo, name, userEmail);
+  await assertProjectWritable(repo, name, userEmail);
   const token = generateSecretValue("projectApiToken");
   const masked = cipher.mask(token);
   const createdAt = new Date().toISOString();
@@ -34,13 +34,13 @@ export async function generateApiToken(
   return { token, masked, createdAt };
 }
 
-/** Report whether the project has an API token, and when it was created. Owner-only. */
+/** Report whether the project has an API token, and when it was created. Owner or admin. */
 export async function getApiTokenStatus(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
 ): Promise<ApiTokenStatus> {
-  await assertProjectOwner(repo, name, userEmail);
+  await assertProjectWritable(repo, name, userEmail);
   const token = await repo.getApiToken(name);
   if (!token) {
     return { configured: false };
@@ -54,9 +54,15 @@ export async function getApiTokenStatus(
 }
 
 /**
- * Return the project's API token in plaintext. Owner-only, and deliberately a
- * separate call from the status read: the token never rides along with a routine
+ * Return the project's API token in plaintext. Owner or admin, and deliberately
+ * a separate call from the status read: the token never rides along with a routine
  * page load, only with an explicit request to see it.
+ *
+ * This token authenticates *as the owner*, so an admin reveal is an admin taking
+ * a credential that acts in someone else's name. It stays allowed — an admin can
+ * regenerate the token anyway, which is strictly more disruptive — but it leaves
+ * two log lines, not one: `assertProjectWritable` records the override, and the
+ * line below records the reveal.
  *
  * A token issued before tokens were stored encrypted has only its hash, so there
  * is nothing to decrypt — the owner is told to regenerate rather than left with a
@@ -68,7 +74,7 @@ export async function revealApiToken(
   userEmail: string,
   cipher: SecretCipher,
 ): Promise<{ token: string; createdAt: string }> {
-  await assertProjectOwner(repo, name, userEmail);
+  await assertProjectWritable(repo, name, userEmail);
   const stored = await repo.getApiToken(name);
   if (!stored) {
     throw new NotFoundError(`Project "${name}" has no API token`);
@@ -83,13 +89,13 @@ export async function revealApiToken(
   return { token: cipher.decrypt(stored.token), createdAt: stored.createdAt };
 }
 
-/** Remove the project's API token. Owner-only. Idempotent. */
+/** Remove the project's API token. Owner or admin. Idempotent. */
 export async function revokeApiToken(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
 ): Promise<void> {
-  await assertProjectOwner(repo, name, userEmail);
+  await assertProjectWritable(repo, name, userEmail);
   await repo.deleteApiToken(name);
 }
 

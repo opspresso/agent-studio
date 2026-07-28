@@ -270,6 +270,30 @@ export function createSettingsUseCases(
         }
       }
 
+      /*
+       * A stored access-control list that parses to nothing is never what the
+       * operator meant, and it is *not* the same as clearing the field: an
+       * absent override falls back to the env var, which `assertAccessControlConfig`
+       * requires on alpha/prod. A present-but-empty one falls back to nothing.
+       *
+       * The result would be silent and contradictory. An empty admin list makes
+       * `isAdminEmail` true for everyone — every signed-in user could then mutate
+       * the shared registries and re-edit this very page — while making
+       * `isConfiguredAdmin` false for everyone, revoking the project override at
+       * the same moment. An empty allowed-domains list lets any Google account
+       * sign in. The boot guard cannot catch either, because it reads the env var
+       * and never runs again. Rejecting the value here is what keeps "effectively
+       * empty on a deployed stage" unreachable.
+       */
+      for (const key of ["adminEmails", "allowedEmailDomains"] as const) {
+        const stored = next[key];
+        if (stored !== undefined && parseList(stored).length === 0) {
+          throw new ValidationError(
+            `${key} must name at least one entry — clear the field entirely to fall back to the environment variable`,
+          );
+        }
+      }
+
       const effectiveAdmins = parseList(next.adminEmails ?? env.ADMIN_EMAILS ?? "");
       if (effectiveAdmins.length > 0 && !effectiveAdmins.includes(userEmail.toLowerCase())) {
         throw new ValidationError(
