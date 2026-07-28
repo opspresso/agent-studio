@@ -1,7 +1,7 @@
 import { unauthorized } from "@/shared/unauthorized";
 import { headers } from "next/headers";
 import { auth } from "./auth";
-import { getAdminEmails } from "./runtime-settings";
+import { isAdminEmail } from "./runtime-settings";
 
 export interface SessionUser {
   id: string;
@@ -36,9 +36,8 @@ export function withAuth<T extends unknown[]>(
 }
 
 /** True when the effective admin list contains this user, or is empty (no restriction). */
-export async function isAdmin(user: SessionUser): Promise<boolean> {
-  const admins = await getAdminEmails();
-  return admins.length === 0 || admins.includes(user.email.toLowerCase());
+export function isAdmin(user: SessionUser): Promise<boolean> {
+  return isAdminEmail(user.email);
 }
 
 /**

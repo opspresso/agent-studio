@@ -13,6 +13,8 @@ import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
   invalidateSettingsCache,
+  isAdminEmail,
+  isConfiguredAdmin,
 } from "@/lib/runtime-settings";
 import { encryptSecret } from "@/infrastructure/crypto/secretEncryption";
 
@@ -106,5 +108,43 @@ describe("runtime settings precedence", () => {
     invalidateSettingsCache();
     expect(await getAdminEmails()).toEqual(["second@example.com"]);
     expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The two admin questions differ only on the unconfigured case, and that
+ * difference is load-bearing: `isAdminEmail` gates shared-registry mutations,
+ * where "no list" has always meant "no restriction"; `isConfiguredAdmin` gates
+ * overriding someone else's project ownership, where the same reading would
+ * hand every signed-in user write access to every project.
+ */
+describe("admin predicates", () => {
+  it("both accept an address on the configured list", async () => {
+    stub({ adminEmails: "ops@example.com, admin@example.com" } as AppSettings);
+    await expect(isAdminEmail("admin@example.com")).resolves.toBe(true);
+    await expect(isConfiguredAdmin("admin@example.com")).resolves.toBe(true);
+  });
+
+  it("both match the address case-insensitively", async () => {
+    stub({ adminEmails: "admin@example.com" } as AppSettings);
+    await expect(isAdminEmail("Admin@Example.com")).resolves.toBe(true);
+    await expect(isConfiguredAdmin("ADMIN@EXAMPLE.COM")).resolves.toBe(true);
+  });
+
+  it("both reject an address off a configured list", async () => {
+    stub({ adminEmails: "admin@example.com" } as AppSettings);
+    await expect(isAdminEmail("someone@example.com")).resolves.toBe(false);
+    await expect(isConfiguredAdmin("someone@example.com")).resolves.toBe(false);
+  });
+
+  it("diverge when no admin list is configured: open for registries, closed for ownership", async () => {
+    stub(null);
+    await expect(isAdminEmail("anyone@example.com")).resolves.toBe(true);
+    await expect(isConfiguredAdmin("anyone@example.com")).resolves.toBe(false);
+  });
+
+  it("treats an admin list set to empty the same as unset", async () => {
+    stub({ adminEmails: "  ,  " } as AppSettings);
+    await expect(isConfiguredAdmin("anyone@example.com")).resolves.toBe(false);
   });
 });

@@ -9,7 +9,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMcpAuthUseCases,
   MCP_OAUTH_CALLBACK_PATH,
@@ -21,6 +21,17 @@ import type { McpConnection, McpOAuthState } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
 import type { TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
+
+/**
+ * Project authorization now consults the effective admin list, because admins
+ * may mutate a project they do not own. These cases are about ownership, so
+ * they run with no admin configured — which is also the shape a deployment
+ * that never set ADMIN_EMAILS has.
+ */
+vi.mock("@/lib/runtime-settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/runtime-settings")>()),
+  isConfiguredAdmin: async () => false,
+}));
 
 const OWNER = "owner@example.com";
 const BASE_URL = "https://studio.example.com";
