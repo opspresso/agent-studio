@@ -6,7 +6,7 @@
  */
 process.env.STAGE ??= "local";
 
-const endpoint = process.env.DYNAMODB_ENDPOINT_URL ?? "";
+const endpoint = process.env.DYNAMODB_ENDPOINT ?? "";
 if (!endpoint.includes("localhost") && !endpoint.includes("127.0.0.1")) {
   console.error(
     `Refusing to run against non-local endpoint: ${endpoint || "(unset — pass --env-file=.env.local)"}`,

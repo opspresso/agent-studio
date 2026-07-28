@@ -3,13 +3,13 @@
  * signed session cookie for exercising authenticated API routes without the
  * Google OAuth round-trip. Local development only.
  *
- *   pnpm tsx scripts/dev-session.ts        # dev instance on :8085
+ *   pnpm tsx scripts/dev-session.ts        # dev instance on :8083
  */
 process.env.STAGE ??= "local";
-process.env.DYNAMODB_ENDPOINT_URL ??= "http://localhost:8085";
+process.env.DYNAMODB_ENDPOINT ??= "http://localhost:8083";
 process.env.BETTER_AUTH_SECRET ??= "dev-secret";
 
-const endpoint = process.env.DYNAMODB_ENDPOINT_URL;
+const endpoint = process.env.DYNAMODB_ENDPOINT;
 if (!endpoint.includes("localhost") && !endpoint.includes("127.0.0.1")) {
   console.error(`Refusing to run against non-local endpoint: ${endpoint}`);
   process.exit(1);

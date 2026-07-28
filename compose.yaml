@@ -1,0 +1,56 @@
+# The two DynamoDB Local containers are shared with every other project on this
+# machine, so the compose project name is fixed here instead of being derived
+# from the directory. Another repository running `docker compose up -d dynamodb`
+# finds them already up and leaves them alone — as long as its service block is
+# identical to this one, which is why the block below is copied verbatim from the
+# nextjs-init skill rather than adjusted per project. Table names, not ports,
+# keep the projects apart.
+#
+# Never `docker compose down -v` here: the volume belongs to every project. Nor
+# `--remove-orphans`, which would take out containers another repository started.
+name: localdev
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      # Inside the compose network the local DynamoDB is reachable by service name.
+      DYNAMODB_ENDPOINT: http://dynamodb:8000
+    depends_on:
+      - dynamodb
+    restart: unless-stopped
+
+  # Development instance — what `pnpm dev` and `pnpm init-local-table` talk to.
+  # -sharedDb + -dbPath + the volume keep tables and sessions across restarts.
+  # user: root because Docker creates the mount point root-owned while the image
+  # runs as uid 1000, which fails silently — the container shows Up but SQLite
+  # can't open its file and clients hang.
+  dynamodb:
+    image: amazon/dynamodb-local:3.3.0
+    user: root
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "./data"]
+    working_dir: /home/dynamodblocal
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    ports:
+      - "8083:8000"
+    restart: unless-stopped
+
+  # Integration-test instance, kept separate so `pnpm test:integration` — which
+  # writes and cascade-deletes — can never touch data the dev app is using. It is
+  # wiped on every start, so `pnpm init-local-table:test` has to recreate the
+  # table. -inMemory and -dbPath are mutually exclusive, which is why this block
+  # differs from the one above.
+  dynamodb-test:
+    image: amazon/dynamodb-local:3.3.0
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "8084:8000"
+    restart: unless-stopped
+
+volumes:
+  dynamodb-data:

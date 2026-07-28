@@ -690,9 +690,12 @@ The word "agent" is overloaded; these are the distinct concepts:
 ## Environment
 
 See `.env.example`. `STAGE` = local | alpha | prod. Local DynamoDB via
-`DYNAMODB_ENDPOINT_URL=http://localhost:8085`; `scripts/init-local-table.ts` creates the
-table + GSIs. The integration check runs against a second instance on `8086` so it cannot
-cascade-delete data the dev app is using.
+`DYNAMODB_ENDPOINT=http://localhost:8083`; `scripts/init-local-table.ts` creates the
+table + GSIs. The integration check runs against a second instance on `8084`, and against
+`agent-studio-test` rather than `agent-studio`, so it cannot cascade-delete data the dev
+app is using. Both instances are shared with the other projects on this machine
+(`compose.yaml` pins the compose project name), which is why the table name is the
+isolation boundary rather than the port.
 
 ## Verification
 

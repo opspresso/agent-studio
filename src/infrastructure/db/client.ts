@@ -8,9 +8,9 @@ export function getDocumentClient(): DynamoDBDocumentClient {
   if (!documentClient) {
     const client = new DynamoDBClient({
       region: config.awsRegion,
-      ...(config.dynamodbEndpointUrl
+      ...(config.dynamodbEndpoint
         ? {
-            endpoint: config.dynamodbEndpointUrl,
+            endpoint: config.dynamodbEndpoint,
             credentials: { accessKeyId: "local", secretAccessKey: "local" },
           }
         : {}),

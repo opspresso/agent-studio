@@ -9,11 +9,15 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     services:
+      # `services:` cannot pass command arguments, so the compose flags are
+      # absent here — and neither is needed: a fresh container per job is already
+      # empty (-inMemory), and one job holds a single credential and region, so
+      # there is no second DB to split off (-sharedDb). The host port must be
+      # 8084, which is what the integration check connects to.
       dynamodb:
         image: amazon/dynamodb-local:3.3.0
         ports:
-          # 8086 is the integration-test port; 8085 is the dev instance.
-          - 8086:8000
+          - 8084:8000
     steps:
       - uses: actions/checkout@v7
 
@@ -35,12 +39,12 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # Both scripts carry the test endpoint and table themselves, so there is
+      # nothing to set here — and nothing to keep in step with them.
       - name: Integration tests
         run: |
-          pnpm init-local-table
+          pnpm init-local-table:test
           pnpm test:integration
-        env:
-          DYNAMODB_ENDPOINT_URL: http://127.0.0.1:8086
 
       - name: Build
         run: pnpm build

@@ -61,8 +61,8 @@ export const config = {
   get tableName(): string {
     return process.env.DYNAMODB_TABLE_NAME ?? "agent-studio";
   },
-  get dynamodbEndpointUrl(): string | undefined {
-    return process.env.DYNAMODB_ENDPOINT_URL || undefined;
+  get dynamodbEndpoint(): string | undefined {
+    return process.env.DYNAMODB_ENDPOINT || undefined;
   },
   get awsRegion(): string {
     return process.env.AWS_REGION ?? "ap-northeast-2";

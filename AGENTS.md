@@ -26,19 +26,27 @@ Node 24 (`engines >=24`), pnpm 11 (pinned via `packageManager`). CI (`.github/wo
 ### Local development
 
 ```bash
-docker compose up -d dynamodb-local        # dev DynamoDB on :8085
+docker compose up -d dynamodb              # dev DynamoDB on :8083
 pnpm init-local-table                      # create table + GSIs (uses AWS_REGION, default ap-northeast-2)
 
 pnpm tsx scripts/mock-llm.ts                              # mock OpenAI-compatible LLM (set LLM_BASE_URL=http://127.0.0.1:8002/v1)
 pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses Google OAuth)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts    # seed sample skills
 
-# Integration check — a *separate* instance on :8086, because it cascade-deletes
-# what it writes. Never point it at :8085 (the script refuses).
-docker compose up -d dynamodb-local-test
-DYNAMODB_ENDPOINT_URL=http://localhost:8086 pnpm init-local-table
+# Integration check — a *separate* instance on :8084 and the `agent-studio-test`
+# table, because it cascade-deletes what it writes. Never point it at :8083 (the
+# script refuses).
+docker compose up -d dynamodb-test
+pnpm init-local-table:test
 pnpm test:integration                      # CI runs this same pair
 ```
+
+**Both DynamoDB Local containers are shared with every other project on this
+machine** — `compose.yaml` pins the compose project name to `localdev`, so
+`docker compose up -d dynamodb` from another repository reuses these. Table
+names, not ports, separate the projects: never widen a cleanup past
+`DYNAMODB_TABLE_NAME`, and never run `docker compose down -v` (or
+`--remove-orphans`).
 
 Required env for any real run (validated fail-fast at boot by `src/instrumentation.ts`):
 `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64). Google OAuth creds

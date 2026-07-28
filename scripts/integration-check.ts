@@ -3,28 +3,33 @@
  * Exercises every repository round-trip plus the execution engine (single-shot
  * and agent loop with the builtin Skill tool).
  *
- * Runs against the *test* DynamoDB Local instance (8086), never the dev one
- * (8085): this check writes fixtures and cascade-deletes them.
+ * Runs against the *test* DynamoDB Local instance (8084), never the dev one
+ * (8083): this check writes fixtures and cascade-deletes them.
  *
- *   docker compose up -d dynamodb-local-test
- *   DYNAMODB_ENDPOINT_URL=http://localhost:8086 pnpm init-local-table
+ *   docker compose up -d dynamodb-test
+ *   pnpm init-local-table:test
  *   pnpm test:integration
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 
 process.env.STAGE ??= "local";
-process.env.DYNAMODB_ENDPOINT_URL ??= "http://localhost:8086";
+process.env.DYNAMODB_ENDPOINT ??= "http://localhost:8084";
+// The `-test` table is the second layer under the port guard below: both
+// instances are shared with the other projects on this machine, so the table
+// name is what separates them, and a mistake about *which* instance still
+// cannot reach the table `pnpm dev` writes to.
+process.env.DYNAMODB_TABLE_NAME ??= "agent-studio-test";
 
 // Refuse anything but the local test instance. This check cascade-deletes what
 // it writes, and `--env-file=.env.local` (which carries the dev endpoint) is an
-// easy way to aim it at 8085 by accident — where it would take the dev app's
+// easy way to aim it at 8083 by accident — where it would take the dev app's
 // data with it. `init-local-table.ts` guards the same way, one port over.
-const endpoint = new URL(process.env.DYNAMODB_ENDPOINT_URL);
-if (!["localhost", "127.0.0.1"].includes(endpoint.hostname) || endpoint.port !== "8086") {
+const endpoint = new URL(process.env.DYNAMODB_ENDPOINT);
+if (!["localhost", "127.0.0.1"].includes(endpoint.hostname) || endpoint.port !== "8084") {
   console.error(
     `Refusing to run against ${endpoint.origin}: this check writes and deletes, so it ` +
-      `only runs against the local test instance (http://localhost:8086).`,
+      `only runs against the local test instance (http://localhost:8084).`,
   );
   process.exit(1);
 }
