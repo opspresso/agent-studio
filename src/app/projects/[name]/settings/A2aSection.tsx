@@ -7,6 +7,7 @@ import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { getProjectA2a } from "../../lib/api";
 import type { ProjectA2aView } from "../../lib/api";
 import { Badge, Code, Stack, Text } from "@mantine/core";
+import { stateColor } from "@/app/_components/badgeColors";
 
 export function A2aSection({ projectName }: { projectName: string }) {
   const [view, setView] = useState<ProjectA2aView | null>(null);
@@ -36,7 +37,7 @@ export function A2aSection({ projectName }: { projectName: string }) {
     <CollapsibleSection
       title="A2A"
       badge={
-        <Badge color={ready ? "teal" : "gray"} radius="xl">
+        <Badge color={stateColor(ready)} radius="xl">
           {ready ? "exposed" : view.enabled ? "not published" : "disabled"}
         </Badge>
       }

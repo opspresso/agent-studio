@@ -1,31 +1,47 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The auth wrapper is the enforcement point every route handler shares. Mock the
-// Better Auth session lookup and the admin decision; run the real wrappers. The
-// rule that turns a list into that decision is owned by `runtime-settings` and
-// covered in its own test — here the question is only what the wrappers do with
-// the answer.
-const { authMock, adminEmails } = vi.hoisted(() => ({
-  authMock: { getSession: vi.fn() },
-  adminEmails: { value: [] as string[] },
-}));
+// Better Auth session lookup; run the real wrappers *and* the real admin rule.
+//
+// The admin list is steered through `ADMIN_EMAILS` rather than by stubbing
+// `isAdminEmail`, because a stub would be a second copy of "empty means no
+// restriction" — the exact rule under test — and would keep passing if
+// `runtime-settings` ever tightened it. The settings row itself is unreachable
+// here (`tests/setup.ts` stubs the DynamoDB client), so the env var is what the
+// effective list resolves to.
+const { authMock } = vi.hoisted(() => ({ authMock: { getSession: vi.fn() } }));
 
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: authMock.getSession } } }));
-vi.mock("@/lib/runtime-settings", () => ({
-  getAdminEmails: async () => adminEmails.value,
-  isAdminEmail: async (email: string) =>
-    adminEmails.value.length === 0 || adminEmails.value.includes(email.toLowerCase()),
-}));
 
 const { withAuth, withAdminAuth, isAdmin } = await import("@/lib/session");
 
 const okHandler = vi.fn(async () => Response.json({ ok: true }));
 const session = (email: string) => ({ user: { id: "u1", email, name: "U", image: null } });
 
+const adminEmails = {
+  set value(emails: string[]) {
+    if (emails.length === 0) {
+      delete process.env.ADMIN_EMAILS;
+    } else {
+      process.env.ADMIN_EMAILS = emails.join(",");
+    }
+  },
+};
+
+const savedAdminEmails = process.env.ADMIN_EMAILS;
+
 beforeEach(() => {
   vi.clearAllMocks();
   adminEmails.value = [];
+});
+
+afterEach(() => {
+  if (savedAdminEmails === undefined) {
+    delete process.env.ADMIN_EMAILS;
+  } else {
+    process.env.ADMIN_EMAILS = savedAdminEmails;
+  }
 });
 
 describe("withAuth", () => {

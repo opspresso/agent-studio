@@ -22,12 +22,7 @@ import { toSlug } from "@/shared/slug";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
-
-const TYPE_COLOR: Record<ProjectType, string> = {
-  agent: "violet",
-  llm: "cyan",
-  image: "grape",
-};
+import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
 
 const TYPE_OPTIONS = [
   { value: "llm", label: "llm — single-shot prompt" },
@@ -94,7 +89,7 @@ export default function ProjectsPage() {
               <Text fw={500} truncate>
                 {project.displayName || project.name}
               </Text>
-              <Badge color={TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
+              <Badge color={PROJECT_TYPE_COLOR[project.projectType]}>{project.projectType}</Badge>
             </Group>
             <Text ff="monospace" fz="xs" c="dimmed" mt={2}>
               {project.name}

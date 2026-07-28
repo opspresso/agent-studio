@@ -2,6 +2,7 @@
 
 import { ActionIcon, Anchor, Badge, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
+import { BADGE } from "./badgeColors";
 
 export interface HeaderRow {
   key: string;
@@ -103,7 +104,7 @@ export function HeaderRowsEditor({
               styles={{ label: { fontSize: "var(--mantine-font-size-xs)" } }}
             />
           ) : (
-            <Badge color="yellow" title="Stored encrypted at rest">
+            <Badge color={BADGE.attention} title="Stored encrypted at rest">
               secret
             </Badge>
           )}

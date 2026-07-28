@@ -12,7 +12,7 @@ import type { McpRepository } from "@/domain/mcp/repository";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
-import { assertProjectOwner } from "./projectUseCases";
+import { assertProjectWritable } from "./projectUseCases";
 import { nextUpdatedAt } from "./timestamps";
 
 /**
@@ -259,7 +259,7 @@ export async function createVersion(
   refs: VersionRefRepos,
   cipher: SecretCipher,
 ): Promise<Version> {
-  const project = await assertProjectOwner(projects, projectName, userEmail);
+  const project = await assertProjectWritable(projects, projectName, userEmail);
   assertValidImageModel(input.parameters);
   assertModelSupports(project, input.model, input.parameters);
   warnUnknownCatalogModel(projectName, input.model);
@@ -307,7 +307,7 @@ export async function updateVersion(
   refs: VersionRefRepos,
   cipher: SecretCipher,
 ): Promise<Version> {
-  const project = await assertProjectOwner(projects, projectName, userEmail);
+  const project = await assertProjectWritable(projects, projectName, userEmail);
   if (input.parameters) {
     assertValidImageModel(input.parameters);
   }
@@ -344,7 +344,7 @@ export async function deleteVersion(
   versionName: string,
   userEmail: string,
 ): Promise<void> {
-  const project = await assertProjectOwner(projects, projectName, userEmail);
+  const project = await assertProjectWritable(projects, projectName, userEmail);
   await getVersion(versions, projectName, versionName);
   if (project.publishedVersion === versionName) {
     throw new ConflictError(`Published version "${versionName}" cannot be deleted`);
@@ -367,7 +367,7 @@ export async function publishVersion(
   versionName: string,
   userEmail: string,
 ): Promise<Project> {
-  const project = await assertProjectOwner(projects, projectName, userEmail);
+  const project = await assertProjectWritable(projects, projectName, userEmail);
   await getVersion(versions, projectName, versionName);
 
   const updated: Project = {

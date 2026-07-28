@@ -22,6 +22,8 @@ import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { ManagedMcpModal } from "./_components/ManagedMcpModal";
+import { CredentialBadges } from "./_components/CredentialBadges";
+import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 
 export default function ToolsPage() {
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -76,7 +78,9 @@ export default function ToolsPage() {
           <Card key={server.name} component={Link} href={`/tools/${server.name}`} h="100%">
             <Group gap="xs" wrap="wrap">
               <Text fw={500}>{server.name}</Text>
-              {server.runtime === "managed" && <Badge>managed</Badge>}
+              {server.runtime === "managed" && (
+                <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
+              )}
               <CredentialBadges server={server} />
             </Group>
             <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
@@ -107,29 +111,6 @@ export default function ToolsPage() {
         }}
       />
     </Stack>
-  );
-}
-
-/**
- * How an entry can be authenticated, at a glance.
- *
- * Both badges can appear at once, and the order is the order they are tried at
- * dispatch: a project's OAuth connection first, the entry's own headers as the
- * fallback for projects that have not connected. Neither badge means the entry
- * sends no credential at all, which is worth seeing on a list.
- */
-function CredentialBadges({ server }: { server: McpServer }) {
-  const headerCount = Object.keys(server.headers ?? {}).length;
-  const badges: string[] = [
-    ...(server.auth ? ["OAuth"] : []),
-    ...(headerCount > 0 ? [`${headerCount} header${headerCount === 1 ? "" : "s"}`] : []),
-  ];
-  return (
-    <>
-      {(badges.length === 0 ? ["no credential"] : badges).map((badge) => (
-        <Badge key={badge}>{badge}</Badge>
-      ))}
-    </>
   );
 }
 

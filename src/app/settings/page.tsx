@@ -17,6 +17,7 @@ import {
   Title,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
+import { BADGE } from "@/app/_components/badgeColors";
 
 
 type SettingSource = "override" | "env" | "default" | "unset";
@@ -88,12 +89,12 @@ const SECTIONS: SectionDef[] = [
 
 const PROVIDER_OPTIONS = ["openai", "anthropic", "google", "xai"] as const;
 
-/** Where a value came from — the brand colour marks the one the DB owns. */
+/** Where a value came from — the owned colour marks the one the DB owns. */
 const SOURCE_LABELS: Record<SettingSource, { text: string; color: string }> = {
-  override: { text: "override", color: "brand" },
-  env: { text: "env", color: "gray" },
-  default: { text: "default", color: "gray" },
-  unset: { text: "not set", color: "gray" },
+  override: { text: "override", color: BADGE.owned },
+  env: { text: "env", color: BADGE.neutral },
+  default: { text: "default", color: BADGE.neutral },
+  unset: { text: "not set", color: BADGE.neutral },
 };
 
 

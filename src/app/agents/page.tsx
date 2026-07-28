@@ -29,6 +29,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
+import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
@@ -80,7 +81,9 @@ export default function AgentsPage() {
           <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
             <Group gap="xs">
               <Text fw={500}>{agent.name}</Text>
-              <Badge>{agent.protocol === "a2a" ? "A2A" : "OpenAI"}</Badge>
+              <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
+                {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
+              </Badge>
             </Group>
             <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
               {agent.description}
@@ -111,7 +114,7 @@ export default function AgentsPage() {
                   <Anchor component={Link} href={`/projects/${project.name}`} fw={500} c="inherit">
                     {project.displayName || project.name}
                   </Anchor>
-                  <Badge>A2A</Badge>
+                  <Badge color={AGENT_PROTOCOL_COLOR.a2a}>{AGENT_PROTOCOL_LABEL.a2a}</Badge>
                 </Group>
                 <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
                   {project.description}

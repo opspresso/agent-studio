@@ -32,19 +32,25 @@ export async function getProject(repo: ProjectRepository, name: string): Promise
 }
 
 /**
- * Load a project and assert `userEmail` may mutate it. Projects are a shared
+ * Load a project and assert `userEmail` may write it. Projects are a shared
  * catalog — any signed-in user may read and run them; writing is for the owner
- * and for admins. Mutation use cases call this before writing.
+ * and for admins.
  *
- * The admin case is checked here rather than threaded through the twenty-odd
- * call sites as a flag: the rule is "owner or admin", and a flag that any one
- * of those callers forgot to pass would silently narrow it back to owner-only
- * for that path alone. `isConfiguredAdmin` reads the effective admin list, so
- * demoting an admin on the settings page takes effect without a redeploy — and
- * it is the *configured* check, so a deployment with no admin list keeps plain
- * owner-only mutation rather than opening every project to everyone.
+ * Named for what it checks, not for the owner alone: it is bound at twenty-odd
+ * call sites, and while it asserted ownership the name was the documentation.
+ * Anything that ever needs *ownership* specifically — attributing a quota,
+ * choosing whose credentials to dispatch with, deciding whom to notify — must
+ * read `project.ownerEmail` and not reach for this.
+ *
+ * The admin case is checked here rather than threaded through those call sites
+ * as a flag: the rule is "owner or admin", and a flag any one caller forgot to
+ * pass would silently narrow it back to owner-only for that path alone.
+ * `isConfiguredAdmin` reads the effective admin list, so demoting an admin on
+ * the settings page takes effect without a redeploy — and it is the *configured*
+ * check, so a deployment with no admin list keeps plain owner-only writes rather
+ * than opening every project to everyone.
  */
-export async function assertProjectOwner(
+export async function assertProjectWritable(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
@@ -53,10 +59,35 @@ export async function assertProjectOwner(
   if (project.ownerEmail === userEmail) {
     return project;
   }
-  if (await isConfiguredAdmin(userEmail)) {
+  if (await isAdminOverride(userEmail)) {
+    // The owner cannot see this happen from the data — a deleted project takes
+    // the row that would have named who deleted it — so the override is the
+    // thing worth recording, not the eventual write.
+    console.warn(
+      `[authz] admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
+    );
     return project;
   }
   throw new ForbiddenError(`You do not have permission to modify project "${name}"`);
+}
+
+/**
+ * The admin override, resolved so that losing the settings store denies rather
+ * than throws.
+ *
+ * Only a non-owner reaches this, and for a non-owner on a deployment with no
+ * admin list the answer is "no" without any I/O at all. Letting a settings read
+ * failure escape would turn the deterministic 403 that path has always returned
+ * into a 500, so an outage would change *which* error an unauthorized caller
+ * sees. Failing closed keeps the denial.
+ */
+async function isAdminOverride(userEmail: string): Promise<boolean> {
+  try {
+    return await isConfiguredAdmin(userEmail);
+  } catch (error) {
+    console.error("[authz] admin list unavailable; denying the override", error);
+    return false;
+  }
 }
 
 export async function createProject(
@@ -97,7 +128,7 @@ export async function updateProject(
   input: UpdateProjectInput,
   userEmail: string,
 ): Promise<Project> {
-  const existing = await assertProjectOwner(repo, name, userEmail);
+  const existing = await assertProjectWritable(repo, name, userEmail);
   const updated: Project = {
     ...existing,
     displayName: input.displayName ?? existing.displayName,
@@ -122,6 +153,6 @@ export async function deleteProject(
   name: string,
   userEmail: string,
 ): Promise<void> {
-  await assertProjectOwner(repo, name, userEmail);
+  await assertProjectWritable(repo, name, userEmail);
   await repo.delete(name);
 }

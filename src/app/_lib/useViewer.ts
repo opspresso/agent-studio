@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 
 export interface Viewer {
   email: string;
+  /** May mutate shared registries and app settings. */
   isAdmin: boolean;
+  /**
+   * May write a project owned by someone else. Not the same question as
+   * {@link isAdmin} and not interchangeable with it — see `/api/me`.
+   */
+  isConfiguredAdmin: boolean;
 }
 
 /**
@@ -39,7 +45,19 @@ export function useViewer(): Viewer | null {
   return viewer;
 }
 
-/** Whether this viewer may mutate a project owned by `ownerEmail`. */
+/**
+ * Whether this viewer may mutate a project owned by `ownerEmail`.
+ *
+ * `isConfiguredAdmin`, not `isAdmin`: this must mirror `assertProjectWritable`
+ * exactly, and the two differ on a deployment that has no admin list — where
+ * `isAdmin` is true for everyone and the server still allows only the owner.
+ * Using the wrong one here does not open anything up, but it offers every user
+ * an edit form for every project that 403s on save.
+ */
 export function canEditProject(viewer: Viewer | null, ownerEmail: string | null): boolean {
-  return viewer !== null && ownerEmail !== null && (viewer.isAdmin || viewer.email === ownerEmail);
+  return (
+    viewer !== null &&
+    ownerEmail !== null &&
+    (viewer.isConfiguredAdmin || viewer.email === ownerEmail)
+  );
 }

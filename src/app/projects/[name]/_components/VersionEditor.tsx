@@ -28,6 +28,7 @@ import {
 } from "./inputs";
 import type { PickerOption } from "./inputs";
 import type { VersionSave } from "./McpBindingSettings";
+import { SUBAGENT_KIND_COLOR } from "@/app/_components/badgeColors";
 
 type SubagentOption = PickerOption & { type: "local" | "remote" };
 
@@ -84,6 +85,7 @@ export function VersionEditor({
                   value: p.name,
                   description: p.description,
                   badge: "local",
+                  badgeColor: SUBAGENT_KIND_COLOR.local,
                   type: "local" as const,
                 }))
             : [];
@@ -93,6 +95,7 @@ export function VersionEditor({
                 value: a.name,
                 description: a.description,
                 badge: "remote",
+                badgeColor: SUBAGENT_KIND_COLOR.remote,
                 type: "remote" as const,
               }))
             : [];

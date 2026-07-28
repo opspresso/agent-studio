@@ -26,6 +26,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
 
 export default function AgentDetailPage() {
   const params = useParams<{ name: string }>();
@@ -101,7 +102,9 @@ export default function AgentDetailPage() {
             <Title order={1} fz="h2">
               {agent.name}
             </Title>
-            <Badge>{agent.protocol === "a2a" ? "A2A" : "OpenAI"}</Badge>
+            <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
+              {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
+            </Badge>
           </Group>
           <Text fz="sm" c="dimmed" mt={4}>
             {agent.description}

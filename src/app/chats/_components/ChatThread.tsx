@@ -8,6 +8,7 @@ import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn 
 import { Composer, GeneratedImage, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 import { Alert, Badge, Box, Flex, Group, ScrollArea, Stack, Text } from "@mantine/core";
+import { BADGE } from "@/app/_components/badgeColors";
 
 export function ChatThread({ chatId }: { chatId: string }) {
   const [chat, setChat] = useState<Chat | null>(null);
@@ -112,7 +113,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
           mb="sm"
           style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
         >
-          <Badge color="brand" radius="xl">
+          <Badge color={BADGE.owned} radius="xl">
             {chat.projectName}
           </Badge>
         </Group>

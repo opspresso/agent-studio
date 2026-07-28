@@ -492,17 +492,17 @@ GET|PUT|DELETE /api/projects/[name]
 GET|POST /api/projects/[name]/versions
 GET|PUT|DELETE /api/projects/[name]/versions/[version]
 POST /api/projects/[name]/publish           set publishedVersion
-GET  /api/projects/[name]/traces            trace list (owner-only)
-GET  /api/projects/[name]/traces/[traceId]  trace detail (owner-only)
+GET  /api/projects/[name]/traces            trace list (owner/admin)
+GET  /api/projects/[name]/traces/[traceId]  trace detail (owner/admin)
 POST /api/projects/[name]/versions/[version]/predict        (version = name | 'published')
 POST /api/projects/[name]/versions/[version]/chat/completions   OpenAI-compatible
 POST /api/projects/[name]/versions/[version]/agent          SSE stream
-POST /api/projects/[name]/preview           assemble an unsaved draft's prompt without running it, owner-only
-GET|POST|DELETE /api/projects/[name]/token  per-project API token, owner-only (POST returns raw token once)
-POST /api/projects/[name]/token/reveal      read that token back in plaintext, owner-only
+POST /api/projects/[name]/preview           assemble an unsaved draft's prompt without running it, owner/admin
+GET|POST|DELETE /api/projects/[name]/token  per-project API token, owner/admin (POST returns raw token once)
+POST /api/projects/[name]/token/reveal      read that token back in plaintext, owner/admin
 POST /api/settings/a2a-key                  issue/reissue the app-wide A2A key, admin-only
 POST /api/settings/a2a-key/reveal           read the effective A2A key in plaintext, admin-only
-GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner-only (+ POST …/slack/test)
+GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner/admin (+ POST …/slack/test)
 GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
 GET|POST /api/skills/sync                   skills-repo sync status / run
@@ -567,20 +567,34 @@ unknown ids are counted rather than labelled.
 
 Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) go
-through `assertProjectOwner`, which returns 403 for anyone who is neither the owner nor a
+through `assertProjectWritable`, which returns 403 for anyone who is neither the owner nor a
 configured admin. Two project sub-resources that expose other users' data are gated the
 same way on *read*: traces (runtime inputs/outputs) and the Slack config (masked bot token
 / signing secret + manifest). MCP/agent/skill registries are shared: reads are open to any
 signed-in user, while mutations go through `withAdminAuth` and are restricted to the
 effective admin list when set (unset allows any signed-in user).
 
-The admin override is checked inside `assertProjectOwner` rather than passed in by its
+The admin override is checked inside `assertProjectWritable` rather than passed in by its
 twenty-odd callers: the rule is "owner or admin", and a flag one caller forgot to thread
-would silently narrow it back to owner-only on that path alone. It uses
+would silently narrow it back to owner-only on that path alone. The function is named for
+that rule and not for the owner — anything that genuinely needs *ownership* (attribution,
+whose credentials to dispatch with, whom to notify) must read `project.ownerEmail`. It uses
 `isConfiguredAdmin`, not the `isAdminEmail` that `withAdminAuth` uses — the two agree
 except when no admin list is configured, where the registry check stays open ("no
 restriction") and the ownership override closes. Treating "no list" as "everyone is an
 admin" here would hand every signed-in user write access to every project.
+
+Both flags are therefore sent to the browser by `GET /api/me`, under the same two names.
+The console gate for "may I edit this project" must mirror `assertProjectWritable`, so it
+reads `isConfiguredAdmin`; using `isAdmin` there offered every user an edit form for every
+project on a deployment with no admin list, and every save 403'd.
+
+Two consequences of the override are handled rather than assumed away. It is logged —
+`[authz] admin … is acting on project …` — because the write can destroy the row that would
+have identified who made it, and a project's API token authenticates *as its owner*, so an
+admin reveal leaves that line plus the `[token] … revealed by …` one. And the settings read
+it needs fails closed: a settings-store outage denies the override instead of turning a
+non-owner's deterministic 403 into a 500.
 
 Runtime settings: the admin-only `/settings` page stores overrides for selected env vars
 (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
@@ -623,10 +637,19 @@ Better Auth 1.6, Google OAuth only, custom DynamoDB adapter over the single tabl
 route handlers wrap themselves in `withAuth(...)`, which returns a 401 `Response` when
 there is no session and otherwise passes the `SessionUser` as the handler's first argument.
 
+Pages have their own gate in `src/middleware.ts`, which owns the list of public paths (`/`
+and `/login`) and redirects everything else to `/login?next=…` when the session cookie is
+absent. It is an optimistic check — a present-but-invalid cookie reaches the page and gets
+its 401 from the API behind it — so it is a redirect, not an authorization decision. `/api`
+is outside the matcher: those routes authenticate themselves and must answer a programmatic
+caller with a 401 rather than an HTML redirect. The `next` value is sanitised by
+`safeNextPath` (`src/shared/safeNextPath.ts`) so the flow cannot be aimed off-origin.
+
 ## UI Pages
 
 ```
 /                     dashboard when signed in, landing page otherwise
+/login                sign-in screen; where the middleware sends a signed-out visitor
 /projects             project catalog (cards)
 /projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
 /projects/[name]/versions | usage | traces | api-reference | settings

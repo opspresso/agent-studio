@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Route-handler tests for the two endpoints that return a live credential.
-// `withAuth` is stubbed to inject a controllable user; the real admin gate and
-// owner gate run. These guard the blast radius: a reveal endpoint that answers
-// the wrong caller hands over a working key.
+// `withAuth`/`withAdminAuth` are stubbed so the caller and their admin status
+// are drivable from `state`; the real *owner* gate runs inside the use case.
+// These guard the blast radius: a reveal endpoint that answers the wrong caller
+// hands over a working key.
 const { state, projectRepo } = vi.hoisted(() => ({
   state: { email: "owner@example.com", admin: true, a2aKey: undefined as string | undefined },
   projectRepo: { get: vi.fn(), getApiToken: vi.fn() },
@@ -36,10 +37,12 @@ vi.mock("@/lib/container", () => ({
 }));
 vi.mock("@/lib/runtime-settings", () => ({
   getA2aApiKey: async () => state.a2aKey,
-  // These routes are owner-gated; no admin list is configured here, so the
-  // owner check stands on its own.
+  // The project token route is owner-gated; no admin list is configured here,
+  // so the owner check stands on its own. `isAdminEmail` is deliberately absent:
+  // `withAdminAuth` is stubbed above, so nothing reaches it, and a stub of it
+  // returning `true` would quietly neutralise the non-admin rejection below if
+  // that stub were ever removed.
   isConfiguredAdmin: async () => false,
-  isAdminEmail: async () => true,
 }));
 vi.mock("@/infrastructure/crypto/secretEncryption", () => ({
   decryptSecret: (value: string) => value.replace("enc:v1:", ""),

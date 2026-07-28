@@ -812,6 +812,79 @@ describe("deleteProject", () => {
   });
 });
 
+/**
+ * `assertProjectWritable` widened every project mutation at once, so each path
+ * that leads to it needs to say which way it went. Without these, a later change
+ * that re-narrows one path — or over-widens one that should have stayed with the
+ * owner — breaks nothing in CI.
+ */
+describe("the admin override, per mutation path", () => {
+  beforeEach(() => {
+    admins.emails = [OTHER];
+    // Every case here trips the override's audit line by design.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  it("lets an admin delete a project they do not own", async () => {
+    const repo = makeProjectRepo([projectFixture("p")]);
+    await expect(deleteProject(repo, "p", OTHER)).resolves.toBeUndefined();
+    expect(await repo.get("p")).toBeNull();
+  });
+
+  it("lets an admin publish a version of a project they do not own", async () => {
+    const updated = await publishVersion(
+      makeProjectRepo([projectFixture("p")]),
+      makeVersionRepo([versionFixture("p", "1")]),
+      "p",
+      "1",
+      OTHER,
+    );
+    expect(updated.publishedVersion).toBe("1");
+  });
+
+  it("lets an admin create, update and delete a version on a project they do not own", async () => {
+    const projects = makeProjectRepo([projectFixture("p")]);
+    const versions = makeVersionRepo();
+
+    const created = await createVersion(versions, projects, "p", versionInput(), OTHER);
+    expect(created.versionName).toBe("1");
+
+    const updated = await updateVersion(
+      versions,
+      projects,
+      "p",
+      "1",
+      { systemPrompt: "rewritten by admin" },
+      OTHER,
+    );
+    expect(updated.systemPrompt).toBe("rewritten by admin");
+
+    await deleteVersion(versions, projects, "p", "1", OTHER);
+    expect(await versions.get("p", "1")).toBeNull();
+  });
+
+  it("denies the override when the admin list cannot be read, rather than failing the request", async () => {
+    /*
+     * The non-owner path now depends on a settings read. If losing that store
+     * threw, an unauthorized caller would get a 500 where they have always got a
+     * 403 — the authorization answer would become a function of the store's
+     * availability. It has to fail closed and stay a ForbiddenError.
+     */
+    const settings = await import("@/lib/runtime-settings");
+    const spy = vi
+      .spyOn(settings, "isConfiguredAdmin")
+      .mockRejectedValue(new Error("DynamoDB unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(
+        updateProject(makeProjectRepo([projectFixture("p")]), "p", { displayName: "X" }, OTHER),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe("updateProject ownership", () => {
   it("lets the owner update", async () => {
     const updated = await updateProject(

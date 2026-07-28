@@ -11,6 +11,7 @@ import {
   type ProjectTokenStatus,
 } from "../../lib/api";
 import { Alert, Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
+import { stateColor } from "@/app/_components/badgeColors";
 
 export function TokenSection({ projectName }: { projectName: string }) {
   const [status, setStatus] = useState<ProjectTokenStatus | null>(null);
@@ -92,7 +93,7 @@ export function TokenSection({ projectName }: { projectName: string }) {
     <CollapsibleSection
       title="API token"
       badge={
-        <Badge color={status.configured ? "teal" : "gray"} radius="xl">
+        <Badge color={stateColor(status.configured)} radius="xl">
           {status.configured ? "set" : "none"}
         </Badge>
       }
