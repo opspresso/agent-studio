@@ -2,6 +2,7 @@ import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dyn
 import { createAdapter } from "better-auth/adapters";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { expiresAtFromIso } from "@/infrastructure/db/ttl";
 
 type Where = {
   field: string;
@@ -18,6 +19,16 @@ const UNIQUE_FIELDS: Record<string, string[]> = {
 };
 
 type Item = Record<string, unknown>;
+
+/**
+ * Where the ISO `expiresAt` Better Auth wrote is parked while the attribute of
+ * that name carries the unix-seconds TTL the table expires on. `supportsDates`
+ * is off, so Better Auth hands us — and expects back — an ISO string; DynamoDB
+ * only collects a *Number*, and silently ignores any other type. Storing the
+ * string under the TTL attribute is therefore not a type mismatch anything
+ * reports: session and verification rows simply accumulate forever.
+ */
+const EXPIRES_AT_ISO = "expiresAtIso";
 
 function uniqueFieldFor(model: string, data: Item): string | undefined {
   return (UNIQUE_FIELDS[model] ?? []).find((field) => data[field] !== undefined);
@@ -42,7 +53,13 @@ function uniqueLock(model: string, data: Item): Item | undefined {
 function toRecord(item: Item): Item {
   const { PK, SK, GSI1PK, GSI1SK, GSI2PK, GSI2SK, entityType, ...rest } = item;
   void PK, SK, GSI1PK, GSI1SK, GSI2PK, GSI2SK, entityType;
-  return rest;
+  const iso = rest[EXPIRES_AT_ISO];
+  delete rest[EXPIRES_AT_ISO];
+  // Hand Better Auth back the ISO instant it wrote, not the numeric TTL that
+  // replaced it. Rows written before the split carry no `expiresAtIso` and keep
+  // their string `expiresAt`, so they still read correctly — they just stay
+  // uncollected until a session refresh rewrites them.
+  return typeof iso === "string" ? { ...rest, expiresAt: iso } : rest;
 }
 
 function matchesClause(record: Item, clause: Where): boolean {
@@ -172,6 +189,14 @@ function buildItem(model: string, data: Item): Item {
     GSI1SK: id,
     entityType: `auth:${model}`,
   };
+  const iso = data.expiresAt;
+  if (typeof iso === "string") {
+    const seconds = expiresAtFromIso(iso);
+    if (seconds !== undefined) {
+      item.expiresAt = seconds;
+      item[EXPIRES_AT_ISO] = iso;
+    }
+  }
   const uniqueField = uniqueFieldFor(model, data);
   if (uniqueField) {
     item.GSI2PK = keys.authUniqueLookup(model, uniqueField, String(data[uniqueField]));

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
+import {
+  expiresAtFromIso,
+  expiresAtSeconds,
+  isExpired,
+  notExpired,
+  RETENTION,
+} from "@/infrastructure/db/ttl";
 
 const DAY = 86_400;
 
@@ -13,6 +19,17 @@ describe("expiresAtSeconds", () => {
   it("is deterministic for the same base and retention (index co-expiry)", () => {
     const base = "2026-03-15T12:34:56Z";
     expect(expiresAtSeconds(base, 180)).toBe(expiresAtSeconds(base, 180));
+  });
+});
+
+describe("expiresAtFromIso", () => {
+  it("is the ISO instant itself, in unix seconds", () => {
+    const iso = "2026-02-01T00:00:00.000Z";
+    expect(expiresAtFromIso(iso)).toBe(Date.parse(iso) / 1000);
+  });
+
+  it("is undefined for an unparseable value, so no NaN reaches a put", () => {
+    expect(expiresAtFromIso("not-a-date")).toBeUndefined();
   });
 });
 
