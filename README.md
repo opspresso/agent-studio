@@ -160,8 +160,11 @@ a second way for a storage blip to stop the platform.
 ## Webhook triggers
 
 An outside system can start a run by posting to a trigger's URL with its secret. Configure
-them under **Project Settings → Webhook triggers**; each has a delivery URL, a rotatable
-`asw_…` secret sent as `X-Trigger-Secret`, and a history of recent deliveries.
+them under **Project Settings → Webhook triggers**; each has a delivery URL, an `asw_…`
+secret sent as `X-Trigger-Secret`, and a history of recent deliveries. The trigger id follows
+the same slug rule as a project name and is normalised for you. The secret is stored
+encrypted, so — like a project API token — you can reveal it again or regenerate it from the
+same panel rather than losing it after creation.
 
 ```bash
 curl -X POST https://<host>/api/triggers/my-project/nightly \

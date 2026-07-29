@@ -16,12 +16,15 @@ import {
 } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
+import { CopyButton } from "@/app/_components/CopyButton";
+import { toSlug } from "@/shared/slug";
 import { formatDateTime } from "@/shared/date";
 import {
   createTrigger,
   deleteTrigger,
   listTriggerRuns,
   listTriggers,
+  revealTriggerSecret,
   updateTrigger,
   type TriggerRun,
   type TriggerView,
@@ -91,6 +94,15 @@ export function TriggersSection({ projectName }: { projectName: string }) {
     }
   }
 
+  /** Drop a revealed secret back to its mask without reloading the panel. */
+  function hide(triggerId: string) {
+    setRevealed((prev) => {
+      const next = { ...prev };
+      delete next[triggerId];
+      return next;
+    });
+  }
+
   const deliveryUrl = (triggerId: string) =>
     typeof window === "undefined"
       ? `/api/triggers/${projectName}/${triggerId}`
@@ -117,13 +129,19 @@ export function TriggersSection({ projectName }: { projectName: string }) {
             placeholder="nightly-report"
             value={newId}
             onChange={(e) => setNewId(e.currentTarget.value)}
+            // Same rule and same moment as a project name: normalised on blur so
+            // typing stays unsurprising, and the id that reaches the slug-only
+            // API is always one it accepts.
+            onBlur={() => setNewId(toSlug(newId))}
+            description="Lowercase letters, digits, and hyphens only."
+            inputWrapperOrder={["label", "input", "description", "error"]}
             disabled={loading}
           />
           <Button
-            disabled={!newId.trim() || busy || loading}
+            disabled={!toSlug(newId) || busy || loading}
             onClick={() =>
               act(async () => {
-                const created = await createTrigger(projectName, { triggerId: newId.trim() });
+                const created = await createTrigger(projectName, { triggerId: toSlug(newId) });
                 if (created.secret) {
                   setRevealed((prev) => ({ ...prev, [created.triggerId]: created.secret! }));
                 }
@@ -145,17 +163,40 @@ export function TriggersSection({ projectName }: { projectName: string }) {
             </Group>
             <CopyableUrl url={deliveryUrl(trigger.triggerId)} />
             {revealed[trigger.triggerId] ? (
-              <Stack gap={4}>
-                <Text fz="sm" c="orange">
-                  Copy this secret now — it is not shown again.
+              <Alert color="yellow" variant="light" p="sm">
+                <Group gap="xs" wrap="nowrap">
+                  <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                    {revealed[trigger.triggerId]}
+                  </Code>
+                  <CopyButton text={revealed[trigger.triggerId]!} />
+                  <Button variant="default" size="compact-xs" onClick={() => hide(trigger.triggerId)}>
+                    Hide
+                  </Button>
+                </Group>
+                <Text fz="xs" mt={4}>
+                  Send it as <Code>X-Trigger-Secret</Code>. Anyone holding it can start this
+                  project&apos;s published version.
                 </Text>
-                <Code block>{revealed[trigger.triggerId]}</Code>
-              </Stack>
+              </Alert>
             ) : (
-              <Text fz="sm" c="dimmed">
-                Secret: <code>{trigger.secretMasked}</code> — send it as{" "}
-                <code>X-Trigger-Secret</code>.
-              </Text>
+              <Group gap="xs" wrap="nowrap">
+                <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                  {trigger.secretMasked}
+                </Code>
+                <Button
+                  variant="default"
+                  size="compact-xs"
+                  disabled={busy}
+                  onClick={() =>
+                    act(async () => {
+                      const secret = await revealTriggerSecret(projectName, trigger.triggerId);
+                      setRevealed((prev) => ({ ...prev, [trigger.triggerId]: secret }));
+                    })
+                  }
+                >
+                  Reveal
+                </Button>
+              </Group>
             )}
             <Group gap="md" align="center">
               <Switch
@@ -206,18 +247,25 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                 variant="default"
                 size="xs"
                 disabled={busy}
-                onClick={() =>
-                  act(async () => {
+                onClick={() => {
+                  if (
+                    !confirm(
+                      `Regenerate the secret for "${trigger.triggerId}"? The current secret stops working immediately.`,
+                    )
+                  ) {
+                    return;
+                  }
+                  void act(async () => {
                     const rotated = await updateTrigger(projectName, trigger.triggerId, {
                       rotateSecret: true,
                     });
                     if (rotated.secret) {
                       setRevealed((prev) => ({ ...prev, [trigger.triggerId]: rotated.secret! }));
                     }
-                  })
-                }
+                  });
+                }}
               >
-                Rotate secret
+                Regenerate secret
               </Button>
               <Button
                 variant="default"

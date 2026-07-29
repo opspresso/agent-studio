@@ -365,14 +365,20 @@ GET    /api/projects/{name}/triggers                     → 200 { triggers: [ �
 POST   /api/projects/{name}/triggers                     → 201 { …, secret }   | 409
 PUT    /api/projects/{name}/triggers/{trigger}           → 200 { … }           | 404
 DELETE /api/projects/{name}/triggers/{trigger}           → 204                 | 404
+POST   /api/projects/{name}/triggers/{trigger}/reveal    → 200 { secret, createdAt }
 GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }
 ```
 
 Create body: `{ triggerId (slug), description?, enabled?, variables?, payloadMode?,
-allowConcurrent? }`. The response carries `secret` in the clear — the only time it is
-readable, like a freshly issued project API token; later reads return `secretMasked` only.
-`PUT` takes the same fields plus `rotateSecret: true`, which re-issues it (and returns the
-new one once). The previous secret stops working immediately.
+allowConcurrent? }`. `triggerId` follows the same rule as a project name
+(`^[a-z0-9-]+$`); the console normalises what you type through the same `toSlug` helper the
+project form uses, and the API rejects anything else regardless of client.
+
+Ordinary reads return `secretMasked` only. The secret is stored AES-encrypted rather than
+hashed, so — exactly like a project API token — it can be **read back** through
+`POST …/reveal` (a POST because the body is a live credential; owner/admin only, and every
+reveal is logged with the caller's email). `PUT` with `rotateSecret: true` re-issues it and
+returns the new one; the previous secret stops working immediately.
 
 Delivery (no session — the secret is the authentication):
 

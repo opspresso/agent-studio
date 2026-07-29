@@ -501,6 +501,13 @@ export function deleteTrigger(name: string, triggerId: string): Promise<void> {
   return fetch(`/api/projects/${name}/triggers/${triggerId}`, { method: "DELETE" }).then(assertOk);
 }
 
+/** Read a trigger's secret back. POST, not GET — the body is a live credential. */
+export function revealTriggerSecret(name: string, triggerId: string): Promise<string> {
+  return fetch(`/api/projects/${name}/triggers/${triggerId}/reveal`, { method: "POST" })
+    .then((r) => readJson<{ secret: string }>(r))
+    .then((d) => d.secret);
+}
+
 export function listTriggerRuns(
   name: string,
   triggerId: string,
