@@ -7,7 +7,7 @@ import { safeNextPath } from "@/shared/safeNextPath";
 export const metadata = { title: "Sign in · Agent Studio" };
 
 /**
- * Where `middleware.ts` sends a signed-out visitor.
+ * Where `proxy.ts` sends a signed-out visitor.
  *
  * A server component so the already-signed-in case is settled before anything
  * renders: arriving here with a session — a stale bookmark, a second tab that

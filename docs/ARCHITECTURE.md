@@ -865,7 +865,7 @@ Better Auth 1.6, Google OAuth only, custom DynamoDB adapter over the single tabl
 route handlers wrap themselves in `withAuth(...)`, which returns a 401 `Response` when
 there is no session and otherwise passes the `SessionUser` as the handler's first argument.
 
-Pages have their own gate in `src/middleware.ts`, which owns the list of public paths (`/`
+Pages have their own gate in `src/proxy.ts`, which owns the list of public paths (`/`
 and `/login`) and redirects everything else to `/login?next=…` when the session cookie is
 absent. It is an optimistic check — a present-but-invalid cookie reaches the page and gets
 its 401 from the API behind it — so it is a redirect, not an authorization decision. `/api`
@@ -877,7 +877,7 @@ caller with a 401 rather than an HTML redirect. The `next` value is sanitised by
 
 ```
 /                     dashboard when signed in, landing page otherwise
-/login                sign-in screen; where the middleware sends a signed-out visitor
+/login                sign-in screen; where the proxy sends a signed-out visitor
 /projects             project catalog (cards)
 /projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
 /projects/[name]/versions | usage | traces | api-reference | settings

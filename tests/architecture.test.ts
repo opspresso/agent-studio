@@ -400,16 +400,17 @@ describe("react event handling", () => {
 /**
  * What the Edge runtime has to be able to load.
  *
- * Next compiles `instrumentation.ts` for **both** the Node and Edge runtimes,
- * and `middleware.ts` for Edge only. A Node builtin anywhere in their transitive
- * imports fails the Edge compile — and since the middleware runs on every page,
- * that takes the whole console down while every `/api/*` route keeps working,
- * because those are outside the matcher. That asymmetry is exactly what let it
- * ship: the API surface tested clean.
+ * Next compiles `instrumentation.ts` for **both** the Node and Edge runtimes.
+ * `proxy.ts` defaults to Node as of Next 16, but it stays on this list because
+ * it is the one file a deploy target may lift out to its edge network, and it
+ * runs on every page: a Node builtin anywhere in its transitive imports takes
+ * the whole console down while every `/api/*` route keeps working, because those
+ * are outside the matcher. That asymmetry is exactly what let it ship once: the
+ * API surface tested clean.
  *
  * `pnpm build` only *warns*. This fails.
  */
-const EDGE_ENTRY_POINTS = ["src/instrumentation.ts", "src/middleware.ts"];
+const EDGE_ENTRY_POINTS = ["src/instrumentation.ts", "src/proxy.ts"];
 
 /** The Node builtins the Edge runtime implements. Everything else is banned. */
 const EDGE_SAFE_NODE_BUILTINS = new Set([

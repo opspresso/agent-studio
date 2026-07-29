@@ -19,7 +19,7 @@
 // so importing it here is safe. `randomUUID` is *not* — and this module is
 // reachable from `instrumentation.ts`, which Next compiles for Edge as well as
 // Node, so a `node:crypto` import here fails that build and takes down every
-// page the middleware runs on. The Web Crypto global is present in all three
+// page the proxy runs on. The Web Crypto global is present in all three
 // runtimes and needs no import at all.
 import { AsyncLocalStorage } from "node:async_hooks";
 

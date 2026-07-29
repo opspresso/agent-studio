@@ -120,7 +120,7 @@ Better Auth 1.6 + Google OAuth, custom DynamoDB adapter (`src/infrastructure/db/
 restricted to `ALLOWED_EMAIL_DOMAINS`. Route handlers wrap in `withAuth(...)`
 (`src/lib/session.ts`), which 401s without a session and passes `SessionUser` as the first arg.
 
-**Pages** are gated separately, in `src/middleware.ts` — the single owner of which pages are
+**Pages** are gated separately, in `src/proxy.ts` — the single owner of which pages are
 public (`/` and `/login`; everything else the matcher reaches needs a session, so a new route
 defaults to protected). A signed-out visitor is redirected to `/login?next=…` before the route
 renders, rather than being handed the console and an error box once the API 401s. The check is

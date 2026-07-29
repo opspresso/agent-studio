@@ -27,7 +27,7 @@ import { getSessionCookie } from "better-auth/cookies";
  */
 const PUBLIC_PATHS = new Set(["/", "/login"]);
 
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
   if (PUBLIC_PATHS.has(pathname) || getSessionCookie(request)) {
     return NextResponse.next();
