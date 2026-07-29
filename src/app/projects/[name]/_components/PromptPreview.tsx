@@ -114,9 +114,12 @@ export function PromptPreview({
               <TextInput
                 key={name}
                 value={variables[name] ?? ""}
-                onChange={(e) =>
-                  setVariables((prev) => ({ ...prev, [name]: e.currentTarget.value }))
-                }
+                onChange={(e) => {
+                  // Captured here: React nulls `currentTarget` when the handler
+                  // returns, and the updater below runs on the next render.
+                  const value = e.currentTarget.value;
+                  setVariables((prev) => ({ ...prev, [name]: value }));
+                }}
                 leftSectionWidth={132}
                 leftSectionPointerEvents="none"
                 leftSection={
