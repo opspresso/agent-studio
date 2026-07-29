@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
 import { listMcpTools } from "@/infrastructure/mcp/mcpClient";
+import { PROTOCOL_VERSION } from "@/infrastructure/mcp/session";
 import { clearMcpDiscoveryCache, getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
@@ -28,6 +29,24 @@ interface ServerScript {
   framing?: "json" | "sse";
   /** Value returned in the Mcp-Session-Id response header on initialize. */
   sessionId?: string;
+  /** Session ids handed out one per initialize, so a re-handshake is visible. */
+  sessionIds?: string[];
+  /** Protocol version the handshake agrees to. Defaults to the one we propose. */
+  protocolVersion?: string;
+  /**
+   * Answer requests carrying a session id with 404, as a server whose session
+   * has expired does. `once` expires only the first such request, which is the
+   * recoverable case; `always` never stops, which is what an endpoint that has
+   * genuinely gone looks like.
+   *
+   * Notifications are exempt — a real server answers those 202 whatever it
+   * thinks of the session, and this client does not read their status.
+   */
+  expiredSession?: "once" | "always";
+  /** Narrow {@link expiredSession} to one method, so a test can pick its moment. */
+  expireOn?: string;
+  /** 404 every post-handshake request, session or not: the endpoint itself is gone. */
+  notFoundAfterHandshake?: boolean;
   /** Tools reported by tools/list. */
   listTools?: ToolShape[];
   /** Pages of tools/list, keyed by the cursor that asks for them ("" = first). */
@@ -50,14 +69,19 @@ interface RecordedCall {
   method: string;
   /** HTTP verb, which is what distinguishes a session release from a request. */
   httpMethod: string;
+  /** The Mcp-Session-Id the request carried, if any. */
+  sessionId?: string;
+  /** The MCP-Protocol-Version the request stated. */
+  protocolVersion?: string;
   params?: Record<string, unknown>;
   hasSignal: boolean;
 }
 
-function framedResponse(payload: RpcEnvelope, script: ServerScript): Response {
+function framedResponse(payload: RpcEnvelope, script: ServerScript, sessionId?: string): Response {
   const headers = new Headers();
-  if (script.sessionId) {
-    headers.set("Mcp-Session-Id", script.sessionId);
+  const issued = sessionId ?? script.sessionId;
+  if (issued) {
+    headers.set("Mcp-Session-Id", issued);
   }
   if (script.framing === "sse") {
     headers.set("content-type", "text/event-stream");
@@ -70,6 +94,16 @@ function framedResponse(payload: RpcEnvelope, script: ServerScript): Response {
 /** Install a fetch stub that speaks the MCP JSON-RPC protocol per URL. */
 function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
   const calls: RecordedCall[] = [];
+  /** Session ids already handed out, per script, so each initialize gets the next. */
+  const handshakes = new Map<ServerScript, number>();
+  /** Scripts that have already spent their one expiry. */
+  const expired = new Set<ServerScript>();
+  /**
+   * Session ids the server has forgotten. Once a session dies it stays dead for
+   * every request still carrying it, which is what makes concurrent callers meet
+   * the same 404 — the case a per-caller reset would turn into a session leak.
+   */
+  const dead = new Set<string>();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : String(input);
     const script = scripts[url];
@@ -79,6 +113,9 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     if (script.networkError) {
       throw new Error("network down");
     }
+    const sent = new Headers(init?.headers);
+    const sentSession = sent.get("Mcp-Session-Id") ?? undefined;
+    const sentVersion = sent.get("MCP-Protocol-Version") ?? undefined;
     const body = JSON.parse(String(init?.body ?? "{}")) as {
       method: string;
       id?: number;
@@ -88,6 +125,8 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       url,
       method: body.method,
       httpMethod: init?.method ?? "GET",
+      ...(sentSession ? { sessionId: sentSession } : {}),
+      ...(sentVersion ? { protocolVersion: sentVersion } : {}),
       params: body.params,
       hasSignal: init?.signal instanceof AbortSignal,
     });
@@ -96,9 +135,40 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     if (body.method === "notifications/initialized") {
       return new Response("", { status: 202 });
     }
+    // A session the server no longer knows. Checked before anything is done
+    // with the message, which is why replaying the request afterwards is safe.
+    if (sentSession !== undefined && dead.has(sentSession)) {
+      return new Response("Session not found", { status: 404 });
+    }
+    const expiresNow =
+      script.expiredSession !== undefined &&
+      sentSession !== undefined &&
+      (script.expireOn === undefined || script.expireOn === body.method) &&
+      !expired.has(script);
+    if (expiresNow && sentSession !== undefined) {
+      if (script.expiredSession === "once") {
+        expired.add(script);
+      }
+      dead.add(sentSession);
+      return new Response("Session not found", { status: 404 });
+    }
+    if (script.notFoundAfterHandshake && body.method !== "initialize") {
+      return new Response("Not found", { status: 404 });
+    }
     let payload: RpcEnvelope;
+    let issuedSession: string | undefined;
     if (body.method === "initialize") {
-      payload = { jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18", capabilities: {} } };
+      const nth = handshakes.get(script) ?? 0;
+      handshakes.set(script, nth + 1);
+      issuedSession = script.sessionIds?.[nth];
+      payload = {
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          protocolVersion: script.protocolVersion ?? "2025-06-18",
+          capabilities: {},
+        },
+      };
     } else if (body.method === "tools/list") {
       if (script.listError) {
         payload = { jsonrpc: "2.0", id: body.id, error: script.listError };
@@ -120,7 +190,7 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     } else {
       payload = { jsonrpc: "2.0", id: body.id, result: {} };
     }
-    return framedResponse(payload, script);
+    return framedResponse(payload, script, issuedSession);
   });
   vi.stubGlobal("fetch", fetchMock);
   return calls;
@@ -623,6 +693,155 @@ describe("ToolManager image results", () => {
     // The text is the diagnosis; attaching a picture to a failure only spends context.
     expect(result.images).toBeUndefined();
     expect(result.text.startsWith("Error:")).toBe(true);
+  });
+});
+
+/**
+ * Streamable HTTP answers a request carrying an unknown `Mcp-Session-Id` with
+ * 404 and requires the client to start a new session. Runs here last up to ten
+ * minutes, so a session expiring mid-run is not hypothetical — and left
+ * unhandled it takes every remaining tool call down with it.
+ */
+describe("ToolManager expired-session recovery", () => {
+  it("re-handshakes and completes the call the expired session refused", async () => {
+    const calls = stubMcpFetch({
+      "https://expiring.test/mcp": {
+        sessionIds: ["sess-1", "sess-2"],
+        expiredSession: "once",
+        expireOn: "tools/call",
+        listTools: [{ name: "search" }],
+        callContent: [textBlock("ok")],
+      },
+    });
+    const manager = new ToolManager([server("x", "https://expiring.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("search", {});
+
+    // The model gets its answer, not `HTTP 404`.
+    expect(result.text).toBe("ok");
+    const rpc = calls.filter((call) => call.httpMethod === "POST");
+    expect(rpc.map((call) => call.method)).toEqual([
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+      // The call that met the expired session, then a fresh handshake, then the
+      // same call again.
+      "tools/call",
+      "initialize",
+      "notifications/initialized",
+      "tools/call",
+    ]);
+    // The retry carried the *new* id, which is what proves the old one was
+    // forgotten rather than merely re-sent.
+    expect(rpc.at(-1)?.sessionId).toBe("sess-2");
+    // And the second handshake proposed no session at all, as a new one must:
+    // re-offering the dead id would ask the server to resurrect it.
+    const handshakes = rpc.filter((call) => call.method === "initialize");
+    expect(handshakes).toHaveLength(2);
+    expect(handshakes.every((call) => call.sessionId === undefined)).toBe(true);
+  });
+
+  it("gives up after one retry when the endpoint itself is gone", async () => {
+    // A server that answers 404 to everything is not a session that expired, and
+    // handshaking against it forever would replace a failed call with a hang.
+    const calls = stubMcpFetch({
+      "https://gone.test/mcp": {
+        sessionIds: ["sess-1", "sess-2", "sess-3"],
+        expiredSession: "always",
+        listTools: [{ name: "search" }],
+      },
+    });
+    const manager = new ToolManager([server("x", "https://gone.test/mcp")]);
+    await manager.init();
+
+    // Discovery is the first thing to meet it: tools/list is a request like any
+    // other, so it retries once and then reports the server as unreachable.
+    expect(manager.tools).toHaveLength(0);
+    expect(manager.warnings[0]).toContain("unreachable");
+    expect(calls.filter((call) => call.method === "tools/list")).toHaveLength(2);
+    expect(calls.filter((call) => call.method === "initialize")).toHaveLength(2);
+  });
+
+  it("does not retry a 404 from a server that issued no session", async () => {
+    // Then the 404 is about the endpoint, and re-handshaking only doubles the
+    // wait before the same answer.
+    const calls = stubMcpFetch({
+      "https://nosession.test/mcp": {
+        notFoundAfterHandshake: true,
+        listTools: [{ name: "search" }],
+      },
+    });
+    const manager = new ToolManager([server("x", "https://nosession.test/mcp")]);
+
+    await manager.init();
+
+    expect(calls.filter((call) => call.method === "initialize")).toHaveLength(1);
+    expect(manager.warnings[0]).toContain("unreachable");
+  });
+
+  it("handshakes once when concurrent calls all meet the same expired session", async () => {
+    // The MCP calls of one model response are dispatched together, so several
+    // can hold the same dead id. Each resetting in turn would abandon a
+    // handshake another had started and mint one server-side session per caller.
+    const calls = stubMcpFetch({
+      "https://expiring.test/mcp": {
+        sessionIds: ["sess-1", "sess-2", "sess-3", "sess-4"],
+        expiredSession: "once",
+        expireOn: "tools/call",
+        listTools: [{ name: "search" }],
+        callContent: [textBlock("ok")],
+      },
+    });
+    const manager = new ToolManager([server("x", "https://expiring.test/mcp")]);
+    await manager.init();
+
+    const results = await Promise.all([
+      manager.callTool("search", {}),
+      manager.callTool("search", {}),
+      manager.callTool("search", {}),
+    ]);
+
+    expect(results.map((r) => r.text)).toEqual(["ok", "ok", "ok"]);
+    // Two in total: the original, and exactly one replacement.
+    expect(calls.filter((call) => call.method === "initialize")).toHaveLength(2);
+  });
+});
+
+describe("ToolManager protocol version negotiation", () => {
+  it("states the version the server agreed to, not the one we proposed", async () => {
+    // The header is meant to say which revision is in use. Claiming ours after a
+    // server answered with another states something it never agreed to — and it
+    // is the value era detection would key on if this client ever speaks two.
+    const calls = stubMcpFetch({
+      "https://old.test/mcp": {
+        protocolVersion: "2025-03-26",
+        listTools: [{ name: "search" }],
+        callContent: [textBlock("ok")],
+      },
+    });
+    const manager = new ToolManager([server("x", "https://old.test/mcp")]);
+    await manager.init();
+    await manager.callTool("search", {});
+
+    const byMethod = (method: string) => calls.find((call) => call.method === method);
+    // The proposal is ours — there is nothing else to offer yet.
+    expect(byMethod("initialize")?.protocolVersion).toBe(PROTOCOL_VERSION);
+    // Everything after it is the server's answer, the notification included.
+    expect(byMethod("notifications/initialized")?.protocolVersion).toBe("2025-03-26");
+    expect(byMethod("tools/list")?.protocolVersion).toBe("2025-03-26");
+    expect(byMethod("tools/call")?.protocolVersion).toBe("2025-03-26");
+  });
+
+  it("keeps proposing our own version when the server names none", async () => {
+    const calls = stubMcpFetch({
+      "https://quiet.test/mcp": { protocolVersion: "", listTools: [{ name: "search" }] },
+    });
+    await new ToolManager([server("x", "https://quiet.test/mcp")]).init();
+
+    expect(calls.find((call) => call.method === "tools/list")?.protocolVersion).toBe(
+      PROTOCOL_VERSION,
+    );
   });
 });
 

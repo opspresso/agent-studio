@@ -62,6 +62,15 @@ export class McpSession {
   private serverDescription = "";
   /** The handshake while it is in flight; see {@link ensureInitialized}. */
   private handshake: Promise<void> | undefined;
+  /**
+   * The protocol version the server agreed to, once it has said. Requests after
+   * the handshake carry this rather than {@link PROTOCOL_VERSION}: the header is
+   * meant to state the version *in use*, and a server that answered with an
+   * older revision is owed that revision's semantics, not a claim about ours.
+   * Undefined until the handshake, where our own version is the only thing there
+   * is to propose.
+   */
+  private negotiatedVersion: string | undefined;
 
   constructor(
     private readonly url: string,
@@ -90,13 +99,27 @@ export class McpSession {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
-      "MCP-Protocol-Version": PROTOCOL_VERSION,
+      "MCP-Protocol-Version": this.negotiatedVersion ?? PROTOCOL_VERSION,
       ...this.headers,
     };
     if (this.sessionId) {
       headers["Mcp-Session-Id"] = this.sessionId;
     }
     return headers;
+  }
+
+  /**
+   * Forget the server-side session, so the next request handshakes afresh.
+   *
+   * Shared by teardown and by expiry recovery, which want exactly the same
+   * thing: the id is gone, so nothing may be sent under it and nothing may
+   * wait on a handshake that established it.
+   */
+  private forgetSession(): void {
+    this.sessionId = undefined;
+    this.initialized = false;
+    this.handshake = undefined;
+    this.negotiatedVersion = undefined;
   }
 
   /**
@@ -164,6 +187,15 @@ export class McpSession {
     ]
       .filter(Boolean)
       .join(" ");
+    // Adopted, not just displayed. Every request from here on states the version
+    // actually in use — including the `notifications/initialized` below, which
+    // is already past the negotiation. A server that answered with something
+    // else is not refused: this client reads one shape of tool list, and every
+    // revision that answers `initialize` at all still speaks it, so disconnecting
+    // would cost an operator a working server to make a point about a header.
+    if (typeof result?.protocolVersion === "string" && result.protocolVersion !== "") {
+      this.negotiatedVersion = result.protocolVersion;
+    }
 
     // Notify the server that initialization completed.
     await this.send(this.url, {
@@ -180,12 +212,64 @@ export class McpSession {
     return this.serverDescription;
   }
 
+  /**
+   * One request, retried once behind a fresh handshake if the server says the
+   * session is gone.
+   *
+   * Streamable HTTP answers a request carrying an unknown `Mcp-Session-Id` with
+   * 404, and requires the client to start a new session rather than treat that
+   * as a dead server. Without it a run outliving the server's session TTL loses
+   * every tool for the rest of the run — the model keeps calling and keeps
+   * reading `HTTP 404`, with no path back. Runs here last up to ten minutes, so
+   * that is not a hypothetical window.
+   *
+   * Retrying is safe precisely because the 404 is a session-lookup failure: the
+   * server rejected the message before running anything, so a `tools/call` that
+   * gets one had no effect to repeat.
+   *
+   * Bounded at one attempt. A server that answers 404 to everything — because
+   * the endpoint itself is gone — would otherwise be handshaked against forever,
+   * and the second failure is the one that says so.
+   */
   private async request(
     method: string,
     params: Record<string, unknown>,
     timeoutMs: number,
   ): Promise<unknown> {
     await this.ensureInitialized();
+    // Captured before the attempt: it is what decides whether a 404 means *this*
+    // session expired, and whether another caller has already replaced it.
+    const attemptedSession = this.sessionId;
+    try {
+      return await this.dispatch(method, params, timeoutMs);
+    } catch (error) {
+      if (
+        !(error instanceof McpHttpError) ||
+        error.status !== 404 ||
+        // No session id means the 404 is about the endpoint, not a session.
+        attemptedSession === undefined
+      ) {
+        throw error;
+      }
+      // Only the caller whose session is still the current one clears it. The
+      // MCP calls of one model response are dispatched concurrently, so several
+      // can hold the same expired id — and each resetting in turn would abandon
+      // a handshake another had already started, minting one server-side session
+      // per caller and leaking all but the last. The rest simply wait on the
+      // handshake the winner started.
+      if (this.sessionId === attemptedSession) {
+        this.forgetSession();
+      }
+      await this.ensureInitialized();
+      return await this.dispatch(method, params, timeoutMs);
+    }
+  }
+
+  private async dispatch(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number,
+  ): Promise<unknown> {
     const id = this.nextId++;
     const response = await this.send(this.url, {
       method: "POST",
@@ -275,9 +359,7 @@ export class McpSession {
     } catch {
       // Session teardown is best-effort.
     } finally {
-      this.sessionId = undefined;
-      this.initialized = false;
-      this.handshake = undefined;
+      this.forgetSession();
     }
   }
 }
