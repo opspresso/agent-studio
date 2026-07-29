@@ -374,6 +374,20 @@ Two deliberate strategies coexist:
   in configured order so names are deterministic; sessions are registered before their first
   request and released with a `DELETE` when the run ends (`ToolManager.close()`, called from
   the execution facade's `finally` — including when discovery itself failed or was cancelled).
+  A request answered `404` while carrying an `Mcp-Session-Id` means the server has forgotten
+  that session, and the transport requires a new one: the session id is dropped and the
+  request is replayed once behind a fresh handshake. Replaying is safe because a 404 is a
+  session-lookup failure — the server rejected the message before running anything, so a
+  `tools/call` that gets one had no effect to repeat. Bounded at one attempt, or an endpoint
+  that has genuinely gone would be handshaked against forever. Only the caller whose session
+  is still the current one clears it: one model response dispatches its MCP calls together,
+  so several can hold the same dead id, and each resetting in turn would abandon a handshake
+  another had started and mint one server-side session per caller. Without this a run that
+  outlives the server's session TTL — runs here last up to ten minutes — loses every
+  remaining tool call, with the model reading `HTTP 404` and no path back.
+  After the handshake, requests state the protocol version the **server** agreed to rather
+  than the one proposed; a server that answers with another revision is not refused, since
+  every revision that answers `initialize` still speaks the tool-list shape this client reads.
 - Discovery is cached per `url + headers` (`discoveryCache.ts`, `MCP_DISCOVERY_CACHE_TTL_MS`,
   default 60s, invalidated when the registry entry is edited). On a hit the session is left
   uninitialized and handshakes lazily on its first tool call, so a turn that calls no tool
