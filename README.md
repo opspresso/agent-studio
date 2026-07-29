@@ -157,6 +157,25 @@ follows the flush. It is a daily backstop against a runaway loop or a heavy call
 hard ceiling and not a rate limit. Every read failure fails open — the guard must not become
 a second way for a storage blip to stop the platform.
 
+## Concurrency limits
+
+One caller may have `MAX_CONCURRENT_RUNS_PER_ACTOR` runs in flight at once (default 10);
+inbound A2A has its own `MAX_CONCURRENT_RUNS_A2A` (default 50), because the inbound key is
+shared so one identity stands for every machine caller. `0` turns a limit off. Over the
+limit, the run is refused with `429` and a short `Retry-After` — and refused before it
+starts, so it records no usage and no trace.
+
+This is the fast-acting half of the pair: per-run bounds (10 minutes, 50 turns, tool-result
+caps) bound one run and the chat run lease bounds one chat, but neither stops the same person
+opening twenty chats or calling `/predict` in a loop, and the daily cost guard only reacts
+once the money is spent.
+
+Slots live in DynamoDB, not in process memory, so the limit does not multiply by the number
+of instances. Each is a leased row reclaimed automatically, so an instance that dies
+mid-run does not hold one forever. Unlike the cost guard this one **fails closed**: opening
+it when the store is unreachable would add load at exactly the wrong moment, and every run
+needs that same table anyway.
+
 ## Project API
 
 Each project's **API Reference** tab documents how to call it from outside the

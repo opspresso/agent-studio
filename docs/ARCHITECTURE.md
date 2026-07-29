@@ -84,6 +84,7 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
 | Usage (daily per caller) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
+| Run concurrency slot | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
@@ -166,6 +167,25 @@ guard runs **before** the metric opens, so a refused run is never counted, trace
 recorded. `close()` runs **after** the caller has flushed its usage — an agent run buffers
 usage until the end, so a settle before the flush would always read a total that excludes
 the run being settled.
+
+Two guards hang off it, and they fail in opposite directions on purpose. The **cost guard**
+protects money, so a storage blip must not stop the platform: it fails open. The
+**concurrency guard** protects the platform itself, so opening it when the store is failing
+would add load exactly when the store cannot take it: it fails closed — and costs nothing
+extra, since every run reads its project and version from the same table and a store that
+cannot answer was about to fail the run anyway. Cost is checked first: a project over budget
+should be told so rather than made to queue for a slot it would be refused on regardless.
+
+Concurrency is a **slot index**, not a counter (`src/domain/execution/runSlot.ts`). A counter
+is exact only while every process lives to decrement it; an instance killed mid-run leaks its
+increment forever, and nothing expires a number. Each of a caller's `0..limit-1` indices is a
+row with a lease, claimed by a conditional write — so the limit is exact rather than a bound
+two concurrent acquires can overshoot, and a dead instance releases its hold when the lease
+runs out. State is shared rather than per-process for the obvious reason: `runMetrics` counts
+this instance's runs, so a limit built on it would multiply by the number of instances.
+`a2a` gets its own ceiling because its actor id is a constant — the inbound key is shared, so
+one identity stands for every machine caller and the per-caller limit would otherwise become
+a cap on the whole A2A surface.
 
 The cost guard itself (`src/application/usage/costGuard.ts`) reads one day's row with a
 single primary-key `GetItem`, sums every model's `costUsd`, and refuses with

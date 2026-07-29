@@ -29,39 +29,8 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 **선행 관계**
 
 ```
-abuse-control        webhook-trigger ──→ schedule-trigger        run-observability
+webhook-trigger ──→ schedule-trigger        run-observability
 ```
-
----
-
-## abuse-control — 호출자별 동시 실행 상한
-
-**이유**: `src/` 어디에도 rate limit이나 동시 실행 상한이 없다. 현재 경계는 run
-단위(10분 벽시계, 50턴, 도구 결과 상한)와 chat 단위 run lease뿐이다. lease는 한 chat의
-중복 실행만 막고, 같은 사용자가 chat을 여러 개 열거나 `/predict`를 루프로 호출하는 것은
-막지 않는다. 일간 비용 가드는 이미 쓴 돈에만 대응한다 — 짧은 시간 규모의 억제는 그쪽이
-백스톱이라고 명시적으로 유보한 몫이다.
-
-**선행**: 없음. 세는 단위는 `RunActor`(`domain/execution/actor.ts`)를 쓴다.
-
-**범위**
-
-- 주체별 동시 실행 상한. 세는 단위는 `RunActor`다 — 토큰과 그 소유자의 콘솔 실행은
-  `kind`로 갈라지므로 한 사람의 두 경로가 서로의 슬롯을 잡아먹지 않는다.
-- 가드는 `openRun` (`application/execution/runBracket.ts`)에 붙인다 — 네 개 실행 진입점을
-  이미 덮고 있고, `tests/architecture.test.ts`가 그 사실을 강제한다. 거부는 비용 가드가
-  이미 쓰는 `RateLimitedError`(429 + `Retry-After`)를 재사용한다.
-- 상태는 **공유 저장소**에 둔다. `runMetrics`는 프로세스별이라 수평 확장에서 상한이
-  인스턴스 수만큼 곱해진다. Slack 이벤트 dedup과 chat run lease가 이미 쓰는 조건부
-  쓰기 + TTL lease 방식을 재사용하고, lease 길이는 `RUN_LEASE_SECONDS`를 따른다 —
-  죽은 인스턴스의 슬롯이 영구히 잠기지 않아야 한다.
-- 조회 실패 시 정책을 **명시적으로 정한다**. 비용 가드와 같은 답일 필요는 없다:
-  비용 가드는 fail-open이 옳지만, 동시성 가드는 저장소가 죽었을 때 열어두면 정확히
-  그 저장소를 더 때린다.
-
-**완료 조건**: 상한을 넘는 동시 요청은 429를 받고 실행이 시작되지 않는다(usage도 trace도
-생기지 않음). 인스턴스 두 개가 동시에 동작하는 시나리오에서 상한이 인스턴스 수만큼
-곱해지지 않음을 테스트로 검증한다. lease 만료 후 다시 실행 가능함을 검증한다.
 
 ---
 

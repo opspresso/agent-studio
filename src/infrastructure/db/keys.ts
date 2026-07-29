@@ -62,6 +62,16 @@ export const keys = {
   }),
   usageActorPrefix: (date: string) => `ACTOR#${date}`,
 
+  /**
+   * One in-flight run's concurrency slot for one caller. All of a caller's
+   * slots share a partition so the live ones can be read in a single query.
+   */
+  runSlot: (actor: string, index: number) => ({
+    PK: `RUNSLOT#${actor}`,
+    SK: `SLOT#${String(index).padStart(3, "0")}`,
+  }),
+  runSlotPartition: (actor: string) => `RUNSLOT#${actor}`,
+
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
   a2aTask: (projectName: string, taskId: string) => ({

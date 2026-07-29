@@ -82,7 +82,7 @@ export async function generateImage(
 
   // After the validation above, before anything is spent: a refused run should
   // still tell a misconfigured version apart from an exhausted budget.
-  const bracket = await openRun(deps, input.project);
+  const bracket = await openRun(deps, input.project, input.actor);
   const recorder =
     deps.traces && Math.random() < (deps.traceSampleRate ?? 0)
       ? new TraceRecorder(deps.traces, {

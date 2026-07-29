@@ -36,6 +36,7 @@ import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
+import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
@@ -51,6 +52,7 @@ import { createSettingsUseCases } from "@/application/settings/settingsUseCases"
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { CostAlertSlack } from "@/application/usage/costGuard";
+import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import {
@@ -221,6 +223,16 @@ const traceSampleRate = Number.isFinite(configuredTraceSampleRate)
  * other Slack use so a route that only wanted a repository does not load the
  * client; the guard awaits it at the one point it actually posts.
  */
+/**
+ * Per-caller concurrency ceilings. Read once here rather than at each guard
+ * call: the numbers come from boot env, and a getter per run would re-parse
+ * them on every request.
+ */
+const concurrencyLimits: ConcurrencyLimits = {
+  perActor: config.maxConcurrentRunsPerActor,
+  a2a: config.maxConcurrentRunsA2a,
+};
+
 const costAlertSlack: CostAlertSlack = {
   postMessage: async (token, args) =>
     (await import("@/infrastructure/slack/client")).slackClient.postMessage(token, args),
@@ -244,6 +256,8 @@ export const executionDeps: ExecutionDeps = {
   traces: traceRepository,
   traceSampleRate,
   slack: costAlertSlack,
+  runSlots: runSlotRepository,
+  limits: concurrencyLimits,
 };
 
 /** Dependencies for image-generation projects. */
@@ -254,4 +268,6 @@ export const imageDeps: ImageGenerationDeps = {
   traceSampleRate,
   cipher: secretCipher,
   slack: costAlertSlack,
+  runSlots: runSlotRepository,
+  limits: concurrencyLimits,
 };
