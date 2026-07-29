@@ -19,6 +19,7 @@ import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { McpAuthProvider } from "@/domain/mcp/oauth";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
+import type { RunActor } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "./runBracket";
 
 /**
@@ -59,6 +60,8 @@ export interface ExecuteVersionInput {
   /** Prior OpenAI-shaped messages; `messages` is the route-layer alias. */
   extraMessages?: ChatMessageInput[];
   messages?: ChatMessageInput[];
+  /** Who caused this run. Recorded on the trace and on the caller's usage row. */
+  actor?: RunActor;
   signal?: AbortSignal;
 }
 
@@ -67,7 +70,7 @@ export interface ExecuteAgentInput {
   version: Version;
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
-  userEmail?: string;
+  actor?: RunActor;
   signal?: AbortSignal;
 }
 
@@ -78,7 +81,7 @@ export interface ExecuteProjectInput {
   version: Version;
   variables?: Record<string, string>;
   messages: ChatMessageInput[];
-  userEmail?: string;
+  actor?: RunActor;
   signal?: AbortSignal;
 }
 

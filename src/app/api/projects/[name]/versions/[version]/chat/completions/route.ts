@@ -9,7 +9,7 @@ import {
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { chatCompletionsSchema } from "@/app/api/projects/_lib/schemas";
-import { authenticateExecution } from "@/app/api/projects/_lib/executionAuth";
+import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { collectRun, toChatCompletion, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
 
@@ -34,13 +34,13 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       version: versionEntity,
       variables: parsed.data.variables,
       messages: parsed.data.messages,
-      userEmail: principal.email,
+      actor: principalActor(principal),
     };
     const agentParams = {
       project,
       version: versionEntity,
       messages: parsed.data.messages,
-      userEmail: principal.email,
+      actor: principalActor(principal),
     };
 
     if (parsed.data.stream) {

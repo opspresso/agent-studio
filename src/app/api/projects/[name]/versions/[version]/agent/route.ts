@@ -4,7 +4,7 @@ import { executeAgent } from "@/application/execution/runProject";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { agentSchema } from "@/app/api/projects/_lib/schemas";
-import { authenticateExecution } from "@/app/api/projects/_lib/executionAuth";
+import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
@@ -28,7 +28,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         project,
         version: versionEntity,
         messages: parsed.data.messages,
-        userEmail: principal.email,
+        actor: principalActor(principal),
         signal: abortController.signal,
       }),
       abortController,

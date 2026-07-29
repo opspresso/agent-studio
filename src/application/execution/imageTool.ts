@@ -1,5 +1,6 @@
 /** The GenerateImage/EditImage builtins and the image-project subagent. */
 
+import type { RunOrigin } from "@/domain/execution/actor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
@@ -110,13 +111,13 @@ export async function* runImageSubagent(
   version: Version,
   message: string,
   recordUsageFn: engine.RecordUsageFn,
-  ancestry: readonly string[],
+  origin: RunOrigin,
   signal?: AbortSignal,
   images?: ImageBytes[],
 ): AsyncGenerator<EngineChunk, string> {
   const model = version.model;
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
+    ? createTraceRecorder(deps.traces, project, version, 1, origin)
     : undefined;
   if (!getModelConfig(model)?.capabilities.imageGeneration) {
     yield {

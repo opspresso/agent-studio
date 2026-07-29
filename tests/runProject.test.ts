@@ -102,6 +102,7 @@ function executionDepsFixture(channel: FakeChannel) {
       },
       getDay: async () => null,
       claimAlert: async () => false,
+      listActorsByProject: reject,
       listByProject: reject,
       listByDateRange: reject,
     },

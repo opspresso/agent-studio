@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
+import type { RunActor } from "@/domain/execution/actor";
 
 const MAX_PREVIEW_CHARS = 1_000;
 const MAX_SPANS = 100;
@@ -16,6 +17,8 @@ export interface TraceContext {
   messageCount: number;
   /** Transfer chain that reached this run, outermost first. */
   ancestry?: string[];
+  /** Who caused the run; a subagent inherits its parent's. */
+  actor?: RunActor;
 }
 
 /** What one transfer contributed, accumulated while its chunks stream by. */
@@ -197,6 +200,7 @@ export class TraceRecorder {
       ...(this.context.ancestry && this.context.ancestry.length > 1
         ? { ancestry: this.context.ancestry }
         : {}),
+      ...(this.context.actor ? { actor: this.context.actor } : {}),
       status: this.error ? "failed" : cancelled ? "cancelled" : "completed",
       spans: this.spans,
       ...(this.spansDropped > 0 ? { spansDropped: this.spansDropped } : {}),

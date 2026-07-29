@@ -12,6 +12,7 @@ import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
+import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
 import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
@@ -30,8 +31,8 @@ export type { PromptPreview, PromptPreviewMessage } from "./deps";
 export { previewPrompt } from "./promptPreview";
 export { runStrategyFor, type RunStrategy } from "./deps";
 
-function bindUsage(deps: ExecutionDeps): engine.RecordUsageFn {
-  return (record) => recordUsage(deps.usage, record);
+function bindUsage(deps: ExecutionDeps, actor: string | undefined): engine.RecordUsageFn {
+  return (record) => recordUsage(deps.usage, { ...record, ...(actor ? { actor } : {}) });
 }
 
 // --- Single-shot version execution -----------------------------------------
@@ -41,13 +42,14 @@ export async function executeVersion(
   input: ExecuteVersionInput,
 ): Promise<RunResult> {
   const channel = deps.channel;
+  const actorKey = input.actor ? toActorKey(input.actor) : undefined;
   // Before the recorder: a run refused by the cost guard leaves no trace, no
   // metric and no usage — it never started.
   const bracket = await openRun(deps, input.project);
   const recorder = sampledTraceRecorder(deps, input);
   try {
     const result = await engine.runPrompt(
-      { channel, recordUsage: bindUsage(deps) },
+      { channel, recordUsage: bindUsage(deps, actorKey) },
       {
         projectName: input.project.name,
         model: input.version.model,
@@ -78,13 +80,14 @@ export async function* executeVersionStream(
   input: ExecuteVersionInput,
 ): AsyncGenerator<EngineChunk> {
   const channel = deps.channel;
+  const actorKey = input.actor ? toActorKey(input.actor) : undefined;
   const bracket = await openRun(deps, input.project);
   const recorder = sampledTraceRecorder(deps, input);
   let thrown: unknown;
   let completed = false;
   try {
     for await (const chunk of engine.runPromptStream(
-      { channel, recordUsage: bindUsage(deps) },
+      { channel, recordUsage: bindUsage(deps, actorKey) },
       {
         projectName: input.project.name,
         model: input.version.model,
@@ -127,7 +130,7 @@ export function executeProjectStream(
       project: input.project,
       version: input.version,
       messages: input.messages,
-      userEmail: input.userEmail,
+      ...(input.actor ? { actor: input.actor } : {}),
       signal: input.signal,
     });
   }
@@ -136,6 +139,7 @@ export function executeProjectStream(
     version: input.version,
     variables: input.variables,
     messages: input.messages,
+    ...(input.actor ? { actor: input.actor } : {}),
     signal: input.signal,
   });
 }
@@ -148,12 +152,17 @@ export async function* executeAgent(
 ): AsyncGenerator<EngineChunk> {
   // A multi-turn agent run makes many LLM calls; accumulate their usage and
   // flush once (per project/date/model) when the run ends, even on error.
-  const usage = createUsageAggregator(deps.usage);
+  // The actor is the run's, not the turn's: every model call this loop makes —
+  // including the ones a subagent transfer makes on another project — was caused
+  // by whoever started it.
+  const origin: RunOrigin = {
+    ancestry: [input.project.name],
+    ...(input.actor ? { actor: input.actor } : {}),
+  };
+  const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
   const bracket = await openRun(deps, input.project);
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, [
-        input.project.name,
-      ])
+    ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, origin)
     : undefined;
   let thrown: unknown;
   let completed = false;
@@ -170,7 +179,7 @@ export async function* executeAgent(
       input.version,
       input.project.name,
       usage.record,
-      [input.project.name],
+      origin,
       readSkill,
       runSignal,
     );

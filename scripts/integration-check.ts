@@ -405,7 +405,7 @@ async function main() {
       project,
       version: published,
       messages: [{ role: "user", content: "use your skill" }],
-      userEmail: "it@example.com",
+      actor: { kind: "user", id: "it@example.com" },
     })) {
       chunks.push(chunk as never);
     }

@@ -1,11 +1,18 @@
-import type { UsageDelta, UsageRow } from "./types";
+import type { ActorUsageRow, UsageDelta, UsageRow } from "./types";
 
 /** Which threshold a once-per-day notification belongs to. */
 export type CostAlertKind = "alert" | "block";
 
 export interface UsageRepository {
-  /** Atomic ADD of one call's usage into the daily row. */
+  /**
+   * Atomic ADD of one call's usage into the daily row, and into the caller's
+   * own daily row when the delta names one. The project total is written first
+   * and unconditionally: attribution must never be the reason spend goes
+   * unrecorded.
+   */
   record(delta: UsageDelta): Promise<void>;
+  /** One project's per-caller rows across a date range (who spent it). */
+  listActorsByProject(projectName: string, from: string, to: string): Promise<ActorUsageRow[]>;
   /**
    * One project's row for one date, or null when nothing was spent that day.
    * A single primary-key read — the cost guard runs it on every run, so it must

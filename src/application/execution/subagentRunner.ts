@@ -9,6 +9,7 @@ import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
+import { descend, type RunOrigin } from "@/domain/execution/actor";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
@@ -29,8 +30,8 @@ export async function buildAgentDeps(
   version: Version,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
-  /** Transfer chain this run sits on; the top-level run starts with itself. */
-  ancestry: readonly string[],
+  /** Who caused the run, and the transfer chain it sits on. */
+  origin: RunOrigin,
   readSkill: SkillReader,
   signal?: AbortSignal,
 ): Promise<engine.AgentDeps> {
@@ -39,7 +40,7 @@ export async function buildAgentDeps(
     channel,
     recordUsage: recordUsageFn,
     loadSkillContent: buildSkillLoader(readSkill),
-    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, ancestry, signal),
+    runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, origin, signal),
     generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
     editImage: buildImageEditor(deps, version, projectName, recordUsageFn, signal),
   };
@@ -98,8 +99,8 @@ export function buildSubagentRunner(
   deps: ExecutionDeps,
   subagentList: SubagentRef[] | undefined,
   recordUsageFn: engine.RecordUsageFn,
-  /** Project names already on this transfer chain, outermost first. */
-  ancestry: readonly string[],
+  /** Who caused the run, and the projects already on this transfer chain. */
+  origin: RunOrigin,
   signal?: AbortSignal,
 ): NonNullable<engine.AgentDeps["runSubagent"]> {
   const refByName = new Map((subagentList ?? []).map((ref) => [ref.name, ref]));
@@ -134,14 +135,14 @@ export function buildSubagentRunner(
     // Refuse cycles and runaway nesting as tool errors, like an unknown agent:
     // the parent sees the refusal and can answer, instead of the run burning
     // tokens until the wall-clock deadline.
-    if (ancestry.includes(agentName)) {
+    if (origin.ancestry.includes(agentName)) {
       yield {
         author: agentName,
-        error: `Transfer to '${agentName}' would loop (already on this chain: ${ancestry.join(" -> ")}).`,
+        error: `Transfer to '${agentName}' would loop (already on this chain: ${origin.ancestry.join(" -> ")}).`,
       };
       return "";
     }
-    if (ancestry.length >= MAX_SUBAGENT_DEPTH) {
+    if (origin.ancestry.length >= MAX_SUBAGENT_DEPTH) {
       yield {
         author: agentName,
         error: `Subagent depth limit (${MAX_SUBAGENT_DEPTH}) reached; not transferring to '${agentName}'.`,
@@ -156,7 +157,9 @@ export function buildSubagentRunner(
         turn,
         maxTurn,
         recordUsageFn,
-        [...ancestry, agentName],
+        // Same actor one hop down: the transfer was the parent's decision, not
+        // a second person's.
+        descend(origin, agentName),
         signal,
         images,
         transcript,
@@ -224,13 +227,13 @@ export async function* runPromptSubagent(
   version: Version,
   message: string,
   recordUsageFn: engine.RecordUsageFn,
-  ancestry: readonly string[],
+  origin: RunOrigin,
   signal?: AbortSignal,
   images?: ImageBytes[],
   transcript?: string,
 ): AsyncGenerator<EngineChunk, string> {
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
+    ? createTraceRecorder(deps.traces, project, version, 1, origin)
     : undefined;
   let text = "";
   let thrown: unknown;
@@ -275,7 +278,7 @@ export async function* runLocalSubagent(
   turn: number,
   maxTurn: number,
   recordUsageFn: engine.RecordUsageFn,
-  ancestry: readonly string[],
+  origin: RunOrigin,
   signal?: AbortSignal,
   images?: ImageBytes[],
   transcript?: string,
@@ -306,7 +309,7 @@ export async function* runLocalSubagent(
       version,
       message,
       recordUsageFn,
-      ancestry,
+      origin,
       signal,
       images,
     );
@@ -321,7 +324,7 @@ export async function* runLocalSubagent(
       version,
       message,
       recordUsageFn,
-      ancestry,
+      origin,
       signal,
       images,
       transcript,
@@ -331,7 +334,7 @@ export async function* runLocalSubagent(
   // Opened before the version's tools resolve, so the trace covers that work
   // and can record what resolving lost.
   const recorder = deps.traces
-    ? createTraceRecorder(deps.traces, project, version, 1, ancestry)
+    ? createTraceRecorder(deps.traces, project, version, 1, origin)
     : undefined;
   const readSkill = createSkillReader(deps);
   const { skills, subagents, mcp, warnings } = await resolveRunTools(
@@ -353,7 +356,7 @@ export async function* runLocalSubagent(
       version,
       project.name,
       recordUsageFn,
-      ancestry,
+      origin,
       readSkill,
       signal,
     );

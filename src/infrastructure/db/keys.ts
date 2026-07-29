@@ -50,6 +50,17 @@ export const keys = {
     SK: `DATE#${date}`,
   }),
   usageDatePartition: (date: string) => `USAGEDATE#${date}`,
+  /**
+   * Per-caller daily usage, in the project's usage partition. Date leads the
+   * sort key so a range query over dates is one `BETWEEN`, and so the rows of
+   * one day sit together; `DATE#` and `ACTOR#` are distinct prefixes, so the
+   * project totals above are never swept up by an actor query or vice versa.
+   */
+  usageActor: (projectName: string, date: string, actor: string) => ({
+    PK: `USAGE#${projectName}`,
+    SK: `ACTOR#${date}#${actor}`,
+  }),
+  usageActorPrefix: (date: string) => `ACTOR#${date}`,
 
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 

@@ -331,7 +331,15 @@ export async function handleSlackEvent(
   );
   try {
     const messages: ChatMessageInput[] = [...history, { role: "user", content: userContent }];
-    for await (const chunk of deps.runAgent({ project, version, messages, signal: deadline })) {
+    for await (const chunk of deps.runAgent({
+      project,
+      version,
+      messages,
+      // The Slack user id, not an email: Slack does not hand one over, and
+      // guessing at a mapping would attribute spend to the wrong person.
+      ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
+      signal: deadline,
+    })) {
       if (chunk.error) {
         warnings.push(chunk.error);
         // A subagent's failure reaches the parent as a tool error and the parent

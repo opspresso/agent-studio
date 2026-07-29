@@ -6,6 +6,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
+import { actorKey, type RunActor } from "@/domain/execution/actor";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/shared/runDeadline";
 import { openRun, type RunBracketDeps } from "@/application/execution/runBracket";
@@ -37,6 +38,8 @@ export interface GenerateImageInput {
   images?: ImageBytes[];
   size?: string;
   quality?: string;
+  /** Who caused the run; recorded on the trace and the caller's usage row. */
+  actor?: RunActor;
   /** Caller cancellation (client disconnect / A2A cancel); a run deadline is
    * composed onto it so a hung provider call can't run or bill unbounded. */
   signal?: AbortSignal;
@@ -88,6 +91,7 @@ export async function generateImage(
           projectType: input.project.projectType,
           model,
           messageCount: 1,
+          ...(input.actor ? { actor: input.actor } : {}),
         })
       : undefined;
   try {
@@ -115,7 +119,12 @@ export async function generateImage(
     // billed) the image, so a write failure must not turn that into a 500 and
     // discard the result. Same policy as the engine's recordUsageIfPossible.
     try {
-      await recordUsage(deps.usage, { projectName: input.project.name, model, ...recorded });
+      await recordUsage(deps.usage, {
+        projectName: input.project.name,
+        model,
+        ...recorded,
+        ...(input.actor ? { actor: actorKey(input.actor) } : {}),
+      });
     } catch (error) {
       console.error("[image] usage recording failed", error);
     }

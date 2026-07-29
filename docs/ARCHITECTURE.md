@@ -83,6 +83,7 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | MCP server | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
+| Usage (daily per caller) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
@@ -576,6 +577,29 @@ Two deliberate strategies coexist:
 - Daily per-project per-model aggregates (see table design). Dashboard reads
   `USAGEDATE#{date}` GSI partitions across a range and regroups client-side by
   project/provider/model.
+- **Who spent it** is a second row, not another dimension on the first. Projects are a
+  shared catalog — any signed-in user may run any project — so the project name does not
+  identify the spender. `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names one:
+  `user` (email), `project-token` (the *owner's* email, since a token authenticates as them —
+  the kind is the only thing keeping a machine's spend apart from that person's own runs),
+  `slack` (Slack user id; Slack hands over no email and guessing a mapping would bill the
+  wrong person), `a2a` (a constant — the key is shared, so there is nobody to name).
+- The split is deliberate. `UsageRow` holds a map per metric keyed by model; keying those by
+  `actor|model` instead would grow one item with the number of distinct callers, and a busy
+  project would approach the 400KB item limit within a day — while the dashboard, which only
+  ever asks for project totals, would pay to read every caller on every request. A separate
+  `ACTOR#{date}#{actor}` row in the same partition keeps both reads exactly as wide as their
+  question, and the project cascade already deletes the whole partition.
+- The project total is written first and unconditionally; the actor row follows. Attribution
+  is additive — a path that cannot name its caller still records the spend it caused.
+- Per-caller reads are owner/admin gated (`GET /api/projects/[name]/usage/actors`) on the
+  same reasoning as traces: project *totals* are open because the catalog is shared, but a
+  breakdown by caller names individuals and what they ran.
+- The actor is the **run's**, not the turn's: `createUsageAggregator` is bound with it once,
+  so the calls a subagent transfer makes on another project are still attributed to whoever
+  started the run. `RunOrigin { actor?, ancestry }` carries both down every transfer hop —
+  they always travel together, so they are one value rather than two parameters threaded
+  side by side through eight signatures.
 
 ## API Surface (App Router route handlers)
 
@@ -588,6 +612,7 @@ GET|PUT|DELETE /api/projects/[name]
 GET|POST /api/projects/[name]/versions
 GET|PUT|DELETE /api/projects/[name]/versions/[version]
 POST /api/projects/[name]/publish           set publishedVersion
+GET  /api/projects/[name]/usage/actors      per-caller daily spend (owner/admin)
 GET  /api/projects/[name]/traces            trace list (owner/admin)
 GET  /api/projects/[name]/traces/[traceId]  trace detail (owner/admin)
 POST /api/projects/[name]/versions/[version]/predict        (version = name | 'published')

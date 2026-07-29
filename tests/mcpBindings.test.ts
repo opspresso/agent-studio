@@ -85,6 +85,7 @@ function depsFixture(
       record: async (_delta: UsageDelta) => {},
       getDay: async () => null,
       claimAlert: async () => false,
+      listActorsByProject: reject,
       listByProject: reject,
       listByDateRange: reject,
     },

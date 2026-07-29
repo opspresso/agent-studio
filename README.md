@@ -255,6 +255,22 @@ project's own secret and always run that project — no selector needed.
   the background. `after()` requires a persistent process; an abrupt process loss can
   still interrupt work after the event has been claimed.
 
+## Cost attribution
+
+Every run records **who caused it**. Projects are a shared catalog — any signed-in user may
+run any project — so the project name alone never answered "who spent this".
+
+An actor is a kind plus an id: `user` (email), `project-token` (the *owner's* email, because
+a token authenticates as them — the kind is what keeps a machine's spend apart from that
+person's own runs), `slack` (Slack user id), `a2a` (a constant; the key is shared, so there
+is nobody to name). It lands in two places: on the run's trace, and on a per-caller daily
+usage row read through `GET /api/projects/{name}/usage/actors` (owner/admin only — project
+totals are open, a breakdown by caller names individuals).
+
+The actor belongs to the run, not the turn, so the model calls a subagent transfer makes on
+another project are attributed to whoever started the run rather than to the project it
+transferred into.
+
 ## Tracing
 
 Agent executions always persist model/tool/subagent spans. Non-agent and image predict

@@ -1,3 +1,4 @@
+import type { RunActor } from "@/domain/execution/actor";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
@@ -8,7 +9,8 @@ export interface AgentRunParams {
   version: Version;
   /** OpenAI-shaped message history (see messageMapping.ts). */
   messages: ChatMessageInput[];
-  userEmail: string;
+  /** Who caused the run — always the chat's owner, since chats are private. */
+  actor: RunActor;
   signal?: AbortSignal;
 }
 

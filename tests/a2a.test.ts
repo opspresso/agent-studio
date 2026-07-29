@@ -240,6 +240,7 @@ function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
       record: async () => {},
       getDay: async () => null,
       claimAlert: async () => false,
+      listActorsByProject: reject,
       listByProject: reject,
       listByDateRange: reject,
     },

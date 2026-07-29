@@ -1,3 +1,4 @@
+import type { RunActor } from "@/domain/execution/actor";
 import { unauthorized } from "@/shared/unauthorized";
 import { getSessionUser } from "@/lib/session";
 import { projectRepository, secretCipher } from "@/lib/container";
@@ -6,6 +7,18 @@ import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
 export interface ExecutionPrincipal {
   email: string;
   viaToken: boolean;
+}
+
+/**
+ * The principal as a run actor.
+ *
+ * A token authenticates *as its owner*, so both kinds carry the same email —
+ * the kind is the only thing that keeps a machine's spend apart from that
+ * person's own console runs, which is exactly the distinction an owner looking
+ * at an unexpected bill needs.
+ */
+export function principalActor(principal: ExecutionPrincipal): RunActor {
+  return { kind: principal.viaToken ? "project-token" : "user", id: principal.email };
 }
 
 /**

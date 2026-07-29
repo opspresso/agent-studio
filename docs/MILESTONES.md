@@ -29,39 +29,8 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 **선행 관계**
 
 ```
-run-attribution ─┬─→ abuse-control
-                 ├─→ webhook-trigger ──→ schedule-trigger
-                 └─→ (run-observability 와 짝을 이루지만 선행은 아님)
+abuse-control        webhook-trigger ──→ schedule-trigger        run-observability
 ```
-
----
-
-## run-attribution — 실행 주체 기록
-
-**이유**: 이 제품의 목적이 비용 관리인데 "누가 썼는지"를 답할 수 없다. `Trace`에도
-`UsageRow`에도 호출자 필드가 없고, 프로젝트는 공유 카탈로그라 프로젝트명이 사용자를
-대신하지 못한다. `ExecuteAgentInput.userEmail` / `ExecuteProjectInput.userEmail`은 네 개
-route(predict, chat/completions, agent, chat)가 채워 넣지만 실행 파사드가 한 번도 읽지
-않는다 — 지금은 타입에만 남은 죽은 필드이며, 그 자체가 이 기능이 절반만 들어왔다는
-증거다.
-
-**선행**: 없음.
-
-**범위**
-
-- 실행 주체(actor)를 도메인 타입으로 세운다. 사람이 없는 호출도 주체가 있다:
-  세션 사용자, 프로젝트 API 토큰(소유자로 실행), Slack 사용자, A2A 키, 그리고 앞으로의
-  webhook/schedule 트리거.
-- `Trace`에 주체를 기록한다. 식별자만 — trace는 원문 프롬프트를 저장하지 않는 정책이고
-  이 마일스톤이 그 정책을 바꾸지 않는다.
-- usage에 주체 차원을 추가할지 **결정하고 근거를 `docs/ARCHITECTURE.md`에 적는다**.
-  추가한다면 daily row의 map이 사용자 수만큼 커지므로 400KB 항목 한도를 먼저 계산해야
-  한다. 추가하지 않는다면 "누가 썼나"는 trace로만 답한다는 것을 명시한다.
-- `userEmail`은 소비하거나 제거한다. 읽히지 않는 채로 타입에 남겨두지 않는다.
-
-**완료 조건**: 여섯 진입점 각각에서 시작한 run의 trace가 주체를 담고, 주체를 표현하지
-못하는 실행 경로가 남아 있지 않음을 진입점별 테스트로 검증한다. `userEmail`이 읽히지
-않는 채로 실행 파사드 타입에 남아 있지 않다.
 
 ---
 
@@ -73,11 +42,12 @@ route(predict, chat/completions, agent, chat)가 채워 넣지만 실행 파사�
 막지 않는다. 일간 비용 가드는 이미 쓴 돈에만 대응한다 — 짧은 시간 규모의 억제는 그쪽이
 백스톱이라고 명시적으로 유보한 몫이다.
 
-**선행**: `run-attribution`. 무엇을 기준으로 세는지가 거기서 정해진다.
+**선행**: 없음. 세는 단위는 `RunActor`(`domain/execution/actor.ts`)를 쓴다.
 
 **범위**
 
-- 주체별 동시 실행 상한. 세는 단위는 `run-attribution`이 세운 주체를 쓴다.
+- 주체별 동시 실행 상한. 세는 단위는 `RunActor`다 — 토큰과 그 소유자의 콘솔 실행은
+  `kind`로 갈라지므로 한 사람의 두 경로가 서로의 슬롯을 잡아먹지 않는다.
 - 가드는 `openRun` (`application/execution/runBracket.ts`)에 붙인다 — 네 개 실행 진입점을
   이미 덮고 있고, `tests/architecture.test.ts`가 그 사실을 강제한다. 거부는 비용 가드가
   이미 쓰는 `RateLimitedError`(429 + `Retry-After`)를 재사용한다.
@@ -101,8 +71,8 @@ route(predict, chat/completions, agent, chat)가 채워 넣지만 실행 파사�
 published project를 실행할 수 있어야 운영 워크플로에 연결된다. Webhook은 기존 요청·응답
 경계 안에서 처리되므로 새 인프라 없이 도입할 수 있다.
 
-**선행**: `run-attribution`. 트리거 실행에는 사람이 없으므로, 주체를 표현할 자리가
-먼저 있어야 이력과 usage가 "누가 돌렸는지" 없이 쌓이지 않는다.
+**선행**: 없음. 트리거 실행의 주체는 `RunActor`에 `webhook` kind를 더해 표현한다 —
+사람이 없는 호출도 주체가 있다는 규약은 이미 서 있다.
 
 **범위**
 
