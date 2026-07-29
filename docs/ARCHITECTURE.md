@@ -697,6 +697,7 @@ GET  /api/mcps/oauth/callback               the authorization server's redirect 
 POST /api/agents/[name]/message             external-agent test message
 GET|POST /api/chats, GET|DELETE /api/chats/[chatId]
 POST /api/chats/[chatId]/messages           streams SSE
+GET  /api/me                                the viewer's admin flags (isAdmin, isConfiguredAdmin)
 GET|PUT /api/settings                       admin runtime overrides
 GET  /api/usages/summary?from&to
 GET  /api/models
@@ -707,7 +708,7 @@ POST /api/slack/events/[project]              project Slack webhook
 GET|POST /api/auth/[...all]                  Better Auth login flow (Google OAuth)
 GET  /api/health                            liveness (static 200)
 GET  /api/ready                             readiness (DynamoDB + LLM reachability)
-GET  /api/metrics                           Prometheus scrape (in-flight runs, unknown-model calls)
+GET  /api/metrics                           Prometheus scrape (in-flight/failed runs, duration, unknown models)
 ```
 
 All routes require a Better Auth session except the unauthenticated endpoints:
