@@ -372,6 +372,32 @@ describe("single owners", () => {
 });
 
 /**
+ * A synthetic event read from inside a state updater.
+ *
+ * React nulls `SyntheticEvent.currentTarget` once the handler returns — it only
+ * means anything while the event is being dispatched. A `setState` updater is
+ * *not* run then; React defers it to the next render. So
+ * `setX(prev => ({ ...prev, k: e.currentTarget.value }))` throws
+ * "Cannot read properties of null" whenever React batches, which on the admin
+ * settings page it did on every load.
+ *
+ * The value has to be read in the handler's own scope and closed over. This
+ * catches the shape rather than the symptom: an updater arrow whose body still
+ * mentions the event.
+ */
+const DEFERRED_EVENT_READ =
+  /set[A-Z]\w*\(\s*\((?:prev|current)\w*\)\s*=>[\s\S]{0,400}?currentTarget/;
+
+describe("react event handling", () => {
+  it("never reads currentTarget inside a state updater", () => {
+    const offenders = SOURCE_FILES.filter(
+      (file) => file.path.endsWith(".tsx") && DEFERRED_EVENT_READ.test(file.text),
+    ).map((file) => file.path);
+    expect(offenders.sort()).toEqual([]);
+  });
+});
+
+/**
  * What the Edge runtime has to be able to load.
  *
  * Next compiles `instrumentation.ts` for **both** the Node and Edge runtimes,

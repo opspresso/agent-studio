@@ -291,9 +291,13 @@ export default function SettingsPage() {
                         </Group>
                       }
                       value={values[field.key] ?? ""}
-                      onChange={(e) =>
-                        setValues((prev) => ({ ...prev, [field.key]: e.currentTarget.value }))
-                      }
+                      onChange={(e) => {
+                        // Read now, not inside the updater: React nulls a
+                        // synthetic event's `currentTarget` once the handler
+                        // returns, and an updater runs on the next render.
+                        const value = e.currentTarget.value;
+                        setValues((prev) => ({ ...prev, [field.key]: value }));
+                      }}
                       placeholder={field.placeholder}
                       styles={monoInput}
                     />
@@ -392,13 +396,12 @@ export default function SettingsPage() {
                         />
                         <TextInput
                           value={provider.baseUrl}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const baseUrl = e.currentTarget.value;
                             editProviders((prev) =>
-                              prev.map((p, i) =>
-                                i === index ? { ...p, baseUrl: e.currentTarget.value } : p,
-                              ),
-                            )
-                          }
+                              prev.map((p, i) => (i === index ? { ...p, baseUrl } : p)),
+                            );
+                          }}
                           placeholder="base URL"
                           miw={192}
                           style={{ flex: 1 }}
@@ -406,13 +409,12 @@ export default function SettingsPage() {
                         />
                         <TextInput
                           value={provider.apiKey}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const apiKey = e.currentTarget.value;
                             editProviders((prev) =>
-                              prev.map((p, i) =>
-                                i === index ? { ...p, apiKey: e.currentTarget.value } : p,
-                              ),
-                            )
-                          }
+                              prev.map((p, i) => (i === index ? { ...p, apiKey } : p)),
+                            );
+                          }}
                           placeholder="API key"
                           w={176}
                           styles={monoInput}
@@ -421,15 +423,12 @@ export default function SettingsPage() {
                           size="xs"
                           label="keep prefix"
                           checked={provider.keepModelPrefix}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const keepModelPrefix = e.currentTarget.checked;
                             editProviders((prev) =>
-                              prev.map((p, i) =>
-                                i === index
-                                  ? { ...p, keepModelPrefix: e.currentTarget.checked }
-                                  : p,
-                              ),
-                            )
-                          }
+                              prev.map((p, i) => (i === index ? { ...p, keepModelPrefix } : p)),
+                            );
+                          }}
                         />
                         <Button
                           variant="default"
