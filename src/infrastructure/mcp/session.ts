@@ -41,6 +41,19 @@ interface JsonRpcResponse {
   error?: { code: number; message: string };
 }
 
+/**
+ * What one discovery learned: the catalogue, and how long the server says it
+ * stays fresh.
+ *
+ * `ttlMs` is the MCP caching hint (SEP-2549, required of servers from protocol
+ * `2026-07-28`). Absent from every older server, which is why the caller keeps
+ * a default of its own rather than reading absence as "do not cache".
+ */
+export interface McpDiscovery {
+  tools: McpTool[];
+  ttlMs?: number;
+}
+
 export class McpSession {
   private sessionId: string | undefined;
   private nextId = 1;
@@ -209,26 +222,34 @@ export class McpSession {
    * cursor — indistinguishable, from the outside, from a server that genuinely
    * has no tools.
    */
-  async listTools(): Promise<McpTool[]> {
+  async listTools(): Promise<McpDiscovery> {
     const tools: McpTool[] = [];
+    let ttlMs: number | undefined;
     let cursor: string | undefined;
     for (let page = 0; page < MAX_TOOL_PAGES; page++) {
       const result = (await this.request(
         "tools/list",
         cursor === undefined ? {} : { cursor },
         MCP_DISCOVERY_TIMEOUT_MS,
-      )) as { tools?: McpTool[]; nextCursor?: string } | undefined;
+      )) as { tools?: McpTool[]; nextCursor?: string; ttlMs?: unknown } | undefined;
       tools.push(...(result?.tools ?? []));
+      // Each page carries its own hint and they may differ, but the caller
+      // caches the pages as one catalogue — so it is only as fresh as the page
+      // that goes stale first.
+      const pageTtl = result?.ttlMs;
+      if (typeof pageTtl === "number" && Number.isFinite(pageTtl)) {
+        ttlMs = ttlMs === undefined ? pageTtl : Math.min(ttlMs, pageTtl);
+      }
       const next = result?.nextCursor;
       // A server that repeats a cursor would otherwise re-read the same page
       // until the bound, so stop on anything that is not forward progress.
       if (typeof next !== "string" || next === "" || next === cursor) {
-        return tools;
+        return { tools, ...(ttlMs === undefined ? {} : { ttlMs }) };
       }
       cursor = next;
     }
     console.warn(`[mcp] ${this.url} paged past ${MAX_TOOL_PAGES} tool pages; the tail was dropped`);
-    return tools;
+    return { tools, ...(ttlMs === undefined ? {} : { ttlMs }) };
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {

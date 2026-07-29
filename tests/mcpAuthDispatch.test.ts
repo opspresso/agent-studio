@@ -69,6 +69,7 @@ function connectionFixture(overrides: Partial<McpConnection> = {}): McpConnectio
 
 function providerHarness(opts: {
   connection?: McpConnection | null;
+  server?: McpServer;
   refresh?: () => Promise<{ accessToken: string; refreshToken?: string; expiresInSeconds?: number }>;
   updateTokensWins?: boolean;
   onUpdate?: (args: unknown) => void;
@@ -76,8 +77,14 @@ function providerHarness(opts: {
   let stored = opts.connection === undefined ? connectionFixture() : opts.connection;
   const refreshCalls: string[] = [];
   const updates: Array<Record<string, unknown>> = [];
+  let entryReads = 0;
   const provider = createMcpAuthProvider({
-    mcps: { get: async () => OAUTH_SERVER } as never,
+    mcps: {
+      get: async () => {
+        entryReads += 1;
+        return opts.server ?? OAUTH_SERVER;
+      },
+    } as never,
     connections: {
       get: async () => stored,
       listByProject: async () => (stored ? [stored] : []),
@@ -105,7 +112,7 @@ function providerHarness(opts: {
     } as never,
     cipher,
   });
-  return { provider, refreshCalls, updates, current: () => stored };
+  return { provider, refreshCalls, updates, current: () => stored, entryReads: () => entryReads };
 }
 
 describe("resolving the Authorization for a project's connection", () => {
@@ -134,6 +141,43 @@ describe("resolving the Authorization for a project's connection", () => {
     expect(h.refreshCalls).toEqual(["refresh-1"]);
     expect(result.headers).toEqual({ Authorization: "Bearer refreshed-token" });
     expect(h.updates[0]).toMatchObject({ accessToken: "enc:refreshed-token", status: "connected" });
+  });
+
+  it("will not spend this project's credentials at an authorization server that did not issue them", async () => {
+    // SEP-2352. A refresh is the one thing on the run path that presents the
+    // client_id and secret, so an entry repointed by a re-discovery would send
+    // them to a server that never registered them.
+    const h = providerHarness({
+      connection: connectionFixture({
+        issuer: "https://auth.test",
+        expiresAt: new Date(Date.now() + TOKEN_REFRESH_MARGIN_MS - 60_000).toISOString(),
+      }),
+      server: {
+        ...OAUTH_SERVER,
+        auth: { ...OAUTH_SERVER.auth!, issuer: "https://elsewhere.test" },
+      },
+    });
+
+    const result = await h.provider.headersFor("p", "slack");
+
+    expect(h.refreshCalls).toHaveLength(0);
+    expect(result.headers).toEqual({});
+    expect(result.unavailable).toMatch(/different authorization server/);
+  });
+
+  it("serves a live token without reading the registry entry at all", async () => {
+    // The fast path sends only a bearer token — no credentials leave — so the
+    // issuer check above must not cost every run an extra read before its first
+    // token. The entry is consulted only where a refresh actually needs it.
+    const h = providerHarness({
+      connection: connectionFixture({ issuer: "https://auth.test" }),
+      server: { ...OAUTH_SERVER, auth: { ...OAUTH_SERVER.auth!, issuer: "https://elsewhere.test" } },
+    });
+
+    expect((await h.provider.headersFor("p", "slack")).headers).toEqual({
+      Authorization: "Bearer live-token",
+    });
+    expect(h.entryReads()).toBe(0);
   });
 
   it("refreshes a token whose stored expiry cannot be parsed", async () => {

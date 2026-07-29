@@ -297,5 +297,7 @@ docker compose up --build             # local container + DynamoDB Local
 - A bound MCP server's tool list is cached in process memory for
   `MCP_DISCOVERY_CACHE_TTL_MS` (default `60000`), which also lets a turn that calls no tool
   skip the MCP handshake entirely. Editing the registry entry invalidates it on the instance
-  that served the edit; the TTL bounds the others.
+  that served the edit; the TTL bounds the others. A server that sends its own `ttlMs` on
+  `tools/list` sets its entry's lifetime instead, capped at 10 minutes; setting
+  `MCP_DISCOVERY_CACHE_TTL_MS=0` disables caching outright and no server hint overrides it.
 - AWS credentials come from the task/instance role — never bake keys into the image.

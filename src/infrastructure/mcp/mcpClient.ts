@@ -30,7 +30,7 @@ export async function listMcpTools(
     loopback,
   );
   try {
-    const tools = await session.listTools();
+    const { tools } = await session.listTools();
     return {
       ok: true,
       tools: tools.map((tool) => ({ name: tool.name, description: tool.description ?? "" })),

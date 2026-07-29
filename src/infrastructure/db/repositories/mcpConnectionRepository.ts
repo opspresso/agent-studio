@@ -26,6 +26,7 @@ function fromItem(item: Record<string, unknown>): McpConnection {
     clientId: item.clientId as string,
     clientSecret: optionalString(item.clientSecret),
     clientRegistered: item.clientRegistered === true,
+    issuer: optionalString(item.issuer),
     scopes: (item.scopes as string[] | undefined) ?? [],
     accessToken: optionalString(item.accessToken),
     refreshToken: optionalString(item.refreshToken),

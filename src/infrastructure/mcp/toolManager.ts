@@ -108,8 +108,8 @@ export class ToolManager {
           return null;
         }
         try {
-          const tools = await session.listTools();
-          setCachedTools(server.url, server.headers, tools);
+          const { tools, ttlMs } = await session.listTools();
+          setCachedTools(server.url, server.headers, tools, ttlMs);
           return { server, session, tools };
         } catch (error) {
           // A single broken MCP must not abort the whole tool set — but it must

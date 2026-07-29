@@ -29,6 +29,19 @@ export interface McpServerAuth {
   resource: string;
   /** Which `authorization_servers` entry was chosen; the choice is the client's. */
   authorizationServer: string;
+  /**
+   * The `issuer` the authorization server's own metadata claims — the identity
+   * a callback's RFC 9207 `iss` is compared against, and the key a connection's
+   * client credentials are bound to (SEP-2352, SEP-2468).
+   *
+   * Optional only because entries discovered before it was recorded have none.
+   * Those fall back to {@link authorizationServer}, which RFC 8414 §3.3 requires
+   * an authorization server's `issuer` to equal anyway; re-running discovery
+   * stores the value the server actually published.
+   */
+  issuer?: string;
+  /** RFC 9207: does this server advertise that it returns `iss`? See the metadata field. */
+  issParameterSupported?: boolean;
   authorizationEndpoint: string;
   tokenEndpoint: string;
   /** RFC 7591. Absent means the provider requires a manually registered app. */
@@ -36,6 +49,23 @@ export interface McpServerAuth {
   tokenEndpointAuthMethod: TokenEndpointAuthMethod;
   scopesSupported?: string[];
   discoveredAt: string;
+}
+
+/**
+ * Which authorization server an entry's credentials and callbacks belong to.
+ *
+ * The single owner of that question — a callback's RFC 9207 `iss` is compared
+ * against it, and a connection's client credentials are bound to it, so the two
+ * must never disagree about what "this entry's issuer" means.
+ *
+ * Falls back to the advertised URL for entries discovered before the published
+ * `issuer` was recorded: RFC 8414 §3.3 requires an authorization server's
+ * metadata `issuer` to equal the identifier it was fetched under, so for any
+ * conforming server the fallback is the same string, and a re-discovery
+ * replaces it with the published value either way.
+ */
+export function issuerOf(auth: McpServerAuth): string {
+  return auth.issuer ?? auth.authorizationServer;
 }
 
 /**

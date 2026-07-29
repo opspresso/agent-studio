@@ -238,6 +238,43 @@ describe("discovering a server's authorization configuration", () => {
     expect(stored[0]?.auth?.tokenEndpointAuthMethod).toBe("client_secret_basic");
   });
 
+  it("stores the issuer the server publishes, not the URL it was asked at", async () => {
+    // RFC 9207 compares a callback's `iss` against this value, so it has to be
+    // the server's own claim. The two are equal for a conforming server, which
+    // is exactly why taking the wrong one would go unnoticed until they differ.
+    const { useCases: uc, stored } = useCases({
+      fetchProtectedResource: async () => ({
+        resource: "https://mcp.example.com",
+        authorizationServers: ["https://auth.example.com/tenant-a"],
+      }),
+      fetchAuthorizationServer: async () => ({
+        issuer: "https://auth.example.com/issuer/tenant-a",
+        authorizationEndpoint: "https://auth.example.com/authorize",
+        tokenEndpoint: "https://auth.example.com/token",
+        issParameterSupported: true,
+      }),
+    });
+
+    await uc.discover("slack");
+
+    expect(stored[0]?.auth?.authorizationServer).toBe("https://auth.example.com/tenant-a");
+    expect(stored[0]?.auth?.issuer).toBe("https://auth.example.com/issuer/tenant-a");
+    expect(stored[0]?.auth?.issParameterSupported).toBe(true);
+  });
+
+  it("leaves the iss advertisement off unless the server states it", async () => {
+    // It decides only whether a *missing* `iss` is fatal, so assuming it would
+    // break every server that simply does not implement RFC 9207.
+    const { useCases: uc, stored } = useCases({
+      fetchProtectedResource: async () => SLACK_RESOURCE,
+      fetchAuthorizationServer: async () => SLACK_AS,
+    });
+
+    await uc.discover("slack");
+
+    expect(stored[0]?.auth?.issParameterSupported).toBeUndefined();
+  });
+
   it("clears the block, returning the entry to static-header behaviour", async () => {
     const { useCases: uc, stored } = useCases({});
     await uc.clearAuth("slack");
@@ -295,5 +332,43 @@ describe("reading a metadata document", () => {
     expect(result.resource).toBe("https://mcp.example.com");
     expect(calls).toHaveLength(2);
     vi.unstubAllGlobals();
+  });
+
+  it("reads the RFC 9207 advertisement only from an explicit boolean true", async () => {
+    // The field decides whether a response *without* `iss` is refused. A string
+    // "true", or any other truthy shape, would switch that refusal on for a
+    // server that never promised anything — and break every one of its flows.
+    for (const [advertised, expected] of [
+      [true, true],
+      ["true", undefined],
+      [false, undefined],
+      [undefined, undefined],
+    ] as const) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                issuer: "https://auth.example.com",
+                authorization_endpoint: "https://auth.example.com/authorize",
+                token_endpoint: "https://auth.example.com/token",
+                ...(advertised === undefined
+                  ? {}
+                  : { authorization_response_iss_parameter_supported: advertised }),
+              }),
+              { headers: { "Content-Type": "application/json" } },
+            ),
+        ),
+      );
+      const { oauthMetadataClient } = await import("@/infrastructure/mcp/oauthMetadata");
+
+      const metadata = await oauthMetadataClient.fetchAuthorizationServer(
+        "https://auth.example.com",
+      );
+
+      expect(metadata.issParameterSupported).toBe(expected);
+      vi.unstubAllGlobals();
+    }
   });
 });

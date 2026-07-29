@@ -345,6 +345,298 @@ describe("completeAuthorization", () => {
   });
 });
 
+/**
+ * RFC 9207. Every registry server shares one callback URI, which is precisely
+ * the shape a mix-up attack needs: a code issued by one authorization server,
+ * redeemed at another's token endpoint. `iss` is what tells the two apart.
+ */
+describe("completeAuthorization: issuer validation", () => {
+  const ISSUING = { ...SERVER, auth: { ...SERVER.auth!, issuer: "https://auth-a.example.com" } };
+
+  async function started(server: McpServer) {
+    const h = harness({ connection: {}, server });
+    const uc = createMcpAuthUseCases(h.deps);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    return { h, uc, state: new URL(authorizeUrl).searchParams.get("state") as string };
+  }
+
+  it("refuses a code that came back from a different issuer, before redeeming it", async () => {
+    const { h, uc, state } = await started(ISSUING);
+
+    await expect(
+      uc.completeAuthorization({
+        state,
+        code: "code-from-elsewhere",
+        userEmail: OWNER,
+        iss: "https://auth-b.example.com",
+      }),
+    ).rejects.toThrow(/different authorization server/);
+
+    // The point of the check: the code must never reach a token endpoint that
+    // did not issue it, so this has to fail *before* the exchange.
+    expect(h.exchanges).toHaveLength(0);
+    expect(h.connections.get("p/slack")?.status).toBe("needs_auth");
+  });
+
+  it("accepts a matching issuer", async () => {
+    const { h, uc, state } = await started(ISSUING);
+
+    await uc.completeAuthorization({
+      state,
+      code: "c",
+      userEmail: OWNER,
+      iss: "https://auth-a.example.com",
+    });
+
+    expect(h.exchanges).toHaveLength(1);
+    expect(h.connections.get("p/slack")?.status).toBe("connected");
+  });
+
+  it("compares literally, so a merely equivalent URL is still a mismatch", async () => {
+    // RFC 9207 §2.4 mandates simple string comparison and the MCP spec spells
+    // out what must not be normalised. Each normalisation is another way for two
+    // different issuers to compare equal.
+    const { uc, state } = await started(ISSUING);
+
+    await expect(
+      uc.completeAuthorization({
+        state,
+        code: "c",
+        userEmail: OWNER,
+        iss: "https://auth-a.example.com/",
+      }),
+    ).rejects.toThrow(/different authorization server/);
+  });
+
+  it("refuses a response with no iss when the server advertises that it sends one", async () => {
+    const { h, uc, state } = await started({
+      ...ISSUING,
+      auth: { ...ISSUING.auth, issParameterSupported: true },
+    });
+
+    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(
+      /missing the issuer identifier/,
+    );
+    expect(h.exchanges).toHaveLength(0);
+  });
+
+  it("proceeds without iss when the server never claimed to send one", async () => {
+    // Most authorization servers in the wild. Rejecting these would make the
+    // check a availability bug rather than a security one.
+    const { h, uc, state } = await started(ISSUING);
+
+    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+
+    expect(h.exchanges).toHaveLength(1);
+  });
+
+  it("refuses when the entry was repointed while the user was at the provider", async () => {
+    // The registry entry is shared and an admin can re-run discovery at any
+    // moment; redeeming here would hand the new server a code it never issued.
+    const { h, uc, state } = await started(ISSUING);
+    h.deps.mcps.get = (async () => ({
+      ...ISSUING,
+      auth: { ...ISSUING.auth, issuer: "https://auth-b.example.com" },
+    })) as never;
+
+    await expect(
+      uc.completeAuthorization({
+        state,
+        code: "c",
+        userEmail: OWNER,
+        iss: "https://auth-a.example.com",
+      }),
+    ).rejects.toThrow(/changed while this authorization was in progress/);
+    expect(h.exchanges).toHaveLength(0);
+  });
+
+  it("refuses an iss it cannot check, rather than accepting it unchecked", async () => {
+    // A state written before the expected issuer was recorded — a deploy can
+    // catch one mid-flight. There is nothing to compare against, and treating
+    // that as a pass would be the same as not checking at all.
+    const h = harness({ connection: {} });
+    const uc = createMcpAuthUseCases(h.deps);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const state = new URL(authorizeUrl).searchParams.get("state") as string;
+    const pending = h.states.get(state);
+    h.states.set(state, { ...pending!, issuer: undefined });
+
+    await expect(
+      uc.completeAuthorization({ state, code: "c", userEmail: OWNER, iss: "https://anything" }),
+    ).rejects.toThrow(/before issuer validation was in place/);
+    expect(h.exchanges).toHaveLength(0);
+  });
+});
+
+describe("abandonAuthorization", () => {
+  async function started() {
+    const h = harness({ connection: {} });
+    const uc = createMcpAuthUseCases(h.deps);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    return { h, uc, state: new URL(authorizeUrl).searchParams.get("state") as string };
+  }
+
+  it("relays the provider's own description once the response is attributable", async () => {
+    const { uc, state } = await started();
+
+    expect(
+      await uc.abandonAuthorization({
+        state,
+        userEmail: OWNER,
+        error: "access_denied",
+        errorDescription: "You cancelled the request.",
+      }),
+    ).toEqual({ error: "You cancelled the request." });
+  });
+
+  it("refuses to relay text from a response that came from another issuer", async () => {
+    // `error_description` is provider-controlled text this app would otherwise
+    // present as its own, which is why RFC 9207 extends the check to errors.
+    const h = harness({
+      connection: {},
+      server: { ...SERVER, auth: { ...SERVER.auth!, issuer: "https://auth-a.example.com" } },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const state = new URL(authorizeUrl).searchParams.get("state") as string;
+
+    await expect(
+      uc.abandonAuthorization({
+        state,
+        userEmail: OWNER,
+        error: "access_denied",
+        errorDescription: "Session expired — sign in again at evil.example.com",
+        iss: "https://attacker.example.com",
+      }),
+    ).rejects.toThrow(/different authorization server/);
+  });
+
+  it("spends the state, so the abandoned flow cannot also be completed", async () => {
+    const { uc, state } = await started();
+
+    await uc.abandonAuthorization({ state, userEmail: OWNER, error: "access_denied" });
+
+    await expect(uc.completeAuthorization({ state, code: "c", userEmail: OWNER })).rejects.toThrow(
+      /expired or was already used/,
+    );
+  });
+
+  it("refuses a state belonging to a different user", async () => {
+    const { uc, state } = await started();
+    await expect(
+      uc.abandonAuthorization({ state, userEmail: "other@example.com", error: "access_denied" }),
+    ).rejects.toThrow(ForbiddenError);
+  });
+});
+
+/**
+ * SEP-2352: a `client_id` means nothing away from the server that issued it.
+ * Re-running discovery rewrites the registry entry and never touches these
+ * rows, so nothing else notices that the credentials have been orphaned.
+ */
+describe("client credentials bound to their issuer", () => {
+  const AT_A: McpServer = {
+    ...SERVER,
+    auth: {
+      ...SERVER.auth!,
+      issuer: "https://auth-a.example.com",
+      registrationEndpoint: "https://auth-a.example.com/register",
+    },
+  };
+  const AT_B: McpServer = {
+    ...AT_A,
+    auth: { ...AT_A.auth!, issuer: "https://auth-b.example.com" },
+  };
+
+  it("re-registers dynamic credentials when the entry has moved to another issuer", async () => {
+    const h = harness({
+      server: AT_B,
+      connection: {
+        clientId: "client-at-a",
+        clientRegistered: true,
+        issuer: "https://auth-a.example.com",
+        status: "connected",
+        accessToken: "enc:at",
+        refreshToken: "enc:rt",
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.registrations).toHaveLength(1);
+    const connection = h.connections.get("p/slack");
+    expect(connection?.clientId).toBe("dcr-client");
+    expect(connection?.issuer).toBe("https://auth-b.example.com");
+    // Whatever the old client authorized was granted by a server this entry no
+    // longer points at; keeping it would leave a connection reporting
+    // `connected` on a token nothing here can refresh.
+    expect(connection?.status).toBe("needs_auth");
+    expect(connection?.accessToken).toBeUndefined();
+    expect(connection?.refreshToken).toBeUndefined();
+  });
+
+  it("refuses hand-entered credentials from another issuer rather than guessing", async () => {
+    // Nothing here can re-issue them, so the only honest move is to say which
+    // server the owner now has to register with.
+    const h = harness({
+      server: AT_B,
+      connection: { clientId: "manual", clientRegistered: false, issuer: "https://auth-a.example.com" },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
+      /registered with a different authorization server/,
+    );
+    expect(h.registrations).toHaveLength(0);
+  });
+
+  it("leaves credentials alone while the issuer still matches", async () => {
+    const h = harness({
+      server: AT_A,
+      connection: { clientId: "client-at-a", clientRegistered: true, issuer: "https://auth-a.example.com" },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.registrations).toHaveLength(0);
+    expect(h.connections.get("p/slack")?.clientId).toBe("client-at-a");
+  });
+
+  it("treats a row written before issuer binding as belonging to the current server", async () => {
+    // Those credentials were already being used against this entry; inventing a
+    // mismatch would break every existing connection on deploy.
+    const h = harness({ server: AT_A, connection: { clientId: "legacy", clientRegistered: true } });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.registrations).toHaveLength(0);
+    expect(h.connections.get("p/slack")?.clientId).toBe("legacy");
+  });
+
+  it("stamps the issuer on a row that predates binding when it is next authorized", async () => {
+    const h = harness({ server: AT_A, connection: { clientId: "legacy", clientRegistered: true } });
+    const uc = createMcpAuthUseCases(h.deps);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const state = new URL(authorizeUrl).searchParams.get("state") as string;
+
+    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+
+    expect(h.connections.get("p/slack")?.issuer).toBe("https://auth-a.example.com");
+  });
+
+  it("records the issuer against hand-entered credentials", async () => {
+    const h = harness({ server: AT_A });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.saveClientCredentials("p", "slack", { clientId: "manual", clientSecret: "s" }, OWNER);
+
+    expect(h.connections.get("p/slack")?.issuer).toBe("https://auth-a.example.com");
+  });
+});
+
 describe("saveClientCredentials", () => {
   it("keeps the stored secret when the submitted one is a mask", async () => {
     const h = harness({ connection: { clientSecret: "enc:original" } });

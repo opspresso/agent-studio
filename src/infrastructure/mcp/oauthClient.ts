@@ -137,6 +137,13 @@ export const oauthClient: OAuthClient = {
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
         token_endpoint_auth_method: "client_secret_post",
+        // SEP-837. The redirect is always this deployment's own https callback,
+        // built from the configured public base URL — never a loopback one — so
+        // `web` is the accurate declaration. Sent rather than left to the OpenID
+        // Connect default because an authorization server that applies the
+        // default differently rejects the registration on a field we never
+        // stated an opinion about.
+        application_type: "web",
         ...(scopes.length > 0 ? { scope: scopes.join(" ") } : {}),
       }),
       signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),

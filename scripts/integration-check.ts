@@ -235,6 +235,7 @@ async function main() {
       serverName,
       clientId: "client-abc",
       clientSecret: encryptSecret("client-secret"),
+      issuer: "https://auth.example.com",
       scopes: ["chat:write"],
       accessToken: encryptSecret("access-1"),
       refreshToken: encryptSecret("refresh-1"),
@@ -247,6 +248,9 @@ async function main() {
     const conn = await mcpConnectionRepository.get(projectName, serverName);
     assert.ok(conn, "mcp connection get");
     assert.equal(decryptSecret(conn.clientSecret ?? ""), "client-secret", "client secret round-trip");
+    // Losing this would silently unbind the credentials from the server that
+    // issued them, which is the whole of SEP-2352.
+    assert.equal(conn.issuer, "https://auth.example.com", "credential issuer round-trip");
     assert.equal(
       (await mcpConnectionRepository.listByProject(projectName)).length,
       1,
@@ -308,12 +312,18 @@ async function main() {
         serverName,
         codeVerifier: encryptSecret("verifier"),
         userEmail: "owner@example.com",
+        issuer: "https://auth.example.com",
+        issParameterSupported: true,
         createdAt: now,
       },
       600,
     );
     const consumed = await mcpOAuthStateRepository.consume(`it-state-${suffix}`);
     assert.equal(consumed?.userEmail, "owner@example.com", "oauth state consumed once");
+    // The expected issuer has to survive the round trip or the RFC 9207 check at
+    // the callback has nothing to compare against and fails the flow closed.
+    assert.equal(consumed?.issuer, "https://auth.example.com", "expected issuer round-trips");
+    assert.equal(consumed?.issParameterSupported, true, "iss advertisement round-trips");
     assert.equal(
       await mcpOAuthStateRepository.consume(`it-state-${suffix}`),
       null,

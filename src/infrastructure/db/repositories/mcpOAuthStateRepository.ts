@@ -48,6 +48,10 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
       serverName: item.serverName as string,
       codeVerifier: item.codeVerifier as string,
       userEmail: item.userEmail as string,
+      // Absent on a state written before issuer validation existed; the use case
+      // fails such a flow closed rather than reading the gap as "no check".
+      issuer: typeof item.issuer === "string" ? item.issuer : undefined,
+      issParameterSupported: item.issParameterSupported === true,
       createdAt: item.createdAt as string,
     } satisfies McpOAuthState;
   },
