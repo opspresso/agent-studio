@@ -627,6 +627,22 @@ describe("client credentials bound to their issuer", () => {
     expect(h.connections.get("p/slack")?.issuer).toBe("https://auth-a.example.com");
   });
 
+  it("records the resource the tokens were minted for", async () => {
+    // The other axis: `issuer` says who issued the client, `resource` says which
+    // server the tokens may be presented at. An entry moved to a different
+    // resource must not have these tokens follow it there.
+    const h = harness({ server: AT_A, connection: { clientId: "c", clientRegistered: true } });
+    const uc = createMcpAuthUseCases(h.deps);
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+    const state = new URL(authorizeUrl).searchParams.get("state") as string;
+
+    await uc.completeAuthorization({ state, code: "c", userEmail: OWNER });
+
+    // The same value the exchange sent as the RFC 8707 `resource`.
+    expect(h.exchanges[0]?.target.resource).toBe("https://mcp.slack.com");
+    expect(h.connections.get("p/slack")?.resource).toBe("https://mcp.slack.com");
+  });
+
   it("records the issuer against hand-entered credentials", async () => {
     const h = harness({ server: AT_A });
     const uc = createMcpAuthUseCases(h.deps);

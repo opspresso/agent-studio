@@ -16,8 +16,7 @@ import type {
   TokenRequestTarget,
 } from "@/domain/mcp/oauth";
 import { OAuthGrantError } from "@/domain/mcp/oauth";
-import type { McpRepository } from "@/domain/mcp/repository";
-import { issuerOf } from "@/domain/mcp/types";
+import { issuerOf, type McpServerAuth } from "@/domain/mcp/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 
@@ -38,7 +37,6 @@ import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 export const TOKEN_REFRESH_MARGIN_MS = MAX_RUN_DURATION_MS + 5 * 60_000;
 
 export interface McpAuthProviderDeps {
-  mcps: McpRepository;
   connections: McpConnectionRepository;
   oauth: OAuthClient;
   cipher: SecretCipher;
@@ -46,6 +44,39 @@ export interface McpAuthProviderDeps {
 
 function bearer(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * Does this connection still belong to what the entry points at?
+ *
+ * The registry entry is shared and admin-owned; these credentials are per
+ * project and owner-owned; the only thing joining them is the entry's name. An
+ * admin moving an entry to another address, or deleting and recreating it under
+ * the same name, therefore changes what that name means while every project's
+ * stored tokens stay exactly where they are. Without this the next run would
+ * present a token minted for one server to a different one — across the very
+ * admin/owner boundary the rest of this codebase is careful to keep.
+ *
+ * Two axes, both checked: `issuer` is who issued the client credentials
+ * (SEP-2352), `resource` is the RFC 8707 audience the tokens are bound to.
+ * A row that predates either field is read as belonging to the entry it was
+ * already being used against, so existing connections keep working.
+ *
+ * @returns why the connection may not be used, or undefined when it may.
+ */
+function mismatchReason(
+  connection: McpConnection,
+  serverName: string,
+  auth: McpServerAuth,
+): string | undefined {
+  const issuer = issuerOf(auth);
+  if ((connection.issuer ?? issuer) !== issuer) {
+    return `MCP server '${serverName}' points at a different authorization server than the one this project's credentials were registered with; it needs to be connected again.`;
+  }
+  if ((connection.resource ?? auth.resource) !== auth.resource) {
+    return `MCP server '${serverName}' now identifies as a different resource than the one this project's access was granted for; it needs to be connected again.`;
+  }
+  return undefined;
 }
 
 function needsRefresh(connection: McpConnection, nowMs: number): boolean {
@@ -135,13 +166,20 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
   }
 
   return {
-    async headersFor(projectName, serverName) {
+    async headersFor(projectName, serverName, auth) {
       const connection = await deps.connections.get(projectName, serverName);
       if (!connection) {
         return {
           headers: {},
           unavailable: `MCP server '${serverName}' requires authorization and this project has not connected it.`,
         };
+      }
+      // Ahead of every path that would hand a credential out, including the one
+      // that only reads a live token: sending a bearer token to a server it was
+      // not minted for is the failure this guards, and that path sends one.
+      const mismatch = mismatchReason(connection, serverName, auth);
+      if (mismatch) {
+        return { headers: {}, unavailable: mismatch };
       }
       if (connection.status === "needs_reauth") {
         return {
@@ -159,35 +197,14 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         return { headers: bearer(deps.cipher.decrypt(connection.accessToken)) };
       }
 
-      const server = await deps.mcps.get(serverName);
-      if (!server?.auth) {
-        // The registry entry lost its OAuth block while a connection still
-        // pointed at it; there is nowhere to refresh against.
-        return {
-          headers: {},
-          unavailable: `MCP server '${serverName}' no longer has an OAuth configuration.`,
-        };
-      }
-      // SEP-2352: a refresh presents this connection's client credentials at
-      // the entry's token endpoint, so it is the one place on the run path that
-      // could send them to an authorization server that never issued them. The
-      // fast path above sends only a bearer token and needs no such check —
-      // which is why this read stays off every run's critical path.
-      const issuer = issuerOf(server.auth);
-      if ((connection.issuer ?? issuer) !== issuer) {
-        return {
-          headers: {},
-          unavailable: `MCP server '${serverName}' points at a different authorization server than the one this project's credentials were registered with; it needs to be connected again.`,
-        };
-      }
       return refresh(connection, {
-        tokenEndpoint: server.auth.tokenEndpoint,
+        tokenEndpoint: auth.tokenEndpoint,
         clientId: connection.clientId,
         ...(connection.clientSecret
           ? { clientSecret: deps.cipher.decrypt(connection.clientSecret) }
           : {}),
-        tokenEndpointAuthMethod: server.auth.tokenEndpointAuthMethod,
-        resource: server.auth.resource,
+        tokenEndpointAuthMethod: auth.tokenEndpointAuthMethod,
+        resource: auth.resource,
       });
     },
 

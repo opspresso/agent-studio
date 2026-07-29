@@ -40,6 +40,23 @@ export interface McpConnection {
    * already being used as.
    */
   issuer?: string;
+  /**
+   * The RFC 8707 `resource` the stored tokens were minted for — the audience
+   * they are bound to, and therefore the only server they may be presented at.
+   *
+   * Recorded for the same reason as {@link issuer}, on the other axis. A
+   * registry entry is shared and admin-owned while these rows are per project
+   * and owner-owned, joined only by the entry's *name*: moving an entry to
+   * another address, or deleting and recreating it under the same name, changes
+   * what that name means without touching anything here. Comparing this against
+   * the entry's current `auth.resource` is what stops a token minted for one
+   * server being sent to another.
+   *
+   * Absent on rows written before it was recorded: those are treated as
+   * belonging to whatever the entry points at now, which is what they were
+   * already being used as.
+   */
+  resource?: string;
   scopes: string[];
   /** Encrypted. */
   accessToken?: string;

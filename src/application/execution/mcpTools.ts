@@ -66,7 +66,14 @@ export async function buildMcpTools(
           // A per-project credential, resolved and refreshed by the auth
           // provider. Applied last on purpose: a version must not be able to
           // substitute its own Authorization for the project's connection.
-          const resolved = await deps.mcpAuth.headersFor(version.projectName, mcp.name);
+          // The entry's own OAuth block goes with it, so the provider can tell
+          // whether the connection still belongs to what this name points at —
+          // it is already in hand here, which keeps that check off the read path.
+          const resolved = await deps.mcpAuth.headersFor(
+            version.projectName,
+            mcp.name,
+            mcp.auth,
+          );
           if (!resolved.unavailable) {
             Object.assign(headers, resolved.headers);
           } else if (Object.keys(headers).length === 0) {

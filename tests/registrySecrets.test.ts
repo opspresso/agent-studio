@@ -136,6 +136,61 @@ describe("MCP registry secret contract", () => {
     }
   });
 
+  it("drops the discovered OAuth block when the entry is moved to another address", async () => {
+    // The block was read out of the *old* address's well-known documents: its
+    // `resource` names that server and its endpoints belong to whichever
+    // authorization server vouched for it. Carried across a move, every
+    // project's stored token — bound by RFC 8707 to that stale `resource` —
+    // would be sent to the new address instead.
+    const { repo, store } = makeMcpRepo();
+    const useCases = createMcpUseCases(repo);
+    await useCases.create({ name: "m", url: "https://mcp.example/mcp", headers: {} });
+    store.set("m", {
+      ...store.get("m")!,
+      auth: {
+        type: "oauth2",
+        resource: "https://mcp.example",
+        authorizationServer: "https://auth.example",
+        issuer: "https://auth.example",
+        authorizationEndpoint: "https://auth.example/authorize",
+        tokenEndpoint: "https://auth.example/token",
+        tokenEndpointAuthMethod: "client_secret_post",
+        discoveredAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    await useCases.update("m", { url: "https://other.example/mcp" });
+
+    expect(store.get("m")?.url).toBe("https://other.example/mcp");
+    expect(store.get("m")?.auth).toBeUndefined();
+  });
+
+  it("keeps the OAuth block when the address is unchanged", async () => {
+    // Editing headers or a description must not cost an entry its discovery —
+    // that would make every unrelated save a reconnect for every project.
+    const { repo, store } = makeMcpRepo();
+    const useCases = createMcpUseCases(repo);
+    await useCases.create({ name: "m", url: "https://mcp.example/mcp", headers: {} });
+    const auth = {
+      type: "oauth2" as const,
+      resource: "https://mcp.example",
+      authorizationServer: "https://auth.example",
+      authorizationEndpoint: "https://auth.example/authorize",
+      tokenEndpoint: "https://auth.example/token",
+      tokenEndpointAuthMethod: "client_secret_post" as const,
+      discoveredAt: "2026-01-01T00:00:00.000Z",
+    };
+    store.set("m", { ...store.get("m")!, auth });
+
+    await useCases.update("m", { description: "renamed" });
+    expect(store.get("m")?.auth).toEqual(auth);
+
+    // Re-submitting the same url is not a move either; the console posts every
+    // field back on save, so this is the ordinary path.
+    await useCases.update("m", { url: "https://mcp.example/mcp" });
+    expect(store.get("m")?.auth).toEqual(auth);
+  });
+
   it("preserves the stored secret when an update echoes the mask back", async () => {
     const { repo, store } = makeMcpRepo();
     const useCases = createMcpUseCases(repo);

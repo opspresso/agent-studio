@@ -387,11 +387,19 @@ Two deliberate strategies coexist:
   A server that sends the MCP caching hint `ttlMs` on `tools/list` (SEP-2549, required of
   servers from protocol `2026-07-28`) sets its own entry's lifetime instead: it knows its
   catalogue and the local default is only a guess about someone else's. `0` means do not
-  cache, a paged catalogue takes the shortest of its pages' hints, and the value is capped at
-  10 minutes — nothing invalidates on the *server's* catalogue changing, so that cap is the
-  bound on how long such a change can go unnoticed. Absent (every older server) falls back to
-  the local default, and `MCP_DISCOVERY_CACHE_TTL_MS=0` wins over any hint, since that
-  setting means caching is off and no server may switch it back on.
+  cache, and a paged catalogue takes the shortest of its pages' hints.
+  The hint is capped by `MCP_MAX_SERVER_TTL_MS` (default 5 minutes), which exists because an
+  entry's lifetime answers two questions with one number. The server's hint answers the first
+  — catalogue freshness. The second is how long a registry edit made on one instance goes
+  unseen on the others, since `invalidateMcpDiscovery` is process-local; that one belongs to
+  the deployment, not to the server, and without a ceiling a server asking for an hour would
+  decide it for the whole fleet. The cap is a separate knob rather than a reuse of
+  `MCP_DISCOVERY_CACHE_TTL_MS` because raising *that* to admit a hint would also stop
+  unhinted servers being re-read, which is the opposite trade. Single-instance deployments
+  can raise it freely; `MCP_MAX_SERVER_TTL_MS=0` ignores server hints entirely and returns
+  every entry to the local TTL. Absent (every older server) falls back to the local default,
+  and `MCP_DISCOVERY_CACHE_TTL_MS=0` wins over any hint, since that setting means caching is
+  off and no server may switch it back on.
 - **Managed servers** (`runtime: "managed"`, absent = `remote`). A container this
   app starts on its own host through SSM Run Command, reached at
   `127.0.0.1:<port>`. That address is one `UrlPolicy` rejects — correctly, for
@@ -454,11 +462,21 @@ Two deliberate strategies coexist:
     so provider-controlled `error_description` text is never relayed from a redirect this
     app cannot attribute.
   - A connection's client credentials carry the `issuer` they were registered with
-    (SEP-2352). When an entry moves to another authorization server, dynamically registered
-    credentials are re-registered there and the tokens the old client authorized are
-    dropped; hand-entered ones are refused with the issuer to register at. The run path
-    enforces the same rule where a refresh would present them, which is the only place
-    credentials leave — the fast path sends a bearer token alone and stays free of the read.
+    (SEP-2352), and its tokens carry the RFC 8707 `resource` they were minted for. Both are
+    checked before anything is handed out, on the refresh path *and* on the path that only
+    reads a live token — a bearer token has an audience, so serving one unchecked is the
+    same mistake as spending the client secret. The entry's current `auth` block travels
+    with the call from both callers, which already hold it, so the check costs no read.
+    When an entry moves to another authorization server, dynamically registered credentials
+    are re-registered there and the tokens the old client authorized are dropped;
+    hand-entered ones are refused with the issuer to register at.
+  Editing an entry's **URL** drops its `auth` block outright, for the same reason: the block
+  was read out of the old address's well-known documents, so keeping it would leave the entry
+  describing a server it no longer points at. The entry falls back to its own headers until
+  an admin re-runs Discover — and once they do, the two checks above catch every connection
+  that belonged to the old server. Deleting and recreating an entry under the same name is
+  caught the same way, which matters because the registry is admin-owned while connections
+  are owner-owned and the only thing joining them is the name.
 
   Tokens refresh only within a margin derived from
   `MAX_RUN_DURATION_MS`, so a token cannot expire mid-run *and* the header stays

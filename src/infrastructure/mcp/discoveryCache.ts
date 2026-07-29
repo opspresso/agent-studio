@@ -51,29 +51,64 @@ const TTL_MS = parseTtlMs(process.env.MCP_DISCOVERY_CACHE_TTL_MS);
 /**
  * The most a server's own `ttlMs` may buy it.
  *
- * A server that asks for hours would pin a tool list in this process for hours,
- * and the hint is explicitly only a freshness guess — the spec says the data may
- * change before it expires. The registry edit path invalidates by URL, but
- * nothing invalidates when the *server's* catalogue changes, so this is the
- * bound on how long that can go unnoticed.
+ * This entry's lifetime answers two questions at once, and they want different
+ * numbers. The server's hint answers the first — how long its catalogue stays
+ * fresh — and it knows that better than we do. But the same number also bounds
+ * the second: `invalidateMcpDiscovery` is process-local, so on a multi-instance
+ * deployment it is how long a registry edit made on one instance goes unseen on
+ * the others. A server asking for an hour would decide that for the whole fleet.
+ *
+ * Hence a separate ceiling with its own knob, rather than reusing
+ * `MCP_DISCOVERY_CACHE_TTL_MS`: raising the local default to let a server's hint
+ * through would also stop *unhinted* servers being re-read, which is the
+ * opposite trade. Deployments that run one instance can raise this freely; those
+ * that run many should keep it near the staleness they are willing to wear.
  */
-const MAX_SERVER_TTL_MS = 10 * 60_000;
+const DEFAULT_MAX_SERVER_TTL_MS = 5 * 60_000;
+
+/**
+ * `MCP_MAX_SERVER_TTL_MS` override. Read through the same guard as the TTL
+ * itself: a negative or unparseable ceiling would either freeze a hinted tool
+ * list or silently drop every hint. `0` is a meaningful setting — it ignores
+ * server hints entirely and keeps the local TTL for everything.
+ */
+function parseMaxServerTtlMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_MAX_SERVER_TTL_MS;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    console.warn(
+      `[mcp] ignoring invalid MCP_MAX_SERVER_TTL_MS="${raw}"; using ${DEFAULT_MAX_SERVER_TTL_MS}ms`,
+    );
+    return DEFAULT_MAX_SERVER_TTL_MS;
+  }
+  return value;
+}
+
+const MAX_SERVER_TTL_MS = parseMaxServerTtlMs(process.env.MCP_MAX_SERVER_TTL_MS);
 
 /**
  * How long a discovery may be reused: the server's hint where it gave a usable
  * one, this process's default where it did not (SEP-2549).
  *
- * The operator's `MCP_DISCOVERY_CACHE_TTL_MS=0` wins over any hint — that
- * setting means "do not cache", and a server must not be able to switch caching
- * back on. Per the spec `0` is "immediately stale" and a negative value is
- * ignored and treated as `0`; absent is the older-server case, and is the one
+ * Two operator settings outrank any hint, and they mean different things.
+ * `MCP_DISCOVERY_CACHE_TTL_MS=0` is "do not cache", so no server may switch
+ * caching back on. `MCP_MAX_SERVER_TTL_MS=0` is "ignore what servers ask for",
+ * which returns every entry to the local TTL rather than to no caching — that
+ * is the setting for a fleet that would rather bound registry-edit staleness
+ * itself, and it has to ignore a hint of `0` for the same reason it ignores one
+ * of an hour.
+ *
+ * Otherwise, per the spec: `0` is "immediately stale", a negative value is
+ * ignored and treated as `0`, and absent is the older-server case — the one
  * reading that falls back to our own heuristic rather than to no caching.
  */
 function discoveryTtlMs(serverTtlMs: number | undefined): number {
   if (TTL_MS <= 0) {
     return 0;
   }
-  if (serverTtlMs === undefined) {
+  if (serverTtlMs === undefined || MAX_SERVER_TTL_MS === 0) {
     return TTL_MS;
   }
   if (serverTtlMs <= 0) {

@@ -76,8 +76,19 @@ export function createMcpUseCases(
       if (patch.url !== undefined && !isManagedLoopback(existing)) {
         await assertAllowedUrl(policy, patch.url);
       }
-      const updated = {
-        ...existing,
+      // The OAuth block was read out of the *old* address's well-known
+      // documents: its `resource` names that server, and its endpoints belong to
+      // whichever authorization server vouched for it. Carrying it across a move
+      // would leave the entry describing a server it no longer points at — and
+      // every project's stored token is bound by RFC 8707 to that stale
+      // `resource` while being sent to the new address. Dropped instead, which
+      // is the state a never-discovered entry is already in: the entry keeps
+      // working on its own headers, and an admin re-runs Discover to get an
+      // `auth` block that describes where it points now.
+      const movedAddress = patch.url !== undefined && patch.url !== existing.url;
+      const { auth: discarded, ...withoutAuth } = existing;
+      const updated: McpServer = {
+        ...(movedAddress ? withoutAuth : existing),
         url: patch.url ?? existing.url,
         description: patch.description ?? existing.description,
         content: patch.content ?? existing.content,
@@ -87,6 +98,11 @@ export function createMcpUseCases(
             : existing.headers,
         updatedAt: now,
       };
+      if (movedAddress && discarded) {
+        console.warn(
+          `[mcp] '${existing.name}' moved to ${updated.url}; its OAuth configuration was dropped and must be rediscovered`,
+        );
+      }
       // A new url or new credentials can mean a different tool list, so an
       // operator fixing a server must not have to wait out the discovery TTL on
       // the instance they are working against.
