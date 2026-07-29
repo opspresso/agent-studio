@@ -35,7 +35,8 @@ export function buildImageGenerator(
   } else {
     if (requested) {
       log.warn(
-        "image", `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
+        "image",
+        `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
       );
     }
     model = DEFAULT_IMAGE_MODEL;

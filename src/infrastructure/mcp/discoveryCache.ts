@@ -40,7 +40,8 @@ function parseTtlMs(raw: string | undefined): number {
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0) {
     log.warn(
-      "mcp", `ignoring invalid MCP_DISCOVERY_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`,
+      "mcp",
+      `ignoring invalid MCP_DISCOVERY_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`,
     );
     return DEFAULT_TTL_MS;
   }
@@ -80,7 +81,8 @@ function parseMaxServerTtlMs(raw: string | undefined): number {
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0) {
     log.warn(
-      "mcp", `ignoring invalid MCP_MAX_SERVER_TTL_MS="${raw}"; using ${DEFAULT_MAX_SERVER_TTL_MS}ms`,
+      "mcp",
+      `ignoring invalid MCP_MAX_SERVER_TTL_MS="${raw}"; using ${DEFAULT_MAX_SERVER_TTL_MS}ms`,
     );
     return DEFAULT_MAX_SERVER_TTL_MS;
   }

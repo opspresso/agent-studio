@@ -202,7 +202,8 @@ function assertValidImageModel(parameters: VersionParameters): void {
 function warnUnknownCatalogModel(projectName: string, model: string): void {
   if (!getModelConfig(model)) {
     log.warn(
-      "version", `${projectName}: model "${model}" is not in the catalog; usage will be recorded with $0 cost`,
+      "version",
+      `${projectName}: model "${model}" is not in the catalog; usage will be recorded with $0 cost`,
     );
   }
 }

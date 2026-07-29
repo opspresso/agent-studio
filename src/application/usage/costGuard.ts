@@ -197,7 +197,8 @@ async function notifyOnce(
     // Configured thresholds without a notification path still block; saying so
     // once in the log is the only place an operator can notice the gap.
     log.warn(
-      "cost-guard", `"${project.name}" crossed its ${kind} threshold ` +
+      "cost-guard",
+      `"${project.name}" crossed its ${kind} threshold ` +
         `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no Slack channel configured`,
     );
     return;

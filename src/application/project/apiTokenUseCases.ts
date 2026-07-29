@@ -139,7 +139,8 @@ function matches(
       // operational fault, not a wrong caller: it must be visible, and it must
       // not authenticate anyone.
       log.error(
-        "token", `API token of project '${projectName}' cannot be decrypted:`,
+        "token",
+        `API token of project '${projectName}' cannot be decrypted:`,
         error instanceof Error ? error.message : String(error),
       );
       return false;

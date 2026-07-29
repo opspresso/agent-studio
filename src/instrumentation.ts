@@ -32,13 +32,15 @@ function reportReconcile(managed: ManagedMcpUseCases): Promise<void> {
       for (const outcome of outcomes) {
         if (outcome.action !== "healthy") {
           log.warn(
-            "managed-mcp", `${outcome.name}: ${outcome.action}${outcome.detail ? ` — ${outcome.detail}` : ""}`,
+            "managed-mcp",
+            `${outcome.name}: ${outcome.action}${outcome.detail ? ` — ${outcome.detail}` : ""}`,
           );
         }
       }
       const count = (action: string) => outcomes.filter((o) => o.action === action).length;
       log.info(
-        "managed-mcp", `reconciled ${outcomes.length} server(s): ` +
+        "managed-mcp",
+        `reconciled ${outcomes.length} server(s): ` +
           `${count("healthy")} healthy, ${count("restarted")} restarted, ` +
           `${count("failed")} failed, ${count("skipped")} skipped`,
       );

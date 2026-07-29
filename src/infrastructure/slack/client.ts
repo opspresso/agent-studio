@@ -145,7 +145,8 @@ export const slackClient = {
       }
     }
     log.warn(
-      "slack", `thread ${args.ts} exceeds ${MAX_THREAD_PAGES} pages; newest replies were not read`,
+      "slack",
+      `thread ${args.ts} exceeds ${MAX_THREAD_PAGES} pages; newest replies were not read`,
     );
     return messages;
   },

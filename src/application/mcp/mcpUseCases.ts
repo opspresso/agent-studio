@@ -101,7 +101,8 @@ export function createMcpUseCases(
       };
       if (movedAddress && discarded) {
         log.warn(
-          "mcp", `'${existing.name}' moved to ${updated.url}; its OAuth configuration was dropped and must be rediscovered`,
+          "mcp",
+          `'${existing.name}' moved to ${updated.url}; its OAuth configuration was dropped and must be rediscovered`,
         );
       }
       // A new url or new credentials can mean a different tool list, so an
