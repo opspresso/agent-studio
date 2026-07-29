@@ -148,7 +148,6 @@ export const managedMcpUseCases =
       })
     : undefined;
 const mcpAuthProvider = createMcpAuthProvider({
-  mcps: mcpRepository,
   connections: mcpConnectionRepository,
   oauth: oauthClient,
   cipher: secretCipher,

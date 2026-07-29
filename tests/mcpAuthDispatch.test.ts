@@ -77,14 +77,7 @@ function providerHarness(opts: {
   let stored = opts.connection === undefined ? connectionFixture() : opts.connection;
   const refreshCalls: string[] = [];
   const updates: Array<Record<string, unknown>> = [];
-  let entryReads = 0;
   const provider = createMcpAuthProvider({
-    mcps: {
-      get: async () => {
-        entryReads += 1;
-        return opts.server ?? OAUTH_SERVER;
-      },
-    } as never,
     connections: {
       get: async () => stored,
       listByProject: async () => (stored ? [stored] : []),
@@ -112,7 +105,19 @@ function providerHarness(opts: {
     } as never,
     cipher,
   });
-  return { provider, refreshCalls, updates, current: () => stored, entryReads: () => entryReads };
+  return {
+    /**
+     * The entry's OAuth block travels with the call, as it does from both real
+     * callers — they already hold the entry, so the identity check it feeds
+     * costs no read.
+     */
+    headersFor: (projectName = "p", serverName = "slack") =>
+      provider.headersFor(projectName, serverName, (opts.server ?? OAUTH_SERVER).auth!),
+    provider,
+    refreshCalls,
+    updates,
+    current: () => stored,
+  };
 }
 
 describe("resolving the Authorization for a project's connection", () => {
@@ -122,7 +127,7 @@ describe("resolving the Authorization for a project's connection", () => {
     // run and every message would pay a full handshake before its first token.
     const h = providerHarness({});
 
-    const result = await h.provider.headersFor("p", "slack");
+    const result = await h.headersFor();
 
     expect(result.headers).toEqual({ Authorization: "Bearer live-token" });
     expect(result.unavailable).toBeUndefined();
@@ -136,7 +141,7 @@ describe("resolving the Authorization for a project's connection", () => {
       }),
     });
 
-    const result = await h.provider.headersFor("p", "slack");
+    const result = await h.headersFor();
 
     expect(h.refreshCalls).toEqual(["refresh-1"]);
     expect(result.headers).toEqual({ Authorization: "Bearer refreshed-token" });
@@ -158,33 +163,57 @@ describe("resolving the Authorization for a project's connection", () => {
       },
     });
 
-    const result = await h.provider.headersFor("p", "slack");
+    const result = await h.headersFor();
 
     expect(h.refreshCalls).toHaveLength(0);
     expect(result.headers).toEqual({});
     expect(result.unavailable).toMatch(/different authorization server/);
   });
 
-  it("serves a live token without reading the registry entry at all", async () => {
-    // The fast path sends only a bearer token — no credentials leave — so the
-    // issuer check above must not cost every run an extra read before its first
-    // token. The entry is consulted only where a refresh actually needs it.
+  it("refuses a still-live token when the entry now identifies as another resource", async () => {
+    // The path that needs no refresh still hands out a bearer token, and a token
+    // carries an RFC 8707 audience. An admin who repoints this shared entry —
+    // by editing its URL and rediscovering, or by deleting and recreating it
+    // under the same name — would otherwise have every project's token
+    // delivered to a server it was never minted for, across the admin/owner
+    // boundary the rest of this codebase keeps.
+    const h = providerHarness({
+      connection: connectionFixture({ resource: "https://oauth-mcp.test" }),
+      server: {
+        ...OAUTH_SERVER,
+        auth: { ...OAUTH_SERVER.auth!, resource: "https://elsewhere.test" },
+      },
+    });
+
+    const result = await h.headersFor();
+
+    expect(result.headers).toEqual({});
+    expect(result.unavailable).toMatch(/different resource/);
+    expect(h.refreshCalls).toHaveLength(0);
+  });
+
+  it("refuses a still-live token when the entry moved to another authorization server", async () => {
     const h = providerHarness({
       connection: connectionFixture({ issuer: "https://auth.test" }),
       server: { ...OAUTH_SERVER, auth: { ...OAUTH_SERVER.auth!, issuer: "https://elsewhere.test" } },
     });
 
-    expect((await h.provider.headersFor("p", "slack")).headers).toEqual({
-      Authorization: "Bearer live-token",
-    });
-    expect(h.entryReads()).toBe(0);
+    expect((await h.headersFor()).unavailable).toMatch(/different authorization server/);
+  });
+
+  it("serves a connection written before either field was recorded", async () => {
+    // Those credentials were already being used against this entry; inventing a
+    // mismatch would break every existing connection on deploy.
+    const h = providerHarness({ connection: connectionFixture() });
+
+    expect((await h.headersFor()).headers).toEqual({ Authorization: "Bearer live-token" });
   });
 
   it("refreshes a token whose stored expiry cannot be parsed", async () => {
     // Trusting it would mean sending a token that may already be dead, which
     // costs the whole run's tools instead of one round trip.
     const h = providerHarness({ connection: connectionFixture({ expiresAt: "not-a-date" }) });
-    await h.provider.headersFor("p", "slack");
+    await h.headersFor();
     expect(h.refreshCalls).toHaveLength(1);
   });
 
@@ -195,7 +224,6 @@ describe("resolving the Authorization for a project's connection", () => {
       expiresAt: new Date(Date.now() + 1_000).toISOString(),
     });
     const provider = createMcpAuthProvider({
-      mcps: { get: async () => OAUTH_SERVER } as never,
       connections: {
         get: async () => stored,
         listByProject: async () => [stored],
@@ -215,7 +243,7 @@ describe("resolving the Authorization for a project's connection", () => {
       cipher,
     });
 
-    const result = await provider.headersFor("p", "slack");
+    const result = await provider.headersFor("p", "slack", OAUTH_SERVER.auth!);
 
     expect(result.headers).toEqual({ Authorization: "Bearer winner-token" });
     expect(stored.status).toBe("connected");
@@ -228,7 +256,7 @@ describe("resolving the Authorization for a project's connection", () => {
         throw new OAuthGrantError("invalid_grant", "expired");
       },
     });
-    const result = await refused.provider.headersFor("p", "slack");
+    const result = await refused.headersFor();
     expect(result.unavailable).toMatch(/reconnected/);
     expect(refused.updates[0]).toMatchObject({ status: "needs_reauth" });
   });
@@ -241,7 +269,7 @@ describe("resolving the Authorization for a project's connection", () => {
         throw new Error("HTTP 503");
       },
     });
-    const result = await transient.provider.headersFor("p", "slack");
+    const result = await transient.headersFor();
     expect(result.unavailable).toMatch(/503/);
     expect(transient.updates).toHaveLength(0);
     expect(transient.current()?.status).toBe("connected");
@@ -249,14 +277,14 @@ describe("resolving the Authorization for a project's connection", () => {
 
   it("explains an unconnected project instead of sending nothing", async () => {
     const h = providerHarness({ connection: null });
-    const result = await h.provider.headersFor("p", "slack");
+    const result = await h.headersFor();
     expect(result.headers).toEqual({});
     expect(result.unavailable).toMatch(/has not connected it/);
   });
 
   it("explains a connection already known to need reauthorization", async () => {
     const h = providerHarness({ connection: connectionFixture({ status: "needs_reauth" }) });
-    const result = await h.provider.headersFor("p", "slack");
+    const result = await h.headersFor();
     expect(result.unavailable).toMatch(/needs to be reconnected/);
     expect(h.refreshCalls).toHaveLength(0);
   });

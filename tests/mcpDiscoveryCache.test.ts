@@ -93,12 +93,13 @@ describe("MCP discovery cache keying", () => {
   });
 
   it("caps how long a server may pin its catalogue in this process", async () => {
-    // The hint is explicitly only a guess — the data may change before it
-    // expires — and nothing invalidates on the *server's* catalogue changing.
+    // Without the cap a server asking for an hour would also decide how long a
+    // registry edit stays unseen on every *other* instance, which is the
+    // deployment's call and not the server's.
     setCachedTools(URL_A, {}, [{ name: "search" }], 24 * 60 * 60_000, 0);
 
-    expect(getCachedTools(URL_A, {}, 10 * 60_000 - 1)).toHaveLength(1);
-    expect(getCachedTools(URL_A, {}, 10 * 60_000 + 1)).toBeUndefined();
+    expect(getCachedTools(URL_A, {}, 5 * 60_000 - 1)).toHaveLength(1);
+    expect(getCachedTools(URL_A, {}, 5 * 60_000 + 1)).toBeUndefined();
   });
 
   it("does not cache at all when the server says the result is already stale", async () => {

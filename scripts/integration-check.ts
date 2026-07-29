@@ -236,6 +236,7 @@ async function main() {
       clientId: "client-abc",
       clientSecret: encryptSecret("client-secret"),
       issuer: "https://auth.example.com",
+      resource: "https://mcp.example.com",
       scopes: ["chat:write"],
       accessToken: encryptSecret("access-1"),
       refreshToken: encryptSecret("refresh-1"),
@@ -248,9 +249,11 @@ async function main() {
     const conn = await mcpConnectionRepository.get(projectName, serverName);
     assert.ok(conn, "mcp connection get");
     assert.equal(decryptSecret(conn.clientSecret ?? ""), "client-secret", "client secret round-trip");
-    // Losing this would silently unbind the credentials from the server that
-    // issued them, which is the whole of SEP-2352.
+    // Losing either would silently unbind the credentials and tokens from the
+    // servers they belong to — the whole of SEP-2352, and of the audience check
+    // that stops a repointed entry carrying them somewhere else.
     assert.equal(conn.issuer, "https://auth.example.com", "credential issuer round-trip");
+    assert.equal(conn.resource, "https://mcp.example.com", "token resource round-trip");
     assert.equal(
       (await mcpConnectionRepository.listByProject(projectName)).length,
       1,

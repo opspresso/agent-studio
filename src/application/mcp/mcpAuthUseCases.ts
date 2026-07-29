@@ -612,9 +612,12 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const now = new Date();
       await deps.connections.put({
         ...connection,
-        // Stamped here too, so a row that predates issuer binding acquires it
-        // the first time it is authorized rather than staying unbound forever.
+        // Stamped here too, so a row that predates the binding acquires both
+        // halves the first time it is authorized rather than staying unbound
+        // forever. `resource` is what these very tokens were minted for — the
+        // RFC 8707 audience sent on the exchange just above.
         issuer: issuerOf(server.auth),
+        resource: server.auth.resource,
         accessToken: deps.cipher.encrypt(tokens.accessToken),
         ...(tokens.refreshToken
           ? { refreshToken: deps.cipher.encrypt(tokens.refreshToken) }
@@ -671,7 +674,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // any other way would be answering a question nobody asked.
       const headers = deps.cipher.mergeOutboundHeaders(server.headers, headerOverrides);
       if (server.auth) {
-        const resolved = await deps.authProvider.headersFor(projectName, serverName);
+        const resolved = await deps.authProvider.headersFor(projectName, serverName, server.auth);
         if (!resolved.unavailable) {
           Object.assign(headers, resolved.headers);
         } else if (Object.keys(headers).length === 0) {

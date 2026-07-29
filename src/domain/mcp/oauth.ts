@@ -7,6 +7,8 @@
  * server's authorization server lives and what it accepts.
  */
 
+import type { McpServerAuth } from "./types";
+
 /** RFC 9728 protected-resource metadata, narrowed to the fields we act on. */
 export interface ProtectedResourceMetadata {
   /**
@@ -117,7 +119,18 @@ export interface McpAuthResolution {
 }
 
 export interface McpAuthProvider {
-  headersFor(projectName: string, serverName: string): Promise<McpAuthResolution>;
+  /**
+   * `auth` is the entry's *current* OAuth block, passed in rather than read
+   * back here. Two things follow. It is what the stored connection is checked
+   * against — a registry entry can be repointed at another server, and a token
+   * minted for the old one must not be sent to the new one — and both callers
+   * already hold the entry, so the check costs no read on a run's critical path.
+   */
+  headersFor(
+    projectName: string,
+    serverName: string,
+    auth: McpServerAuth,
+  ): Promise<McpAuthResolution>;
   /**
    * Record that the server rejected this connection's token, so the console can
    * offer a reconnect instead of reporting the server as down.
