@@ -11,6 +11,7 @@ import type { TriggerRun, TriggerPayloadMode, WebhookTrigger } from "@/domain/tr
 import { ConflictError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { generateSecretValue } from "@/shared/generatedSecret";
+import { log } from "@/shared/logger";
 
 export interface TriggerDeps {
   triggers: TriggerRepository;
@@ -133,6 +134,29 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       };
       await deps.triggers.put(updated);
       return toView(updated, deps.cipher, rotated);
+    },
+
+    /**
+     * The secret in plaintext, for an owner or admin.
+     *
+     * Possible for the same reason a project API token is: it is stored
+     * AES-encrypted rather than hashed, so it can be shown again instead of
+     * forcing a rotation every time someone needs to re-copy it. The trade is
+     * the same too — ciphertext plus `AES_ENCRYPTION_KEY` is enough to use one.
+     */
+    async reveal(
+      projectName: string,
+      triggerId: string,
+      userEmail: string,
+    ): Promise<{ secret: string; createdAt: string }> {
+      await assertProjectWritable(deps.projects, projectName, userEmail);
+      const trigger = await load(projectName, triggerId);
+      // Secret access is worth a trail even when it is authorized.
+      log.warn(
+        "trigger",
+        `secret of trigger '${projectName}/${triggerId}' revealed by ${userEmail}`,
+      );
+      return { secret: deps.cipher.decrypt(trigger.secret), createdAt: trigger.createdAt };
     },
 
     async remove(projectName: string, triggerId: string, userEmail: string): Promise<void> {

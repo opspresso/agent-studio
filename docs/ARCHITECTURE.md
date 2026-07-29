@@ -592,6 +592,11 @@ Two deliberate strategies coexist:
   delivery log is not a record to keep.
 - **Published only**, via `resolveRunnableVersion` — a draft is configuration in progress,
   and an external system firing at one would run whatever an editor happened to have saved.
+- `triggerId` is a slug under the same rule as a project name, normalised client-side by the
+  shared `toSlug` and enforced by the schema.
+- The secret is stored encrypted rather than hashed, so it is revealable through
+  `POST …/reveal` — the same trade the project API token makes, and the same reasoning for
+  POST-not-GET and for logging every reveal.
 - The secret is compared with `cipher.decryptEquals` (constant time) **before** the enabled
   flag is read, so a disabled trigger cannot answer a wrong secret differently from an
   enabled one — that difference is an oracle for which triggers exist.
@@ -685,6 +690,7 @@ POST /api/settings/a2a-key                  issue/reissue the app-wide A2A key, 
 POST /api/settings/a2a-key/reveal           read the effective A2A key in plaintext, admin-only
 GET|POST /api/projects/[name]/triggers          webhook triggers (owner/admin)
 PUT|DELETE /api/projects/[name]/triggers/[trigger]
+POST /api/projects/[name]/triggers/[trigger]/reveal read the secret back (owner/admin)
 GET  /api/projects/[name]/triggers/[trigger]/runs   delivery history
 POST /api/triggers/[project]/[trigger]      webhook delivery, gated by X-Trigger-Secret
 GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner/admin (+ POST …/slack/test)
