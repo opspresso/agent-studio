@@ -157,6 +157,34 @@ follows the flush. It is a daily backstop against a runaway loop or a heavy call
 hard ceiling and not a rate limit. Every read failure fails open — the guard must not become
 a second way for a storage blip to stop the platform.
 
+## Webhook triggers
+
+An outside system can start a run by posting to a trigger's URL with its secret. Configure
+them under **Project Settings → Webhook triggers**; each has a delivery URL, a rotatable
+`asw_…` secret sent as `X-Trigger-Secret`, and a history of recent deliveries.
+
+```bash
+curl -X POST https://<host>/api/triggers/my-project/nightly \
+  -H "X-Trigger-Secret: $TRIGGER_SECRET" \
+  -H "Idempotency-Key: $EVENT_ID" \
+  -d '{"event":"nightly-report"}'
+```
+
+- Always runs the project's **published** version — a draft is configuration in progress.
+- Answers `202` immediately and runs in the background; the outcome lands on the delivery's
+  history row, because a run can take ten minutes and no sender waits that long.
+- `Idempotency-Key` makes a redelivery a no-op for 24 hours.
+- Overlapping runs are off by default: a delivery arriving while one is still going is
+  recorded as `skipped` rather than piling runs up.
+- Every refusal — disabled, duplicate, busy, no published version — is a row with a status,
+  so "it never fired" is distinguishable from "it fired and failed" without reading logs.
+- The payload becomes the user message (agent projects) or template variables (prompt
+  projects), configurable per trigger.
+
+Like the Slack path, background work does not survive an instance dying mid-delivery; that
+row stays `running`. See `docs/MILESTONES.md` (schedule-trigger) for the durable worker that
+would close it.
+
 ## Concurrency limits
 
 One caller may have `MAX_CONCURRENT_RUNS_PER_ACTOR` runs in flight at once (default 10);

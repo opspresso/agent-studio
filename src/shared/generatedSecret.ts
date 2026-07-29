@@ -11,6 +11,7 @@ import { timingSafeEqualString } from "./timingSafe";
  *
  *   asa_…   A2A API key       (app-wide, admin-managed)
  *   ast_…   project API token (per project, owner-managed)
+ *   asw_…   webhook trigger secret (per trigger, owner-managed)
  *
  * The random part is 32 bytes — 256 bits — so the prefix costs no entropy that
  * matters. Verification compares hashes and never looks at the prefix, so
@@ -19,11 +20,12 @@ import { timingSafeEqualString } from "./timingSafe";
 
 const VENDOR = "as";
 
-export type GeneratedSecretKind = "a2aApiKey" | "projectApiToken";
+export type GeneratedSecretKind = "a2aApiKey" | "projectApiToken" | "triggerSecret";
 
 const KIND_CHAR: Record<GeneratedSecretKind, string> = {
   a2aApiKey: "a",
   projectApiToken: "t",
+  triggerSecret: "w",
 };
 
 /** The `as{kind}_` prefix a generated secret of this kind carries. */

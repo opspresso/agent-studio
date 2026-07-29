@@ -8,6 +8,7 @@ import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { A2aSection } from "./A2aSection";
 import { CostLimitsSection } from "./CostLimitsSection";
 import { SlackSection } from "./SlackSection";
+import { TriggersSection } from "./TriggersSection";
 import { TokenSection } from "./TokenSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 
@@ -136,6 +137,8 @@ export default function SettingsPage() {
       <CostLimitsSection projectName={name} />
 
       <TokenSection projectName={name} />
+
+      <TriggersSection projectName={name} />
 
       <SlackSection projectName={name} />
 

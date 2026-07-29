@@ -27,6 +27,10 @@ export const RETENTION = {
   get chatDays(): number {
     return retentionDays("CHAT_RETENTION_DAYS", 180);
   },
+  /** Trigger delivery history — an operational log, not a record to keep. */
+  get triggerRunDays(): number {
+    return retentionDays("TRIGGER_RUN_RETENTION_DAYS", 30);
+  },
   /** Inbound A2A task state — ephemeral job state, kept just long enough for
    * `tasks/get`/`tasks/cancel` after `message/send`. */
   get a2aTaskDays(): number {

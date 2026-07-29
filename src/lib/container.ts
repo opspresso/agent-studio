@@ -37,6 +37,7 @@ import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
+import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
 import { dbReachable, llmReachable } from "@/infrastructure/health/probes";
 import { checkReadiness } from "@/application/health/readiness";
@@ -48,6 +49,8 @@ import { createDockerProvisioner } from "@/infrastructure/mcp/dockerProvisioner"
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
+import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
+import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
@@ -171,6 +174,11 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   publicBaseUrl: getPublicBaseUrl,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
+export const triggerUseCases = createTriggerUseCases({
+  triggers: triggerRepository,
+  projects: projectRepository,
+  cipher: secretCipher,
+});
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
 
 /**
@@ -270,4 +278,41 @@ export const imageDeps: ImageGenerationDeps = {
   slack: costAlertSlack,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
+};
+
+/**
+ * The webhook delivery path. `run` binds the same dispatch every other entry
+ * point uses — `runStrategyFor` decides, and an image project generates rather
+ * than streaming — so a trigger cannot become a fifth place that re-encodes it.
+ */
+export const triggerRunnerDeps: TriggerRunnerDeps = {
+  triggers: triggerRepository,
+  projects: projectRepository,
+  versions: versionRepository,
+  cipher: secretCipher,
+  runSlots: runSlotRepository,
+  run: async function* (input) {
+    const { runStrategyFor, executeProjectStream } = await import(
+      "@/application/execution/runProject"
+    );
+    if (runStrategyFor(input.project) === "image") {
+      const { generateImage } = await import("@/application/image/generateImage");
+      const image = await generateImage(imageDeps, {
+        project: input.project,
+        version: input.version,
+        ...(input.variables ? { variables: input.variables } : {}),
+        ...(input.message ? { prompt: input.message } : {}),
+        actor: input.actor,
+      });
+      yield { image: { b64: image.imageBase64, mimeType: image.mimeType } };
+      return;
+    }
+    yield* executeProjectStream(executionDeps, {
+      project: input.project,
+      version: input.version,
+      ...(input.variables ? { variables: input.variables } : {}),
+      messages: input.message ? [{ role: "user", content: input.message }] : [],
+      actor: input.actor,
+    });
+  },
 };

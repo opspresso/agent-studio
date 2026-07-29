@@ -36,6 +36,31 @@ export const keys = {
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
   externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
 
+  /**
+   * A project's triggers and their delivery history, both in the project
+   * partition — so the project cascade delete already removes them, and a
+   * trigger's runs list is one `begins_with` query.
+   */
+  trigger: (projectName: string, triggerId: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `TRIGGER#${triggerId}`,
+  }),
+  triggerPrefix: () => "TRIGGER#",
+  triggerRun: (projectName: string, triggerId: string, startedAt: string, runId: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `TRIGGERRUN#${triggerId}#${startedAt}#${runId}`,
+  }),
+  triggerRunPrefix: (triggerId: string) => `TRIGGERRUN#${triggerId}#`,
+  /**
+   * A delivery's idempotency claim. Its own partition because the key is an
+   * arbitrary caller-supplied string, which has no business in the project
+   * partition's sort-key space.
+   */
+  triggerIdempotency: (projectName: string, triggerId: string, key: string) => ({
+    PK: `TRIGGERIDEM#${projectName}#${triggerId}#${key}`,
+    SK: "META",
+  }),
+
   /** A project's OAuth connection to one registry MCP server. */
   mcpConnection: (projectName: string, serverName: string) => ({
     PK: `PROJECT#${projectName}`,

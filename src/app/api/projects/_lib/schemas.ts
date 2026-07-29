@@ -46,6 +46,29 @@ export const updateProjectSchema = z.object({
   costLimits: costLimitsSchema.nullable().optional(),
 });
 
+/** Trigger payload handling; see `TriggerPayloadMode`. */
+const payloadModeSchema = z.enum(["variables", "message"]);
+
+export const createTriggerSchema = z.object({
+  triggerId: z
+    .string()
+    .regex(/^[a-z0-9-]+$/, "triggerId must be a slug (lowercase letters, digits, hyphens)"),
+  description: z.string().default(""),
+  enabled: z.boolean().optional(),
+  variables: z.record(z.string().min(1), z.string()).optional(),
+  payloadMode: payloadModeSchema.optional(),
+  allowConcurrent: z.boolean().optional(),
+});
+
+export const updateTriggerSchema = z.object({
+  description: z.string().optional(),
+  enabled: z.boolean().optional(),
+  variables: z.record(z.string().min(1), z.string()).optional(),
+  payloadMode: payloadModeSchema.optional(),
+  allowConcurrent: z.boolean().optional(),
+  rotateSecret: z.boolean().optional(),
+});
+
 export const versionParametersSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().positive().optional(),
