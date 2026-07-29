@@ -80,7 +80,8 @@ export async function resolveSubagents(
             : await deps.projects.get(ref.name);
         if (!target) {
           log.warn(
-            "run", `${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
+            "run",
+            `${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
           );
           return {
             warning: `${ref.type === "remote" ? "Remote agent" : "Agent project"} '${ref.name}' no longer exists; a transfer to it was not offered.`,

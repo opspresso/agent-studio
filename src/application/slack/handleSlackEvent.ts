@@ -399,7 +399,8 @@ export async function handleSlackEvent(
   }
 
   log.info(
-    "slack", `run done project=${projectName} chars=${text.length} images=${images.length} warnings=${warnings.length}`,
+    "slack",
+    `run done project=${projectName} chars=${text.length} images=${images.length} warnings=${warnings.length}`,
   );
   for (const [index, image] of images.entries()) {
     try {

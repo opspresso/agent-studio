@@ -118,7 +118,8 @@ export class ToolManager {
           // run looks like a model that ignored them.
           const reason = error instanceof Error ? error.message : String(error);
           log.warn(
-            "mcp", `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
+            "mcp",
+            `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
             reason,
           );
           const unauthorized = error instanceof McpHttpError && error.status === 401;

@@ -67,7 +67,8 @@ export async function assertProjectWritable(
     // the row that would have named who deleted it — so the override is the
     // thing worth recording, not the eventual write.
     log.warn(
-      "authz", `admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
+      "authz",
+      `admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
     );
     return project;
   }
