@@ -63,6 +63,9 @@ function fakeDeps() {
     async claimAlert() {
       return false;
     },
+    async listActorsByProject() {
+      return [];
+    },
     async listByProject() {
       return [];
     },
@@ -125,6 +128,9 @@ describe("generateImage", () => {
       },
       async claimAlert() {
         return false;
+      },
+      async listActorsByProject() {
+        return [];
       },
       async listByProject() {
         return [];

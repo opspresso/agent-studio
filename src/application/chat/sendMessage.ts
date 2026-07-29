@@ -75,7 +75,7 @@ export async function sendMessage(
         ...history.messages,
         { role: "user", content: userTurnContent(input.content, attachments) },
       ],
-      userEmail: input.userEmail,
+      actor: { kind: "user", id: input.userEmail },
       signal: input.signal,
     });
 

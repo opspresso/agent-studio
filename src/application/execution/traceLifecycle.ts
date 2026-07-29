@@ -1,5 +1,6 @@
 /** Trace recorder creation, sampling and termination for one run. */
 
+import type { RunOrigin } from "@/domain/execution/actor";
 import type { Project, Version } from "@/domain/project/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
@@ -17,6 +18,7 @@ export function sampledTraceRecorder(
     input.project,
     input.version,
     (input.extraMessages ?? input.messages ?? []).length,
+    { ancestry: [input.project.name], ...(input.actor ? { actor: input.actor } : {}) },
   );
 }
 
@@ -25,8 +27,8 @@ export function createTraceRecorder(
   project: Project,
   version: Version,
   messageCount: number,
-  /** Transfer chain that reached this run, outermost first. */
-  ancestry?: readonly string[],
+  /** Who caused the run, and the transfer chain that reached it. */
+  origin: RunOrigin,
 ): TraceRecorder {
   return new TraceRecorder(traces, {
     projectName: project.name,
@@ -34,7 +36,8 @@ export function createTraceRecorder(
     projectType: project.projectType,
     model: version.model,
     messageCount,
-    ...(ancestry ? { ancestry: [...ancestry] } : {}),
+    ancestry: [...origin.ancestry],
+    ...(origin.actor ? { actor: origin.actor } : {}),
   });
 }
 

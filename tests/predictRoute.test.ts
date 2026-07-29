@@ -16,8 +16,9 @@ vi.mock("@/lib/container", () => ({
   versionRepository: versionRepo,
 }));
 
-vi.mock("@/app/api/projects/_lib/executionAuth", () => ({
-  authenticateExecution: async () => ({ email: "owner@example.com" }),
+vi.mock("@/app/api/projects/_lib/executionAuth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/app/api/projects/_lib/executionAuth")>()),
+  authenticateExecution: async () => ({ email: "owner@example.com", viaToken: false }),
 }));
 
 vi.mock("@/application/execution/runProject", async (importOriginal) => ({

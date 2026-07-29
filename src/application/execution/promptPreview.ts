@@ -83,7 +83,8 @@ export async function previewPrompt(
       version,
       project.name,
       async () => {},
-      [project.name],
+      // A preview runs nothing, so it has no actor to attribute.
+      { ancestry: [project.name] },
       readSkill,
     );
     const uses = engine.imagePromptUses(agentDeps, resolved.subagents);

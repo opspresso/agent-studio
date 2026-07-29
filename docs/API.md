@@ -338,6 +338,24 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 → 400 { "error": "…" }   (bad/oversized range: max 184 days, from ≤ to)
 ```
 
+### Per-caller spend
+
+```
+GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
+→ 200 { "items": [ { projectName, date, actor, calls, inputTokens, outputTokens, costUsd }, … ] }
+```
+
+`actor` is `{kind}:{id}` — `user:a@example.com`, `project-token:owner@example.com` (a token
+authenticates as its owner, so the kind is what keeps a machine's spend apart from that
+person's own runs), `slack:U123`, `a2a:shared-key`. The metric fields are per-model maps,
+exactly as in the summary above.
+
+Owner/admin only, on the same reasoning as traces: project *totals* are open to any
+signed-in user because the catalog is shared, but a breakdown by caller names individuals.
+Range validation matches `/api/usages/summary` (both dates required, `from ≤ to`, ≤ 184
+days). Subagent transfers are attributed to whoever started the run, not to the project
+they transferred into.
+
 ## Traces
 
 ```
@@ -351,7 +369,9 @@ Both endpoints are limited to the owner and to configured admins (403 for anyone
 inputs/outputs. Agent runs are always traced. Text and image predict runs are sampled
 according to `TRACE_SAMPLE_RATE` (0–1, default `0.1`). Trace spans contain model token/cost
 summaries, tool input/output sizes, and local subagent trace links; raw prompts and tool
-results are not persisted.
+results are not persisted. Each trace also carries `actor` — who caused the run — and a
+subagent's trace carries the actor of the top-level run that reached it, since the transfer
+was not a second person's decision.
 
 ## Models
 

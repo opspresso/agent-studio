@@ -16,9 +16,14 @@ function fromItem(item: Record<string, unknown>): Trace {
     versionName: String(item.versionName ?? ""),
     projectType: String(item.projectType ?? ""),
     ...(Array.isArray(item.ancestry) ? { ancestry: item.ancestry as string[] } : {}),
+    ...(item.actor ? { actor: item.actor as Trace["actor"] } : {}),
     status: item.status as Trace["status"],
     spans: (item.spans as Trace["spans"] | undefined) ?? [],
     ...(typeof item.spansDropped === "number" ? { spansDropped: item.spansDropped } : {}),
+    // The recorder has always written these and this mapping never read them
+    // back, so the warning banner the traces page renders was never reachable:
+    // every trace came out of storage as if the run had lost nothing.
+    ...(Array.isArray(item.warnings) ? { warnings: item.warnings as string[] } : {}),
     startedAt: String(item.startedAt ?? item.createdAt ?? ""),
     endedAt: String(item.endedAt ?? ""),
     durationMs: Number(item.durationMs ?? 0),

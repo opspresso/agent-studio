@@ -77,6 +77,7 @@ function fixture(
       claims.push({ kind, date });
       return opts.claimable ?? true;
     },
+    listActorsByProject: async () => [],
     listByProject: async () => [],
     listByDateRange: async () => [],
   };
@@ -225,7 +226,8 @@ describe("settleCostLimit", () => {
         record: async () => {},
         getDay: async () => row({ m: 5 }),
         claimAlert: async () => true,
-        listByProject: async () => [],
+        listActorsByProject: async () => [],
+    listByProject: async () => [],
         listByDateRange: async () => [],
       },
       cipher: { decrypt: (v: string) => v } as CostGuardDeps["cipher"],

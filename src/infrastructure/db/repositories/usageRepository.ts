@@ -16,7 +16,7 @@ import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
-import type { UsageDelta, UsageRow } from "@/domain/usage/types";
+import type { ActorUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
 
 /**
  * Attribute the once-per-day notification claim is written to. One per kind, so
@@ -48,11 +48,54 @@ function toUsageRow(item: Record<string, unknown>): UsageRow {
   };
 }
 
+function toActorUsageRow(item: Record<string, unknown>): ActorUsageRow {
+  return {
+    ...toUsageRow(item),
+    actor: String(item.actor ?? ""),
+  };
+}
+
 export class DynamoUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
+    await this.addTo(keys.usage(delta.projectName, delta.date), delta, {
+      GSI1PK: keys.usageDatePartition(delta.date),
+      GSI1SK: delta.projectName,
+    });
+    if (delta.actor) {
+      // After the project total, and separately: attribution is additive, so a
+      // failure to write who spent it must not lose the fact that it was spent.
+      // No GSI entry — this row is only ever read within its project.
+      await this.addTo(
+        keys.usageActor(delta.projectName, delta.date, delta.actor),
+        delta,
+        { actor: delta.actor },
+      );
+    }
+  }
+
+  /**
+   * The two-step atomic ADD, for one row.
+   *
+   * DynamoDB cannot `ADD` into a nested attribute of a map that does not exist,
+   * so the maps are materialised first. `extra` carries whatever identifies this
+   * particular row (the dashboard GSI keys, or the actor) and is written with
+   * the same `if_not_exists` guard as the rest of the metadata.
+   */
+  private async addTo(
+    key: { PK: string; SK: string },
+    delta: UsageDelta,
+    extra: Record<string, string>,
+  ): Promise<void> {
     const doc = getDocumentClient();
     const table = getTableName();
-    const key = keys.usage(delta.projectName, delta.date);
+    const extraNames = Object.keys(extra);
+    const extraSet = extraNames
+      .map((name) => `#x_${name} = if_not_exists(#x_${name}, :x_${name})`)
+      .join(", ");
+    const extraAttrNames = Object.fromEntries(extraNames.map((name) => [`#x_${name}`, name]));
+    const extraAttrValues = Object.fromEntries(
+      extraNames.map((name) => [`:x_${name}`, extra[name]!]),
+    );
 
     // Step 1: materialise the maps + metadata if the row is new.
     await doc.send(
@@ -77,17 +120,15 @@ export class DynamoUsageRepository implements UsageRepository {
                 "projectName = if_not_exists(projectName, :pn), " +
                 "#date = if_not_exists(#date, :date), " +
                 "entityType = if_not_exists(entityType, :et), " +
-                "GSI1PK = if_not_exists(GSI1PK, :g1pk), " +
-                "GSI1SK = if_not_exists(GSI1SK, :g1sk), " +
+                `${extraSet}, ` +
                 "expiresAt = if_not_exists(expiresAt, :exp)",
-              ExpressionAttributeNames: { "#date": "date" },
+              ExpressionAttributeNames: { "#date": "date", ...extraAttrNames },
               ExpressionAttributeValues: {
                 ":empty": {},
                 ":pn": delta.projectName,
                 ":date": delta.date,
                 ":et": "Usage",
-                ":g1pk": keys.usageDatePartition(delta.date),
-                ":g1sk": delta.projectName,
+                ...extraAttrValues,
                 // Retention runs from the usage date, so a day's row is never
                 // purged mid-aggregation and backfilled dates don't linger.
                 ":exp": expiresAtSeconds(`${delta.date}T00:00:00Z`, RETENTION.usageDays),
@@ -128,6 +169,26 @@ export class DynamoUsageRepository implements UsageRepository {
         ],
       }),
     );
+  }
+
+  async listActorsByProject(
+    projectName: string,
+    from: string,
+    to: string,
+  ): Promise<ActorUsageRow[]> {
+    const items = await queryAll({
+      TableName: getTableName(),
+      KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
+      ExpressionAttributeValues: {
+        ":pk": keys.usage(projectName, from).PK,
+        ":from": keys.usageActorPrefix(from),
+        // The upper bound has to sort after every actor on `to`, and actor ids
+        // are unbounded strings — so bound by the prefix of the day after,
+        // exclusive, rather than by any suffix guessed for `to` itself.
+        ":to": `${keys.usageActorPrefix(to)}￿`,
+      },
+    });
+    return notExpired(items, Date.now()).map(toActorUsageRow);
   }
 
   async getDay(projectName: string, date: string): Promise<UsageRow | null> {

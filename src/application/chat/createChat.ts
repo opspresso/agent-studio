@@ -78,7 +78,7 @@ export async function createChat(
       // The attachment bytes go straight to the engine; the stored URLs are for
       // replay on later turns.
       messages: [{ role: "user", content: userTurnContent(input.firstMessage, attachments) }],
-      userEmail: input.userEmail,
+      actor: { kind: "user", id: input.userEmail },
       signal: input.signal,
     });
 

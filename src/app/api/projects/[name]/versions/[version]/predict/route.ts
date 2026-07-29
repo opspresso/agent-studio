@@ -11,7 +11,7 @@ import { collectRun } from "@/app/api/projects/_lib/openai";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
-import { authenticateExecution } from "@/app/api/projects/_lib/executionAuth";
+import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
@@ -37,6 +37,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         prompt: parsed.data.prompt,
         // With source images the prompt edits them instead of drawing anew.
         images: parsed.data.images,
+        actor: principalActor(principal),
         size: parsed.data.size,
         quality: parsed.data.quality,
         signal: request.signal,
@@ -48,7 +49,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       version: versionEntity,
       variables: parsed.data.variables,
       messages: parsed.data.messages ?? [],
-      userEmail: principal.email,
+      actor: principalActor(principal),
     };
     // Dispatch on projectType like /chat/completions does: an agent project run
     // through the single-shot path would silently lose every skill, MCP server
@@ -66,7 +67,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
           project,
           version: versionEntity,
           messages: params.messages,
-          userEmail: principal.email,
+          actor: principalActor(principal),
           signal: request.signal,
         }),
         versionEntity.model,

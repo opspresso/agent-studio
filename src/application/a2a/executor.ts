@@ -15,6 +15,13 @@ import {
   type ExecutionDeps,
 } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
+import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
+
+/**
+ * Inbound A2A is authenticated by one shared app key, so there is no caller to
+ * name. The kind still separates this spend from every human's.
+ */
+const A2A_ACTOR: RunActor = { kind: "a2a", id: A2A_ACTOR_ID };
 
 const RESULT_ARTIFACT_ID = "result";
 const IMAGE_ARTIFACT_ID = "image";
@@ -68,6 +75,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
           project: this.project,
           version: this.version,
           prompt: messages[0] ? messageText(messages[0]) : "",
+          actor: A2A_ACTOR,
           signal: controller.signal,
         });
         eventBus.publish({
@@ -98,6 +106,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
         project: this.project,
         version: this.version,
         messages,
+        actor: A2A_ACTOR,
         signal: controller.signal,
       });
       let isFirstChunk = true;
