@@ -49,6 +49,40 @@ function parseTtlMs(raw: string | undefined): number {
 const TTL_MS = parseTtlMs(process.env.MCP_DISCOVERY_CACHE_TTL_MS);
 
 /**
+ * The most a server's own `ttlMs` may buy it.
+ *
+ * A server that asks for hours would pin a tool list in this process for hours,
+ * and the hint is explicitly only a freshness guess — the spec says the data may
+ * change before it expires. The registry edit path invalidates by URL, but
+ * nothing invalidates when the *server's* catalogue changes, so this is the
+ * bound on how long that can go unnoticed.
+ */
+const MAX_SERVER_TTL_MS = 10 * 60_000;
+
+/**
+ * How long a discovery may be reused: the server's hint where it gave a usable
+ * one, this process's default where it did not (SEP-2549).
+ *
+ * The operator's `MCP_DISCOVERY_CACHE_TTL_MS=0` wins over any hint — that
+ * setting means "do not cache", and a server must not be able to switch caching
+ * back on. Per the spec `0` is "immediately stale" and a negative value is
+ * ignored and treated as `0`; absent is the older-server case, and is the one
+ * reading that falls back to our own heuristic rather than to no caching.
+ */
+function discoveryTtlMs(serverTtlMs: number | undefined): number {
+  if (TTL_MS <= 0) {
+    return 0;
+  }
+  if (serverTtlMs === undefined) {
+    return TTL_MS;
+  }
+  if (serverTtlMs <= 0) {
+    return 0;
+  }
+  return Math.min(serverTtlMs, MAX_SERVER_TTL_MS);
+}
+
+/**
  * Failures are remembered too, and for much less time.
  *
  * Without this a server that is down — or a connection whose token has been
@@ -133,14 +167,21 @@ function remember(
   cache.set(cacheKey(url, headers), { url, value, expiresAt: now + ttlMs });
 }
 
-/** Remember a successful discovery. */
+/**
+ * Remember a successful discovery.
+ *
+ * `serverTtlMs` is the freshness hint the server sent with its catalogue, if
+ * any; see {@link discoveryTtlMs} for how it is reconciled with this process's
+ * own TTL.
+ */
 export function setCachedTools(
   url: string,
   headers: Record<string, string>,
   tools: McpTool[],
+  serverTtlMs?: number,
   now: number = Date.now(),
 ): void {
-  remember(url, headers, { kind: "tools", tools }, TTL_MS, now);
+  remember(url, headers, { kind: "tools", tools }, discoveryTtlMs(serverTtlMs), now);
 }
 
 /**

@@ -384,6 +384,14 @@ Two deliberate strategies coexist:
   every message. The window is short because a stale failure hides a recovery while a stale
   success only serves a slightly old tool list, and the stored reason is replayed verbatim so
   a cached failure explains itself exactly as the live one did.
+  A server that sends the MCP caching hint `ttlMs` on `tools/list` (SEP-2549, required of
+  servers from protocol `2026-07-28`) sets its own entry's lifetime instead: it knows its
+  catalogue and the local default is only a guess about someone else's. `0` means do not
+  cache, a paged catalogue takes the shortest of its pages' hints, and the value is capped at
+  10 minutes — nothing invalidates on the *server's* catalogue changing, so that cap is the
+  bound on how long such a change can go unnoticed. Absent (every older server) falls back to
+  the local default, and `MCP_DISCOVERY_CACHE_TTL_MS=0` wins over any hint, since that
+  setting means caching is off and no server may switch it back on.
 - **Managed servers** (`runtime: "managed"`, absent = `remote`). A container this
   app starts on its own host through SSM Run Command, reached at
   `127.0.0.1:<port>`. That address is one `UrlPolicy` rejects — correctly, for
@@ -432,7 +440,27 @@ Two deliberate strategies coexist:
   parameter — the spec makes it unconditional, and it is what stops a token issued for one
   MCP server being replayed against another. PKCE S256 is mandatory, `state` is single-use
   with a 10-minute TTL, and the callback re-checks project ownership because it can change
-  while the user is at the provider. Tokens refresh only within a margin derived from
+  while the user is at the provider. Registrations declare `application_type: "web"`
+  (SEP-837) rather than leaving the OpenID Connect default to be applied for them.
+  Two things are bound to the authorization server's `issuer`, both because every registry
+  entry shares one callback URI and an admin can re-point an entry at any time:
+  - The callback validates RFC 9207 `iss` before the code is redeemed (SEP-2468). The
+    expected issuer is recorded on the pending-state item beside the PKCE verifier — not
+    read back off the registry entry, which is exactly what a re-discovery may have changed
+    — and compared literally: no case, port, trailing-slash or percent-encoding
+    normalisation, each of which is another way for two issuers to compare equal. A missing
+    `iss` is fatal only where the server's metadata advertises
+    `authorization_response_iss_parameter_supported`. The same check runs on error responses,
+    so provider-controlled `error_description` text is never relayed from a redirect this
+    app cannot attribute.
+  - A connection's client credentials carry the `issuer` they were registered with
+    (SEP-2352). When an entry moves to another authorization server, dynamically registered
+    credentials are re-registered there and the tokens the old client authorized are
+    dropped; hand-entered ones are refused with the issuer to register at. The run path
+    enforces the same rule where a refresh would present them, which is the only place
+    credentials leave — the fast path sends a bearer token alone and stays free of the read.
+
+  Tokens refresh only within a margin derived from
   `MAX_RUN_DURATION_MS`, so a token cannot expire mid-run *and* the header stays
   byte-identical between runs — refreshing every run would change the discovery cache key
   every run. Refresh is a compare-and-set on the stored refresh token: providers that rotate

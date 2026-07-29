@@ -28,7 +28,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
-import { isManagedLoopback } from "@/domain/mcp/types";
+import { isManagedLoopback, issuerOf } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
 
 /**
@@ -85,6 +85,49 @@ async function assertAuthEndpoint(policy: UrlPolicy, url: string, label: string)
     throw new ValidationError(`${label} must be https (got ${parsed.protocol}//): ${url}`);
   }
   await assertAllowedUrl(policy, url);
+}
+
+/**
+ * RFC 9207 §2.4, applied before an authorization code is worth anything.
+ *
+ * This is the defence against a mix-up: every registry server shares one
+ * callback URI, so without it a code issued by one authorization server can be
+ * redeemed at another's token endpoint — handing that server a code it was
+ * never granted. The comparison is deliberately literal (RFC 3986 §6.2.1
+ * "simple string comparison"): normalising case, ports, trailing slashes or
+ * percent-encoding is exactly what the spec forbids here, because each
+ * normalisation is another way for two different issuers to compare equal.
+ *
+ * @throws {ValidationError} when the response cannot be attributed to the
+ * issuer this flow was started against.
+ */
+function assertIssuerMatches(
+  expected: { issuer?: string; issParameterSupported?: boolean },
+  iss: string | undefined,
+): void {
+  if (iss === undefined) {
+    if (expected.issParameterSupported) {
+      // The server told us it always sends one, so a response without it did
+      // not come from the server we started with.
+      throw new ValidationError(
+        "The provider's redirect was missing the issuer identifier its metadata promises. The authorization was not completed.",
+      );
+    }
+    return;
+  }
+  if (expected.issuer === undefined) {
+    // A flow started before the expected issuer was recorded. There is nothing
+    // to compare against, and accepting an unchecked `iss` would be the same as
+    // not checking at all — fail closed and let the owner start again.
+    throw new ValidationError(
+      "This authorization was started before issuer validation was in place. Please connect the server again.",
+    );
+  }
+  if (iss !== expected.issuer) {
+    throw new ValidationError(
+      "The provider's redirect came from a different authorization server than the one this connection was started against.",
+    );
+  }
 }
 
 /** How long a user has to finish an authorization before the state expires. */
@@ -201,7 +244,27 @@ export interface McpAuthUseCases {
     state: string;
     code: string;
     userEmail: string;
+    /** RFC 9207, as the provider sent it. Validated before the code is redeemed. */
+    iss?: string;
   }): Promise<{ projectName: string; serverName: string }>;
+  /**
+   * The provider redirected back with an error instead of a code.
+   *
+   * Routed through here rather than rendered straight from the query string so
+   * the same RFC 9207 check runs first: the spec extends it to error responses
+   * precisely because `error_description` is provider-controlled text that this
+   * app would otherwise present as its own. Spends the state, since the flow it
+   * belonged to is over either way.
+   *
+   * @returns the description that may safely be shown, if any.
+   */
+  abandonAuthorization(params: {
+    state: string;
+    userEmail: string;
+    error: string;
+    errorDescription?: string;
+    iss?: string;
+  }): Promise<{ error: string }>;
   disconnect(projectName: string, serverName: string, userEmail: string): Promise<void>;
   /**
    * What this server offers *this project*. The registry's own probe carries
@@ -322,6 +385,11 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         type: "oauth2",
         resource: resourceMetadata.resource,
         authorizationServer,
+        // What the server published, not the URL we asked at: this is the value
+        // a callback's `iss` is compared against, so it has to be the server's
+        // own claim about its identity.
+        issuer: asMetadata.issuer,
+        ...(asMetadata.issParameterSupported ? { issParameterSupported: true } : {}),
         authorizationEndpoint: asMetadata.authorizationEndpoint,
         tokenEndpoint: asMetadata.tokenEndpoint,
         ...(asMetadata.registrationEndpoint
@@ -365,6 +433,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             : deps.cipher.encrypt(submitted);
       const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
 
+      const issuer = issuerOf(server.auth);
+
       // Saving credentials that did not change is a no-op, not a reset. Both
       // boxes arrive prefilled from the stored connection, so pressing Save
       // without editing anything is the likeliest press there is — and it must
@@ -373,7 +443,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         existing &&
         existing.clientId === input.clientId &&
         existing.clientSecret === clientSecret &&
-        sameScopes(existing.scopes, scopes)
+        sameScopes(existing.scopes, scopes) &&
+        (existing.issuer ?? issuer) === issuer
       ) {
         return toConnectionView(deps.cipher, existing);
       }
@@ -384,6 +455,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         clientId: input.clientId,
         ...(clientSecret ? { clientSecret } : {}),
         clientRegistered: false,
+        // Whatever the owner just typed was registered with the server this
+        // entry points at now; that is what makes it re-checkable later.
+        issuer,
         scopes,
         // Credentials changing invalidates whatever they authorized. Keeping the
         // old tokens would leave a connection that reports `connected` while
@@ -399,11 +473,30 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireOAuthServer(serverName);
       const callback = await redirectUri();
+      const issuer = issuerOf(server.auth);
       let connection = await deps.connections.get(projectName, serverName);
 
-      // No client yet: register one if the server offers it, otherwise the owner
-      // has to bring credentials from a manually registered app.
-      if (!connection?.clientId) {
+      /**
+       * SEP-2352: a `client_id` means nothing away from the server that issued
+       * it. Re-running discovery rewrites the registry entry's authorization
+       * server and never touches these rows, so without this check the next
+       * authorization would present one server's client to another — and the
+       * tokens it already holds were granted by a server this entry no longer
+       * points at.
+       */
+      const staleCredentials =
+        connection?.clientId !== undefined && (connection.issuer ?? issuer) !== issuer;
+      if (staleCredentials && connection?.clientRegistered !== true) {
+        // Hand-entered credentials cannot be re-issued on the owner's behalf.
+        throw new ValidationError(
+          `The client credentials stored for "${serverName}" were registered with a different authorization server (${connection?.issuer}). Register an app with ${issuer} and save its client ID and secret before connecting.`,
+        );
+      }
+
+      // No client yet, or one that belongs to a server this entry has moved off:
+      // register with the server it points at now. Failing that, the owner has
+      // to bring credentials from a manually registered app.
+      if (!connection?.clientId || staleCredentials) {
         if (!server.auth.registrationEndpoint) {
           throw new ValidationError(
             `MCP server "${serverName}" does not support dynamic client registration. Register an app with the provider and save its client ID and secret first.`,
@@ -416,6 +509,8 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           redirectUri: callback,
           scopes,
         });
+        // Rebuilt rather than merged: whatever the previous client authorized
+        // was granted by a different server, and must not survive into this one.
         connection = {
           projectName,
           serverName,
@@ -424,6 +519,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             ? { clientSecret: deps.cipher.encrypt(registered.clientSecret) }
             : {}),
           clientRegistered: true,
+          issuer,
           scopes,
           status: "needs_auth",
           updatedAt: new Date().toISOString(),
@@ -440,6 +536,12 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           serverName,
           codeVerifier: deps.cipher.encrypt(pkce.verifier),
           userEmail,
+          // Recorded alongside the verifier, as RFC 9207 requires: the registry
+          // entry is exactly what may change while the user is at the provider,
+          // so reading the expected issuer back off it would compare the
+          // response against whatever the entry says by the time it returns.
+          issuer,
+          ...(server.auth.issParameterSupported ? { issParameterSupported: true } : {}),
           createdAt: new Date().toISOString(),
         },
         OAUTH_STATE_TTL_SECONDS,
@@ -462,7 +564,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       return { authorizeUrl: url.toString() };
     },
 
-    async completeAuthorization({ state, code, userEmail }) {
+    async completeAuthorization({ state, code, userEmail, iss }) {
       // Consumed first and unconditionally: a replayed state must not be able to
       // bind a second token, whatever else about the request turns out to be
       // wrong.
@@ -473,11 +575,24 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       if (pending.userEmail !== userEmail) {
         throw new ForbiddenError("This authorization was started by a different user.");
       }
+      // Before the code goes anywhere. RFC 9207 §2.4 places this ahead of the
+      // token request because the whole point is to not hand the code to a
+      // token endpoint that did not issue it.
+      assertIssuerMatches(pending, iss);
       // Re-checked here, not only at authorize time: ownership can change while
       // the user is away at the provider.
       await assertProjectWritable(deps.projects, pending.projectName, userEmail);
 
       const server = await requireOAuthServer(pending.serverName);
+      // The entry may have been repointed while the user was at the provider.
+      // Redeeming at the new server's token endpoint would send it a code its
+      // authorization server never issued. Skipped for a state that predates the
+      // recorded issuer, which has nothing to compare.
+      if (pending.issuer !== undefined && issuerOf(server.auth) !== pending.issuer) {
+        throw new ValidationError(
+          `The authorization server configured for "${pending.serverName}" changed while this authorization was in progress. Please connect it again.`,
+        );
+      }
       const connection = await requireConnection(pending.projectName, pending.serverName);
       const target: TokenRequestTarget = {
         tokenEndpoint: server.auth.tokenEndpoint,
@@ -497,6 +612,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       const now = new Date();
       await deps.connections.put({
         ...connection,
+        // Stamped here too, so a row that predates issuer binding acquires it
+        // the first time it is authorized rather than staying unbound forever.
+        issuer: issuerOf(server.auth),
         accessToken: deps.cipher.encrypt(tokens.accessToken),
         ...(tokens.refreshToken
           ? { refreshToken: deps.cipher.encrypt(tokens.refreshToken) }
@@ -512,6 +630,20 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         updatedAt: now.toISOString(),
       });
       return { projectName: pending.projectName, serverName: pending.serverName };
+    },
+
+    async abandonAuthorization({ state, userEmail, error, errorDescription, iss }) {
+      const pending = await deps.states.consume(state);
+      if (!pending) {
+        throw new ValidationError("This authorization link has expired or was already used.");
+      }
+      if (pending.userEmail !== userEmail) {
+        throw new ForbiddenError("This authorization was started by a different user.");
+      }
+      // Throws on mismatch, which is what stops provider-controlled text from
+      // being relayed: the caller renders its own message instead.
+      assertIssuerMatches(pending, iss);
+      return { error: errorDescription ?? error };
     },
 
     async disconnect(projectName, serverName, userEmail) {

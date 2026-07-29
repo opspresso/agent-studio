@@ -54,10 +54,33 @@ export const GET = withAuth(async (user, request: Request) => {
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");
   const providerError = url.searchParams.get("error");
+  // RFC 9207. Read from the query exactly as it arrived: the comparison this
+  // feeds is a literal one, so any tidying here would defeat it.
+  const iss = url.searchParams.get("iss") ?? undefined;
 
   if (providerError) {
-    const description = url.searchParams.get("error_description");
-    return resultPage({ ok: false, error: description ?? providerError });
+    if (!state) {
+      // Nothing ties this to an authorization this app started, so there is
+      // nothing to attribute the provider's text to — and a redirect anyone can
+      // craft must not get to put words on this page.
+      return resultPage({ ok: false, error: "The provider's redirect was missing state." });
+    }
+    try {
+      const { error } = await mcpAuthUseCases.abandonAuthorization({
+        state,
+        userEmail: user.email,
+        error: providerError,
+        errorDescription: url.searchParams.get("error_description") ?? undefined,
+        iss,
+      });
+      return resultPage({ ok: false, error });
+    } catch (error) {
+      return resultPage({
+        ok: false,
+        error:
+          error instanceof AppError ? error.message : "The authorization could not be completed.",
+      });
+    }
   }
   if (!state || !code) {
     return resultPage({ ok: false, error: "The provider's redirect was missing state or code." });
@@ -67,11 +90,13 @@ export const GET = withAuth(async (user, request: Request) => {
       state,
       code,
       userEmail: user.email,
+      iss,
     });
     return resultPage({ ok: true, project: projectName, server: serverName });
   } catch (error) {
-    // Message only — an AppError here is a rejected state or a lost ownership,
-    // both of which the person in front of the browser needs to read.
+    // Message only — an AppError here is a rejected state, a lost ownership or
+    // an issuer that did not match, all of which the person in front of the
+    // browser needs to read.
     return resultPage({
       ok: false,
       error: error instanceof AppError ? error.message : "The authorization could not be completed.",

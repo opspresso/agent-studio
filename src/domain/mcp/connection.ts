@@ -26,6 +26,20 @@ export interface McpConnection {
   clientSecret?: string;
   /** True when RFC 7591 issued the credentials, so they can be re-registered. */
   clientRegistered?: boolean;
+  /**
+   * The authorization server these credentials belong to.
+   *
+   * A `client_id` is only meaningful at the server that issued it, so SEP-2352
+   * requires persisted credentials to be keyed by issuer and re-registered when
+   * the authorization server changes. Without this, re-running discovery on a
+   * registry entry — which rewrites `McpServerAuth` and never touches these
+   * rows — would silently present one server's client to another.
+   *
+   * Absent on rows written before it was recorded: those are treated as
+   * belonging to whatever the entry points at now, which is what they were
+   * already being used as.
+   */
+  issuer?: string;
   scopes: string[];
   /** Encrypted. */
   accessToken?: string;
@@ -56,6 +70,19 @@ export interface McpOAuthState {
   codeVerifier: string;
   /** The user who started the flow; the callback must be the same person. */
   userEmail: string;
+  /**
+   * The issuer this flow was started against, recorded here rather than read
+   * back off the registry entry: RFC 9207 requires the expected issuer to live
+   * on the same record as the PKCE verifier, and the entry is exactly what a
+   * re-discovery may have changed while the user was away at the provider.
+   *
+   * Absent only on a state written before this field existed. Such a flow has
+   * nothing to compare against, so a response that carries `iss` is refused
+   * rather than accepted unchecked.
+   */
+  issuer?: string;
+  /** RFC 9207 advertisement, snapshotted with {@link issuer} for the same reason. */
+  issParameterSupported?: boolean;
   createdAt: string;
 }
 

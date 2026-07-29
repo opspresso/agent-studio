@@ -30,6 +30,13 @@ export interface AuthorizationServerMetadata {
   codeChallengeMethodsSupported?: string[];
   scopesSupported?: string[];
   grantTypesSupported?: string[];
+  /**
+   * RFC 9207 `authorization_response_iss_parameter_supported`. Decides only one
+   * thing: whether a response that carries *no* `iss` must be rejected. A
+   * response that carries one is compared either way — servers emit `iss` before
+   * they update their metadata, and the comparison costs nothing.
+   */
+  issParameterSupported?: boolean;
 }
 
 /**

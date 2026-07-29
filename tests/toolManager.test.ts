@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
 import { listMcpTools } from "@/infrastructure/mcp/mcpClient";
-import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
+import { clearMcpDiscoveryCache, getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
@@ -31,7 +31,7 @@ interface ServerScript {
   /** Tools reported by tools/list. */
   listTools?: ToolShape[];
   /** Pages of tools/list, keyed by the cursor that asks for them ("" = first). */
-  toolPages?: Record<string, { tools: ToolShape[]; nextCursor?: string }>;
+  toolPages?: Record<string, { tools: ToolShape[]; nextCursor?: string; ttlMs?: number }>;
   /** Content blocks returned by tools/call. */
   callContent?: unknown[];
   /** When set, fetch itself rejects for this server (network failure). */
@@ -485,6 +485,25 @@ describe("ToolManager per-binding tool allowlist", () => {
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "post", "react"]);
     expect(manager.warnings).toEqual([]);
+  });
+
+  it("keeps a paged catalogue only as long as its shortest-lived page", async () => {
+    // Each page carries its own hint and the pages are cached as one catalogue,
+    // so the whole thing goes stale when the first of them does.
+    stubMcpFetch({
+      "https://paged.test/mcp": {
+        toolPages: {
+          "": { tools: [{ name: "search" }], nextCursor: "c1", ttlMs: 9 * 60_000 },
+          c1: { tools: [{ name: "post" }], ttlMs: 60_000 },
+        },
+      },
+    });
+
+    await new ToolManager([server("paged", "https://paged.test/mcp")]).init();
+
+    const url = "https://paged.test/mcp";
+    expect(getCachedDiscovery(url, {}, Date.now() + 59_000)).toBeDefined();
+    expect(getCachedDiscovery(url, {}, Date.now() + 60_001)).toBeUndefined();
   });
 
   it("stops paging when a server repeats its cursor", async () => {

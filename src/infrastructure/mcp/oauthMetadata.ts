@@ -140,6 +140,12 @@ export const oauthMetadataClient: OAuthMetadataClient = {
           ...(codeChallengeMethodsSupported ? { codeChallengeMethodsSupported } : {}),
           ...(scopesSupported ? { scopesSupported } : {}),
           ...(grantTypesSupported ? { grantTypesSupported } : {}),
+          // Only `true` counts. RFC 9207 §2.3 makes this the signal that a
+          // response *without* `iss` must be rejected, so anything that is not
+          // an explicit boolean true leaves that rejection switched off.
+          ...(doc.authorization_response_iss_parameter_supported === true
+            ? { issParameterSupported: true }
+            : {}),
         };
       },
       "authorization server metadata",

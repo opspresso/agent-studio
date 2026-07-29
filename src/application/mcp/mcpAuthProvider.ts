@@ -17,6 +17,7 @@ import type {
 } from "@/domain/mcp/oauth";
 import { OAuthGrantError } from "@/domain/mcp/oauth";
 import type { McpRepository } from "@/domain/mcp/repository";
+import { issuerOf } from "@/domain/mcp/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 
@@ -165,6 +166,18 @@ export function createMcpAuthProvider(deps: McpAuthProviderDeps): McpAuthProvide
         return {
           headers: {},
           unavailable: `MCP server '${serverName}' no longer has an OAuth configuration.`,
+        };
+      }
+      // SEP-2352: a refresh presents this connection's client credentials at
+      // the entry's token endpoint, so it is the one place on the run path that
+      // could send them to an authorization server that never issued them. The
+      // fast path above sends only a bearer token and needs no such check —
+      // which is why this read stays off every run's critical path.
+      const issuer = issuerOf(server.auth);
+      if ((connection.issuer ?? issuer) !== issuer) {
+        return {
+          headers: {},
+          unavailable: `MCP server '${serverName}' points at a different authorization server than the one this project's credentials were registered with; it needs to be connected again.`,
         };
       }
       return refresh(connection, {
