@@ -4,6 +4,7 @@ import type { Chat, ChatMessageImage } from "@/domain/chat/types";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChannelToolCall, ContentPart, EngineChunk } from "@/domain/llm/types";
 import type { AttachedImage, ChatDeps } from "./deps";
+import { log } from "@/shared/logger";
 
 /**
  * Chat is an interactive surface, so it may fall back to the newest draft
@@ -73,7 +74,7 @@ export async function storeMessageImages(
     } catch (error) {
       failed += 1;
       reason = error instanceof Error ? error.message : String(error);
-      console.error("[chat] image upload failed", error);
+      log.error("chat", "image upload failed", error);
     }
   }
   if (failed > 0) {
@@ -216,7 +217,7 @@ export async function* runAndPersist(
       });
       await deps.chats.update({ ...chat, updatedAt: now });
     } catch (error) {
-      console.error("[chat] persist failed", error);
+      log.error("chat", "persist failed", error);
     }
   }
 

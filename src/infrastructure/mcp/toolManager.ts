@@ -22,6 +22,7 @@ import type { ImageBytes } from "@/domain/llm/imageChannel";
 import type { McpToolResult } from "@/domain/llm/types";
 import { getCachedDiscovery, setCachedFailure, setCachedTools } from "./discoveryCache";
 import { McpHttpError, McpSession, type McpTool } from "./session";
+import { log } from "@/shared/logger";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 
@@ -116,8 +117,8 @@ export class ToolManager {
           // not vanish either: without this the tools are simply absent and the
           // run looks like a model that ignored them.
           const reason = error instanceof Error ? error.message : String(error);
-          console.warn(
-            `[mcp] discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
+          log.warn(
+            "mcp", `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
             reason,
           );
           const unauthorized = error instanceof McpHttpError && error.status === 401;

@@ -19,6 +19,7 @@ import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
+import { log } from "@/shared/logger";
 
 /** Bounded preview of a run's answer, kept on the delivery row. */
 const MAX_RESULT_CHARS = 2_000;
@@ -177,7 +178,7 @@ export async function admitDelivery(
       } catch (error) {
         // The lease expires on its own; a failed release costs one window, not
         // a permanently blocked trigger.
-        console.warn(`[trigger] could not release overlap lease for ${triggerId}`, error);
+        log.warn("trigger", `could not release overlap lease for ${triggerId}`, error);
       }
     };
   }
@@ -194,7 +195,7 @@ export async function admitDelivery(
     await deps.triggers.appendRun(run);
   } catch (error) {
     // History is a log; losing a row must not cost the delivery.
-    console.error("[trigger] could not record the start of a delivery", error);
+    log.error("trigger", "could not record the start of a delivery", error);
   }
   return { status: "accepted", runId: run.runId, trigger, project, version, run, release };
 }
@@ -220,7 +221,7 @@ async function recordSkip(
       error: reason,
     });
   } catch (error) {
-    console.error("[trigger] could not record a skipped delivery", error);
+    log.error("trigger", "could not record a skipped delivery", error);
   }
 }
 
@@ -275,6 +276,6 @@ export async function executeDelivery(
   try {
     await deps.triggers.finishRun(finished);
   } catch (writeError) {
-    console.error("[trigger] could not record the end of a delivery", writeError);
+    log.error("trigger", "could not record the end of a delivery", writeError);
   }
 }

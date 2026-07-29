@@ -9,6 +9,7 @@ import {
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ListToolsResult, McpToolProbe } from "@/domain/mcp/toolProbe";
+import { log } from "@/shared/logger";
 
 export interface CreateMcpInput {
   name: string;
@@ -99,8 +100,8 @@ export function createMcpUseCases(
         updatedAt: now,
       };
       if (movedAddress && discarded) {
-        console.warn(
-          `[mcp] '${existing.name}' moved to ${updated.url}; its OAuth configuration was dropped and must be rediscovered`,
+        log.warn(
+          "mcp", `'${existing.name}' moved to ${updated.url}; its OAuth configuration was dropped and must be rediscovered`,
         );
       }
       // A new url or new credentials can mean a different tool list, so an

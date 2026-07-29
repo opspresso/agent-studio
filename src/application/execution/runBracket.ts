@@ -24,14 +24,23 @@
 import type { RunActor } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
+import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
 import { acquireRunSlot, type ConcurrencyGuardDeps } from "./concurrencyGuard";
 
 export type RunBracketDeps = CostGuardDeps & ConcurrencyGuardDeps;
 
 export interface RunBracket {
-  /** Ends the run. Call in a `finally`, after any usage flush. Never throws. */
-  close(): Promise<void>;
+  /**
+   * Ends the run. Call in a `finally`, after any usage flush. Never throws.
+   *
+   * `failed` separates an error from a cancellation: a client that hung up is
+   * not a failure, and counting it as one turns a page of users navigating away
+   * into an outage on the dashboard.
+   */
+  close(outcome?: { failed?: boolean }): Promise<void>;
+  /** The correlation id every log line in this run carries. */
+  readonly runId: string;
 }
 
 /**
@@ -49,10 +58,15 @@ export async function openRun(
 ): Promise<RunBracket> {
   await assertWithinCostLimit(deps, project);
   const slot = await acquireRunSlot(deps, actor);
+  // Opened once the run is admitted, so a refused one does not mint an id that
+  // never appears again — and before the first log line the run produces.
+  const context = enterRunContext();
+  const startedAt = Date.now();
   beginRun();
   let closed = false;
   return {
-    async close() {
+    runId: context.runId,
+    async close(outcome = {}) {
       // Idempotent: a generator can reach its `finally` through both a normal
       // return and a consumer's `return()`, and a double decrement would leave
       // the gauge permanently understating load — or release a slot a later run
@@ -61,7 +75,7 @@ export async function openRun(
         return;
       }
       closed = true;
-      endRun();
+      endRun({ durationMs: Date.now() - startedAt, ...outcome });
       await slot.release();
       await settleCostLimit(deps, project);
     },

@@ -1,4 +1,5 @@
 import { parseList } from "@/shared/parseList";
+import { log } from "@/shared/logger";
 
 export type Stage = "local" | "alpha" | "prod";
 
@@ -62,7 +63,7 @@ function positiveIntEnv(name: string, fallback: number): number {
   }
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 0) {
-    console.warn(`[config] ignoring invalid ${name}="${raw}"; using ${fallback}`);
+    log.warn("config", `ignoring invalid ${name}="${raw}"; using ${fallback}`);
     return fallback;
   }
   return value;

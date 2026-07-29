@@ -21,6 +21,7 @@
 
 import { createHash } from "node:crypto";
 import type { McpTool } from "./session";
+import { log } from "@/shared/logger";
 
 const DEFAULT_TTL_MS = 60_000;
 /** Bounds memory when many servers × credential sets pass through one instance. */
@@ -38,8 +39,8 @@ function parseTtlMs(raw: string | undefined): number {
   }
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0) {
-    console.warn(
-      `[mcp] ignoring invalid MCP_DISCOVERY_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`,
+    log.warn(
+      "mcp", `ignoring invalid MCP_DISCOVERY_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`,
     );
     return DEFAULT_TTL_MS;
   }
@@ -78,8 +79,8 @@ function parseMaxServerTtlMs(raw: string | undefined): number {
   }
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0) {
-    console.warn(
-      `[mcp] ignoring invalid MCP_MAX_SERVER_TTL_MS="${raw}"; using ${DEFAULT_MAX_SERVER_TTL_MS}ms`,
+    log.warn(
+      "mcp", `ignoring invalid MCP_MAX_SERVER_TTL_MS="${raw}"; using ${DEFAULT_MAX_SERVER_TTL_MS}ms`,
     );
     return DEFAULT_MAX_SERVER_TTL_MS;
   }

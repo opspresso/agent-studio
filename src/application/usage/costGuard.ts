@@ -24,6 +24,7 @@ import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { RateLimitedError } from "@/application/errors";
 import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { todayUtc } from "./recordUsage";
+import { log } from "@/shared/logger";
 
 /**
  * Slack access the guard needs — posting one message. Declared here rather than
@@ -127,7 +128,7 @@ export async function assertWithinCostLimit(
   } catch (error) {
     // Fail open: the guard exists to bound spend, not to be a second way for a
     // storage blip to take the platform down.
-    console.error(`[cost-guard] could not read spend for "${project.name}"; allowing the run`, error);
+    log.error("cost-guard", `could not read spend for "${project.name}"; allowing the run`, error);
     return;
   }
   if (spent !== null && spent >= limit) {
@@ -166,7 +167,7 @@ export async function settleCostLimit(
       await notifyOnce(deps, project, date, "alert", spent, limits.alertThresholdUsd);
     }
   } catch (error) {
-    console.error(`[cost-guard] settle failed for "${project.name}"`, error);
+    log.error("cost-guard", `settle failed for "${project.name}"`, error);
   }
 }
 
@@ -195,8 +196,8 @@ async function notifyOnce(
   if (!deps.slack || !channel || !runtime) {
     // Configured thresholds without a notification path still block; saying so
     // once in the log is the only place an operator can notice the gap.
-    console.warn(
-      `[cost-guard] "${project.name}" crossed its ${kind} threshold ` +
+    log.warn(
+      "cost-guard", `"${project.name}" crossed its ${kind} threshold ` +
         `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no Slack channel configured`,
     );
     return;

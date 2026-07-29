@@ -16,6 +16,7 @@ import {
 } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
+import { log } from "@/shared/logger";
 
 /**
  * Inbound A2A is authenticated by one shared app key, so there is no caller to
@@ -170,7 +171,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
       try {
         current = await this.store.load(taskId);
       } catch (error) {
-        console.error("[a2a] terminal cancel check failed", error);
+        log.error("a2a", "terminal cancel check failed", error);
       }
       if (current?.status.state !== "canceled") {
         this.publishStatus(eventBus, taskId, contextId, "completed", true);
@@ -190,7 +191,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
           }
         },
         (error) => {
-          console.error("[a2a] cancel poll failed", error);
+          log.error("a2a", "cancel poll failed", error);
         },
       );
     }, CANCEL_POLL_MS);

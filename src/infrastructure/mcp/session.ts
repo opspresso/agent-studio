@@ -13,6 +13,7 @@ import type { McpTool } from "@/domain/mcp/types";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
+import { log } from "@/shared/logger";
 
 export const PROTOCOL_VERSION = "2025-06-18";
 /** A tool may legitimately take minutes; the model is waiting on its answer. */
@@ -332,7 +333,7 @@ export class McpSession {
       }
       cursor = next;
     }
-    console.warn(`[mcp] ${this.url} paged past ${MAX_TOOL_PAGES} tool pages; the tail was dropped`);
+    log.warn("mcp", `${this.url} paged past ${MAX_TOOL_PAGES} tool pages; the tail was dropped`);
     return { tools, ...(ttlMs === undefined ? {} : { ttlMs }) };
   }
 

@@ -3,6 +3,7 @@ import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
 import type { RunActor } from "@/domain/execution/actor";
+import { linkTrace } from "@/shared/runContext";
 
 const MAX_PREVIEW_CHARS = 1_000;
 const MAX_SPANS = 100;
@@ -61,7 +62,12 @@ export class TraceRecorder {
   constructor(
     private readonly repository: TraceRepository,
     private readonly context: TraceContext,
-  ) {}
+  ) {
+    // Join the two ids for anything reading logs. Only the first sticks, which
+    // is the top-level run's — a subagent's recorder is constructed later, and
+    // its trace is reachable from the parent's anyway.
+    linkTrace(this.traceId);
+  }
 
   observe(chunk: EngineChunk): void {
     const now = new Date();

@@ -3,6 +3,7 @@ import { NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { assertProjectWritable, getProject } from "./projectUseCases";
+import { log } from "@/shared/logger";
 
 export interface ApiTokenStatus {
   configured: boolean;
@@ -85,7 +86,7 @@ export async function revealApiToken(
     );
   }
   // Secret access is worth a trail even when it is authorized.
-  console.warn(`[token] API token of project '${name}' revealed by ${userEmail}`);
+  log.warn("token", `API token of project '${name}' revealed by ${userEmail}`);
   return { token: cipher.decrypt(stored.token), createdAt: stored.createdAt };
 }
 
@@ -137,8 +138,8 @@ function matches(
       // A stored token that will not decrypt (wrong or rotated AES key) is an
       // operational fault, not a wrong caller: it must be visible, and it must
       // not authenticate anyone.
-      console.error(
-        `[token] API token of project '${projectName}' cannot be decrypted:`,
+      log.error(
+        "token", `API token of project '${projectName}' cannot be decrypted:`,
         error instanceof Error ? error.message : String(error),
       );
       return false;

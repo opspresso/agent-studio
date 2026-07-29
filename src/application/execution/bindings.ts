@@ -6,6 +6,7 @@ import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { buildMcpTools, closeMcp, type ResolvedMcp } from "./mcpTools";
+import { log } from "@/shared/logger";
 
 /**
  * One read per skill per run, shared by the prompt's skill table and the `Skill`
@@ -45,7 +46,7 @@ export async function resolveSkills(
       async (name): Promise<{ skill?: engine.SkillInfo; warning?: string }> => {
         const skill = await readSkill(name);
         if (!skill) {
-          console.warn(`[run] skill '${name}' is not in the registry; not offering it this run`);
+          log.warn("run", `skill '${name}' is not in the registry; not offering it this run`);
           return { warning: `Skill '${name}' is no longer in the registry; it was not offered.` };
         }
         return { skill: { name, description: skill.description ?? "" } };
@@ -78,8 +79,8 @@ export async function resolveSubagents(
             ? await deps.externalAgents.get(ref.name)
             : await deps.projects.get(ref.name);
         if (!target) {
-          console.warn(
-            `[run] ${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
+          log.warn(
+            "run", `${ref.type} agent '${ref.name}' no longer exists; not offering it this run`,
           );
           return {
             warning: `${ref.type === "remote" ? "Remote agent" : "Agent project"} '${ref.name}' no longer exists; a transfer to it was not offered.`,

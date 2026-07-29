@@ -27,6 +27,7 @@ import {
   ValidationError,
   isConditionalWriteFailure,
 } from "@/application/errors";
+import { log } from "@/shared/logger";
 
 export interface CreateManagedInput {
   name: string;
@@ -332,12 +333,12 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           if (!(await settles(await restartEntry(entry, spec)))) {
             // The sweep reports this outcome; the button path has to as well, or
             // a repair that did not work is evidenced nowhere on the server.
-            console.warn(`[managed-mcp] ${name}: restarted, still unreachable`);
+            log.warn("managed-mcp", `${name}: restarted, still unreachable`);
           }
         } catch (error) {
           // Nothing is waiting on this. The console learns the outcome from
           // `status`, the same place it learned there was a problem.
-          console.error(`[managed-mcp] restart of ${name} failed`, error);
+          log.error("managed-mcp", `restart of ${name} failed`, error);
         } finally {
           restarting.delete(name);
         }

@@ -38,6 +38,7 @@ import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
 import { PiiFilter } from "./pii";
 import { renderTemplate } from "./template";
+import { log } from "@/shared/logger";
 
 export const SKILL_TOOL_NAME = "Skill";
 export const TRANSFER_TOOL_NAME = "transfer_to_agent";
@@ -326,7 +327,7 @@ function imageEligibleFallback(fallbackModel: string | undefined, withImages: bo
   if (!reject) {
     return fallbackModel;
   }
-  console.warn(`[engine] fallback skipped for an image request: ${reject}`);
+  log.warn("engine", `fallback skipped for an image request: ${reject}`);
   return undefined;
 }
 
@@ -438,7 +439,7 @@ async function recordUsageIfPossible(
     // Usage recording is telemetry: a write failure must not turn a successful
     // generation into an error. The agent aggregator already guarantees this;
     // single-shot runs record inline, so swallow here too.
-    console.error("[engine] usage recording failed", errorMessage(error));
+    log.error("engine", "usage recording failed", errorMessage(error));
   }
 }
 

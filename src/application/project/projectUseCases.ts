@@ -3,6 +3,7 @@ import type { CostLimits, Project, ProjectType } from "@/domain/project/types";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { isConfiguredAdmin } from "@/lib/runtime-settings";
 import { nextUpdatedAt } from "./timestamps";
+import { log } from "@/shared/logger";
 
 export interface CreateProjectInput {
   name: string;
@@ -65,8 +66,8 @@ export async function assertProjectWritable(
     // The owner cannot see this happen from the data — a deleted project takes
     // the row that would have named who deleted it — so the override is the
     // thing worth recording, not the eventual write.
-    console.warn(
-      `[authz] admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
+    log.warn(
+      "authz", `admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
     );
     return project;
   }
@@ -87,7 +88,7 @@ async function isAdminOverride(userEmail: string): Promise<boolean> {
   try {
     return await isConfiguredAdmin(userEmail);
   } catch (error) {
-    console.error("[authz] admin list unavailable; denying the override", error);
+    log.error("authz", "admin list unavailable; denying the override", error);
     return false;
   }
 }

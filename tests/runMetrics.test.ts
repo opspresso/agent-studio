@@ -10,10 +10,18 @@ describe("run metrics", () => {
   it("tracks concurrent runs as a gauge and arrivals as a total", () => {
     beginRun();
     beginRun();
-    expect(runMetricsSnapshot()).toEqual({ activeRuns: 2, runsStarted: 2, runsFinished: 0 });
+    expect(runMetricsSnapshot()).toMatchObject({
+      activeRuns: 2,
+      runsStarted: 2,
+      runsFinished: 0,
+    });
 
     endRun();
-    expect(runMetricsSnapshot()).toEqual({ activeRuns: 1, runsStarted: 2, runsFinished: 1 });
+    expect(runMetricsSnapshot()).toMatchObject({
+      activeRuns: 1,
+      runsStarted: 2,
+      runsFinished: 1,
+    });
   });
 
   /**

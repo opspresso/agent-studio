@@ -47,6 +47,7 @@ export async function executeVersion(
   // metric and no usage — it never started.
   const bracket = await openRun(deps, input.project, input.actor);
   const recorder = sampledTraceRecorder(deps, input);
+  let failed = false;
   try {
     const result = await engine.runPrompt(
       { channel, recordUsage: bindUsage(deps, actorKey) },
@@ -66,12 +67,14 @@ export async function executeVersion(
     await finishTrace(recorder);
     return result;
   } catch (error) {
+    // A caller that hung up is a cancellation, not a failure of the run.
+    failed = !input.signal?.aborted;
     await finishTrace(recorder, error);
     throw error;
   } finally {
     // `runPrompt` awaits its own usage recording, so the settle inside `close`
     // already sees this run's spend.
-    await bracket.close();
+    await bracket.close({ failed });
   }
 }
 
@@ -110,7 +113,7 @@ export async function* executeVersionStream(
     }
     throw error;
   } finally {
-    await bracket.close();
+    await bracket.close({ failed: thrown !== undefined });
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
 }
@@ -225,7 +228,7 @@ export async function* executeAgent(
     // The flush comes first: an agent run's usage is buffered until here, so a
     // settle before it would be reading a total that excludes this whole run.
     await usage.flush();
-    await bracket.close();
+    await bracket.close({ failed: thrown !== undefined });
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
 }

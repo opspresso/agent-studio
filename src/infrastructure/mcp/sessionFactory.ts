@@ -8,6 +8,7 @@
 
 import type { McpServerConfig, McpSessionFactory, McpToolSession } from "@/domain/mcp/toolSession";
 import { ToolManager } from "./toolManager";
+import { log } from "@/shared/logger";
 
 export const mcpSessionFactory: McpSessionFactory = {
   async open(
@@ -20,7 +21,7 @@ export const mcpSessionFactory: McpSessionFactory = {
       await manager.init();
     } catch (error) {
       await manager.close().catch((closeError) => {
-        console.error("[mcp] failed to release sessions after a failed init:", closeError);
+        log.error("mcp", "failed to release sessions after a failed init:", closeError);
       });
       throw error;
     }

@@ -12,6 +12,7 @@ import type {
   SlackEventBody,
   SlackEventDeps,
 } from "@/application/slack/handleSlackEvent";
+import { log } from "@/shared/logger";
 
 const slackEventDeps: SlackEventDeps = {
   runAgent: (params) => executeAgent(executionDeps, params),
@@ -84,7 +85,7 @@ export async function handleSlackEventRequest(
       await handleSlackEvent(slackEventDeps, payload, opts.binding);
     } catch (error) {
       outcome = "failed";
-      console.error(`[slack] ${opts.logLabel} event handling failed`, error);
+      log.error("slack", `${opts.logLabel} event handling failed`, error);
     }
     if (!eventId) {
       return;
@@ -94,7 +95,7 @@ export async function handleSlackEventRequest(
     try {
       await slackEventRepository.settle(eventId, outcome);
     } catch (error) {
-      console.error(`[slack] ${opts.logLabel} event settle failed`, error);
+      log.error("slack", `${opts.logLabel} event settle failed`, error);
     }
   });
 

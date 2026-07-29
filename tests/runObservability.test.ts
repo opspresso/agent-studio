@@ -1,0 +1,152 @@
+import { describe, expect, it, vi } from "vitest";
+import { log } from "@/shared/logger";
+import { currentRunContext, linkTrace, withRunContext } from "@/shared/runContext";
+import { openRun } from "@/application/execution/runBracket";
+import {
+  DURATION_BUCKETS_SECONDS,
+  endRun,
+  beginRun,
+  resetRunMetrics,
+  runMetricsSnapshot,
+} from "@/lib/runMetrics";
+import { GET as metricsRoute } from "@/app/api/metrics/route";
+import type { Project } from "@/domain/project/types";
+import type { UsageRepository } from "@/domain/usage/repository";
+
+const project: Project = {
+  name: "p",
+  displayName: "P",
+  description: "",
+  projectType: "agent",
+  ownerEmail: "owner@example.com",
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+};
+
+const usage: UsageRepository = {
+  record: async () => {},
+  getDay: async () => null,
+  claimAlert: async () => false,
+  listActorsByProject: async () => [],
+  listByProject: async () => [],
+  listByDateRange: async () => [],
+};
+
+describe("run correlation", () => {
+  it("stamps every line of a run with the same id", () => {
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    withRunContext({ runId: "run-1" }, () => {
+      log.warn("mcp", "first");
+      log.warn("engine", "second");
+    });
+    warn.mockRestore();
+    expect(lines).toEqual(["[mcp run=run-1] first", "[engine run=run-1] second"]);
+  });
+
+  it("works for a run with no trace, which sampling makes the common case", () => {
+    // The reason the correlation id is not the trace id: nine out of ten prompt
+    // and image runs are not sampled, and would have nothing to correlate on.
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    withRunContext({ runId: "run-2" }, () => log.warn("run", "unsampled"));
+    warn.mockRestore();
+    expect(lines[0]).toBe("[run run=run-2] unsampled");
+    expect(lines[0]).not.toContain("trace=");
+  });
+
+  it("links a trace once one exists, and keeps the first", () => {
+    withRunContext({ runId: "run-3" }, () => {
+      linkTrace("trace-a");
+      // A subagent's recorder is constructed later; the run's own trace is the
+      // one worth carrying.
+      linkTrace("trace-b");
+      expect(currentRunContext()?.traceId).toBe("trace-a");
+    });
+  });
+
+  it("falls back to the bare scope outside a run", () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    log.error("boot", "no run here");
+    error.mockRestore();
+    expect(lines[0]).toBe("[boot] no run here");
+  });
+
+  it("gives an admitted run an id", async () => {
+    resetRunMetrics();
+    const bracket = await openRun({ usage }, project);
+    expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
+    await bracket.close();
+  });
+});
+
+describe("run metrics", () => {
+  it("counts failures apart from cancellations", () => {
+    resetRunMetrics();
+    beginRun();
+    endRun({ failed: true });
+    beginRun();
+    // A client that hung up is not an outage.
+    endRun({ failed: false });
+    beginRun();
+    endRun();
+    expect(runMetricsSnapshot()).toMatchObject({ runsFinished: 3, runsFailed: 1 });
+  });
+
+  it("observes durations into cumulative buckets", () => {
+    resetRunMetrics();
+    beginRun();
+    endRun({ durationMs: 1_500 });
+    beginRun();
+    endRun({ durationMs: 45_000 });
+    const snapshot = runMetricsSnapshot();
+    expect(snapshot.durationCount).toBe(2);
+    expect(snapshot.durationSumSeconds).toBeCloseTo(46.5, 6);
+    // Cumulative: the 2s bucket holds the 1.5s run, the 60s bucket holds both.
+    const at = (bound: number) => snapshot.durationBuckets[DURATION_BUCKETS_SECONDS.indexOf(bound)];
+    expect(at(1)).toBe(0);
+    expect(at(2)).toBe(1);
+    expect(at(60)).toBe(2);
+  });
+
+  it("does not observe a duration that was never measured", () => {
+    resetRunMetrics();
+    beginRun();
+    endRun({ failed: true });
+    expect(runMetricsSnapshot().durationCount).toBe(0);
+  });
+});
+
+describe("/api/metrics", () => {
+  it("exposes the failure counter and a well-formed histogram", async () => {
+    resetRunMetrics();
+    beginRun();
+    endRun({ durationMs: 3_000, failed: true });
+    const body = await metricsRoute().text();
+    expect(body).toContain("agent_studio_runs_failed_total 1");
+    expect(body).toContain("# TYPE agent_studio_run_duration_seconds histogram");
+    expect(body).toContain('agent_studio_run_duration_seconds_bucket{le="5"} 1');
+    expect(body).toContain('agent_studio_run_duration_seconds_bucket{le="+Inf"} 1');
+    expect(body).toContain("agent_studio_run_duration_seconds_count 1");
+  });
+
+  it("names no project, user or model in any label", async () => {
+    resetRunMetrics();
+    beginRun();
+    endRun({ durationMs: 1_000 });
+    const body = await metricsRoute().text();
+    // A label whose values are unbounded turns one metric into a series per
+    // value — the same reason unknown models are counted rather than labelled.
+    const labels = [...body.matchAll(/\{([^}]*)\}/g)].map((m) => m[1] ?? "");
+    for (const label of labels) {
+      expect(label).toMatch(/^le="[^"]+"$/);
+    }
+  });
+});

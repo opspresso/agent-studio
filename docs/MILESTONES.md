@@ -29,7 +29,7 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 **선행 관계**
 
 ```
-schedule-trigger        run-observability
+schedule-trigger   (durable worker 결정 대기)
 ```
 
 ---
@@ -53,40 +53,16 @@ schedule-trigger        run-observability
   `TriggerRun`, 그리고 중첩 방지에 쓰는 run slot lease.
 - `TriggerKind`에 `"schedule"`을 더하고, cron 평가만 새로 만든다.
 
-**설계 메모 — 이 결정에는 이미 고객이 하나 더 있다.** Slack 이벤트 처리는 3초 ack 후
-`after()`로 백그라운드에서 돌기 때문에, 이벤트를 claim한 인스턴스가 급사하면 작업이
-중단된다(claim은 lease라 회수는 되지만 재처리는 없다). 같은 durable worker 경계가 이
-공백도 메운다. 후보를 평가할 때 schedule 하나가 아니라 두 소비자를 놓고 판단하고,
-Slack 경로를 옮길지 여부를 결정에 함께 기록한다.
+**설계 메모 — 이 결정에는 이미 고객이 둘 더 있다.** Slack 이벤트와 webhook 딜리버리는
+모두 즉시 ack하고 `after()`로 백그라운드에서 돈다. 그래서 작업을 claim한 인스턴스가
+급사하면 처리가 중단된다 — Slack은 claim lease가 회수되지만 재처리는 없고, webhook은
+이력 row가 `running`인 채로 남는다. 같은 durable worker 경계가 두 공백을 함께 메운다.
+후보를 평가할 때 schedule 하나가 아니라 **세 소비자**(schedule, Slack, webhook)를 놓고
+판단하고, 앞의 둘을 옮길지 여부를 결정에 함께 기록한다.
+
+이 마일스톤이 남아 있는 이유도 이것이다: 나머지는 코드 결정이지만 이건 배포 환경
+결정이고(EKS + ArgoCD가 현재 타깃), 무엇을 쓸지는 저장소 안에서 판단할 수 없다.
 
 **완료 조건**: schedule이 published version을 지정 시각에 실행하고, 비활성 트리거는
 실행하지 않는다. 여러 Agent Studio 인스턴스가 동시에 동작해도 동일 schedule 시각에
 실행이 정확히 한 번 일어난다. 중복 제거·실패·재시작 후 복구를 테스트로 검증한다.
-
----
-
-## run-observability — 실행 상관 id와 실패 신호
-
-**이유**: `/api/metrics`는 in-flight run 수, unknown model, draining만 낸다 — 실패율도
-지속시간 분포도 없어 "느려졌다 / 실패하고 있다"를 알람으로 잡을 수 없다. 로그는 49곳의
-`console.*`가 `[run]` `[mcp]` `[slack]` 같은 임의 접두사로 나가고 실행 식별자가 붙지
-않아, 한 실행에서 나온 로그를 모을 수 없다.
-
-**선행**: 없음. `run-attribution`과 짝을 이루지만(주체를 로그에도 남길 수 있게 된다)
-그쪽을 기다릴 이유는 없다.
-
-**범위**
-
-- run 단위 상관 id. **trace id와 별개여야 한다** — trace는 비-agent 경로에서
-  `TRACE_SAMPLE_RATE`(기본 0.1)로 샘플링되므로, trace id를 상관 id로 쓰면 그 경로 로그의
-  90%는 붙일 id가 없다. trace가 있으면 상관 id와 서로 연결한다.
-- `console.*` 직접 호출의 소유자를 한 곳으로 모으고, 그 사실을
-  `tests/architecture.test.ts`의 single-owner 불변식으로 고정한다.
-- `/api/metrics`에 실행 실패 카운터와 지속시간 히스토그램을 추가한다.
-- 라벨 규칙은 지금 것을 유지한다: 프로젝트·사용자·모델을 라벨로 쓰지 않는다. unknown
-  model을 라벨이 아니라 개수로 세는 현재 선택과 같은 이유(카디널리티)다.
-
-**완료 조건**: 한 run에서 나온 모든 로그 라인이 같은 상관 id를 달고, 샘플링돼 trace가
-없는 run도 마찬가지임을 테스트로 검증한다. 로거 소유 파일 밖의 `console.*` 직접 호출이
-architecture test에서 실패한다. 스크레이프 출력에 실패 수와 지속시간 분포가 있고, 어떤
-metric도 프로젝트·사용자·모델을 라벨로 담지 않음을 테스트로 고정한다.

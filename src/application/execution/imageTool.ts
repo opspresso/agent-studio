@@ -8,6 +8,7 @@ import { getModelConfig, MODEL_CONFIGS, toImageUsageRecord } from "@/domain/llm/
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { createTraceRecorder, finishTrace } from "./traceLifecycle";
+import { log } from "@/shared/logger";
 
 /** Default image model: the first registry entry with the imageGeneration capability. */
 export const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
@@ -33,8 +34,8 @@ export function buildImageGenerator(
     model = requested;
   } else {
     if (requested) {
-      console.warn(
-        `[image] version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
+      log.warn(
+        "image", `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
       );
     }
     model = DEFAULT_IMAGE_MODEL;

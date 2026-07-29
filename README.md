@@ -331,6 +331,19 @@ table stays bounded — default retention is 30 / 400 / 180 / 1 days, overridabl
 `TRACE_RETENTION_DAYS`, `USAGE_RETENTION_DAYS`, `CHAT_RETENTION_DAYS`, and
 `A2A_TASK_RETENTION_DAYS`. Enable TTL on the `expiresAt` attribute of the production table.
 
+## Logs and metrics
+
+Every run carries a correlation id, stamped on each of its log lines as
+`[scope run=… trace=…]`. It is independent of the trace id on purpose: traces are sampled on
+the non-agent paths, so a trace id would leave most prompt and image runs with nothing to
+correlate on. Where a trace does exist, both ids appear.
+
+`/api/metrics` reports in-flight runs (the autoscaling signal — runs are I/O bound, so a
+saturated instance still reads as idle CPU), `agent_studio_runs_failed_total` and an
+`agent_studio_run_duration_seconds` histogram (the alerting signals), the unknown-model
+counters, and whether the instance is draining. No metric is labelled by project, user or
+model: unbounded label values turn one metric into a time series per value.
+
 ## A2A (Agent2Agent)
 
 Both directions of the [A2A protocol](https://a2a-protocol.org) are supported.

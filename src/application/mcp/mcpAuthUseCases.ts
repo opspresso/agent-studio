@@ -30,6 +30,7 @@ import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
 import { isManagedLoopback, issuerOf } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
+import { log } from "@/shared/logger";
 
 /**
  * Discovery either finishes, or stops to ask which authorization server to use.
@@ -691,7 +692,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // What a run does with the same 401: record it, so the console offers a
         // reconnect instead of leaving the owner to re-diagnose the message.
         await deps.authProvider.markUnauthorized(projectName, serverName).catch((error: unknown) => {
-          console.warn(`[mcp] could not flag '${serverName}' as needing reauthorization`, error);
+          log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
         });
       }
       return result;
