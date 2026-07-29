@@ -15,8 +15,13 @@
  * the codebase.
  */
 
+// `AsyncLocalStorage` is one of the Node builtins the Edge runtime implements,
+// so importing it here is safe. `randomUUID` is *not* — and this module is
+// reachable from `instrumentation.ts`, which Next compiles for Edge as well as
+// Node, so a `node:crypto` import here fails that build and takes down every
+// page the middleware runs on. The Web Crypto global is present in all three
+// runtimes and needs no import at all.
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
 
 export interface RunContext {
   /** Stable for the whole run, including its subagent transfers. */
@@ -46,7 +51,7 @@ export function enterRunContext(): RunContext {
   if (existing) {
     return existing;
   }
-  const context: RunContext = { runId: randomUUID() };
+  const context: RunContext = { runId: crypto.randomUUID() };
   storage.enterWith(context);
   return context;
 }
