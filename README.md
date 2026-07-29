@@ -135,6 +135,28 @@ pnpm build          # production build
 - The header theme control cycles through system, light, and dark appearances. The
   selection is stored in the browser; system mode follows operating-system changes.
 
+## Daily cost limits
+
+Each project may set two independent thresholds under **Project Settings → Daily cost
+limits**, measured per UTC day across every model it runs:
+
+- `alertThresholdUsd` — post a notification once, keep running.
+- `blockThresholdUsd` — refuse every run for the rest of the day. All six execution entry
+  points (predict, `chat/completions`, agent SSE, chat, Slack, A2A) and image generation
+  answer `429` with `Retry-After` set to the seconds until 00:00 UTC.
+
+Notifications go to `alertSlackChannel` using the project's own Slack bot, once per
+threshold per day (a conditional write on the usage row, so two instances crossing together
+still post once). With no channel or no bot configured the thresholds still block — a
+missing notification path must not disable the guard.
+
+**What this bounds, and what it does not.** An agent run buffers its usage and flushes once
+at the end, so the check that admits a run cannot see what runs already in flight have
+spent: runs starting together all pass it, and the block becomes true on the check that
+follows the flush. It is a daily backstop against a runaway loop or a heavy caller, not a
+hard ceiling and not a rate limit. Every read failure fails open — the guard must not become
+a second way for a storage blip to stop the platform.
+
 ## Project API
 
 Each project's **API Reference** tab documents how to call it from outside the

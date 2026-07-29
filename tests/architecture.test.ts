@@ -295,6 +295,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/unauthorized.ts",
   },
   {
+    // Four functions admit a top-level run, and each used to open the in-flight
+    // metric for itself — which is exactly why the daily cost guard had four
+    // places it could have been forgotten. `openRun` is now the one bracket, so
+    // a fifth entry point that skips it is missing its metric too, and that is
+    // what this catches. The pattern matches the *call*, not the definition in
+    // `lib/runMetrics.ts`.
+    what: "what wraps a top-level run",
+    pattern: /^\s*beginRun\(\);/m,
+    owner: "src/application/execution/runBracket.ts",
+  },
+  {
     // Three call sites used to ask this for themselves, so a new project type
     // meant finding all three. They now ask the facade and only decide how to
     // serialise its answer.

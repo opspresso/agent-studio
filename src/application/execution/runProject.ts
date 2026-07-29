@@ -12,7 +12,7 @@ import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
-import { beginRun, endRun } from "@/lib/runMetrics";
+import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
@@ -41,8 +41,10 @@ export async function executeVersion(
   input: ExecuteVersionInput,
 ): Promise<RunResult> {
   const channel = deps.channel;
+  // Before the recorder: a run refused by the cost guard leaves no trace, no
+  // metric and no usage — it never started.
+  const bracket = await openRun(deps, input.project);
   const recorder = sampledTraceRecorder(deps, input);
-  beginRun();
   try {
     const result = await engine.runPrompt(
       { channel, recordUsage: bindUsage(deps) },
@@ -65,7 +67,9 @@ export async function executeVersion(
     await finishTrace(recorder, error);
     throw error;
   } finally {
-    endRun();
+    // `runPrompt` awaits its own usage recording, so the settle inside `close`
+    // already sees this run's spend.
+    await bracket.close();
   }
 }
 
@@ -74,10 +78,10 @@ export async function* executeVersionStream(
   input: ExecuteVersionInput,
 ): AsyncGenerator<EngineChunk> {
   const channel = deps.channel;
+  const bracket = await openRun(deps, input.project);
   const recorder = sampledTraceRecorder(deps, input);
   let thrown: unknown;
   let completed = false;
-  beginRun();
   try {
     for await (const chunk of engine.runPromptStream(
       { channel, recordUsage: bindUsage(deps) },
@@ -103,7 +107,7 @@ export async function* executeVersionStream(
     }
     throw error;
   } finally {
-    endRun();
+    await bracket.close();
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
 }
@@ -145,6 +149,7 @@ export async function* executeAgent(
   // A multi-turn agent run makes many LLM calls; accumulate their usage and
   // flush once (per project/date/model) when the run ends, even on error.
   const usage = createUsageAggregator(deps.usage);
+  const bracket = await openRun(deps, input.project);
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, [
         input.project.name,
@@ -153,7 +158,6 @@ export async function* executeAgent(
   let thrown: unknown;
   let completed = false;
   let closeMcpSessions: (() => Promise<void>) | undefined;
-  beginRun();
   try {
     input.signal?.throwIfAborted();
     // Compose the caller's signal with a hard deadline; classification in the
@@ -208,9 +212,11 @@ export async function* executeAgent(
     }
     throw error;
   } finally {
-    endRun();
     await closeMcp(closeMcpSessions);
+    // The flush comes first: an agent run's usage is buffered until here, so a
+    // settle before it would be reading a total that excludes this whole run.
     await usage.flush();
+    await bracket.close();
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
 }

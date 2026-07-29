@@ -83,6 +83,8 @@ function depsFixture(
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
       record: async (_delta: UsageDelta) => {},
+      getDay: async () => null,
+      claimAlert: async () => false,
       listByProject: reject,
       listByDateRange: reject,
     },

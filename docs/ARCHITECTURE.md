@@ -99,6 +99,11 @@ Conventions:
 - Usage rows are updated with atomic `ADD` per model: `calls.{model}`, `inputTokens.{model}`,
   `outputTokens.{model}`, `costUsd.{model}` — two-step update: `SET … if_not_exists` to
   materialise the maps, then `ADD calls.#model :calls, …` on the nested number attrs.
+  They also carry the cost guard's once-per-day notification claims (`alertedAt`,
+  `blockedAt`), taken with a conditional write. The claim lives here rather than on the
+  project item because that item's `updatedAt` is the optimistic-concurrency condition for
+  every project write — a background marker there would fail a concurrent edit — and because
+  a usage row already expires on its own date, which retires the marker with it.
 - Row retention (`src/infrastructure/db/ttl.ts`): trace, usage, chat/message, and inbound A2A
   task rows carry a unix-seconds `expiresAt` (the table's TTL attribute, shared with Slack
   dedup rows) so the single table does not grow without bound. Retention runs from the trace
@@ -144,6 +149,30 @@ The two table entries not on that list are thin wrappers alongside: `generateIma
 (`src/application/image/generateImage.ts`, the image predict path) and `collectRun`
 (`src/app/api/projects/_lib/openai.ts`, which drains `executeAgent` for the non-stream
 OpenAI response).
+
+### The run bracket
+
+Exactly four functions admit a top-level run — `executeVersion`, `executeVersionStream`,
+`executeAgent` and `generateImage` — and each one opens a bracket
+(`src/application/execution/runBracket.ts`) around it. The bracket is the single owner of
+everything that wraps a run regardless of how it was started: the in-flight metric
+(`beginRun`/`endRun`) and the daily cost guard. `tests/architecture.test.ts` pins it, so a
+fifth entry point that skips the bracket is missing its metric as loudly as its guard.
+
+It is *not* "the execution facade", because `generateImage` is not in one: the predict route
+and the A2A executor call that module directly. Order is load-bearing at both ends. The
+guard runs **before** the metric opens, so a refused run is never counted, traced, or
+recorded. `close()` runs **after** the caller has flushed its usage — an agent run buffers
+usage until the end, so a settle before the flush would always read a total that excludes
+the run being settled.
+
+The cost guard itself (`src/application/usage/costGuard.ts`) reads one day's row with a
+single primary-key `GetItem`, sums every model's `costUsd`, and refuses with
+`CostLimitExceededError` (a `RateLimitedError`, so `apiError` emits `Retry-After` — the
+seconds to 00:00 UTC, which is exactly when the refusal stops being true). Every read or
+write failure inside it fails open. Notification claims are conditional writes on the usage
+row, one per threshold, so crossing the alert threshold does not consume the block
+notification and two instances crossing together still post once.
 
 `executeProjectStream` is the canonical projectType → strategy dispatch (`agent` runs the
 multi-turn tool loop, anything else streams a single-shot completion). New entry points
@@ -201,8 +230,11 @@ predicate — consumers must use it instead of re-deriving author semantics.
 Two deliberate strategies coexist:
 
 - **HTTP path (before a stream starts)**: use cases throw `AppError` subclasses
-  (`src/application/errors.ts` — Validation/NotFound/Forbidden/Conflict; chat adds `Chat*`
-  subclasses extending the same base). Route handlers map any thrown error through
+  (`src/application/errors.ts` — Validation/NotFound/Forbidden/Conflict/RateLimited; chat
+  adds `Chat*` subclasses extending the same base). `RateLimitedError` carries the seconds
+  to wait, because the thing that knows *why* a request was refused is the only thing that
+  knows when it stops being refused; `apiError` turns that into `Retry-After`.
+  Route handlers map any thrown error through
   `apiError` (`src/app/api/_lib/http.ts`); `parseName` validates `[name]` params as slugs
   by throwing `ValidationError`. The registry slices share this contract via
   `createRegistryUseCases` (`src/application/registry/registryUseCases.ts`): missing →
@@ -221,7 +253,11 @@ Two deliberate strategies coexist:
 - `Project { name (slug, immutable id), displayName, description,
   projectType: 'llm' | 'agent' | 'image', ownerEmail, departmentCode?,
   publishedVersion?, slack? (per-project Slack bot credentials, AES-encrypted),
-  createdAt, updatedAt }`
+  costLimits? (daily spend guards), createdAt, updatedAt }`
+- `CostLimits { alertThresholdUsd?, blockThresholdUsd?, alertSlackChannel? }` — the window is
+  the UTC day because that is the grain the usage row is keyed at; a guard on any other
+  window would need an aggregate that does not exist. Both thresholds are optional and
+  independent. Enforced by the run bracket (see [Request Flow](#request-flow-execution)).
 - `Version { versionName, systemPrompt, userPromptTemplate, model, fallbackModel?, parameters
   (temperature, maxTokens, reasoningEffort?, piiFiltering, structuredOutput?/jsonSchema,
   imageGeneration?/imageModel?), mcpList: McpBinding[], skillList: string[],

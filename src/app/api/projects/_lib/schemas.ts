@@ -15,10 +15,35 @@ export const createProjectSchema = z.object({
   departmentCode: z.string().optional(),
 });
 
+/**
+ * Daily spend guards. Sent whole: the object replaces whatever was stored, and
+ * `null` clears the guard entirely. A partial merge would make "remove the block
+ * threshold but keep the alert" unexpressible without a second verb.
+ */
+export const costLimitsSchema = z
+  .object({
+    alertThresholdUsd: z.number().positive().optional(),
+    blockThresholdUsd: z.number().positive().optional(),
+    alertSlackChannel: z.string().min(1).optional(),
+  })
+  .refine(
+    (limits) =>
+      limits.alertThresholdUsd === undefined ||
+      limits.blockThresholdUsd === undefined ||
+      limits.alertThresholdUsd <= limits.blockThresholdUsd,
+    {
+      // Above the block threshold the alert can never fire on its own: the block
+      // stops the spending that would have reached it.
+      message: "alertThresholdUsd must not exceed blockThresholdUsd",
+      path: ["alertThresholdUsd"],
+    },
+  );
+
 export const updateProjectSchema = z.object({
   displayName: z.string().min(1).optional(),
   description: z.string().optional(),
   departmentCode: z.string().optional(),
+  costLimits: costLimitsSchema.nullable().optional(),
 });
 
 export const versionParametersSchema = z.object({
