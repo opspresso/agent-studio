@@ -172,11 +172,40 @@ user write access to every project on a deployment that never set `ADMIN_EMAILS`
   events are deduplicated exactly-once via `slackEventRepository.claim` (conditional put),
   whose claim is a lease settled by `settle` — an instance that dies mid-processing leaves a
   reclaimable claim rather than an event recorded as handled by nobody.
-  Per-project bots and one workspace-default bot coexist.
+  Bots are per project: `/api/slack/events/[project]` is the only events endpoint, and it
+  resolves that project's own bot token and signing secret.
 - **A2A**: inbound endpoints gated by `A2A_API_KEY` (constant-time compare); task state is
   persisted per-project in the single table (`createA2aTaskStore`), TTL-expired, with a
   terminal-state-guarding conditional write so a concurrent complete/cancel never regresses a
   finished task. Outbound A2A/agent registry.
+- **Run bracket**: `src/application/execution/runBracket.ts` is the single owner of what wraps
+  a top-level run — the in-flight metric, the daily cost guard, the per-caller concurrency
+  guard, and the log correlation id. Exactly four functions admit a run (`executeVersion`,
+  `executeVersionStream`, `executeAgent`, `generateImage`); the architecture test pins that
+  none of them opens the metric for itself. Guards run before the metric so a refused run is
+  never counted; `close()` runs after the caller's usage flush so the cost settle sees the
+  run it is settling.
+- **Cost guard** (`src/application/usage/costGuard.ts`): per-project daily USD alert/block
+  thresholds, read from one `GetItem` on the UTC-day usage row. Fails **open**. Notification
+  claims are conditional writes on that row, one per threshold. A daily backstop, not a rate
+  limit — an agent run's usage is buffered to the end, so runs starting together all pass the
+  pre-check.
+- **Concurrency guard** (`src/application/execution/concurrencyGuard.ts`): per-`RunActor` slot
+  indices leased in DynamoDB, so the limit is exact and does not multiply by instance count.
+  Fails **closed**, opposite to the cost guard, on purpose — see its comment.
+- **Attribution**: `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names who caused
+  a run — user / project-token / slack / a2a / webhook. Recorded on the trace and on a
+  per-caller `ACTOR#{date}#{actor}` usage row (separate from the project total: keying the
+  project row's model maps by caller would approach the 400KB item limit). `RunOrigin`
+  carries the actor plus the transfer chain down every subagent hop.
+- **Triggers** (`src/domain/trigger/`, `src/application/trigger/`): per-project webhooks that
+  run the **published** version. Secret compared in constant time before the enabled flag,
+  `Idempotency-Key` claimed conditionally, overlap refused by reusing a run slot. Answers 202
+  and runs via `after()`; every refusal is a history row with a status.
+- **Logging**: `src/shared/logger.ts` is the only place that writes to the console (pinned by
+  the architecture test; `domain` exempt because it imports nothing from `@/`). Lines carry
+  the run's correlation id from `src/shared/runContext.ts` — deliberately *not* the trace id,
+  which is sampled.
 - **Errors**: shared `AppError` base carrying an HTTP status (`src/application/errors.ts`);
   `apiError` (`src/app/api/_lib/http.ts`) maps any of them, else a generic 500.
 - **SSE**: `src/app/api/_lib/sse.ts` — `sseResponse` (OpenAI `[DONE]` terminator) vs `sseResponseRaw`
