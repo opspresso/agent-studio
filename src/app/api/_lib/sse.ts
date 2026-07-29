@@ -5,15 +5,33 @@
 
 const encoder = new TextEncoder();
 
-function createSseResponse(
+/**
+ * Pull the first chunk before the response exists.
+ *
+ * A run is refused — over its daily cost limit, out of concurrency slots — on
+ * the generator's *first* `next()`, which is before it has produced anything.
+ * Constructing the `Response` first would send `200 text/event-stream` and then
+ * deliver the refusal as a data frame, so the caller never sees the status or
+ * the `Retry-After` that says when to come back. Awaiting one chunk here lets
+ * that throw reach the route's `apiError`, which is what turns it into a 429.
+ *
+ * It costs nothing for a run that starts normally: the chunk is held and
+ * emitted first, so the stream is byte-identical. Nothing is buffered beyond
+ * that one chunk.
+ */
+async function createSseResponse(
   generator: AsyncGenerator<unknown>,
   includeDone: boolean,
   abortController?: AbortController,
-): Response {
+): Promise<Response> {
+  const first = await generator.next();
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
+        if (!first.done) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(first.value)}\n\n`));
+        }
         for await (const chunk of generator) {
           if (!cancelled) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
@@ -57,13 +75,13 @@ function createSseResponse(
 export function sseResponseRaw(
   generator: AsyncGenerator<unknown>,
   abortController?: AbortController,
-): Response {
+): Promise<Response> {
   return createSseResponse(generator, false, abortController);
 }
 
 export function sseResponse(
   generator: AsyncGenerator<unknown>,
   abortController?: AbortController,
-): Response {
+): Promise<Response> {
   return createSseResponse(generator, true, abortController);
 }

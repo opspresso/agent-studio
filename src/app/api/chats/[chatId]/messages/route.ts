@@ -34,7 +34,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       userEmail: user.email,
       signal: abortController.signal,
     });
-    return sseResponse(stream, abortController);
+    return await sseResponse(stream, abortController);
   } catch (error) {
     if (error instanceof ChatError) {
       return Response.json({ error: error.message }, { status: error.status });

@@ -51,7 +51,7 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   const body = await request.json().catch(() => null);
   const result = await transport.handle(body);
   if (isAsyncGenerator(result)) {
-    return sseResponseRaw(result);
+    return await sseResponseRaw(result);
   }
   return Response.json(result);
 }

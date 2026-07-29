@@ -334,7 +334,9 @@ table stays bounded — default retention is 30 / 400 / 180 / 1 days, overridabl
 ## Logs and metrics
 
 Every run carries a correlation id, stamped on each of its log lines as
-`[scope run=… trace=…]`. It is independent of the trace id on purpose: traces are sampled on
+`[scope run=… trace=…]`. Work started outside a request uses the id you can already see: a
+webhook delivery's lines carry the delivery id from its history row, a Slack event's carry
+the Slack event id. It is independent of the trace id on purpose: traces are sampled on
 the non-agent paths, so a trace id would leave most prompt and image runs with nothing to
 correlate on. Where a trace does exist, both ids appear.
 

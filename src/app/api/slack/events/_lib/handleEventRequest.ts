@@ -7,6 +7,7 @@ import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
+import { withRunContext } from "@/shared/runContext";
 import type {
   SlackBotBinding,
   SlackEventBody,
@@ -79,25 +80,30 @@ export async function handleSlackEventRequest(
     }
   }
 
-  after(async () => {
-    let outcome: "done" | "failed" = "done";
-    try {
-      await handleSlackEvent(slackEventDeps, payload, opts.binding);
-    } catch (error) {
-      outcome = "failed";
-      log.error("slack", `${opts.logLabel} event handling failed`, error);
-    }
-    if (!eventId) {
-      return;
-    }
-    // Settling is bookkeeping for a response that already went out; a failure
-    // here leaves the claim to expire on its own rather than escalating.
-    try {
-      await slackEventRepository.settle(eventId, outcome);
-    } catch (error) {
-      log.error("slack", `${opts.logLabel} event settle failed`, error);
-    }
-  });
+  // Same reason as the webhook path: `after()` leaves the request's async
+  // context. The Slack event id is the natural key — it is what the dedup claim
+  // is keyed by, so a log line joins the row that says whether it was handled.
+  after(() =>
+    withRunContext({ runId: eventId ?? "slack-event" }, async () => {
+      let outcome: "done" | "failed" = "done";
+      try {
+        await handleSlackEvent(slackEventDeps, payload, opts.binding);
+      } catch (error) {
+        outcome = "failed";
+        log.error("slack", `${opts.logLabel} event handling failed`, error);
+      }
+      if (!eventId) {
+        return;
+      }
+      // Settling is bookkeeping for a response that already went out; a failure
+      // here leaves the claim to expire on its own rather than escalating.
+      try {
+        await slackEventRepository.settle(eventId, outcome);
+      } catch (error) {
+        log.error("slack", `${opts.logLabel} event settle failed`, error);
+      }
+    }),
+  );
 
   return Response.json({ ok: true });
 }

@@ -28,14 +28,24 @@ export interface RunContext {
 const storage = new AsyncLocalStorage<RunContext>();
 
 /**
- * Start a correlation scope for the current run.
+ * Start a correlation scope for the current run, or join the one already open.
  *
  * `enterWith` rather than `run(store, callback)` because the caller is a bracket
- * — `openRun()` … `close()` — not a wrapper it could hand a callback to. The
- * store therefore applies to the rest of the current async context, which for a
- * run admitted inside a request handler is exactly the run.
+ * — `openRun()` … `close()` — not a wrapper it could hand a callback to. It must
+ * therefore be called **before the bracket's first await**, or it binds to the
+ * bracket's own continuation instead of the caller's and never reaches the run.
+ *
+ * An existing scope wins. Work started outside a request — a webhook delivery,
+ * a Slack event — opens one with the id the operator can already see (the
+ * delivery id, the Slack event id) via {@link withRunContext}, because
+ * `enterWith` does not survive the generator delegation on those paths. Minting
+ * a second id underneath would split one run's lines across two.
  */
 export function enterRunContext(): RunContext {
+  const existing = storage.getStore();
+  if (existing) {
+    return existing;
+  }
   const context: RunContext = { runId: randomUUID() };
   storage.enterWith(context);
   return context;
@@ -58,7 +68,11 @@ export function linkTrace(traceId: string): void {
   }
 }
 
-/** Test seam: run `fn` inside a fresh context without leaking into the caller. */
+/**
+ * Run `fn` inside `context`. The reliable form — unlike `enterWith`, this holds
+ * across awaits and generator delegation — so it is what background work uses
+ * to open its own scope before handing off to the run.
+ */
 export function withRunContext<T>(context: RunContext, fn: () => T): T {
   return storage.run(context, fn);
 }
