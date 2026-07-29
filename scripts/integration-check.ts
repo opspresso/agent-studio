@@ -56,6 +56,7 @@ async function main() {
     "@/infrastructure/db/repositories/mcpOAuthStateRepository"
   );
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
+  const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { executionDeps } = await import("@/lib/container");
   const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
@@ -387,6 +388,51 @@ async function main() {
       "usage date-range GSI listing",
     );
     pass("usage atomic ADD accumulation + range query");
+
+    // ---------- usage attribution (per-caller rows) ----------
+    await usageRepository.record({ ...usageDelta, actor: "user:it@example.com" });
+    await usageRepository.record({ ...usageDelta, actor: "project-token:it@example.com" });
+    const actorRows = await usageRepository.listActorsByProject(projectName, today, today);
+    assert.equal(actorRows.length, 2, "one row per caller");
+    assert.deepEqual(
+      actorRows.map((r) => r.actor).sort(),
+      ["project-token:it@example.com", "user:it@example.com"],
+      "a token's spend is not merged into its owner's own",
+    );
+    const projectRows = await usageRepository.listByProject(projectName, today, today);
+    assert.equal(projectRows.length, 1, "actor rows do not leak into the project listing");
+    assert.equal(
+      projectRows[0]?.calls["openai/gpt-5-mini"],
+      4,
+      "the project total counts attributed calls too",
+    );
+    pass("usage attribution: per-caller rows, project totals unaffected");
+
+    // ---------- concurrency slots (conditional claim + lease reclaim) ----------
+    const slotActor = `user:slots-${suffix}@example.com`;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const firstSlot = await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600);
+    const secondSlot = await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600);
+    assert.ok(firstSlot && secondSlot, "slots up to the limit are granted");
+    assert.notEqual(firstSlot?.index, secondSlot?.index, "each run gets its own index");
+    assert.equal(
+      await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600),
+      null,
+      "the limit is exact",
+    );
+    await runSlotRepository.release(slotActor, firstSlot!);
+    assert.ok(
+      await runSlotRepository.acquire(slotActor, 2, nowSeconds + 600),
+      "a released slot is reusable",
+    );
+    // An instance that died holds a slot only until its lease runs out.
+    const expiredActor = `user:expired-${suffix}@example.com`;
+    await runSlotRepository.acquire(expiredActor, 1, nowSeconds - 1);
+    assert.ok(
+      await runSlotRepository.acquire(expiredActor, 1, nowSeconds + 600),
+      "an expired lease is reclaimable",
+    );
+    pass("concurrency slots: exact limit, release, lease reclaim");
 
     // ---------- engine: single-shot ----------
     const runResult = await executeVersion(executionDeps, {

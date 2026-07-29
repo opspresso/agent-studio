@@ -50,6 +50,24 @@ export function assertAccessControlConfig(): void {
   }
 }
 
+/**
+ * A non-negative integer setting, falling back to `fallback` on anything else.
+ * A misconfigured value degrades to the default with a warning rather than
+ * silently disabling a limit — `Number("abc") || 0` would read as "off".
+ */
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    console.warn(`[config] ignoring invalid ${name}="${raw}"; using ${fallback}`);
+    return fallback;
+  }
+  return value;
+}
+
 export const config = {
   get stage(): Stage {
     const stage = process.env.STAGE ?? "local";
@@ -121,6 +139,25 @@ export const config = {
    */
   get adminEmails(): string[] {
     return parseList(process.env.ADMIN_EMAILS ?? "");
+  },
+  /**
+   * How many runs one caller may have in flight at once, and the separate
+   * ceiling for inbound A2A.
+   *
+   * A2A needs its own because its actor id is a constant — the inbound key is
+   * shared, so one identity stands for every machine caller and the per-caller
+   * limit would become a cap on the whole A2A surface.
+   *
+   * Both are on by default. The default is generous enough that a person with
+   * several chats open never meets it, while still bounding a loop; `0` turns
+   * the limit off, which is a choice a deployment has to make explicitly rather
+   * than inherit from an unset variable.
+   */
+  get maxConcurrentRunsPerActor(): number {
+    return positiveIntEnv("MAX_CONCURRENT_RUNS_PER_ACTOR", 10);
+  },
+  get maxConcurrentRunsA2a(): number {
+    return positiveIntEnv("MAX_CONCURRENT_RUNS_A2A", 50);
   },
   /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
   get a2aApiKey(): string | undefined {
