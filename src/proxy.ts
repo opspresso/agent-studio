@@ -45,6 +45,11 @@ export const config = {
    * Everything except `/api` — whose routes authenticate themselves and must
    * answer a programmatic caller with a 401, never a redirect to an HTML page —
    * and the static asset paths, which have no session to speak of.
+   *
+   * `icon.png` is the app-directory icon convention (`src/app/icon.png`), so it
+   * is a route like any other and the matcher reaches it: without the exclusion
+   * the browser tab on `/login` asks for the favicon, gets a redirect back to
+   * `/login`, and renders HTML where an image should be.
    */
-  matcher: ["/((?!api/|_next/|favicon.ico|logo.png).*)"],
+  matcher: ["/((?!api/|_next/|favicon.ico|icon.png|logo.png).*)"],
 };
