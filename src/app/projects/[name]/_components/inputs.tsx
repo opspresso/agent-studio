@@ -1,7 +1,7 @@
 "use client";
 
 import type { McpTool } from "@/domain/mcp/types";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Autocomplete,
@@ -152,11 +152,27 @@ function OptionPicker<T extends PickerOption>({
 }) {
   const [draft, setDraft] = useState("");
 
+  /**
+   * The value `Autocomplete` is about to echo into the input.
+   *
+   * Picking an option runs `onOptionSubmit` and *then* pushes that option's
+   * label into the controlled value, so clearing the draft in the submit
+   * handler is undone one statement later and the picked name sits in the
+   * search box over a list that no longer offers it. Holding the value rather
+   * than a bare "just picked" flag keeps a write-back that never arrives from
+   * swallowing an unrelated keystroke: only the exact echo is dropped.
+   */
+  const echo = useRef<string | null>(null);
+
   return (
     <Autocomplete
       mt={6}
       value={draft}
-      onChange={setDraft}
+      onChange={(value) => {
+        const expected = echo.current;
+        echo.current = null;
+        setDraft(expected === value ? "" : value);
+      }}
       placeholder={placeholder}
       data={options.map((option) => option.value)}
       filter={({ options: items, search }) => {
@@ -198,6 +214,7 @@ function OptionPicker<T extends PickerOption>({
         if (option) {
           onPick(option);
         }
+        echo.current = value;
         setDraft("");
       }}
       comboboxProps={{ withinPortal: false }}
