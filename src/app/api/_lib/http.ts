@@ -1,5 +1,5 @@
 import type { ZodError } from "zod";
-import { statusForError, ValidationError } from "@/application/errors";
+import { RateLimitedError, statusForError, ValidationError } from "@/application/errors";
 
 const NAME_PATTERN = /^[a-z0-9-]+$/;
 
@@ -23,7 +23,18 @@ export function invalidRequest(error: ZodError): Response {
 export function apiError(error: unknown): Response {
   const status = statusForError(error);
   if (status !== null) {
-    return Response.json({ error: (error as Error).message }, { status });
+    return Response.json(
+      { error: (error as Error).message },
+      {
+        status,
+        // A 429 without it tells the caller to back off and nothing about how
+        // far, which is how a client ends up retrying in a tight loop against
+        // the very limit that refused it.
+        ...(error instanceof RateLimitedError
+          ? { headers: { "Retry-After": String(error.retryAfterSeconds) } }
+          : {}),
+      },
+    );
   }
   console.error("[api] unhandled error", error);
   return Response.json({ error: "Internal server error" }, { status: 500 });

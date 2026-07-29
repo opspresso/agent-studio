@@ -8,9 +8,15 @@ import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/shared/runDeadline";
-import { beginRun, endRun } from "@/lib/runMetrics";
+import { openRun, type RunBracketDeps } from "@/application/execution/runBracket";
 
-export interface ImageGenerationDeps {
+/**
+ * Extends the run bracket's deps because an image run is a top-level run: it is
+ * counted, and it is guarded, exactly like a text one. It reaches the bracket
+ * directly rather than through `runProject` — the predict route and the A2A
+ * executor call this module themselves.
+ */
+export interface ImageGenerationDeps extends RunBracketDeps {
   imageChannel: ImageChannel;
   usage: UsageRepository;
   traces?: TraceRepository;
@@ -71,6 +77,9 @@ export async function generateImage(
     throw new ValidationError("Image prompt is empty");
   }
 
+  // After the validation above, before anything is spent: a refused run should
+  // still tell a misconfigured version apart from an exhausted budget.
+  const bracket = await openRun(deps, input.project);
   const recorder =
     deps.traces && Math.random() < (deps.traceSampleRate ?? 0)
       ? new TraceRecorder(deps.traces, {
@@ -81,7 +90,6 @@ export async function generateImage(
           messageCount: 1,
         })
       : undefined;
-  beginRun();
   try {
     const sources = input.images ?? [];
     const result: ImageGenerationResult =
@@ -124,6 +132,6 @@ export async function generateImage(
     await finishTrace(recorder, error);
     throw error;
   } finally {
-    endRun();
+    await bracket.close();
   }
 }

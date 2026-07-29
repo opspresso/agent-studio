@@ -10,13 +10,22 @@
  * `ExpressionAttributeNames`.
  */
 
-import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
-import type { UsageRepository } from "@/domain/usage/repository";
+import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageDelta, UsageRow } from "@/domain/usage/types";
+
+/**
+ * Attribute the once-per-day notification claim is written to. One per kind, so
+ * crossing the alert threshold does not consume the block notification.
+ */
+const ALERT_MARKER: Record<CostAlertKind, string> = {
+  alert: "alertedAt",
+  block: "blockedAt",
+};
 
 function eachDate(from: string, to: string): string[] {
   const dates: string[] = [];
@@ -119,6 +128,45 @@ export class DynamoUsageRepository implements UsageRepository {
         ],
       }),
     );
+  }
+
+  async getDay(projectName: string, date: string): Promise<UsageRow | null> {
+    const result = await getDocumentClient().send(
+      new GetCommand({ TableName: getTableName(), Key: keys.usage(projectName, date) }),
+    );
+    const item = result.Item;
+    if (!item) {
+      return null;
+    }
+    // The TTL purge is only eventually consistent, so an expired row can still
+    // be read. Counting it would charge a project for a day that has already
+    // been retired.
+    return notExpired([item], Date.now()).length === 0 ? null : toUsageRow(item);
+  }
+
+  async claimAlert(projectName: string, date: string, kind: CostAlertKind): Promise<boolean> {
+    const marker = ALERT_MARKER[kind];
+    try {
+      await getDocumentClient().send(
+        new UpdateCommand({
+          TableName: getTableName(),
+          Key: keys.usage(projectName, date),
+          // The row exists by construction — the guard only claims after reading
+          // spend off it — but requiring it here keeps a claim from materialising
+          // a usage row for a project that never ran.
+          ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(#marker)",
+          UpdateExpression: "SET #marker = :now",
+          ExpressionAttributeNames: { "#marker": marker },
+          ExpressionAttributeValues: { ":now": new Date().toISOString() },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]> {

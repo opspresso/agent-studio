@@ -1,4 +1,5 @@
 import type {
+  CostLimits,
   McpBinding,
   Project,
   ProjectType,
@@ -15,7 +16,7 @@ import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
-export type { McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
+export type { CostLimits, McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
 export type { ModelConfig, EngineChunk, UsageRow, Trace };
 
 // --- Projects -------------------------------------------------------------
@@ -32,6 +33,8 @@ export interface UpdateProjectInput {
   displayName?: string;
   description?: string;
   departmentCode?: string;
+  /** Sent whole; `null` removes the guards. Omitted leaves them untouched. */
+  costLimits?: CostLimits | null;
 }
 
 export function listProjects(): Promise<Project[]> {

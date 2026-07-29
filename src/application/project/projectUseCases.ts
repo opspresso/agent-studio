@@ -1,5 +1,5 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import type { Project, ProjectType } from "@/domain/project/types";
+import type { CostLimits, Project, ProjectType } from "@/domain/project/types";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { isConfiguredAdmin } from "@/lib/runtime-settings";
 import { nextUpdatedAt } from "./timestamps";
@@ -17,6 +17,8 @@ export interface UpdateProjectInput {
   displayName?: string;
   description?: string;
   departmentCode?: string;
+  /** Replaces the stored guards; `null` removes them. Absent leaves them alone. */
+  costLimits?: CostLimits | null;
 }
 
 export function listProjects(repo: ProjectRepository): Promise<Project[]> {
@@ -134,6 +136,14 @@ export async function updateProject(
     displayName: input.displayName ?? existing.displayName,
     description: input.description ?? existing.description,
     departmentCode: input.departmentCode ?? existing.departmentCode,
+    // Three-state on purpose: absent keeps, `null` clears, an object replaces.
+    // `??` alone cannot express the clear, and a spread merge could not remove
+    // one threshold while keeping the other.
+    ...(input.costLimits === undefined
+      ? {}
+      : input.costLimits === null
+        ? { costLimits: undefined }
+        : { costLimits: input.costLimits }),
     updatedAt: nextUpdatedAt(existing.updatedAt),
   };
   try {

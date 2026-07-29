@@ -236,7 +236,13 @@ function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
     skills: { get: reject, list: reject, put: reject, delete: reject },
     mcps: { get: reject, list: reject, put: reject, delete: reject },
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
-    usage: { record: async () => {}, listByProject: reject, listByDateRange: reject },
+    usage: {
+      record: async () => {},
+      getDay: async () => null,
+      claimAlert: async () => false,
+      listByProject: reject,
+      listByDateRange: reject,
+    },
     channel,
     imageChannel: {
       generateImage: async () => ({

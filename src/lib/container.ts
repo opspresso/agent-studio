@@ -50,6 +50,9 @@ import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
+import type { CostAlertSlack } from "@/application/usage/costGuard";
+import type { ExecutionDeps } from "@/application/execution/deps";
+import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -213,8 +216,18 @@ const traceSampleRate = Number.isFinite(configuredTraceSampleRate)
   ? Math.min(Math.max(configuredTraceSampleRate, 0), 1)
   : 0.1;
 
+/**
+ * Slack access for the cost guard's threshold notification. Deferred like the
+ * other Slack use so a route that only wanted a repository does not load the
+ * client; the guard awaits it at the one point it actually posts.
+ */
+const costAlertSlack: CostAlertSlack = {
+  postMessage: async (token, args) =>
+    (await import("@/infrastructure/slack/client")).slackClient.postMessage(token, args),
+};
+
 /** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
-export const executionDeps = {
+export const executionDeps: ExecutionDeps = {
   projects: projectRepository,
   versions: versionRepository,
   skills: skillRepository,
@@ -230,12 +243,15 @@ export const executionDeps = {
   mcpAuth: mcpAuthProvider,
   traces: traceRepository,
   traceSampleRate,
+  slack: costAlertSlack,
 };
 
 /** Dependencies for image-generation projects. */
-export const imageDeps = {
+export const imageDeps: ImageGenerationDeps = {
   imageChannel,
   usage: usageRepository,
   traces: traceRepository,
   traceSampleRate,
+  cipher: secretCipher,
+  slack: costAlertSlack,
 };

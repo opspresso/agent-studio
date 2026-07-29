@@ -10,6 +10,12 @@ function fakeUsageRepo(onRecord?: (delta: UsageDelta) => void) {
       onRecord?.(delta);
       writes.push(delta);
     },
+    async getDay() {
+      return null;
+    },
+    async claimAlert() {
+      return false;
+    },
     async listByProject() {
       return [];
     },

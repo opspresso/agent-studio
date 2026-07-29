@@ -38,6 +38,24 @@ export class ForbiddenError extends AppError {
   }
 }
 
+/**
+ * A refusal the caller can retry once a known amount of time has passed — a
+ * daily spend cap that resets at UTC midnight, a concurrency slot that frees
+ * when a lease expires.
+ *
+ * The wait is part of the error rather than left to the route, because the
+ * thing that knows *why* the request was refused is the only thing that knows
+ * when it stops being refused. `apiError` turns it into `Retry-After`.
+ */
+export class RateLimitedError extends AppError {
+  constructor(
+    message: string,
+    readonly retryAfterSeconds: number,
+  ) {
+    super(message, 429);
+  }
+}
+
 /** Map any {@link AppError} to its HTTP status; `null` for non-app errors (→ 500). */
 export function statusForError(error: unknown): number | null {
   return error instanceof AppError ? error.status : null;

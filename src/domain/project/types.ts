@@ -33,6 +33,28 @@ export interface SlackIntegration {
   enabled: boolean;
 }
 
+/**
+ * Daily (UTC) spend guards for one project. Both thresholds are optional and
+ * independent: a project may warn without ever blocking, or block without
+ * warning first. Absent means no limit — the shape every project had before.
+ *
+ * The window is the UTC day because that is the grain the usage row is keyed
+ * at (`USAGE#{project} / DATE#{yyyy-MM-dd}`); a guard on any other window would
+ * need an aggregate that does not exist.
+ */
+export interface CostLimits {
+  /** Notify once when the day's spend reaches this, but keep running. */
+  alertThresholdUsd?: number;
+  /** Refuse further runs for the rest of the UTC day once spend reaches this. */
+  blockThresholdUsd?: number;
+  /**
+   * Slack channel id the notifications are posted to, using this project's own
+   * bot. Without it (or without a configured bot) the thresholds still block —
+   * a missing notification channel must not disable the guard.
+   */
+  alertSlackChannel?: string;
+}
+
 export interface Project {
   name: string;
   displayName: string;
@@ -42,6 +64,7 @@ export interface Project {
   departmentCode?: string;
   publishedVersion?: string;
   slack?: SlackIntegration;
+  costLimits?: CostLimits;
   createdAt: string;
   updatedAt: string;
 }

@@ -28,7 +28,10 @@ auth, and error cases for the non-obvious endpoints.
   any signed-in user), otherwise `403 { "error": "Only admins can modify this resource" }`.
 - **Errors**: `{ "error": string }`, with an extra `issues` array on schema-validation
   failures. Status codes: `400` (bad input), `401` (no session), `403` (not owner), `404`
-  (missing), `409` (name conflict), `500` (unhandled).
+  (missing), `409` (name conflict), `429` (refused for now — see below), `500` (unhandled).
+- **Retry-After**: a `429` always carries it, in seconds. The refusal knows when it stops
+  being true — a daily cost block lasts until 00:00 UTC — so the caller is told rather than
+  left to guess and retry into the same wall.
 - **List responses**: resource collections (`projects`, `skills`, `mcps`, `agents`) return a
   bare array; `chats`, `models`, and `usages/summary` wrap theirs in an object
   (`{ chats }`, `{ models }`, `{ items }` respectively).
@@ -63,6 +66,29 @@ DELETE /api/skills/{name}     → 204                     | 404
 { "name": "my-bot", "displayName": "My Bot", "description": "",
   "projectType": "llm | agent | image", "departmentCode": "OPT-optional" }
 ```
+
+#### Daily cost limits
+
+`PUT /api/projects/{name}` also carries the project's spend guards:
+
+```json
+{ "costLimits": { "alertThresholdUsd": 20, "blockThresholdUsd": 50,
+                  "alertSlackChannel": "C0123456789" } }
+```
+
+Sent whole — the object replaces what was stored, `null` clears the guards, and omitting the
+field leaves them untouched. A partial merge would make "drop the block threshold, keep the
+alert" unexpressible. Both thresholds are optional and independent; `alertThresholdUsd` may
+not exceed `blockThresholdUsd` (above it the alert could never fire on its own, because the
+block stops the spending that would reach it).
+
+Spend is the sum of every model's `costUsd` on the project's UTC-day usage row. Once it
+reaches `blockThresholdUsd` every execution entry point answers
+`429 { "error": "Project \"…\" has reached its daily cost limit …" }` with `Retry-After` set
+to the seconds remaining until 00:00 UTC. Crossing either threshold posts once per day to
+`alertSlackChannel` using the project's own Slack bot; without a channel or bot the
+thresholds still block. See [README](../README.md#daily-cost-limits) for what the guard does
+and does not bound.
 
 ### Versions & publish
 

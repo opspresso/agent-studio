@@ -6,6 +6,7 @@ import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { A2aSection } from "./A2aSection";
+import { CostLimitsSection } from "./CostLimitsSection";
 import { SlackSection } from "./SlackSection";
 import { TokenSection } from "./TokenSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
@@ -131,6 +132,8 @@ export default function SettingsPage() {
           </Group>
         </Stack>
       </form>
+
+      <CostLimitsSection projectName={name} />
 
       <TokenSection projectName={name} />
 

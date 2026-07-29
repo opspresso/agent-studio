@@ -57,6 +57,12 @@ function fakeDeps() {
     async record(delta) {
       recorded.push(delta);
     },
+    async getDay() {
+      return null;
+    },
+    async claimAlert() {
+      return false;
+    },
     async listByProject() {
       return [];
     },
@@ -114,6 +120,12 @@ describe("generateImage", () => {
     };
     const usage: UsageRepository = {
       async record() {},
+      async getDay() {
+        return null;
+      },
+      async claimAlert() {
+        return false;
+      },
       async listByProject() {
         return [];
       },

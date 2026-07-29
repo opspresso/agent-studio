@@ -100,6 +100,8 @@ function executionDepsFixture(channel: FakeChannel) {
       record: async (delta: UsageDelta) => {
         recorded.push(delta);
       },
+      getDay: async () => null,
+      claimAlert: async () => false,
       listByProject: reject,
       listByDateRange: reject,
     },

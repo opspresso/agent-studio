@@ -19,8 +19,15 @@ import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { McpAuthProvider } from "@/domain/mcp/oauth";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
+import type { RunBracketDeps } from "./runBracket";
 
-export interface ExecutionDeps {
+/**
+ * Extends the run bracket's deps rather than restating them: every entry point
+ * in this facade opens a bracket, so anything the bracket needs is something
+ * this bag must carry. Growing the bracket becomes a type error here instead of
+ * a policy that silently stops applying to text runs.
+ */
+export interface ExecutionDeps extends RunBracketDeps {
   versions: VersionRepository;
   projects: ProjectRepository;
   skills: SkillRepository;
