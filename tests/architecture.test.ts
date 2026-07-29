@@ -57,6 +57,8 @@ export interface ModuleImport {
   spec: string;
   /** True for `import type …` / `export type …`, whose cost is compile-time only. */
   typeOnly: boolean;
+  /** True for `import("x")`. Only a *static* import joins a module's own graph. */
+  dynamic: boolean;
 }
 
 export function parseImports(source: string): ModuleImport[] {
@@ -65,12 +67,14 @@ export function parseImports(source: string): ModuleImport[] {
       spec: match[2]!,
       // `import { type A }` mixes a type in with value imports — not type-only.
       typeOnly: /^type\b/.test((match[1] ?? "").trim()),
+      dynamic: false,
     })),
     ...[...source.matchAll(INLINE_IMPORT_RE)].map((match) => ({
       spec: match[1]!,
       // Separating a runtime `await import()` from a type-position one needs a
       // parser. The stricter reading wins: a banned target is reported either way.
       typeOnly: false,
+      dynamic: true,
     })),
   ];
 }
@@ -368,6 +372,71 @@ describe("single owners", () => {
 });
 
 /**
+ * What the Edge runtime has to be able to load.
+ *
+ * Next compiles `instrumentation.ts` for **both** the Node and Edge runtimes,
+ * and `middleware.ts` for Edge only. A Node builtin anywhere in their transitive
+ * imports fails the Edge compile — and since the middleware runs on every page,
+ * that takes the whole console down while every `/api/*` route keeps working,
+ * because those are outside the matcher. That asymmetry is exactly what let it
+ * ship: the API surface tested clean.
+ *
+ * `pnpm build` only *warns*. This fails.
+ */
+const EDGE_ENTRY_POINTS = ["src/instrumentation.ts", "src/middleware.ts"];
+
+/** The Node builtins the Edge runtime implements. Everything else is banned. */
+const EDGE_SAFE_NODE_BUILTINS = new Set([
+  "node:async_hooks",
+  "node:buffer",
+  "node:events",
+  "node:util",
+  "node:assert",
+]);
+
+/** Resolve an `@/…` specifier to the source file it names, if we have one. */
+function fileFor(spec: string): { path: string; text: string } | undefined {
+  if (!spec.startsWith("@/")) {
+    return undefined;
+  }
+  const base = `src/${spec.slice(2)}`;
+  return SOURCE_FILES.find((file) =>
+    [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`].includes(file.path),
+  );
+}
+
+describe("edge runtime compatibility", () => {
+  it.each(EDGE_ENTRY_POINTS)("%s pulls in no Node-only builtin", (entry) => {
+    const seen = new Set<string>();
+    const offenders: string[] = [];
+    const queue = SOURCE_FILES.filter((file) => file.path === entry);
+    expect(queue).toHaveLength(1);
+    while (queue.length > 0) {
+      const file = queue.pop()!;
+      if (seen.has(file.path)) {
+        continue;
+      }
+      seen.add(file.path);
+      // Static value imports only. A `import()` kept lexically inside the
+      // `NEXT_RUNTIME` check folds away in the Edge build — which is the rule
+      // `instrumentation.ts` already documents — and a type import is erased.
+      for (const { spec } of parseImports(file.text).filter((i) => !i.dynamic && !i.typeOnly)) {
+        const resolved = resolveSpec(spec, file.path);
+        if (resolved.startsWith("node:") && !EDGE_SAFE_NODE_BUILTINS.has(resolved)) {
+          offenders.push(`${file.path} -> ${resolved}`);
+          continue;
+        }
+        const next = fileFor(resolved);
+        if (next) {
+          queue.push(next);
+        }
+      }
+    }
+    expect(offenders.sort()).toEqual([]);
+  });
+});
+
+/**
  * The scanner is the thing every rule above trusts. A regex that silently stops
  * matching would report zero violations everywhere and read as a clean pass, so
  * its parsing and its reach are asserted directly.
@@ -395,12 +464,12 @@ describe("scanner", () => {
       ].join("\n"),
     );
     expect(parsed).toEqual([
-      { spec: "@/domain/a", typeOnly: false },
-      { spec: "@/domain/b", typeOnly: true },
-      { spec: "@/domain/cd", typeOnly: false },
-      { spec: "@/infrastructure/e", typeOnly: true },
+      { spec: "@/domain/a", typeOnly: false, dynamic: false },
+      { spec: "@/domain/b", typeOnly: true, dynamic: false },
+      { spec: "@/domain/cd", typeOnly: false, dynamic: false },
+      { spec: "@/infrastructure/e", typeOnly: true, dynamic: false },
       // An inline `type` among value imports is still a value import.
-      { spec: "@/domain/fg", typeOnly: false },
+      { spec: "@/domain/fg", typeOnly: false, dynamic: false },
     ]);
   });
 
@@ -412,8 +481,8 @@ describe("scanner", () => {
       ].join("\n"),
     );
     expect(parsed).toEqual([
-      { spec: "@/lib/config", typeOnly: false },
-      { spec: "@/infrastructure/db/client", typeOnly: false },
+      { spec: "@/lib/config", typeOnly: false, dynamic: true },
+      { spec: "@/infrastructure/db/client", typeOnly: false, dynamic: true },
     ]);
   });
 
@@ -422,7 +491,7 @@ describe("scanner", () => {
       [`export type A = () => number;`, `import { b } from "@/domain/b";`].join("\n"),
     );
     // One import, and a value one — not `A`'s `export type` pinned to `b`.
-    expect(parsed).toEqual([{ spec: "@/domain/b", typeOnly: false }]);
+    expect(parsed).toEqual([{ spec: "@/domain/b", typeOnly: false, dynamic: false }]);
   });
 
   it("flags a banned import that is not on the allowlist", () => {

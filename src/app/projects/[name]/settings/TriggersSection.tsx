@@ -16,6 +16,7 @@ import {
 } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
+import { formatDateTime } from "@/shared/date";
 import {
   createTrigger,
   deleteTrigger,
@@ -100,9 +101,9 @@ export function TriggersSection({ projectName }: { projectName: string }) {
       <Stack gap="lg">
         <Text fz="sm" c="dimmed">
           An outside system can start a run by posting to a trigger&apos;s URL with its secret.
-          Triggers always run the project&apos;s <strong>published</strong> version, and answer
-          immediately — the delivery&apos;s outcome shows up in the table below rather than in the
-          response.
+          Triggers always run the project&apos;s <strong>published</strong>{" "}
+          version, and answer immediately — the delivery&apos;s outcome shows up in the table
+          below rather than in the response.
         </Text>
         {error && (
           <Alert color="red" variant="light">
@@ -184,9 +185,10 @@ export function TriggersSection({ projectName }: { projectName: string }) {
               <Select
                 label="Payload"
                 data={[
-                  { value: "message", label: "As the user message (agent)" },
-                  { value: "variables", label: "As template variables (prompt)" },
+                  { value: "message", label: "User message (agent)" },
+                  { value: "variables", label: "Template variables (prompt)" },
                 ]}
+                w={220}
                 value={trigger.payloadMode}
                 disabled={busy}
                 onChange={(value) =>
@@ -237,17 +239,32 @@ export function TriggersSection({ projectName }: { projectName: string }) {
               <Table fz="xs" withTableBorder>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Started</Table.Th>
-                    <Table.Th>Status</Table.Th>
+                    {/* Widths are reserved rather than left to the content: a
+                        Mantine Badge clips its own label to the cell, so an
+                        unsized Status column renders "SUCCEED…" — the one thing
+                        this table exists to show. */}
+                    <Table.Th w={170}>Started</Table.Th>
+                    <Table.Th w={130}>Status</Table.Th>
                     <Table.Th>Result</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {runs[trigger.triggerId]?.map((run) => (
                     <Table.Tr key={run.runId}>
-                      <Table.Td>{run.startedAt}</Table.Td>
-                      <Table.Td>
-                        <Badge color={STATUS_COLOR[run.status]} variant="light">
+                      {/* The raw ISO string wrapped onto two lines and squeezed
+                          the status badge into "SUCCEE…" — a status column you
+                          cannot read defeats the table. */}
+                      <Table.Td style={{ whiteSpace: "nowrap" }}>
+                        {formatDateTime(run.startedAt)}
+                      </Table.Td>
+                      <Table.Td style={{ whiteSpace: "nowrap" }}>
+                        {/* Badge clamps its own label independently of the cell,
+                            so the column width alone still rendered "SUCCEED…". */}
+                        <Badge
+                          color={STATUS_COLOR[run.status]}
+                          variant="light"
+                          styles={{ label: { overflow: "visible" } }}
+                        >
                           {run.status}
                         </Badge>
                       </Table.Td>
