@@ -131,6 +131,19 @@ function RegisterMcpModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * The modal is mounted for the life of the page — `opened` is a prop, not a
+   * mount — so the draft that just became a server is still here when the next
+   * "Register MCP server" opens, headers and all.
+   */
+  function reset() {
+    setName("");
+    setUrl("");
+    setDescription("");
+    setContent("");
+    setRows([]);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -143,6 +156,7 @@ function RegisterMcpModal({
         content: content || undefined,
         headers: rowsToRecord(rows),
       });
+      reset();
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to register MCP server");

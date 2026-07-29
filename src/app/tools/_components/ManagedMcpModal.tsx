@@ -43,6 +43,19 @@ export function ManagedMcpModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * The modal is mounted for the life of the page — `opened` is a prop, not a
+   * mount — so the draft that just started a container is still here when the
+   * next one opens, image and SSM refs included.
+   */
+  function reset() {
+    setName("");
+    setImage("");
+    setContainerPort("3000");
+    setEnvRefs("");
+    setDescription("");
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setSubmitting(true);
@@ -59,6 +72,7 @@ export function ManagedMcpModal({
         ...(refs.length > 0 ? { envRefs: refs } : {}),
         ...(description ? { description } : {}),
       });
+      reset();
       onCreated();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start the server");

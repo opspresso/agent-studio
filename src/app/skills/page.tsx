@@ -144,12 +144,24 @@ function CreateSkillModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * The modal is mounted for the life of the page — `opened` is a prop, not a
+   * mount — so the draft that just became a skill is still here when the next
+   * "New skill" opens, with a whole markdown body to clear by hand.
+   */
+  function reset() {
+    setName("");
+    setDescription("");
+    setContent("");
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
       await createSkill({ name, description, content });
+      reset();
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create skill");

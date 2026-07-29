@@ -398,6 +398,56 @@ describe("react event handling", () => {
 });
 
 /**
+ * A create modal that keeps its draft.
+ *
+ * These modals are mounted for the life of the page — `opened` is a prop, not a
+ * mount — so their `useState` fields outlive being closed. After a successful
+ * create the next open came up still holding the item that had just been saved,
+ * and the operator either cleared every field by hand or submitted a name the
+ * registry already had.
+ *
+ * Clearing them means naming every field, which is exactly what drifts when a
+ * field is added later, so the rule is mechanical rather than a comment: a
+ * component that calls `onCreated()` clears through a `reset()` immediately
+ * before it, and that `reset()` touches every field setter the component
+ * declares. Adding a field and forgetting its reset fails here.
+ */
+const NOT_A_FIELD = new Set(["setSubmitting", "setError"]);
+
+/** The component that calls `onCreated()`, from its `function` line to the end of the file. */
+function createModalBody(text: string): string {
+  const call = text.indexOf("onCreated();");
+  const declarations = [...text.matchAll(/^(?:export )?function \w+\(/gm)];
+  const owner = declarations.filter((match) => match.index! < call).at(-1);
+  return owner ? text.slice(owner.index!) : "";
+}
+
+describe("create modals", () => {
+  const modals = SOURCE_FILES.filter(
+    (file) => file.path.endsWith(".tsx") && file.text.includes("onCreated();"),
+  );
+
+  // Without this the scan going blind — a renamed callback, a changed call
+  // shape — would read as every modal passing.
+  it("finds the modals to check", () => {
+    expect(modals.length).toBeGreaterThan(0);
+  });
+
+  it.each(modals.map((file) => file.path))("%s clears every field it declares", (path) => {
+    const body = createModalBody(SOURCE_FILES.find((file) => file.path === path)!.text);
+    const fields = [...body.matchAll(/const \[\w+, (set\w+)\] = useState/g)]
+      .map((match) => match[1]!)
+      .filter((setter) => !NOT_A_FIELD.has(setter));
+    const reset = /\n {2}function reset\(\) \{\n([\s\S]*?)\n {2}\}/.exec(body)?.[1] ?? "";
+
+    expect({
+      clearsBeforeOnCreated: /reset\(\);\n\s*onCreated\(\);/.test(body),
+      unreset: fields.filter((setter) => !reset.includes(`${setter}(`)),
+    }).toEqual({ clearsBeforeOnCreated: true, unreset: [] });
+  });
+});
+
+/**
  * What the Edge runtime has to be able to load.
  *
  * Next compiles `instrumentation.ts` for **both** the Node and Edge runtimes.

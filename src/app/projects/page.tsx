@@ -139,12 +139,25 @@ function CreateProjectModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * The modal is mounted for the life of the page — `opened` is a prop, not a
+   * mount — so the draft that just became a project is still here when the next
+   * "New project" opens.
+   */
+  function reset() {
+    setName("");
+    setDisplayName("");
+    setDescription("");
+    setProjectType("llm");
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
       await createProject({ name, displayName: displayName || name, description, projectType });
+      reset();
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");

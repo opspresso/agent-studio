@@ -159,12 +159,26 @@ function RegisterAgentModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * The modal is mounted for the life of the page — `opened` is a prop, not a
+   * mount — so the draft that just became an agent is still here when the next
+   * "Register agent" opens, headers and all.
+   */
+  function reset() {
+    setName("");
+    setUrl("");
+    setProtocol("openai");
+    setDescription("");
+    setRows([]);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
       await createAgent({ name, url, protocol, description, headers: rowsToRecord(rows) });
+      reset();
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to register agent");
