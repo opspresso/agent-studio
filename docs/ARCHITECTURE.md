@@ -735,14 +735,40 @@ unready at once — including the console, chats and dashboards, none of which n
 provider. There, point readiness at `/api/health` too and let the platform's own
 deregistration handle draining (a `preStop` pause covers the endpoint-propagation window).
 
+## Observability
+
+Every top-level run gets a **correlation id** when the bracket admits it, carried in an
+`AsyncLocalStorage` (`src/shared/runContext.ts`) and stamped on every log line the run
+produces: `[mcp run=… trace=…] …`. It is deliberately *not* the trace id — traces are sampled
+on the non-agent paths (`TRACE_SAMPLE_RATE`, default 0.1), so a trace id as the correlation
+id would leave nine out of ten prompt and image runs with nothing to correlate on, and
+sampling does not favour the runs worth reading logs for. A trace, when there is one, is
+linked into the context by the recorder's constructor instead.
+
+`AsyncLocalStorage` rather than a threaded parameter because a run is a generator consumed
+across many awaits, and the code that logs is usually several layers below the code that
+knows which run it is. `enterWith` rather than `run(store, cb)` because the caller is a
+bracket, not a wrapper it could hand a callback to.
+
+`src/shared/logger.ts` is the single owner of writing to the console, pinned by
+`tests/architecture.test.ts`. It lives in `shared` because every layer above needs it;
+`domain` is exempt from the rule because it imports nothing from `@/` at all, so its one
+counter-keeping line cannot reach the logger.
+
 `/api/metrics` is the Prometheus scrape endpoint. It reports the number of top-level runs
 in flight on this instance (`src/lib/runMetrics.ts`), which is the signal to autoscale on:
-runs are I/O bound, so an instance saturated with them still reads as idle CPU. It also
-reports `agent_studio_unknown_model_calls_total` and `agent_studio_unknown_models` — a
+runs are I/O bound, so an instance saturated with them still reads as idle CPU. Alerting
+keys on `agent_studio_runs_failed_total` and `agent_studio_run_duration_seconds` instead —
+the gauge says how busy an instance is and nothing about whether the work is succeeding or
+how long it now takes. A cancelled run (a client that hung up) is not counted as a failure,
+or a page full of users navigating away would read as an outage. The histogram's top finite
+bucket is 600s, the run deadline itself, so anything past it is a run that outlived its own
+limit. It also reports `agent_studio_unknown_model_calls_total` and `agent_studio_unknown_models` — a
 correctness signal rather than a scaling one: a model id missing from the registry still
 runs, but its usage is booked at $0, so the miss is invisible in the cost dashboard it
-corrupts. Counters are per-process and name no project, user, or model, which is why the
-unknown ids are counted rather than labelled.
+corrupts. Counters are per-process and name no project, user, or model — the only label any of them
+carries is a histogram's `le`. A label whose values are unbounded turns one metric into a
+time series per value, which is also why unknown model ids are counted rather than labelled.
 
 Projects are a shared catalog: any signed-in user may read and run any
 project, but mutations (update/delete/publish, version create/update, Slack config) go

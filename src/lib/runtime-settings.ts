@@ -21,6 +21,7 @@ import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config } from "./config";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
+import { log } from "@/shared/logger";
 
 const DEFAULT_TTL_MS = 5_000;
 
@@ -35,7 +36,7 @@ function parseTtlMs(raw: string | undefined): number {
   }
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
-    console.warn(`[settings] ignoring invalid SETTINGS_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`);
+    log.warn("settings", `ignoring invalid SETTINGS_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`);
     return DEFAULT_TTL_MS;
   }
   return value;

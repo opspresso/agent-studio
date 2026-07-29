@@ -8,6 +8,8 @@
  * so every run path — chat, Slack, A2A, predict, image — is bounded the same way.
  */
 
+import { log } from "./logger";
+
 const DEFAULT_MAX_RUN_DURATION_MS = 600_000;
 /** setTimeout / AbortSignal.timeout reject delays outside [1, 2**31 - 1] ms. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -25,8 +27,9 @@ export function parseMaxRunDuration(raw: string | undefined): number {
   }
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0 || value > MAX_TIMEOUT_MS) {
-    console.warn(
-      `[runDeadline] ignoring invalid MAX_RUN_DURATION_MS="${raw}"; using ${DEFAULT_MAX_RUN_DURATION_MS}ms`,
+    log.warn(
+      "config",
+      `ignoring invalid MAX_RUN_DURATION_MS="${raw}"; using ${DEFAULT_MAX_RUN_DURATION_MS}ms`,
     );
     return DEFAULT_MAX_RUN_DURATION_MS;
   }

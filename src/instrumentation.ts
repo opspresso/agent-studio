@@ -15,6 +15,7 @@
  */
 
 import type { ManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
+import { log } from "@/shared/logger";
 
 /**
  * Restart any managed MCP container this process cannot reach.
@@ -30,14 +31,14 @@ function reportReconcile(managed: ManagedMcpUseCases): Promise<void> {
     .then((outcomes) => {
       for (const outcome of outcomes) {
         if (outcome.action !== "healthy") {
-          console.warn(
-            `[managed-mcp] ${outcome.name}: ${outcome.action}${outcome.detail ? ` — ${outcome.detail}` : ""}`,
+          log.warn(
+            "managed-mcp", `${outcome.name}: ${outcome.action}${outcome.detail ? ` — ${outcome.detail}` : ""}`,
           );
         }
       }
       const count = (action: string) => outcomes.filter((o) => o.action === action).length;
-      console.info(
-        `[managed-mcp] reconciled ${outcomes.length} server(s): ` +
+      log.info(
+        "managed-mcp", `reconciled ${outcomes.length} server(s): ` +
           `${count("healthy")} healthy, ${count("restarted")} restarted, ` +
           `${count("failed")} failed, ${count("skipped")} skipped`,
       );
@@ -46,7 +47,7 @@ function reportReconcile(managed: ManagedMcpUseCases): Promise<void> {
       // Repair is best-effort: a server that stays unreachable is the state we
       // started in, and it must not stop this instance from serving everything
       // else.
-      console.error("[managed-mcp] reconcile failed", error);
+      log.error("managed-mcp", "reconcile failed", error);
     });
 }
 
@@ -73,7 +74,7 @@ export async function register(): Promise<void> {
       // the only thing that reaches here is the composition root refusing to
       // load — a different and much larger problem than an unreachable
       // container, and one that would be misread under the other message.
-      console.error("[managed-mcp] could not load the composition root to reconcile", error);
+      log.error("managed-mcp", "could not load the composition root to reconcile", error);
     });
   }
 }

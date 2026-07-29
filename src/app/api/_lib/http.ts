@@ -1,5 +1,6 @@
 import type { ZodError } from "zod";
 import { RateLimitedError, statusForError, ValidationError } from "@/application/errors";
+import { log } from "@/shared/logger";
 
 const NAME_PATTERN = /^[a-z0-9-]+$/;
 
@@ -36,6 +37,6 @@ export function apiError(error: unknown): Response {
       },
     );
   }
-  console.error("[api] unhandled error", error);
+  log.error("api", "unhandled error", error);
   return Response.json({ error: "Internal server error" }, { status: 500 });
 }

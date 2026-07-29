@@ -16,6 +16,7 @@ import { actorKey, type RunActor } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { RateLimitedError } from "@/application/errors";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
+import { log } from "@/shared/logger";
 
 export interface ConcurrencyLimits {
   /** Per identified caller — a person, or a project token acting for one. */
@@ -98,7 +99,7 @@ export async function acquireRunSlot(
   try {
     slot = await deps.runSlots.acquire(key, limit, leaseUntil);
   } catch (error) {
-    console.error(`[concurrency] slot store unavailable for ${key}; refusing the run`, error);
+    log.error("concurrency", `slot store unavailable for ${key}; refusing the run`, error);
     throw new ConcurrencyLimitError(limit, RETRY_AFTER_SECONDS);
   }
   if (!slot) {
@@ -112,7 +113,7 @@ export async function acquireRunSlot(
       } catch (error) {
         // The lease expires on its own, so a failed release costs this caller
         // one slot for the rest of it — never a permanently wedged limit.
-        console.warn(`[concurrency] could not release slot ${slot.index} for ${key}`, error);
+        log.warn("concurrency", `could not release slot ${slot.index} for ${key}`, error);
       }
     },
   };

@@ -2,6 +2,7 @@ import { apiError } from "@/app/api/_lib/http";
 import { NotFoundError } from "@/application/errors";
 import { getA2aApiKey } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
+import { log } from "@/shared/logger";
 
 /**
  * Return the effective A2A API key in plaintext — the stored override decrypted,
@@ -18,7 +19,7 @@ export const POST = withAdminAuth(async (user) => {
       throw new NotFoundError("A2A_API_KEY is not configured");
     }
     // Secret access is worth a trail even when it is authorized.
-    console.warn(`[settings] A2A_API_KEY revealed by ${user.email}`);
+    log.warn("settings", `A2A_API_KEY revealed by ${user.email}`);
     return Response.json({ key });
   } catch (error) {
     return apiError(error);

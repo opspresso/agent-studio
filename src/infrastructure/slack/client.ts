@@ -1,6 +1,7 @@
 /** Minimal Slack Web API client over fetch — no SDK dependency. */
 
 import type { SlackMessage } from "@/domain/slack/types";
+import { log } from "@/shared/logger";
 export type { SlackMessage };
 
 /** Per-page size for paginated reads; Slack's recommended maximum. */
@@ -143,8 +144,8 @@ export const slackClient = {
         return messages;
       }
     }
-    console.warn(
-      `[slack] thread ${args.ts} exceeds ${MAX_THREAD_PAGES} pages; newest replies were not read`,
+    log.warn(
+      "slack", `thread ${args.ts} exceeds ${MAX_THREAD_PAGES} pages; newest replies were not read`,
     );
     return messages;
   },

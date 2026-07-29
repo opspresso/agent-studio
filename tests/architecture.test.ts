@@ -295,6 +295,20 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/unauthorized.ts",
   },
   {
+    // Every line already carried a `[scope]` prefix by convention, and the
+    // convention was the only thing holding it: nothing stopped a new spelling,
+    // and none of them said which run they came from. `domain` is exempt because
+    // it imports nothing from `@/` at all — not even `shared` — so its one
+    // counter-keeping line cannot reach the logger and stays a bare call.
+    what: "writing to the console",
+    pattern: /(?:^|[\s;{(])console\.(?:log|warn|error|info)\(/m,
+    owner: "src/shared/logger.ts",
+    alsoAllowedIn: ["domain"],
+    // The API-reference page ships a Node.js SDK sample *containing* a
+    // `console.log` call. It is text shown to a user, not a call this app makes.
+    alsoAllowedUnder: ["src/app/projects/[name]/api-reference/"],
+  },
+  {
     // Four functions admit a top-level run, and each used to open the in-flight
     // metric for itself — which is exactly why the daily cost guard had four
     // places it could have been forgotten. `openRun` is now the one bracket, so

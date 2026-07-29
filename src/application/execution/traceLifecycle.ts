@@ -5,6 +5,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
 import type { ExecuteVersionInput, ExecutionDeps } from "./deps";
+import { log } from "@/shared/logger";
 
 export function sampledTraceRecorder(
   deps: ExecutionDeps,
@@ -52,6 +53,6 @@ export async function finishTrace(
   try {
     await recorder.finish(error, cancelled);
   } catch (traceError) {
-    console.error("[trace] persistence failed", traceError);
+    log.error("trace", "persistence failed", traceError);
   }
 }

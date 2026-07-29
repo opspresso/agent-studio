@@ -10,6 +10,7 @@ import { actorKey, type RunActor } from "@/domain/execution/actor";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/shared/runDeadline";
 import { openRun, type RunBracketDeps } from "@/application/execution/runBracket";
+import { log } from "@/shared/logger";
 
 /**
  * Extends the run bracket's deps because an image run is a top-level run: it is
@@ -59,7 +60,7 @@ async function finishTrace(recorder: TraceRecorder | undefined, error?: unknown)
   try {
     await recorder.finish(error);
   } catch (traceError) {
-    console.error("[trace] persistence failed", traceError);
+    log.error("trace", "persistence failed", traceError);
   }
 }
 
@@ -94,6 +95,7 @@ export async function generateImage(
           ...(input.actor ? { actor: input.actor } : {}),
         })
       : undefined;
+  let failed = false;
   try {
     const sources = input.images ?? [];
     const result: ImageGenerationResult =
@@ -126,7 +128,7 @@ export async function generateImage(
         ...(input.actor ? { actor: actorKey(input.actor) } : {}),
       });
     } catch (error) {
-      console.error("[image] usage recording failed", error);
+      log.error("image", "usage recording failed", error);
     }
     recorder?.observeResult({ content: "", model, usage: recorded });
     await finishTrace(recorder);
@@ -138,9 +140,10 @@ export async function generateImage(
       usage: recorded,
     };
   } catch (error) {
+    failed = !input.signal?.aborted;
     await finishTrace(recorder, error);
     throw error;
   } finally {
-    await bracket.close();
+    await bracket.close({ failed });
   }
 }

@@ -1,5 +1,5 @@
 /**
- * In-process run counters, exposed by `/api/metrics` for autoscaling.
+ * In-process run counters, exposed by `/api/metrics` for autoscaling and alerting.
  *
  * This workload is I/O bound: a run holds its connection open while it waits on
  * the LLM provider and the tools it calls, at near-zero CPU. CPU utilization
@@ -14,11 +14,29 @@
  * Only top-level runs are counted. Subagent transfers execute inside their
  * parent's run and would otherwise inflate the gauge with work that consumes no
  * additional connection.
+ *
+ * Nothing here is labelled by project, user or model — the same rule the
+ * unknown-model counter follows. A label whose values are unbounded turns one
+ * metric into a time series per value, and none of these questions need one.
  */
+
+/**
+ * Duration buckets, in seconds, cumulative as Prometheus histograms are.
+ *
+ * Chosen for the shape of this workload rather than a default ladder: a chat
+ * turn is seconds, a multi-turn agent run is tens of seconds to minutes, and the
+ * hard deadline is 600s — so the top finite bucket is the deadline itself, and
+ * anything beyond it is a run that outlived its own limit.
+ */
+export const DURATION_BUCKETS_SECONDS = [0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600];
 
 let activeRuns = 0;
 let runsStarted = 0;
 let runsFinished = 0;
+let runsFailed = 0;
+let durationSumSeconds = 0;
+let durationObservations = 0;
+let bucketCounts = new Array<number>(DURATION_BUCKETS_SECONDS.length).fill(0);
 
 /** Call when a top-level run starts; pair with {@link endRun} in a `finally`. */
 export function beginRun(): void {
@@ -26,22 +44,56 @@ export function beginRun(): void {
   runsStarted += 1;
 }
 
-/** Call when a top-level run ends, however it ended. */
-export function endRun(): void {
+/**
+ * Call when a top-level run ends, however it ended.
+ *
+ * `failed` is the signal to alert on: the gauge says how busy an instance is and
+ * nothing about whether the work is succeeding. A cancelled run — a client that
+ * hung up — is not a failure and must not be counted as one, or a page full of
+ * users navigating away reads as an outage.
+ */
+export function endRun(outcome: { durationMs?: number; failed?: boolean } = {}): void {
   // Clamped: a stray extra end would otherwise drive the gauge negative and
   // permanently understate load to the autoscaler.
   activeRuns = Math.max(0, activeRuns - 1);
   runsFinished += 1;
+  if (outcome.failed) {
+    runsFailed += 1;
+  }
+  if (outcome.durationMs !== undefined) {
+    const seconds = outcome.durationMs / 1000;
+    durationSumSeconds += seconds;
+    durationObservations += 1;
+    for (const [index, bound] of DURATION_BUCKETS_SECONDS.entries()) {
+      if (seconds <= bound) {
+        bucketCounts[index] = (bucketCounts[index] ?? 0) + 1;
+      }
+    }
+  }
 }
 
 export interface RunMetricsSnapshot {
   activeRuns: number;
   runsStarted: number;
   runsFinished: number;
+  runsFailed: number;
+  durationSumSeconds: number;
+  /** Cumulative counts aligned with {@link DURATION_BUCKETS_SECONDS}. */
+  durationBuckets: number[];
+  /** Every observation — the histogram's `_count` and its `+Inf` bucket. */
+  durationCount: number;
 }
 
 export function runMetricsSnapshot(): RunMetricsSnapshot {
-  return { activeRuns, runsStarted, runsFinished };
+  return {
+    activeRuns,
+    runsStarted,
+    runsFinished,
+    runsFailed,
+    durationSumSeconds,
+    durationBuckets: [...bucketCounts],
+    durationCount: durationObservations,
+  };
 }
 
 /** Test seam — production code never resets counters. */
@@ -49,4 +101,8 @@ export function resetRunMetrics(): void {
   activeRuns = 0;
   runsStarted = 0;
   runsFinished = 0;
+  runsFailed = 0;
+  durationSumSeconds = 0;
+  durationObservations = 0;
+  bucketCounts = new Array<number>(DURATION_BUCKETS_SECONDS.length).fill(0);
 }

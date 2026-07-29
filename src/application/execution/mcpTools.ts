@@ -6,6 +6,7 @@ import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { isManagedLoopback } from "@/domain/mcp/types";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
+import { log } from "@/shared/logger";
 
 /**
  * MCP tools one run may declare. Providers reject a request that declares too
@@ -39,7 +40,7 @@ export async function buildMcpTools(
       async (binding): Promise<{ server?: McpServerConfig; description?: string; warning?: string }> => {
         const mcp = await deps.mcps.get(binding.name);
         if (!mcp) {
-          console.warn(`[run] MCP server '${binding.name}' is not in the registry; skipping it`);
+          log.warn("run", `MCP server '${binding.name}' is not in the registry; skipping it`);
           return {
             warning: `MCP server '${binding.name}' is no longer in the registry; its tools were not offered.`,
           };
@@ -57,7 +58,7 @@ export async function buildMcpTools(
             await deps.urlPolicy.assertAllowed(mcp.url);
           } catch (error) {
             const reason = error instanceof BlockedUrlError ? error.message : String(error);
-            console.warn(`Skipping MCP server '${mcp.name}': ${reason}`);
+            log.warn("mcp", `skipping server '${mcp.name}': ${reason}`);
             return { warning: `MCP server '${mcp.name}' was blocked: ${reason}` };
           }
         }
@@ -121,7 +122,7 @@ export async function buildMcpTools(
   // owner to re-diagnose it from a warning on every future run.
   for (const serverName of toolManager.unauthorizedServers) {
     await deps.mcpAuth.markUnauthorized(version.projectName, serverName).catch((error: unknown) => {
-      console.warn(`[mcp] could not flag '${serverName}' as needing reauthorization`, error);
+      log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
     });
   }
   // Providers cap how many tools one request may declare, and a request over
@@ -166,6 +167,6 @@ export async function closeMcp(close: (() => Promise<void>) | undefined): Promis
   try {
     await close();
   } catch (error) {
-    console.warn("[mcp] session cleanup failed", error);
+    log.warn("mcp", "session cleanup failed", error);
   }
 }

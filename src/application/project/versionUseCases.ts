@@ -14,6 +14,7 @@ import { getModelConfig } from "@/domain/llm/models";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure, isTransactionCancelled } from "@/application/errors";
 import { assertProjectWritable } from "./projectUseCases";
 import { nextUpdatedAt } from "./timestamps";
+import { log } from "@/shared/logger";
 
 /**
  * Registry lookups a version's references are checked against. A dangling
@@ -200,8 +201,8 @@ function assertValidImageModel(parameters: VersionParameters): void {
 /** Warn (non-blocking) when a version references a model missing from the catalog. */
 function warnUnknownCatalogModel(projectName: string, model: string): void {
   if (!getModelConfig(model)) {
-    console.warn(
-      `[version] ${projectName}: model "${model}" is not in the catalog; usage will be recorded with $0 cost`,
+    log.warn(
+      "version", `${projectName}: model "${model}" is not in the catalog; usage will be recorded with $0 cost`,
     );
   }
 }

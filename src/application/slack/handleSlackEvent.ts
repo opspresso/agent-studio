@@ -9,6 +9,7 @@ import {
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
 import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
+import { log } from "@/shared/logger";
 
 /** The slice of the Slack Web API the event handler uses; faked in tests. */
 export interface SlackClientPort {
@@ -177,7 +178,7 @@ async function collectImageParts(
         image_url: { url: imageDataUrl({ b64: data.toString("base64"), mimeType }) },
       });
     } catch (error) {
-      console.error("[slack] attachment download failed", error);
+      log.error("slack", "attachment download failed", error);
       warnings.push(
         `Could not read attachment ${label}: ${error instanceof Error ? error.message : "unknown"}`,
       );
@@ -282,7 +283,7 @@ export async function handleSlackEvent(
     return;
   }
 
-  console.log(`[slack] run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
+  log.info("slack", `run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
 
   const warnings: string[] = [];
   // Read the thread *before* posting the placeholder — otherwise our own
@@ -296,7 +297,7 @@ export async function handleSlackEvent(
       });
       turns = threadToTurns(replies, event.ts).slice(-MAX_HISTORY_MESSAGES);
     } catch (error) {
-      console.error("[slack] thread history failed", error);
+      log.error("slack", "thread history failed", error);
       warnings.push("Thread history unavailable; answered without prior context.");
     }
   }
@@ -397,8 +398,8 @@ export async function handleSlackEvent(
     );
   }
 
-  console.log(
-    `[slack] run done project=${projectName} chars=${text.length} images=${images.length} warnings=${warnings.length}`,
+  log.info(
+    "slack", `run done project=${projectName} chars=${text.length} images=${images.length} warnings=${warnings.length}`,
   );
   for (const [index, image] of images.entries()) {
     try {
@@ -411,7 +412,7 @@ export async function handleSlackEvent(
         title: image.prompt?.slice(0, 80) ?? "Generated image",
       });
     } catch (error) {
-      console.error("[slack] image upload failed", error);
+      log.error("slack", "image upload failed", error);
       warnings.push(`Image upload failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
   }
@@ -426,6 +427,6 @@ export async function handleSlackEvent(
       text: text ? (suffix ? `${text}\n\n${suffix}` : text) : suffix || "(no response)",
     });
   } catch (error) {
-    console.error("[slack] final update failed", error);
+    log.error("slack", "final update failed", error);
   }
 }
