@@ -451,3 +451,61 @@ export async function listProjectMcpTools(
   }
   return (await readJson<{ tools: McpTool[] }>(response)).tools;
 }
+
+// --- Triggers --------------------------------------------------------------
+
+export type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
+
+export interface TriggerView extends Omit<import("@/domain/trigger/types").WebhookTrigger, "secret"> {
+  secretMasked: string;
+  /** Returned once, on create and on rotation. */
+  secret?: string;
+}
+
+export function listTriggers(name: string): Promise<{ triggers: TriggerView[] }> {
+  return fetch(`/api/projects/${name}/triggers`).then((r) =>
+    readJson<{ triggers: TriggerView[] }>(r),
+  );
+}
+
+export function createTrigger(
+  name: string,
+  input: { triggerId: string; description?: string; payloadMode?: "variables" | "message"; allowConcurrent?: boolean },
+): Promise<TriggerView> {
+  return fetch(`/api/projects/${name}/triggers`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<TriggerView>(r));
+}
+
+export function updateTrigger(
+  name: string,
+  triggerId: string,
+  input: {
+    description?: string;
+    enabled?: boolean;
+    payloadMode?: "variables" | "message";
+    allowConcurrent?: boolean;
+    rotateSecret?: boolean;
+  },
+): Promise<TriggerView> {
+  return fetch(`/api/projects/${name}/triggers/${triggerId}`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<TriggerView>(r));
+}
+
+export function deleteTrigger(name: string, triggerId: string): Promise<void> {
+  return fetch(`/api/projects/${name}/triggers/${triggerId}`, { method: "DELETE" }).then(assertOk);
+}
+
+export function listTriggerRuns(
+  name: string,
+  triggerId: string,
+): Promise<{ runs: import("@/domain/trigger/types").TriggerRun[] }> {
+  return fetch(`/api/projects/${name}/triggers/${triggerId}/runs`).then((r) =>
+    readJson<{ runs: import("@/domain/trigger/types").TriggerRun[] }>(r),
+  );
+}

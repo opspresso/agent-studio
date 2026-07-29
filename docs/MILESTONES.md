@@ -29,40 +29,8 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 **선행 관계**
 
 ```
-webhook-trigger ──→ schedule-trigger        run-observability
+schedule-trigger        run-observability
 ```
-
----
-
-## webhook-trigger — Webhook 트리거
-
-**이유**: 현재 실행은 사용자 요청, Slack, A2A 호출에 의존한다. 외부 시스템이 이벤트로
-published project를 실행할 수 있어야 운영 워크플로에 연결된다. Webhook은 기존 요청·응답
-경계 안에서 처리되므로 새 인프라 없이 도입할 수 있다.
-
-**선행**: 없음. 트리거 실행의 주체는 `RunActor`에 `webhook` kind를 더해 표현한다 —
-사람이 없는 호출도 주체가 있다는 규약은 이미 서 있다.
-
-**범위**
-
-- 프로젝트별 webhook 트리거 생성·활성화·비활성화.
-- 프로젝트별 인증 URL과 secret. secret은 암호화 저장하고 조회 시 masking
-  (`SecretCipher` 포트 사용).
-- 항상 published version만 실행. published version이 없으면 실행하지 않는다.
-- 고정 입력과 trigger payload를 project variables 또는 agent message로 전달.
-- `Idempotency-Key` 기반 중복 실행 방지.
-- 동시 실행 시 중첩 허용 여부를 명시적으로 설정.
-- 실행 상태, 시작·종료 시각, 결과·오류, `traceId`를 이력으로 저장.
-- 콘솔에서 트리거 설정과 최근 실행 결과를 확인.
-
-**설계 메모**: 실행 이력 item은 `schedule-trigger`가 그대로 재사용한다. 키 구조와 TTL은
-여기서 확정되므로, 프로젝트 파티션 안에서 트리거 종류(webhook/schedule)를 구분할 수 있게
-설계한다. 나머지 run 관련 row와 마찬가지로 `expiresAt`을 붙여 무한 증식을 막는다.
-
-**완료 조건**: webhook 호출이 published version을 실행하고, 비활성 트리거와 published
-version이 없는 프로젝트는 실행하지 않는다. 같은 `Idempotency-Key`가 재전달돼도 실행
-이력이 중복 생성되지 않는다. 성공·실패·중복 제거·인증 실패·동시 실행 정책을 테스트로
-검증하고, 콘솔에서 설정과 최근 실행 결과를 확인할 수 있다.
 
 ---
 
@@ -72,8 +40,8 @@ version이 없는 프로젝트는 실행하지 않는다. 같은 `Idempotency-Ke
 단일 Next.js process 내부 timer로는 만족스럽게 구현할 수 없어 durable scheduler/worker
 경계가 필요하며, 이 인프라 결정이 `webhook-trigger`와 규모를 다르게 만든다.
 
-**선행**: `webhook-trigger`. 트리거 저장 구조, 실행 이력, 중복 제거 규약을 그쪽이
-확정한다.
+**선행**: 없음. 트리거 저장 구조·실행 이력·중복 제거 규약은 webhook 쪽이 확정했다
+(`domain/trigger/`, `PROJECT#{name} / TRIGGER#…` 및 `TRIGGERRUN#…`).
 
 **범위**
 
@@ -81,7 +49,9 @@ version이 없는 프로젝트는 실행하지 않는다. 같은 `Idempotency-Ke
   `docs/ARCHITECTURE.md`에 기록한다. **이 선택이 끝나기 전에는 구현에 착수하지 않는다.**
 - 프로젝트별 schedule 트리거: cron expression과 timezone.
 - 동일 schedule 시각의 중복 실행 방지(조건부 쓰기 기반).
-- 실행 이력·중첩 정책은 `webhook-trigger`의 구조를 재사용한다.
+- 실행 이력·중첩 정책은 webhook 트리거의 구조를 재사용한다 — `TriggerRepository`,
+  `TriggerRun`, 그리고 중첩 방지에 쓰는 run slot lease.
+- `TriggerKind`에 `"schedule"`을 더하고, cron 평가만 새로 만든다.
 
 **설계 메모 — 이 결정에는 이미 고객이 하나 더 있다.** Slack 이벤트 처리는 3초 ack 후
 `after()`로 백그라운드에서 돌기 때문에, 이벤트를 claim한 인스턴스가 급사하면 작업이

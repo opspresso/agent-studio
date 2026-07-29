@@ -15,7 +15,9 @@ export type RunActorKind =
   /** A Slack mention or DM, identified by the Slack user id. */
   | "slack"
   /** An inbound A2A call, authenticated by the shared app key. */
-  | "a2a";
+  | "a2a"
+  /** A webhook trigger delivery, identified by `{project}:{triggerId}`. */
+  | "webhook";
 
 export interface RunActor {
   kind: RunActorKind;

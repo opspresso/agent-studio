@@ -77,6 +77,9 @@ GSIs: `GSI1` (`GSI1PK`/`GSI1SK`), `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `e
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
 | Project API token | `PROJECT#{name}` | `APITOKEN` | — | — |
+| Webhook trigger | `PROJECT#{name}` | `TRIGGER#{triggerId}` | — | — |
+| Trigger delivery | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
+| Trigger idempotency claim | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
 | Chat message | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
 | Skill | `SKILL#{name}` | `META` | `TYPE#SKILL` | `{name}` |
@@ -146,6 +149,7 @@ records usage. To trace any request, start there.
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent` in `app/api/chats/_deps.ts`) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
+| Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `executeProjectStream` (bound in `container.ts` as `triggerRunnerDeps.run`) |
 
 The two table entries not on that list are thin wrappers alongside: `generateImage`
 (`src/application/image/generateImage.ts`, the image predict path) and `collectRun`
@@ -572,6 +576,35 @@ Two deliberate strategies coexist:
   tool names) to the system prompt so the model knows which server a tool group belongs
   to; servers that are unreachable or expose no tools are omitted.
 
+### Triggers
+- `WebhookTrigger { projectName, triggerId (slug), kind, description, enabled, secret
+  (AES-encrypted, masked on read), variables?, payloadMode, allowConcurrent,
+  createdAt, updatedAt }`. Triggers and their delivery history both live in the project
+  partition, so the project cascade delete already removes them and a trigger's runs are one
+  `begins_with`; run rows carry a TTL (`TRIGGER_RUN_RETENTION_DAYS`, default 30) because a
+  delivery log is not a record to keep.
+- **Published only**, via `resolveRunnableVersion` — a draft is configuration in progress,
+  and an external system firing at one would run whatever an editor happened to have saved.
+- The secret is compared with `cipher.decryptEquals` (constant time) **before** the enabled
+  flag is read, so a disabled trigger cannot answer a wrong secret differently from an
+  enabled one — that difference is an oracle for which triggers exist.
+- `Idempotency-Key` is claimed with a conditional write (24h TTL), the same shape as the
+  Slack event claim.
+- `allowConcurrent: false` (the default) is enforced by reusing a **run slot**: "at most one
+  in flight, and a dead instance's hold expires" is exactly what `RunSlotRepository` already
+  is. Off by default because a webhook that fires faster than the run takes would otherwise
+  pile runs up until the cost guard notices.
+- `payloadMode` decides what the payload becomes. `variables` flattens its scalar top-level
+  fields over the trigger's fixed ones — only strings can be substituted into a template, so
+  a nested object is dropped rather than rendered as `[object Object]`. `message` serialises
+  it into the user turn, which is what an agent project can reason about.
+- Every refusal is a history row with a status, including a skip: an operator must be able to
+  tell "it never fired" from "it fired and failed" without reading logs.
+- The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
+  last ten minutes and no webhook sender waits that long. Same durability gap as Slack, too —
+  an instance lost mid-delivery leaves a row stuck in `running`, which is what the durable
+  worker in the schedule-trigger milestone would close for both.
+
 ### External Agents (registry, A2A-lite)
 - `ExternalAgent { name, url (OpenAI-compatible or agent endpoint), protocol? ('openai' |
   'a2a', absent = openai), description, headers (encrypted like MCP), createdAt, updatedAt }`
@@ -643,6 +676,10 @@ GET|POST|DELETE /api/projects/[name]/token  per-project API token, owner/admin (
 POST /api/projects/[name]/token/reveal      read that token back in plaintext, owner/admin
 POST /api/settings/a2a-key                  issue/reissue the app-wide A2A key, admin-only
 POST /api/settings/a2a-key/reveal           read the effective A2A key in plaintext, admin-only
+GET|POST /api/projects/[name]/triggers          webhook triggers (owner/admin)
+PUT|DELETE /api/projects/[name]/triggers/[trigger]
+GET  /api/projects/[name]/triggers/[trigger]/runs   delivery history
+POST /api/triggers/[project]/[trigger]      webhook delivery, gated by X-Trigger-Secret
 GET|PUT|DELETE /api/projects/[name]/slack   per-project Slack bot, owner/admin (+ POST …/slack/test)
 GET  /api/projects/[name]/a2a               project A2A exposure status
 GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
@@ -676,7 +713,8 @@ GET  /api/metrics                           Prometheus scrape (in-flight runs, u
 All routes require a Better Auth session except the unauthenticated endpoints:
 `/api/auth/*` (the Better Auth login flow itself), `/api/health`, `/api/ready`,
 `/api/metrics`,
-`/api/slack/events/*` (verified by signing secret), `POST /api/a2a/[name]`
+`/api/slack/events/*` (verified by signing secret), `/api/triggers/*` (verified by the
+trigger's own secret), `POST /api/a2a/[name]`
 (gated by `A2A_API_KEY`), and the public Agent Card GET. The three execution endpoints
 (`predict`, `chat/completions`, `agent`) also accept a per-project API token via
 `Authorization: Bearer <token>` in place of the session — resolved by
@@ -755,7 +793,7 @@ Better Auth, Google OAuth, DynamoDB, `STAGE`) stays env-only. SSE responses use
 
 Generated secrets: the two credentials Agent Studio issues itself carry a prefix naming
 product and kind (`src/shared/generatedSecret.ts`) — `asa_` for the app-wide A2A key, `ast_`
-for a project API token — so a leaked string is traceable to what it opens. Both are issued
+for a project API token, `asw_` for a webhook trigger secret — so a leaked string is traceable to what it opens. Both are issued
 from the console. The A2A key is an ordinary settings override: encrypted, then masked on
 every later read. A project API token is stored AES-encrypted for the same reason — the
 owner can read it back later through `POST /api/projects/[name]/token/reveal`, which is a

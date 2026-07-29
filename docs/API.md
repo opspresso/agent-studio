@@ -356,6 +356,51 @@ Range validation matches `/api/usages/summary` (both dates required, `from ≤ t
 days). Subagent transfers are attributed to whoever started the run, not to the project
 they transferred into.
 
+## Webhook triggers
+
+Configuration (owner/admin):
+
+```
+GET    /api/projects/{name}/triggers                     → 200 { triggers: [ … ] }
+POST   /api/projects/{name}/triggers                     → 201 { …, secret }   | 409
+PUT    /api/projects/{name}/triggers/{trigger}           → 200 { … }           | 404
+DELETE /api/projects/{name}/triggers/{trigger}           → 204                 | 404
+GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }
+```
+
+Create body: `{ triggerId (slug), description?, enabled?, variables?, payloadMode?,
+allowConcurrent? }`. The response carries `secret` in the clear — the only time it is
+readable, like a freshly issued project API token; later reads return `secretMasked` only.
+`PUT` takes the same fields plus `rotateSecret: true`, which re-issues it (and returns the
+new one once). The previous secret stops working immediately.
+
+Delivery (no session — the secret is the authentication):
+
+```
+POST /api/triggers/{project}/{trigger}
+  X-Trigger-Secret: asw_…
+  Idempotency-Key: <optional>
+  { "any": "json payload" }
+→ 202 { ok: true, status: "accepted", runId }
+→ 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-published-version" }
+→ 401 (wrong or missing secret) | 404 (no such trigger) | 400 (bad JSON) | 413 (>1MB)
+```
+
+`202` even for the refusals a caller cannot fix by retrying: the delivery was accepted and
+its outcome is recorded, which is where an operator looks. Only `accepted` starts a run.
+
+The endpoint answers immediately and runs in the background — a run can last ten minutes and
+no webhook sender waits that long, so the result is on the delivery's history row rather than
+in the response. A trigger always runs the project's **published** version.
+
+`payloadMode: "message"` (the default) serialises the payload into the user turn — what an
+agent project reads. `"variables"` flattens the payload's scalar top-level fields over the
+trigger's fixed `variables` for a prompt template; non-scalar fields are dropped rather than
+rendered as `[object Object]`.
+
+`allowConcurrent` is false by default: a second delivery while one is still running is
+recorded as `skipped` rather than piling runs up.
+
 ## Traces
 
 ```
