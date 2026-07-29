@@ -228,6 +228,13 @@ sequenceDiagram
   X->>X: usage aggregator flush (finally)
 ```
 
+Streaming entry points pull the generator's **first chunk before constructing the Response**
+(`src/app/api/_lib/sse.ts`). A run refused by a guard throws on that first `next()`, before
+producing anything; building the response first would send `200 text/event-stream` and then
+deliver the refusal as a data frame, so an SSE caller would never see the 429 or its
+`Retry-After`. Holding one chunk lets the throw reach `apiError`, and the stream is otherwise
+byte-identical.
+
 ### EngineChunk contract
 
 `EngineChunk` (`src/domain/llm/types.ts`) is the wire unit between the engine and every
@@ -749,7 +756,16 @@ linked into the context by the recorder's constructor instead.
 `AsyncLocalStorage` rather than a threaded parameter because a run is a generator consumed
 across many awaits, and the code that logs is usually several layers below the code that
 knows which run it is. `enterWith` rather than `run(store, cb)` because the caller is a
-bracket, not a wrapper it could hand a callback to.
+bracket, not a wrapper it could hand a callback to — which makes **where** it is called
+load-bearing: it must run before the bracket's first `await`, or it binds to the bracket's
+own continuation and never reaches the run that produces the lines.
+
+`enterWith` does not survive the generator delegation on the two paths that start work
+outside a request, so `after()` callers open the scope themselves with
+`withRunContext` — the webhook delivery with its **delivery id** (what the history row and
+console show) and the Slack handler with the **event id** (what the dedup claim is keyed by).
+An already-open scope wins inside `openRun`: minting a second id underneath would split one
+delivery's lines across two.
 
 `src/shared/logger.ts` is the single owner of writing to the console, pinned by
 `tests/architecture.test.ts`. It lives in `shared` because every layer above needs it;

@@ -85,6 +85,41 @@ describe("run correlation", () => {
     expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
     await bracket.close();
   });
+
+  /**
+   * The bug this pins: `openRun` entered the store *after* its first await, so
+   * it bound to the bracket's own continuation and the caller — every line the
+   * run actually produces — saw nothing. Every test here passed anyway, because
+   * they all entered the store themselves. Assert from the caller's side.
+   */
+  it("is visible to the caller after openRun returns", async () => {
+    resetRunMetrics();
+    const bracket = await openRun({ usage }, project);
+    expect(currentRunContext()?.runId).toBe(bracket.runId);
+    await bracket.close();
+  });
+
+  it("still carries the id at the end of the run, not just the start", async () => {
+    resetRunMetrics();
+    const bracket = await openRun({ usage }, project);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    linkTrace("trace-x");
+    expect(currentRunContext()).toMatchObject({ runId: bracket.runId, traceId: "trace-x" });
+    await bracket.close();
+  });
+
+  it("joins a scope background work already opened, rather than minting a second id", async () => {
+    // `after()` leaves the request's async context, so a webhook delivery opens
+    // its own scope with the id its history row shows. A fresh id underneath
+    // would split one delivery's lines across two.
+    resetRunMetrics();
+    await withRunContext({ runId: "delivery-1" }, async () => {
+      const bracket = await openRun({ usage }, project);
+      expect(bracket.runId).toBe("delivery-1");
+      expect(currentRunContext()?.runId).toBe("delivery-1");
+      await bracket.close();
+    });
+  });
 });
 
 describe("run metrics", () => {

@@ -56,11 +56,17 @@ export async function openRun(
   project: Project,
   actor?: RunActor,
 ): Promise<RunBracket> {
+  // Before the first `await`, and therefore before this function leaves the
+  // caller's async context. `enterWith` binds the store to the context it runs
+  // in; called after an await it would bind to this function's own continuation
+  // and never reach the caller — which is exactly what happened, and it looked
+  // fine in a unit test that entered the store itself.
+  //
+  // The cost is that a refused run also mints an id. That is the better trade:
+  // the refusal's own log line is correlated too.
+  const context = enterRunContext();
   await assertWithinCostLimit(deps, project);
   const slot = await acquireRunSlot(deps, actor);
-  // Opened once the run is admitted, so a refused one does not mint an id that
-  // never appears again — and before the first log line the run produces.
-  const context = enterRunContext();
   const startedAt = Date.now();
   beginRun();
   let closed = false;

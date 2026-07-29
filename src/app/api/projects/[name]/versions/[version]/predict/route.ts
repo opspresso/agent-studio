@@ -56,7 +56,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     // and subagent its version declares.
     if (parsed.data.stream) {
       const abortController = new AbortController();
-      return sseResponse(
+      return await sseResponse(
         executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
         abortController,
       );

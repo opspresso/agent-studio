@@ -23,7 +23,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     const project = await getProject(projectRepository, name);
     const versionEntity = await getVersion(versionRepository, name, version);
     const abortController = new AbortController();
-    return sseResponse(
+    return await sseResponse(
       executeAgent(executionDeps, {
         project,
         version: versionEntity,

@@ -49,7 +49,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         ...versionParams,
         signal: abortController.signal,
       });
-      return sseResponse(
+      return await sseResponse(
         toChatCompletionChunks(source, versionEntity.model),
         abortController,
       );

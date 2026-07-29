@@ -3,6 +3,7 @@ import { admitDelivery, executeDelivery } from "@/application/trigger/runTrigger
 import { triggerRunnerDeps } from "@/lib/container";
 import { readBodyText, BodyTooLargeError } from "@/shared/httpBody";
 import { unauthorized } from "@/shared/unauthorized";
+import { withRunContext } from "@/shared/runContext";
 
 type RouteContext = { params: Promise<{ project: string; trigger: string }> };
 
@@ -70,8 +71,16 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       break;
   }
 
-  after(async () => {
-    await executeDelivery(triggerRunnerDeps, admitted, payload);
-  });
+  // The delivery id, not a fresh one: it is what the history row and the console
+  // show, so a log line and the delivery an operator is looking at share a key.
+  // Opened here because `after()` runs outside the request's async context, and
+  // the run bracket's `enterWith` does not survive the generator delegation
+  // between here and it.
+  const runId = admitted.runId;
+  after(() =>
+    withRunContext({ runId }, async () => {
+      await executeDelivery(triggerRunnerDeps, admitted, payload);
+    }),
+  );
   return Response.json({ ok: true, status: "accepted", runId: admitted.runId }, { status: 202 });
 }
