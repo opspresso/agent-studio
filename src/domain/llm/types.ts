@@ -58,6 +58,8 @@ export interface EngineChunk {
    * element is always {@link author}.
    */
   authorPath?: string[];
+  /** This authored run returned; consumers should stop showing its chain as active. */
+  authorDone?: boolean;
   delta?: {
     content?: string;
     reasoningContent?: string;

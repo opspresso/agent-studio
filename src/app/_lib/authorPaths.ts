@@ -55,6 +55,12 @@ export function trackActivePath(active: string[][], path: string[]): string[][] 
   ];
 }
 
+/** Remove a completed chain and anything nested beneath it. */
+export function removeActivePath(active: string[][], path: string[]): string[][] {
+  const completed = key(path);
+  return active.filter((existing) => !key(existing).startsWith(completed));
+}
+
 /** The chain a chunk came from, or nothing when it is the top-level agent's. */
 export function chunkAuthorPath(chunk: {
   author?: string;
