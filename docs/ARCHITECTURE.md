@@ -337,7 +337,10 @@ Two deliberate strategies coexist:
   - a builtin serves a call only when that builtin was **offered** this run (the offered
     names come from `buildAgentTools`, never from dep presence): `Skill` (progressive skill
     loading), `transfer_to_agent` (subagent transfer — local recursion or remote agent HTTP
-    call; budget guard `turn + 2 >= maxTurn` rejects transfer), `GenerateImage` (image
+    call; budget guard `turn + 2 >= maxTurn` rejects transfer), `dispatch_agents` (several
+    subagents at once, answers collected into one budgeted tool result — offered to top-level
+    runs only, so the number of concurrent children does not grow with transfer depth),
+    `GenerateImage` (image
     generation via the injected `generateImage` dep; results persist to S3 when configured),
     `EditImage` (edit an existing image by handle id via the injected `editImage` dep). Any
     other name is an MCP tool; `BUILTIN_TOOL_NAMES` is reserved during alias allocation so an

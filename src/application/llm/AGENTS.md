@@ -66,6 +66,30 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   grandchild inherits the original conversation rather than a transcript of a transcript,
   while an **image child gets the bare message** — that message is its image prompt, so a
   conversation prepended to it would be drawn.
+- **`dispatch_agents` is fan-out; `transfer_to_agent` is handoff.** One call runs several
+  children at once and collects their answers, so it stays a *single* entry in call order —
+  whatever ran before it in that order has already run — and the answers land in **one tool
+  result**, spent from the same `MAX_TOOL_RESULT_CHARS_PER_TURN` budget as every other
+  result. That is why it is its own tool rather than parallel transfers: a transfer's answer
+  enters as a `postContextMessages` user turn, which no budget bounds at all.
+  - Offered to **top-level runs only** (`input.canDispatch`, set by `executeAgent`). A child
+    that could dispatch would multiply concurrent runs by transfer depth, and a subagent run
+    does not pass through the run bracket — these children are outside the concurrency and
+    cost guards, so `MAX_DISPATCH_TASKS` and that asymmetry are the only bounds on them.
+  - Turn accounting is a transfer's: children start at `turn + 1`, the parent resumes at
+    `turn + 2` however many ran, guarded by the same `turn + 2 >= maxTurn`.
+  - Children advance through `mergeGenerators` (`src/shared/`), which keeps each one's return
+    value at **its own index** — chunks interleave in arrival order, answers are collected in
+    task order.
+  - The budget is **split evenly** across tasks rather than spent in order: a first child
+    answering at length would otherwise starve every task after it, which is the whole point
+    of having asked several at once.
+  - A task that cannot run (bad shape, unknown `image_ids`, past the width limit) keeps its
+    place in the result carrying its reason, and does **not** cancel the others. The group is
+    prefixed `Error:` only when *every* task failed — the trace recorder reads that prefix, so
+    a partial failure must not report the whole call as failed. Telling a failed task from a
+    quiet one requires watching the child's stream (`observeChildFailure`): a child never
+    throws, it yields an `error` chunk and returns `""`.
 - Turn guard: `turn >= maxTurn` (default 50) silently ends the loop. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT

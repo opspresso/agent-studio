@@ -294,6 +294,28 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/execution/mcpTools.ts",
   },
   {
+    what: "how many agents one dispatch may run",
+    pattern: /MAX_DISPATCH_TASKS\s*=/,
+    owner: "src/application/llm/engine.ts",
+  },
+  {
+    // Where the subtleties of a hand-rolled merge live: exactly one in-flight
+    // `next()` per source, return values kept at their own index rather than in
+    // arrival order, and closing that is deliberately never awaited. A second
+    // copy gets one of those three wrong.
+    what: "merging concurrent generators",
+    pattern: /IteratorResult</,
+    owner: "src/shared/mergeGenerators.ts",
+  },
+  {
+    // Two consumers derived this identically, and they would have drifted the
+    // moment one of them had to track more than one chain at a time — which is
+    // exactly what dispatching several agents at once made necessary.
+    what: "deriving the transfer chain a chunk came from",
+    pattern: /authorPath \?\? \(/,
+    owner: "src/app/_lib/authorPaths.ts",
+  },
+  {
     what: "the 401 response body",
     pattern: /error: "Unauthorized"/,
     owner: "src/shared/unauthorized.ts",
