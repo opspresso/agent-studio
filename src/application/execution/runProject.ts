@@ -216,6 +216,11 @@ export async function* executeAgent(
       messages: input.messages,
       parameters: toEngineParameters(input.version),
       now: startedAt,
+      // Fan-out is offered here and nowhere below it. A child that could dispatch
+      // would multiply the number of concurrent runs by transfer depth, and a
+      // subagent run does not pass through the run bracket — so nothing but this
+      // asymmetry keeps those children inside a bound.
+      canDispatch: true,
       maxTurn: input.version.maxTurn,
       skills,
       subagents,

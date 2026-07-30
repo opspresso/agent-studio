@@ -1,0 +1,322 @@
+/**
+ * The `dispatch_agents` builtin: several children at once, their answers
+ * collected into one budgeted tool result.
+ */
+
+import { describe, expect, it } from "vitest";
+import type { EngineChunk } from "@/domain/llm/types";
+import {
+  buildAgentTools,
+  BUILTIN_TOOL_NAMES,
+  DISPATCH_TOOL_NAME,
+  runAgent,
+  type AgentDeps,
+  type RunAgentInput,
+} from "@/application/llm/engine";
+import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+
+const MODEL = "google/gemini-2.5-flash";
+
+const SUBAGENTS: RunAgentInput["subagents"] = [
+  { name: "alpha", description: "A", type: "local" },
+  { name: "beta", description: "B", type: "local" },
+  { name: "gamma", description: "C", type: "local" },
+];
+
+async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
+  const chunks: EngineChunk[] = [];
+  for await (const chunk of gen) {
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+
+/** A promise this test resolves by hand, so completion order is chosen. */
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { opened, open };
+}
+
+function dispatchTurn(tasks: Array<Record<string, unknown>>) {
+  return [
+    toolCallChunk(0, "call_d", DISPATCH_TOOL_NAME, JSON.stringify({ tasks })),
+    usageChunk(1, 1),
+  ];
+}
+
+function inputWith(overrides: Partial<RunAgentInput> = {}): RunAgentInput {
+  return {
+    projectName: "p",
+    model: MODEL,
+    systemPrompt: "s",
+    messages: [{ role: "user", content: "split this up" }],
+    subagents: SUBAGENTS,
+    canDispatch: true,
+    ...overrides,
+  };
+}
+
+function dispatchResult(chunks: EngineChunk[]): string {
+  return chunks.find((c) => c.toolResult?.name === DISPATCH_TOOL_NAME)?.toolResult?.content ?? "";
+}
+
+describe("dispatch_agents", () => {
+  it("runs every task at the same time", async () => {
+    const gates = new Map([
+      ["alpha", gate()],
+      ["beta", gate()],
+      ["gamma", gate()],
+    ]);
+    let active = 0;
+    let peak = 0;
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      active += 1;
+      peak = Math.max(peak, active);
+      await gates.get(agentName)?.opened;
+      active -= 1;
+      yield { author: agentName, delta: { content: `${agentName} spoke` } };
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+        { agent_name: "gamma", message: "three" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const pending = collect(
+      runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith()),
+    );
+    // Nothing finishes until the gates open, so a sequential implementation would
+    // deadlock here rather than merely be slower.
+    for (const held of gates.values()) {
+      held.open();
+    }
+    await pending;
+
+    expect(peak).toBe(3);
+  });
+
+  it("collects answers in task order even when they finish out of order", async () => {
+    const gates = new Map([
+      ["alpha", gate()],
+      ["beta", gate()],
+      ["gamma", gate()],
+    ]);
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      await gates.get(agentName)?.opened;
+      yield { author: agentName, delta: { content: agentName } };
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+        { agent_name: "gamma", message: "three" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const pending = collect(
+      runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith()),
+    );
+    // Reverse of the request order.
+    gates.get("gamma")?.open();
+    gates.get("beta")?.open();
+    gates.get("alpha")?.open();
+    const result = dispatchResult(await pending);
+
+    expect(result.indexOf("### alpha")).toBeLessThan(result.indexOf("### beta"));
+    expect(result.indexOf("### beta")).toBeLessThan(result.indexOf("### gamma"));
+    expect(result).toContain("alpha answered");
+    expect(result).toContain("gamma answered");
+  });
+
+  it("costs the parent the same two turns however many agents ran", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield { author: agentName, delta: { content: agentName } };
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+        { agent_name: "gamma", message: "three" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith()));
+
+    // The parent resumed once — three children did not consume three turns.
+    expect(channel.seenParams).toHaveLength(2);
+  });
+
+  it("refuses the call when two turns do not remain", async () => {
+    let started = 0;
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      started += 1;
+      yield { author: agentName, delta: { content: agentName } };
+      return "answered";
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([{ agent_name: "alpha", message: "one" }]),
+      [contentChunk("unused"), usageChunk(1, 1)],
+    ]);
+
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async () => {}, runSubagent },
+        inputWith({ maxTurn: 2 }),
+      ),
+    );
+
+    expect(dispatchResult(chunks)).toContain("max_turn reached");
+    expect(started).toBe(0);
+  });
+
+  it("keeps the answers of the tasks that worked when one fails", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      if (agentName === "beta") {
+        yield { author: agentName, error: "beta is unreachable" };
+        return "";
+      }
+      yield { author: agentName, delta: { content: agentName } };
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    expect(result).toContain("alpha answered");
+    expect(result).toContain("beta is unreachable");
+    // A partial failure is not a failed call: the trace reads this prefix.
+    expect(result.startsWith("Error:")).toBe(false);
+  });
+
+  it("reports a failed call only when no agent produced an answer", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield { author: agentName, error: `${agentName} is unreachable` };
+      return "";
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    expect(result.startsWith("Error:")).toBe(true);
+    expect(result).toContain("alpha is unreachable");
+    expect(result).toContain("beta is unreachable");
+  });
+
+  it("splits the turn budget evenly, so a long first answer cannot starve the rest", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield { author: agentName, delta: { content: agentName } };
+      // Far past the whole turn's budget, let alone this task's share.
+      return agentName === "alpha" ? "A".repeat(400_000) : "beta answered in full";
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    expect(result).toContain("truncated");
+    // The point of the even split: the second task still has its answer.
+    expect(result).toContain("beta answered in full");
+  });
+
+  it("refuses tasks past the width limit instead of dropping them", async () => {
+    const started: string[] = [];
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      started.push(agentName);
+      yield { author: agentName, delta: { content: agentName } };
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "1" },
+        { agent_name: "beta", message: "2" },
+        { agent_name: "gamma", message: "3" },
+        { agent_name: "alpha", message: "4" },
+        { agent_name: "beta", message: "5" },
+        { agent_name: "gamma", message: "6" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    expect(started).toHaveLength(4);
+    // Said, not silently shortened — otherwise the model answers for work that
+    // never ran.
+    expect(result).toContain("not run");
+  });
+
+  it("rejects a task with no agent_name without cancelling the others", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield { author: agentName, delta: { content: agentName } };
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([{ agent_name: "alpha", message: "one" }, { message: "no agent" }]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    expect(result).toContain("alpha answered");
+    expect(result).toContain("each task needs agent_name");
+  });
+});
+
+describe("dispatch_agents is offered only to a top-level run", () => {
+  const names = (canDispatch: boolean) =>
+    buildAgentTools(undefined, [], SUBAGENTS ?? [], false, false, false, canDispatch).tools.map(
+      (tool) => tool.function.name,
+    );
+
+  it("offers it alongside the transfer tool at the top level", () => {
+    expect(names(true)).toEqual(["transfer_to_agent", DISPATCH_TOOL_NAME]);
+  });
+
+  it("withholds it from a subagent run", () => {
+    // A child that could dispatch would multiply concurrent runs by transfer
+    // depth, and those runs are outside the run bracket's guards.
+    expect(names(false)).toEqual(["transfer_to_agent"]);
+  });
+
+  it("reserves the name so an MCP tool called dispatch_agents stays reachable", () => {
+    expect(BUILTIN_TOOL_NAMES).toContain(DISPATCH_TOOL_NAME);
+  });
+});

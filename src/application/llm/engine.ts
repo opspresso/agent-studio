@@ -39,10 +39,12 @@ import { ValidationError } from "@/application/errors";
 import { PiiFilter } from "./pii";
 import { renderTemplate } from "./template";
 import { formatRunClock } from "@/shared/date";
+import { mergeGenerators } from "@/shared/mergeGenerators";
 import { log } from "@/shared/logger";
 
 export const SKILL_TOOL_NAME = "Skill";
 export const TRANSFER_TOOL_NAME = "transfer_to_agent";
+export const DISPATCH_TOOL_NAME = "dispatch_agents";
 export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 /**
@@ -54,9 +56,22 @@ export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 export const BUILTIN_TOOL_NAMES: readonly string[] = [
   SKILL_TOOL_NAME,
   TRANSFER_TOOL_NAME,
+  DISPATCH_TOOL_NAME,
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
 ];
+
+/**
+ * Agents one `dispatch_agents` call may run at once.
+ *
+ * Lower than the MCP ceiling on purpose: a child is a whole run — its own tool
+ * resolution, MCP sessions and multi-turn loop — not one request. And it is a
+ * hard bound rather than a queue because a subagent run does not pass through
+ * the run bracket, so these children are outside the concurrency and cost
+ * guards; the only thing limiting them is this number and the fact that a child
+ * is never offered this tool.
+ */
+const MAX_DISPATCH_TASKS = 4;
 const DEFAULT_MAX_TURN = 50;
 
 /** An image this run can edit, addressed by a short id the model can quote. */
@@ -212,6 +227,12 @@ export interface RunAgentInput {
   parameters?: EngineParameters;
   /** See {@link RunPromptInput.now} — injected, never read from the clock here. */
   now?: Date;
+  /**
+   * Whether this run may fan out to several agents at once. Set by the top-level
+   * execution facade only — a subagent run is never given the tool, so the number
+   * of children a request can start does not grow with transfer depth.
+   */
+  canDispatch?: boolean;
   maxTurn?: number;
   /** Starting turn, used when a subagent continues the parent's turn budget. */
   startTurn?: number;
@@ -501,6 +522,45 @@ function restoreValues(filter: PiiFilter, value: unknown): unknown {
     );
   }
   return value;
+}
+
+/**
+ * One entry of a `dispatch_agents` call once it has been validated. A task that
+ * cannot run carries its reason instead of a message, so it keeps its place in
+ * the result without being dispatched.
+ */
+type DispatchPlan =
+  | { agentName: string; failure: string }
+  | {
+      agentName: string;
+      message: string;
+      childImages: Array<{ b64: string; mimeType: string }>;
+    };
+
+/**
+ * Pass a dispatched child's stream through, noting the first error it reported.
+ *
+ * A child never throws — the runner turns its failures into `error` chunks and
+ * returns an empty string — so watching the stream is the only way to tell a
+ * failed task from one that simply had nothing to say. The distinction is
+ * load-bearing twice: the group's result is prefixed `Error:` only when *every*
+ * task failed, and the trace recorder reads that prefix to decide whether the
+ * span failed.
+ */
+async function* observeChildFailure(
+  source: AsyncGenerator<EngineChunk, string>,
+  sink: { error?: string },
+): AsyncGenerator<EngineChunk, string> {
+  while (true) {
+    const step = await source.next();
+    if (step.done) {
+      return step.value;
+    }
+    if (step.value.error && sink.error === undefined) {
+      sink.error = step.value.error;
+    }
+    yield step.value;
+  }
 }
 
 async function* runSubagentWithPii(
@@ -987,7 +1047,7 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
  * The set of names is not restated in prose: `transfer_to_agent`'s `agent_name`
  * is an enum, which constrains the call itself rather than asking for it.
  */
-function subagentSystemPromptAddition(subagents: SubagentInfo[]): string {
+function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: boolean): string {
   const rows = subagents
     .map((a) => `| ${a.name} | ${tableCell(a.description) || "No description"} |`)
     .join("\n");
@@ -996,15 +1056,22 @@ function subagentSystemPromptAddition(subagents: SubagentInfo[]): string {
   // agent or prompt child, but an image child is handed the `message` alone
   // (it is that child's image prompt), and the engine cannot tell them apart
   // from here — so the request itself always has to be complete.
-  return [
+  const lines = [
     "## Available Agents",
     "",
     "`message` is the whole of the request: the other agent does not see your instructions, so say what it should do. The recent conversation is passed alongside as background. Once it has answered, do not transfer to it again for the same request.",
-    "",
-    "| Agent | Description |",
-    "|-------|-------------|",
-    rows,
-  ].join("\n");
+  ];
+  if (withDispatch) {
+    // Which of the two tools fits is specific to this section, like everything
+    // else stated here — it is a fact about these agents, not a precedence rule,
+    // so it does not belong in the framing.
+    lines.push(
+      "",
+      `Parts that do not depend on each other go to \`${DISPATCH_TOOL_NAME}\` in **one** call, so they run at the same time. A single request goes to \`${TRANSFER_TOOL_NAME}\`.`,
+    );
+  }
+  lines.push("", "| Agent | Description |", "|-------|-------------|", rows);
+  return lines.join("\n");
 }
 
 function skillToolDef(skills: SkillInfo[]): ChannelToolDef {
@@ -1066,6 +1133,64 @@ function transferToolDef(subagents: SubagentInfo[], withImages: boolean): Channe
             : {}),
         },
         required: ["agent_name", "message"],
+      },
+    },
+  };
+}
+
+/**
+ * Fan-out, where {@link transferToolDef} is handoff.
+ *
+ * Two tools rather than one widened tool. A call that runs several agents is a
+ * different shape from one that hands the request to a single agent: the array
+ * is what lets the model say "these do not depend on each other", and because it
+ * is one call, the whole group keeps its place in call order and its answers
+ * land in one tool result — spent from the same turn budget as every other tool
+ * result rather than appended to the context with no budget at all.
+ */
+function dispatchToolDef(subagents: SubagentInfo[], withImages: boolean): ChannelToolDef {
+  return {
+    type: "function",
+    function: {
+      name: DISPATCH_TOOL_NAME,
+      description: `Run several connected agents at the same time and collect their answers. Use this instead of ${TRANSFER_TOOL_NAME} when the request splits into parts that do not depend on each other. At most ${MAX_DISPATCH_TASKS} agents per call.`,
+      parameters: {
+        type: "object",
+        properties: {
+          tasks: {
+            type: "array",
+            minItems: 1,
+            maxItems: MAX_DISPATCH_TASKS,
+            description:
+              "One entry per agent. They run concurrently, so no entry may depend on another's answer — dependent work belongs in a later turn.",
+            items: {
+              type: "object",
+              properties: {
+                agent_name: {
+                  type: "string",
+                  enum: subagents.map((a) => a.name),
+                  description: "The agent to run.",
+                },
+                message: {
+                  type: "string",
+                  description:
+                    "The full message for this agent. It sees neither your instructions nor the other tasks.",
+                },
+                ...(withImages
+                  ? {
+                      image_ids: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Ids of images to hand to this agent (see Available Images).",
+                      },
+                    }
+                  : {}),
+              },
+              required: ["agent_name", "message"],
+            },
+          },
+        },
+        required: ["tasks"],
       },
     },
   };
@@ -1163,6 +1288,8 @@ export function buildAgentSystemPrompt(
   images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean },
   /** See {@link RunPromptInput.now}. Omitted keeps the prompt clock-free. */
   now?: Date,
+  /** Whether this run is offered `dispatch_agents` (see {@link buildAgentTools}). */
+  canDispatch = false,
 ): string {
   const withMcp = mcpServers.length > 0;
   const sections: string[] = [];
@@ -1173,7 +1300,7 @@ export function buildAgentSystemPrompt(
     sections.push(mcpSystemPromptAddition(mcpServers));
   }
   if (subagents.length > 0) {
-    sections.push(subagentSystemPromptAddition(subagents));
+    sections.push(subagentSystemPromptAddition(subagents, canDispatch));
   }
   if (images.canEdit || images.canTransfer) {
     sections.push(imageSystemPromptAddition(images.handles, images, withMcp));
@@ -1267,6 +1394,12 @@ export function buildAgentTools(
   withImageTool: boolean,
   withEditTool: boolean,
   withImageTransfer: boolean,
+  /**
+   * Whether fan-out is offered. False for a subagent run: a child that could
+   * dispatch would multiply the run count by depth, and these children run
+   * outside the concurrency and cost guards (see {@link MAX_DISPATCH_TASKS}).
+   */
+  canDispatch = false,
 ): { tools: ChannelToolDef[]; builtinNames: Set<string> } {
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
   // The names of the builtins actually offered. The tool loop intercepts a call
@@ -1280,6 +1413,10 @@ export function buildAgentTools(
   if (subagents.length > 0) {
     tools.push(transferToolDef(subagents, withImageTransfer));
     builtinNames.add(TRANSFER_TOOL_NAME);
+    if (canDispatch) {
+      tools.push(dispatchToolDef(subagents, withImageTransfer));
+      builtinNames.add(DISPATCH_TOOL_NAME);
+    }
   }
   if (withImageTool) {
     tools.push(IMAGE_TOOL_DEF);
@@ -1348,6 +1485,9 @@ export async function* runAgent(
   if (canEdit || canTransfer) {
     registerInputImages(images, input.messages);
   }
+  // Fan-out is offered only where it can actually reach a child: the facade said
+  // this is a top-level run, and there is a runner to dispatch to.
+  const canDispatch = Boolean(input.canDispatch && deps.runSubagent);
   const systemPrompt = buildAgentSystemPrompt(
     input.systemPrompt,
     skills,
@@ -1355,6 +1495,7 @@ export async function* runAgent(
     input.mcpServers ?? [],
     { handles: images.list(), canEdit, canTransfer },
     input.now,
+    canDispatch,
   );
   const { tools, builtinNames } = buildAgentTools(
     input.mcpTools,
@@ -1363,6 +1504,7 @@ export async function* runAgent(
     Boolean(deps.generateImage),
     canEdit,
     canTransfer,
+    canDispatch,
   );
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
 
@@ -1626,6 +1768,165 @@ export async function* runAgent(
             filter?.mask(subagentContextMessage(agentName, childText)) ??
             subagentContextMessage(agentName, childText),
         });
+        nextTurn = Math.max(nextTurn, turn + 2);
+        continue;
+      }
+
+      if (builtin && call.name === DISPATCH_TOOL_NAME && deps.runSubagent) {
+        const dispatchSubagent = deps.runSubagent;
+        // A group costs the parent exactly what one transfer costs: the children
+        // run at turn+1 and the parent resumes at turn+2 however many there were.
+        if (turn + 2 >= maxTurn) {
+          const errorText = `Error: Agent max_turn reached before ${DISPATCH_TOOL_NAME}.`;
+          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
+          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          continue;
+        }
+        const rawTasks = Array.isArray(displayArgs.tasks) ? displayArgs.tasks : [];
+        if (rawTasks.length === 0) {
+          const errorText = `Error: ${DISPATCH_TOOL_NAME} requires a non-empty tasks array; each task needs agent_name and message.`;
+          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
+          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          continue;
+        }
+        // Validated per task, and one task that cannot run does not cancel the
+        // others — its own section says why. Tasks past the width limit are
+        // refused the same way rather than dropped: a silently shortened list
+        // makes the model answer for work that never ran.
+        const plans = rawTasks.map((raw, index): DispatchPlan => {
+          const task = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+            string,
+            unknown
+          >;
+          const agentName = typeof task.agent_name === "string" ? task.agent_name : "";
+          const label = agentName || `task ${index + 1}`;
+          if (index >= MAX_DISPATCH_TASKS) {
+            return {
+              agentName: label,
+              failure: `Error: not run — at most ${MAX_DISPATCH_TASKS} agents per ${DISPATCH_TOOL_NAME} call. Ask for this one again.`,
+            };
+          }
+          const message = typeof task.message === "string" ? task.message : "";
+          if (!agentName || !message.trim()) {
+            return {
+              agentName: label,
+              failure: "Error: each task needs agent_name and a non-empty message.",
+            };
+          }
+          const requestedIds = Array.isArray(task.image_ids)
+            ? task.image_ids.filter((id): id is string => typeof id === "string")
+            : [];
+          const handedOver = requestedIds
+            .map((id) => images.get(id))
+            .filter(Boolean) as ImageHandle[];
+          if (handedOver.length < requestedIds.length) {
+            const known = images.list().map((handle) => handle.id);
+            return {
+              agentName,
+              failure: `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`,
+            };
+          }
+          return {
+            agentName,
+            message,
+            childImages: handedOver.map(({ b64, mimeType }) => ({ b64, mimeType })),
+          };
+        });
+        const runnable = plans.flatMap((plan, index) =>
+          "failure" in plan ? [] : [{ plan, index, outcome: {} as { error?: string } }],
+        );
+        // Same clipped-transcript report a transfer makes, and for the same
+        // reason: these children receive the same conversation.
+        if (runnable.length > 0 && !transcriptTruncationReported) {
+          transcriptTruncationReported = true;
+          yield {
+            author,
+            warning: `Earlier turns were left out of the context handed to other agents: a transfer carries at most ${MAX_TRANSFER_CONTEXT_CHARS} characters of this conversation.`,
+          };
+        }
+        // Every child advances at once; their chunks interleave, which is what
+        // `author`/`authorPath` on a subagent chunk is for. The returned texts
+        // come back at their own index, not in arrival order.
+        const answers = yield* mergeGenerators(
+          runnable.map(({ plan, outcome }) =>
+            observeChildFailure(
+              filter
+                ? runSubagentWithPii(
+                    filter,
+                    dispatchSubagent,
+                    plan.agentName,
+                    plan.message,
+                    turn + 1,
+                    maxTurn,
+                    plan.childImages,
+                    transcript,
+                  )
+                : dispatchSubagent(
+                    plan.agentName,
+                    plan.message,
+                    turn + 1,
+                    maxTurn,
+                    plan.childImages,
+                    transcript,
+                  ),
+              outcome,
+            ),
+          ),
+        );
+        // Split evenly rather than spent in order: a first task that answers at
+        // length would otherwise starve every task after it, which is the whole
+        // point of having asked several at once.
+        const perTask = Math.max(
+          1,
+          Math.floor(MAX_TOOL_RESULT_CHARS_PER_TURN / Math.max(1, runnable.length)),
+        );
+        const answerByIndex = new Map<number, { text: string; failed: boolean }>();
+        runnable.forEach(({ index, outcome }, position) => {
+          const answer = (answers[position] ?? "").trim();
+          if (outcome.error) {
+            answerByIndex.set(index, { text: `Error: ${outcome.error}`, failed: true });
+            return;
+          }
+          if (!answer) {
+            answerByIndex.set(index, {
+              text: "Error: the agent returned no answer.",
+              failed: true,
+            });
+            return;
+          }
+          answerByIndex.set(index, { text: createToolResultBudget(perTask)(answer), failed: false });
+        });
+        const sections = plans.map((plan, index) => ({
+          agentName: plan.agentName,
+          ...("failure" in plan
+            ? { text: plan.failure, failed: true }
+            : (answerByIndex.get(index) ?? {
+                text: "Error: the agent did not run.",
+                failed: true,
+              })),
+        }));
+        // Prefixed `Error:` only when nothing succeeded. A partial failure is not
+        // a failed call — the sections that answered are usable, and the trace
+        // reads this prefix to decide whether the span failed.
+        const body = sections
+          .map((section) => `### ${section.agentName}\n${section.text}`)
+          .join("\n\n");
+        const dispatchText = sections.every((section) => section.failed)
+          ? `Error: no agent in this ${DISPATCH_TOOL_NAME} call produced an answer.\n\n${body}`
+          : body;
+        // Through the turn budget like any other tool result, which is the reason
+        // the answers come back here instead of as an unbudgeted context message.
+        const spentText = spendResultBudget(dispatchText);
+        const maskedDispatch = filter?.mask(spentText) ?? spentText;
+        yield {
+          author,
+          toolResult: {
+            toolCallId: call.id,
+            name: call.name,
+            content: filter?.restore(maskedDispatch) ?? spentText,
+          },
+        };
+        toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedDispatch });
         nextTurn = Math.max(nextTurn, turn + 2);
         continue;
       }
