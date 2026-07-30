@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
-import { chunkAuthorPath, mergeAuthorPath } from "@/app/_lib/authorPaths";
+import { chunkAuthorPath, mergeVisitedPath, trackActivePath } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
@@ -176,9 +176,10 @@ export function RunPanel({
         // now and joins the set; an unauthored one means control is back at the
         // top level and none of them is still going.
         const path = chunkAuthorPath(chunk);
-        setActivePaths((prev) => (path ? mergeAuthorPath(prev, path) : []));
+        // Two different questions: what is running now, and what this run reached.
+        setActivePaths((prev) => (path ? trackActivePath(prev, path) : []));
         if (path) {
-          setVisitedPaths((prev) => mergeAuthorPath(prev, path));
+          setVisitedPaths((prev) => mergeVisitedPath(prev, path));
         }
         const content = chunk.delta?.content;
         if (content && isTopLevelChunk(chunk)) {

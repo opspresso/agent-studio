@@ -1,5 +1,5 @@
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
-import { chunkAuthorPath, mergeAuthorPath } from "@/app/_lib/authorPaths";
+import { chunkAuthorPath, trackActivePath } from "@/app/_lib/authorPaths";
 import { isTopLevelChunk } from "@/domain/llm/types";
 import type { LiveTurn, StreamChunk } from "./types";
 
@@ -30,11 +30,11 @@ function toolResultName(toolResult: unknown): string | undefined {
 export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   let { text, toolCalls, tools, images, warnings, authorPaths } = prev;
   // Follow the stream: an authored chunk names a chain that is running now and
-  // joins the set — several children speak at once under `dispatch_agents`. An
-  // unauthored chunk means the top-level agent has control again, and none of
-  // them is still running.
+  // joins the set — several children speak at once under `dispatch_agents`, while
+  // a chain it is nested with has evidently finished. An unauthored chunk means
+  // the top-level agent has control again, and none of them is still running.
   const path = chunkAuthorPath(chunk);
-  authorPaths = path ? mergeAuthorPath(authorPaths, path) : [];
+  authorPaths = path ? trackActivePath(authorPaths, path) : [];
   if (typeof chunk.delta?.content === "string" && isTopLevelChunk(chunk)) {
     text += chunk.delta.content;
   }
