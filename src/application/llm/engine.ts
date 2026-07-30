@@ -541,11 +541,14 @@ type DispatchPlan =
  * Pass a dispatched child's stream through, noting the first error it reported.
  *
  * A child never throws — the runner turns its failures into `error` chunks and
- * returns an empty string — so watching the stream is the only way to tell a
- * failed task from one that simply had nothing to say. The distinction is
- * load-bearing twice: the group's result is prefixed `Error:` only when *every*
- * task failed, and the trace recorder reads that prefix to decide whether the
- * span failed.
+ * returns an empty string — so this is the only way to say *why* a task came back
+ * with nothing.
+ *
+ * It does **not** decide that the task failed. An `error` chunk in a child's
+ * stream is not the child ending: a nested transfer it could not reach arrives as
+ * a tool error and the child may answer from it, and a deeper descendant's
+ * failure travels out through this same stream. The returned text decides;
+ * this only explains an empty one.
  */
 async function* observeChildFailure(
   source: AsyncGenerator<EngineChunk, string>,
@@ -1890,18 +1893,24 @@ export async function* runAgent(
         const answerByIndex = new Map<number, { text: string; failed: boolean }>();
         runnable.forEach(({ index, outcome }, position) => {
           const answer = (answers[position] ?? "").trim();
-          if (outcome.error) {
-            answerByIndex.set(index, { text: `Error: ${outcome.error}`, failed: true });
-            return;
-          }
-          if (!answer) {
+          // The answer decides, not the error chunks that went past. A child whose
+          // nested transfer failed still answers from that tool error, and a
+          // descendant's failure surfaces on this same stream — treating either as
+          // the task's outcome would throw away the answer it actually produced,
+          // and one recovered failure per task would report the whole call failed.
+          if (answer) {
             answerByIndex.set(index, {
-              text: "Error: the agent returned no answer.",
-              failed: true,
+              text: createToolResultBudget(perTask)(answer),
+              failed: false,
             });
             return;
           }
-          answerByIndex.set(index, { text: createToolResultBudget(perTask)(answer), failed: false });
+          answerByIndex.set(index, {
+            text: outcome.error
+              ? `Error: ${outcome.error}`
+              : "Error: the agent returned no answer.",
+            failed: true,
+          });
         });
         const sections = plans.map((plan, index) => ({
           agentName: plan.agentName,
