@@ -191,7 +191,9 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
         />
       ))}
       <div style={{ maxWidth: "80%" }}>
-        {turn.authorPath && <AuthorBadge path={turn.authorPath} />}
+        {turn.authorPaths.map((path) => (
+          <AuthorBadge key={path.join(">")} path={path} />
+        ))}
         <AssistantBubble>
           {turn.text ? (
             <MarkdownContent content={turn.text} />
