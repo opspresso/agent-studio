@@ -137,6 +137,42 @@ describe("dispatch_agents", () => {
     expect(result).toContain("gamma answered");
   });
 
+  it("reports each child completion before slower siblings finish", async () => {
+    const beta = gate();
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield { author: agentName, delta: { content: agentName } };
+      if (agentName === "beta") {
+        await beta.opened;
+      }
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+    const stream = runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith());
+
+    const seen: EngineChunk[] = [];
+    while (!seen.some((chunk) => chunk.authorDone)) {
+      const step = await stream.next();
+      if (step.done) {
+        break;
+      }
+      seen.push(step.value);
+    }
+
+    expect(seen.at(-1)).toMatchObject({
+      author: "alpha",
+      authorPath: ["alpha"],
+      authorDone: true,
+    });
+    beta.open();
+    await collect(stream);
+  });
+
   it("costs the parent the same two turns however many agents ran", async () => {
     const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
       yield { author: agentName, delta: { content: agentName } };

@@ -11,6 +11,8 @@ export interface StreamChunk {
   author?: string;
   /** Transfer chain that produced the chunk, outermost first. */
   authorPath?: string[];
+  /** This authored run returned and is no longer active. */
+  authorDone?: boolean;
   /** A binding the run could not use; the run still answers. */
   warning?: string;
   error?: string;

@@ -73,6 +73,18 @@ describe("reduceChunk author tracking", () => {
     expect(turn.text).toBe("");
   });
 
+  it("removes a completed sibling while another dispatched agent is still active", () => {
+    let turn = reduceChunk(EMPTY_TURN, { author: "alpha", delta: { content: "a" } });
+    turn = reduceChunk(turn, { author: "beta", delta: { content: "b" } });
+    turn = reduceChunk(turn, {
+      author: "alpha",
+      authorPath: ["alpha"],
+      authorDone: true,
+    });
+
+    expect(turn.authorPaths).toEqual([["beta"]]);
+  });
+
   it("clears them when the top-level agent speaks again", () => {
     let turn = reduceChunk(EMPTY_TURN, { author: "alpha", delta: { content: "a" } });
     turn = reduceChunk(turn, { author: "beta", delta: { content: "b" } });

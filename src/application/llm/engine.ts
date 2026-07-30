@@ -566,6 +566,15 @@ async function* observeChildFailure(
   }
 }
 
+async function* reportChildCompletion(
+  source: AsyncGenerator<EngineChunk, string>,
+  agentName: string,
+): AsyncGenerator<EngineChunk, string> {
+  const answer = yield* source;
+  yield { author: agentName, authorPath: [agentName], authorDone: true };
+  return answer;
+}
+
 async function* runSubagentWithPii(
   filter: PiiFilter,
   runSubagent: NonNullable<AgentDeps["runSubagent"]>,
@@ -1859,27 +1868,30 @@ export async function* runAgent(
         // come back at their own index, not in arrival order.
         const answers = yield* mergeGenerators(
           runnable.map(({ plan, outcome }) =>
-            observeChildFailure(
-              filter
-                ? runSubagentWithPii(
-                    filter,
-                    dispatchSubagent,
-                    plan.agentName,
-                    plan.message,
-                    turn + 1,
-                    maxTurn,
-                    plan.childImages,
-                    transcript,
-                  )
-                : dispatchSubagent(
-                    plan.agentName,
-                    plan.message,
-                    turn + 1,
-                    maxTurn,
-                    plan.childImages,
-                    transcript,
-                  ),
-              outcome,
+            reportChildCompletion(
+              observeChildFailure(
+                filter
+                  ? runSubagentWithPii(
+                      filter,
+                      dispatchSubagent,
+                      plan.agentName,
+                      plan.message,
+                      turn + 1,
+                      maxTurn,
+                      plan.childImages,
+                      transcript,
+                    )
+                  : dispatchSubagent(
+                      plan.agentName,
+                      plan.message,
+                      turn + 1,
+                      maxTurn,
+                      plan.childImages,
+                      transcript,
+                    ),
+                outcome,
+              ),
+              plan.agentName,
             ),
           ),
         );
