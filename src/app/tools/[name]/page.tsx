@@ -636,14 +636,12 @@ function EditMcpForm({
               max={65535}
               required
             />
-            <Textarea
+            <TextInput
               label="Environment"
               value={envRefs}
               onChange={(e) => setEnvRefs(e.currentTarget.value)}
               placeholder="/env/prod/mcp-image-fetch"
-              autosize
-              minRows={2}
-              description="SSM parameter names, separated by whitespace or commas."
+              description="SSM parameter names, not values — the secrets never pass through here."
               inputWrapperOrder={["label", "input", "description", "error"]}
               styles={monoInput}
             />
