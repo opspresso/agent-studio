@@ -1782,7 +1782,14 @@ export async function* runAgent(
           toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
           continue;
         }
-        const rawTasks = Array.isArray(displayArgs.tasks) ? displayArgs.tasks : [];
+        // From `args`, not `displayArgs`, for the same reason a transfer reads
+        // `args.message`: a child is on the far side of the PII boundary and must
+        // receive the **masked** text. `displayArgs` has the values restored — for
+        // display and for MCP dispatch, where the real address is the point — and
+        // handing that to another model would leak what the parent's own context
+        // is protected from. Image ids are not PII patterns, so they read the same
+        // either way and one source per task keeps this honest.
+        const rawTasks = Array.isArray(args.tasks) ? args.tasks : [];
         if (rawTasks.length === 0) {
           const errorText = `Error: ${DISPATCH_TOOL_NAME} requires a non-empty tasks array; each task needs agent_name and message.`;
           yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
