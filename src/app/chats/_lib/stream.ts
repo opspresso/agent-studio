@@ -1,4 +1,5 @@
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { chunkAuthorPath, mergeAuthorPath } from "@/app/_lib/authorPaths";
 import { isTopLevelChunk } from "@/domain/llm/types";
 import type { LiveTurn, StreamChunk } from "./types";
 
@@ -27,10 +28,13 @@ function toolResultName(toolResult: unknown): string | undefined {
  * results, and generated images all render live regardless of author.
  */
 export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
-  let { text, toolCalls, tools, images, warnings } = prev;
-  // Follow the stream: an authored chunk names the chain that is running now, an
-  // unauthored one means the top-level agent has control again.
-  const authorPath = chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
+  let { text, toolCalls, tools, images, warnings, authorPaths } = prev;
+  // Follow the stream: an authored chunk names a chain that is running now and
+  // joins the set — several children speak at once under `dispatch_agents`. An
+  // unauthored chunk means the top-level agent has control again, and none of
+  // them is still running.
+  const path = chunkAuthorPath(chunk);
+  authorPaths = path ? mergeAuthorPath(authorPaths, path) : [];
   if (typeof chunk.delta?.content === "string" && isTopLevelChunk(chunk)) {
     text += chunk.delta.content;
   }
@@ -51,5 +55,5 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
     // reader only needs to be told once.
     warnings = [...warnings, chunk.warning];
   }
-  return { text, toolCalls, tools, images, warnings, ...(authorPath ? { authorPath } : {}) };
+  return { text, toolCalls, tools, images, warnings, authorPaths };
 }

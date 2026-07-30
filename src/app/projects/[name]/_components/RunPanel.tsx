@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { chunkAuthorPath, mergeAuthorPath } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
@@ -54,21 +55,6 @@ function toolCallView(raw: unknown, author?: string): ToolCallView {
   return { ...parseWireToolCall(raw), author };
 }
 
-/**
- * Keep only the deepest chains seen: a run that reached
- * `sample-agent → simple-image` also produced `sample-agent` chunks, and listing
- * both reads as two separate agents.
- */
-function mergePath(seen: string[][], path: string[]): string[][] {
-  // The trailing separator keeps the comparison on whole names: without it `img`
-  // reads as a chain prefix of the unrelated agent `image-agent`.
-  const key = (p: string[]) => `${p.join(">")}>`;
-  if (seen.some((existing) => key(existing).startsWith(key(path)))) {
-    return seen;
-  }
-  return [...seen.filter((existing) => !key(path).startsWith(key(existing))), path];
-}
-
 export function RunPanel({
   projectName,
   versionName,
@@ -98,7 +84,8 @@ export function RunPanel({
   const [toolResults, setToolResults] = useState<ToolResultView[]>([]);
   // The chain currently producing chunks (outermost first), or undefined while the
   // top-level agent itself is answering.
-  const [activePath, setActivePath] = useState<string[] | undefined>(undefined);
+  // A set, not one chain: `dispatch_agents` has several children running at once.
+  const [activePaths, setActivePaths] = useState<string[][]>([]);
   const [visitedPaths, setVisitedPaths] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cost, setCost] = useState<number | null>(null);
@@ -131,7 +118,7 @@ export function RunPanel({
     setText("");
     setToolCalls([]);
     setToolResults([]);
-    setActivePath(undefined);
+    setActivePaths([]);
     setVisitedPaths([]);
     setError(null);
     setCost(null);
@@ -185,12 +172,13 @@ export function RunPanel({
           }
           continue;
         }
-        // Track who is running: an authored chunk names the innermost agent (and
-        // its chain); an unauthored one means control is back at the top level.
-        const path = chunk.authorPath ?? (chunk.author ? [chunk.author] : undefined);
-        setActivePath(path);
+        // Track who is running: an authored chunk names a chain that is running
+        // now and joins the set; an unauthored one means control is back at the
+        // top level and none of them is still going.
+        const path = chunkAuthorPath(chunk);
+        setActivePaths((prev) => (path ? mergeAuthorPath(prev, path) : []));
         if (path) {
-          setVisitedPaths((prev) => mergePath(prev, path));
+          setVisitedPaths((prev) => mergeAuthorPath(prev, path));
         }
         const content = chunk.delta?.content;
         if (content && isTopLevelChunk(chunk)) {
@@ -343,7 +331,7 @@ export function RunPanel({
         </Alert>
       )}
 
-      {(activePath || visitedPaths.length > 0) && (
+      {(activePaths.length > 0 || visitedPaths.length > 0) && (
         <Stack gap={4}>
           <Group gap={6} wrap="wrap">
             <Text fz="xs" c="dimmed">
@@ -352,15 +340,17 @@ export function RunPanel({
             <Badge color={BADGE.owned} ff="monospace">
               {projectName}
             </Badge>
-            {(activePath ?? []).map((agent, index) => (
-              <Group key={`active-${index}`} gap={6} wrap="nowrap">
-                <Text fz="xs" c="dimmed">
-                  →
-                </Text>
-                <Badge color={SUBAGENT_COLOR} ff="monospace">
-                  {agent}
-                </Badge>
-              </Group>
+            {activePaths.length > 0 && (
+              <Text fz="xs" c="dimmed">
+                →
+              </Text>
+            )}
+            {/* One badge per chain, side by side — several children of one
+                dispatch are running at the same time, not in sequence. */}
+            {activePaths.map((path) => (
+              <Badge key={path.join(">")} color={SUBAGENT_COLOR} ff="monospace">
+                {path.join(" → ")}
+              </Badge>
             ))}
           </Group>
           {visitedPaths.length > 0 && (

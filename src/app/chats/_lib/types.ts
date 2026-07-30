@@ -41,11 +41,14 @@ export interface LiveTurn {
   /** Bindings this run could not use, reported before the answer starts. */
   warnings: string[];
   /**
-   * The chain currently producing chunks, outermost first — cleared when the
-   * top-level agent takes over again, so the badge never claims a subagent is
+   * The chains currently producing chunks, each outermost first — cleared when
+   * the top-level agent takes over again, so a badge never claims a subagent is
    * still running after it returned.
+   *
+   * A set rather than one chain: `dispatch_agents` has several children speaking
+   * at the same time, and a single slot would flicker between them.
    */
-  authorPath?: string[];
+  authorPaths: string[][];
 }
 
 export interface AgentProject {
@@ -60,4 +63,5 @@ export const EMPTY_TURN: LiveTurn = {
   tools: [],
   images: [],
   warnings: [],
+  authorPaths: [],
 };
