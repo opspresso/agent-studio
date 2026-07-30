@@ -207,6 +207,38 @@ describe("dispatch_agents", () => {
     expect(result.startsWith("Error:")).toBe(false);
   });
 
+  it("keeps a child's answer when it recovered from a nested failure", async () => {
+    // An `error` chunk in a child's stream does not mean the child is done. A
+    // nested transfer it could not reach comes back to it as a tool error, and it
+    // may answer from that — so the returned text has to win over the chunk.
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield {
+        author: "grandchild",
+        authorPath: [agentName, "grandchild"],
+        error: "grandchild is unreachable",
+      };
+      yield { author: agentName, delta: { content: "recovered" } };
+      return `${agentName} recovered and answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    expect(result).toContain("alpha recovered and answered");
+    expect(result).toContain("beta recovered and answered");
+    // Every task recovered, so nothing about this call failed.
+    expect(result.startsWith("Error:")).toBe(false);
+    expect(result).not.toContain("grandchild is unreachable");
+  });
+
   it("reports a failed call only when no agent produced an answer", async () => {
     const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
       yield { author: agentName, error: `${agentName} is unreachable` };

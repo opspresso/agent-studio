@@ -87,9 +87,15 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   - A task that cannot run (bad shape, unknown `image_ids`, past the width limit) keeps its
     place in the result carrying its reason, and does **not** cancel the others. The group is
     prefixed `Error:` only when *every* task failed — the trace recorder reads that prefix, so
-    a partial failure must not report the whole call as failed. Telling a failed task from a
-    quiet one requires watching the child's stream (`observeChildFailure`): a child never
-    throws, it yields an `error` chunk and returns `""`.
+    a partial failure must not report the whole call as failed.
+  - **The returned text decides whether a task failed**, never the `error` chunks that went
+    past. A child answers from a nested transfer's failure (it arrives as a tool error), and a
+    deeper descendant's error travels out on that same stream — so treating either as the
+    task's outcome throws away the answer it produced, and one recovered failure per task
+    would report the whole call as failed. `observeChildFailure` exists only to say *why* a
+    task came back empty; a child never throws, it yields an `error` chunk and returns `""`.
+  - The message a task carries comes from `args`, **not** `displayArgs` — see the PII
+    boundaries below. A child is on the far side of that boundary, like a transfer's.
 - Turn guard: `turn >= maxTurn` (default 50) silently ends the loop. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
@@ -159,8 +165,10 @@ format-preserving `[[PII:…]]` tokens:
   recorded on the assistant message — everything entering the channel or re-entering engine
   context stays masked.
 - **Not masked on outbound tool dispatch**: `callMcpTool` is handed the *restored* arguments,
-  because a tool asked to mail `a@b.com` needs the address, not a token. A subagent transfer is
-  the opposite: the child receives the masked message **and a masked transcript** — the
+  because a tool asked to mail `a@b.com` needs the address, not a token. A subagent is the
+  opposite — for `transfer_to_agent` and for every task of `dispatch_agents`, both of which
+  read their message from `args`: the child receives the masked message **and a masked
+  transcript** — the
   conversation crosses that boundary the same way the message does — and the parent's filter
   restores its output. So `piiFiltering` bounds what the LLM and the engine context see —
   **not** what a third-party MCP server sees. Keep it that way deliberately, or make it a
