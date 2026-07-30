@@ -6,8 +6,8 @@
  * There is no address field, and that absence is the point: a managed entry is
  * trusted because the provisioner reported where it bound the port, so letting
  * anyone type one here would put the claim back in an operator's hands. The
- * form takes an image and the port the container listens on, and nothing that
- * could become a command.
+ * form takes declarative workload and registry settings, and nothing that could
+ * become a command.
  */
 
 import { useState } from "react";
@@ -20,9 +20,11 @@ import {
   NumberInput,
   Stack,
   Text,
+  Textarea,
   TextInput,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
+import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { createManagedMcp } from "../api";
 
 
@@ -40,6 +42,8 @@ export function ManagedMcpModal({
   const [containerPort, setContainerPort] = useState("3000");
   const [envRefs, setEnvRefs] = useState("");
   const [description, setDescription] = useState("");
+  const [content, setContent] = useState("");
+  const [rows, setRows] = useState<HeaderRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +58,8 @@ export function ManagedMcpModal({
     setContainerPort("3000");
     setEnvRefs("");
     setDescription("");
+    setContent("");
+    setRows([]);
   }
 
   async function submit(event: React.FormEvent) {
@@ -71,6 +77,8 @@ export function ManagedMcpModal({
         containerPort: Number(containerPort),
         ...(refs.length > 0 ? { envRefs: refs } : {}),
         ...(description ? { description } : {}),
+        ...(content ? { content } : {}),
+        headers: rowsToRecord(rows),
       });
       reset();
       onCreated();
@@ -141,6 +149,20 @@ export function ManagedMcpModal({
             onChange={(e) => setDescription(e.currentTarget.value)}
             placeholder="Fetches an image URL and returns its bytes"
           />
+          <Textarea
+            label="Content (markdown)"
+            value={content}
+            onChange={(e) => setContent(e.currentTarget.value)}
+            placeholder="Setup steps, caveats, links…"
+            autosize
+            minRows={6}
+            maxRows={24}
+            description="Operator notes for the console. Not sent to the model."
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            styles={monoInput}
+          />
+
+          <HeaderRowsEditor rows={rows} onChange={setRows} />
 
           <Group
             justify="flex-end"
