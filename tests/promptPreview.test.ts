@@ -201,6 +201,11 @@ describe("previewPrompt", () => {
       "transfer_to_agent",
       "dispatch_agents",
     ]);
+    expect(preview.tools.map((tool) => tool.name)).toEqual(preview.toolNames);
+    expect(preview.tools.find((tool) => tool.name === "dispatch_agents")).toMatchObject({
+      description: expect.stringContaining("Run several connected agents"),
+      parameters: expect.objectContaining({ required: ["tasks"] }),
+    });
   });
 
   it("releases the MCP session it opened", async () => {

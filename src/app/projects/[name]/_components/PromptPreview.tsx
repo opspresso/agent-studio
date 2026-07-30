@@ -18,7 +18,12 @@ import { CopyButton } from "@/app/_components/CopyButton";
 
 /** The whole assembled prompt as one block, for pasting elsewhere. */
 function promptText(preview: PromptPreview): string {
-  return preview.messages.map((message) => `[${message.role}]\n${message.content}`).join("\n\n");
+  const messages = preview.messages
+    .map((message) => `[${message.role}]\n${message.content}`)
+    .join("\n\n");
+  const tools =
+    preview.tools.length > 0 ? `[tools]\n${JSON.stringify(preview.tools, null, 2)}` : "";
+  return [messages, tools].filter(Boolean).join("\n\n");
 }
 
 function charCount(preview: PromptPreview): number {
@@ -175,9 +180,9 @@ export function PromptPreview({
           hideLabel="Hide tools"
           fz="xs"
         >
-          <Text ff="monospace" fz="xs" c="dimmed" mt={4}>
-            {preview.toolNames.join(", ")}
-          </Text>
+          <Code block fz="xs" mt={4} mah={384} style={{ overflow: "auto" }}>
+            {JSON.stringify(preview.tools, null, 2)}
+          </Code>
         </Spoiler>
       )}
 

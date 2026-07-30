@@ -238,6 +238,25 @@ describe("ToolManager tool-name collision aliasing", () => {
     expect((await manager.callTool("search_2", {})).text).toBe("from server C");
   });
 
+  it("keeps a collision alias within the provider's 64-character limit", async () => {
+    const name = "a".repeat(64);
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name }] },
+      "https://b.test/mcp": { listTools: [{ name }] },
+    });
+    const manager = new ToolManager([
+      server("a", "https://a.test/mcp"),
+      server("b", "https://b.test/mcp"),
+    ]);
+
+    await manager.init();
+
+    expect(manager.tools.map((tool) => tool.function.name)).toEqual([
+      name,
+      `${"a".repeat(62)}_1`,
+    ]);
+  });
+
   it("returns a not-found message for an unknown alias", async () => {
     stubMcpFetch({
       "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
@@ -250,6 +269,37 @@ describe("ToolManager tool-name collision aliasing", () => {
     const result = await manager.callTool("does_not_exist", {});
     expect(result.text.startsWith("Error:")).toBe(true);
     expect(result.text).toContain("does_not_exist");
+  });
+});
+
+describe("ToolManager discovery validation", () => {
+  it("drops invalid tools without losing valid tools from the same server", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [
+          { name: "valid_tool", inputSchema: { type: "object", properties: {} } },
+          { name: "implicit_object", inputSchema: {} },
+          { name: "invalid tool" },
+          { name: "bad_schema", inputSchema: { type: "string" } },
+          { name: "bad_properties", inputSchema: { type: "object", properties: [] } },
+        ],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools.map((tool) => tool.function.name)).toEqual([
+      "valid_tool",
+      "implicit_object",
+    ]);
+    expect(manager.tools[1]?.function.parameters).toEqual({ type: "object", properties: {} });
+    expect(manager.warnings).toEqual([
+      expect.stringContaining("invalid tool"),
+      expect.stringContaining("bad_schema"),
+      expect.stringContaining("bad_properties"),
+    ]);
+    expect(manager.toolNamesByServer.get("a")).toEqual(["valid_tool", "implicit_object"]);
   });
 });
 

@@ -25,6 +25,7 @@ import { McpHttpError, McpSession, type McpTool } from "./session";
 import { log } from "@/shared/logger";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
+const PROVIDER_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type { McpServerConfig };
 
@@ -154,13 +155,20 @@ export class ToolManager {
       const offered = this.selectOffered(entry.server, entry.tools);
       const aliases: string[] = [];
       for (const tool of offered) {
+        const invalid = invalidToolReason(tool);
+        if (invalid) {
+          this._warnings.push(
+            `MCP server '${entry.server.name}' offered invalid tool '${String(tool.name)}'; it was not offered: ${invalid}.`,
+          );
+          continue;
+        }
         const alias = allocateToolName(tool.name, usedNames, aliasIndexByName);
         tools.push({
           type: "function",
           function: {
             name: alias,
             description: tool.description,
-            parameters: tool.inputSchema ?? { type: "object", properties: {} },
+            parameters: { type: "object", properties: {}, ...(tool.inputSchema ?? {}) },
           },
         });
         this.sessionByToolName.set(alias, entry.session);
@@ -257,6 +265,26 @@ export class ToolManager {
   }
 }
 
+function invalidToolReason(tool: McpTool): string | undefined {
+  if (!PROVIDER_TOOL_NAME.test(tool.name)) {
+    return "the name must be 1-64 letters, digits, underscores, or hyphens";
+  }
+  if (
+    tool.inputSchema !== undefined &&
+    (typeof tool.inputSchema !== "object" ||
+      tool.inputSchema === null ||
+      Array.isArray(tool.inputSchema) ||
+      (tool.inputSchema.type !== undefined && tool.inputSchema.type !== "object") ||
+      (tool.inputSchema.properties !== undefined &&
+        (typeof tool.inputSchema.properties !== "object" ||
+          tool.inputSchema.properties === null ||
+          Array.isArray(tool.inputSchema.properties))))
+  ) {
+    return "inputSchema must be an object JSON schema";
+  }
+  return undefined;
+}
+
 /** Return a unique alias; suffix `{name}_{n}` on collision (n from 1). */
 function allocateToolName(
   originalName: string,
@@ -268,10 +296,12 @@ function allocateToolName(
     return originalName;
   }
   let index = aliasIndexByName.get(originalName) ?? 1;
-  let alias = `${originalName}_${index}`;
+  let suffix = `_${index}`;
+  let alias = `${originalName.slice(0, 64 - suffix.length)}${suffix}`;
   while (usedNames.has(alias)) {
     index += 1;
-    alias = `${originalName}_${index}`;
+    suffix = `_${index}`;
+    alias = `${originalName.slice(0, 64 - suffix.length)}${suffix}`;
   }
   aliasIndexByName.set(originalName, index + 1);
   usedNames.add(alias);

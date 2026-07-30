@@ -448,6 +448,24 @@ describe("tool bindings on a project type that cannot run them", () => {
 });
 
 describe("version reference validation", () => {
+  it("rejects local and remote agents with the same model-visible name", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        "p",
+        {
+          ...versionInput(),
+          subagentList: [
+            { name: "shared", type: "local" },
+            { name: "shared", type: "remote" },
+          ],
+        },
+        OWNER,
+      ),
+    ).rejects.toThrow(/must have unique names/);
+  });
+
   it("rejects a create that names an MCP server, skill, or subagent that does not exist", async () => {
     await expect(
       createVersion(

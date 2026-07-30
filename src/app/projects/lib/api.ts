@@ -135,6 +135,11 @@ export function updateVersion(
 export interface PromptPreview {
   messages: Array<{ role: "system" | "user"; content: string }>;
   toolNames: string[];
+  tools: Array<{
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  }>;
   warnings: string[];
 }
 

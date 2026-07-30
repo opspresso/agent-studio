@@ -49,6 +49,7 @@ export async function previewPrompt(
     return {
       messages: prompt ? [{ role: "user", content: prompt }] : [],
       toolNames: [],
+      tools: [],
       warnings,
     };
   }
@@ -65,6 +66,7 @@ export async function previewPrompt(
         }),
       ),
       toolNames: [],
+      tools: [],
       warnings,
     };
   }
@@ -116,6 +118,7 @@ export async function previewPrompt(
     return {
       messages: systemPrompt ? [{ role: "system", content: systemPrompt }] : [],
       toolNames: tools.map((tool) => tool.function.name),
+      tools: tools.map((tool) => tool.function),
       warnings: [...warnings, ...resolved.warnings],
     };
   } finally {

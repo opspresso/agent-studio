@@ -83,6 +83,22 @@ function assertToolBindingsRunnable(
   }
 }
 
+function assertUniqueSubagentNames(subagents: SubagentRef[] | undefined): void {
+  const seen = new Set<string>();
+  const duplicate = (subagents ?? []).find((ref) => {
+    if (seen.has(ref.name)) {
+      return true;
+    }
+    seen.add(ref.name);
+    return false;
+  });
+  if (duplicate) {
+    throw new ValidationError(
+      `Agent name "${duplicate.name}" is used more than once; connected agents must have unique names.`,
+    );
+  }
+}
+
 /**
  * Reject references that do not resolve. Only entries absent from `existing`
  * are checked: a version whose skill or MCP server was deleted afterwards must
@@ -266,6 +282,7 @@ export async function createVersion(
   assertModelSupports(project, input.model, input.parameters);
   warnUnknownCatalogModel(projectName, input.model);
   assertToolBindingsRunnable(project, input);
+  assertUniqueSubagentNames(input.subagentList);
   await assertReferencesExist(refs, input);
   const existing = await versions.list(projectName);
 
@@ -318,6 +335,9 @@ export async function updateVersion(
   }
   const existing = await getVersion(versions, projectName, versionName);
   assertToolBindingsRunnable(project, input, existing);
+  if (input.subagentList) {
+    assertUniqueSubagentNames(input.subagentList);
+  }
   await assertReferencesExist(refs, input, existing);
   const updated: Version = {
     ...existing,

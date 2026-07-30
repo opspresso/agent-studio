@@ -103,6 +103,12 @@ export interface PromptPreview {
   messages: PromptPreviewMessage[];
   /** Tool names the model would be offered, aliases applied. */
   toolNames: string[];
+  /** Tool contracts the model would receive, aliases applied. */
+  tools: Array<{
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  }>;
   /** What the preview — and therefore a run — could not resolve. */
   warnings: string[];
 }
