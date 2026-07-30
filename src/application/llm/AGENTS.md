@@ -75,15 +75,26 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 
 ## System prompt assembly (`buildAgentSystemPrompt`)
 
-The version's own text comes first, then — only when the run resolved at least one
-capability — a `---` break and a `# Runtime capabilities` block holding the `##` sections.
-Two rules keep the halves from restating each other:
+The version's own text comes first, then — when the run has anything to append — a `---`
+break and the engine's blocks: the **run clock**, then a `# Runtime capabilities` block
+holding the `##` sections (that one only when the run resolved at least one capability).
+`withEngineBlocks` owns that boundary for this and for the single-shot assembly
+(`buildPromptMessages`) alike; a second copy of the rule would drift the moment one path
+grew a block the other did not have. Rules that keep the halves from restating each other:
 
 - **The block is the authority on what exists, the version's text on who the agent is.**
   The break exists because the generated `##` headings are otherwise indistinguishable
   from the author's own, and because the precedence rule below needs "your own
-  instructions" to have a referent. A run that reaches nothing gets the author's text
+  instructions" to have a referent. Nothing to append means the author's text
   byte-for-byte — no boundary is announced with nothing behind it.
+- **The clock sits outside the capability block, ahead of it.** It says when the run
+  happens, which is not something the run can *reach*, and the framing speaks only for the
+  sections that follow it. It arrives as `input.now` rather than being read here — the
+  engine stays pure and its tests stay off the real clock. `runClock`
+  (`execution/deps.ts`) is the one place the real clock is read, and `executeAgent` pins it
+  for the whole run: a subagent reading its own would disagree with its parent across a
+  midnight boundary, which is the confusion the clock exists to remove. UTC, labelled, to
+  the minute — a prompt that changed every second would defeat provider prompt caching.
 - **Precedence is stated once, in the framing, and names only what the run has.** Each
   section documents what is specific to it (an MCP table says where the tools come from;
   the agent table says a `message` is the whole request and must not be sent twice) and

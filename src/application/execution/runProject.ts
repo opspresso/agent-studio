@@ -19,7 +19,7 @@ import { createSkillReader, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
-import { runStrategyFor, toEngineParameters } from "./deps";
+import { runClock, runStrategyFor, toEngineParameters } from "./deps";
 
 export type {
   ExecutionDeps,
@@ -60,6 +60,7 @@ export async function executeVersion(
         variables: input.variables,
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
+        now: runClock(deps),
         signal: withRunDeadline(input.signal),
       },
     );
@@ -100,6 +101,7 @@ export async function* executeVersionStream(
         variables: input.variables,
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
+        now: runClock(deps),
         signal: withRunDeadline(input.signal),
       },
     )) {
@@ -177,8 +179,14 @@ export async function* executeAgent(
     // caller abort as cancelled.
     const runSignal = withRunDeadline(input.signal);
     const readSkill = createSkillReader(deps);
+    // Pinned for the whole run, subagents included: every prompt this run
+    // assembles has to agree on when "now" is, and a parent and a child landing
+    // on different dates across a midnight boundary is the exact confusion the
+    // clock exists to remove. The pinned deps travel down the transfer chain.
+    const startedAt = runClock(deps);
+    const runDeps: ExecutionDeps = { ...deps, now: () => startedAt };
     const agentDeps = await buildAgentDeps(
-      deps,
+      runDeps,
       input.version,
       input.project.name,
       usage.record,
@@ -207,6 +215,7 @@ export async function* executeAgent(
       systemPrompt: input.version.systemPrompt,
       messages: input.messages,
       parameters: toEngineParameters(input.version),
+      now: startedAt,
       maxTurn: input.version.maxTurn,
       skills,
       subagents,

@@ -1,0 +1,75 @@
+/**
+ * The clock a run stamps its prompt with. Pure assembly only — the instant is an
+ * input here, exactly as the engine receives it, so nothing in this file reads
+ * the real clock.
+ */
+
+import { describe, expect, it } from "vitest";
+import { buildAgentSystemPrompt, buildPromptMessages } from "@/application/llm/engine";
+
+const NOW = new Date("2026-07-30T06:12:00Z");
+const CLOCK_LINE =
+  'Current date and time: 2026-07-30 (Thursday) 06:12 UTC. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.';
+/** A run that can neither edit nor hand over an image, so no image section. */
+const NO_IMAGES = { handles: [], canEdit: false, canTransfer: false };
+
+describe("agent prompt clock", () => {
+  it("leaves the author's text byte-for-byte when no clock is injected", () => {
+    expect(buildAgentSystemPrompt("You are terse.", [], [], [], NO_IMAGES)).toBe("You are terse.");
+  });
+
+  it("appends the clock behind the engine-block boundary", () => {
+    expect(buildAgentSystemPrompt("You are terse.", [], [], [], NO_IMAGES, NOW)).toBe(
+      `You are terse.\n\n---\n\n${CLOCK_LINE}`,
+    );
+  });
+
+  it("carries the clock when the version has no prompt of its own", () => {
+    expect(buildAgentSystemPrompt(undefined, [], [], [], NO_IMAGES, NOW)).toBe(CLOCK_LINE);
+  });
+
+  it("puts the clock ahead of the capability block, behind a single boundary", () => {
+    const prompt = buildAgentSystemPrompt(
+      "You are terse.",
+      [{ name: "greeting", description: "How to greet" }],
+      [],
+      [],
+      NO_IMAGES,
+      NOW,
+    );
+    // The framing speaks for the sections that follow it, and the clock is not
+    // one of them — it is a fact about when the run happens.
+    expect(prompt).toContain(CLOCK_LINE);
+    expect(prompt.indexOf(CLOCK_LINE)).toBeLessThan(prompt.indexOf("# Runtime capabilities"));
+    expect(prompt).toContain("## Available Skills");
+    // One break for everything the engine appends, not one per block.
+    expect(prompt.match(/^---$/gm)).toHaveLength(1);
+  });
+});
+
+describe("single-shot prompt clock", () => {
+  const base = { model: "openai/gpt-5.4", userPromptTemplate: "Summarize this." };
+
+  it("leaves the system prompt untouched when no clock is injected", () => {
+    const messages = buildPromptMessages({ ...base, systemPrompt: "You summarize." });
+    expect(messages[0]).toEqual({ role: "system", content: "You summarize." });
+  });
+
+  it("appends the clock behind the same boundary the agent prompt uses", () => {
+    const messages = buildPromptMessages({ ...base, systemPrompt: "You summarize.", now: NOW });
+    expect(messages[0]).toEqual({
+      role: "system",
+      content: `You summarize.\n\n---\n\n${CLOCK_LINE}`,
+    });
+  });
+
+  it("sends the clock alone when the version has no system prompt", () => {
+    const messages = buildPromptMessages({ ...base, now: NOW });
+    expect(messages[0]).toEqual({ role: "system", content: CLOCK_LINE });
+  });
+
+  it("sends no system message at all with neither a prompt nor a clock", () => {
+    const messages = buildPromptMessages(base);
+    expect(messages.some((message) => message.role === "system")).toBe(false);
+  });
+});

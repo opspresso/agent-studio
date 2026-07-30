@@ -13,7 +13,7 @@ import { descend, type RunOrigin } from "@/domain/execution/actor";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
-import { runStrategyFor, toEngineParameters } from "./deps";
+import { runClock, runStrategyFor, toEngineParameters } from "./deps";
 import { buildImageEditor, buildImageGenerator, runImageSubagent } from "./imageTool";
 import { closeMcp } from "./mcpTools";
 import {
@@ -251,6 +251,8 @@ export async function* runPromptSubagent(
           { role: "user", content: subagentContent(withTranscript(message, transcript), images) },
         ],
         parameters: toEngineParameters(version),
+        // The parent pinned this — a child must not say a different "now".
+        now: runClock(deps),
         signal,
       },
     )) {
@@ -377,6 +379,8 @@ export async function* runLocalSubagent(
       // transcript inside the next and re-send the conversation twice over.
       ...(transcript ? { transcript } : {}),
       parameters: toEngineParameters(version),
+      // The parent pinned this — a child must not say a different "now".
+      now: runClock(deps),
       // Clamped to the parent's ceiling: the child continues the parent's turn
       // counter (`startTurn`), so a child version configured with a larger
       // maxTurn would raise the limit the whole run was started under.

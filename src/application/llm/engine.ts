@@ -38,6 +38,7 @@ import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
 import { PiiFilter } from "./pii";
 import { renderTemplate } from "./template";
+import { formatRunClock } from "@/shared/date";
 import { log } from "@/shared/logger";
 
 export const SKILL_TOOL_NAME = "Skill";
@@ -193,6 +194,12 @@ export interface RunPromptInput {
   variables?: Record<string, string>;
   extraMessages?: ChatMessageInput[];
   parameters?: EngineParameters;
+  /**
+   * The run's wall clock, injected rather than read: the engine stays pure and
+   * its tests stay off the real clock. Omitted leaves the prompt exactly as it
+   * was before there was a clock.
+   */
+  now?: Date;
   signal?: AbortSignal;
 }
 
@@ -203,6 +210,8 @@ export interface RunAgentInput {
   systemPrompt?: string;
   messages: ChatMessageInput[];
   parameters?: EngineParameters;
+  /** See {@link RunPromptInput.now} — injected, never read from the clock here. */
+  now?: Date;
   maxTurn?: number;
   /** Starting turn, used when a subagent continues the parent's turn budget. */
   startTurn?: number;
@@ -584,8 +593,15 @@ async function* runSubagentWithPii(
  */
 export function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): ChannelMessage[] {
   const messages: ChannelMessage[] = [];
-  if (input.systemPrompt) {
-    messages.push({ role: "system", content: input.systemPrompt });
+  // The same boundary the agent prompt uses. A single-shot run has no capability
+  // block, so the clock is the only thing that can sit behind the break — and
+  // with no clock the author's text is sent exactly as it was.
+  const systemPrompt = withEngineBlocks(
+    input.systemPrompt,
+    input.now ? [runClockBlock(input.now)] : [],
+  );
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
   }
   const rendered = renderTemplate(input.userPromptTemplate, input.variables);
   if (rendered) {
@@ -1104,12 +1120,49 @@ function imageSystemPromptAddition(
  * A run that reaches nothing gets the version's text unchanged: framing an
  * empty capability block would announce a boundary with nothing behind it.
  */
+/**
+ * The version's own text, then everything the engine appends, behind one `---`.
+ *
+ * Single owner of that boundary. Both prompt assemblies — the agent's and the
+ * single-shot one — append to an author's text, and a second copy of the rule
+ * would drift the moment one of them grew a block the other did not have.
+ *
+ * A thematic break, not a heading: it separates without competing with the
+ * author's own headings, and the blank line `join` adds keeps it from being read
+ * as a setext underline for the line above. No blocks returns the author's text
+ * byte-for-byte — a boundary is never announced with nothing behind it.
+ */
+function withEngineBlocks(base: string | undefined, blocks: string[]): string {
+  if (blocks.length === 0) {
+    return base ?? "";
+  }
+  const parts: string[] = [];
+  if (base) {
+    parts.push(base, "---");
+  }
+  parts.push(...blocks);
+  return parts.join("\n\n");
+}
+
+/**
+ * Stated as a fact, not as a `##` section: it is one line, and a heading would
+ * compete with the capability sections while carrying a fraction of their
+ * content. The instruction is what makes it useful — a model that is told the
+ * date still answers "last week" from its training data unless it is told to
+ * resolve relative dates from this line.
+ */
+function runClockBlock(now: Date): string {
+  return `Current date and time: ${formatRunClock(now)}. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.`;
+}
+
 export function buildAgentSystemPrompt(
   base: string | undefined,
   skills: SkillInfo[],
   subagents: SubagentInfo[],
   mcpServers: McpServerInfo[],
   images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean },
+  /** See {@link RunPromptInput.now}. Omitted keeps the prompt clock-free. */
+  now?: Date,
 ): string {
   const withMcp = mcpServers.length > 0;
   const sections: string[] = [];
@@ -1125,18 +1178,17 @@ export function buildAgentSystemPrompt(
   if (images.canEdit || images.canTransfer) {
     sections.push(imageSystemPromptAddition(images.handles, images, withMcp));
   }
-  if (sections.length === 0) {
-    return base ?? "";
+  const blocks: string[] = [];
+  // Ahead of the capability block, and outside it: the clock is a fact about
+  // when the run happens, not something the run can reach, and the framing
+  // below speaks only for the sections that follow it.
+  if (now) {
+    blocks.push(runClockBlock(now));
   }
-  const parts: string[] = [];
-  if (base) {
-    // A thematic break, not a heading: it separates without competing with the
-    // author's own headings, and the blank line `join` adds keeps it from being
-    // read as a setext underline for the line above.
-    parts.push(base, "---");
+  if (sections.length > 0) {
+    blocks.push(capabilityFraming(skills.length > 0, withMcp, subagents.length > 0), ...sections);
   }
-  parts.push(capabilityFraming(skills.length > 0, withMcp, subagents.length > 0), ...sections);
-  return parts.join("\n\n");
+  return withEngineBlocks(base, blocks);
 }
 
 const IMAGE_TOOL_DEF: ChannelToolDef = {
@@ -1302,6 +1354,7 @@ export async function* runAgent(
     subagents,
     input.mcpServers ?? [],
     { handles: images.list(), canEdit, canTransfer },
+    input.now,
   );
   const { tools, builtinNames } = buildAgentTools(
     input.mcpTools,
