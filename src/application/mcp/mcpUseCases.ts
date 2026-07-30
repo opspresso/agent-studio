@@ -31,9 +31,15 @@ export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput,
   testConnection(name: string): Promise<ListToolsResult>;
 }
 
-/** Client-safe projection: encrypted header values are replaced with a mask. */
+/** Client-safe projection: encrypted secret values are replaced with a mask. */
 function masked(cipher: SecretCipher, server: McpServer): McpServer {
-  return { ...server, headers: cipher.maskHeaders(server.headers) };
+  return {
+    ...server,
+    headers: cipher.maskHeaders(server.headers),
+    ...(server.environment
+      ? { environment: cipher.maskHeaders(server.environment) }
+      : {}),
+  };
 }
 
 export function createMcpUseCases(

@@ -6,8 +6,8 @@
  * There is no address field, and that absence is the point: a managed entry is
  * trusted because the provisioner reported where it bound the port, so letting
  * anyone type one here would put the claim back in an operator's hands. The
- * form takes declarative workload and registry settings, and nothing that could
- * become a command.
+ * form takes declarative workload and registry settings. Runtime arguments are
+ * kept as an argv list rather than a shell command.
  */
 
 import { useState } from "react";
@@ -41,6 +41,9 @@ export function ManagedMcpModal({
   const [image, setImage] = useState("");
   const [containerPort, setContainerPort] = useState("3000");
   const [envRefs, setEnvRefs] = useState("");
+  const [environmentRows, setEnvironmentRows] = useState<HeaderRow[]>([]);
+  const [args, setArgs] = useState("");
+  const [endpointPath, setEndpointPath] = useState("/mcp");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
   const [rows, setRows] = useState<HeaderRow[]>([]);
@@ -57,6 +60,9 @@ export function ManagedMcpModal({
     setImage("");
     setContainerPort("3000");
     setEnvRefs("");
+    setEnvironmentRows([]);
+    setArgs("");
+    setEndpointPath("/mcp");
     setDescription("");
     setContent("");
     setRows([]);
@@ -71,11 +77,18 @@ export function ManagedMcpModal({
         .split(/[\s,]+/)
         .map((ref) => ref.trim())
         .filter(Boolean);
+      const runtimeArgs = args
+        .split("\n")
+        .map((arg) => arg.trim())
+        .filter(Boolean);
       await createManagedMcp({
         name,
         image,
         containerPort: Number(containerPort),
         ...(refs.length > 0 ? { envRefs: refs } : {}),
+        environment: rowsToRecord(environmentRows),
+        ...(runtimeArgs.length > 0 ? { args: runtimeArgs } : {}),
+        endpointPath,
         ...(description ? { description } : {}),
         ...(content ? { content } : {}),
         headers: rowsToRecord(rows),
@@ -135,12 +148,42 @@ export function ManagedMcpModal({
             inputWrapperOrder={["label", "input", "description", "error"]}
           />
           <TextInput
-            label="Environment"
+            label="Environment references"
             value={envRefs}
             onChange={(e) => setEnvRefs(e.currentTarget.value)}
             placeholder="/env/prod/mcp-image-fetch"
             description="SSM parameter names, not values — the secrets never pass through here."
             inputWrapperOrder={["label", "input", "description", "error"]}
+            styles={monoInput}
+          />
+          <HeaderRowsEditor
+            rows={environmentRows}
+            onChange={setEnvironmentRows}
+            caption="Environment variables"
+            emptyHint="No direct environment variables."
+            addLabel="+ Add variable"
+            keyPlaceholder="VARIABLE_NAME"
+            valuePlaceholder="value"
+          />
+          <Textarea
+            label="Arguments"
+            value={args}
+            onChange={(e) => setArgs(e.currentTarget.value)}
+            placeholder={
+              "--transport\nstreamable-http\n--address\n0.0.0.0:{{PORT}}\n--allowed-hosts\n*"
+            }
+            autosize
+            minRows={3}
+            description="One container entrypoint argument per line. {{PORT}} becomes the effective listen port; arguments are not run through a shell."
+            inputWrapperOrder={["label", "input", "description", "error"]}
+            styles={monoInput}
+          />
+          <TextInput
+            label="Endpoint path"
+            value={endpointPath}
+            onChange={(e) => setEndpointPath(e.currentTarget.value)}
+            placeholder="/mcp"
+            required
             styles={monoInput}
           />
           <TextInput

@@ -575,6 +575,11 @@ function EditMcpForm({
   const [image, setImage] = useState(server.image ?? "");
   const [containerPort, setContainerPort] = useState(String(server.containerPort ?? 3000));
   const [envRefs, setEnvRefs] = useState((server.envRefs ?? []).join("\n"));
+  const [environmentRows, setEnvironmentRows] = useState<HeaderRow[]>(
+    recordToRows(server.environment ?? {}),
+  );
+  const [args, setArgs] = useState((server.args ?? []).join("\n"));
+  const [endpointPath, setEndpointPath] = useState(server.endpointPath ?? "/mcp");
   const [description, setDescription] = useState(server.description ?? "");
   const [content, setContent] = useState(server.content ?? "");
   const [rows, setRows] = useState<HeaderRow[]>(recordToRows(server.headers));
@@ -595,6 +600,12 @@ function EditMcpForm({
             .split(/[\s,]+/)
             .map((ref) => ref.trim())
             .filter(Boolean),
+          environment: rowsToRecord(environmentRows),
+          args: args
+            .split("\n")
+            .map((arg) => arg.trim())
+            .filter(Boolean),
+          endpointPath,
           description,
           content,
           headers,
@@ -637,7 +648,7 @@ function EditMcpForm({
               required
             />
             <TextInput
-              label="Environment"
+              label="Environment references"
               value={envRefs}
               onChange={(e) => setEnvRefs(e.currentTarget.value)}
               placeholder="/env/prod/mcp-image-fetch"
@@ -645,8 +656,39 @@ function EditMcpForm({
               inputWrapperOrder={["label", "input", "description", "error"]}
               styles={monoInput}
             />
+            <HeaderRowsEditor
+              rows={environmentRows}
+              onChange={setEnvironmentRows}
+              caption="Environment variables"
+              emptyHint="No direct environment variables."
+              addLabel="+ Add variable"
+              keyPlaceholder="VARIABLE_NAME"
+              valuePlaceholder="value"
+            />
+            <Textarea
+              label="Arguments"
+              value={args}
+              onChange={(e) => setArgs(e.currentTarget.value)}
+              placeholder={
+                "--transport\nstreamable-http\n--address\n0.0.0.0:{{PORT}}\n--allowed-hosts\n*"
+              }
+              autosize
+              minRows={3}
+              description="One container entrypoint argument per line. {{PORT}} becomes the effective listen port; arguments are not run through a shell."
+              inputWrapperOrder={["label", "input", "description", "error"]}
+              styles={monoInput}
+            />
+            <TextInput
+              label="Endpoint path"
+              value={endpointPath}
+              onChange={(e) => setEndpointPath(e.currentTarget.value)}
+              placeholder="/mcp"
+              required
+              styles={monoInput}
+            />
             <Text fz="xs" c="dimmed">
-              Changing the image, port, or environment automatically restarts the container.
+              Changing the image, port, environment, arguments, or endpoint automatically
+              restarts the container.
             </Text>
           </>
         ) : (

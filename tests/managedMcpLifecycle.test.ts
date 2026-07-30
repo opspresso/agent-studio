@@ -195,14 +195,17 @@ describe("managed MCP lifecycle", () => {
       description: "fetches images",
       content: "# Setup",
       headers: { Authorization: "Bearer secret" },
+      environment: { GRAFANA_TOKEN: "secret-token" },
     });
 
     expect(rows.get("image-fetch")).toMatchObject({
       description: "fetches images",
       content: "# Setup",
       headers: { Authorization: "enc:v1:Bearer secret" },
+      environment: { GRAFANA_TOKEN: "enc:v1:secret-token" },
     });
     expect(created.headers).toEqual({ Authorization: "********" });
+    expect(created.environment).toEqual({ GRAFANA_TOKEN: "********" });
   });
 
   it("refuses to register an address that is not loopback, and stops what it started", async () => {
@@ -268,6 +271,9 @@ describe("managed MCP lifecycle", () => {
       image: "ecr/img:v2",
       containerPort: 8080,
       envRefs: ["/env/prod/image-fetch"],
+      environment: { GRAFANA_TOKEN: "new-token" },
+      args: ["--transport", "streamable-http"],
+      endpointPath: "/custom-mcp",
       description: "updated",
       content: "# Notes",
       headers: { Authorization: "Bearer new" },
@@ -277,6 +283,9 @@ describe("managed MCP lifecycle", () => {
       image: "ecr/img:v2",
       containerPort: 8080,
       envRefs: ["/env/prod/image-fetch"],
+      environment: { GRAFANA_TOKEN: "enc:v1:new-token" },
+      args: ["--transport", "streamable-http"],
+      endpointPath: "/custom-mcp",
       description: "updated",
       content: "# Notes",
       headers: { Authorization: "enc:v1:Bearer new" },
@@ -288,6 +297,8 @@ describe("managed MCP lifecycle", () => {
         image: "ecr/img:v2",
         containerPort: 8080,
         envRefs: ["/env/prod/image-fetch"],
+        environment: { GRAFANA_TOKEN: "new-token" },
+        args: ["--transport", "streamable-http"],
       },
     ]);
     f.releaseStart();
@@ -300,6 +311,14 @@ describe("managed MCP lifecycle", () => {
 
     expect(f.rows.get("image-fetch")?.description).toBe("updated");
     expect(f.started).toEqual([]);
+  });
+
+  it("rejects an endpoint path that could change the request target", async () => {
+    const f = fixture();
+
+    await expect(
+      f.useCases.create({ ...input, endpointPath: "//external.test/mcp" }),
+    ).rejects.toThrow(/endpoint path/);
   });
 });
 

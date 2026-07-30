@@ -39,6 +39,9 @@ describe("mcp repository mapping", () => {
       url: "http://127.0.0.1:3204/mcp",
       image: "mcp-image-fetch:local",
       envRefs: ["/env/prod/mcp-image-fetch"],
+      environment: { API_TOKEN: "enc:v1:ciphertext" },
+      args: ["--transport", "streamable-http"],
+      endpointPath: "/custom-mcp",
       headers: {},
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -48,10 +51,16 @@ describe("mcp repository mapping", () => {
     expect(stored.runtime).toBe("managed");
     expect(stored.image).toBe("mcp-image-fetch:local");
     expect(stored.envRefs).toEqual(["/env/prod/mcp-image-fetch"]);
+    expect(stored.environment).toEqual({ API_TOKEN: "enc:v1:ciphertext" });
+    expect(stored.args).toEqual(["--transport", "streamable-http"]);
+    expect(stored.endpointPath).toBe("/custom-mcp");
 
     const read = await mcpRepository.get("image-fetch");
     expect(read?.runtime).toBe("managed");
     expect(read?.image).toBe("mcp-image-fetch:local");
+    expect(read?.args).toEqual(["--transport", "streamable-http"]);
+    expect(read?.environment).toEqual({ API_TOKEN: "enc:v1:ciphertext" });
+    expect(read?.endpointPath).toBe("/custom-mcp");
     expect(read?.url).toBe("http://127.0.0.1:3204/mcp");
   });
 

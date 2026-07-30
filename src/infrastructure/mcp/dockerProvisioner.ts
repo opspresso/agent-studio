@@ -6,9 +6,8 @@
  * The SSM adapter is what production uses; this one exists so the loopback path
  * can be exercised at all without an EC2 instance in the loop.
  *
- * Arguments are passed as an array, never a shell string, so the pattern checks
- * are belt to that braces — but they stay, because the port's contract is that
- * an image reference is all anyone can supply.
+ * Arguments are passed as an array, never a shell string. Pattern checks still
+ * protect the values used structurally by the Docker CLI.
  */
 
 import { execFile } from "node:child_process";
@@ -56,6 +55,7 @@ export function createDockerProvisioner(): McpProvisioner {
       // predates persisting it, and then the only port anyone knows is the one
       // being bound — so the mapping is onto itself.
       const target = spec.containerPort ?? port;
+      const args = (spec.args ?? []).map((arg) => arg.replaceAll("{{PORT}}", String(target)));
       await docker(["pull", "-q", image]).catch(() => {
         // A locally built image has nothing to pull; the run below will say so
         // if it genuinely is not there.
@@ -78,10 +78,15 @@ export function createDockerProvisioner(): McpProvisioner {
         // and a container that was merely stranded comes back definitively
         // broken. `-e` beats `--env-file`, so an operator who set `PORT` there
         // and a `containerPort` that disagrees gets the one the mapping uses.
+        ...(spec.envRefs ?? []).flatMap((ref) => ["--env-file", ref]),
+        ...Object.entries(spec.environment ?? {}).flatMap(([key, value]) => [
+          "-e",
+          `${key}=${value}`,
+        ]),
         "-e",
         `PORT=${target}`,
-        ...(spec.envRefs ?? []).flatMap((ref) => ["--env-file", ref]),
         image,
+        ...args,
       ]);
       const state = await docker(["inspect", "-f", "{{.Id}} {{.State.Running}}", name]);
       const [identity = "", running = "false"] = state.split(/\s+/);

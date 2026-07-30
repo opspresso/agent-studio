@@ -89,6 +89,9 @@ export interface CreateManagedMcpInput {
   image: string;
   containerPort: number;
   envRefs?: string[];
+  environment?: Record<string, string>;
+  args?: string[];
+  endpointPath?: string;
   description?: string;
   content?: string;
   headers?: Record<string, string>;

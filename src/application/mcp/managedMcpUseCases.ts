@@ -34,6 +34,9 @@ export interface CreateManagedInput {
   image: string;
   containerPort: number;
   envRefs?: string[];
+  environment?: Record<string, string>;
+  args?: string[];
+  endpointPath?: string;
   description?: string;
   content?: string;
   headers?: Record<string, string>;
@@ -43,6 +46,9 @@ export interface UpdateManagedInput {
   image?: string;
   containerPort?: number;
   envRefs?: string[];
+  environment?: Record<string, string>;
+  args?: string[];
+  endpointPath?: string;
   description?: string;
   content?: string;
   headers?: Record<string, string>;
@@ -80,9 +86,6 @@ export interface ManagedMcpDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
-/** The path suffix every server this app starts is expected to serve. */
-const MCP_PATH = "/mcp";
-
 /**
  * How long a just-restarted container gets to start accepting.
  *
@@ -105,6 +108,7 @@ const SETTLE_INTERVAL_MS = 1_000;
  * the page for the full discovery timeout.
  */
 const REACHABILITY_TIMEOUT_MS = 3_000;
+const DEFAULT_ENDPOINT_PATH = "/mcp";
 
 export interface ManagedMcpUseCases {
   create(input: CreateManagedInput): Promise<McpServer>;
@@ -141,7 +145,13 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
   const restarting = new Set<string>();
 
   function view(entry: McpServer): McpServer {
-    return { ...entry, headers: deps.cipher.maskHeaders(entry.headers) };
+    return {
+      ...entry,
+      headers: deps.cipher.maskHeaders(entry.headers),
+      ...(entry.environment
+        ? { environment: deps.cipher.maskHeaders(entry.environment) }
+        : {}),
+    };
   }
 
   async function requireManaged(name: string): Promise<McpServer> {
@@ -204,8 +214,22 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       name: entry.name,
       image: entry.image,
       ...(entry.envRefs ? { envRefs: entry.envRefs } : {}),
+      ...(entry.environment
+        ? { environment: deps.cipher.decryptHeadersForOutbound(entry.environment) }
+        : {}),
+      ...(entry.args ? { args: entry.args } : {}),
       ...(entry.containerPort !== undefined ? { containerPort: entry.containerPort } : {}),
     };
+  }
+
+  function endpointPath(value: string | undefined): string {
+    const path = value ?? DEFAULT_ENDPOINT_PATH;
+    if (!/^\/(?!\/)[^\s?#]*$/.test(path)) {
+      throw new ValidationError(
+        "Managed MCP endpoint path must start with / and contain no query or fragment.",
+      );
+    }
+    return path;
   }
 
   /**
@@ -216,7 +240,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     const workload = await deps.provisioner.start(spec);
     const restarted: McpServer = {
       ...entry,
-      url: `${workload.address}${MCP_PATH}`,
+      url: `${workload.address}${endpointPath(entry.endpointPath)}`,
       updatedAt: deps.now(),
     };
     // The same guard `create` applies, for the same reason: the provisioner is
@@ -275,15 +299,23 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         image: input.image,
         containerPort: input.containerPort,
         ...(input.envRefs ? { envRefs: input.envRefs } : {}),
+        ...(input.environment ? { environment: input.environment } : {}),
+        ...(input.args ? { args: input.args } : {}),
       };
+      endpointPath(input.endpointPath);
       const workload = await deps.provisioner.start(spec);
       const server: McpServer = {
         name: input.name,
         runtime: "managed",
-        url: `${workload.address}${MCP_PATH}`,
+        url: `${workload.address}${endpointPath(input.endpointPath)}`,
         image: input.image,
         containerPort: input.containerPort,
         ...(input.envRefs ? { envRefs: input.envRefs } : {}),
+        ...(input.environment
+          ? { environment: deps.cipher.encryptHeaders(input.environment) }
+          : {}),
+        ...(input.args ? { args: input.args } : {}),
+        ...(input.endpointPath ? { endpointPath: input.endpointPath } : {}),
         ...(input.description ? { description: input.description } : {}),
         ...(input.content ? { content: input.content } : {}),
         headers: deps.cipher.encryptHeaders(input.headers ?? {}),
@@ -315,9 +347,22 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
           : input.envRefs.length > 0
             ? input.envRefs
             : undefined;
+      const args =
+        input.args === undefined ? existing.args : input.args.length > 0 ? input.args : undefined;
+      const environment =
+        input.environment === undefined
+          ? existing.environment
+          : Object.keys(input.environment).length > 0
+            ? deps.cipher.mergeHeaderUpdate(existing.environment ?? {}, input.environment)
+            : undefined;
+      const nextEndpointPath = endpointPath(input.endpointPath ?? existing.endpointPath);
       const updated: McpServer = {
         ...existing,
         envRefs,
+        environment,
+        args,
+        endpointPath:
+          nextEndpointPath === DEFAULT_ENDPOINT_PATH ? undefined : nextEndpointPath,
         image: input.image ?? existing.image,
         containerPort: input.containerPort ?? existing.containerPort,
         description: input.description ?? existing.description,
@@ -331,7 +376,10 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       const workloadChanged =
         updated.image !== existing.image ||
         updated.containerPort !== existing.containerPort ||
-        JSON.stringify(updated.envRefs ?? []) !== JSON.stringify(existing.envRefs ?? []);
+        JSON.stringify(updated.envRefs ?? []) !== JSON.stringify(existing.envRefs ?? []) ||
+        JSON.stringify(updated.environment ?? {}) !== JSON.stringify(existing.environment ?? {}) ||
+        JSON.stringify(updated.args ?? []) !== JSON.stringify(existing.args ?? []) ||
+        nextEndpointPath !== endpointPath(existing.endpointPath);
       if (workloadChanged) {
         if (restarting.has(name)) {
           throw new ConflictError(`A restart of "${name}" is already running.`);

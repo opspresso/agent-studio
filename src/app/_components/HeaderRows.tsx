@@ -31,8 +31,8 @@ export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
 }
 
 /**
- * Editable key/value header rows. Every header value is stored encrypted at
- * rest, so each row is flagged as a secret. On edit, existing values arrive
+ * Editable secret key/value rows. Every value is stored encrypted at rest, so
+ * each row is flagged as a secret. On edit, existing values arrive
  * masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); leaving a value
  * masked keeps the stored secret, while typing a new value replaces it.
  *
@@ -46,6 +46,8 @@ export function HeaderRowsEditor({
   emptyHint = "No headers. Add one if the server needs auth.",
   caption = "Headers",
   addLabel = "+ Add header",
+  keyPlaceholder = "Header-Name",
+  valuePlaceholder = "value",
   allowRemove = false,
 }: {
   rows: HeaderRow[];
@@ -54,6 +56,8 @@ export function HeaderRowsEditor({
   /** `null` where the surrounding section already names these rows. */
   caption?: string | null;
   addLabel?: string;
+  keyPlaceholder?: string;
+  valuePlaceholder?: string;
   /** Offer "remove", for rows that layer over a set of inherited headers. */
   allowRemove?: boolean;
 }) {
@@ -84,14 +88,14 @@ export function HeaderRowsEditor({
           <TextInput
             value={row.key}
             onChange={(event) => update(index, { key: event.currentTarget.value })}
-            placeholder="Header-Name"
+            placeholder={keyPlaceholder}
             w="40%"
           />
           <TextInput
             value={row.remove ? "" : row.value}
             onChange={(event) => update(index, { value: event.currentTarget.value })}
             disabled={row.remove === true}
-            placeholder={row.remove ? "(removed)" : "value"}
+            placeholder={row.remove ? "(removed)" : valuePlaceholder}
             style={{ flex: 1 }}
           />
           {allowRemove ? (
