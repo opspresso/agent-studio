@@ -4,7 +4,7 @@ import type { Project, Version } from "@/domain/project/types";
 import { renderTemplate } from "@/application/llm/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
-import { runStrategyFor } from "./deps";
+import { runClock, runStrategyFor } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
@@ -61,6 +61,7 @@ export async function previewPrompt(
           systemPrompt: version.systemPrompt,
           userPromptTemplate: version.userPromptTemplate,
           variables: input.variables,
+          now: runClock(deps),
         }),
       ),
       toolNames: [],
@@ -96,6 +97,9 @@ export async function previewPrompt(
       // No handles: a preview stands before the first message, like a fresh run
       // with nothing attached.
       { handles: [], ...uses },
+      // The clock a run started now would carry, so the preview does not hide a
+      // line the model will read.
+      runClock(deps),
     );
     const { tools } = engine.buildAgentTools(
       resolved.mcp.mcpTools,

@@ -228,9 +228,13 @@ describe("normalizeAgentCardUrl", () => {
 
 // --- inbound executor -------------------------------------------------------
 
+/** Pinned so the clock line a prompt carries is deterministic. */
+const TEST_NOW = new Date("2026-07-30T06:12:00Z");
+
 function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
   const reject = () => Promise.reject(new Error("not used in this test"));
   return {
+    now: () => TEST_NOW,
     projects: { get: reject, list: reject, put: reject, delete: reject },
     versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: { get: reject, list: reject, put: reject, delete: reject },

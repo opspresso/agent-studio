@@ -63,6 +63,12 @@ function versionFixture(parameters: VersionParameters): Version {
   };
 }
 
+/** Pinned so the clock line a prompt carries is deterministic. */
+const TEST_NOW = new Date("2026-07-30T06:12:00Z");
+/** What {@link TEST_NOW} renders as, behind the engine-block boundary. */
+const CLOCK_LINE =
+  'Current date and time: 2026-07-30 (Thursday) 06:12 UTC. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.';
+
 function executionDepsFixture(channel: FakeChannel) {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const recorded: UsageDelta[] = [];
@@ -91,6 +97,7 @@ function executionDepsFixture(channel: FakeChannel) {
     },
   };
   const deps = {
+    now: () => TEST_NOW,
     projects: { get: reject, list: reject, put: reject, delete: reject },
     versions: { get: reject, list: reject, put: reject, delete: reject },
     skills: { get: reject, list: reject, put: reject, delete: reject },
@@ -1051,7 +1058,7 @@ describe("executeAgent local subagent projectType dispatch", () => {
 
     const childRequest = channel.seenParams[1];
     expect(childRequest?.messages.map((m) => m.content)).toEqual([
-      "You summarize.",
+      `You summarize.\n\n---\n\n${CLOCK_LINE}`,
       "Answer in exactly one sentence.",
       "three otters",
     ]);
@@ -1061,6 +1068,60 @@ describe("executeAgent local subagent projectType dispatch", () => {
     expect(chunks.find((c) => c.author === "summarizer" && c.delta?.content)?.delta?.content).toBe(
       "Summarized.",
     );
+  });
+
+  it("pins the clock for the whole run, so a child cannot say a different now", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(
+          0,
+          "call_t",
+          "transfer_to_agent",
+          '{"agent_name":"summarizer","message":"three otters"}',
+        ),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Summarized."), usageChunk(1, 1)],
+      [contentChunk("Passed on."), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    // A clock that advances on every read, across midnight. Unpinned, the child
+    // would stamp its prompt with a later instant than its parent — here, a
+    // different date and weekday, which is exactly the confusion the clock is
+    // meant to remove.
+    const instants = [new Date("2026-07-30T23:59:59Z"), new Date("2026-07-31T00:00:01Z")];
+    let reads = 0;
+    deps.now = () => instants[Math.min(reads++, instants.length - 1)] as Date;
+    deps.projects.get = (async (name: string) =>
+      name === "summarizer"
+        ? { ...projectFixture(), name: "summarizer", projectType: "llm" }
+        : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string, versionName: string) =>
+      projectName === "summarizer" && versionName === "v1"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "summarizer",
+            systemPrompt: "You summarize.",
+            userPromptTemplate: "Answer in exactly one sentence.",
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "summarizer", type: "local" }],
+        },
+        messages: [{ role: "user", content: "summarize this" }],
+      }),
+    );
+
+    const parentSystem = String(channel.seenParams[0]?.messages[0]?.content);
+    const childSystem = String(channel.seenParams[1]?.messages[0]?.content);
+    expect(parentSystem).toContain("2026-07-30 (Thursday) 23:59 UTC");
+    expect(childSystem).toContain("2026-07-30 (Thursday) 23:59 UTC");
+    expect(childSystem).not.toContain("2026-07-31");
   });
 });
 

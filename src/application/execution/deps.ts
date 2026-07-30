@@ -51,6 +51,12 @@ export interface ExecutionDeps extends RunBracketDeps {
   mcpAuth: McpAuthProvider;
   traces?: TraceRepository;
   traceSampleRate?: number;
+  /**
+   * The wall clock a run's prompt is stamped with. Injected for the same reason
+   * the channel is — a test that asserts on a prompt needs a fixed instant.
+   * Unset means the real clock (see {@link runClock}).
+   */
+  now?: () => Date;
 }
 
 export interface ExecuteVersionInput {
@@ -141,4 +147,16 @@ export function runStrategyFor(project: Project): RunStrategy {
     return "image";
   }
   return project.projectType === "agent" ? "agent" : "prompt";
+}
+
+/**
+ * The instant this run's prompt says it is happening.
+ *
+ * Read at the composition point, not in the engine: the engine takes the value
+ * as input so it stays pure and its tests stay off the real clock. One call per
+ * run, so every prompt a run assembles — including a subagent's — agrees on
+ * when "now" is, and the Playground preview can report the same instant.
+ */
+export function runClock(deps: Pick<ExecutionDeps, "now">): Date {
+  return deps.now?.() ?? new Date();
 }

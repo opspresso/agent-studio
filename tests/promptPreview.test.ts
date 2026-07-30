@@ -60,6 +60,12 @@ function boundVersion(): Version {
   };
 }
 
+/** Pinned so the clock line a prompt carries is deterministic. */
+const TEST_NOW = new Date("2026-07-30T06:12:00Z");
+/** What {@link TEST_NOW} renders as, behind the engine-block boundary. */
+const CLOCK_LINE =
+  'Current date and time: 2026-07-30 (Thursday) 06:12 UTC. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.';
+
 function executionDepsFixture(channel: FakeChannel) {
   const reject = () => Promise.reject(new Error("not used in this test"));
   const imageChannel = {
@@ -82,6 +88,7 @@ function executionDepsFixture(channel: FakeChannel) {
     cipher: secretCipher,
     urlPolicy: testUrlPolicy,
     mcpSessions: mcpSessionFactory,
+    now: () => TEST_NOW,
   } as unknown as ExecutionDeps;
 }
 
@@ -170,6 +177,10 @@ describe("previewPrompt", () => {
     expect(content).toContain("Sales CRM");
     expect(content).toContain("query, update");
     expect(content).toContain("painter");
+    // The clock is in the preview too. The model reads that line, so a panel
+    // that hid it would be showing a prompt nobody sends — the same drift the
+    // shared assembly exists to prevent.
+    expect(content).toContain(CLOCK_LINE);
   });
 
   it("reports the tool names the model is offered", async () => {
@@ -244,7 +255,7 @@ describe("previewPrompt", () => {
     });
 
     expect(preview.messages).toEqual([
-      { role: "system", content: "You summarize." },
+      { role: "system", content: `You summarize.\n\n---\n\n${CLOCK_LINE}` },
       { role: "user", content: "Summarize otters in one line." },
     ]);
     expect(preview.toolNames).toEqual([]);
