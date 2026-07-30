@@ -30,9 +30,138 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 
 ```
 schedule-trigger   (durable worker 결정 대기)
+context-budget     (run-termination 선행 — 예산 소진으로 루프를 끝내려면 종료 이유가 먼저)
 ```
 
 ---
+
+## run-clock — run에 "지금"을 알려준다
+
+**이유**: 어떤 진입점으로 들어와도 모델은 현재 시각을 모른다. 프롬프트 조립 경로 어디에도
+날짜가 주입되지 않고(`Date.now()`를 쓰는 곳은 `runBracket`의 지속시간 계측과
+`concurrencyGuard`의 lease 계산뿐), `renderTemplate`은 caller가 넘긴 변수만 치환한다. 그래서
+"오늘", "지난주", "이번 분기"를 다루는 모든 agent가 학습 컷오프 기준으로 답한다 — 도구를
+아무리 붙여도 고쳐지지 않는 종류의 오답이다.
+
+**선행**: 없음.
+
+**도구로 만들지 않는다.** `get_current_time` builtin은 날짜 한 줄을 얻는 데 turn 왕복 하나를
+쓰고, 모델이 그것을 부를 생각을 해야 비로소 정확해진다. 시각은 항상 참인 사실이므로 시스템
+프롬프트에 있어야 한다.
+
+**범위**
+
+- `buildAgentSystemPrompt`의 capability framing에 현재 시각 한 줄. 단일 호출 경로
+  (`runPrompt`/`runPromptStream`)에도 같은 값이 가야 한다 — 프롬프트 프로젝트가 더 자주
+  날짜를 묻는다.
+- **시각은 주입한다.** 엔진이 `Date.now()`를 직접 부르면 "테스트에 실제 시계를 쓰지 않는다"는
+  규약이 깨지고 엔진의 순수성도 함께 깨진다. `AgentDeps`/`EngineDeps`의 다른 모든 것과 같은
+  방식으로 받는다.
+- timezone을 명시한다. 표시 tz를 운영자가 고를 수 있게 할 것인지 UTC로 고정할 것인지 결정하고,
+  고르게 한다면 `src/lib/runtime-settings.ts`에 둔다(그 파일이 env override의 단일 소유자다).
+- `previewPrompt`가 같은 줄을 보여준다 — 프리뷰와 실제 run이 다른 프롬프트를 쓰면 프리뷰가
+  거짓말을 한다.
+
+**완료 조건**: 주입한 고정 시각으로 시스템 프롬프트에 그 시각이 나타나고, `previewPrompt`가
+동일한 문자열을 보고한다. 엔진 테스트가 실제 시계를 읽지 않는다. 시각을 주입하지 않은
+호출에서도 프롬프트 조립이 실패하지 않는다.
+
+---
+
+## run-termination — run이 왜 끝났는지 말한다
+
+**이유**: 이 저장소는 잃은 것을 반드시 말하는 규약을 일관되게 지킨다 — tool 결과 절단은 결과
+텍스트에 적히고, transcript 절단·해석 실패한 스킬/에이전트/MCP·채팅 히스토리 절단은 모두
+`warning` chunk가 된다. 그런데 **가장 큰 절단인 "답 없이 run이 끝난다"만 조용하다.** turn
+guard는 `engine.ts`의 루프 첫머리에서 `return;` 한 줄이다(`turn >= maxTurn`). warning도,
+`done`도, 아무 chunk도 없이 스트림이 닫힌다.
+
+그 침묵이 아래로 번진다:
+
+- **OpenAI 레이어가 `finish_reason`을 부재로 역산한다.** `src/app/api/projects/_lib/openai.ts`는
+  `done`이 오면 `stop`, 안 오면 `length`를 보낸다. 그런데 `done`이 없는 경우는 turn guard만이
+  아니다 — 취소(abort)와 mid-stream 에러도 `done`을 내지 않는다. **사용자가 중단한 run이
+  "출력 길이 초과"로 보고된다.**
+- **트레이스가 turn guard 종료를 성공으로 기록한다.** generator가 정상 반환하므로
+  `executeAgent`의 `completed`가 `true`가 되고, `finishTrace`는 에러도 취소도 아닌 완료로
+  남긴다. 답을 주지 못한 run이 관측 위에서 정상이다.
+- 채팅·Slack·콘솔은 애초에 구분할 방법이 없다. 사용자는 답이 왜 없는지 알 수 없다.
+
+**근본 원인**: 종료 이유에 소유자가 없다. `done: true` 하나가 정상 종료만 표현하고 나머지는
+전부 *부재로부터의 추론*이며, 그 추론이 소비자마다 흩어져 있다. `isTopLevelChunk`가 author
+semantics를 한 곳에 소유해 재유도를 막은 것과 정확히 같은 문제이고, 같은 해법이 필요하다.
+
+**선행**: 없음. `context-budget`이 이것을 선행으로 갖는다.
+
+**범위**
+
+- 종료 이유를 `EngineChunk`에 **명시적으로** 싣는다 — 정상 종료, turn 한도, 취소, 에러가
+  서로 다른 값이다. `src/domain/llm/types.ts`가 그 값의 단일 소유자이며, 판별은
+  `isTopLevelChunk`처럼 owned predicate로 노출한다.
+- turn guard가 이유와 함께 `warning`을 내고 끝낸다.
+- `openai.ts`가 역산을 멈추고 이유를 읽는다. 취소는 `length`가 아니다.
+- 트레이스가 turn 한도 종료를 정상 완료와 구분해 기록한다.
+- 채팅·Slack·콘솔이 이유를 사용자에게 보여준다.
+- 하위 호환: 지금 `done`을 읽는 소비자가 전부 있으므로, 기존 필드의 의미를 바꾸는 대신
+  이유를 더하는 쪽이 안전한지 먼저 판단하고 결정을 기록한다.
+
+**완료 조건**
+
+- `maxTurn`에 걸린 run이 turn 한도를 이유로 든 종료 chunk와 `warning`을 낸다.
+- 취소된 run과 mid-stream 에러가 `finish_reason: "length"`로 보고되지 않는다.
+- 트레이스에서 turn 한도로 끝난 run이 정상 완료와 구분된다.
+- 어떤 소비자도 `done`의 부재로 이유를 추론하지 않는다 —
+  `tests/architecture.test.ts`의 single-owner 불변식으로 고정한다.
+- 정상 종료 경로의 출력은 바이트 단위로 동일하다.
+
+---
+
+## context-budget — run이 컨텍스트에 쌓는 총량의 소유자
+
+**이유**: 상한은 많지만 **합계를 보는 곳이 없다.** 지금 있는 것은 전부 항목별·turn별이다 —
+tool 결과 `MAX_TOOL_RESULT_CHARS_PER_TURN`(200,000자, **turn당**), 이미지
+`MAX_ATTACHMENTS`(4, turn당), transcript `MAX_TRANSFER_CONTEXT_CHARS`(8,000자), 그리고 채팅
+진입에만 있는 `MAX_HISTORY_CHARS`/`MAX_HISTORY_MESSAGES`. 루프의 `messages` 배열은 turn마다
+자라고 `maxTurn`은 기본 50이다. 즉 **한 run이 컨텍스트에 넣을 수 있는 총량에는 상한이 없다.**
+transfer가 자식 답변을 넣는 `postContextMessages`는 상한이 아예 없는 자리다.
+
+`contextWindow`는 이미 모델마다 정의돼 있다(`src/domain/llm/models.ts`). **엔진이 그것을 읽지
+않는다** — 정보는 있는데 쓰이지 않는 상태다. 그래서 컨텍스트 초과는 예산 초과로 처리되지
+못하고 provider의 400으로 나타나며, 첫 chunk 이후라면 재시도 없이 `{error}` chunk가 된다.
+도구를 많이 쓰는 긴 run이 원인 불명으로 죽는다.
+
+**진입점별 방어도 고르지 않다.** 채팅만 히스토리 예산을 갖고, predict / OpenAI 호환 /
+Slack / A2A / webhook trigger는 받은 `messages`를 그대로 넘긴다. 같은 모델에 같은 크기의
+입력을 주면서 한 경로만 보호된다.
+
+**선행**: `run-termination`. 예산 소진을 이유로 루프를 끝내는 선택지를 쓰려면 종료 이유를
+말할 수 있어야 한다. 절단만으로 끝낼 수 있다면 선행 없이 착수 가능하며, 어느 쪽인지 설계
+단계에서 먼저 정한다.
+
+**범위**
+
+- run 단위 누적 예산의 **단일 소유자**를 만든다. 모델의 `contextWindow`에서 유도하고,
+  기존 항목별 상한은 그 아래에 남긴다 — 상한을 없애는 작업이 아니라 합계를 아는 작업이다.
+- `postContextMessages`(transfer 답변, MCP 반환 이미지의 동반 메시지)를 예산 안으로 넣는다.
+- 절단은 기존 규약대로 `warning`으로 보고한다. 조용히 버리지 않는다.
+- 문자 수와 토큰의 관계를 어떻게 근사할지 결정하고 기록한다. 정확한 토큰 계산은 provider별
+  tokenizer를 요구하므로, 보수적 문자 기반 근사로 시작할지 판단한다.
+- 진입점별 불균형을 정리한다 — 히스토리 예산을 모든 진입점이 지나는 자리로 옮길지, 아니면
+  채팅 전용임을 근거와 함께 문서에 남길지 결정한다.
+
+**설계 메모**: `MAX_TOOL_RESULT_CHARS_PER_TURN`이 200,000자라는 것은 **한 turn만으로도** 작은
+컨텍스트 창을 넘길 수 있다는 뜻이다. 즉 이 마일스톤은 "긴 run"만의 문제가 아니라 per-turn
+상한이 모델과 무관하게 정해져 있다는 문제이기도 하다. 예산을 모델에서 유도하면 두 문제가
+같은 곳에서 해결된다.
+
+**완료 조건**
+
+- 작은 `contextWindow`를 가진 모델로 도구를 반복 호출하는 run이 provider 400 대신 예산
+  절단과 `warning`으로 처리된다.
+- transfer 답변이 예산에 포함된다 — 자식 답변을 크게 만든 fake로 절단이 보고되는 것을
+  확인한다.
+- 예산 계산은 한 곳에만 있다. `tests/architecture.test.ts`의 single-owner 불변식으로 고정한다.
+- 예산에 여유가 있는 run의 요청 본문은 바이트 단위로 동일하다.
 
 ## dispatch-agents — 여러 subagent 동시 실행
 
