@@ -100,6 +100,9 @@ export async function previewPrompt(
       // The clock a run started now would carry, so the preview does not hide a
       // line the model will read.
       runClock(deps),
+      // A preview stands for a top-level run, and that is the only kind offered
+      // fan-out — hiding it here would show a prompt nobody sends.
+      true,
     );
     const { tools } = engine.buildAgentTools(
       resolved.mcp.mcpTools,
@@ -108,6 +111,7 @@ export async function previewPrompt(
       Boolean(agentDeps.generateImage),
       uses.canEdit,
       uses.canTransfer,
+      true,
     );
     return {
       messages: systemPrompt ? [{ role: "system", content: systemPrompt }] : [],

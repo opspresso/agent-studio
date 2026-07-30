@@ -193,7 +193,14 @@ describe("previewPrompt", () => {
       version: boundVersion(),
     });
 
-    expect(preview.toolNames).toEqual(["query", "Skill", "transfer_to_agent"]);
+    // `dispatch_agents` rides along with the transfer tool: a preview stands for
+    // a top-level run, and that is the only kind offered fan-out.
+    expect(preview.toolNames).toEqual([
+      "query",
+      "Skill",
+      "transfer_to_agent",
+      "dispatch_agents",
+    ]);
   });
 
   it("releases the MCP session it opened", async () => {
