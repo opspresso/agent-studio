@@ -60,7 +60,12 @@ function portFor(name: string): number {
 export interface SsmProvisionerConfig {
   instanceId: string;
   region: string;
-  /** Registry host used for `docker login`; images must come from it. */
+  /**
+   * Registry host `docker login` authenticates against, so images this account
+   * publishes pull without a credential being typed anywhere. It is not a
+   * restriction: an image from any registry the host can reach is accepted, and
+   * the login is skipped for one that does not come from here.
+   */
   registry: string;
   /**
    * The container whose network namespace managed workloads join.
@@ -121,9 +126,6 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
     async start(spec: ManagedWorkloadSpec): Promise<ManagedWorkload> {
       const name = assertSafe(spec.name, NAME, "name");
       const image = assertSafe(spec.image, IMAGE, "image");
-      if (!image.startsWith(`${config.registry}/`)) {
-        throw new Error(`Refusing an image from outside ${config.registry}: ${image}`);
-      }
       const envRefs = (spec.envRefs ?? []).map((ref) => assertSafe(ref, ENV_REF, "env reference"));
       const environment = Object.entries(spec.environment ?? {}).map(
         ([key, value]) => [assertSafe(key, ENV_NAME, "environment name"), value] as const,
@@ -147,7 +149,15 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
         // In a shared namespace the container listens directly on the port the
         // entry's address names; there is no mapping to translate it.
         `echo PORT=${port} >> ${envFile}`,
-        `aws ecr get-login-password --region ${config.region} | docker login --username AWS --password-stdin ${config.registry}`,
+        // Only for images from this account's registry. Logging in to pull a
+        // public one would make a missing ECR permission look like a broken
+        // image reference, and `set -e` would stop before the pull that would
+        // have worked.
+        ...(image.startsWith(`${config.registry}/`)
+          ? [
+              `aws ecr get-login-password --region ${config.region} | docker login --username AWS --password-stdin ${config.registry}`,
+            ]
+          : []),
         `docker pull -q ${image}`,
         `docker rm -f ${name} >/dev/null 2>&1 || true`,
         // No `-p`: ports belong to the joined namespace, and this one is meant

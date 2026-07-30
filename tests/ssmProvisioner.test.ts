@@ -72,16 +72,31 @@ describe("ssm provisioner input handling", () => {
     ]) {
       await expect(
         provisioner.start({ name: "ok", image, containerPort: 3000 }),
-      ).rejects.toThrow(/unsafe|outside/);
+      ).rejects.toThrow(/unsafe/);
     }
   });
 
-  it("refuses an image from outside the configured registry", async () => {
-    // An approved artifact means one this account publishes, not any string
-    // that parses as an image reference.
-    await expect(
-      provisioner.start({ name: "ok", image: "docker.io/library/nginx:latest", containerPort: 3000 }),
-    ).rejects.toThrow(/outside/);
+  it("pulls an image from outside this account's registry without logging in to it", async () => {
+    sent.length = 0;
+    await provisioner.start({
+      name: "ok",
+      image: "grafana/mcp-grafana:latest",
+      containerPort: 8000,
+    });
+
+    const script = sent[0]?.commands.join("\n") ?? "";
+    expect(script).toContain("docker pull -q grafana/mcp-grafana:latest");
+    // An ECR login buys nothing for a public image, and a missing permission
+    // there would fail the script before the pull that would have worked.
+    expect(script).not.toContain("docker login");
+  });
+
+  it("logs in to this account's registry for an image published there", async () => {
+    sent.length = 0;
+    await provisioner.start({ name: "ok", image: `${REGISTRY}/x:v1`, containerPort: 3000 });
+
+    const script = sent[0]?.commands.join("\n") ?? "";
+    expect(script).toContain(`docker login --username AWS --password-stdin ${REGISTRY}`);
   });
 
   it("refuses an env reference that is not a parameter path", async () => {

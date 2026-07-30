@@ -502,8 +502,11 @@ Two deliberate strategies coexist:
   directly to Docker; the SSM adapter shell-quotes every argument before
   assembling its command. `{{PORT}}` in an argument becomes the effective
   listen port, so images that do not honour the `PORT` environment variable can
-  still work in both mapped-port and shared-network deployments. Images must
-  come from the configured registry. Unset
+  still work in both mapped-port and shared-network deployments. An image may
+  come from any registry the host can pull from; `MANAGED_MCP_REGISTRY` is the
+  one `docker login` authenticates against, so this account's own images pull
+  without a credential being typed, and the login is skipped for an image from
+  anywhere else. Unset
   `MANAGED_MCP_INSTANCE_ID`/`MANAGED_MCP_REGISTRY` means the routes answer 503
   rather than half-enable the feature. Direct environment values are encrypted
   in the registry row, masked on reads, and decrypted only when building the

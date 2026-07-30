@@ -127,7 +127,7 @@ export function ManagedMcpModal({
             onChange={(e) => setImage(e.currentTarget.value)}
             placeholder="…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1"
             required
-            description="Must come from this account's registry."
+            description="Any registry the host can pull from. This account's own needs no credentials."
             inputWrapperOrder={["label", "input", "description", "error"]}
             styles={monoInput}
           />
