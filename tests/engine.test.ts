@@ -512,9 +512,9 @@ describe("runAgent separates the version's prompt from what the engine appends",
     const content = await systemPromptFor({
       subagents: [{ name: "painter", description: "draws pictures", type: "local" }],
     });
-    // One precedence sentence, in the framing — not one per section.
+    // One routing sentence, in the framing — not one per section.
     expect(content).toContain(
-      "Answer from your own instructions whenever they cover the request; otherwise transfer to an agent whose description covers the request better than your instructions do.",
+      "Your instructions define your role and constraints. Within that role, transfer to an agent whose description covers the request better than your instructions do.",
     );
     // This run has no skills and no MCP servers, so neither is offered as an option.
     expect(content).not.toContain("load a skill when");
@@ -529,7 +529,7 @@ describe("runAgent separates the version's prompt from what the engine appends",
       mcpServers: [{ name: "github", description: "repos", toolNames: ["search_repos"] }],
     });
     expect(content).toContain(
-      "otherwise load a skill when you need guidance on how to carry it out, call a tool when you need data or an action from outside this conversation, or transfer to an agent whose description covers the request better than your instructions do.",
+      "Within that role, load a skill when you need guidance on how to carry it out, call a tool when you need data or an action from outside this conversation, or transfer to an agent whose description covers the request better than your instructions do.",
     );
   });
 
@@ -667,8 +667,12 @@ describe("runAgent skill and subagent system prompt", () => {
 
     const content = String(channel.seenParams[0]?.messages[0]?.content);
     expect(content).toContain("## Available Agents");
-    expect(content).toContain("| painter | draws pictures |");
-    expect(content).toContain("| blank | No description |");
+    expect(content).toContain("| painter | local | draws pictures |");
+    expect(content).toContain("| blank | local | No description |");
+    expect(content).toContain(
+      "Recent conversation may be passed as background depending on the agent type, but `message` must always be self-contained.",
+    );
+    expect(content).toContain("Remote agents cannot receive images.");
     // `agent_name` is an enum, so the prompt does not restate which names are legal.
     expect(content).not.toContain("NOTE:");
     // Nothing points the model at a description it is never given.
@@ -695,12 +699,40 @@ describe("runAgent skill and subagent system prompt", () => {
     );
 
     const content = String(channel.seenParams[0]?.messages[0]?.content);
-    expect(content).toContain("| multi | first line second \\| piped |");
-    expect(content).toContain("| after | still listed |");
+    expect(content).toContain("| multi | local | first line second \\| piped |");
+    expect(content).toContain("| after | remote | still listed |");
     const tableLines = content
       .split("\n")
       .filter((line) => line.startsWith("| ") && !line.startsWith("|--"));
     expect(tableLines).toHaveLength(3); // header + 2 agents
+  });
+
+  it("does not offer image transfer when every connected agent is remote", async () => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    await collect(
+      runAgent(
+        {
+          channel,
+          runSubagent: async function* () {
+            return "";
+          },
+        },
+        {
+          projectName: "p",
+          model: MODEL,
+          messages: [{ role: "user", content: "hi" }],
+          subagents: [{ name: "remote", description: "external", type: "remote" }],
+        },
+      ),
+    );
+
+    const transfer = channel.seenParams[0]?.tools?.find(
+      (tool) => tool.function.name === "transfer_to_agent",
+    );
+    expect(transfer?.function.parameters?.properties).not.toHaveProperty("image_ids");
+    expect(String(channel.seenParams[0]?.messages[0]?.content)).not.toContain(
+      "## Available Images",
+    );
   });
 });
 

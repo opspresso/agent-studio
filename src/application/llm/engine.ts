@@ -961,7 +961,7 @@ export function buildTransferTranscript(
 
 /**
  * `a`, `a and b`, `a, b, and c`. Used to build the sentences below from the
- * capabilities a run actually resolved, so neither the precedence rule nor the
+ * capabilities a run actually resolved, so neither the routing rule nor the
  * image empty state ever names something this run cannot reach.
  */
 function joinClauses(items: string[], conjunction: string): string {
@@ -980,7 +980,7 @@ function joinClauses(items: string[], conjunction: string): string {
  *
  * The sections below are generated per run and use `##` headings, which are
  * indistinguishable from headings the prompt author wrote — so the split is
- * marked explicitly. It also gives the precedence rule a referent: "your own
+ * marked explicitly. It also gives the routing rule a referent: "your
  * instructions" is everything above this line, and nothing else.
  */
 function capabilityFraming(
@@ -1008,7 +1008,7 @@ function capabilityFraming(
   if (rules.length > 0) {
     lines.push(
       "",
-      `Answer from your own instructions whenever they cover the request; otherwise ${joinClauses(rules, "or")}.`,
+      `Your instructions define your role and constraints. Within that role, ${joinClauses(rules, "or")}.`,
     );
   }
   return lines.join("\n");
@@ -1061,7 +1061,10 @@ function mcpSystemPromptAddition(servers: McpServerInfo[]): string {
  */
 function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: boolean): string {
   const rows = subagents
-    .map((a) => `| ${a.name} | ${tableCell(a.description) || "No description"} |`)
+    .map(
+      (a) =>
+        `| ${a.name} | ${a.type} | ${tableCell(a.description) || "No description"} |`,
+    )
     .join("\n");
   // Only the constraints the framing cannot state. "Background" is deliberate
   // and not "context you can rely on": the conversation rides along for an
@@ -1071,18 +1074,18 @@ function subagentSystemPromptAddition(subagents: SubagentInfo[], withDispatch: b
   const lines = [
     "## Available Agents",
     "",
-    "`message` is the whole of the request: the other agent does not see your instructions, so say what it should do. The recent conversation is passed alongside as background. Once it has answered, do not transfer to it again for the same request.",
+    "`message` is the whole of the request: the other agent does not see your instructions, so say what it should do. Recent conversation may be passed as background depending on the agent type, but `message` must always be self-contained. Once it has answered, do not transfer to it again for the same request.",
   ];
   if (withDispatch) {
     // Which of the two tools fits is specific to this section, like everything
-    // else stated here — it is a fact about these agents, not a precedence rule,
+    // else stated here — it is a fact about these agents, not a routing rule,
     // so it does not belong in the framing.
     lines.push(
       "",
       `Parts that do not depend on each other go to \`${DISPATCH_TOOL_NAME}\` in **one** call, so they run at the same time. A single request goes to \`${TRANSFER_TOOL_NAME}\`.`,
     );
   }
-  lines.push("", "| Agent | Description |", "|-------|-------------|", rows);
+  lines.push("", "| Agent | Type | Description |", "|-------|------|-------------|", rows);
   return lines.join("\n");
 }
 
@@ -1139,7 +1142,7 @@ function transferToolDef(subagents: SubagentInfo[], withImages: boolean): Channe
                   type: "array",
                   items: { type: "string" },
                   description:
-                    "Ids of images to hand over (see Available Images). Pass these when the other agent must edit or look at an existing image instead of making one up.",
+                    "Ids of images to hand over (see Available Images). Pass these when a local agent must edit or look at an existing image instead of making one up. Remote agents cannot receive images.",
                 },
               }
             : {}),
@@ -1193,7 +1196,8 @@ function dispatchToolDef(subagents: SubagentInfo[], withImages: boolean): Channe
                       image_ids: {
                         type: "array",
                         items: { type: "string" },
-                        description: "Ids of images to hand to this agent (see Available Images).",
+                        description:
+                          "Ids of images to hand to this local agent (see Available Images). Remote agents cannot receive images.",
                       },
                     }
                   : {}),
@@ -1242,7 +1246,7 @@ function imageSystemPromptAddition(
   }
   if (uses.canTransfer) {
     howTo.push(
-      `Pass ids as \`image_ids\` on \`${TRANSFER_TOOL_NAME}\` so the other agent receives the actual picture instead of a description of it.`,
+      `Pass ids as \`image_ids\` on \`${TRANSFER_TOOL_NAME}\`, or on each \`${DISPATCH_TOOL_NAME}\` task, so a local agent receives the actual picture instead of a description of it. Remote agents cannot receive images.`,
     );
   }
   return ["## Available Images", "", ...howTo.flatMap((line) => [line, ""]), ...table].join("\n");
@@ -1453,7 +1457,7 @@ export function imagePromptUses(
 ): { canEdit: boolean; canTransfer: boolean } {
   return {
     canEdit: Boolean(deps.editImage),
-    canTransfer: subagents.length > 0 && Boolean(deps.runSubagent),
+    canTransfer: subagents.some((agent) => agent.type === "local") && Boolean(deps.runSubagent),
   };
 }
 

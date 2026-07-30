@@ -25,7 +25,12 @@ vi.mock("@/application/execution/runProject", () => ({
     input: { version: { versionName: string }; variables?: Record<string, string> },
   ) => {
     calls.push({ versionName: input.version.versionName, variables: input.variables });
-    return { messages: [{ role: "system", content: "assembled" }], toolNames: [], warnings: [] };
+    return {
+      messages: [{ role: "system", content: "assembled" }],
+      toolNames: [],
+      tools: [],
+      warnings: [],
+    };
   },
 }));
 

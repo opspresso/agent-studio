@@ -114,8 +114,8 @@ grew a block the other did not have. Rules that keep the halves from restating e
 
 - **The block is the authority on what exists, the version's text on who the agent is.**
   The break exists because the generated `##` headings are otherwise indistinguishable
-  from the author's own, and because the precedence rule below needs "your own
-  instructions" to have a referent. Nothing to append means the author's text
+  from the author's own, and because the routing rule below needs "your instructions"
+  to have a referent. Nothing to append means the author's text
   byte-for-byte — no boundary is announced with nothing behind it.
 - **The clock sits outside the capability block, ahead of it.** It says when the run
   happens, which is not something the run can *reach*, and the framing speaks only for the
@@ -125,7 +125,7 @@ grew a block the other did not have. Rules that keep the halves from restating e
   for the whole run: a subagent reading its own would disagree with its parent across a
   midnight boundary, which is the confusion the clock exists to remove. UTC, labelled, to
   the minute — a prompt that changed every second would defeat provider prompt caching.
-- **Precedence is stated once, in the framing, and names only what the run has.** Each
+- **Capability routing is stated once, in the framing, and names only what the run has.** Each
   section documents what is specific to it (an MCP table says where the tools come from;
   the agent table says a `message` is the whole request and must not be sent twice) and
   never its own "use me when…" — several unranked policies leave the model no way to
