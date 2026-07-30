@@ -8,6 +8,7 @@ import {
   getManagedMcpStatus,
   removeManagedMcp,
   restartManagedMcp,
+  updateManagedMcp,
   type ManagedMcpStatus,
   getMcp,
   testMcpConnection,
@@ -30,6 +31,7 @@ import {
   Textarea,
   TextInput,
   Title,
+  NumberInput,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
@@ -570,6 +572,9 @@ function EditMcpForm({
   onSaved: () => void;
 }) {
   const [url, setUrl] = useState(server.url);
+  const [image, setImage] = useState(server.image ?? "");
+  const [containerPort, setContainerPort] = useState(String(server.containerPort ?? 3000));
+  const [envRefs, setEnvRefs] = useState((server.envRefs ?? []).join("\n"));
   const [description, setDescription] = useState(server.description ?? "");
   const [content, setContent] = useState(server.content ?? "");
   const [rows, setRows] = useState<HeaderRow[]>(recordToRows(server.headers));
@@ -581,12 +586,27 @@ function EditMcpForm({
     setSubmitting(true);
     setError(null);
     try {
-      await updateMcp(server.name, {
-        url,
-        description,
-        content,
-        headers: rowsToRecord(rows),
-      });
+      const headers = rowsToRecord(rows);
+      if (server.runtime === "managed") {
+        await updateManagedMcp(server.name, {
+          image,
+          containerPort: Number(containerPort),
+          envRefs: envRefs
+            .split(/[\s,]+/)
+            .map((ref) => ref.trim())
+            .filter(Boolean),
+          description,
+          content,
+          headers,
+        });
+      } else {
+        await updateMcp(server.name, {
+          url,
+          description,
+          content,
+          headers,
+        });
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -598,13 +618,48 @@ function EditMcpForm({
   return (
     <form onSubmit={submit}>
       <Stack gap="md">
-        <TextInput
-          label="URL"
-          value={url}
-          onChange={(e) => setUrl(e.currentTarget.value)}
-          type="url"
-          required
-        />
+        {server.runtime === "managed" ? (
+          <>
+            <TextInput label="URL" value={url} readOnly description="Set by the managed runtime." />
+            <TextInput
+              label="Image"
+              value={image}
+              onChange={(e) => setImage(e.currentTarget.value)}
+              required
+              styles={monoInput}
+            />
+            <NumberInput
+              label="Container port"
+              value={containerPort}
+              onChange={(value) => setContainerPort(String(value))}
+              min={1}
+              max={65535}
+              required
+            />
+            <Textarea
+              label="Environment"
+              value={envRefs}
+              onChange={(e) => setEnvRefs(e.currentTarget.value)}
+              placeholder="/env/prod/mcp-image-fetch"
+              autosize
+              minRows={2}
+              description="SSM parameter names, separated by whitespace or commas."
+              inputWrapperOrder={["label", "input", "description", "error"]}
+              styles={monoInput}
+            />
+            <Text fz="xs" c="dimmed">
+              Changing the image, port, or environment automatically restarts the container.
+            </Text>
+          </>
+        ) : (
+          <TextInput
+            label="URL"
+            value={url}
+            onChange={(e) => setUrl(e.currentTarget.value)}
+            type="url"
+            required
+          />
+        )}
         <TextInput
           label="Description"
           value={description}

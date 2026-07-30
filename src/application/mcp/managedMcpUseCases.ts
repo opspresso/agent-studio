@@ -35,6 +35,17 @@ export interface CreateManagedInput {
   containerPort: number;
   envRefs?: string[];
   description?: string;
+  content?: string;
+  headers?: Record<string, string>;
+}
+
+export interface UpdateManagedInput {
+  image?: string;
+  containerPort?: number;
+  envRefs?: string[];
+  description?: string;
+  content?: string;
+  headers?: Record<string, string>;
 }
 
 export interface ManagedMcpStatus {
@@ -97,6 +108,7 @@ const REACHABILITY_TIMEOUT_MS = 3_000;
 
 export interface ManagedMcpUseCases {
   create(input: CreateManagedInput): Promise<McpServer>;
+  update(name: string, input: UpdateManagedInput): Promise<McpServer>;
   remove(name: string): Promise<void>;
   status(name: string): Promise<ManagedMcpStatus>;
   /**
@@ -127,6 +139,10 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
    * app instance per host, because a container joins exactly one namespace.
    */
   const restarting = new Set<string>();
+
+  function view(entry: McpServer): McpServer {
+    return { ...entry, headers: deps.cipher.maskHeaders(entry.headers) };
+  }
 
   async function requireManaged(name: string): Promise<McpServer> {
     const existing = await deps.repo.get(name);
@@ -235,6 +251,20 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
     return restarted;
   }
 
+  function queueRestart(entry: McpServer): void {
+    void (async () => {
+      try {
+        if (!(await settles(await restartEntry(entry, specFor(entry))))) {
+          log.warn("managed-mcp", `${entry.name}: restarted, still unreachable`);
+        }
+      } catch (error) {
+        log.error("managed-mcp", `restart of ${entry.name} failed`, error);
+      } finally {
+        restarting.delete(entry.name);
+      }
+    })();
+  }
+
   return {
     async create(input) {
       if (await deps.repo.get(input.name)) {
@@ -255,7 +285,8 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
         containerPort: input.containerPort,
         ...(input.envRefs ? { envRefs: input.envRefs } : {}),
         ...(input.description ? { description: input.description } : {}),
-        headers: {},
+        ...(input.content ? { content: input.content } : {}),
+        headers: deps.cipher.encryptHeaders(input.headers ?? {}),
         createdAt: deps.now(),
         updatedAt: deps.now(),
       };
@@ -273,7 +304,55 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       // `create` rather than `put`: a conditional write, so two operators
       // pressing the button together produce one entry, not two.
       await deps.repo.create(server);
-      return server;
+      return view(server);
+    },
+
+    async update(name, input) {
+      const existing = await requireManaged(name);
+      const envRefs =
+        input.envRefs === undefined
+          ? existing.envRefs
+          : input.envRefs.length > 0
+            ? input.envRefs
+            : undefined;
+      const updated: McpServer = {
+        ...existing,
+        envRefs,
+        image: input.image ?? existing.image,
+        containerPort: input.containerPort ?? existing.containerPort,
+        description: input.description ?? existing.description,
+        content: input.content ?? existing.content,
+        headers:
+          input.headers === undefined
+            ? existing.headers
+            : deps.cipher.mergeHeaderUpdate(existing.headers, input.headers),
+        updatedAt: deps.now(),
+      };
+      const workloadChanged =
+        updated.image !== existing.image ||
+        updated.containerPort !== existing.containerPort ||
+        JSON.stringify(updated.envRefs ?? []) !== JSON.stringify(existing.envRefs ?? []);
+      if (workloadChanged) {
+        if (restarting.has(name)) {
+          throw new ConflictError(`A restart of "${name}" is already running.`);
+        }
+        specFor(updated);
+        restarting.add(name);
+      }
+      try {
+        await deps.repo.update(updated);
+      } catch (error) {
+        restarting.delete(name);
+        if (isConditionalWriteFailure(error)) {
+          throw new NotFoundError(`MCP server "${name}" was removed while it was being updated.`);
+        }
+        throw error;
+      }
+      deps.probe.invalidateDiscovery(existing.url);
+      if (workloadChanged) {
+        queueRestart(updated);
+      }
+      return view(updated);
     },
 
     async remove(name) {
@@ -310,13 +389,12 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       // get past the check and tear the same container down twice.
       restarting.add(name);
       let entry: McpServer;
-      let spec: ManagedWorkloadSpec;
       try {
         entry = await requireManaged(name);
         // Built before the answer, not inside the background task. A row with
         // no image can never be started, and a 202 for that leaves the console
         // polling for minutes to learn what was knowable up front.
-        spec = specFor(entry);
+        specFor(entry);
       } catch (error) {
         restarting.delete(name);
         throw error;
@@ -325,24 +403,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       // work is measured in minutes; holding an HTTP response open for it means
       // a client that times out and retries, and a retry here is a second
       // teardown of the container the first one is still bringing up.
-      void (async () => {
-        try {
-          // The same grace the sweep gives, so a `status` poll that lands right
-          // after this is looking at a settled container rather than one caught
-          // mid-boot.
-          if (!(await settles(await restartEntry(entry, spec)))) {
-            // The sweep reports this outcome; the button path has to as well, or
-            // a repair that did not work is evidenced nowhere on the server.
-            log.warn("managed-mcp", `${name}: restarted, still unreachable`);
-          }
-        } catch (error) {
-          // Nothing is waiting on this. The console learns the outcome from
-          // `status`, the same place it learned there was a problem.
-          log.error("managed-mcp", `restart of ${name} failed`, error);
-        } finally {
-          restarting.delete(name);
-        }
-      })();
+      queueRestart(entry);
     },
 
     async reconcile() {

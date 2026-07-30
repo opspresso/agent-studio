@@ -11,10 +11,12 @@ import { managedMcpUnavailable } from "./_unavailable";
  */
 const bodySchema = z.object({
   name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
-  image: z.string().min(1),
+  image: z.string().trim().min(1),
   containerPort: z.number().int().min(1).max(65535),
-  envRefs: z.array(z.string()).optional(),
+  envRefs: z.array(z.string().trim().min(1)).optional(),
   description: z.string().optional(),
+  content: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
 });
 
 export const POST = withAdminAuth(async (_user, request: Request) => {

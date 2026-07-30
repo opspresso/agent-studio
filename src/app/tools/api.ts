@@ -90,7 +90,11 @@ export interface CreateManagedMcpInput {
   containerPort: number;
   envRefs?: string[];
   description?: string;
+  content?: string;
+  headers?: Record<string, string>;
 }
+
+export type UpdateManagedMcpInput = Omit<CreateManagedMcpInput, "name">;
 
 export interface ManagedMcpStatus {
   name: string;
@@ -105,6 +109,17 @@ export interface ManagedMcpStatus {
 export function createManagedMcp(input: CreateManagedMcpInput): Promise<McpServer> {
   return fetch("/api/mcps/managed", {
     method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  }).then((r) => readJson<McpServer>(r));
+}
+
+export function updateManagedMcp(
+  name: string,
+  input: UpdateManagedMcpInput,
+): Promise<McpServer> {
+  return fetch(`/api/mcps/managed/${name}`, {
+    method: "PUT",
     headers: jsonHeaders,
     body: JSON.stringify(input),
   }).then((r) => readJson<McpServer>(r));

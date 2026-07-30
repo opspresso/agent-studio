@@ -131,6 +131,12 @@ function fixture(
     // Enough of the port to prove the probe is handed decrypted values.
     cipher: { decryptHeadersForOutbound: (h: Record<string, string>) =>
       Object.fromEntries(Object.entries(h).map(([k, v]) => [k, v.replace(/^enc:v1:/, "")])),
+      encryptHeaders: (h: Record<string, string>) =>
+        Object.fromEntries(Object.entries(h).map(([k, v]) => [k, `enc:v1:${v}`])),
+      maskHeaders: (h: Record<string, string>) =>
+        Object.fromEntries(Object.keys(h).map((key) => [key, "********"])),
+      mergeHeaderUpdate: (_stored: Record<string, string>, update: Record<string, string>) =>
+        Object.fromEntries(Object.entries(update).map(([k, v]) => [k, `enc:v1:${v}`])),
     } as never,
     now: () => "2026-01-01T00:00:00.000Z",
     // Recorded, never waited on: a test that sleeps for real is a test nobody
@@ -179,6 +185,24 @@ describe("managed MCP lifecycle", () => {
     expect(server.runtime).toBe("managed");
     expect(server.url).toBe("http://127.0.0.1:3001/mcp");
     expect(rows.get("image-fetch")?.image).toBe("ecr/img:v1");
+  });
+
+  it("stores managed metadata and encrypted outbound headers at creation", async () => {
+    const { useCases, rows } = fixture();
+
+    const created = await useCases.create({
+      ...input,
+      description: "fetches images",
+      content: "# Setup",
+      headers: { Authorization: "Bearer secret" },
+    });
+
+    expect(rows.get("image-fetch")).toMatchObject({
+      description: "fetches images",
+      content: "# Setup",
+      headers: { Authorization: "enc:v1:Bearer secret" },
+    });
+    expect(created.headers).toEqual({ Authorization: "********" });
   });
 
   it("refuses to register an address that is not loopback, and stops what it started", async () => {
@@ -235,6 +259,47 @@ describe("managed MCP lifecycle", () => {
     await useCases.create({ ...input, containerPort: 8080 });
 
     expect(rows.get("image-fetch")?.containerPort).toBe(8080);
+  });
+
+  it("updates every managed setting and restarts when the workload changes", async () => {
+    const f = fixture({ existing: managedRow(), holdStart: true });
+
+    const updated = await f.useCases.update("image-fetch", {
+      image: "ecr/img:v2",
+      containerPort: 8080,
+      envRefs: ["/env/prod/image-fetch"],
+      description: "updated",
+      content: "# Notes",
+      headers: { Authorization: "Bearer new" },
+    });
+
+    expect(f.rows.get("image-fetch")).toMatchObject({
+      image: "ecr/img:v2",
+      containerPort: 8080,
+      envRefs: ["/env/prod/image-fetch"],
+      description: "updated",
+      content: "# Notes",
+      headers: { Authorization: "enc:v1:Bearer new" },
+    });
+    expect(updated.headers).toEqual({ Authorization: "********" });
+    expect(f.startedSpecs).toEqual([
+      {
+        name: "image-fetch",
+        image: "ecr/img:v2",
+        containerPort: 8080,
+        envRefs: ["/env/prod/image-fetch"],
+      },
+    ]);
+    f.releaseStart();
+  });
+
+  it("updates metadata without restarting the container", async () => {
+    const f = fixture({ existing: managedRow() });
+
+    await f.useCases.update("image-fetch", { description: "updated" });
+
+    expect(f.rows.get("image-fetch")?.description).toBe("updated");
+    expect(f.started).toEqual([]);
   });
 });
 
