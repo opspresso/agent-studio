@@ -95,6 +95,54 @@ describe("ssm provisioner input handling", () => {
     ).rejects.toThrow(/unsafe/);
   });
 
+  it("passes runtime arguments as shell-quoted container argv", async () => {
+    sent.length = 0;
+    await provisioner.start({
+      name: "grafana",
+      image: `${REGISTRY}/mcp-grafana:v1`,
+      args: [
+        "--transport",
+        "streamable-http",
+        "--address=0.0.0.0:{{PORT}}",
+        "--label=it's safe; $(id)",
+      ],
+    });
+
+    const script = sent[0]?.commands.join("\n") ?? "";
+    const runLine = script.split("\n").find((line) => line.startsWith("docker run")) ?? "";
+    expect(runLine).toContain(
+      `${REGISTRY}/mcp-grafana:v1 '--transport' 'streamable-http' '--address=0.0.0.0:`,
+    );
+    expect(runLine).not.toContain("{{PORT}}");
+    expect(runLine).toContain(`'--label=it'\"'\"'s safe; $(id)'`);
+  });
+
+  it("writes direct environment values with quoted names and values", async () => {
+    sent.length = 0;
+    await provisioner.start({
+      name: "grafana",
+      image: `${REGISTRY}/mcp-grafana:v1`,
+      environment: {
+        GRAFANA_URL: "https://grafana.example.com",
+        GRAFANA_TOKEN: "secret'; $(id)",
+      },
+    });
+
+    const script = sent[0]?.commands.join("\n") ?? "";
+    expect(script).toContain(`echo 'GRAFANA_URL=https://grafana.example.com' >>`);
+    expect(script).toContain(`echo 'GRAFANA_TOKEN=secret'\"'\"'; $(id)' >>`);
+  });
+
+  it("refuses an unsafe direct environment name", async () => {
+    await expect(
+      provisioner.start({
+        name: "grafana",
+        image: `${REGISTRY}/mcp-grafana:v1`,
+        environment: { "TOKEN; id": "secret" },
+      }),
+    ).rejects.toThrow(/unsafe environment name/);
+  });
+
   it("derives the same port for a name every time", async () => {
     // Re-discovery after a restart depends on this: the port is not stored, so
     // it has to be recomputable from the name alone.

@@ -497,16 +497,23 @@ Two deliberate strategies coexist:
   at loopback — that address was typed. The registry refuses to move a managed
   entry's url for the same reason, and the lifecycle use case refuses to store a
   non-loopback address even when the provisioner reports one, stopping the
-  container it named. The provisioner takes an image reference and a port, never
-  a command, and the shell string is assembled only from values matched against
-  narrow patterns; images must come from the configured registry. Unset
+  container it named. The provisioner takes an image reference, a port and an
+  optional argv array, never a shell command. The local adapter passes argv
+  directly to Docker; the SSM adapter shell-quotes every argument before
+  assembling its command. `{{PORT}}` in an argument becomes the effective
+  listen port, so images that do not honour the `PORT` environment variable can
+  still work in both mapped-port and shared-network deployments. Images must
+  come from the configured registry. Unset
   `MANAGED_MCP_INSTANCE_ID`/`MANAGED_MCP_REGISTRY` means the routes answer 503
-  rather than half-enable the feature. The stored row carries `image`, `envRefs`
+  rather than half-enable the feature. Direct environment values are encrypted
+  in the registry row, masked on reads, and decrypted only when building the
+  workload spec; `envRefs` remains available when the value should stay in
+  Parameter Store. The stored row also carries `image`, `args`, `endpointPath`
   and `containerPort` — everything a restart needs, because at restart time
   there is no operator to ask again. `containerPort` is a request, not a
   guarantee: only an adapter that publishes a port mapping can honour it, and
-  the deployed one shares a network namespace instead, so it tells the container
-  which port to bind (`PORT`) and ignores the stored value.
+  the deployed one shares a network namespace instead, so it tells the
+  container which port to bind (`PORT`) and ignores the stored value.
 - **Surviving a redeploy.** A managed container joins this app's own network
   namespace (`--network container:<MANAGED_MCP_NETWORK_CONTAINER>`), which is the
   only way a loopback address means the same thing at both ends. Docker resolves
@@ -702,7 +709,7 @@ GET|POST /api/skills, /api/mcps, /api/agents (+ [name] GET|PUT|DELETE)
 GET|POST /api/skills/sync                   skills-repo sync status / run
 POST /api/mcps/[name]/tools                 MCP connection test
 POST /api/mcps/managed                      start a managed MCP container + entry, admin-only
-GET|DELETE /api/mcps/managed/[name]         its running state / remove container and entry
+GET|PUT|DELETE /api/mcps/managed/[name]     status / update settings / remove container and entry
 POST /api/mcps/managed/[name]/restart       re-create the container in this app's namespace (202; poll GET)
 POST|DELETE /api/mcps/[name]/auth           OAuth discovery for a registry server (admin)
 GET  /api/projects/[name]/mcp-connections   this project's OAuth connections (owner)

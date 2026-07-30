@@ -7,10 +7,10 @@
  * that reason. The instance already runs the SSM agent, and the same path
  * deploys this app.
  *
- * Every value that reaches the shell is checked against a narrow pattern first.
- * The caller supplies an image reference, never a command — but "never" has to
- * be enforced here, where the string is actually assembled, or it is only a
- * comment.
+ * Structural values that reach the shell are checked against narrow patterns.
+ * Runtime arguments allow ordinary punctuation, so each is single-quoted
+ * independently before the command is assembled. The caller never supplies a
+ * shell command.
  */
 
 import {
@@ -30,11 +30,16 @@ const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
 /** SSM parameter paths this app is allowed to name. */
 const ENV_REF = /^\/[A-Za-z0-9._\-/]+$/;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const POLL_INTERVAL_MS = 2_000;
 const COMMAND_TIMEOUT_MS = 300_000;
 /** Ports handed to managed containers. Above the ephemeral range this app uses. */
 const PORT_BASE = 3100;
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
+}
 
 function assertSafe(value: string, pattern: RegExp, what: string): string {
   if (!pattern.test(value)) {
@@ -120,7 +125,13 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
         throw new Error(`Refusing an image from outside ${config.registry}: ${image}`);
       }
       const envRefs = (spec.envRefs ?? []).map((ref) => assertSafe(ref, ENV_REF, "env reference"));
+      const environment = Object.entries(spec.environment ?? {}).map(
+        ([key, value]) => [assertSafe(key, ENV_NAME, "environment name"), value] as const,
+      );
       const port = portFor(name);
+      const args = (spec.args ?? []).map((arg) =>
+        shellQuote(arg.replaceAll("{{PORT}}", String(port))),
+      );
       const envFile = `/home/ec2-user/managed-mcp/${name}.env`;
 
       const out = await run([
@@ -132,6 +143,7 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
           (ref) =>
             `aws ssm get-parameter --name ${ref} --with-decryption --region ${config.region} --query Parameter.Value --output text >> ${envFile}`,
         ),
+        ...environment.map(([key, value]) => `echo ${shellQuote(`${key}=${value}`)} >> ${envFile}`),
         // In a shared namespace the container listens directly on the port the
         // entry's address names; there is no mapping to translate it.
         `echo PORT=${port} >> ${envFile}`,
@@ -140,7 +152,7 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
         `docker rm -f ${name} >/dev/null 2>&1 || true`,
         // No `-p`: ports belong to the joined namespace, and this one is meant
         // to be reachable from there and nowhere else.
-        `docker run -d --name ${name} --restart unless-stopped --memory 512m --pids-limit 256 --network container:${assertSafe(config.networkContainer, NAME, "network container")} --env-file ${envFile} ${image} >/dev/null`,
+        `docker run -d --name ${name} --restart unless-stopped --memory 512m --pids-limit 256 --network container:${assertSafe(config.networkContainer, NAME, "network container")} --env-file ${envFile} ${image}${args.length > 0 ? ` ${args.join(" ")}` : ""} >/dev/null`,
         `docker inspect -f '{{.Id}} {{.State.Running}}' ${name}`,
       ]);
       const [identity = "", running = "false"] = out.trim().split(/\s+/);

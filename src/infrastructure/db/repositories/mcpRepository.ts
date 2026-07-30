@@ -14,6 +14,9 @@ function fromItem(item: Record<string, unknown>): McpServer {
     runtime: item.runtime as McpRuntime | undefined,
     image: item.image as string | undefined,
     envRefs: item.envRefs as string[] | undefined,
+    environment: item.environment as Record<string, string> | undefined,
+    args: item.args as string[] | undefined,
+    endpointPath: item.endpointPath as string | undefined,
     containerPort: item.containerPort as number | undefined,
     description: item.description as string | undefined,
     content: item.content as string | undefined,
@@ -37,6 +40,9 @@ function toItem(server: McpServer): Record<string, unknown> {
     runtime: server.runtime,
     image: server.image,
     envRefs: server.envRefs,
+    environment: server.environment,
+    args: server.args,
+    endpointPath: server.endpointPath,
     // The only record of what the operator typed; a restart rebuilds the spec
     // from this row and has nowhere else to read it.
     containerPort: server.containerPort,

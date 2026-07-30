@@ -77,7 +77,8 @@ function useCasesWith(stored: McpServer) {
   const cipher = {
     encryptHeaders: (h: Record<string, string>) => h,
     mergeHeaderUpdate: (_a: unknown, b: Record<string, string>) => b,
-    maskHeaders: (h: Record<string, string>) => h,
+    maskHeaders: (h: Record<string, string>) =>
+      Object.fromEntries(Object.keys(h).map((key) => [key, "********"])),
   };
   const policy: UrlPolicy = { async assertAllowed() {} };
   const probe = { listTools: async () => ({ ok: true as const, tools: [] }), invalidateDiscovery() {} };
@@ -118,6 +119,17 @@ describe("managed entries are not editable through the registry", () => {
 });
 
 describe("editing a managed entry's other fields", () => {
+  it("masks direct environment values on registry reads", async () => {
+    const { useCases } = useCasesWith({
+      ...managedRow,
+      environment: { GRAFANA_TOKEN: "enc:v1:ciphertext" },
+    });
+
+    await expect(useCases.get("image-fetch")).resolves.toMatchObject({
+      environment: { GRAFANA_TOKEN: "********" },
+    });
+  });
+
   it("saves when the form echoes back the unchanged loopback url", async () => {
     // The edit form submits every field, so an unchanged address arrives as a
     // patch — and re-guarding it blocked saves that never touched it.

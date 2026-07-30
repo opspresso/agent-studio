@@ -6,10 +6,9 @@
  * milestone's rule is one adapter now and a contract for the rest.
  *
  * What a provisioner may be asked for is deliberately small. It takes an
- * approved image and returns the loopback address it bound — never a command,
- * never a shell string. An operator who can create a managed server must not
- * thereby be able to run arbitrary code on the host, so there is no field here
- * in which such a thing could be written.
+ * approved image and returns the loopback address it bound — never a shell
+ * command. Runtime arguments remain an argv array so adapters can pass them to
+ * the container process without invoking a host shell.
  */
 
 export interface ManagedWorkloadSpec {
@@ -37,6 +36,14 @@ export interface ManagedWorkloadSpec {
    * References, so secrets never pass through this app or its table.
    */
   envRefs?: string[];
+  /** Plaintext values passed only from the lifecycle boundary to the runtime adapter. */
+  environment?: Record<string, string>;
+  /**
+   * Arguments appended to the image entrypoint. Never interpreted by a host
+   * shell. `{{PORT}}` is replaced with the port the adapter expects the process
+   * to bind.
+   */
+  args?: string[];
 }
 
 export interface ManagedWorkload {

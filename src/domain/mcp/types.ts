@@ -125,6 +125,12 @@ export interface McpServer {
    * References, not values: the secrets never enter this table.
    */
   envRefs?: string[];
+  /** Managed only: encrypted-at-rest environment values. Masked on client reads. */
+  environment?: Record<string, string>;
+  /** Managed only: arguments appended to the image entrypoint. */
+  args?: string[];
+  /** Managed only: streamable HTTP endpoint exposed by the container. */
+  endpointPath?: string;
   /**
    * Managed only: the port the container listens on inside itself. Stored so a
    * restart can rebuild the spec the entry was created from — an operator types
