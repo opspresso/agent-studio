@@ -66,10 +66,10 @@ describe("syncSkillsFromSnapshot", () => {
     ],
   };
 
-  it("upserts new skills with a source marker", async () => {
+  it("imports a skill the registry does not have, with a source marker", async () => {
     const { repo, store } = fakeRepo();
     const result = await syncSkillsFromSnapshot(repo, snapshot);
-    expect(result.synced).toEqual(["greeting"]);
+    expect(result.created).toEqual(["greeting"]);
     expect(store.get("greeting")).toMatchObject({
       description: "Say hello",
       content: "Be warm.",
@@ -88,9 +88,8 @@ describe("syncSkillsFromSnapshot", () => {
         updatedAt: "2026-01-01T00:00:00Z",
       },
     ]);
-    const result = await syncSkillsFromSnapshot(repo, snapshot);
-    expect(result.synced).toEqual([]);
-    expect(result.unchanged).toBe(1);
+    const result = await syncSkillsFromSnapshot(repo, snapshot, { overwrite: ["greeting"] });
+    expect(result.existing).toEqual([{ name: "greeting", differs: [] }]);
     expect(store.get("greeting")?.createdAt).toBe("2026-01-01T00:00:00Z");
   });
 
@@ -122,9 +121,8 @@ describe("syncSkillsFromSnapshot", () => {
     const { repo } = fakeRepo();
     const snap = withFiles([{ path: "references/api.md", content: "# API" }]);
     await syncSkillsFromSnapshot(repo, snap);
-    const result = await syncSkillsFromSnapshot(repo, snap);
-    expect(result.synced).toEqual([]);
-    expect(result.unchanged).toBe(1);
+    const result = await syncSkillsFromSnapshot(repo, snap, { overwrite: ["greeting"] });
+    expect(result.existing).toEqual([{ name: "greeting", differs: [] }]);
   });
 
   it("re-syncs when an attachment changes, and drops removed files", async () => {
@@ -139,8 +137,9 @@ describe("syncSkillsFromSnapshot", () => {
     const result = await syncSkillsFromSnapshot(
       repo,
       withFiles([{ path: "references/api.md", content: "# API v2" }]),
+      { overwrite: ["greeting"] },
     );
-    expect(result.synced).toEqual(["greeting"]);
+    expect(result.overwritten).toEqual(["greeting"]);
     expect(store.get("greeting")?.files).toEqual([{ path: "references/api.md", content: "# API v2" }]);
   });
 
@@ -151,7 +150,9 @@ describe("syncSkillsFromSnapshot", () => {
       skipped: [{ name: "greeting", path: "big.md", reason: "too-large" as const }],
     };
     const result = await syncSkillsFromSnapshot(repo, snap);
-    expect(result.skipped).toEqual([{ name: "greeting", path: "big.md", reason: "too-large" }]);
+    expect(result.skipped).toEqual([
+      { name: "greeting", reason: "attachment", detail: "big.md: too-large" },
+    ]);
   });
 });
 

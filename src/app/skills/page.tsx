@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
+import { SyncSummary } from "@/app/_components/SyncSummary";
+import type { RepoSyncResult, SyncSelection } from "@/domain/sync/types";
 import { createSkill, listSkills, type Skill } from "./api";
 import {
   Alert,
@@ -26,7 +28,21 @@ export default function SkillsPage() {
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
   const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
+
+  async function runSync(selection: SyncSelection = {}) {
+    const res = await fetch("/api/skills/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(selection),
+    });
+    const data = (await res.json()) as RepoSyncResult & { error?: string };
+    if (!res.ok) {
+      throw new Error(data.error ?? "Sync failed");
+    }
+    setSyncResult(data);
+    await refresh();
+  }
 
   async function refresh() {
     setLoading(true);
@@ -56,33 +72,15 @@ export default function SkillsPage() {
           </Text>
         </div>
         <Group gap="sm">
-          {syncStatus && (
-            <Text fz="xs" c="dimmed">
-              {syncStatus}
-            </Text>
-          )}
           <Button
             variant="default"
             loading={syncing}
             onClick={async () => {
               setSyncing(true);
-              setSyncStatus(null);
+              setSyncResult(null);
               setError(null);
               try {
-                const res = await fetch("/api/skills/sync", { method: "POST" });
-                const data = (await res.json()) as {
-                  synced?: string[];
-                  unchanged?: number;
-                  error?: string;
-                };
-                if (!res.ok) {
-                  setError(data.error ?? "Sync failed");
-                } else {
-                  setSyncStatus(
-                    `Synced ${data.synced?.length ?? 0} · unchanged ${data.unchanged ?? 0}`,
-                  );
-                  await refresh();
-                }
+                await runSync();
               } catch (e) {
                 setError(e instanceof Error ? e.message : "Sync failed");
               } finally {
@@ -95,6 +93,10 @@ export default function SkillsPage() {
           <Button onClick={open}>New skill</Button>
         </Group>
       </Group>
+
+      {syncResult && (
+        <SyncSummary result={syncResult} label="skill" onApply={runSync} />
+      )}
 
       {error && (
         <Alert color="red" variant="light">

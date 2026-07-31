@@ -1,5 +1,24 @@
-// Normalizes user input to the slug format required by name fields
-// (lowercase letters, digits, hyphens — matches /^[a-z0-9-]+$/ in API schemas).
+/**
+ * The name every registry entry, project and skill is addressed by.
+ *
+ * One owner, because it was written out ten times — three API schemas, the
+ * route-param check, both repo sync clients, and prose in this file's own
+ * comment — while the door they all go through (`createRegistryUseCases.create`)
+ * checked nothing at all. Nothing was wrong, but nothing made it right either:
+ * a name that slipped past one copy would be stored and then be unreadable,
+ * because `parseName` refuses it on the way back out.
+ */
+const SLUG = /^[a-z0-9-]+$/;
+
+/** True when `value` may be used as a name. */
+export function isSlug(value: string): boolean {
+  return SLUG.test(value);
+}
+
+/** What a name that is not a slug should say, wherever it is refused. */
+export const SLUG_RULE = "must be a slug (lowercase letters, digits, hyphens)";
+
+// Normalizes user input to the slug format {@link isSlug} accepts.
 export function toSlug(value: string): string {
   return value
     .toLowerCase()

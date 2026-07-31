@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { agentUseCases } from "@/lib/container";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 const createSchema = z.object({
-  name: z.string().regex(/^[a-z0-9-]+$/, "name must be a slug (lowercase letters, digits, hyphens)"),
+  name: z.string().refine(isSlug, `name ${SLUG_RULE}`),
   url: z.url(),
   protocol: z.enum(["openai", "a2a"]).default("openai"),
   description: z.string().min(1),

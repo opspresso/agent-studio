@@ -6,6 +6,7 @@
  */
 
 import type { RepoSkillFile, SkillFile, SkillsRepoSnapshot } from "@/domain/skill/types";
+import { isSlug } from "@/shared/slug";
 import {
   selectSkillAttachments,
   type SkillRoot,
@@ -15,7 +16,6 @@ import { fetchBlobText, githubApi } from "./client";
 
 export type { RepoSkillFile, SkillsRepoSnapshot };
 
-const SLUG = /^[a-z0-9-]+$/;
 
 export async function fetchSkillsRepoSnapshot(
   { repo, branch, token }: { repo?: string; branch: string; token?: string },
@@ -48,7 +48,7 @@ export async function fetchSkillsRepoSnapshot(
     }
     const parts = entry.path.split("/");
     const name = parts[parts.length - 2] ?? "";
-    if (!SLUG.test(name)) {
+    if (!isSlug(name)) {
       continue;
     }
     roots.push({ name, rootPath: parts.slice(0, -1).join("/"), skillMdPath: entry.path });

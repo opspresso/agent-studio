@@ -159,13 +159,13 @@ recovery while a stale success only serves a slightly old tool list.
 | `TOOLS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access. Shared by both syncs. |
 
-The two syncs divide ownership differently, which is the thing to know before editing either
-side. A skill row is entirely reconstructible from its document, so the repository is its
-source of truth and a sync overwrites the whole row. An MCP entry is not: it carries encrypted
-headers, an OAuth block discovered from the server's own metadata, and — for a managed entry —
-an address the provisioner bound. So a tools sync is authoritative **per field**: `url`,
-`description` and `content` come from the document every time, and nothing else is touched.
-The repository owns what a TOOL.md can say; the registry owns what git must never hold.
+Both syncs work the same way: **they import what is missing and report the rest.** A name the
+registry already holds is left alone and reported with the fields the document would replace;
+a name a previous sync created and the repository no longer carries is reported as orphaned.
+Neither is acted on until a person picks it in the console — the stored version may be a
+deliberate edit, and an MCP entry may hold credentials. When an overwrite does happen it
+replaces only what the document owns: encrypted headers, a discovered OAuth block and a
+managed entry's provisioned address are never touched.
 
 A cluster-internal URL is registerable this way only if its host is covered by
 `MCP_INTERNAL_HOST_SUFFIXES` — the sync faces the same outbound guard a typed URL does, and a

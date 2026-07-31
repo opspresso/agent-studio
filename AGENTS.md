@@ -127,6 +127,7 @@ about to make copy number two.
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
 | User-document caps | `src/domain/llm/documentLimits.ts` |
 | How an attached document is framed in a turn | `src/application/llm/documentParts.ts` |
+| The name every entry is addressed by | `isSlug` in `src/shared/slug.ts` |
 
 Other decisions with a single owner that the test cannot express as a pattern, but that the
 same rule applies to:
@@ -141,6 +142,7 @@ same rule applies to:
 | User-image caps | `src/domain/llm/imageLimits.ts` |
 | `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
 | Row TTLs | `src/infrastructure/db/ttl.ts` |
+| What a repo sync did, and what it left to a person | `src/domain/sync/types.ts` |
 | The brand palette and component defaults | `src/app/theme.ts` |
 
 ## Subsystem map
@@ -239,6 +241,12 @@ One line each — the linked section is the authority.
   document. `TOOLS_REPO` only ever creates: an MCP entry also carries encrypted headers and an
   OAuth block discovered from the server, so an existing name is left untouched and reported as
   `skipped`. Making the tools sync upsert "for consistency" destroys credentials.
+- **A repo sync imports and reports; it never overwrites or deletes on its own.** Both syncs
+  (`syncSkillsFromSnapshot`, `syncToolsFromSnapshot`) create what is missing and report the
+  rest — what a document would change, and what the repository no longer carries. Either is
+  acted on only when a caller names it, because the stored version may be a deliberate edit
+  and an entry may hold credentials. Only entries a sync created are listed as orphaned; one
+  someone registered by hand was never the repository's to miss.
 - **Docs record the current state, not history.** Completed milestones are deleted from
   `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
   accumulate changelogs in comments or docs.

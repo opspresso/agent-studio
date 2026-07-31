@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { skillUseCases } from "@/lib/container";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 const createSchema = z.object({
-  name: z.string().regex(/^[a-z0-9-]+$/, "name must be a slug (lowercase letters, digits, hyphens)"),
+  name: z.string().refine(isSlug, `name ${SLUG_RULE}`),
   description: z.string().min(1),
   content: z.string(),
 });

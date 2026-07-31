@@ -365,23 +365,35 @@ Both sync endpoints answer `GET` to a session and require admin access for `POST
 test operations require a session and apply the same SSRF guard used during registration and
 dispatch.
 
-`/api/skills/sync` overwrites: the repository is the source of truth for a synced skill.
+Both syncs follow one rule: **import what is missing, report the rest, decide nothing else.**
 
-`/api/mcps/sync` splits it by field. **The repository owns the document** — `url`,
-`description` and `content` are replaced from the TOOL.md — and **the registry owns everything
-else**: encrypted headers, a discovered OAuth block, a managed entry's provisioned address and
-image are never touched. A field the document does not carry leaves the stored one alone, so
-an empty body does not erase notes. `url` is required only for a name the registry does not
-already hold.
+```
+POST /api/skills/sync   { "overwrite"?: ["name"], "remove"?: ["name"] }
+POST /api/mcps/sync     { "overwrite"?: ["name"], "remove"?: ["name"] }
+→ 200 { repo, commitSha, created, existing, overwritten, orphaned, removed, skipped }
+```
 
-The result is `{ repo, commitSha, created, updated, unchanged, skipped }`. An `updated` entry
-names the `fields` that changed and carries `authDropped` when its address moved — the OAuth
-block was discovered from the old address and described a server the entry no longer points
-at, so Discover has to be re-run before any project can connect. Skip reasons: `missing-url`,
-`invalid-url` (the outbound guard's refusal, carried through in `detail`), `bad-name`,
-`managed-url` (a managed entry's address comes from the provisioner, so the document's was
-ignored while its other fields synced) and `conflict` (the name was taken mid-sync; the next
-run picks it up).
+- **created** — in the repository, not in the registry. Imported outright.
+- **existing** — in both, as `{ name, differs }` where `differs` names the fields the document
+  would replace. **Nothing is written** unless the name is in `overwrite`: the stored version
+  may be a correction someone made on purpose, and a sync cannot tell that apart from a
+  document that moved on.
+- **orphaned** — created by a previous sync of this repository and no longer in it. **Nothing
+  is deleted** unless the name is in `remove`. Entries someone registered by hand never
+  appear: they were never the repository's to miss.
+- **skipped** — `bad-name`, `missing-url`, `invalid-url` (the outbound guard's message in
+  `detail`), `managed-url` (a managed MCP entry's address comes from the provisioner, so the
+  document's was ignored while its other fields applied), `conflict` (the name was taken
+  mid-sync), `attachment` (a skill synced but one of its files did not).
+
+An overwrite replaces only what the document owns — a skill's description, content and
+attachments; an MCP entry's `url`, `description` and `content`. Encrypted headers, a
+discovered OAuth block and a managed entry's provisioned address are never touched, and a
+field the document does not carry leaves the stored one alone. Moving an MCP entry's address
+drops the OAuth block read from the old one, so Discover has to be re-run.
+
+An upstream failure (GitHub unreachable, a truncated tree) answers `502` through `apiError`
+like every other route; a missing `SKILLS_REPO`/`TOOLS_REPO` or `GITHUB_TOKEN` answers `503`.
 
 Per-project Slack configuration uses these endpoints:
 
