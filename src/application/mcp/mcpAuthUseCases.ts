@@ -16,6 +16,7 @@ import type {
   OAuthMetadataClient,
   TokenRequestTarget,
 } from "@/domain/mcp/oauth";
+import { McpMetadataError } from "@/domain/mcp/oauth";
 import type { ListToolsResult, McpToolProbe } from "@/domain/mcp/toolProbe";
 import type {
   McpConnection,
@@ -75,6 +76,30 @@ function selectAuthMethod(metadata: AuthorizationServerMetadata): TokenEndpointA
  * separately — the MCP spec requires it for authorization endpoints, and the
  * guard alone would happily allow a public `http:` host.
  */
+/**
+ * Give a failed metadata read a status.
+ *
+ * Every reason a read can fail is about the server or the network — it publishes
+ * no well-known document, it answered with a login page, its host is refused by
+ * the outbound guard. None of those are faults in this app, but as a bare error
+ * `apiError` has nothing to map and answers 500, which is how an admin pointing
+ * Discover at a server that simply does not do OAuth got `unhandled error` in
+ * the logs and "Internal server error" in the console.
+ *
+ * Only {@link McpMetadataError} is remapped. Anything else still reaches 500,
+ * because anything else really is ours.
+ */
+async function readMetadata<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (error instanceof McpMetadataError) {
+      throw new ValidationError(error.message);
+    }
+    throw error;
+  }
+}
+
 async function assertAuthEndpoint(policy: UrlPolicy, url: string, label: string): Promise<void> {
   let parsed: URL;
   try {
@@ -334,7 +359,14 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
   return {
     async discover(name, opts) {
       const server = await requireServer(name);
-      const resourceMetadata = await deps.metadata.fetchProtectedResource(server.url);
+      // The same predicate the run path and the tool probe use, for the same
+      // reason. Without it this was the one place that reached for the guard
+      // directly, so an entry this deployment declared internal could be
+      // registered and dialed by a run but never discovered.
+      const loopback = skipsUrlGuard(server, deps.internalHostSuffixes);
+      const resourceMetadata = await readMetadata(() =>
+        deps.metadata.fetchProtectedResource(server.url, loopback),
+      );
 
       const choices = resourceMetadata.authorizationServers;
       const requested = opts?.authorizationServer;
@@ -359,7 +391,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       }
       await assertAuthEndpoint(deps.urlPolicy, authorizationServer, "Authorization server");
 
-      const asMetadata = await deps.metadata.fetchAuthorizationServer(authorizationServer);
+      const asMetadata = await readMetadata(() =>
+        deps.metadata.fetchAuthorizationServer(authorizationServer),
+      );
       await assertAuthEndpoint(
         deps.urlPolicy,
         asMetadata.authorizationEndpoint,

@@ -78,11 +78,15 @@ export class McpSession {
     private readonly headers: Record<string, string>,
     private readonly signal?: AbortSignal,
     /**
-     * Reaching a container on this host. `fetchPublicUrl` would reject the
-     * address on every request — correctly, for anything an operator typed —
-     * so a managed server uses plain fetch instead. Only ever set from
-     * `isManagedLoopback`; defaulting to the guarded path means a caller that
-     * forgets it loses tools rather than protection.
+     * An address this deployment vouches for: a container it started, or a host
+     * whose suffix it declared internal. `fetchPublicUrl` would reject both on
+     * every request — correctly, for anything an operator merely typed — so
+     * these use plain fetch instead.
+     *
+     * Only ever set from `skipsUrlGuard`, which owns that decision and is the
+     * only thing entitled to make it; the name predates the second way in.
+     * Defaulting to the guarded path means a caller that forgets it loses tools
+     * rather than protection.
      */
     private readonly loopback = false,
   ) {}

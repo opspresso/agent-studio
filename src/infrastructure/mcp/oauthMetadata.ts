@@ -1,6 +1,10 @@
 /**
  * {@link OAuthMetadataClient} over `fetchPublicUrl`, so metadata reads pass the
- * same SSRF guard every other operator-supplied URL does.
+ * same SSRF guard every other operator-supplied URL does — with the same one
+ * exception the run path and the tool probe carry, and only where the caller
+ * passes it: an address this deployment vouches for is dialed with plain fetch,
+ * because the guard would reject it on every request and the entry would be
+ * registrable and dispatchable but never discoverable.
  *
  * Only used at registration. The run path reads the stored `McpServerAuth`
  * instead: fetching two well-known documents per run would add a third party's
@@ -12,6 +16,7 @@ import type {
   OAuthMetadataClient,
   ProtectedResourceMetadata,
 } from "@/domain/mcp/oauth";
+import { McpMetadataError } from "@/domain/mcp/oauth";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
 
@@ -34,8 +39,11 @@ export function wellKnownCandidates(base: string, suffix: string): string[] {
   return candidates;
 }
 
-async function fetchJson(url: string): Promise<Record<string, unknown> | null> {
-  const response = await fetchPublicUrl(url, {
+async function fetchJson(url: string, loopback: boolean): Promise<Record<string, unknown> | null> {
+  // Read per call rather than captured at module load, so a test that stubs the
+  // global is what a loopback read talks to.
+  const send = loopback ? fetch : fetchPublicUrl;
+  const response = await send(url, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
   });
@@ -58,12 +66,13 @@ async function firstUsable<T>(
   candidates: string[],
   parse: (doc: Record<string, unknown>) => T | null,
   what: string,
+  loopback: boolean,
 ): Promise<T> {
   const failures: string[] = [];
   for (const url of candidates) {
     let doc: Record<string, unknown> | null = null;
     try {
-      doc = await fetchJson(url);
+      doc = await fetchJson(url, loopback);
     } catch (error) {
       failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
       continue;
@@ -74,7 +83,9 @@ async function firstUsable<T>(
     }
     failures.push(`${url}: no usable ${what}`);
   }
-  throw new Error(`Could not read ${what}. Tried ${failures.join("; ")}`);
+  // Typed, not bare: every reason collected above is about the server or the
+  // network, and the caller needs to be able to say so with a status.
+  throw new McpMetadataError(`Could not read ${what}. Tried ${failures.join("; ")}`);
 }
 
 function asString(value: unknown): string | undefined {
@@ -88,7 +99,7 @@ function asStringArray(value: unknown): string[] | undefined {
 }
 
 export const oauthMetadataClient: OAuthMetadataClient = {
-  async fetchProtectedResource(mcpUrl) {
+  async fetchProtectedResource(mcpUrl, loopback = false) {
     return firstUsable(
       wellKnownCandidates(mcpUrl, "oauth-protected-resource"),
       (doc): ProtectedResourceMetadata | null => {
@@ -107,6 +118,7 @@ export const oauthMetadataClient: OAuthMetadataClient = {
         };
       },
       "protected resource metadata",
+      loopback,
     );
   },
 
@@ -149,6 +161,8 @@ export const oauthMetadataClient: OAuthMetadataClient = {
         };
       },
       "authorization server metadata",
+      // Never the loopback path: see the port's note on this method.
+      false,
     );
   },
 };
