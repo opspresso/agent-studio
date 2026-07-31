@@ -165,4 +165,114 @@ describe("buildProjectSlackManifest", () => {
     ]);
     expect(settings.is_mcp_enabled).toBe(true);
   });
+
+  it("subscribes to the event that announces the agent container opening", () => {
+    const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com");
+    const settings = manifest.settings as {
+      event_subscriptions: { bot_events: string[] };
+    };
+
+    // Without it the panel opens with no prompts and the app looks dead.
+    expect(settings.event_subscriptions.bot_events).toContain("app_home_opened");
+    // Acting on the channel a user is looking at needs storage that does not
+    // exist, so subscribing would only buy traffic.
+    expect(settings.event_subscriptions.bot_events).not.toContain("app_context_changed");
+  });
+
+  it("describes the agent from the project and carries its prompts", () => {
+    const prompts = [{ title: "Draw", message: "Draw me a cat" }];
+    const manifest = buildProjectSlackManifest(
+      makeProject({
+        description: "Paints pictures on request.",
+        slack: { botToken: "e", signingSecret: "e", enabled: true, suggestedPrompts: prompts },
+      }),
+      "https://studio.example.com",
+    );
+    const features = manifest.features as {
+      agent_view: { agent_description: string; suggested_prompts: unknown[] };
+    };
+
+    // Slack requires a description once `agent_view` is present, and it is the
+    // only text a user sees before asking anything.
+    expect(features.agent_view.agent_description).toBe("Paints pictures on request.");
+    expect(features.agent_view.suggested_prompts).toEqual(prompts);
+  });
+
+  it("falls back to a generated description when the project has none", () => {
+    const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com");
+    const features = manifest.features as { agent_view: { agent_description: string } };
+
+    expect(features.agent_view.agent_description).toContain("bot-proj");
+  });
+
+  it("truncates a description Slack would reject", () => {
+    const manifest = buildProjectSlackManifest(
+      makeProject({ description: "x".repeat(400) }),
+      "https://studio.example.com",
+    );
+    const features = manifest.features as { agent_view: { agent_description: string } };
+
+    expect(features.agent_view.agent_description).toHaveLength(300);
+  });
+});
+
+describe("suggested prompts", () => {
+  const repoFor = () => fakeRepo(makeProject());
+
+  it("drops the editor's blank rows instead of storing them", async () => {
+    const { repo, current } = repoFor();
+
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      {
+        suggestedPrompts: [
+          { title: " Draw ", message: " Draw me a cat " },
+          { title: "", message: "" },
+          { title: "  ", message: "  " },
+        ],
+      },
+      OWNER,
+    );
+
+    expect(current().slack?.suggestedPrompts).toEqual([
+      { title: "Draw", message: "Draw me a cat" },
+    ]);
+  });
+
+  it("rejects a prompt missing either half", async () => {
+    const { repo } = repoFor();
+
+    await expect(
+      updateProjectSlack(repo, "bot-proj", { suggestedPrompts: [{ title: "Draw", message: "" }] }, OWNER),
+    ).rejects.toThrow("both a title and a message");
+  });
+
+  it("rejects more than Slack accepts", async () => {
+    const { repo } = repoFor();
+    const prompts = Array.from({ length: 5 }, (_, index) => ({
+      title: `T${index}`,
+      message: `M${index}`,
+    }));
+
+    await expect(
+      updateProjectSlack(repo, "bot-proj", { suggestedPrompts: prompts }, OWNER),
+    ).rejects.toThrow("at most 4");
+  });
+
+  it("leaves stored prompts alone when the update does not mention them", async () => {
+    const { repo, current } = repoFor();
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { suggestedPrompts: [{ title: "Draw", message: "Draw me a cat" }] },
+      OWNER,
+    );
+
+    await updateProjectSlack(repo, "bot-proj", { botToken: "xoxb-new" }, OWNER);
+
+    expect(current().slack?.suggestedPrompts).toEqual([
+      { title: "Draw", message: "Draw me a cat" },
+    ]);
+  });
 });

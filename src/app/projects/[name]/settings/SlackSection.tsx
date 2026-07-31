@@ -10,16 +10,30 @@ import {
   testProjectSlack,
   updateProjectSlack,
 } from "../../lib/api";
-import type { ProjectSlackView } from "../../lib/api";
+import type { ProjectSlackView, SlackSuggestedPrompt } from "../../lib/api";
 import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
+import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
+
+/**
+ * A fixed grid of empty rows rather than add/remove buttons: Slack takes at
+ * most four prompts, so the whole range fits on screen and a blank row is just
+ * an unused slot. Blank rows are dropped when saved.
+ */
+function emptyPrompts(stored: SlackSuggestedPrompt[]): SlackSuggestedPrompt[] {
+  return Array.from(
+    { length: MAX_SUGGESTED_PROMPTS },
+    (_, index) => stored[index] ?? { title: "", message: "" },
+  );
+}
 
 export function SlackSection({ projectName }: { projectName: string }) {
   const [view, setView] = useState<ProjectSlackView | null>(null);
   const [botToken, setBotToken] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
   const [enabled, setEnabled] = useState(false);
+  const [prompts, setPrompts] = useState<SlackSuggestedPrompt[]>(emptyPrompts([]));
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,6 +47,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
           setBotToken(v.botToken);
           setSigningSecret(v.signingSecret);
           setEnabled(v.enabled);
+          setPrompts(emptyPrompts(v.suggestedPrompts));
         }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Load failed"));
@@ -54,11 +69,17 @@ export function SlackSection({ projectName }: { projectName: string }) {
     setStatus(null);
     setError(null);
     try {
-      const next = await updateProjectSlack(projectName, { botToken, signingSecret, enabled });
+      const next = await updateProjectSlack(projectName, {
+        botToken,
+        signingSecret,
+        enabled,
+        suggestedPrompts: prompts,
+      });
       setView(next);
       setBotToken(next.botToken);
       setSigningSecret(next.signingSecret);
       setEnabled(next.enabled);
+      setPrompts(emptyPrompts(next.suggestedPrompts));
       setStatus("Saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -92,6 +113,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
       setBotToken("");
       setSigningSecret("");
       setEnabled(false);
+      setPrompts(emptyPrompts([]));
       setStatus("Disconnected");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Disconnect failed");
@@ -144,6 +166,45 @@ export function SlackSection({ projectName }: { projectName: string }) {
             onChange={(e) => setEnabled(e.currentTarget.checked)}
           />
           <CopyableUrl url={view.eventsUrl} />
+        </Stack>
+
+        <Stack gap="xs">
+          <Text fz="sm" fw={500}>
+            Suggested prompts
+          </Text>
+          <Text fz="xs" c="dimmed" lh={1.6}>
+            Shown when someone opens the agent. Slack takes up to {MAX_SUGGESTED_PROMPTS}; blank
+            rows are ignored. Changing these also changes the manifest above, so re-apply it to the
+            Slack app if you want the chips before the first event arrives.
+          </Text>
+          {prompts.map((prompt, index) => (
+            <Group key={index} gap="xs" wrap="nowrap" align="flex-start">
+              <TextInput
+                aria-label={`Prompt ${index + 1} label`}
+                placeholder="Label"
+                w={180}
+                value={prompt.title}
+                onChange={(e) => {
+                  const title = e.currentTarget.value;
+                  setPrompts((current) =>
+                    current.map((row, at) => (at === index ? { ...row, title } : row)),
+                  );
+                }}
+              />
+              <TextInput
+                aria-label={`Prompt ${index + 1} message`}
+                placeholder="What clicking it sends"
+                style={{ flex: 1 }}
+                value={prompt.message}
+                onChange={(e) => {
+                  const message = e.currentTarget.value;
+                  setPrompts((current) =>
+                    current.map((row, at) => (at === index ? { ...row, message } : row)),
+                  );
+                }}
+              />
+            </Group>
+          ))}
         </Stack>
 
         {status && (

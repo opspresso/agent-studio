@@ -106,6 +106,77 @@ export const slackClient = {
     return slackApi(token, "chat.update", args);
   },
   /**
+   * Open a streamed reply. Slack renders it as text arriving live rather than a
+   * message being rewritten, and `chat.appendStream` costs a tenth of what a
+   * `chat.update` loop does against the rate limit.
+   *
+   * `thread_ts` is required: a stream is always a reply to the request that
+   * caused it. Streaming into a *channel* additionally needs the recipient, so
+   * a channel mention passes `recipient_user_id`/`recipient_team_id`.
+   */
+  startStream(
+    token: string,
+    args: {
+      channel: string;
+      thread_ts: string;
+      recipient_user_id?: string;
+      recipient_team_id?: string;
+    },
+  ): Promise<{ ts: string; channel: string }> {
+    return slackApi(token, "chat.startStream", args);
+  },
+  /**
+   * Append to an open stream. `markdown_text` is a *delta*, not the accumulated
+   * answer — sending the whole text each time would repeat it on screen.
+   */
+  appendStream(
+    token: string,
+    args: { channel: string; ts: string; markdown_text: string },
+  ): Promise<void> {
+    return slackApi(token, "chat.appendStream", args).then(() => undefined);
+  },
+  /** Close an open stream, optionally with one last delta. */
+  stopStream(
+    token: string,
+    args: { channel: string; ts: string; markdown_text?: string },
+  ): Promise<void> {
+    return slackApi(token, "chat.stopStream", args).then(() => undefined);
+  },
+  /**
+   * The native "<App> is thinking…" line under an agent thread. It is not a
+   * message: it costs no thread real estate, clears itself when a message is
+   * sent, and an empty string clears it explicitly.
+   */
+  setStatus(
+    token: string,
+    args: { channel_id: string; thread_ts: string; status: string },
+  ): Promise<void> {
+    return slackApi(token, "assistant.threads.setStatus", args).then(() => undefined);
+  },
+  /**
+   * The chips a user sees when they open the agent. In the agent messaging
+   * experience they pin to the top of the Messages tab and `thread_ts` is not
+   * required; the legacy assistant view scopes them to one thread.
+   */
+  setSuggestedPrompts(
+    token: string,
+    args: {
+      channel_id: string;
+      thread_ts?: string;
+      title?: string;
+      prompts: Array<{ title: string; message: string }>;
+    },
+  ): Promise<void> {
+    return slackApi(token, "assistant.threads.setSuggestedPrompts", args).then(() => undefined);
+  },
+  /** Name a thread so the agent's history is readable at a glance. */
+  setTitle(
+    token: string,
+    args: { channel_id: string; thread_ts: string; title: string },
+  ): Promise<void> {
+    return slackApi(token, "assistant.threads.setTitle", args).then(() => undefined);
+  },
+  /**
    * Every reply in a thread, oldest first. Slack paginates this endpoint and
    * returns pages oldest-first, so reading a single page drops the *newest*
    * messages — page through to the end instead (bounded by MAX_THREAD_PAGES).

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  handleSlackEvent,
-  type SlackClientPort,
-  type SlackEventBody,
-  type SlackEventDeps,
-} from "@/application/slack/handleSlackEvent";
+import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
+import type {
+  SlackClientPort,
+  SlackEventBody,
+  SlackEventDeps,
+} from "@/application/slack/types";
 import type { SlackMessage } from "@/infrastructure/slack/client";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
@@ -41,9 +41,25 @@ function versionFixture(): Version {
   };
 }
 
-function makeSlackFake() {
+/**
+ * `streaming: false` makes `chat.startStream` fail, which is how a workspace
+ * that cannot stream behaves — the handler is expected to fall back to posting
+ * and editing one message.
+ */
+function makeSlackFake(options: { streaming?: boolean } = {}) {
+  const streaming = options.streaming ?? true;
   const posted: Array<{ channel: string; text: string; thread_ts?: string }> = [];
   const updates: Array<{ ts: string; text: string }> = [];
+  const streamStarts: Array<{
+    channel: string;
+    thread_ts: string;
+    recipient_user_id?: string;
+    recipient_team_id?: string;
+  }> = [];
+  /** Every delta Slack accepted, in order — the streamed message's contents. */
+  const appended: string[] = [];
+  const statuses: string[] = [];
+  const titles: Array<{ channel_id: string; thread_ts: string; title: string }> = [];
   const calls: string[] = [];
   const replies: SlackMessage[] = [];
   const downloads: string[] = [];
@@ -58,6 +74,7 @@ function makeSlackFake() {
       return { ts: "100.1", channel: args.channel };
     },
     async updateMessage(_token, args) {
+      calls.push("updateMessage");
       updates.push(args);
       return { ts: args.ts };
     },
@@ -75,8 +92,53 @@ function makeSlackFake() {
         })),
       ];
     },
+    async startStream(_token, args) {
+      calls.push("startStream");
+      if (!streaming) {
+        throw new Error("streaming is not available on this plan");
+      }
+      streamStarts.push(args);
+      return { ts: "200.1", channel: args.channel };
+    },
+    async appendStream(_token, args) {
+      calls.push("appendStream");
+      appended.push(args.markdown_text);
+    },
+    async stopStream(_token, args) {
+      calls.push("stopStream");
+      if (args.markdown_text) {
+        appended.push(args.markdown_text);
+      }
+    },
+    async setStatus(_token, args) {
+      calls.push("setStatus");
+      statuses.push(args.status);
+    },
+    async setSuggestedPrompts() {},
+    async setTitle(_token, args) {
+      calls.push("setTitle");
+      titles.push(args);
+    },
   };
-  return { slack, posted, updates, calls, replies, downloads };
+  /**
+   * What the reader ends up seeing, whichever transport delivered it — so a
+   * test about the answer does not have to know how it travelled.
+   */
+  const finalText = () =>
+    appended.length > 0 ? appended.join("") : (updates.at(-1)?.text ?? posted.at(-1)?.text ?? "");
+  return {
+    slack,
+    posted,
+    updates,
+    appended,
+    streamStarts,
+    statuses,
+    titles,
+    calls,
+    replies,
+    downloads,
+    finalText,
+  };
 }
 
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
@@ -100,6 +162,13 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
 const EVENT: SlackEventBody = {
   event_id: "Ev1",
   event: { type: "app_mention", channel: "C1", ts: "1.0", text: "<@U0> hello" },
+};
+
+/** The agent container / DM surface, where Slack offers a status line and a title. */
+const DM_EVENT: SlackEventBody = {
+  event_id: "Ev2",
+  team_id: "T1",
+  event: { type: "message", channel_type: "im", channel: "D1", ts: "1.0", text: "hello" },
 };
 
 const BINDING = { projectName: "painter", botToken: "tok" };
@@ -141,10 +210,10 @@ describe("handleSlackEvent", () => {
     expect(userMessage).toBe("project:other hello");
   });
 
-  it("posts a placeholder and finalizes it with the top-level answer only", async () => {
+  it("delivers the top-level answer only", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack, posted, updates } = makeSlackFake();
+    const { slack, appended, finalText } = makeSlackFake();
     const deps = makeDeps(
       [
         { delta: { content: "Hello " } },
@@ -157,28 +226,28 @@ describe("handleSlackEvent", () => {
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
-    expect(posted[0]?.text).toBe("_thinking…_");
-    const finalText = updates.at(-1)?.text;
-    expect(finalText).toBe("Hello there.");
-    expect(updates.some((u) => u.text.includes("nested"))).toBe(false);
+    expect(finalText()).toBe("Hello there.");
+    expect(appended.some((chunk) => chunk.includes("nested"))).toBe(false);
   });
 
   it("surfaces an engine error chunk in the final message", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack, updates } = makeSlackFake();
+    const { slack, finalText } = makeSlackFake();
     const deps = makeDeps([{ error: "boom" }], slack);
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
-    expect(updates.at(-1)?.text).toBe(":warning: boom");
+    // Nothing was ever streamed, so there is no message to finish — the warning
+    // is posted on its own rather than left unsaid.
+    expect(finalText()).toBe(":warning: boom");
   });
 
   it("keeps the streamed answer and appends the warning on a late failure", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const { slack, updates } = makeSlackFake();
+    const { slack, finalText } = makeSlackFake();
     slack.uploadImage = async () => {
       throw new Error("upload boom");
     };
@@ -193,9 +262,8 @@ describe("handleSlackEvent", () => {
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
-    const finalText = updates.at(-1)?.text ?? "";
-    expect(finalText).toContain("Here is your answer.");
-    expect(finalText).toContain(":warning:");
+    expect(finalText()).toContain("Here is your answer.");
+    expect(finalText()).toContain(":warning:");
   });
 
   it("replies with guidance when the project is not a runnable agent", async () => {
@@ -209,7 +277,7 @@ describe("handleSlackEvent", () => {
     expect(posted[0]?.text).toContain("Agent project not available");
   });
 
-  it("reads the thread before posting its own placeholder", async () => {
+  it("reads the thread before writing anything of its own", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { slack, calls, replies } = makeSlackFake();
@@ -334,7 +402,7 @@ describe("handleSlackEvent", () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const { slack, updates } = makeSlackFake();
+    const { slack, finalText } = makeSlackFake();
     slack.threadReplies = async () => {
       throw new Error("replies boom");
     };
@@ -346,9 +414,8 @@ describe("handleSlackEvent", () => {
       BINDING,
     );
 
-    const finalText = updates.at(-1)?.text ?? "";
-    expect(finalText).toContain("answer");
-    expect(finalText).toContain(":warning:");
+    expect(finalText()).toContain("answer");
+    expect(finalText()).toContain(":warning:");
   });
 
   it("sends an attached image to the agent as a content part", async () => {
@@ -430,7 +497,7 @@ describe("handleSlackEvent", () => {
   it("reports oversized, unsupported and non-image attachments instead of dropping them", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack, updates, downloads } = makeSlackFake();
+    const { slack, finalText, downloads } = makeSlackFake();
     const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
 
     await handleSlackEvent(
@@ -460,18 +527,17 @@ describe("handleSlackEvent", () => {
     );
 
     expect(downloads).toEqual([]);
-    const finalText = updates.at(-1)?.text ?? "";
-    expect(finalText).toContain("answer");
-    expect(finalText).toContain("larger than 5MB");
-    expect(finalText).toContain("Unsupported image type image/svg+xml");
-    expect(finalText).toContain("Ignored 1 non-image attachment");
+    expect(finalText()).toContain("answer");
+    expect(finalText()).toContain("larger than 5MB");
+    expect(finalText()).toContain("Unsupported image type image/svg+xml");
+    expect(finalText()).toContain("Ignored 1 non-image attachment");
   });
 
   it("keeps answering when an attachment download fails", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const { slack, updates } = makeSlackFake();
+    const { slack, finalText } = makeSlackFake();
     slack.downloadFile = async () => {
       throw new Error("unexpected host: evil.example.com");
     };
@@ -497,7 +563,7 @@ describe("handleSlackEvent", () => {
     );
 
     expect(seen.at(-1)?.content).toBe("hello");
-    expect(updates.at(-1)?.text).toContain("Could not read attachment");
+    expect(finalText()).toContain("Could not read attachment");
   });
 
   it("carries an image from an earlier thread turn into the run", async () => {
@@ -579,7 +645,7 @@ describe("handleSlackEvent", () => {
   it("keeps answering after a subagent error chunk", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const { slack, updates } = makeSlackFake();
+    const { slack, finalText } = makeSlackFake();
     // An authored error is a refused transfer reported to the parent as a tool
     // error; the parent goes on to answer and that answer must be delivered.
     const deps = makeDeps(
@@ -593,9 +659,8 @@ describe("handleSlackEvent", () => {
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
-    const finalText = updates.at(-1)?.text ?? "";
-    expect(finalText).toContain("I drew it myself instead.");
-    expect(finalText).toContain(":warning: images cannot be transferred to it");
+    expect(finalText()).toContain("I drew it myself instead.");
+    expect(finalText()).toContain(":warning: images cannot be transferred to it");
   });
 
   it("spends the image budget on the current message before the thread", async () => {
@@ -654,36 +719,234 @@ describe("handleSlackEvent", () => {
     expect(seen).toBeInstanceOf(AbortSignal);
     expect(seen?.aborted).toBe(false);
   });
-
 });
 
 /**
- * The reply is edited in place, so an interim state looks exactly like a
- * finished one — a reader arriving mid-run sees a complete-looking answer that
- * stops mid-sentence. The marker is what tells them it is still going, and it
- * must not survive into the final edit.
+ * Slack's agent surface expects a streamed reply: the message is opened once
+ * and grown with deltas, which it renders as text arriving rather than as a
+ * message being rewritten.
  */
-describe("the in-progress marker on a Slack reply", () => {
-  const chunks = [{ delta: { content: "생각 중" } }, { done: true }] as EngineChunk[];
+describe("streaming a Slack reply", () => {
+  it("opens the stream once and sends deltas, not the whole answer", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    // Far apart enough that every push clears the pacing interval.
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const { slack, appended, calls, finalText } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        { delta: { content: "Once " } },
+        { delta: { content: "upon " } },
+        { delta: { content: "a time." } },
+        { done: true },
+      ],
+      slack,
+    );
 
-  it("marks interim edits and is gone from the last one", async () => {
-    const { slack, updates } = makeSlackFake();
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(calls.filter((call) => call === "startStream")).toHaveLength(1);
+    expect(calls).toContain("stopStream");
+    expect(calls).not.toContain("updateMessage");
+    // Each write carries only what is new; the reader sees them concatenated.
+    expect(appended).toEqual(["Once ", "upon ", "a time."]);
+    expect(finalText()).toBe("Once upon a time.");
+  });
+
+  it("names the recipient when the thread is a channel", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, streamStarts } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "hi" } }, { done: true }], slack);
+
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, team_id: "T9", event: { ...EVENT.event, user: "U7" } },
+      BINDING,
+    );
+
+    // Slack requires both to stream anywhere other than a DM.
+    expect(streamStarts[0]).toMatchObject({ recipient_user_id: "U7", recipient_team_id: "T9" });
+  });
+
+  it("omits the recipient in a DM", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, streamStarts } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "hi" } }, { done: true }], slack);
+
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+
+    expect(streamStarts[0]?.recipient_user_id).toBeUndefined();
+  });
+
+  it("re-sends a delta Slack rejected instead of losing it", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const { slack, finalText } = makeSlackFake();
+    const original = slack.appendStream.bind(slack);
+    let attempt = 0;
+    slack.appendStream = async (token, args) => {
+      attempt += 1;
+      // The second write fails. A stream sends each delta once, so without
+      // re-sending it that fragment would never reach the reader.
+      if (attempt === 2) {
+        throw new Error("append boom");
+      }
+      return original(token, args);
+    };
+    const deps = makeDeps(
+      [
+        { delta: { content: "alpha " } },
+        { delta: { content: "beta " } },
+        { delta: { content: "gamma" } },
+        { done: true },
+      ],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(finalText()).toBe("alpha beta gamma");
+  });
+});
+
+/**
+ * A DM is an agent thread: Slack renders a status line under it and lets the
+ * thread be named. A channel mention has neither.
+ */
+describe("the native agent affordances", () => {
+  it("reports thinking, then each tool, and clears the status at the end", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const { slack, statuses } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        { delta: { toolCalls: [{ function: { name: "search" } }] } },
+        { delta: { toolCalls: [{ function: { name: "fetch" } }] } },
+        { delta: { content: "done" } },
+        { done: true },
+      ] as EngineChunk[],
+      slack,
+    );
+
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+
+    // Every tool is named, not just the first: the status line costs no room in
+    // the answer, unlike overwriting the message body.
+    expect(statuses).toEqual(["is thinking…", "is using search…", "is using fetch…", ""]);
+  });
+
+  it("leaves the status alone in a channel, which has none", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, statuses } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "hi" } }, { done: true }], slack);
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(statuses).toEqual([]);
+  });
+
+  it("names a new DM thread after the question that opened it", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, titles } = makeSlackFake();
+    const deps = makeDeps([{ done: true }], slack);
+
+    await handleSlackEvent(
+      deps,
+      { ...DM_EVENT, event: { ...DM_EVENT.event, text: "how do I rotate the key?" } },
+      BINDING,
+    );
+
+    expect(titles).toEqual([
+      { channel_id: "D1", thread_ts: "1.0", title: "how do I rotate the key?" },
+    ]);
+  });
+
+  it("does not rename a thread that already has turns", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, titles, replies } = makeSlackFake();
+    replies.push({ ts: "0.9", user: "U1", text: "the first question" });
+    const deps = makeDeps([{ done: true }], slack);
+
+    await handleSlackEvent(
+      deps,
+      { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "0.9" } },
+      BINDING,
+    );
+
+    expect(titles).toEqual([]);
+  });
+
+  it("does not name a channel thread", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, titles } = makeSlackFake();
+
+    await handleSlackEvent(makeDeps([{ done: true }], slack), EVENT, BINDING);
+
+    expect(titles).toEqual([]);
+  });
+});
+
+/**
+ * Not every workspace can stream. There the reply is one message edited in
+ * place, so an interim state looks exactly like a finished one — a reader
+ * arriving mid-run sees a complete-looking answer that stops mid-sentence. The
+ * marker is what tells them it is still going, and it must not survive into the
+ * final edit. A streamed reply needs none: Slack marks it itself.
+ */
+describe("falling back when a workspace cannot stream", () => {
+  const chunks = [
+    { delta: { content: "생각" } },
+    { delta: { content: " 중" } },
+    { done: true },
+  ] as EngineChunk[];
+
+  function advancingClock() {
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+  }
+
+  it("posts and edits one message, marking every state but the last", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    advancingClock();
+    const { slack, posted, updates } = makeSlackFake({ streaming: false });
+
     await handleSlackEvent(makeDeps(chunks, slack), EVENT, BINDING);
 
-    expect(updates.length).toBeGreaterThan(1);
+    expect(posted[0]?.text).toContain(":hourglass_flowing_sand:");
     expect(updates[0]?.text).toContain(":hourglass_flowing_sand:");
-    expect(updates.at(-1)?.text).not.toContain(":hourglass_flowing_sand:");
-    expect(updates.at(-1)?.text).toContain("생각 중");
+    expect(updates.at(-1)?.text).toBe("생각 중");
   });
 
   it("uses whatever the deployment configured instead", async () => {
-    const { slack, updates } = makeSlackFake();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    advancingClock();
+    const { slack, posted } = makeSlackFake({ streaming: false });
     const deps = makeDeps(chunks, slack);
     deps.loadingIndicator = ":loading:";
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
-    expect(updates[0]?.text).toContain(":loading:");
-    expect(updates[0]?.text).not.toContain(":hourglass_flowing_sand:");
+    expect(posted[0]?.text).toContain(":loading:");
+    expect(posted[0]?.text).not.toContain(":hourglass_flowing_sand:");
+  });
+
+  it("carries no marker when the reply did stream", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    advancingClock();
+    const { slack, appended } = makeSlackFake();
+
+    await handleSlackEvent(makeDeps(chunks, slack), EVENT, BINDING);
+
+    expect(appended.join("")).toBe("생각 중");
   });
 });

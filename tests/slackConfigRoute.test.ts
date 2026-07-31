@@ -29,6 +29,8 @@ const SIGNING_SECRET = "abcdef1234567890abcdef12";
 const project = {
   name: "proj",
   displayName: "Proj",
+  // The agent view's description comes from here, and Slack requires one.
+  description: "Does the thing",
   // A Slack bot only attaches to an agent project, so a fixture without a type
   // is one the write path refuses.
   projectType: "agent",
@@ -110,5 +112,33 @@ describe("every verb answers with the same shape", () => {
     state.email = "intruder@example.com";
     projectRepo.get.mockResolvedValue(project);
     expect((await PUT(mutate({ enabled: false }), ctx())).status).toBe(403);
+  });
+
+  it("round-trips suggested prompts into the view and the manifest", async () => {
+    projectRepo.get.mockResolvedValue(project);
+    const res = await PUT(
+      mutate({
+        suggestedPrompts: [
+          { title: "Draw", message: "Draw me a cat" },
+          // A blank row is an unused slot in the editor, not a prompt.
+          { title: "", message: "" },
+        ],
+      }),
+      ctx(),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.suggestedPrompts).toEqual([{ title: "Draw", message: "Draw me a cat" }]);
+    expect(body.manifest.features.agent_view.suggested_prompts).toEqual([
+      { title: "Draw", message: "Draw me a cat" },
+    ]);
+  });
+
+  it("rejects a prompt that has only half of itself", async () => {
+    projectRepo.get.mockResolvedValue(project);
+    const res = await PUT(mutate({ suggestedPrompts: [{ title: "Draw", message: "" }] }), ctx());
+
+    expect(res.status).toBe(400);
   });
 });

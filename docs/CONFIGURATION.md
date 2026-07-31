@@ -161,7 +161,7 @@ recovery while a stale success only serves a slightly old tool list.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Appended to a Slack reply while it is still being written, then dropped by the final edit. A workspace with its own spinner emoji names it here; the default is built in, because a custom name a workspace has not defined renders as literal text. |
+| `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Appended to a Slack reply while it is still being written, then dropped by the final edit. **Only on the edit-in-place fallback** — a streamed reply is marked as still arriving by Slack itself. A workspace with its own spinner emoji names it here; the default is built in, because a custom name a workspace has not defined renders as literal text. |
 | `A2A_API_KEY` | unset | **runtime** | Shared key for inbound A2A JSON-RPC (`X-A2A-Key`). Unset disables the `/api/a2a` endpoints entirely. Issue one from `/settings` rather than inventing it. |
 
 Agent Card URLs are built from `PUBLIC_BASE_URL`.
@@ -207,6 +207,8 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Slack thread turns used as context | `50` | `src/application/slack/handleSlackEvent.ts` |
+| Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |
+| Slack reply write cadence (stream / edit) | `1s` / `3s` | `src/application/slack/replyStream.ts` |
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |
 
 There is deliberately **no run-wide context budget** yet: every limit above is per-item or

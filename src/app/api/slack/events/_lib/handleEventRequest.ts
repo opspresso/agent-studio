@@ -5,14 +5,12 @@ import { slackEventRepository } from "@/infrastructure/db/repositories/slackEven
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
+import { handleThreadStart } from "@/application/slack/handleThreadStart";
 import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { withRunContext } from "@/shared/runContext";
-import type {
-  SlackBotBinding,
-  SlackEventBody,
-  SlackEventDeps,
-} from "@/application/slack/handleSlackEvent";
+import type { SlackBotBinding } from "@/application/slack/handleSlackEvent";
+import type { SlackEventBody, SlackEventDeps } from "@/application/slack/types";
 import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 
@@ -88,7 +86,16 @@ export async function handleSlackEventRequest(
   const eventType = payload.event?.type;
   const isMention = eventType === "app_mention";
   const isDirectMessage = eventType === "message" && payload.event?.channel_type === "im";
-  if (payload.type !== "event_callback" || (!isMention && !isDirectMessage)) {
+  /**
+   * A user opening the agent. The agent messaging experience announces it with
+   * `app_home_opened` on the Messages tab (the Home tab is a different surface
+   * and is not ours); the legacy assistant view uses `assistant_thread_started`.
+   * Both are answered with prompts rather than a run.
+   */
+  const isThreadStart =
+    (eventType === "app_home_opened" && payload.event?.tab === "messages") ||
+    eventType === "assistant_thread_started";
+  if (payload.type !== "event_callback" || (!isMention && !isDirectMessage && !isThreadStart)) {
     return Response.json({ ok: true });
   }
 
@@ -107,7 +114,9 @@ export async function handleSlackEventRequest(
     withRunContext({ runId: eventId ?? "slack-event" }, async () => {
       let outcome: "done" | "failed" = "done";
       try {
-        await handleSlackEvent(slackEventDeps, payload, opts.binding);
+        await (isThreadStart
+          ? handleThreadStart(slackEventDeps, payload, opts.binding)
+          : handleSlackEvent(slackEventDeps, payload, opts.binding));
       } catch (error) {
         outcome = "failed";
         log.error("slack", `${opts.logLabel} event handling failed`, error);

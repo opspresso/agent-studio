@@ -1,106 +1,22 @@
 import type { SlackMessage } from "@/domain/slack/types";
-import type { ExecuteAgentInput } from "@/application/execution/runProject";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import { createReplySink } from "@/application/slack/replyStream";
+import type { SlackEventBody, SlackEventDeps, SlackEventFile } from "@/application/slack/types";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
-import type { ChatMessageInput, ContentPart, EngineChunk } from "@/domain/llm/types";
+import type { ChatMessageInput, ContentPart } from "@/domain/llm/types";
 import { log } from "@/shared/logger";
 
-/** The slice of the Slack Web API the event handler uses; faked in tests. */
-export interface SlackClientPort {
-  postMessage(
-    token: string,
-    args: { channel: string; text: string; thread_ts?: string },
-  ): Promise<{ ts: string; channel: string }>;
-  updateMessage(
-    token: string,
-    args: { channel: string; ts: string; text: string },
-  ): Promise<{ ts: string }>;
-  uploadImage(
-    token: string,
-    args: { channel: string; threadTs?: string; filename: string; data: Buffer; title?: string },
-  ): Promise<void>;
-  threadReplies(
-    token: string,
-    args: { channel: string; ts: string; limit?: number },
-  ): Promise<SlackMessage[]>;
-  /** Fetch a file shared with the bot (host-checked, bot-token authenticated). */
-  downloadFile(token: string, url: string): Promise<Buffer>;
-}
-
-/** Injected dependencies; wired by the route from the composition root. */
-export interface SlackEventDeps {
-  /** Bound wrapper over `executeAgent(executionDeps, params)` (mirrors ChatDeps.runAgent). */
-  runAgent: (params: ExecuteAgentInput) => AsyncGenerator<EngineChunk>;
-  projects: ProjectRepository;
-  versions: VersionRepository;
-  slack: SlackClientPort;
-  /**
-   * What marks a reply as still being written. Injected rather than read here:
-   * application code takes its configuration, it does not reach for it. Unset
-   * means {@link DEFAULT_LOADING_INDICATOR}.
-   */
-  loadingIndicator?: string;
-}
-
-/** An attachment on an inbound message event. */
-export interface SlackEventFile {
-  id?: string;
-  name?: string;
-  mimetype?: string;
-  size?: number;
-  url_private_download?: string;
-  url_private?: string;
-}
-
-export interface SlackEventBody {
-  event_id?: string;
-  /**
-   * Who the event was delivered for — our own app's user id in this workspace.
-   * Comparing it to `event.user` identifies the bot's own messages without an
-   * extra `auth.test` round trip.
-   */
-  authorizations?: Array<{ user_id?: string; is_bot?: boolean }>;
-  event?: {
-    type?: string;
-    subtype?: string;
-    bot_id?: string;
-    user?: string;
-    channel?: string;
-    channel_type?: string;
-    text?: string;
-    ts?: string;
-    thread_ts?: string;
-    files?: SlackEventFile[];
-  };
-}
-
-const UPDATE_INTERVAL_MS = 1000;
-/**
- * Appended to a reply that is still being written, when the deployment names
- * nothing else.
- *
- * An interim update is indistinguishable from a finished answer otherwise — the
- * message is edited in place, so a reader who arrives mid-run sees what looks
- * like a complete reply that stops mid-sentence. This marks it as still going,
- * and the final edit drops it.
- *
- * A built-in emoji as the default, because it is the only kind that renders
- * everywhere: a custom name a workspace has not defined shows up as its own
- * literal text, which is noise exactly where the reply should read as
- * unfinished-but-fine. A workspace that *has* one says so through
- * `SLACK_LOADING_INDICATOR`.
- */
-const DEFAULT_LOADING_INDICATOR = ":hourglass_flowing_sand:";
 /** Hard deadline for one agent run, enforced by an abort signal so a run that
  * stops producing chunks entirely (hung provider or tool) still ends and
- * reports a timeout instead of leaving the placeholder up. */
+ * reports a timeout instead of leaving the status up forever. */
 const RUN_TIMEOUT_MS = 3 * 60 * 1000;
+/** How much of the opening question names the thread in the agent's history. */
+const MAX_THREAD_TITLE_LENGTH = 60;
 /** Most recent thread turns carried as context; older turns are dropped. */
 const MAX_HISTORY_MESSAGES = 50;
 /**
@@ -308,8 +224,8 @@ export async function handleSlackEvent(
   log.info("slack", `run start project=${projectName} channel=${event.channel} ts=${event.ts}`);
 
   const warnings: string[] = [];
-  // Read the thread *before* posting the placeholder — otherwise our own
-  // placeholder comes back as an assistant turn in this run's own context.
+  // Read the thread *before* the run writes anything of its own — otherwise the
+  // reply comes back as an assistant turn in this run's own context.
   let turns: ThreadTurn[] = [];
   if (event.thread_ts !== undefined) {
     try {
@@ -324,14 +240,37 @@ export async function handleSlackEvent(
     }
   }
 
-  const placeholder = await deps.slack.postMessage(token, {
-    channel: event.channel,
-    thread_ts: threadTs,
-    text: "_thinking…_",
-  });
+  // A DM is an agent thread: it has a native status line and a title. A channel
+  // mention has neither, and streaming into one needs the recipient named.
+  const isAssistantThread = event.channel_type === "im";
+  const sink = createReplySink(
+    deps.slack,
+    token,
+    {
+      channel: event.channel,
+      threadTs,
+      assistantThread: isAssistantThread,
+      ...(!isAssistantThread && event.user && body.team_id
+        ? { recipient: { userId: event.user, teamId: body.team_id } }
+        : {}),
+    },
+    deps.loadingIndicator,
+  );
+  await sink.status("is thinking…");
+  // Name the thread from the question that opened it, so the agent's history
+  // reads as a list of topics rather than of timestamps. Only the opening turn:
+  // a later message would rename the thread out from under the user.
+  if (isAssistantThread && turns.length === 0 && message) {
+    await deps.slack
+      .setTitle(token, {
+        channel_id: event.channel,
+        thread_ts: threadTs,
+        title: message.slice(0, MAX_THREAD_TITLE_LENGTH),
+      })
+      .catch(() => {});
+  }
 
   let text = "";
-  let lastUpdate = 0;
   const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
   const deadline = AbortSignal.timeout(RUN_TIMEOUT_MS);
   const imageParts =
@@ -378,18 +317,14 @@ export async function handleSlackEvent(
         // than replacing it — the run still produced one.
         warnings.push(chunk.warning);
       }
-      // Stream tool activity so the first (tool-heavy) turn shows progress.
+      // Report tool activity through the status line rather than the answer:
+      // a tool-heavy first turn shows progress without spending the message
+      // body on it, so every tool can be named, not just the first.
       const toolCall = chunk.delta?.toolCalls?.[0] as
         | { function?: { name?: string } }
         | undefined;
-      if (toolCall?.function?.name && text === "") {
-        await deps.slack
-          .updateMessage(token, {
-            channel: placeholder.channel,
-            ts: placeholder.ts,
-            text: `:hammer_and_wrench: _Using ${toolCall.function.name}…_`,
-          })
-          .catch(() => {});
+      if (toolCall?.function?.name) {
+        await sink.status(`is using ${toolCall.function.name}…`);
       }
       if (chunk.image) {
         images.push(chunk.image);
@@ -397,17 +332,7 @@ export async function handleSlackEvent(
       const content = chunk.delta?.content;
       if (content && isTopLevelChunk(chunk)) {
         text += content;
-        const now = Date.now();
-        if (now - lastUpdate > UPDATE_INTERVAL_MS) {
-          lastUpdate = now;
-          await deps.slack
-            .updateMessage(token, {
-              channel: placeholder.channel,
-              ts: placeholder.ts,
-              text: `${text} ${deps.loadingIndicator || DEFAULT_LOADING_INDICATOR}`,
-            })
-            .catch(() => {});
-        }
+        await sink.push(text);
       }
     }
   } catch (error) {
@@ -439,17 +364,5 @@ export async function handleSlackEvent(
       warnings.push(`Image upload failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
   }
-  const suffix = warnings.map((warning) => `:warning: ${warning}`).join("\n");
-  try {
-    await deps.slack.updateMessage(token, {
-      channel: placeholder.channel,
-      ts: placeholder.ts,
-      // Append the warnings rather than replacing a good answer: a late failure
-      // (image upload, timeout, mid-stream error) must not discard text that
-      // was already streamed to the user.
-      text: text ? (suffix ? `${text}\n\n${suffix}` : text) : suffix || "(no response)",
-    });
-  } catch (error) {
-    log.error("slack", "final update failed", error);
-  }
+  await sink.finish(text, warnings.map((warning) => `:warning: ${warning}`).join("\n"));
 }

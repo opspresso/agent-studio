@@ -9,6 +9,7 @@ import type {
 } from "@/domain/project/types";
 import type { ModelConfig } from "@/domain/llm/models";
 import type { McpTool } from "@/domain/mcp/types";
+import type { SlackSuggestedPrompt } from "@/domain/slack/types";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { UsageRow } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
@@ -17,7 +18,7 @@ import { testMcpConnection } from "@/app/tools/api";
 import { readSse as readSseFrames } from "@/app/_lib/sse";
 
 export type { CostLimits, McpBinding, Project, ProjectType, SubagentRef, Version, VersionParameters };
-export type { ModelConfig, EngineChunk, UsageRow, Trace };
+export type { ModelConfig, EngineChunk, UsageRow, Trace, SlackSuggestedPrompt };
 
 // --- Projects -------------------------------------------------------------
 
@@ -275,6 +276,7 @@ export interface ProjectSlackView {
   signingSecret: string;
   eventsPath: string;
   eventsUrl: string;
+  suggestedPrompts: SlackSuggestedPrompt[];
   /** Every verb returns it, so the settings page can always render the manifest. */
   manifest: Record<string, unknown>;
 }
@@ -289,7 +291,12 @@ export async function getProjectSlack(name: string): Promise<ProjectSlackView> {
 
 export async function updateProjectSlack(
   name: string,
-  update: { botToken?: string; signingSecret?: string; enabled?: boolean },
+  update: {
+    botToken?: string;
+    signingSecret?: string;
+    enabled?: boolean;
+    suggestedPrompts?: SlackSuggestedPrompt[];
+  },
 ): Promise<ProjectSlackView> {
   const res = await fetch(`/api/projects/${name}/slack`, {
     method: "PUT",

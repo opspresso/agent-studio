@@ -109,6 +109,69 @@ describe("slackClient.threadReplies", () => {
   });
 });
 
+describe("slackClient agent methods", () => {
+  function captureCalls() {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: { body?: string }) => {
+      calls.push({ url, body: init?.body ? JSON.parse(init.body) : undefined });
+      return { ok: true, json: async () => ({ ok: true, ts: "200.1", channel: "D1" }) };
+    });
+    return calls;
+  }
+
+  it("opens, appends to and stops a stream on the chat.*Stream methods", async () => {
+    const calls = captureCalls();
+
+    const started = await slackClient.startStream("tok", { channel: "D1", thread_ts: "1.0" });
+    await slackClient.appendStream("tok", { channel: "D1", ts: started.ts, markdown_text: "hi" });
+    await slackClient.stopStream("tok", { channel: "D1", ts: started.ts });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://slack.com/api/chat.startStream",
+      "https://slack.com/api/chat.appendStream",
+      "https://slack.com/api/chat.stopStream",
+    ]);
+    expect(started.ts).toBe("200.1");
+    expect(calls[1]?.body).toEqual({ channel: "D1", ts: "200.1", markdown_text: "hi" });
+  });
+
+  it("calls the assistant.threads.* methods with Slack's argument names", async () => {
+    const calls = captureCalls();
+
+    await slackClient.setStatus("tok", {
+      channel_id: "D1",
+      thread_ts: "1.0",
+      status: "is thinking…",
+    });
+    await slackClient.setSuggestedPrompts("tok", {
+      channel_id: "D1",
+      prompts: [{ title: "Draw", message: "Draw me a cat" }],
+    });
+    await slackClient.setTitle("tok", { channel_id: "D1", thread_ts: "1.0", title: "Cats" });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://slack.com/api/assistant.threads.setStatus",
+      "https://slack.com/api/assistant.threads.setSuggestedPrompts",
+      "https://slack.com/api/assistant.threads.setTitle",
+    ]);
+    expect(calls[1]?.body).toEqual({
+      channel_id: "D1",
+      prompts: [{ title: "Draw", message: "Draw me a cat" }],
+    });
+  });
+
+  it("throws when Slack refuses a stream, so the caller can fall back", async () => {
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      json: async () => ({ ok: false, error: "method_not_supported" }),
+    }));
+
+    await expect(
+      slackClient.startStream("tok", { channel: "D1", thread_ts: "1.0" }),
+    ).rejects.toThrow("method_not_supported");
+  });
+});
+
 describe("slackClient.downloadFile", () => {
   it("sends the bot token only to Slack file hosts", async () => {
     const seen: Array<{ url: string; auth: string | undefined }> = [];

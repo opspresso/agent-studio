@@ -341,12 +341,17 @@ Per-project Slack configuration uses these endpoints:
 
 ```
 GET    /api/projects/{name}/slack
-PUT    /api/projects/{name}/slack   { botToken?, signingSecret?, enabled? }
+PUT    /api/projects/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts? }
 DELETE /api/projects/{name}/slack
 POST   /api/projects/{name}/slack/test
 ```
 
-Slack reads return masked credential state plus `eventsUrl` and a generated app manifest.
+`suggestedPrompts` is `{ title, message }[]`, at most four; blank rows are dropped and a row
+with only one half is a 400. Unlike the two credentials it is not a secret and comes back as
+stored.
+
+Slack reads return masked credential state plus `eventsUrl`, `suggestedPrompts` and a generated
+app manifest.
 All four endpoints are limited to the owner and to configured admins (403 for anyone else) — the masked view still exposes the
 bot token / signing secret edges. Masked or omitted secrets are preserved on update. The test endpoint returns
 `{ ok: true, team, botUser }` or `502` for a Slack API failure.

@@ -17,6 +17,8 @@ const updateSchema = z.object({
   botToken: z.string().optional(),
   signingSecret: z.string().optional(),
   enabled: z.boolean().optional(),
+  // Length and count are the use case's to enforce — it owns what Slack accepts.
+  suggestedPrompts: z.array(z.object({ title: z.string(), message: z.string() })).optional(),
 });
 
 function resolveBaseUrl(request: Request): Promise<string> {

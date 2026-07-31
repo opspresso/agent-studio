@@ -121,6 +121,8 @@ about to make copy number two.
 | Writing to the console | `src/shared/logger.ts` |
 | What wraps a top-level run | `src/application/execution/runBracket.ts` |
 | Which project type runs which way | `src/application/execution/deps.ts` |
+| How a Slack reply is delivered | `src/application/slack/replyStream.ts` |
+| The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |
 
 Other decisions with a single owner that the test cannot express as a pattern, but that the
 same rule applies to:

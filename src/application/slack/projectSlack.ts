@@ -4,7 +4,16 @@ import { assertProjectWritable, getProject } from "@/application/project/project
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
+import type { SlackSuggestedPrompt } from "@/domain/slack/types";
+import {
+  MAX_PROMPT_MESSAGE_LENGTH,
+  MAX_PROMPT_TITLE_LENGTH,
+  MAX_SUGGESTED_PROMPTS,
+} from "@/domain/slack/types";
 import { nextUpdatedAt } from "@/application/project/timestamps";
+
+/** Slack's cap on the agent overview shown above the Messages tab. */
+const MAX_AGENT_DESCRIPTION_LENGTH = 300;
 
 export interface ProjectSlackView {
   enabled: boolean;
@@ -12,12 +21,15 @@ export interface ProjectSlackView {
   botToken: string;
   signingSecret: string;
   eventsPath: string;
+  /** Not a secret, unlike the two above — returned as stored. */
+  suggestedPrompts: SlackSuggestedPrompt[];
 }
 
 export interface ProjectSlackUpdate {
   botToken?: string;
   signingSecret?: string;
   enabled?: boolean;
+  suggestedPrompts?: SlackSuggestedPrompt[];
 }
 
 export function eventsPathFor(projectName: string): string {
@@ -32,7 +44,37 @@ function maskedView(cipher: SecretCipher, project: Project): ProjectSlackView {
     botToken: slack?.botToken ? cipher.mask(slack.botToken) : "",
     signingSecret: slack?.signingSecret ? cipher.mask(slack.signingSecret) : "",
     eventsPath: eventsPathFor(project.name),
+    suggestedPrompts: slack?.suggestedPrompts ?? [],
   };
+}
+
+/**
+ * Reject a prompt list Slack would reject, and drop the empty rows the editor
+ * leaves behind — an editor with four blank slots must not store four prompts.
+ */
+function cleanPrompts(input: SlackSuggestedPrompt[]): SlackSuggestedPrompt[] {
+  const prompts = input
+    .map((prompt) => ({ title: prompt.title.trim(), message: prompt.message.trim() }))
+    .filter((prompt) => prompt.title !== "" || prompt.message !== "");
+  if (prompts.length > MAX_SUGGESTED_PROMPTS) {
+    throw new ValidationError(`Slack accepts at most ${MAX_SUGGESTED_PROMPTS} suggested prompts`);
+  }
+  for (const prompt of prompts) {
+    if (!prompt.title || !prompt.message) {
+      throw new ValidationError("A suggested prompt needs both a title and a message");
+    }
+    if (prompt.title.length > MAX_PROMPT_TITLE_LENGTH) {
+      throw new ValidationError(
+        `A suggested prompt title is limited to ${MAX_PROMPT_TITLE_LENGTH} characters`,
+      );
+    }
+    if (prompt.message.length > MAX_PROMPT_MESSAGE_LENGTH) {
+      throw new ValidationError(
+        `A suggested prompt message is limited to ${MAX_PROMPT_MESSAGE_LENGTH} characters`,
+      );
+    }
+  }
+  return prompts;
 }
 
 /**
@@ -99,10 +141,15 @@ export async function updateProjectSlack(
   if (project.projectType !== "agent") {
     throw new ValidationError("Slack bots can only be attached to agent projects");
   }
+  const prompts =
+    update.suggestedPrompts !== undefined
+      ? cleanPrompts(update.suggestedPrompts)
+      : (project.slack?.suggestedPrompts ?? []);
   const slack: SlackIntegration = {
     botToken: mergeSecret(cipher, project.slack?.botToken, update.botToken),
     signingSecret: mergeSecret(cipher, project.slack?.signingSecret, update.signingSecret),
     enabled: update.enabled ?? project.slack?.enabled ?? false,
+    ...(prompts.length > 0 ? { suggestedPrompts: prompts } : {}),
   };
   if (slack.enabled && (!slack.botToken || !slack.signingSecret)) {
     throw new ValidationError("Bot token and signing secret are required to enable Slack");
@@ -143,6 +190,10 @@ export function resolveProjectSlackRuntime(
   };
 }
 
+function defaultAgentDescription(project: Project): string {
+  return `Agent Studio bot for the ${project.name} project`;
+}
+
 /** Slack app manifest for this project's dedicated bot. */
 export function buildProjectSlackManifest(
   project: Project,
@@ -151,7 +202,7 @@ export function buildProjectSlackManifest(
   return {
     display_information: {
       name: project.displayName.slice(0, 35),
-      description: `Agent Studio bot for the ${project.name} project`,
+      description: defaultAgentDescription(project),
       background_color: "#2b5cd9",
     },
     features: {
@@ -161,7 +212,16 @@ export function buildProjectSlackManifest(
         messages_tab_read_only_enabled: false,
       },
       bot_user: { display_name: project.displayName.slice(0, 80), always_online: true },
-      agent_view: { suggested_prompts: [] },
+      // The agent messaging experience. `agent_description` is required once
+      // this key is present, and it is the only text a user sees before asking
+      // anything — an empty view reads as a bot that is not running.
+      agent_view: {
+        agent_description: (project.description.trim() || defaultAgentDescription(project)).slice(
+          0,
+          MAX_AGENT_DESCRIPTION_LENGTH,
+        ),
+        suggested_prompts: (project.slack?.suggestedPrompts ?? []).slice(0, MAX_SUGGESTED_PROMPTS),
+      },
     },
     oauth_config: {
       redirect_urls: [`${baseUrl}${MCP_OAUTH_CALLBACK_PATH}`],
@@ -188,7 +248,13 @@ export function buildProjectSlackManifest(
     settings: {
       event_subscriptions: {
         request_url: `${baseUrl}${eventsPathFor(project.name)}`,
-        bot_events: ["app_mention", "message.im"],
+        // `app_home_opened` is how the agent messaging experience announces a
+        // user opening the container — without it the panel opens with no
+        // prompts. `app_context_changed` is deliberately absent: acting on the
+        // channel a user is looking at needs per-user context storage, which
+        // does not exist yet, and subscribing to an event nobody reads only
+        // buys traffic.
+        bot_events: ["app_mention", "app_home_opened", "message.im"],
       },
       org_deploy_enabled: false,
       socket_mode_enabled: false,

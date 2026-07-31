@@ -371,6 +371,23 @@ const SINGLE_OWNERS: SingleOwner[] = [
     alsoAllowedUnder: ["src/app/projects/"],
   },
   {
+    // Two transports answer the same question — stream, or post and edit — and
+    // a new Slack entry point that picks one for itself is a second copy of the
+    // fallback, the pacing and the delta bookkeeping. The pattern matches the
+    // *call* that ends a streamed reply, not the client method or the port
+    // declaration (both of which break the argument across lines).
+    what: "how a Slack reply is delivered",
+    pattern: /stopStream\(token,/,
+    owner: "src/application/slack/replyStream.ts",
+  },
+  {
+    // Three Slack modules take this port. Each declaring the subset it happens
+    // to call is how the four `McpTool` definitions started.
+    what: "the Slack Web API surface a run uses",
+    pattern: /interface SlackClientPort/,
+    owner: "src/application/slack/types.ts",
+  },
+  {
     // The agent half of the same dispatch, which cannot be checked tree-wide:
     // `projectType !== "agent"` is also how several use cases validate what a
     // project supports (a Slack bot, a chat, a tools capability), and that is a

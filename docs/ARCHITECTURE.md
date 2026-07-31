@@ -636,7 +636,35 @@ Bots are **per project**: `/api/slack/events/[project]` is the only events endpo
 resolves that project's own bot token and signing secret, so an event always runs that project
 and no selector is needed.
 
-Replies stream into one message via `chat.update`. A mention inside a thread carries the
+**How a reply is delivered is one decision, owned by `src/application/slack/replyStream.ts`.**
+The sink it hands back opens on the first output and prefers `chat.startStream` →
+`chat.appendStream` → `chat.stopStream`, which is what the agent surface renders as text
+arriving and what Slack rate-limits generously (Tier 4). A workspace that cannot stream falls
+back to `chat.postMessage` + `chat.update`, paced at Slack's documented one edit per three
+seconds and marked with a trailing indicator so an interim state does not read as a finished
+answer. Streaming sends **deltas**, so the sink advances its flushed offset only on a
+successful write: a rejected append is re-sent with the next one instead of being lost.
+Streaming into a channel additionally names the recipient (`recipient_user_id` /
+`recipient_team_id`); a DM does not.
+
+The **agent experience** is answered natively where the surface offers it (a DM, not a channel
+thread): progress goes to `assistant.threads.setStatus` — "is thinking…", then each tool by
+name — rather than overwriting the message body, and the opening question of a new thread names
+it via `assistant.threads.setTitle`. Opening the agent container is its own event, handled by
+`handleThreadStart` rather than by a run: `app_home_opened` on the Messages tab (the agent
+messaging experience) pins the project's suggested prompts, and the legacy
+`assistant_thread_started` also introduces the project, because unlike `app_home_opened` it
+fires once per thread rather than on every visit. `app_context_changed` is deliberately not
+subscribed to — acting on the channel a user is looking at needs per-user context storage that
+does not exist.
+
+Suggested prompts are per-project configuration (`SlackIntegration.suggestedPrompts`, at most
+four — `src/domain/slack/types.ts` owns the shape and the cap). They reach Slack twice: in the
+generated manifest's `features.agent_view`, and at runtime through
+`assistant.threads.setSuggestedPrompts`, so changing them takes effect without re-applying the
+manifest.
+
+A mention inside a thread carries the
 thread (its 50 most recent turns) as multi-turn context. Image attachments are downloaded with
 the bot token — the mention's own images first, then whatever budget is left goes to the newest
 images in the 10 most recent turns of the thread, so "make the picture I sent blue" still has

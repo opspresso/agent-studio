@@ -1,3 +1,5 @@
+import type { SlackSuggestedPrompt } from "@/domain/slack/types";
+
 export type ProjectType = "llm" | "agent" | "image";
 
 /**
@@ -31,6 +33,12 @@ export interface SlackIntegration {
   botToken: string;
   signingSecret: string;
   enabled: boolean;
+  /**
+   * What the agent offers when a user opens it. Not a secret — stored, returned
+   * and rendered in the clear, unlike the two credentials above. Absent means
+   * the agent surface offers nothing beyond its description.
+   */
+  suggestedPrompts?: SlackSuggestedPrompt[];
 }
 
 /**
