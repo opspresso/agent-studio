@@ -2,6 +2,7 @@ import type { SlackMessage } from "@/domain/slack/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createReplySink } from "@/application/slack/replyStream";
 import type { SlackEventBody, SlackEventDeps, SlackEventFile } from "@/application/slack/types";
+import type { RunCaller } from "@/domain/execution/actor";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   MAX_ATTACHMENT_BYTES,
@@ -56,19 +57,37 @@ export interface ThreadTurn {
  * Convert thread replies to engine turns: bot turns → assistant, human turns →
  * user. A message with no text is kept when it carried files — an image posted
  * on its own is still part of the conversation.
+ *
+ * `nameByUser` labels each human turn with its speaker. Callers pass it only
+ * when the thread has more than one human: every turn is `role: "user"`
+ * regardless of who typed it, so without a label a three-way conversation
+ * reaches the model as one person's monologue — and *with* one on a two-party
+ * thread it is just noise on every line.
+ *
+ * The label goes in the text rather than in `ChatMessageInput.name`: OpenAI
+ * constrains that field's character set, so a display name with a space or any
+ * non-Latin script cannot go there, and providers disagree about the rest.
  */
-export function threadToTurns(replies: SlackMessage[], currentTs: string): ThreadTurn[] {
+export function threadToTurns(
+  replies: SlackMessage[],
+  currentTs: string,
+  nameByUser?: ReadonlyMap<string, string>,
+): ThreadTurn[] {
   return replies
     .filter(
       (m) => m.ts !== currentTs && ((m.text ?? "").trim() !== "" || (m.files ?? []).length > 0),
     )
-    .map((m) => ({
-      message: {
-        role: m.bot_id ? ("assistant" as const) : ("user" as const),
-        content: (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim(),
-      },
-      files: m.files ?? [],
-    }));
+    .map((m) => {
+      const text = (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim();
+      const speaker = m.bot_id ? undefined : (m.user && nameByUser?.get(m.user)) || undefined;
+      return {
+        message: {
+          role: m.bot_id ? ("assistant" as const) : ("user" as const),
+          content: speaker && text ? `${speaker}: ${text}` : text,
+        },
+        files: m.files ?? [],
+      };
+    });
 }
 
 /**
@@ -183,6 +202,56 @@ async function withHistoryImages(
   });
 }
 
+/**
+ * Who is asking, and who else is in the thread.
+ *
+ * Two separate needs, one pass over the same profiles: the asker names the
+ * caller block, and the rest only matter when there is more than one human in
+ * the thread — a two-party conversation needs no labels, and putting them on
+ * every line would spend context on saying the same name over and over.
+ *
+ * Every lookup is best-effort. A run that could not learn a name still answers;
+ * losing the label is not worth losing the reply.
+ */
+async function resolveSpeakers(
+  deps: SlackEventDeps,
+  token: string,
+  replies: SlackMessage[],
+  currentUser: string | undefined,
+): Promise<{ caller?: RunCaller; nameByUser?: Map<string, string> }> {
+  const humans = new Set<string>();
+  for (const reply of replies) {
+    if (!reply.bot_id && reply.user) {
+      humans.add(reply.user);
+    }
+  }
+  if (currentUser) {
+    humans.add(currentUser);
+  }
+  // Only the asker's profile is needed to name the caller; the others are
+  // fetched solely to tell speakers apart, so a single-speaker thread skips them.
+  const wanted = humans.size > 1 ? [...humans] : currentUser ? [currentUser] : [];
+  const resolved = await Promise.all(
+    wanted.map(async (userId) => [userId, await deps.slack.userProfile(token, userId)] as const),
+  );
+
+  const nameByUser = new Map<string, string>();
+  let caller: RunCaller | undefined;
+  for (const [userId, profile] of resolved) {
+    if (!profile) {
+      continue;
+    }
+    nameByUser.set(userId, profile.displayName);
+    if (userId === currentUser) {
+      caller = profile;
+    }
+  }
+  return {
+    ...(caller ? { caller } : {}),
+    ...(humans.size > 1 && nameByUser.size > 0 ? { nameByUser } : {}),
+  };
+}
+
 /** Credentials and project binding for a project-dedicated bot. */
 export interface SlackBotBinding {
   projectName: string;
@@ -233,19 +302,26 @@ export async function handleSlackEvent(
   const warnings: string[] = [];
   // Read the thread *before* the run writes anything of its own — otherwise the
   // reply comes back as an assistant turn in this run's own context.
-  let turns: ThreadTurn[] = [];
+  let replies: SlackMessage[] = [];
   if (event.thread_ts !== undefined) {
     try {
-      const replies = await deps.slack.threadReplies(token, {
+      replies = await deps.slack.threadReplies(token, {
         channel: event.channel,
         ts: event.thread_ts,
       });
-      turns = threadToTurns(replies, event.ts).slice(-MAX_HISTORY_MESSAGES);
     } catch (error) {
       log.error("slack", "thread history failed", error);
       warnings.push("Thread history unavailable; answered without prior context.");
     }
   }
+
+  // The version's opt-in gates the *lookup*, not just the prompt: a project that
+  // did not ask to know who is asking should not be sending anyone's id to
+  // Slack's profile API either.
+  const named = version.parameters.callerContext
+    ? await resolveSpeakers(deps, token, replies, event.user)
+    : { caller: undefined, nameByUser: undefined };
+  const turns = threadToTurns(replies, event.ts, named.nameByUser).slice(-MAX_HISTORY_MESSAGES);
 
   // A DM is an agent thread: it has a native status line and a title. A channel
   // mention has neither, and streaming into one needs the recipient named.
@@ -312,6 +388,7 @@ export async function handleSlackEvent(
       // The Slack user id, not an email: Slack does not hand one over, and
       // guessing at a mapping would attribute spend to the wrong person.
       ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
+      ...(named.caller ? { caller: named.caller } : {}),
       signal: deadline,
     })) {
       if (chunk.error) {

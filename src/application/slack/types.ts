@@ -1,4 +1,5 @@
 import type { ExecuteAgentInput } from "@/application/execution/runProject";
+import type { RunCaller } from "@/domain/execution/actor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { SlackMessage, SlackSuggestedPrompt } from "@/domain/slack/types";
@@ -69,6 +70,8 @@ export interface SlackClientPort {
     token: string,
     args: { channel_id: string; thread_ts: string; title: string },
   ): Promise<void>;
+  /** Who a Slack user id is. Resolves to `null` rather than throwing. */
+  userProfile(token: string, userId: string): Promise<RunCaller | null>;
 }
 
 /** Injected dependencies; wired by the route from the composition root. */

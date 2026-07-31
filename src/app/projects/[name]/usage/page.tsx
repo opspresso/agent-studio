@@ -6,8 +6,8 @@ import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { DailyCostChart } from "@/app/_components/DailyCostChart";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { buildDailySeries } from "@/app/_lib/usage";
-import { usageSummary, type UsageRow } from "../../lib/api";
-import { Alert, Card, Stack, Table, Text } from "@mantine/core";
+import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
+import { Alert, Avatar, Card, Group, Stack, Table, Text } from "@mantine/core";
 
 function sumRecord(record: Record<string, number>): number {
   let total = 0;
@@ -17,12 +17,42 @@ function sumRecord(record: Record<string, number>): number {
   return total;
 }
 
+/** One line per caller: the rows arrive per day, and a reader wants the person. */
+interface CallerTotal {
+  actor: string;
+  name: string;
+  avatarUrl?: string;
+  calls: number;
+  costUsd: number;
+}
+
+function totalsByCaller(rows: ActorUsageView[]): CallerTotal[] {
+  const byActor = new Map<string, CallerTotal>();
+  for (const row of rows) {
+    const existing = byActor.get(row.actor);
+    const entry = existing ?? {
+      actor: row.actor,
+      // The raw key is the honest fallback: an unresolved Slack id is still
+      // more useful than a blank, and it is what the endpoint returned before.
+      name: row.display?.name ?? row.actor,
+      ...(row.display?.avatarUrl ? { avatarUrl: row.display.avatarUrl } : {}),
+      calls: 0,
+      costUsd: 0,
+    };
+    entry.calls += sumRecord(row.calls);
+    entry.costUsd += sumRecord(row.costUsd);
+    byActor.set(row.actor, entry);
+  }
+  return [...byActor.values()].sort((a, b) => b.costUsd - a.costUsd);
+}
+
 export default function UsagePage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
 
   const [range, setRange] = useState(defaultDateRange);
   const [rows, setRows] = useState<UsageRow[]>([]);
+  const [actorRows, setActorRows] = useState<ActorUsageView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +67,15 @@ export default function UsagePage() {
     } finally {
       setLoading(false);
     }
+    // Separately, and never fatal: the breakdown is owner-only, so a member
+    // looking at a shared project's totals gets a 403 here and should still see
+    // the totals rather than an error page.
+    try {
+      const { items } = await usageActors(name, range.from, range.to);
+      setActorRows(items);
+    } catch {
+      setActorRows([]);
+    }
   }, [name, range.from, range.to]);
 
   useEffect(() => {
@@ -49,6 +88,7 @@ export default function UsagePage() {
   );
   const totalCalls = rows.reduce((sum, row) => sum + sumRecord(row.calls), 0);
   const totalCost = rows.reduce((sum, row) => sum + sumRecord(row.costUsd), 0);
+  const callers = useMemo(() => totalsByCaller(actorRows), [actorRows]);
 
   return (
     <Stack gap="md">
@@ -105,6 +145,49 @@ export default function UsagePage() {
               </Table>
             </Table.ScrollContainer>
           </Card>
+          {callers.length > 0 && (
+            <Card padding={0}>
+              <Text
+                fz="xs"
+                tt="uppercase"
+                c="dimmed"
+                px="md"
+                pt="md"
+                style={{ letterSpacing: "0.05em" }}
+              >
+                Who spent it
+              </Text>
+              <Table.ScrollContainer minWidth={420}>
+                <Table verticalSpacing="xs" horizontalSpacing="md">
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Caller</Table.Th>
+                      <Table.Th ta="right">Calls</Table.Th>
+                      <Table.Th ta="right">Cost (USD)</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {callers.map((caller) => (
+                      <Table.Tr key={caller.actor}>
+                        <Table.Td>
+                          <Group gap="xs" wrap="nowrap">
+                            <Avatar src={caller.avatarUrl ?? null} size={24} radius="xl">
+                              {caller.name.slice(0, 1).toUpperCase()}
+                            </Avatar>
+                            <Text fz="sm" ff={caller.avatarUrl ? undefined : "monospace"}>
+                              {caller.name}
+                            </Text>
+                          </Group>
+                        </Table.Td>
+                        <Table.Td ta="right">{caller.calls.toLocaleString()}</Table.Td>
+                        <Table.Td ta="right">${caller.costUsd.toFixed(4)}</Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </Card>
+          )}
         </>
       )}
     </Stack>

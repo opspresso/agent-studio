@@ -9,6 +9,7 @@ import type { SlackMessage } from "@/infrastructure/slack/client";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
+import type { RunCaller } from "@/domain/execution/actor";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 
 const NOW = 1_750_000_000_000;
@@ -63,6 +64,8 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   const calls: string[] = [];
   const replies: SlackMessage[] = [];
   const downloads: string[] = [];
+  const profileLookups: string[] = [];
+  const profiles = new Map<string, RunCaller>();
   const slack: SlackClientPort = {
     async downloadFile(_token, url) {
       downloads.push(url);
@@ -119,6 +122,11 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       calls.push("setTitle");
       titles.push(args);
     },
+    async userProfile(_token, userId) {
+      calls.push("userProfile");
+      profileLookups.push(userId);
+      return profiles.get(userId) ?? null;
+    },
   };
   /**
    * What the reader ends up seeing, whichever transport delivered it — so a
@@ -137,6 +145,8 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     calls,
     replies,
     downloads,
+    profiles,
+    profileLookups,
     finalText,
   };
 }
@@ -816,6 +826,140 @@ describe("streaming a Slack reply", () => {
  * A DM is an agent thread: Slack renders a status line under it and lets the
  * thread be named. A channel mention has neither.
  */
+/**
+ * Who the run is answering. Opt-in per version, because a real person's name in
+ * the prompt is not something PII filtering masks.
+ */
+describe("telling the run who is asking", () => {
+  function withCallerContext(deps: SlackEventDeps, on: boolean) {
+    deps.versions = {
+      get: async () => ({
+        ...versionFixture(),
+        parameters: { piiFiltering: false, callerContext: on },
+      }),
+      list: async () => [],
+    } as unknown as VersionRepository;
+  }
+
+  it("looks up nobody when the version did not ask", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, profileLookups } = makeSlackFake();
+    const deps = makeDeps([{ done: true }], slack);
+    withCallerContext(deps, false);
+    let seenCaller: unknown;
+    deps.runAgent = async function* (input) {
+      seenCaller = input.caller;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, user: "U1" } }, BINDING);
+
+    // The opt-in gates the lookup, not just the prompt — a project that did not
+    // ask should not be sending anyone's id to Slack's profile API either.
+    expect(profileLookups).toEqual([]);
+    expect(seenCaller).toBeUndefined();
+  });
+
+  it("passes the resolved caller into the run", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, profiles } = makeSlackFake();
+    profiles.set("U1", { displayName: "Bruce", timezone: "Asia/Seoul" });
+    const deps = makeDeps([{ done: true }], slack);
+    withCallerContext(deps, true);
+    let seenCaller: RunCaller | undefined;
+    deps.runAgent = async function* (input) {
+      seenCaller = input.caller;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, user: "U1" } }, BINDING);
+
+    expect(seenCaller).toEqual({ displayName: "Bruce", timezone: "Asia/Seoul" });
+  });
+
+  it("answers anyway when the profile cannot be resolved", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, finalText } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+    withCallerContext(deps, true);
+
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, user: "U9" } }, BINDING);
+
+    // A name is a nicety; losing it must not lose the reply.
+    expect(finalText()).toBe("answer");
+  });
+
+  it("labels speakers once a second human joins the thread", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, profiles, replies } = makeSlackFake();
+    profiles.set("U1", { displayName: "Bruce" });
+    profiles.set("U2", { displayName: "Dana" });
+    replies.push(
+      { ts: "0.9", user: "U1", text: "what does this cost?" },
+      { ts: "0.92", bot_id: "B0", text: "about ten dollars" },
+      { ts: "0.94", user: "U2", text: "per day or per month?" },
+    );
+    const deps = makeDeps([{ done: true }], slack);
+    withCallerContext(deps, true);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "0.9", user: "U1" } },
+      BINDING,
+    );
+
+    // Every turn is `role: "user"` whoever typed it, so without a label a
+    // three-way conversation reaches the model as one person's monologue.
+    expect(seen.map((message) => message.content)).toEqual([
+      "Bruce: what does this cost?",
+      "about ten dollars",
+      "Dana: per day or per month?",
+      "hello",
+    ]);
+  });
+
+  it("labels nothing when only one human is in the thread", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, profiles, replies } = makeSlackFake();
+    profiles.set("U1", { displayName: "Bruce" });
+    replies.push(
+      { ts: "0.9", user: "U1", text: "what does this cost?" },
+      { ts: "0.92", bot_id: "B0", text: "about ten dollars" },
+    );
+    const deps = makeDeps([{ done: true }], slack);
+    withCallerContext(deps, true);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "0.9", user: "U1" } },
+      BINDING,
+    );
+
+    // A two-party conversation needs no labels; repeating one name on every
+    // line would only spend context.
+    expect(seen.map((message) => message.content)).toEqual([
+      "what does this cost?",
+      "about ten dollars",
+      "hello",
+    ]);
+  });
+});
+
 describe("the native agent affordances", () => {
   it("reports thinking, then each tool, and clears the status at the end", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});

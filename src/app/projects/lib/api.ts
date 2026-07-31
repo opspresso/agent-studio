@@ -269,6 +269,27 @@ export async function predictImage(
   return (await res.json()) as ImageResult;
 }
 
+export interface ActorUsageView {
+  date: string;
+  /** `kind:id` — stable, and what two callers are told apart by. */
+  actor: string;
+  calls: Record<string, number>;
+  costUsd: Record<string, number>;
+  /** Present when the caller could be resolved to a person (Slack today). */
+  display?: { name: string; avatarUrl?: string };
+}
+
+/** Who spent this project's budget. Owner/admin only, like traces. */
+export async function usageActors(
+  name: string,
+  from: string,
+  to: string,
+): Promise<{ items: ActorUsageView[] }> {
+  const res = await fetch(`/api/projects/${name}/usage/actors?from=${from}&to=${to}`);
+  await assertOk(res);
+  return (await res.json()) as { items: ActorUsageView[] };
+}
+
 export interface ProjectSlackView {
   enabled: boolean;
   configured: boolean;

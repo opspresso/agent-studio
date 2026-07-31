@@ -288,6 +288,13 @@ export function VersionEditor({
         onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
       />
 
+      <Checkbox
+        label="Tell the run who is asking (name, timezone)"
+        description="Slack mentions and DMs only. PII filtering does not mask a name."
+        checked={value.parameters.callerContext ?? false}
+        onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
+      />
+
       {supportsStructured && (
         <Stack gap="xs">
           <Checkbox

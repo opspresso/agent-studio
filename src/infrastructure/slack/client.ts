@@ -1,8 +1,32 @@
 /** Minimal Slack Web API client over fetch — no SDK dependency. */
 
+import type { RunCaller } from "@/domain/execution/actor";
 import type { SlackMessage } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
+import { getCachedProfile, rememberProfile } from "./profileCache";
 export type { SlackMessage };
+
+/** The slice of `users.info`'s user object a caller is built from. */
+interface SlackUserInfo {
+  name?: string;
+  real_name?: string;
+  tz?: string;
+  profile?: { display_name?: string; real_name?: string; image_512?: string };
+}
+
+/**
+ * The first value that is actually there. Slack's own reference warns a field
+ * "may not be present at all, may be null or may contain the empty string", and
+ * `??` only handles the first two of those three.
+ */
+function firstNonEmpty(...values: Array<string | undefined | null>): string | undefined {
+  for (const value of values) {
+    if (value && value.trim() !== "") {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
 
 /** Per-page size for paginated reads; Slack's recommended maximum. */
 const PAGE_SIZE = 200;
@@ -92,6 +116,64 @@ export const slackClient = {
   },
   authTest(token: string): Promise<{ team?: string; user?: string; bot_id?: string }> {
     return slackApi(token, "auth.test", {});
+  },
+  /**
+   * Who a Slack user id is, cached per workspace.
+   *
+   * Slack documents every one of these fields as possibly absent, null *or the
+   * empty string*, so each is read through `firstNonEmpty` rather than `??` —
+   * an empty `display_name` is extremely common and `??` would keep it.
+   *
+   * Never throws: a name is a nicety and a missing one must not be the reason a
+   * mention goes unanswered. A failure is cached briefly so a revoked scope does
+   * not cost a round trip per message.
+   */
+  async userProfile(token: string, userId: string): Promise<RunCaller | null> {
+    const cached = getCachedProfile(token, userId);
+    if (cached) {
+      return cached.value;
+    }
+    let resolved: RunCaller | null = null;
+    try {
+      // A read-family method: GET with query params, like conversations.replies.
+      const params = new URLSearchParams({ user: userId });
+      const res = await fetch(`https://slack.com/api/users.info?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        user?: SlackUserInfo;
+      };
+      if (!data.ok || !data.user) {
+        throw new Error(`Slack users.info failed: ${data.error ?? res.status}`);
+      }
+      const user = data.user;
+      const displayName = firstNonEmpty(
+        user.profile?.display_name,
+        user.profile?.real_name,
+        user.real_name,
+        user.name,
+      );
+      if (displayName) {
+        resolved = {
+          displayName,
+          ...(firstNonEmpty(user.tz) ? { timezone: user.tz as string } : {}),
+          ...(firstNonEmpty(user.profile?.image_512)
+            ? { avatarUrl: user.profile?.image_512 as string }
+            : {}),
+        };
+      }
+    } catch (error) {
+      log.warn(
+        "slack",
+        `profile lookup failed for ${userId}: ${
+          error instanceof Error ? error.message : "unknown"
+        }`,
+      );
+    }
+    rememberProfile(token, userId, resolved);
+    return resolved;
   },
   postMessage(
     token: string,

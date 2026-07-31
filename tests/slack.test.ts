@@ -160,6 +160,68 @@ describe("slackClient agent methods", () => {
     });
   });
 
+  it("resolves a user profile, preferring the display name", async () => {
+    const { clearProfileCache } = await import("@/infrastructure/slack/profileCache");
+    clearProfileCache();
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          user: {
+            name: "bruce",
+            real_name: "Bruce Kim",
+            tz: "Asia/Seoul",
+            profile: { display_name: "bruce", image_512: "https://x/512.png" },
+          },
+        }),
+      };
+    });
+
+    const profile = await slackClient.userProfile("tok-a", "U1");
+
+    expect(urls[0]).toBe("https://slack.com/api/users.info?user=U1");
+    expect(profile).toEqual({
+      displayName: "bruce",
+      timezone: "Asia/Seoul",
+      avatarUrl: "https://x/512.png",
+    });
+  });
+
+  it("falls past fields Slack returned as empty strings", async () => {
+    const { clearProfileCache } = await import("@/infrastructure/slack/profileCache");
+    clearProfileCache();
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        // Slack documents every field as possibly absent, null *or empty* —
+        // `??` would keep the empty display_name and show a nameless caller.
+        user: { name: "bruce", real_name: "Bruce Kim", tz: "", profile: { display_name: "" } },
+      }),
+    }));
+
+    const profile = await slackClient.userProfile("tok-b", "U2");
+
+    expect(profile).toEqual({ displayName: "Bruce Kim" });
+  });
+
+  it("resolves to null rather than throwing when Slack refuses", async () => {
+    const { clearProfileCache } = await import("@/infrastructure/slack/profileCache");
+    clearProfileCache();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      json: async () => ({ ok: false, error: "missing_scope" }),
+    }));
+
+    // A missing name must never be the reason a mention goes unanswered.
+    await expect(slackClient.userProfile("tok-c", "U3")).resolves.toBeNull();
+    vi.restoreAllMocks();
+  });
+
   it("throws when Slack refuses a stream, so the caller can fall back", async () => {
     vi.stubGlobal("fetch", async () => ({
       ok: true,

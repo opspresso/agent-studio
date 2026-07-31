@@ -82,6 +82,12 @@ export interface VersionParameters {
   maxTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
   piiFiltering: boolean;
+  /**
+   * Whether the run is told who is asking (name, timezone, avatar URL — never
+   * an email). Opt-in because it puts a real person's name into the prompt,
+   * which PII filtering does not mask.
+   */
+  callerContext?: boolean;
   structuredOutput?: boolean;
   jsonSchema?: Record<string, unknown>;
   imageGeneration?: boolean;

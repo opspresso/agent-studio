@@ -34,6 +34,27 @@ export interface RunActor {
 export const A2A_ACTOR_ID = "shared-key";
 
 /**
+ * What a run may tell the model about the person asking.
+ *
+ * Deliberately separate from {@link RunActor}, which is a *storage key*
+ * (`actorKey`) and must stay stable and machine-shaped. This is the opposite:
+ * human-readable, resolved from whatever the surface knows, and free to be
+ * absent. Mixing the two would put a display name someone can rename into the
+ * key a year of usage rows is grouped by.
+ *
+ * No email, on purpose. PII filtering masks emails and phone numbers but not
+ * names (`application/llm/pii.ts`), so anything here reaches the model as
+ * written — which is a reason to carry the least that is still useful.
+ */
+export interface RunCaller {
+  displayName: string;
+  /** IANA zone, e.g. `Asia/Seoul`. Lets the model resolve "tomorrow" correctly. */
+  timezone?: string;
+  /** A URL, never image bytes: the answer rarely needs to look at a face. */
+  avatarUrl?: string;
+}
+
+/**
  * Where a run came from: who caused it, and the transfer chain that reached it.
  *
  * The two travel together through every subagent hop — a child is caused by the
@@ -42,6 +63,11 @@ export const A2A_ACTOR_ID = "shared-key";
  */
 export interface RunOrigin {
   actor?: RunActor;
+  /**
+   * Who the actor is, in words. Travels the transfer chain for the same reason
+   * the actor does — a subagent is answering the same person as its parent.
+   */
+  caller?: RunCaller;
   /** Project names on the transfer chain, outermost first. */
   ancestry: readonly string[];
 }

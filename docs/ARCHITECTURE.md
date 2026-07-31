@@ -671,6 +671,16 @@ effect on its own, but it depends on the manifest: an app whose Slack config pre
 `app_home_opened` subscription never receives the event, so its prompts only ever come from the
 manifest and changing them means applying the manifest again.
 
+**Who is asking** reaches the model only when the version opts in
+(`parameters.callerContext`). The opt-in gates the *lookup*, not just the prompt — a project
+that did not ask does not send anyone's id to Slack's profile API either. With it on,
+`users.info` resolves the asker into a `RunCaller` (name, timezone, avatar **URL**; deliberately
+no email) which the engine renders as a caller block next to the run clock, and when a thread
+holds more than one human each history turn is prefixed with its speaker. One human needs no
+labels. Profiles are cached per workspace for an hour
+(`src/infrastructure/slack/profileCache.ts`); a failed lookup is cached for a minute and costs
+the reply nothing.
+
 A mention inside a thread carries the thread (its 50 most recent turns) as multi-turn context.
 Image attachments are downloaded with the bot token — the mention's own images first, then
 whatever budget is left goes to the newest images in the 10 most recent turns of the thread, so

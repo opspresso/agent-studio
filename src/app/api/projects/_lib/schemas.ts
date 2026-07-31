@@ -74,6 +74,7 @@ export const versionParametersSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
   reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
   piiFiltering: z.boolean().default(false),
+  callerContext: z.boolean().optional(),
   structuredOutput: z.boolean().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).optional(),
   imageGeneration: z.boolean().optional(),

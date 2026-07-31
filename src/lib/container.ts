@@ -216,6 +216,10 @@ export const a2aExposureDeps: A2aExposureDeps = {
 export const slackAuthTest = async (botToken: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.authTest(botToken);
 
+/** Slack profile lookup (cached) for putting a name on a `slack:` usage row. */
+export const slackUserProfile = async (botToken: string, userId: string) =>
+  (await import("@/infrastructure/slack/client")).slackClient.userProfile(botToken, userId);
+
 /** Registry lookups a version's mcp/skill/subagent references are validated against. */
 export const versionRefRepos = {
   skills: skillRepository,

@@ -236,11 +236,13 @@ export function buildProjectSlackManifest(
           "im:history",
           "files:read",
           "files:write",
-          "users.profile:read",
           "groups:read",
           "reactions:read",
+          // `users.info` needs this and nothing more. `users.profile:read` and
+          // `users:read.email` used to be requested here and were never called:
+          // the caller block carries a name and a timezone, deliberately not an
+          // email, so neither has anything left to buy.
           "users:read",
-          "users:read.email",
         ],
       },
       pkce_enabled: false,

@@ -12,7 +12,12 @@ import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
-import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
+import {
+  actorKey as toActorKey,
+  type RunCaller,
+  type RunOrigin,
+} from "@/domain/execution/actor";
+import type { Version } from "@/domain/project/types";
 import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
@@ -33,6 +38,17 @@ export { runStrategyFor, type RunStrategy } from "./deps";
 
 function bindUsage(deps: ExecutionDeps, actor: string | undefined): engine.RecordUsageFn {
   return (record) => recordUsage(deps.usage, { ...record, ...(actor ? { actor } : {}) });
+}
+
+/**
+ * The caller the prompt is allowed to name — the version's opt-in decides, not
+ * the surface. A surface that resolved one anyway (a cached profile, a replayed
+ * run) must not be able to leak a name into a version that never asked for it.
+ */
+function callerFor(input: { version: Version; caller?: RunCaller }): { caller?: RunCaller } {
+  return input.version.parameters.callerContext && input.caller
+    ? { caller: input.caller }
+    : {};
 }
 
 // --- Single-shot version execution -----------------------------------------
@@ -61,6 +77,7 @@ export async function executeVersion(
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
         now: runClock(deps),
+        ...callerFor(input),
         signal: withRunDeadline(input.signal),
       },
     );
@@ -102,6 +119,7 @@ export async function* executeVersionStream(
         extraMessages: input.extraMessages ?? input.messages,
         parameters: toEngineParameters(input.version),
         now: runClock(deps),
+        ...callerFor(input),
         signal: withRunDeadline(input.signal),
       },
     )) {
@@ -216,6 +234,7 @@ export async function* executeAgent(
       messages: input.messages,
       parameters: toEngineParameters(input.version),
       now: startedAt,
+      ...callerFor(input),
       // Fan-out is offered here and nowhere below it. A child that could dispatch
       // would multiply the number of concurrent runs by transfer depth, and a
       // subagent run does not pass through the run bracket — so nothing but this

@@ -19,7 +19,7 @@ import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { McpAuthProvider } from "@/domain/mcp/oauth";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "./runBracket";
 
 /**
@@ -75,6 +75,12 @@ export interface ExecuteVersionInput {
   messages?: ChatMessageInput[];
   /** Who caused this run. Recorded on the trace and on the caller's usage row. */
   actor?: RunActor;
+  /**
+   * Who that actor is, in words. Reaches the prompt only when the version opted
+   * in (`parameters.callerContext`); the surface is expected not to resolve one
+   * at all otherwise.
+   */
+  caller?: RunCaller;
   signal?: AbortSignal;
 }
 
@@ -84,6 +90,8 @@ export interface ExecuteAgentInput {
   /** OpenAI-shaped message history from the route/chat boundary. */
   messages: ChatMessageInput[];
   actor?: RunActor;
+  /** See {@link ExecuteVersionInput.caller}. */
+  caller?: RunCaller;
   signal?: AbortSignal;
 }
 
@@ -95,6 +103,8 @@ export interface ExecuteProjectInput {
   variables?: Record<string, string>;
   messages: ChatMessageInput[];
   actor?: RunActor;
+  /** See {@link ExecuteVersionInput.caller}. */
+  caller?: RunCaller;
   signal?: AbortSignal;
 }
 

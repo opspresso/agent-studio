@@ -20,6 +20,7 @@ import type {
   ChannelUsage,
   LlmChannel,
 } from "@/domain/llm/channel";
+import type { RunCaller } from "@/domain/execution/actor";
 import {
   applyModelConstraints,
   calculateCost,
@@ -223,6 +224,8 @@ export interface RunPromptInput {
    * was before there was a clock.
    */
   now?: Date;
+  /** Who is asking. Absent leaves the prompt exactly as it was without one. */
+  caller?: RunCaller;
   signal?: AbortSignal;
 }
 
@@ -235,6 +238,8 @@ export interface RunAgentInput {
   parameters?: EngineParameters;
   /** See {@link RunPromptInput.now} — injected, never read from the clock here. */
   now?: Date;
+  /** See {@link RunPromptInput.caller}. */
+  caller?: RunCaller;
   /**
    * Whether this run may fan out to several agents at once. Set by the top-level
    * execution facade only — a subagent run is never given the tool, so the number
@@ -676,10 +681,10 @@ export function buildPromptMessages(input: RunPromptInput, filter?: PiiFilter): 
   // The same boundary the agent prompt uses. A single-shot run has no capability
   // block, so the clock is the only thing that can sit behind the break — and
   // with no clock the author's text is sent exactly as it was.
-  const systemPrompt = withEngineBlocks(
-    input.systemPrompt,
-    input.now ? [runClockBlock(input.now)] : [],
-  );
+  const systemPrompt = withEngineBlocks(input.systemPrompt, [
+    ...(input.now ? [runClockBlock(input.now)] : []),
+    ...(input.caller ? [callerBlock(input.caller)] : []),
+  ]);
   if (systemPrompt) {
     messages.push({ role: "system", content: systemPrompt });
   }
@@ -1304,6 +1309,28 @@ function runClockBlock(now: Date): string {
   return `Current date and time: ${formatRunClock(now)}. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.`;
 }
 
+/**
+ * Who this run is answering, when the surface knows and the version asked for it.
+ *
+ * A fact about the run in the same sense the clock is: the model is told, it
+ * cannot go looking. Without it a Slack thread reaches the model as anonymous
+ * text and the answer cannot address anybody — which is what a conversational
+ * agent is for.
+ *
+ * The avatar is a URL rather than an image part: a face is almost never what the
+ * question is about, and encoding one would spend a turn's image budget on it.
+ */
+function callerBlock(caller: RunCaller): string {
+  const lines = [`You are answering ${caller.displayName}.`];
+  if (caller.timezone) {
+    lines.push(`Their timezone is ${caller.timezone}; resolve their relative times in it.`);
+  }
+  if (caller.avatarUrl) {
+    lines.push(`Their avatar: ${caller.avatarUrl}`);
+  }
+  return lines.join(" ");
+}
+
 export function buildAgentSystemPrompt(
   base: string | undefined,
   skills: SkillInfo[],
@@ -1314,6 +1341,8 @@ export function buildAgentSystemPrompt(
   now?: Date,
   /** Whether this run is offered `dispatch_agents` (see {@link buildAgentTools}). */
   canDispatch = false,
+  /** See {@link RunPromptInput.caller}. Omitted keeps the prompt anonymous. */
+  caller?: RunCaller,
 ): string {
   const withMcp = mcpServers.length > 0;
   const sections: string[] = [];
@@ -1330,11 +1359,14 @@ export function buildAgentSystemPrompt(
     sections.push(imageSystemPromptAddition(images.handles, images, withMcp));
   }
   const blocks: string[] = [];
-  // Ahead of the capability block, and outside it: the clock is a fact about
-  // when the run happens, not something the run can reach, and the framing
-  // below speaks only for the sections that follow it.
+  // Ahead of the capability block, and outside it: the clock and the caller are
+  // facts about when the run happens and who it answers, not things the run can
+  // reach, and the framing below speaks only for the sections that follow it.
   if (now) {
     blocks.push(runClockBlock(now));
+  }
+  if (caller) {
+    blocks.push(callerBlock(caller));
   }
   if (sections.length > 0) {
     blocks.push(capabilityFraming(skills.length > 0, withMcp, subagents.length > 0), ...sections);
@@ -1520,6 +1552,7 @@ export async function* runAgent(
     { handles: images.list(), canEdit, canTransfer },
     input.now,
     canDispatch,
+    input.caller,
   );
   const { tools, builtinNames } = buildAgentTools(
     input.mcpTools,

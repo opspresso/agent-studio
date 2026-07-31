@@ -210,6 +210,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |
 | Slack reply write cadence (stream / edit) | `1s` / `3s` | `src/application/slack/replyStream.ts` |
 | Slack status refresh (Slack expires it at `2m`) | `45s` | `src/application/slack/replyStream.ts` |
+| Slack profile cache (success / failure) | `1h` / `1m` | `src/infrastructure/slack/profileCache.ts` |
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |
 
 There is deliberately **no run-wide context budget** yet: every limit above is per-item or

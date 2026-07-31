@@ -601,13 +601,19 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 
 ```
 GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
-→ 200 { "items": [ { projectName, date, actor, calls, inputTokens, outputTokens, costUsd }, … ] }
+→ 200 { "items": [ { projectName, date, actor, calls, inputTokens, outputTokens, costUsd,
+                     display?: { name, avatarUrl? } }, … ] }
 ```
 
 `actor` is `{kind}:{id}` — `user:a@example.com`, `project-token:owner@example.com` (a token
 authenticates as its owner, so the kind is what keeps a machine's spend apart from that
 person's own runs), `slack:U123`, `a2a:shared-key`. The metric fields are per-model maps,
 exactly as in the summary above.
+
+`display` puts a face on a `slack:` row, resolved through the project's own bot token. It is
+decoration and may be absent for any reason — no Slack bot, a revoked token, a deactivated user,
+a Slack outage — and `actor` is unchanged in every case, because that is the key two callers are
+told apart by.
 
 Owner/admin only, on the same reasoning as traces: project *totals* are open to any
 signed-in user because the catalog is shared, but a breakdown by caller names individuals.

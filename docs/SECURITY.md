@@ -344,6 +344,23 @@ receives the masked message.) Review MCP server registrations on their own terms
 Detection is regex-based and covers emails and phone numbers only. Treat it as best-effort
 masking, not a guarantee. Off is byte-identical to the unfiltered path.
 
+## Caller context
+
+Opt-in per version via `parameters.callerContext`. With it on, a Slack run tells the model who
+is asking — display name, timezone, and the avatar's URL — and labels each speaker when a thread
+holds more than one human.
+
+**A name is PII that `piiFiltering` does not mask.** Its patterns match emails and phone numbers,
+and a person's name matches neither, so anything the caller block carries reaches the model as
+written even with filtering on. That is why the block carries **no email**, and why this is a
+per-version opt-in rather than default behaviour: turning it on is a decision to put real
+people's names into prompts and into whatever the provider logs.
+
+The opt-in gates the lookup as well as the prompt. A version with it off causes no `users.info`
+call at all, so a project that has not opted in never sends a member's id to Slack's profile
+API. Resolved profiles are cached in memory per workspace (an hour; a failure, a minute) and are
+never persisted.
+
 ## Data exposure and retention
 
 - Traces store **bounded metadata only** — character counts, tokens, cost, duration, subagent
