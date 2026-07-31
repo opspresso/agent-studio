@@ -100,7 +100,6 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
     removeAt,
     removeDocumentAt,
     clear,
-    acceptsDocuments: allowDocuments,
   };
 }
 

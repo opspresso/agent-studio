@@ -30,6 +30,30 @@ const BOM = "﻿";
  * the text a reader would see. An empty input is text — the empty string — which
  * is a different answer from "not text", and callers rely on telling them apart.
  */
+/** The high half of a surrogate pair — a character that is only half of one. */
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+/**
+ * Cut `text` to at most `maxChars`, never through a character.
+ *
+ * A JS string is UTF-16, so `slice` at an arbitrary index can land between the
+ * two halves of a non-BMP character — an emoji, CJK ext-B, a maths symbol. What
+ * comes back is then not well-formed text at all: it does not survive a UTF-8
+ * round trip, DynamoDB will not store it as written, and it goes on the wire to
+ * a provider as a lone surrogate escape. Backing off one unit costs a character
+ * and keeps the string a string.
+ */
+export function cutCodePoints(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  const end =
+    maxChars > 0 && isHighSurrogate(text.charCodeAt(maxChars - 1)) ? maxChars - 1 : maxChars;
+  return text.slice(0, Math.max(end, 0));
+}
+
 export function decodeUtf8Text(bytes: Uint8Array): string | null {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (buffer.includes(0)) {

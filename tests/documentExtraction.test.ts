@@ -52,6 +52,26 @@ describe("documentKind", () => {
   });
 });
 
+/** Page 1 blank, page 2 with text — the cover-sheet shape. */
+const PDF_BLANK_FIRST_PAGE = Buffer.from(
+  `%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R 6 0 R]/Count 2>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<<>>>>endobj
+4 0 obj<</Length 0>>stream
+
+endstream
+endobj
+6 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 7 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+7 0 obj<</Length 52>>stream
+BT /F1 12 Tf 20 100 Td (Second page carries the text) Tj ET
+endstream
+endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+trailer<</Root 1 0 R>>`,
+  "latin1",
+);
+
 describe("extracting a document", () => {
   it("reads a PDF's text layer", async () => {
     const result = await documentExtractor.extract({
@@ -139,6 +159,38 @@ describe("extracting a document", () => {
         maxChars: 5_000,
       }),
     ).rejects.toBeInstanceOf(DocumentExtractionError);
+  });
+
+  it("never returns an empty document with a confident page note", async () => {
+    // The failure this guards: a blank leading page (a cover sheet, a scanned
+    // divider) costs nothing, so the page loop keeps it and then breaks on the
+    // page that does not fit. `kept` is non-empty and the old fallback never
+    // ran, so the model got a framed block with nothing in it while the reader
+    // was told "Read the first 1 of 3 pages".
+    const result = await documentExtractor.extract({
+      bytes: PDF_BLANK_FIRST_PAGE,
+      mimeType: "application/pdf",
+      name: "cover.pdf",
+      maxChars: 12,
+    });
+
+    expect(result.text.trim()).not.toBe("");
+    expect(result.note).toContain("itself cut at");
+  });
+
+  it("cuts extracted text without splitting a character", async () => {
+    const result = await documentExtractor.extract({
+      bytes: Buffer.from("a".repeat(9) + "\u{1F600}" + "tail", "utf-8"),
+      mimeType: "text/plain",
+      name: "emoji.txt",
+      maxChars: 10,
+    });
+
+    // A naive slice(0, 10) lands between the two halves of the emoji.
+    expect(result.text.isWellFormed()).toBe(true);
+    expect(result.text).toBe("a".repeat(9));
+    // The note reports what actually came back, not the limit that was asked for.
+    expect(result.note).toContain("first 9");
   });
 
   it("refuses when there is no room left, instead of returning an empty read", async () => {

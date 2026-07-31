@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ContentPart, EngineChunk } from "@/domain/llm/types";
-import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import {
+  buildTransferTranscript,
+  runAgent,
+  type AgentDeps,
+  type RunAgentInput,
+} from "@/application/llm/engine";
 import {
   contentChunk,
   FakeChannel,
@@ -926,5 +931,60 @@ describe("runAgent separates what consecutive turns say", () => {
     ]);
 
     expect(joined(await collect(runAgent(deps(channel), input())))).toBe("하나\n\n둘\n\n셋");
+  });
+});
+
+/**
+ * A turn bigger than the whole transfer budget used to be dropped outright,
+ * which lost the question along with whatever made it long. A turn carrying an
+ * attached document is exactly that shape — the document's text is flattened
+ * into the same line — so every document turn evicted itself and the child never
+ * learned the conversation was about one.
+ */
+describe("buildTransferTranscript with an oversized turn", () => {
+  it("keeps the head of a turn too long to fit, rather than losing it whole", () => {
+    const { text, dropped } = buildTransferTranscript(
+      [
+        { role: "user", content: `[Attached file "q3.pdf"]\n${"x".repeat(30_000)}\nsummarise this` },
+        { role: "assistant", content: "here is the summary" },
+        { role: "user", content: "now transfer" },
+      ],
+      "Assistant",
+    );
+
+    expect(text).toContain("here is the summary");
+    // The oversized turn is present in some form, and says it was cut.
+    expect(text).toContain('[Attached file "q3.pdf"');
+    expect(text).toContain("[truncated]");
+    expect(dropped).toBe(1);
+  });
+
+  it("still omits a turn when what would survive is too short to mean anything", () => {
+    const filler = { role: "assistant" as const, content: "y".repeat(7_800) };
+    const { text, dropped } = buildTransferTranscript(
+      [
+        { role: "user", content: "x".repeat(30_000) },
+        filler,
+        { role: "user", content: "now transfer" },
+      ],
+      "Assistant",
+    );
+
+    // The filler spent the budget; half a sentence would read as a whole one.
+    expect(text).not.toContain("[truncated]");
+    expect(text).toContain("earlier turn(s) omitted");
+    expect(dropped).toBe(1);
+  });
+
+  it("never cuts through a character", () => {
+    const { text } = buildTransferTranscript(
+      [
+        { role: "user", content: "\u{1F600}".repeat(20_000) },
+        { role: "user", content: "now transfer" },
+      ],
+      "Assistant",
+    );
+
+    expect(text.isWellFormed()).toBe(true);
   });
 });

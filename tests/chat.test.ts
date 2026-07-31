@@ -7,7 +7,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
-import { runAndPersist } from "@/application/chat/run";
+import { runAndPersist, userTurnContent } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { sendMessage } from "@/application/chat/sendMessage";
@@ -949,10 +949,13 @@ describe("attached documents", () => {
       // drain so the run completes and persistence happens
     }
 
-    const sent = seenMessages[0] as { content: Array<{ type: string; text: string }> };
-    expect(sent.content[0]?.text).toContain('[Attached file "q3.txt"');
-    expect(sent.content[0]?.text).toContain("Q3 revenue rose 12%");
-    expect(sent.content[1]?.text).toBe("summarise this");
+    const sent = seenMessages[0] as { content: string };
+    // No image, so the turn stays the string every text-only turn has always
+    // been; a documents-only turn must not put a new shape on the wire.
+    expect(typeof sent.content).toBe("string");
+    expect(sent.content).toContain('[Attached file "q3.txt"');
+    expect(sent.content).toContain("Q3 revenue rose 12%");
+    expect(sent.content.endsWith("summarise this")).toBe(true);
 
     const stored = await repo.listMessages("c1");
     const user = stored.find((message) => message.role === "user");
@@ -967,15 +970,14 @@ describe("attached documents", () => {
     const first = message({ seq: 0, role: "user", content: "summarise this" });
     (first as { documents?: unknown }).documents = [{ name: "q3.txt", text: "revenue rose" }];
 
-    const replayed = toEngineMessages([first]).messages[0] as {
-      content: Array<{ type: string; text: string }>;
-    };
+    const replayed = toEngineMessages([first]).messages[0] as { content: string };
 
-    // Same wrapper, same order — otherwise a follow-up turn would put the model
-    // in a different conversation than the one the chat recorded.
-    expect(replayed.content[0]?.text).toContain('[Attached file "q3.txt"');
-    expect(replayed.content[0]?.text).toContain("revenue rose");
-    expect(replayed.content[1]?.text).toBe("summarise this");
+    // Same wrapper, same order, same shape — otherwise a follow-up turn would
+    // put the model in a different conversation than the one the chat recorded.
+    expect(replayed.content).toBe(
+      userTurnContent("summarise this", [], [{ name: "q3.txt", text: "revenue rose" }]),
+    );
+    expect(replayed.content).toContain('[Attached file "q3.txt"');
   });
 
   it("answers, and says why, when the document could not be read", async () => {
