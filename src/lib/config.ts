@@ -177,6 +177,17 @@ export const config = {
   get mcpInternalHostSuffixes(): string[] {
     return parseList(process.env.MCP_INTERNAL_HOST_SUFFIXES ?? "");
   },
+  /**
+   * What a Slack reply carries while it is still being written.
+   *
+   * The default is a built-in emoji, because a custom name a workspace has not
+   * defined renders as its own literal text. A workspace with its own spinner
+   * (`:loading:` and friends are common) names it here. Any string works — it is
+   * appended to the interim message and dropped by the final edit.
+   */
+  get slackLoadingIndicator(): string | undefined {
+    return process.env.SLACK_LOADING_INDICATOR || undefined;
+  },
   /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
   get a2aApiKey(): string | undefined {
     return process.env.A2A_API_KEY || undefined;

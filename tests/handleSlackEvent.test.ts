@@ -656,3 +656,34 @@ describe("handleSlackEvent", () => {
   });
 
 });
+
+/**
+ * The reply is edited in place, so an interim state looks exactly like a
+ * finished one — a reader arriving mid-run sees a complete-looking answer that
+ * stops mid-sentence. The marker is what tells them it is still going, and it
+ * must not survive into the final edit.
+ */
+describe("the in-progress marker on a Slack reply", () => {
+  const chunks = [{ delta: { content: "생각 중" } }, { done: true }] as EngineChunk[];
+
+  it("marks interim edits and is gone from the last one", async () => {
+    const { slack, updates } = makeSlackFake();
+    await handleSlackEvent(makeDeps(chunks, slack), EVENT, BINDING);
+
+    expect(updates.length).toBeGreaterThan(1);
+    expect(updates[0]?.text).toContain(":hourglass_flowing_sand:");
+    expect(updates.at(-1)?.text).not.toContain(":hourglass_flowing_sand:");
+    expect(updates.at(-1)?.text).toContain("생각 중");
+  });
+
+  it("uses whatever the deployment configured instead", async () => {
+    const { slack, updates } = makeSlackFake();
+    const deps = makeDeps(chunks, slack);
+    deps.loadingIndicator = ":loading:";
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(updates[0]?.text).toContain(":loading:");
+    expect(updates[0]?.text).not.toContain(":hourglass_flowing_sand:");
+  });
+});

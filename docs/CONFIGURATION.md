@@ -161,6 +161,7 @@ recovery while a stale success only serves a slightly old tool list.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
+| `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Appended to a Slack reply while it is still being written, then dropped by the final edit. A workspace with its own spinner emoji names it here; the default is built in, because a custom name a workspace has not defined renders as literal text. |
 | `A2A_API_KEY` | unset | **runtime** | Shared key for inbound A2A JSON-RPC (`X-A2A-Key`). Unset disables the `/api/a2a` endpoints entirely. Issue one from `/settings` rather than inventing it. |
 
 Agent Card URLs are built from `PUBLIC_BASE_URL`.

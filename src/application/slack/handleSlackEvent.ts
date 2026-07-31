@@ -40,6 +40,12 @@ export interface SlackEventDeps {
   projects: ProjectRepository;
   versions: VersionRepository;
   slack: SlackClientPort;
+  /**
+   * What marks a reply as still being written. Injected rather than read here:
+   * application code takes its configuration, it does not reach for it. Unset
+   * means {@link DEFAULT_LOADING_INDICATOR}.
+   */
+  loadingIndicator?: string;
 }
 
 /** An attachment on an inbound message event. */
@@ -76,18 +82,21 @@ export interface SlackEventBody {
 
 const UPDATE_INTERVAL_MS = 1000;
 /**
- * Appended to a reply that is still being written.
+ * Appended to a reply that is still being written, when the deployment names
+ * nothing else.
  *
  * An interim update is indistinguishable from a finished answer otherwise — the
  * message is edited in place, so a reader who arrives mid-run sees what looks
  * like a complete reply that stops mid-sentence. This marks it as still going,
  * and the final edit drops it.
  *
- * A built-in emoji on purpose. A custom one (`:loading:`) renders as its own
- * literal name in a workspace that has not defined it, which turns the marker
- * into noise exactly where the reply is meant to look unfinished-but-fine.
+ * A built-in emoji as the default, because it is the only kind that renders
+ * everywhere: a custom name a workspace has not defined shows up as its own
+ * literal text, which is noise exactly where the reply should read as
+ * unfinished-but-fine. A workspace that *has* one says so through
+ * `SLACK_LOADING_INDICATOR`.
  */
-const LOADING_INDICATOR = ":hourglass_flowing_sand:";
+const DEFAULT_LOADING_INDICATOR = ":hourglass_flowing_sand:";
 /** Hard deadline for one agent run, enforced by an abort signal so a run that
  * stops producing chunks entirely (hung provider or tool) still ends and
  * reports a timeout instead of leaving the placeholder up. */
@@ -395,7 +404,7 @@ export async function handleSlackEvent(
             .updateMessage(token, {
               channel: placeholder.channel,
               ts: placeholder.ts,
-              text: `${text} ${LOADING_INDICATOR}`,
+              text: `${text} ${deps.loadingIndicator || DEFAULT_LOADING_INDICATOR}`,
             })
             .catch(() => {});
         }

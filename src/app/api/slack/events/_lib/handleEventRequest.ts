@@ -13,6 +13,7 @@ import type {
   SlackEventBody,
   SlackEventDeps,
 } from "@/application/slack/handleSlackEvent";
+import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 
 const slackEventDeps: SlackEventDeps = {
@@ -20,6 +21,7 @@ const slackEventDeps: SlackEventDeps = {
   projects: projectRepository,
   versions: versionRepository,
   slack: slackClient,
+  loadingIndicator: config.slackLoadingIndicator,
 };
 
 const MAX_SLACK_BODY_BYTES = 1_000_000;
