@@ -769,6 +769,13 @@ chat persistence, replay and the PII filter unchanged.
 | Extraction (a port — it needs a PDF parser) | `DocumentExtractor`, adapter over `unpdf` |
 | Budgets, warnings, and the wrapper the model reads | `src/application/llm/documentParts.ts` |
 | Whether bytes are text at all | `decodeUtf8Text` in `src/shared/utf8Text.ts` |
+| A user turn's body, sent and replayed | `turnContent` in `src/application/llm/documentParts.ts` |
+
+**An all-text turn stays a string.** Only images make a content-parts array necessary, and
+only images are gated on a model declaring it can take them. Wrapping text in parts merely
+because a document is present would put a shape on the wire that no turn used before, for no
+gain — the parts are concatenated anyway — and would give back exactly the channel-independence
+that made text the right choice. `turnContent` owns that, for the send and the replay alike.
 
 Two properties are load-bearing. **Nothing is lost quietly** — a truncated document, one that
 failed to parse, one past the per-turn count: each becomes a `warning`, because a document

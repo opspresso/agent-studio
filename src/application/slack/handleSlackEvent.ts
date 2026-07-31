@@ -12,9 +12,11 @@ import {
 import type { ChatMessageInput, ContentPart } from "@/domain/llm/types";
 import { documentKind, MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
 import {
-  documentParts,
+  readDocuments as readDocumentsFor,
+  turnContent,
   withinDocumentCount,
   type AttachedDocument,
+  type ReadDocument,
 } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
 
@@ -52,6 +54,14 @@ const SUPPORTED_TYPES = new Set<string>(SUPPORTED_IMAGE_TYPES);
  * recent context is worth that cost.
  */
 const HISTORY_IMAGE_LOOKBACK = 10;
+
+/**
+ * There was nothing to ask. Thrown rather than returned so the one `finally`
+ * that stops the status heartbeat still runs, and caught without a warning of
+ * its own: the reason every attachment failed is already in `warnings`, and
+ * "agent run failed" on top of it would blame the run for not starting.
+ */
+class EmptyTurnError extends Error {}
 
 /** One thread turn: the mapped engine message plus the attachments it carried. */
 export interface ThreadTurn {
@@ -198,12 +208,12 @@ async function collectImageParts(
  * A Slack file lives behind `url_private` and needs this bot's token, which is
  * why no URL-fetching MCP tool can stand in for this.
  */
-async function collectDocumentParts(
+async function collectDocuments(
   deps: SlackEventDeps,
   token: string,
   files: SlackEventFile[],
   warnings: string[],
-): Promise<ContentPart[]> {
+): Promise<ReadDocument[]> {
   const candidates = files.filter(
     (file) => documentKind(file.mimetype ?? "", file.name ?? "") !== null,
   );
@@ -239,7 +249,7 @@ async function collectDocumentParts(
       );
     }
   }
-  return documentParts(deps.documents, downloaded, warnings);
+  return readDocumentsFor(deps.documents, downloaded, warnings);
 }
 
 /**
@@ -457,26 +467,16 @@ export async function handleSlackEvent(
   const deadline = AbortSignal.timeout(RUN_TIMEOUT_MS);
   const attached = event.files ?? [];
   const imageParts = attached.length > 0 ? await collectImageParts(deps, token, attached, warnings) : [];
-  const documents =
-    attached.length > 0 ? await collectDocumentParts(deps, token, attached, warnings) : [];
+  const readDocuments =
+    attached.length > 0 ? await collectDocuments(deps, token, attached, warnings) : [];
   // Labelled on the same terms as the history: leaving the newest turn bare
   // while every older one is named invites the model to attribute the question
   // to whoever spoke last.
   const currentSpeaker = event.user ? named.nameByUser?.get(event.user) : undefined;
   const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
-  // An attachment-only message must not become an empty user turn.
-  //
-  // Documents lead: they are the long context, and the question reads better
-  // after the material it is about than before it. Images stay where they were,
-  // after the text.
-  const userContent: string | ContentPart[] =
-    imageParts.length > 0 || documents.length > 0
-      ? [
-          ...documents,
-          ...(askText ? [{ type: "text" as const, text: askText }] : []),
-          ...imageParts,
-        ]
-      : askText;
+  // Assembled by the one function that owns a turn's body, so Slack and a chat
+  // put the same message in front of the model.
+  const userContent: string | ContentPart[] = turnContent(readDocuments, askText, imageParts);
   // Whatever budget the current message left goes to the newest thread images,
   // so "make the picture I sent blue" still has the picture.
   const history = await withHistoryImages(
@@ -492,6 +492,14 @@ export async function handleSlackEvent(
   // on its own clock.
   const stopStatusHeartbeat = sink.keepStatusAlive();
   try {
+    // Nothing survived to ask about. A file-only message whose every attachment
+    // failed — a scanned PDF is the ordinary case — would otherwise dispatch a
+    // user turn with empty content, which providers reject or answer with
+    // whatever an empty prompt evokes. The warnings already say what happened
+    // and they are the whole answer, so the reply is those alone.
+    if (typeof userContent === "string" && userContent === "") {
+      throw new EmptyTurnError();
+    }
     const messages: ChatMessageInput[] = [...history, { role: "user", content: userContent }];
     for await (const chunk of deps.runAgent({
       project,
@@ -540,13 +548,15 @@ export async function handleSlackEvent(
       }
     }
   } catch (error) {
-    warnings.push(
-      deadline.aborted
-        ? "Agent run timed out"
-        : error instanceof Error
-          ? error.message
-          : "agent run failed",
-    );
+    if (!(error instanceof EmptyTurnError)) {
+      warnings.push(
+        deadline.aborted
+          ? "Agent run timed out"
+          : error instanceof Error
+            ? error.message
+            : "agent run failed",
+      );
+    }
   } finally {
     stopStatusHeartbeat();
   }

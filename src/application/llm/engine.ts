@@ -42,6 +42,7 @@ import { renderTemplate } from "./template";
 import { formatRunClock } from "@/shared/date";
 import { mergeGenerators } from "@/shared/mergeGenerators";
 import { log } from "@/shared/logger";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 export const SKILL_TOOL_NAME = "Skill";
 export const TRANSFER_TOOL_NAME = "transfer_to_agent";
@@ -902,6 +903,11 @@ function subagentContextMessage(agentName: string, text: string): string {
  * so it is bounded far below the history budget a top-level run works with.
  */
 const MAX_TRANSFER_CONTEXT_CHARS = 8_000;
+/**
+ * Below this, a truncated turn says nothing useful and is worse than admitting
+ * it was omitted — the child reads half a sentence as if it were the whole one.
+ */
+const MIN_TRANSFER_LINE_CHARS = 500;
 
 /** The readable text of one message; image parts are named, not inlined. */
 function messageText(content: ChatMessageInput["content"]): string {
@@ -954,6 +960,17 @@ export function buildTransferTranscript(
     }
     const line = `${message.role === "user" ? "User" : assistantLabel}: ${text}`;
     if (line.length > budget) {
+      // One turn larger than the whole remaining budget. Dropping it outright
+      // loses the *question* along with whatever made it long — a turn carrying
+      // an attached document is a single line of tens of thousands of
+      // characters, so every such turn used to evict itself entirely and the
+      // child never learned the conversation was about a document at all.
+      // Keeping its head keeps what the turn was about; the budget is spent
+      // either way, so nothing older fits after this.
+      if (budget > MIN_TRANSFER_LINE_CHARS) {
+        lines.push(`${cutCodePoints(line, budget)}…[truncated]`);
+        budget = 0;
+      }
       dropped += 1;
       continue;
     }

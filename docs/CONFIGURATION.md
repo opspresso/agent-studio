@@ -220,6 +220,8 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | Documents per turn / bytes each | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
+| Chat request body (derived from the attachment caps) | ~`84MB` | `src/app/api/_lib/body.ts` |
+| Transfer transcript line kept when a turn overflows | `500` chars minimum | `src/application/llm/engine.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Slack thread turns used as context | `50` | `src/application/slack/handleSlackEvent.ts` |
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |

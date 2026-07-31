@@ -1275,13 +1275,16 @@ describe("a document attached to a Slack message", () => {
       BINDING,
     );
 
-    const parts = seen.at(-1)?.content;
-    expect(Array.isArray(parts)).toBe(true);
-    const texts = (parts as Array<{ type: string; text?: string }>).map((part) => part.text ?? "");
-    expect(texts[0]).toContain('[Attached file "q3.pdf"');
-    expect(texts[0]).toContain("Q3 revenue rose 12%");
+    const content = seen.at(-1)?.content;
+    // A turn with no image stays a plain string: only images make a content-parts
+    // array necessary, and only images are gated on the model accepting one.
+    expect(typeof content).toBe("string");
+    const text = content as string;
+    expect(text).toContain('[Attached file "q3.pdf"');
+    expect(text).toContain("Q3 revenue rose 12%");
     // The long context leads and the ask follows it.
-    expect(texts[1]).toBe("hello");
+    expect(text.indexOf("Q3 revenue rose 12%")).toBeLessThan(text.indexOf("hello"));
+    expect(text.endsWith("hello")).toBe(true);
   });
 
   it("keeps answering, and says why, when the document cannot be read", async () => {
@@ -1318,6 +1321,52 @@ describe("a document attached to a Slack message", () => {
     expect(finalText()).toContain("answer");
     expect(finalText()).toContain("Could not read scan.pdf");
     expect(finalText()).toContain("no extractable text layer");
+  });
+
+  it("does not dispatch an empty turn when a file-only message yields nothing", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, finalText } = makeSlackFake();
+    slack.downloadFile = async () => Buffer.from("scanned", "utf-8");
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+    deps.documents = {
+      extract: async () => {
+        throw new DocumentExtractionError("it has 3 page(s) but no extractable text layer");
+      },
+    };
+    let dispatched = 0;
+    const run = deps.runAgent;
+    deps.runAgent = (input) => {
+      dispatched += 1;
+      return run(input);
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          // No words at all — the file was the whole message.
+          text: "<@U0>",
+          subtype: "file_share",
+          files: [
+            {
+              name: "scan.pdf",
+              mimetype: "application/pdf",
+              url_private_download: "https://files.slack.com/f/scan",
+            },
+          ],
+        },
+      },
+      BINDING,
+    );
+
+    // An empty user turn is rejected by providers or answered from nothing.
+    expect(dispatched).toBe(0);
+    // The reason is the whole answer, and it still reaches the thread.
+    expect(finalText()).toContain("no extractable text layer");
+    expect(finalText()).not.toContain("agent run failed");
   });
 
   it("refuses a document past the size cap without downloading it", async () => {

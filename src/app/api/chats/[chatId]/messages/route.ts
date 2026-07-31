@@ -1,4 +1,5 @@
 import { withAuth } from "@/lib/session";
+import { bodyTooLarge, BodyTooLargeError, readTurnBody } from "@/app/api/_lib/body";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { sendMessage } from "@/application/chat/sendMessage";
 import { ChatError } from "@/application/chat/errors";
@@ -12,8 +13,11 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
 
   let body: unknown;
   try {
-    body = await request.json();
-  } catch {
+    body = await readTurnBody(request);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return bodyTooLarge(error);
+    }
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
 

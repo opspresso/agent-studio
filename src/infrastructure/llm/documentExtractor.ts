@@ -10,14 +10,13 @@
  * holds and no MCP server does.
  */
 
-import { extractText, getDocumentProxy } from "unpdf";
 import {
   DocumentExtractionError,
   type DocumentExtractor,
   type ExtractedDocument,
 } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
-import { decodeUtf8Text } from "@/shared/utf8Text";
+import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
 /** A page break the model can see, since a `note`'s page numbers refer to it. */
 const PAGE_SEPARATOR = "\n\n";
@@ -26,12 +25,20 @@ const PAGE_SEPARATOR = "\n\n";
  * PDF.js refuses a Node `Buffer` outright — "provide binary data as
  * `Uint8Array`" — even though a Buffer is one.
  *
- * This copies rather than taking a view. `Buffer.concat` allocates small results
- * out of a shared 8KB pool, so a view would hand PDF.js a window onto memory
- * other Buffers are using, and PDF.js detaches the array it is given.
+ * It also **detaches** the array it is handed, so what goes in must not be a
+ * window onto memory anything else owns. `Buffer.concat` allocates small results
+ * out of a shared 8KB pool, and a caller is free to pass any view.
+ *
+ * So this copies unless the argument already owns its whole buffer. Testing the
+ * constructor alone was not enough: a plain `new Uint8Array(buffer, offset, n)`
+ * passes that test and is exactly the aliasing case.
  */
 function asPlainBytes(bytes: Uint8Array): Uint8Array {
-  return bytes.constructor === Uint8Array ? bytes : new Uint8Array(bytes);
+  const ownsWholeBuffer =
+    bytes.constructor === Uint8Array &&
+    bytes.byteOffset === 0 &&
+    bytes.byteLength === bytes.buffer.byteLength;
+  return ownsWholeBuffer ? bytes : new Uint8Array(bytes);
 }
 
 /** Turn PDF.js's exception vocabulary into something the attacher can act on. */
@@ -51,6 +58,12 @@ async function pdfToText(bytes: Uint8Array, maxChars: number): Promise<Extracted
   let pages: string[];
   let totalPages: number;
   try {
+    // Loaded here rather than at module scope. `documentExtractor` is wired into
+    // every chat route and every Slack event, and PDF.js is one of the heaviest
+    // things in the tree — a static import would put it in the module graph of
+    // every turn, almost none of which carry a PDF. `container.ts` already reads
+    // its github client this way for the same reason.
+    const { extractText, getDocumentProxy } = await import("unpdf");
     const pdf = await getDocumentProxy(asPlainBytes(bytes));
     const extracted = await extractText(pdf, { mergePages: false });
     pages = extracted.text;
@@ -80,18 +93,26 @@ async function pdfToText(bytes: Uint8Array, maxChars: number): Promise<Extracted
     kept.push(page);
     length += addition;
   }
-  if (kept.length === 0) {
-    // A first page that alone exceeds the budget would otherwise return nothing
-    // at all. A hard cut is worse than a page boundary and far better than
-    // silence.
+
+  const keptText = kept.join(PAGE_SEPARATOR);
+  if (keptText.trim() === "") {
+    // The budget bought nothing readable. Two ways to get here and they end the
+    // same: the first page with text alone exceeds it, or everything that fit
+    // was blank — a cover sheet, a scanned divider — which the loop happily
+    // keeps because an empty page costs nothing. Returning that would be an
+    // empty document carrying a confident "the first 1 of 3 pages", which is
+    // the empty success this whole path exists to refuse.
+    //
+    // Some page has text: the all-blank document threw above.
+    const index = cleaned.findIndex((page) => page !== "");
     return {
-      text: cleaned[0]!.slice(0, maxChars),
-      note: `page 1 of ${totalPages}, itself cut at ${maxChars.toLocaleString("en-US")} characters`,
+      text: cutCodePoints(cleaned[index]!, maxChars),
+      note: `page ${index + 1} of ${totalPages}, itself cut at ${maxChars.toLocaleString("en-US")} characters`,
     };
   }
   return kept.length < cleaned.length
-    ? { text: kept.join(PAGE_SEPARATOR), note: `the first ${kept.length} of ${totalPages} pages` }
-    : { text: kept.join(PAGE_SEPARATOR) };
+    ? { text: keptText, note: `the first ${kept.length} of ${totalPages} pages` }
+    : { text: keptText };
 }
 
 function plainToText(bytes: Uint8Array, maxChars: number): ExtractedDocument {
@@ -106,9 +127,10 @@ function plainToText(bytes: Uint8Array, maxChars: number): ExtractedDocument {
   if (text.length <= maxChars) {
     return { text };
   }
+  const cut = cutCodePoints(text, maxChars);
   return {
-    text: text.slice(0, maxChars),
-    note: `the first ${maxChars.toLocaleString("en-US")} of ${text.length.toLocaleString("en-US")} characters`,
+    text: cut,
+    note: `the first ${cut.length.toLocaleString("en-US")} of ${text.length.toLocaleString("en-US")} characters`,
   };
 }
 

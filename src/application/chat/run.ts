@@ -4,8 +4,8 @@ import type { Chat, ChatMessageDocument, ChatMessageImage } from "@/domain/chat/
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChannelToolCall, ContentPart, EngineChunk } from "@/domain/llm/types";
 import {
-  documentContentParts,
   readDocuments,
+  turnContent,
   type ReadDocument,
 } from "@/application/llm/documentParts";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
@@ -32,20 +32,14 @@ export function userTurnContent(
   images: AttachedImage[],
   documents: ReadDocument[] = [],
 ): string | ContentPart[] {
-  if (images.length === 0 && documents.length === 0) {
-    return content;
-  }
-  // Documents lead, then the question, then images — the order a replay of this
-  // same turn rebuilds (see `messageMapping`), so the first send and every
-  // later one put the model in the same conversation.
-  return [
-    ...documentContentParts(documents),
-    ...(content ? [{ type: "text" as const, text: content }] : []),
-    ...images.map((image) => ({
+  return turnContent(
+    documents,
+    content,
+    images.map((image) => ({
       type: "image_url" as const,
       image_url: { url: imageDataUrl(image) },
     })),
-  ];
+  );
 }
 
 /**

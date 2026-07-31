@@ -5,7 +5,7 @@ import type {
   UserChatMessage,
 } from "@/domain/chat/types";
 import type { ChannelToolCall, ChatMessageInput } from "@/domain/llm/types";
-import { framedDocument } from "@/application/llm/documentParts";
+import { turnContent } from "@/application/llm/documentParts";
 
 /**
  * How many earlier assistant turns replay their tool calls and results. Without
@@ -43,27 +43,18 @@ const MAX_HISTORY_MESSAGES = 200;
  * that uploaded it had the bytes in hand.
  */
 function userMessage(message: UserChatMessage): ChatMessageInput {
-  const images = message.images ?? [];
-  const documents = message.documents ?? [];
-  if (images.length === 0 && documents.length === 0) {
-    return { role: "user", content: message.content };
-  }
   return {
     role: "user",
-    // The same order the turn was sent in, and wrapped by the same function:
-    // a replay that framed a document differently would be a different turn
-    // than the one this chat recorded.
-    content: [
-      ...documents.map((document) => ({
-        type: "text" as const,
-        text: framedDocument(document.name, document.text, document.note),
-      })),
-      ...(message.content ? [{ type: "text" as const, text: message.content }] : []),
-      ...images.map((image) => ({
+    // Assembled by the same function the turn was sent with: a replay shaped
+    // differently would be a different turn than the one this chat recorded.
+    content: turnContent(
+      message.documents ?? [],
+      message.content,
+      (message.images ?? []).map((image) => ({
         type: "image_url" as const,
         image_url: { url: image.url },
       })),
-    ],
+    ),
   };
 }
 

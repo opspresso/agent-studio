@@ -165,3 +165,36 @@ export async function documentParts(
 ): Promise<ContentPart[]> {
   return documentContentParts(await readDocuments(extractor, documents, warnings));
 }
+
+/**
+ * A user turn's body: documents first, then the question, then images.
+ *
+ * One owner because three surfaces build it — Slack, a chat turn being sent, and
+ * the same chat turn replayed from storage — and a replay assembled differently
+ * from the send would put the model in a conversation the chat did not record.
+ * Documents lead because they are the long context and the question reads better
+ * after the material it is about; images stay after the text, where they were.
+ *
+ * **An all-text turn stays a string.** Only images make a content-parts array
+ * necessary, and only images are gated on a model declaring it can take them.
+ * Wrapping text in parts merely because a document is present would put a shape
+ * on the wire that no turn used before — for no gain, since the parts are
+ * concatenated anyway — and this codebase reaches four kinds of endpoint that do
+ * not have to agree about accepting it. The whole reason documents are text
+ * here is that text asks nothing of the channel; sending it in a novel envelope
+ * would give that back.
+ */
+export function turnContent(
+  documents: ReadDocument[],
+  text: string,
+  images: ContentPart[] = [],
+): string | ContentPart[] {
+  const parts: ContentPart[] = [
+    ...documentContentParts(documents),
+    ...(text ? [{ type: "text" as const, text }] : []),
+  ];
+  if (images.length === 0) {
+    return parts.map((part) => (part.type === "text" ? part.text : "")).join("\n\n");
+  }
+  return [...parts, ...images];
+}
