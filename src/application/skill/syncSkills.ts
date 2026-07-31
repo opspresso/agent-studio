@@ -1,6 +1,7 @@
 import type { Skill, SkillFile, SkillsRepoSnapshot } from "@/domain/skill/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { SkippedAttachment } from "@/domain/skill/files";
+import { firstHeadingOrLine, parseFrontmatter } from "@/shared/frontmatter";
 
 export interface ParsedSkillDoc {
   description: string;
@@ -8,42 +9,12 @@ export interface ParsedSkillDoc {
 }
 
 /**
- * Parse a SKILL.md document: an optional YAML frontmatter block provides the
- * description; the remainder is the skill content. Only flat `key: value`
- * frontmatter lines are recognized.
+ * Parse a SKILL.md document: the frontmatter block's `description` names the
+ * skill, and the remainder is the content the model loads.
  */
 export function parseSkillDoc(raw: string): ParsedSkillDoc {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);
-  if (!match?.[1]) {
-    return { description: firstHeadingOrLine(raw), body: raw.trim() };
-  }
-  const fields: Record<string, string> = {};
-  const lines = match[1].split(/\r?\n/);
-  for (let i = 0; i < lines.length; i += 1) {
-    const kv = /^([A-Za-z_-]+):\s*(.*)$/.exec((lines[i] ?? "").trim());
-    if (!kv?.[1] || kv[2] === undefined) {
-      continue;
-    }
-    let value = kv[2].replace(/^["']|["']$/g, "");
-    // YAML folded/literal scalars (`key: >` or `key: |`): consume the
-    // following indented lines and join them with spaces.
-    if (value === ">" || value === "|" || value === ">-" || value === "|-") {
-      const folded: string[] = [];
-      while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1] ?? "")) {
-        folded.push((lines[i + 1] ?? "").trim());
-        i += 1;
-      }
-      value = folded.join(" ");
-    }
-    fields[kv[1].toLowerCase()] = value;
-  }
-  const body = raw.slice(match[0].length).trim();
+  const { fields, body } = parseFrontmatter(raw);
   return { description: fields.description ?? firstHeadingOrLine(body), body };
-}
-
-function firstHeadingOrLine(text: string): string {
-  const firstLine = text.split(/\r?\n/).find((l) => l.trim() !== "") ?? "";
-  return firstLine.replace(/^#+\s*/, "").slice(0, 200);
 }
 
 export interface SyncResult {

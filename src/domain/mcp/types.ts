@@ -230,6 +230,14 @@ export interface McpServer {
    * never sent to the model, unlike a skill's content.
    */
   content?: string;
+  /**
+   * Provenance marker for entries created by a repo sync, e.g.
+   * `"github:opspresso/agent-tools"`. Recorded once at creation and never
+   * revisited: unlike a skill, a synced entry is not owned by the repository
+   * afterwards — the stored row wins every later sync — so this says where the
+   * entry came from, not who may change it.
+   */
+  source?: string;
   /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
   headers: Record<string, string>;
   createdAt: string;

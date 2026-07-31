@@ -207,6 +207,13 @@ export const config = {
   get skillsRepoBranch(): string {
     return process.env.SKILLS_REPO_BRANCH || "main";
   },
+  /** GitHub tools source repo, e.g. "opspresso/agent-tools". */
+  get toolsRepo(): string | undefined {
+    return process.env.TOOLS_REPO || undefined;
+  },
+  get toolsRepoBranch(): string {
+    return process.env.TOOLS_REPO_BRANCH || "main";
+  },
   get githubToken(): string | undefined {
     return process.env.GITHUB_TOKEN || undefined;
   },

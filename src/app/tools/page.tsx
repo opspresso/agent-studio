@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
-import { createMcp, listMcps, type McpServer } from "./api";
+import {
+  createMcp,
+  listMcps,
+  syncTools,
+  type McpServer,
+  type SkippedTool,
+  type ToolSyncResult,
+} from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {
   Alert,
@@ -31,6 +38,8 @@ export default function ToolsPage() {
   const [error, setError] = useState<string | null>(null);
   const [registerOpened, register] = useDisclosure(false);
   const [managedOpened, managed] = useDisclosure(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<ToolSyncResult | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -60,12 +69,33 @@ export default function ToolsPage() {
           </Text>
         </div>
         <Group gap="xs">
+          <Button
+            variant="default"
+            loading={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              setSyncResult(null);
+              setError(null);
+              try {
+                setSyncResult(await syncTools());
+                await refresh();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Sync failed");
+              } finally {
+                setSyncing(false);
+              }
+            }}
+          >
+            Sync from GitHub
+          </Button>
           <Button variant="default" onClick={managed.open}>
             Run managed
           </Button>
           <Button onClick={register.open}>Register MCP</Button>
         </Group>
       </Group>
+
+      {syncResult && <SyncSummary result={syncResult} />}
 
       {error && (
         <Alert color="red" variant="light">
@@ -111,6 +141,40 @@ export default function ToolsPage() {
         }}
       />
     </Stack>
+  );
+}
+
+/** What a skip means, in the words an operator can act on. */
+const SKIP_REASONS: Record<SkippedTool["reason"], string> = {
+  exists: "already registered — the stored entry wins",
+  "missing-url": "no url in the frontmatter",
+  "invalid-url": "url refused",
+  "bad-name": "directory name is not a usable entry name",
+};
+
+/**
+ * The outcome of a sync, skips included.
+ *
+ * A count alone would read as success: `exists` is the ordinary case, but
+ * `invalid-url` is a server nobody can call and `missing-url` is a document
+ * someone wrote that produced nothing. Those are named, with their reason.
+ */
+function SyncSummary({ result }: { result: ToolSyncResult }) {
+  const notable = result.skipped.filter((skip) => skip.reason !== "exists");
+  const alreadyThere = result.skipped.length - notable.length;
+  return (
+    <Alert color={notable.length > 0 ? "yellow" : "teal"} variant="light">
+      <Text fz="sm">
+        Registered {result.created.length} · already there {alreadyThere}
+        {notable.length > 0 ? ` · skipped ${notable.length}` : ""}
+      </Text>
+      {notable.map((skip) => (
+        <Text key={skip.name} fz="xs" mt={4}>
+          {skip.name} — {SKIP_REASONS[skip.reason]}
+          {skip.detail ? `: ${skip.detail}` : ""}
+        </Text>
+      ))}
+    </Alert>
   );
 }
 

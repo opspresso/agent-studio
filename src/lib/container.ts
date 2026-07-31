@@ -53,6 +53,7 @@ import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
+import { syncToolsFromSnapshot } from "@/application/mcp/syncTools";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { CostAlertSlack } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
@@ -63,6 +64,7 @@ import {
   getLlmProviderConfigs,
   getPublicBaseUrl,
   getSkillsRepoConfig,
+  getToolsRepoConfig,
 } from "./runtime-settings";
 
 /**
@@ -200,6 +202,19 @@ export const syncSkillsFromRepo = async (
 ) => {
   const { fetchSkillsRepoSnapshot } = await import("@/infrastructure/github/skillsRepoClient");
   return syncSkillsFromSnapshot(skillRepository, await fetchSkillsRepoSnapshot(repoConfig));
+};
+
+/**
+ * Pull the tools repo and register every TOOL.md that is not registered yet.
+ * Assembled here for the same reason the skills sync is, and it goes through
+ * `mcpUseCases` rather than the repository so a synced entry faces the same URL
+ * guard and header encryption a typed one does.
+ */
+export const syncToolsFromRepo = async (
+  repoConfig: Awaited<ReturnType<typeof getToolsRepoConfig>>,
+) => {
+  const { fetchToolsRepoSnapshot } = await import("@/infrastructure/github/toolsRepoClient");
+  return syncToolsFromSnapshot(mcpUseCases, await fetchToolsRepoSnapshot(repoConfig));
 };
 
 /** A2A exposure: repositories plus the card renderer. */

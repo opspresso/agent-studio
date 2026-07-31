@@ -16,6 +16,8 @@ export interface CreateMcpInput {
   url: string;
   description?: string;
   content?: string;
+  /** Provenance for a sync-created entry; absent for one an operator registered. */
+  source?: string;
   headers: Record<string, string>;
 }
 
@@ -69,6 +71,7 @@ export function createMcpUseCases(
         url: input.url,
         description: input.description,
         content: input.content,
+        source: input.source,
         headers: cipher.encryptHeaders(input.headers),
         createdAt: now,
         updatedAt: now,

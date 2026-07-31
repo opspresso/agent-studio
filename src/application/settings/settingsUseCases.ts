@@ -46,6 +46,13 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
     env: () => env.SKILLS_REPO_BRANCH || undefined,
     defaultValue: "main",
   },
+  { key: "toolsRepo", secret: false, env: () => env.TOOLS_REPO || undefined },
+  {
+    key: "toolsRepoBranch",
+    secret: false,
+    env: () => env.TOOLS_REPO_BRANCH || undefined,
+    defaultValue: "main",
+  },
   { key: "githubToken", secret: true, env: () => env.GITHUB_TOKEN || undefined },
   { key: "a2aApiKey", secret: true, env: () => env.A2A_API_KEY || undefined },
   {

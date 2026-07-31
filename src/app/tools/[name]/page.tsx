@@ -233,6 +233,13 @@ export default function McpDetailPage() {
           <Text fz="xs" c="dimmed" mt={4}>
             {server.url}
           </Text>
+          {server.source && (
+            // Where the entry came from, not who owns it: a repo sync only ever
+            // creates, so everything on this page is editable and stays edited.
+            <Text fz="xs" c="dimmed" mt={4}>
+              registered from {server.source}
+            </Text>
+          )}
           {server.runtime === "managed" && (
             <Group gap={6} mt="xs" fz="xs" wrap="wrap">
               <Text fz="xs" c="dimmed">

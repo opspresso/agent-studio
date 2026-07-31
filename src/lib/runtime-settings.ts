@@ -130,6 +130,19 @@ export async function getSkillsRepoConfig(): Promise<{
   };
 }
 
+export async function getToolsRepoConfig(): Promise<{
+  repo: string | undefined;
+  branch: string;
+  token: string | undefined;
+}> {
+  const stored = await loadSettings();
+  return {
+    repo: stored?.toolsRepo ?? config.toolsRepo,
+    branch: stored?.toolsRepoBranch ?? config.toolsRepoBranch,
+    token: stored?.githubToken !== undefined ? decryptSecret(stored.githubToken) : config.githubToken,
+  };
+}
+
 export async function getA2aApiKey(): Promise<string | undefined> {
   const stored = (await loadSettings())?.a2aApiKey;
   return stored !== undefined ? decryptSecret(stored) : config.a2aApiKey;

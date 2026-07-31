@@ -20,6 +20,7 @@ function fromItem(item: Record<string, unknown>): McpServer {
     containerPort: item.containerPort as number | undefined,
     description: item.description as string | undefined,
     content: item.content as string | undefined,
+    source: item.source as string | undefined,
     headers: (item.headers as Record<string, string> | undefined) ?? {},
     auth: item.auth as McpServerAuth | undefined,
     createdAt: item.createdAt as string,
@@ -48,6 +49,7 @@ function toItem(server: McpServer): Record<string, unknown> {
     containerPort: server.containerPort,
     description: server.description,
     content: server.content,
+    source: server.source,
     headers: server.headers,
     // Absent for a static-header server; `clearAuth` relies on writing it away.
     auth: server.auth,
