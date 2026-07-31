@@ -161,6 +161,12 @@ project-specific manifest, and events on that project's URL are verified with it
 secret and always run that project — no selector needed. Replies stream into one message, a
 mention inside a thread carries the thread as context, and image attachments are analyzed.
 
+With Slack's **Agents** feature enabled, the app answers that surface natively: opening the
+agent container shows the project's suggested prompts (up to four, edited in the same settings
+panel), progress appears as Slack's own status line naming each tool rather than as edits to
+the answer, a new thread is titled after the question that opened it, and the reply is a real
+Slack text stream — falling back to editing one message where streaming is unavailable.
+
 ### A2A (Agent2Agent)
 
 Both directions of the [A2A protocol](https://a2a-protocol.org) are supported. **Inbound**:

@@ -661,15 +661,17 @@ does not exist.
 Suggested prompts are per-project configuration (`SlackIntegration.suggestedPrompts`, at most
 four — `src/domain/slack/types.ts` owns the shape and the cap). They reach Slack twice: in the
 generated manifest's `features.agent_view`, and at runtime through
-`assistant.threads.setSuggestedPrompts`, so changing them takes effect without re-applying the
-manifest.
+`assistant.threads.setSuggestedPrompts`. The runtime path is what lets a prompt change take
+effect on its own, but it depends on the manifest: an app whose Slack config predates the
+`app_home_opened` subscription never receives the event, so its prompts only ever come from the
+manifest and changing them means applying the manifest again.
 
-A mention inside a thread carries the
-thread (its 50 most recent turns) as multi-turn context. Image attachments are downloaded with
-the bot token — the mention's own images first, then whatever budget is left goes to the newest
-images in the 10 most recent turns of the thread, so "make the picture I sent blue" still has
-the picture without re-fetching a long thread's whole history. Only humans' pictures count; the
-bot's own uploads are skipped, and anything skipped is reported in the reply.
+A mention inside a thread carries the thread (its 50 most recent turns) as multi-turn context.
+Image attachments are downloaded with the bot token — the mention's own images first, then
+whatever budget is left goes to the newest images in the 10 most recent turns of the thread, so
+"make the picture I sent blue" still has the picture without re-fetching a long thread's whole
+history. Only humans' pictures count; the bot's own uploads are skipped, and anything skipped is
+reported in the reply.
 
 Events are deduplicated exactly-once via `slackEventRepository.claim` (a conditional put) whose
 claim is a **lease** settled by `settle` — an instance that dies mid-processing leaves a
