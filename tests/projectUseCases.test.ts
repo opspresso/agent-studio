@@ -1250,3 +1250,76 @@ describe("chatMessageSchema content parts", () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+/**
+ * A binding's tool narrowing, from the API in to the API out.
+ *
+ * Three separate places rebuilt an McpBinding field by field — the write path,
+ * the response view, and the repository read — and each of them dropped `tools`
+ * on its own. Fixing one changed nothing observable, because the next one
+ * dropped it again. So this covers the round trip rather than any single hop:
+ * that is the only shape of test that would have failed.
+ */
+describe("a version's MCP tool narrowing survives a round trip", () => {
+  const TOOLS = ["search", "fetch"];
+
+  it("is stored by create and comes back on the view", async () => {
+    const versions = makeVersionRepo();
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+
+    const created = await createVersion(
+      versions,
+      projects,
+      "p",
+      { ...versionInput(), mcpList: [{ name: "real-mcp", tools: TOOLS }] },
+      "owner@x.com",
+    );
+
+    expect(created.mcpList).toEqual([{ name: "real-mcp", tools: TOOLS }]);
+    expect(toVersionView(created).mcpList).toEqual([{ name: "real-mcp", tools: TOOLS }]);
+  });
+
+  it("is kept by update", async () => {
+    const versions = makeVersionRepo();
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+    await createVersion(
+      versions,
+      projects,
+      "p",
+      { ...versionInput(), versionName: "1", mcpList: [{ name: "real-mcp" }] },
+      "owner@x.com",
+    );
+
+    const updated = await updateVersion(
+      versions,
+      projects,
+      "p",
+      "1",
+      { mcpList: [{ name: "real-mcp", tools: TOOLS }] },
+      "owner@x.com",
+    );
+
+    expect(updated.mcpList).toEqual([{ name: "real-mcp", tools: TOOLS }]);
+  });
+
+  it("survives alongside a header override, and masking does not eat it", async () => {
+    const versions = makeVersionRepo();
+    const projects = makeProjectRepo([projectFixture("p", { projectType: "agent" })]);
+
+    const created = await createVersion(
+      versions,
+      projects,
+      "p",
+      {
+        ...versionInput(),
+        mcpList: [{ name: "real-mcp", tools: TOOLS, headers: { Authorization: "Bearer secret" } }],
+      },
+      "owner@x.com",
+    );
+
+    expect(created.mcpList[0]?.tools).toEqual(TOOLS);
+    // The view masks the header; the narrowing beside it is not a secret and
+    // must be reported as it is.
+    expect(toVersionView(created).mcpList[0]?.tools).toEqual(TOOLS);
+  });
+});

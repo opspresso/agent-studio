@@ -167,16 +167,19 @@ function resolveMcpBindings(
 ): McpBinding[] {
   const storedByName = new Map(existing.map((binding) => [binding.name, binding.headers ?? {}]));
   return next.map((binding) => {
-    if (!binding.headers || Object.keys(binding.headers).length === 0) {
-      return { name: binding.name };
+    // Carry the binding forward and replace only `headers`. Rebuilding it from
+    // `{ name, headers }` is what silently dropped `tools`: narrowing a server's
+    // tool list saved with a 200 and changed nothing, because the field never
+    // reached storage. Anything added to McpBinding survives this by default now.
+    const { headers: submitted, ...rest } = binding;
+    if (!submitted || Object.keys(submitted).length === 0) {
+      return rest;
     }
     const headers = cipher.mergeHeaderOverrideUpdate(
       storedByName.get(binding.name) ?? {},
-      binding.headers,
+      submitted,
     );
-    return Object.keys(headers).length > 0
-      ? { name: binding.name, headers }
-      : { name: binding.name };
+    return Object.keys(headers).length > 0 ? { ...rest, headers } : rest;
   });
 }
 
@@ -189,9 +192,11 @@ function resolveMcpBindings(
 export function toVersionView(cipher: SecretCipher, version: Version): Version {
   return {
     ...version,
+    // Masked in place, for the same reason as the write path above: naming the
+    // fields to keep is how the ones nobody thought of get lost.
     mcpList: version.mcpList.map((binding) =>
       binding.headers
-        ? { name: binding.name, headers: cipher.maskHeaderOverrides(binding.headers) }
+        ? { ...binding, headers: cipher.maskHeaderOverrides(binding.headers) }
         : binding,
     ),
   };
