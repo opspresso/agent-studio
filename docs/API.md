@@ -365,11 +365,23 @@ Both sync endpoints answer `GET` to a session and require admin access for `POST
 test operations require a session and apply the same SSRF guard used during registration and
 dispatch.
 
-The two syncs differ in who wins. `/api/skills/sync` overwrites: the repository is the source
-of truth for a synced skill. `/api/mcps/sync` only creates — an entry that already exists is
-returned under `skipped` with reason `exists` and is not modified, because a registry row
-carries headers and an OAuth block the repository cannot hold. `invalid-url` is the outbound
-guard's refusal, carried through in `detail`.
+`/api/skills/sync` overwrites: the repository is the source of truth for a synced skill.
+
+`/api/mcps/sync` splits it by field. **The repository owns the document** — `url`,
+`description` and `content` are replaced from the TOOL.md — and **the registry owns everything
+else**: encrypted headers, a discovered OAuth block, a managed entry's provisioned address and
+image are never touched. A field the document does not carry leaves the stored one alone, so
+an empty body does not erase notes. `url` is required only for a name the registry does not
+already hold.
+
+The result is `{ repo, commitSha, created, updated, unchanged, skipped }`. An `updated` entry
+names the `fields` that changed and carries `authDropped` when its address moved — the OAuth
+block was discovered from the old address and described a server the entry no longer points
+at, so Discover has to be re-run before any project can connect. Skip reasons: `missing-url`,
+`invalid-url` (the outbound guard's refusal, carried through in `detail`), `bad-name`,
+`managed-url` (a managed entry's address comes from the provisioner, so the document's was
+ignored while its other fields synced) and `conflict` (the name was taken mid-sync; the next
+run picks it up).
 
 Per-project Slack configuration uses these endpoints:
 

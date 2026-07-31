@@ -155,16 +155,17 @@ recovery while a stale success only serves a slightly old tool list.
 |---|---|---|---|
 | `SKILLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `skills/<name>/SKILL.md`; the parent directory name is the skill slug. |
 | `SKILLS_REPO_BRANCH` | `main` | **runtime** | |
-| `TOOLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `tools/<name>/TOOL.md`; the parent directory name is the registry entry name. Frontmatter carries `url` and `description`; the body becomes the entry's operator notes. |
+| `TOOLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `tools/<name>/TOOL.md`; the parent directory name is the registry entry name. Frontmatter carries `url` and `description`; the body becomes the entry's operator notes. A sync replaces those three fields on an entry that already exists and touches nothing else — headers and OAuth stay put. |
 | `TOOLS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access. Shared by both syncs. |
 
-The two syncs have **opposite ownership**, which is the thing to know before editing either
+The two syncs divide ownership differently, which is the thing to know before editing either
 side. A skill row is entirely reconstructible from its document, so the repository is its
-source of truth and a sync overwrites. An MCP entry is not: it carries encrypted headers, an
-OAuth block discovered from the server's own metadata, and whatever an admin corrected. So a
-tools sync only ever **creates** — an existing name is left untouched and reported as skipped.
-The repository declares what should exist; it does not own what already does.
+source of truth and a sync overwrites the whole row. An MCP entry is not: it carries encrypted
+headers, an OAuth block discovered from the server's own metadata, and — for a managed entry —
+an address the provisioner bound. So a tools sync is authoritative **per field**: `url`,
+`description` and `content` come from the document every time, and nothing else is touched.
+The repository owns what a TOOL.md can say; the registry owns what git must never hold.
 
 A cluster-internal URL is registerable this way only if its host is covered by
 `MCP_INTERNAL_HOST_SUFFIXES` — the sync faces the same outbound guard a typed URL does, and a
