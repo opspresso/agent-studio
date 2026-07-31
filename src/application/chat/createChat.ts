@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
-import type { AttachedImage, ChatDeps } from "./deps";
+import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatValidationError } from "./errors";
 import {
   resolveVersion,
   runAndPersist,
+  readMessageDocuments,
   storeMessageImages,
   userTurnContent,
   withLeadingWarnings,
@@ -17,6 +18,7 @@ export interface CreateChatInput {
   firstMessage: string;
   /** Images the user attached to the first message. */
   images?: AttachedImage[];
+  documents?: AttachedDocumentInput[];
   userEmail: string;
   signal?: AbortSignal;
 }
@@ -62,12 +64,14 @@ export async function createChat(
   try {
     const attachments = input.images ?? [];
     const uploaded = await storeMessageImages(deps, attachments);
+    const read = await readMessageDocuments(deps, input.documents ?? []);
     const userMessage: ChatMessage = {
       chatId: chat.chatId,
       seq: await deps.chats.reserveMessageSeq(chat.chatId),
       role: "user",
       content: input.firstMessage,
       ...(uploaded.stored.length > 0 ? { images: uploaded.stored } : {}),
+      ...(read.stored.length > 0 ? { documents: read.stored } : {}),
       createdAt: now,
     };
     await deps.chats.appendMessage(userMessage);
@@ -77,7 +81,9 @@ export async function createChat(
       version,
       // The attachment bytes go straight to the engine; the stored URLs are for
       // replay on later turns.
-      messages: [{ role: "user", content: userTurnContent(input.firstMessage, attachments) }],
+      messages: [
+        { role: "user", content: userTurnContent(input.firstMessage, attachments, read.stored) },
+      ],
       actor: { kind: "user", id: input.userEmail },
       signal: input.signal,
     });
@@ -85,7 +91,12 @@ export async function createChat(
     return {
       chat,
       // An attachment that could not be stored is said so before the answer.
-      stream: runAndPersist(deps, chat, withLeadingWarnings(uploaded.warnings, source), runId),
+      stream: runAndPersist(
+        deps,
+        chat,
+        withLeadingWarnings([...uploaded.warnings, ...read.warnings], source),
+        runId,
+      ),
     };
   } catch (error) {
     await deps.chats.releaseRun(chat.chatId, runId);

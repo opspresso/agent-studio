@@ -1,9 +1,14 @@
 import type { Project, Version } from "@/domain/project/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
-import type { Chat, ChatMessageImage } from "@/domain/chat/types";
+import type { Chat, ChatMessageDocument, ChatMessageImage } from "@/domain/chat/types";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChannelToolCall, ContentPart, EngineChunk } from "@/domain/llm/types";
-import type { AttachedImage, ChatDeps } from "./deps";
+import {
+  documentContentParts,
+  readDocuments,
+  type ReadDocument,
+} from "@/application/llm/documentParts";
+import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { log } from "@/shared/logger";
 
 /**
@@ -25,17 +30,50 @@ export async function resolveVersion(
 export function userTurnContent(
   content: string,
   images: AttachedImage[],
+  documents: ReadDocument[] = [],
 ): string | ContentPart[] {
-  if (images.length === 0) {
+  if (images.length === 0 && documents.length === 0) {
     return content;
   }
+  // Documents lead, then the question, then images — the order a replay of this
+  // same turn rebuilds (see `messageMapping`), so the first send and every
+  // later one put the model in the same conversation.
   return [
+    ...documentContentParts(documents),
     ...(content ? [{ type: "text" as const, text: content }] : []),
     ...images.map((image) => ({
       type: "image_url" as const,
       image_url: { url: imageDataUrl(image) },
     })),
   ];
+}
+
+/**
+ * Read attached documents into the text this turn carries and stores.
+ *
+ * The bytes are read exactly once. What comes back is both what the model sees
+ * now and what the chat keeps, which is what lets a follow-up question still
+ * have the document — the file itself is never stored, because a chat message is
+ * one DynamoDB item and a 10MB PDF does not fit in one.
+ */
+export async function readMessageDocuments(
+  deps: ChatDeps,
+  documents: AttachedDocumentInput[],
+): Promise<{ stored: ChatMessageDocument[]; warnings: string[] }> {
+  if (documents.length === 0) {
+    return { stored: [], warnings: [] };
+  }
+  const warnings: string[] = [];
+  const stored = await readDocuments(
+    deps.documents,
+    documents.map((document) => ({
+      bytes: Buffer.from(document.b64, "base64"),
+      mimeType: document.mimeType,
+      name: document.name,
+    })),
+    warnings,
+  );
+  return { stored, warnings };
 }
 
 /**

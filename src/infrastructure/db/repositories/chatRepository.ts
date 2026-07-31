@@ -12,7 +12,13 @@ import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { ChatRepository } from "@/domain/chat/repository";
-import type { Chat, ChatMessage, ChatMessageImage, ChatRole } from "@/domain/chat/types";
+import type {
+  Chat,
+  ChatMessage,
+  ChatMessageDocument,
+  ChatMessageImage,
+  ChatRole,
+} from "@/domain/chat/types";
 import type { ChannelToolCall } from "@/domain/llm/types";
 
 const CHAT_ENTITY = "Chat";
@@ -99,10 +105,16 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
       images: item.images as ChatMessageImage[] | undefined,
     };
   }
-  // A user turn carries images too — what the user attached. Reading them back
-  // is what makes an attachment survive a reload; without it the upload
-  // succeeds, the item holds the urls, and the chat still shows nothing.
-  return { ...base, role: "user", images: item.images as ChatMessageImage[] | undefined };
+  // A user turn carries what the user attached — images, and the text read out
+  // of any documents. Reading them back is what makes an attachment survive a
+  // reload; without it the write succeeds, the item holds them, and the chat
+  // still shows nothing.
+  return {
+    ...base,
+    role: "user",
+    images: item.images as ChatMessageImage[] | undefined,
+    documents: item.documents as ChatMessageDocument[] | undefined,
+  };
 }
 
 export const chatRepository: ChatRepository = {

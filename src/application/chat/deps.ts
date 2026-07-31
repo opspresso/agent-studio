@@ -3,6 +3,7 @@ import type { ChatRepository } from "@/domain/chat/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 
 export interface AgentRunParams {
   project: Project;
@@ -26,6 +27,17 @@ export interface AttachedImage {
   mimeType: string;
 }
 
+/**
+ * A document the user attached to a turn, as inline bytes. The name comes with
+ * it because it is both what the reader sees and, for a file whose declared type
+ * is `application/octet-stream`, the only thing that says what it is.
+ */
+export interface AttachedDocumentInput {
+  b64: string;
+  mimeType: string;
+  name: string;
+}
+
 export interface ChatDeps {
   chats: ChatRepository;
   projects: ProjectRepository;
@@ -33,4 +45,6 @@ export interface ChatDeps {
   runAgent: AgentRunner;
   /** Unset skips image persistence — images then render only during the live stream. */
   storeImage?: ImageStore;
+  /** Reads an attached document into the text the turn carries and stores. */
+  documents: DocumentExtractor;
 }

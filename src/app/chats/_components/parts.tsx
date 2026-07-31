@@ -17,11 +17,12 @@ import {
   Typography,
   UnstyledButton,
 } from "@mantine/core";
-import { IconChevronDown, IconChevronRight, IconSend } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconFileText, IconSend } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
 import { imageDataUrl } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import type { Attachment } from "@/app/_lib/imageAttachments";
+import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
 import classes from "./parts.module.css";
 import { SUBAGENT_COLOR } from "@/app/_components/badgeColors";
@@ -110,6 +111,26 @@ export function MessageView({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <Stack gap={4} align="flex-end">
+        {/* The file itself is never stored — only the text read out of it — so
+            what a reader gets back is the name they attached and how much of it
+            was read. Silence here would make an attachment look like it never
+            happened on the next page load. */}
+        {(message.documents ?? []).length > 0 && (
+          <Group gap="xs" justify="flex-end">
+            {(message.documents ?? []).map((document, index) => (
+              <Badge
+                key={`document-${index}`}
+                variant="light"
+                size="lg"
+                leftSection={<IconFileText size={14} />}
+                title={document.note ? `Read ${document.note}` : undefined}
+              >
+                {document.name}
+                {document.note ? ` · ${document.note}` : ""}
+              </Badge>
+            ))}
+          </Group>
+        )}
         {(message.images ?? []).map((image, index) => (
           <GeneratedImage key={`attached-${index}`} src={image.url} alt="Attached image" />
         ))}
@@ -213,21 +234,26 @@ export function Composer({
   disabled,
   placeholder,
 }: {
-  onSend: (content: string, attachments: Attachment[]) => void;
+  onSend: (
+    content: string,
+    attachments: Attachment[],
+    documents: DocumentAttachment[],
+  ) => void;
   disabled?: boolean;
   placeholder?: string;
 }) {
   const [value, setValue] = useState("");
-  const { attachments, attachError, addFiles, removeAt, clear } = useAttachments();
+  const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt, clear } =
+    useAttachments({ documents: true });
 
   function submit() {
     const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0) || disabled) {
+    if ((!trimmed && attachments.length === 0 && documents.length === 0) || disabled) {
       return;
     }
     setValue("");
     clear();
-    onSend(trimmed, attachments);
+    onSend(trimmed, attachments, documents);
   }
 
   return (
@@ -237,9 +263,15 @@ export function Composer({
         submit();
       }}
     >
-      <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
+      <AttachmentBar
+        attachments={attachments}
+        documents={documents}
+        attachError={attachError}
+        onRemove={removeAt}
+        onRemoveDocument={removeDocumentAt}
+      />
       <Group gap="xs" align="flex-end" wrap="nowrap">
-        <AttachButton onPick={(files) => void addFiles(files)} disabled={disabled} />
+        <AttachButton onPick={(files) => void addFiles(files)} disabled={disabled} documents />
         <Textarea
           value={value}
           onChange={(event) => setValue(event.currentTarget.value)}
@@ -261,7 +293,9 @@ export function Composer({
           variant="filled"
           size="input-sm"
           radius="xl"
-          disabled={disabled || (!value.trim() && attachments.length === 0)}
+          disabled={
+            disabled || (!value.trim() && attachments.length === 0 && documents.length === 0)
+          }
           aria-label="Send"
         >
           <IconSend size={18} />

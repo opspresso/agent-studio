@@ -21,6 +21,22 @@ export interface ChatMessageImage {
   prompt?: string;
 }
 
+/**
+ * A document the user attached, stored as the text extracted from it rather than
+ * as the file.
+ *
+ * The text is what the turn actually carried, so storing it is what lets a
+ * follow-up question — "and what does section 3 say?" — still have the document.
+ * Storing the bytes instead would answer a question nobody asks and would not
+ * fit: a chat message is one DynamoDB item, capped at 400KB.
+ */
+export interface ChatMessageDocument {
+  name: string;
+  text: string;
+  /** What came back when not all of it did — "the first 12 of 40 pages". */
+  note?: string;
+}
+
 interface ChatMessageBase {
   chatId: string;
   seq: number;
@@ -32,6 +48,8 @@ export interface UserChatMessage extends ChatMessageBase {
   role: "user";
   /** Present when the user attached images to the turn. */
   images?: ChatMessageImage[];
+  /** Present when the user attached documents to the turn. */
+  documents?: ChatMessageDocument[];
 }
 
 export interface AssistantChatMessage extends ChatMessageBase {
