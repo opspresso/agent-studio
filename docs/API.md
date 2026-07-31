@@ -1,8 +1,11 @@
 # API Reference
 
-HTTP API for Agent Studio. The full route list and design live in
-[ARCHITECTURE.md](ARCHITECTURE.md); this document covers request/response shapes,
-auth, and error cases for the non-obvious endpoints.
+The HTTP contract for Agent Studio: every route, how it authenticates, and the request /
+response shapes and error cases for the non-obvious ones.
+
+Design rationale for *why* a surface looks like this lives in
+[ARCHITECTURE.md](ARCHITECTURE.md); the authorization model is spelled out in
+[SECURITY.md](SECURITY.md).
 
 ## Conventions
 
@@ -14,31 +17,115 @@ auth, and error cases for the non-obvious endpoints.
   (Better Auth catch-all). The three execution endpoints (`predict`, `chat/completions`,
   `agent`) additionally accept a **per-project API token** via `Authorization: Bearer <token>`
   instead of a session cookie; the token acts on the project owner's behalf and is scoped to
-  that project (see [Project API token](#project-api-token)). Webhooks are gated differently:
-  `/api/a2a/*` by the `X-A2A-Key` header, `/api/slack/events/*` by the Slack signing secret,
-  and `/api/health` (liveness, static 200) and `/api/ready` (readiness — 200, or 503 when
-  DynamoDB / the LLM channel is unreachable or the instance is draining) are open.
+  that project (see [Project API token](#project-api-token)). Machine surfaces are gated
+  differently: `/api/a2a/*` by `X-A2A-Key`, `/api/slack/events/*` by the Slack signing secret,
+  `/api/triggers/*` by the trigger's own secret. `/api/health`, `/api/ready` and
+  `/api/metrics` are open.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
-  project. Only the owner may mutate one (update/delete/publish, version create/update, Slack
-  config), otherwise `403 { "error": "You do not have permission to modify project \"…\"" }`.
-  Two project sub-resources are limited to the owner and to admins for *reading* as well — traces and the Slack config —
-  because they expose other users' runtime data / masked secrets (403 for non-owners).
-  Chats are per-owner private (non-owner reads return 404). MCP/agent/skill registries are
-  shared for reads; mutations require membership in `ADMIN_EMAILS` when set (unset allows
-  any signed-in user), otherwise `403 { "error": "Only admins can modify this resource" }`.
+  project. Only the owner and configured admins may mutate one (update/delete/publish, version
+  create/update, Slack config), otherwise
+  `403 { "error": "You do not have permission to modify project \"…\"" }`.
+  Project sub-resources that expose other users' runtime data or masked secrets — traces, the
+  Slack config, the API token, triggers, per-caller usage, MCP connections — are limited to
+  the owner and admins for *reading* as well. Chats are per-owner private (non-owner reads
+  return 404). MCP/agent/skill registries are shared for reads; mutations require membership
+  in `ADMIN_EMAILS` when set (unset allows any signed-in user), otherwise
+  `403 { "error": "Only admins can modify this resource" }`.
 - **Errors**: `{ "error": string }`, with an extra `issues` array on schema-validation
-  failures. Status codes: `400` (bad input), `401` (no session), `403` (not owner), `404`
-  (missing), `409` (name conflict), `429` (refused for now — see below), `500` (unhandled).
+  failures. Status codes: `400` (bad input), `401` (no session), `403` (not owner/admin),
+  `404` (missing), `409` (name conflict), `413` (payload too large), `429` (refused for now —
+  see below), `500` (unhandled), `502` (an upstream this app called failed), `503` (a feature
+  this deployment did not configure).
 - **Retry-After**: a `429` always carries it, in seconds. The refusal knows when it stops
   being true — a daily cost block lasts until 00:00 UTC — so the caller is told rather than
   left to guess and retry into the same wall.
 - **List responses**: resource collections (`projects`, `skills`, `mcps`, `agents`) return a
-  bare array; `chats`, `models`, and `usages/summary` wrap theirs in an object
-  (`{ chats }`, `{ models }`, `{ items }` respectively).
+  bare array; `chats`, `models`, `usages/summary`, `triggers`, `connections` wrap theirs in an
+  object (`{ chats }`, `{ models }`, `{ items }`, `{ triggers }`, `{ connections }`).
+- **Names** are slugs (`^[a-z0-9-]+$`), validated by `parseName`, which throws a
+  `ValidationError` → `400`.
 - **SSE framing**: each event is `data: {json}\n\n`; OpenAI-style streams end with
   `data: [DONE]\n\n`. On a mid-stream failure a final `data: {"error":"…"}` frame is sent.
   `chat/completions` streams always carry exactly one `finish_reason` chunk: `stop` when the
   model finished on its own, `length` when an agent run ended at its turn budget.
+
+## Route index
+
+`session` = Better Auth session cookie. `admin` = session + membership in the effective admin
+list. `owner` = the project's owner or a configured admin.
+
+### Projects
+
+| Route | Methods | Auth |
+|---|---|---|
+| `/api/projects` | `GET` `POST` | session |
+| `/api/projects/{name}` | `GET` `PUT` `DELETE` | session / owner |
+| `/api/projects/{name}/versions` | `GET` `POST` | session / owner |
+| `/api/projects/{name}/versions/{version}` | `GET` `PUT` `DELETE` | session / owner |
+| `/api/projects/{name}/publish` | `POST` | owner |
+| `/api/projects/{name}/preview` | `POST` | owner |
+| `/api/projects/{name}/versions/{version}/predict` | `POST` | session or project token |
+| `/api/projects/{name}/versions/{version}/chat/completions` | `POST` | session or project token |
+| `/api/projects/{name}/versions/{version}/agent` | `POST` | session or project token |
+| `/api/projects/{name}/token` | `GET` `POST` `DELETE` | owner |
+| `/api/projects/{name}/token/reveal` | `POST` | owner |
+| `/api/projects/{name}/traces` | `GET` | owner |
+| `/api/projects/{name}/traces/{traceId}` | `GET` | owner |
+| `/api/projects/{name}/usage/actors` | `GET` | owner |
+| `/api/projects/{name}/triggers` | `GET` `POST` | owner |
+| `/api/projects/{name}/triggers/{trigger}` | `PUT` `DELETE` | owner |
+| `/api/projects/{name}/triggers/{trigger}/reveal` | `POST` | owner |
+| `/api/projects/{name}/triggers/{trigger}/runs` | `GET` | owner |
+| `/api/projects/{name}/slack` | `GET` `PUT` `DELETE` | owner |
+| `/api/projects/{name}/slack/test` | `POST` | owner |
+| `/api/projects/{name}/a2a` | `GET` | session |
+| `/api/projects/{name}/mcp-connections` | `GET` | owner |
+| `/api/projects/{name}/mcp-connections/{server}` | `PUT` `DELETE` | owner |
+| `/api/projects/{name}/mcp-connections/{server}/authorize` | `POST` | owner |
+| `/api/projects/{name}/mcp-connections/{server}/tools` | `POST` | owner |
+
+### Registries
+
+| Route | Methods | Auth |
+|---|---|---|
+| `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | session / admin |
+| `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | session / admin |
+| `/api/skills/sync` | `GET` `POST` | session / admin |
+| `/api/mcps/{name}/tools` | `POST` | session |
+| `/api/mcps/{name}/auth` | `POST` `DELETE` | admin |
+| `/api/mcps/managed` | `POST` | admin |
+| `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
+| `/api/mcps/managed/{name}/restart` | `POST` | admin |
+| `/api/mcps/oauth/callback` | `GET` | session |
+| `/api/agents/{name}/message` | `POST` | session |
+
+### Chats, usage, platform
+
+| Route | Methods | Auth |
+|---|---|---|
+| `/api/chats` | `GET` `POST` | session |
+| `/api/chats/{chatId}` | `GET` `DELETE` | owner of the chat |
+| `/api/chats/{chatId}/messages` | `POST` | owner of the chat |
+| `/api/usages/summary` | `GET` | session |
+| `/api/models` | `GET` | session |
+| `/api/me` | `GET` | session |
+| `/api/settings` | `GET` `PUT` | admin |
+| `/api/settings/a2a-key` | `POST` | admin |
+| `/api/settings/a2a-key/reveal` | `POST` | admin |
+
+### Unauthenticated / machine surfaces
+
+| Route | Methods | Gate |
+|---|---|---|
+| `/api/auth/{...all}` | `GET` `POST` | the Better Auth login flow itself |
+| `/api/a2a` | `GET` | session |
+| `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | public |
+| `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
+| `/api/slack/events/{project}` | `POST` | Slack signing secret |
+| `/api/triggers/{project}/{trigger}` | `POST` | `X-Trigger-Secret` |
+| `/api/health` | `GET` | open |
+| `/api/ready` | `GET` | open |
+| `/api/metrics` | `GET` | open |
 
 ## Resource CRUD — projects, skills, mcps, agents
 
@@ -87,8 +174,8 @@ reaches `blockThresholdUsd` every execution entry point answers
 `429 { "error": "Project \"…\" has reached its daily cost limit …" }` with `Retry-After` set
 to the seconds remaining until 00:00 UTC. Crossing either threshold posts once per day to
 `alertSlackChannel` using the project's own Slack bot; without a channel or bot the
-thresholds still block. See [README](../README.md#daily-cost-limits) for what the guard does
-and does not bound.
+thresholds still block. See [OPERATIONS.md](OPERATIONS.md#daily-cost-guard--fails-open) for
+what the guard does and does not bound.
 
 ### Versions & publish
 
@@ -101,22 +188,25 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel? }`,
-`mcpList[{ name, headers? }]`, `skillList[]`,
+`mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
 image-capable registry model is rejected with 400. `mcpList`/`skillList`/`subagentList`
 entries must resolve to registered MCP servers, skills, agents, or projects — a dangling
-reference is rejected with 400. On update only *newly added* entries are checked, so a
-version stays editable after a registry entry it already referenced is deleted.
+reference is rejected with 400 — and only an `agent` project may carry them at all. On update
+only *newly added* entries are checked, so a version stays editable after a registry entry it
+already referenced is deleted.
 
 #### MCP bindings and per-version header overrides
 
 Each `mcpList` entry binds the version to a registry MCP server. The URL is always the
 registry's; only headers may be redefined, so the same server can be called with different
-credentials from different projects without registering it twice.
+credentials from different projects without registering it twice. `tools` narrows which of
+that server's tools the run offers (absent or empty = all of them).
 
 ```json
 "mcpList": [
   { "name": "shared-mcp",
+    "tools": ["search", "fetch"],
     "headers": { "Authorization": "Bearer project-token", "X-Tenant": "acme", "X-Shared": null } }
 ]
 ```
@@ -131,6 +221,25 @@ credentials from different projects without registering it twice.
   value under a header with no stored counterpart is dropped. `null` markers are returned
   as-is — a removal is not a secret.
 - Editing overrides is limited to the owner and to admins, like every other version write.
+
+A run declares at most 120 MCP tools in total and reports what it had to leave out as a
+`warning` chunk.
+
+### Prompt preview
+
+```
+POST /api/projects/{name}/preview
+  { …an unsaved version body…, "variables": { "topic": "otters" }? }
+→ 200 { messages: [ { role, content } ], … }
+```
+
+Assembles what the draft in the editor **would** send — system prompt, skill table, connected
+MCP server table, rendered template — without running it.
+
+Owner/admin, unlike reading or running a project: the body is an unsaved version, and its MCP
+bindings may override the outbound headers a request carries to a registered server — the same
+authority saving a version has. The URL always comes from the registry, so the SSRF surface is
+a run's.
 
 ## App settings
 
@@ -166,6 +275,19 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); a masked value on
   PUT keeps the stored secret, an empty string removes the override (env fallback). Setting `adminEmails` to a list that excludes
   the caller is rejected with `400`.
+
+## Viewer
+
+```
+GET /api/me → 200 { email, isAdmin, isConfiguredAdmin }
+```
+
+Both flags are sent because they answer different questions and the console needs both:
+`isAdmin` (may mutate shared registries and app settings — an empty `ADMIN_EMAILS` means *no
+restriction*) and `isConfiguredAdmin` (may write a project owned by someone else — an empty
+list means *nobody*). Neither is derivable in the browser, and inferring one from the other is
+what once offered every signed-in user an edit form that 403'd on save. See
+[SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
 
 ## Chats
 
@@ -229,6 +351,133 @@ All four endpoints are limited to the owner and to configured admins (403 for an
 bot token / signing secret edges. Masked or omitted secrets are preserved on update. The test endpoint returns
 `{ ok: true, team, botUser }` or `502` for a Slack API failure.
 
+## Managed MCP servers
+
+A managed server is a container this deployment starts on its own host through SSM Run
+Command and reaches on loopback. All four endpoints are **admin-only**, and all four answer
+`503 { "error": "This deployment is not configured to run managed MCP servers." }` when
+`MANAGED_MCP_INSTANCE_ID` / `MANAGED_MCP_REGISTRY` are unset — the feature is off rather than
+half-enabled.
+
+```
+POST   /api/mcps/managed              → 201 { …registry entry… }   | 409 | 400 | 503
+GET    /api/mcps/managed/{name}       → 200 { name, image?, running, reachable, address?, detail? }
+PUT    /api/mcps/managed/{name}       → 200 { …entry… }            | 404 | 409 | 400
+DELETE /api/mcps/managed/{name}       → 204
+POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 409 (restart in flight)
+```
+
+Create body:
+
+```json
+{ "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
+  "args": ["--port", "{{PORT}}"]?, "endpointPath": "/mcp"?,
+  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/agent-studio/my-tool/API_KEY"]?,
+  "description": ""?, "content": ""?, "headers": {}? }
+```
+
+- `name` is a slug (`^[a-z0-9][a-z0-9-]{0,62}$`) because it is also the container's name.
+- `args` is an **argv array**, never a shell command; at most 64 entries, each ≤1024 chars and
+  free of control characters. `{{PORT}}` in an argument is substituted with the effective
+  listen port, for images that do not honour the `PORT` environment variable.
+- `environment` values are encrypted in the registry row, masked on reads, and decrypted only
+  when building the workload spec. `PORT` is rejected — the runtime owns it. Use `envRefs`
+  when the value should stay in Parameter Store instead.
+- `image` may come from any registry the host can pull from; `MANAGED_MCP_REGISTRY` is the one
+  `docker login` authenticates against, and the login is skipped for anything else.
+- `containerPort` is a request, not a guarantee: only an adapter that publishes a port mapping
+  can honour it. The deployed adapter shares a network namespace instead, so it tells the
+  container which port to bind (`PORT`) and ignores the stored value.
+
+`GET` reports what is **actually running**, which the stored entry cannot say on its own.
+`running` and `reachable` are separate on purpose: "running and unreachable" is a real state —
+a container stranded in a network namespace by a redeploy is healthy to `docker inspect` and
+addressable by nobody — and reporting only the first is what let one look healthy for half a
+day.
+
+`PUT` updates stored settings and restarts automatically when the workload spec changed.
+`DELETE` removes the container and the entry together; neither outlives the other.
+
+`POST …/restart` re-creates the container against the namespace this app has *now* — the
+recovery after a redeploy stranded it. It answers **202 with no body**: starting a container
+polls the runtime for minutes, far longer than any client will wait, so the caller polls `GET`
+for the outcome. No body, because the stored entry carries encrypted header values and this is
+not a read path that masks them.
+
+## MCP OAuth
+
+Two halves with different owners: the **registry entry's** authorization-server metadata is
+operator configuration (admin), while the **credentials** that use it are per project (owner)
+— which is why one shared entry can back a different provider app in each project.
+
+### Discovery (admin)
+
+```
+POST   /api/mcps/{name}/auth   { "authorizationServer": "https://…"? }
+→ 200 { status: "discovered", auth: {…} }
+→ 200 { status: "choose", resource: "…", authorizationServers: ["…", "…"] }
+DELETE /api/mcps/{name}/auth   → 204     (return the entry to static-header behaviour)
+```
+
+Follows RFC 9728 protected-resource metadata → RFC 8414 authorization-server metadata, both
+re-validated through the SSRF policy and required to be `https`. When the resource advertises
+more than one authorization server the call returns `choose`; repeat it with
+`authorizationServer` set to one of the advertised values.
+
+Editing the entry's **URL** drops the `auth` block outright — it was read out of the old
+address's well-known documents.
+
+### Connections (owner)
+
+```
+GET    /api/projects/{name}/mcp-connections
+→ 200 { connections: [ { serverName, status, clientId, clientSecret?, clientRegistered,
+                         scopes, connectedBy?, connectedAt?, expiresAt? } ] }
+
+PUT    /api/projects/{name}/mcp-connections/{server}
+       { clientId, clientSecret?, scopes?: [] }        → 200 { …connection view… }
+DELETE /api/projects/{name}/mcp-connections/{server}   → 204
+
+POST   /api/projects/{name}/mcp-connections/{server}/authorize
+→ 200 { url: "https://provider/authorize?…" }
+
+POST   /api/projects/{name}/mcp-connections/{server}/tools
+       { headerOverrides?: { "X-Tenant": "acme", "X-Shared": null } }
+→ 200 { tools } | 502 { error }
+```
+
+- `status` is `needs_auth` | `connected` | `needs_reauth`. Only a **refused grant** moves a
+  connection to `needs_reauth`; a 5xx or timeout leaves it alone.
+- `clientSecret` is masked on read and **tokens are never returned** — unlike the A2A key and
+  the project API token there is no reveal path, because a token has no reason to be
+  displayed. On write, an omitted or masked value keeps what is stored; an **empty** one
+  clears it, which is the only way back from a confidential client to a public one.
+- `clientRegistered` is `true` when the credentials came from RFC 7591 dynamic registration
+  rather than being entered by hand.
+- `/authorize` **returns** the provider URL rather than issuing a `3xx`: the caller is the
+  console's `fetch`, which would follow a redirect itself instead of sending the user.
+- `/tools` lists the server's tools **as this project sees them** — with the project's own
+  connection and the binding's header overlay. Distinct from the registry's own
+  `POST /api/mcps/{name}/tools` probe, which carries only the entry's static headers and can
+  do nothing but 401 against an OAuth server. Owner-gated for the same reason: it spends the
+  project's connection.
+
+### Callback
+
+```
+GET /api/mcps/oauth/callback?code=…&state=…&iss=…    (session)
+```
+
+The authorization server redirects the **browser** here, so it answers a small self-closing
+HTML page rather than JSON: it `postMessage`s the outcome to its opener and closes, and still
+reads sensibly if it was opened in a plain tab. Status is `200` either way — the status
+describes serving the page; the outcome is in the message. `Cache-Control: no-store`, since it
+carries a one-time result.
+
+The callback validates RFC 9207 `iss` before the code is redeemed and re-checks project
+ownership, which can change while the user is at the provider. See
+[SECURITY.md](SECURITY.md#mcp-oauth) for the full set of checks.
+
 ## Project API token
 
 A per-project token lets external callers reach the execution endpoints with
@@ -262,6 +511,9 @@ for a legacy token). Every reveal is logged server-side with the caller's email.
 
 The three endpoints below authenticate with either the session cookie or a project API
 token (`Authorization: Bearer <token>`). A token authenticates as the project owner.
+
+All three are bounded by `MAX_RUN_DURATION_MS`, the per-caller concurrency guard, and the
+project's daily cost guard — any of which answers `429` with `Retry-After`.
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 
@@ -324,7 +576,9 @@ frames in a stream. Clients that do not know the field simply ignore it.
 ### `POST /api/projects/{name}/versions/{version}/agent`
 
 Agent SSE stream. Body `{ "messages": [ … ] }`. Emits `EngineChunk` frames
-(`delta.content`, `toolResult`, `author` for subagent turns, `error`) then `data: [DONE]`.
+(`delta.content`, `toolResult`, `warning`, `image`, `author` for subagent turns, `error`) then
+`data: [DONE]`. The full field contract is in
+[ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-contract).
 
 A transfer to a project already on the current transfer chain, or beyond 5 levels of
 nesting, is refused as an authored error chunk rather than recursing.
@@ -434,7 +688,7 @@ providers' models are listed; with none configured every model is listed.
 ## A2A (inbound)
 
 Set `A2A_API_KEY` to enable. Each project with a published version serves a public Agent Card
-and a JSON-RPC endpoint; see [README](../README.md#a2a-agent2agent) for the full contract.
+and a JSON-RPC endpoint.
 
 ```
 GET  /api/a2a                                           (session) → { enabled, projects }
@@ -448,3 +702,31 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
 `{ name, displayName, description, cardUrl }`.
 
 Missing key → `503` (not configured) or `401` (mismatch, constant-time compared).
+
+Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state (`message/send` →
+`tasks/get`/`tasks/cancel`) is persisted per project in DynamoDB, so it survives redeploys and
+is shared across instances; a terminal-state-guarding conditional write keeps a concurrent
+complete/cancel from regressing a finished task. Rows expire via TTL
+(`A2A_TASK_RETENTION_DAYS`, default 1 day).
+
+## Platform endpoints
+
+```
+GET /api/health   → 200 (static)
+GET /api/ready    → 200 { ready: true, … } | 503 { ready: false, draining?: true }
+GET /api/metrics  → 200 text/plain; version=0.0.4
+```
+
+`/api/health` is liveness — a static 200 answering "is the process serving", dependency-free
+so a downstream blip does not trigger a restart. `/api/ready` is readiness — it probes
+DynamoDB and the LLM channel (short timeout, details not surfaced) and returns 503 when a
+downstream is unreachable or the instance is draining after SIGTERM.
+
+`/api/metrics` is a Prometheus scrape exposing `agent_studio_active_runs`,
+`agent_studio_runs_{started,finished,failed}_total`, `agent_studio_run_duration_seconds`,
+`agent_studio_unknown_model_calls_total`, `agent_studio_unknown_models` and
+`agent_studio_draining`. No metric is labelled by project, user or model.
+
+All three are unauthenticated and dependency-light on purpose — they are probed by
+infrastructure that has no session. See [OPERATIONS.md](OPERATIONS.md#health-probes) for how
+to wire them.

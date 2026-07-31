@@ -7,7 +7,8 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 기반 정리는 끝났다. 레이어 경계는 `tests/architecture.test.ts`가 강제한다 — 일곱 개
 규칙 모두 허용 목록이 비어 있고, 이름 붙인 불변식은 저마다 소유 파일이 하나씩 지정돼
 사본이 생기면 실패한다. 아래 기능 작업은 그 위에 얹는다: 새 어댑터는 포트 뒤로 가고,
-조립은 `lib/container.ts`에서만 하며, 새 실행 정책은 `runStrategyFor`가 있는 파사드
+조립은 정해진 wiring site 세 곳(`lib/container.ts`, `app/api/chats/_deps.ts`,
+`app/api/slack/events/_lib/`)에서만 하며, 새 실행 정책은 `runStrategyFor`가 있는 파사드
 한 곳에 붙는다.
 
 **규약**

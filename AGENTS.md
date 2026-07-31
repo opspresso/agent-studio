@@ -1,10 +1,27 @@
 # AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Working rules for coding agents in this repository (`CLAUDE.md` is a symlink to this file).
 
 Agent Studio is a single Next.js 16 full-stack app: an internal LLM platform for
 prompt / agent / cost management (projects & versions, an LLM engine, agents
 (subagents + external registry), skills, MCP tools, chats, cost dashboard).
+
+**This file is the working contract — what to run, what not to break, and who owns which
+decision.** It is not a description of the system; that is
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). When something here is a summary, the linked
+document is authoritative and this file must not restate it.
+
+| Need | Read |
+|---|---|
+| Why the system is shaped this way | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| An endpoint's contract | [docs/API.md](docs/API.md) |
+| An env var or a fixed limit | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| Deploy / probe / scale / retention | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Auth, secrets, SSRF, PII | [docs/SECURITY.md](docs/SECURITY.md) |
+| Local setup, scripts, CI | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| What is still unbuilt | [docs/MILESTONES.md](docs/MILESTONES.md) |
+| The engine's loop invariants | `src/application/llm/AGENTS.md` |
+| Chat persistence and replay | `src/application/chat/AGENTS.md` |
 
 ## Commands
 
@@ -20,16 +37,16 @@ pnpm exec vitest run tests/engine.test.ts
 pnpm exec vitest run -t "streamWithFallback"
 ```
 
-There is **no lint step** (no ESLint config); `typecheck` + `test` are the checks.
-Node 24 (`engines >=24`), pnpm 11 (pinned via `packageManager`). CI (`.github/workflows/ci.yml`) runs typecheck → test → integration test → build.
-
-### Local development
+There is **no lint step** (no ESLint config); `typecheck` + `test` are the checks, and
+`build` is the third — it is what catches an invalid route handler signature. Node 24
+(`engines >=24`), pnpm 11 (pinned via `packageManager`). CI runs typecheck → test →
+integration test → build.
 
 ```bash
 docker compose up -d dynamodb              # dev DynamoDB on :8083
 pnpm init-local-table                      # create table + GSIs (uses AWS_REGION, default ap-northeast-2)
 
-pnpm tsx scripts/mock-llm.ts                              # mock OpenAI-compatible LLM (set LLM_BASE_URL=http://127.0.0.1:8002/v1)
+pnpm tsx scripts/mock-llm.ts                             # mock OpenAI-compatible LLM (LLM_BASE_URL=http://127.0.0.1:8002/v1)
 pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses Google OAuth)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts    # seed sample skills
 
@@ -41,194 +58,163 @@ pnpm init-local-table:test
 pnpm test:integration                      # CI runs this same pair
 ```
 
-**Both DynamoDB Local containers are shared with every other project on this
-machine** — `compose.yaml` pins the compose project name to `localdev`, so
-`docker compose up -d dynamodb` from another repository reuses these. Table
-names, not ports, separate the projects: never widen a cleanup past
-`DYNAMODB_TABLE_NAME`, and never run `docker compose down -v` (or
-`--remove-orphans`).
+> **Both DynamoDB Local containers are shared with every other project on this machine.**
+> `compose.yaml` pins the compose project name to `localdev`, so `docker compose up -d
+> dynamodb` from another repository reuses these. Table names, not ports, separate the
+> projects: never widen a cleanup past `DYNAMODB_TABLE_NAME`, and **never run
+> `docker compose down -v`** (or `--remove-orphans`).
 
 Required env for any real run (validated fail-fast at boot by `src/instrumentation.ts`):
-`LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64). Google OAuth creds
-are only needed for real login. See `.env.example`; `STAGE` = local | alpha | prod.
+`LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64). `STAGE=alpha|prod`
+additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
 
-## Architecture
+## The dependency rule
 
-Clean Architecture with a strict dependency rule — **`app → application → domain ← infrastructure`**:
+**`app → application → domain ← infrastructure`**
 
-- `src/domain/` — entities + repository ports. Pure TS, **no framework/AWS/React imports** (enforced by convention; keep it that way).
-- `src/application/` — use cases. Depend on domain ports only. Orchestration lives here.
-- `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack, A2A, GitHub, net/crypto helpers.
-- `src/app/` — Next.js App Router pages + API route handlers (presentation).
-- `src/lib/` — cross-cutting glue: the composition root, auth, session, config,
-  runtime-settings. Application and infrastructure may import it; domain never does.
-- `src/shared/` — dependency-free helpers (dates, slugs, timeouts, list parsing,
-  constant-time compare). The bottom of the graph: it imports nothing from `@/`.
+- `src/domain/` — entities + repository ports. Pure TS, **no framework/AWS/React imports**,
+  not even `shared`.
+- `src/application/` — use cases. Depend on domain ports only. Orchestration lives here, and
+  it **must not import `container.ts`** — deps are injected, never pulled.
+- `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack,
+  A2A, GitHub, net/crypto helpers.
+- `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
+  directly**; get repositories and `executionDeps` from a wiring site.
+- `src/lib/` — cross-cutting glue: composition root, auth, session, config, runtime-settings.
+  Application and infrastructure may import it; domain never does.
+- `src/shared/` — dependency-free helpers. The bottom of the graph: it imports nothing from
+  `@/`.
 
-**Composition is distributed across a few deliberate wiring sites.** `src/lib/container.ts`
-wires the repositories, the domain ports (`SecretCipher`, `UrlPolicy`,
-`RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`), the four registry-slice
-singletons and `executionDeps`; chats wire `ChatDeps` in `src/app/api/chats/_deps.ts`;
-Slack wires `SlackEventDeps` in `src/app/api/slack/events/_lib/`. Route handlers get
-repositories and `executionDeps` from these wiring sites — do not import `infrastructure/`
-directly from a route/page, and application code must not import `container.ts` (deps are
-injected, never pulled).
+Composition happens at exactly three wiring sites: `src/lib/container.ts` (repositories, the
+domain ports, the four registry-slice singletons, `executionDeps`/`imageDeps`),
+`src/app/api/chats/_deps.ts` (`ChatDeps`), and `src/app/api/slack/events/_lib/`
+(`SlackEventDeps`).
 
-`tests/architecture.test.ts` enforces all of the above mechanically: seven layer rules with
-empty allowlists, plus named single-owner invariants that fail when a second copy of a
-decision appears. Adding a violation is not quietly possible — fix the import, don't widen
-the rule.
+`tests/architecture.test.ts` enforces all of this with **empty allowlists**. When it fails,
+**fix the import — do not widen the rule.**
 
-Read `docs/ARCHITECTURE.md` for the full single-table key map, domain semantics, and API surface.
+## Single-owner invariants
 
-### LLM engine (the core)
+The layer rules say which direction an import may point. They say nothing about the same
+decision being written twice, which is the failure this codebase kept hitting: `McpTool`
+reached four definitions that had already drifted apart, the DynamoDB conditional-write error
+name was spelled at seven call sites — only one of which handled the transactional form — and
+the image-usage collapse was derived independently four times.
 
-`src/application/llm/engine.ts` is pure logic with **everything injected** (channel,
-recordUsage, callMcpTool, loadSkillContent, runSubagent, generateImage) — so it is tested with no
-network/DB via `tests/fakeChannel.ts`. `generateImage` (the builtin GenerateImage tool) is
-injected per version — only when `parameters.imageGeneration: true`, model from
-`parameters.imageModel` else the registry default. `src/application/execution/runProject.ts` is the
-composition point that resolves a version's skills/MCP tools/subagents and assembles those
-deps. Key behaviors:
+Each decision below has one owning file. `tests/architecture.test.ts` fails on a second copy
+**and** on the owner losing the definition. Before writing any of these, check whether you are
+about to make copy number two.
 
-- One OpenAI-compatible channel for all providers; model ids are `provider/model`. Routing
-  by per-provider channels is configured via `LLM_PROVIDER_*` env (see README).
-- `runAgent` is a recursive multi-turn tool loop: all `tool_calls` of a response aggregate
-  into one assistant message; a builtin (`Skill`, `transfer_to_agent`, `GenerateImage`,
-  `EditImage`) serves a call only when that builtin was **offered** this run, and every other
-  name goes to MCP — the MCP calls of one response run concurrently while builtins run in call
-  order, and results stay in call order; a turn guard stops the loop.
-- Fallback: on a retryable error (429/5xx) **before the first chunk**, retry once with
-  `fallbackModel`; a mid-stream failure yields an `{error}` chunk and does not retry.
-- Stream author contract: top-level chunks are unauthored; only subagent chunks carry
-  `author`. Filter with `isTopLevelChunk()` (`src/domain/llm/types.ts`) — never re-derive.
-  See `src/application/llm/AGENTS.md` for the full loop invariants before editing
-  `engine.ts`/`pii.ts`.
+| Decision | Owner |
+|---|---|
+| The shape of an MCP tool | `src/domain/mcp/types.ts` |
+| Which storage errors mean a lost conditional write | `src/application/errors.ts` |
+| Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
+| Constant-time secret comparison | `src/shared/timingSafe.ts` |
+| Parsing a comma-separated config list | `src/shared/parseList.ts` |
+| The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
+| The per-run MCP tool cap | `src/application/execution/mcpTools.ts` |
+| How many agents one dispatch may run | `src/application/llm/engine.ts` |
+| Merging concurrent generators | `src/shared/mergeGenerators.ts` |
+| Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
+| The 401 response body | `src/shared/unauthorized.ts` |
+| Writing to the console | `src/shared/logger.ts` |
+| What wraps a top-level run | `src/application/execution/runBracket.ts` |
+| Which project type runs which way | `src/application/execution/deps.ts` |
 
-### DynamoDB single-table
+Other decisions with a single owner that the test cannot express as a pattern, but that the
+same rule applies to:
 
-One table, keys `PK`/`SK` + `GSI1`/`GSI2`. **All key strings come from
-`src/infrastructure/db/keys.ts` — never hand-write them elsewhere.** List queries must
-paginate through the shared `queryAll()` helper (`src/infrastructure/db/query.ts`): a single
-Query page caps at 1MB and unpaginated lists silently truncate. Usage rows are daily
-per-project-per-model maps updated with atomic `ADD`; a run's per-turn usage is buffered by
-`createUsageAggregator` and flushed once at run end (`recordUsage.ts`).
+| Decision | Owner |
+|---|---|
+| Every DynamoDB key string | `src/infrastructure/db/keys.ts` |
+| Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
+| Which pages are public | `src/proxy.ts` |
+| Whether a chunk is top-level | `isTopLevelChunk()` in `src/domain/llm/types.ts` |
+| Which version a run executes | `resolveRunnableVersion` in `src/application/project/` |
+| User-image caps | `src/domain/llm/imageLimits.ts` |
+| `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
+| Row TTLs | `src/infrastructure/db/ttl.ts` |
+| The brand palette and component defaults | `src/app/theme.ts` |
 
-### Auth & authorization
+## Subsystem map
 
-Better Auth 1.6 + Google OAuth, custom DynamoDB adapter (`src/infrastructure/db/authAdapter.ts`). Login is
-restricted to `ALLOWED_EMAIL_DOMAINS`. Route handlers wrap in `withAuth(...)`
-(`src/lib/session.ts`), which 401s without a session and passes `SessionUser` as the first arg.
+One line each — the linked section is the authority.
 
-**Pages** are gated separately, in `src/proxy.ts` — the single owner of which pages are
-public (`/` and `/login`; everything else the matcher reaches needs a session, so a new route
-defaults to protected). A signed-out visitor is redirected to `/login?next=…` before the route
-renders, rather than being handed the console and an error box once the API 401s. The check is
-cookie *presence*, not validity — the authorization decision stays server-side in `withAuth`
-and `assertProjectWritable`, which see the request that touches data. `next` is read back through
-`safeNextPath` (`src/shared/safeNextPath.ts`); it arrives from the address bar, so `//host` and
-`/\host` have to be rejected or the sign-in flow becomes an open redirect.
-
-Authorization model: **projects are a shared catalog** — any signed-in user may read and run
-any project, but mutations (update/delete/publish, version create/update, Slack config) go
-through `assertProjectWritable`, which allows the owner and any configured admin and 403s
-everyone else. Chats are per-owner private. MCP/agent/skill registries are shared: reads
-are open to any signed-in user; mutations go through `withAdminAuth`, restricted to
-`ADMIN_EMAILS` when set (unset = any signed-in user).
-
-The two admin questions are deliberately different and both live in
-`src/lib/runtime-settings.ts`: `isAdminEmail` (registry mutations, app settings) treats an
-empty list as "no restriction", while `isConfiguredAdmin` (overriding project ownership)
-requires a non-empty list. Reusing the former for ownership would give every signed-in
-user write access to every project on a deployment that never set `ADMIN_EMAILS`.
-
-### Other subsystems
-
-- **Runtime settings**: the admin-only `/settings` page stores env-var overrides
-  (admin/allowed-domain lists, default LLM channel, per-provider LLM channels, skills repo,
-  A2A key, public base URL) in the `SETTINGS#app` item. Read via
-  `src/lib/runtime-settings.ts` — DB override → env fallback, cached in memory
-  (`SETTINGS_CACHE_TTL_MS`, default 5s, invalidated on write — the invalidation is
-  process-local, so the TTL bounds cross-instance staleness). Never read those env vars directly at
-  dispatch; go through runtime-settings.
-- **Secrets**: stored headers/tokens are AES-256-GCM encrypted (`enc:v1:` prefix), masked
-  on read (length-preserving; values ≥20 chars reveal their first/last 2 chars, which
-  decrypts at read in the admin/owner-gated views) and decrypted for outbound dispatch
-  (`src/infrastructure/crypto/secretEncryption.ts`). A masked or empty value on update
-  preserves the stored secret; a masked value under a key with no stored counterpart is
-  dropped. Two app-issued secrets can be read back in plaintext through a dedicated
-  `POST …/reveal` (never a GET — the body is a live credential): the app-wide A2A key
-  (admin-only) and a project's API token (owner or admin). The project token is therefore
-  stored encrypted rather than hashed; tokens predating that still verify by hash but
-  cannot be revealed. Every reveal is logged with the caller's email.
-- **PII filtering**: opt-in per version (`parameters.piiFiltering`) — emails/phone numbers
-  are regex-masked with reversible format-preserving tokens before every LLM dispatch and
-  restored in responses, including streaming and subagent transfers
-  (`src/application/llm/pii.ts`). Best-effort (regex; emails + phones only).
-- **SSRF guard**: operator-registered MCP/agent URLs are validated by
-  `src/infrastructure/net/ssrfGuard.ts` (reject non-http(s) and private/loopback/link-local/
-  metadata addresses) at both registration and dispatch.
-- **Slack**: signature verified (HMAC + `timingSafeEqualString`, 5-min replay window);
-  events are deduplicated exactly-once via `slackEventRepository.claim` (conditional put),
-  whose claim is a lease settled by `settle` — an instance that dies mid-processing leaves a
-  reclaimable claim rather than an event recorded as handled by nobody.
-  Bots are per project: `/api/slack/events/[project]` is the only events endpoint, and it
-  resolves that project's own bot token and signing secret.
-- **A2A**: inbound endpoints gated by `A2A_API_KEY` (constant-time compare); task state is
-  persisted per-project in the single table (`createA2aTaskStore`), TTL-expired, with a
-  terminal-state-guarding conditional write so a concurrent complete/cancel never regresses a
-  finished task. Outbound A2A/agent registry.
-- **Run bracket**: `src/application/execution/runBracket.ts` is the single owner of what wraps
-  a top-level run — the in-flight metric, the daily cost guard, the per-caller concurrency
-  guard, and the log correlation id. Exactly four functions admit a run (`executeVersion`,
-  `executeVersionStream`, `executeAgent`, `generateImage`); the architecture test pins that
-  none of them opens the metric for itself. Guards run before the metric so a refused run is
-  never counted; `close()` runs after the caller's usage flush so the cost settle sees the
-  run it is settling.
-- **Cost guard** (`src/application/usage/costGuard.ts`): per-project daily USD alert/block
-  thresholds, read from one `GetItem` on the UTC-day usage row. Fails **open**. Notification
-  claims are conditional writes on that row, one per threshold. A daily backstop, not a rate
-  limit — an agent run's usage is buffered to the end, so runs starting together all pass the
-  pre-check.
-- **Concurrency guard** (`src/application/execution/concurrencyGuard.ts`): per-`RunActor` slot
-  indices leased in DynamoDB, so the limit is exact and does not multiply by instance count.
-  Fails **closed**, opposite to the cost guard, on purpose — see its comment.
-- **Attribution**: `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names who caused
-  a run — user / project-token / slack / a2a / webhook. Recorded on the trace and on a
-  per-caller `ACTOR#{date}#{actor}` usage row (separate from the project total: keying the
-  project row's model maps by caller would approach the 400KB item limit). `RunOrigin`
-  carries the actor plus the transfer chain down every subagent hop.
-- **Triggers** (`src/domain/trigger/`, `src/application/trigger/`): per-project webhooks that
-  run the **published** version. Secret compared in constant time before the enabled flag,
-  `Idempotency-Key` claimed conditionally, overlap refused by reusing a run slot. Answers 202
-  and runs via `after()`; every refusal is a history row with a status.
-- **Logging**: `src/shared/logger.ts` is the only place that writes to the console (pinned by
-  the architecture test; `domain` exempt because it imports nothing from `@/`). Lines carry
-  the run's correlation id from `src/shared/runContext.ts` — deliberately *not* the trace id,
-  which is sampled.
-- **Errors**: shared `AppError` base carrying an HTTP status (`src/application/errors.ts`);
-  `apiError` (`src/app/api/_lib/http.ts`) maps any of them, else a generic 500.
-- **SSE**: `src/app/api/_lib/sse.ts` — `sseResponse` (OpenAI `[DONE]` terminator) vs `sseResponseRaw`
-  (A2A JSON-RPC framing).
+- **LLM engine** (`src/application/llm/engine.ts`) — pure logic with **everything injected**
+  (channel, `recordUsage`, `callMcpTool`, `loadSkillContent`, `runSubagent`, `generateImage`,
+  `editImage`), so it tests with no network or DB via `tests/fakeChannel.ts`.
+  `src/application/execution/runProject.ts` is the composition point that resolves a version's
+  skills/MCP tools/subagents and assembles those deps.
+  → `src/application/llm/AGENTS.md`, then
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#llm-engine)
+- **Run bracket** — the single owner of what wraps a top-level run: the in-flight metric, the
+  daily cost guard, the per-caller concurrency guard, the correlation id. Exactly four
+  functions admit a run. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
+- **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2`; usage rows are daily
+  per-project-per-model maps updated with atomic `ADD`. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
+- **Auth & authorization** — `withAuth`/`withAdminAuth` for routes, `src/proxy.ts` for pages;
+  projects are a shared catalog with owner/admin-gated mutations. **`isAdminEmail` and
+  `isConfiguredAdmin` are not interchangeable.** →
+  [SECURITY.md](docs/SECURITY.md#authorization-model)
+- **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, three revealable via POST.
+  → [SECURITY.md](docs/SECURITY.md#secrets-at-rest)
+- **Runtime settings** — DB override → env fallback, cached process-locally. Never read those
+  env vars directly at dispatch; go through `src/lib/runtime-settings.ts`. →
+  [CONFIGURATION.md](docs/CONFIGURATION.md#resolution-order)
+- **MCP** — one session owner, discovery cached per `url + headers`, managed servers on
+  loopback by provenance, per-project OAuth connections. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp)
+- **PII filtering** — opt-in per version; bounds what the LLM and engine context see, **not**
+  what an MCP server receives. → [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
+- **SSRF guard** — operator URLs checked at registration *and* dispatch, through
+  `fetchPublicUrl`. → [SECURITY.md](docs/SECURITY.md#outbound-requests-ssrf)
+- **Slack / A2A / triggers** — per-project bots, both A2A directions, published-only webhook
+  runs with conditional idempotency claims. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#slack)
+- **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it
+  plus the transfer chain down every subagent hop. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#usage-and-cost-attribution)
+- **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first
+  one. `apiError` (`src/app/api/_lib/http.ts`) maps any of them. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#error-handling)
+- **Logging** — `src/shared/logger.ts` is the only place that writes to the console; lines
+  carry the run's correlation id, deliberately *not* the trace id (which is sampled). →
+  [OPERATIONS.md](docs/OPERATIONS.md#logging)
 
 ## Conventions that bite
 
-- Domain purity: nothing in `src/domain/` imports infrastructure/framework/AWS.
-- Chat persistence is flattened but tool traffic **is** replayed: the stored assistant
-  message carries the run's top-level `tool_calls`, and `toEngineMessages` pairs each tool
-  row with its call and re-emits it *after* that message (storage order within a turn is the
-  reverse of the wire order). Pairing is scoped to the run a user message delimits, because
-  a tool-call id is only unique within the run that made it. Bounded three ways — the last N
-  turns, a tool-text budget, and a history budget over whole runs — and every drop is
-  reported as a `warning` chunk rather than made silently. A call with no stored result is
-  dropped rather than orphaned. See `src/application/chat/AGENTS.md` before changing
-  `run.ts`/`messageMapping.ts`.
-- User-image limits and encoding have single owners: caps in
-  `src/domain/llm/imageLimits.ts` (client composers, API bodies, Slack all read them) and the
-  `data:` encoding in `imageDataUrl`/`parseImageDataUrl` (`src/domain/llm/types.ts`). Copies of
-  either had already drifted apart once — never restate a cap locally.
-- Tests mock at boundaries: `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
-  `vi.mock("@/infrastructure/db/client")`. Keep tests deterministic — no real `Date.now`,
-  timers, randomness, or network (repository integration lives in
-  `integration-check.ts`, run against a local DynamoDB — in CI as its own step,
-  outside vitest).
+- **Domain purity.** Nothing in `src/domain/` imports infrastructure, framework or AWS.
+- **Never hand-write a DynamoDB key string.** They come from
+  `src/infrastructure/db/keys.ts`.
+- **Never leave a list query unpaginated.** A single Query page caps at 1MB and silently
+  truncates. Use `queryAll()`.
+- **A new execution entry point calls `executeProjectStream`** rather than re-encoding the
+  `projectType` dispatch, and opens the run bracket. Three call sites used to answer that
+  question for themselves.
+- **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
+  `author`. Filter with `isTopLevelChunk()` — never re-derive.
+- **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three
+  traps: storage order within a turn is the *reverse* of the wire order, call/result pairing
+  is scoped to one run (ids are unique only there), and three separate budgets can drop
+  content — each drop reported as a `warning`. Read `src/application/chat/AGENTS.md` before
+  changing `run.ts` or `messageMapping.ts`; the mechanics are in
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#chat).
+- **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
+  composers, API bodies and Slack all read them) and the `data:` encoding in
+  `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.
+- **Report what was lost.** Truncation goes in the tool-result text; a binding that could not
+  be used, a truncated transcript, a dropped history run — all become `warning` chunks. Silent
+  loss is the bug, not the truncation.
+- **Tests mock at boundaries**: `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
+  `vi.mock("@/infrastructure/db/client")`. Keep them deterministic — no real `Date.now`,
+  timers, randomness, or network. Repository integration lives in
+  `scripts/integration-check.ts`, run against a local DynamoDB in its own CI step, outside
+  vitest.
+- **Secrets on update**: a masked or empty value preserves what is stored; a masked value with
+  no stored counterpart is dropped. A mask can only confirm a secret, never create one.
+- **Docs record the current state, not history.** Completed milestones are deleted from
+  `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
+  accumulate changelogs in comments or docs.
