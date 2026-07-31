@@ -42,15 +42,47 @@ export interface AuthorizationServerMetadata {
 }
 
 /**
+ * Neither well-known candidate yielded a usable document — the server published
+ * nothing this client can act on, or it could not be reached.
+ *
+ * A distinct type because the condition says something about the *server*, not
+ * about this app. Thrown as a bare `Error` it reaches a route with no status to
+ * map and answers 500, so pointing Discover at a server that does not do OAuth
+ * reads as a crash.
+ */
+export class McpMetadataError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "McpMetadataError";
+  }
+}
+
+/**
  * Reads the two well-known documents. Implementations must try the
  * path-inserted well-known URI before the origin-level one (RFC 9728 §3,
  * RFC 8414 §3): a server hosting several MCP endpoints distinguishes them by
  * path, and only the origin form would collapse them into one.
  */
 export interface OAuthMetadataClient {
-  /** @throws when neither candidate URL yields a usable document. */
-  fetchProtectedResource(mcpUrl: string): Promise<ProtectedResourceMetadata>;
-  /** @throws when neither candidate URL yields a usable document. */
+  /**
+   * `loopback` says the address is one this deployment vouches for — a container
+   * it started, or a host whose suffix it declared internal — so the outbound
+   * guard is not what makes it safe. The same flag the run path and the tool
+   * probe carry, decided by the same predicate (`skipsUrlGuard`). Absent means
+   * the guarded path.
+   *
+   * @throws {McpMetadataError} when neither candidate yields a usable document.
+   */
+  fetchProtectedResource(mcpUrl: string, loopback?: boolean): Promise<ProtectedResourceMetadata>;
+  /**
+   * Always reached through the guard, and deliberately without a `loopback`
+   * escape: this URL comes out of a third party's document rather than the
+   * registry, and the caller has already refused anything that is not a public
+   * HTTPS host. An internal MCP server is a thing an operator declared; an
+   * internal *authorization server* named by that server's own metadata is not.
+   *
+   * @throws {McpMetadataError} when neither candidate yields a usable document.
+   */
   fetchAuthorizationServer(issuer: string): Promise<AuthorizationServerMetadata>;
 }
 

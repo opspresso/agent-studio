@@ -19,6 +19,7 @@ import { ValidationError } from "@/application/errors";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import type { McpServer } from "@/domain/mcp/types";
 import type { OAuthMetadataClient } from "@/domain/mcp/oauth";
+import { McpMetadataError } from "@/domain/mcp/oauth";
 
 const SERVER: McpServer = {
   name: "slack",
@@ -28,13 +29,21 @@ const SERVER: McpServer = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function useCases(metadata: Partial<OAuthMetadataClient>, opts: { blocked?: string[] } = {}) {
+function useCases(
+  metadata: Partial<OAuthMetadataClient>,
+  opts: {
+    blocked?: string[];
+    server?: McpServer;
+    internalHostSuffixes?: string[];
+  } = {},
+) {
+  const server = opts.server ?? SERVER;
   const stored: McpServer[] = [];
   const deps = {
     mcps: {
-      get: async (name: string) => (name === SERVER.name ? { ...SERVER } : null),
-      put: async (server: McpServer) => {
-        stored.push(server);
+      get: async (name: string) => (name === server.name ? { ...server } : null),
+      put: async (saved: McpServer) => {
+        stored.push(saved);
       },
     } as never,
     metadata: {
@@ -63,6 +72,7 @@ function useCases(metadata: Partial<OAuthMetadataClient>, opts: { blocked?: stri
     probe: {} as never,
     authProvider: {} as never,
     publicBaseUrl: async () => undefined,
+    ...(opts.internalHostSuffixes ? { internalHostSuffixes: opts.internalHostSuffixes } : {}),
   };
   return { useCases: createMcpAuthUseCases(deps), stored };
 }
@@ -370,5 +380,107 @@ describe("reading a metadata document", () => {
       expect(metadata.issParameterSupported).toBe(expected);
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * Discovery is the third caller that has to decide whether an address may skip
+ * the outbound guard, and it was the one that answered for itself. Registration
+ * and dispatch both ask `skipsUrlGuard`; this reached for `fetchPublicUrl`
+ * directly, so an internal Service could be registered and called by a run and
+ * never discovered.
+ */
+describe("discovering a server on a host this deployment declared internal", () => {
+  const INTERNAL: McpServer = {
+    name: "memory",
+    url: "http://mcp-memory.agent-mcps.svc.cluster.local/mcp",
+    headers: {},
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("tells the metadata client the guard is not what makes this address safe", async () => {
+    const seen: Array<boolean | undefined> = [];
+    const { useCases: uc } = useCases(
+      {
+        fetchProtectedResource: async (_url: string, loopback?: boolean) => {
+          seen.push(loopback);
+          return { resource: INTERNAL.url, authorizationServers: ["https://auth.example.com"] };
+        },
+        fetchAuthorizationServer: async () => SLACK_AS,
+      },
+      { server: INTERNAL, internalHostSuffixes: ["agent-mcps.svc.cluster.local"] },
+    );
+
+    await uc.discover("memory");
+
+    expect(seen).toEqual([true]);
+  });
+
+  it("leaves the guard in place when the suffix was never declared", async () => {
+    const seen: Array<boolean | undefined> = [];
+    const { useCases: uc } = useCases(
+      {
+        fetchProtectedResource: async (_url: string, loopback?: boolean) => {
+          seen.push(loopback);
+          return { resource: INTERNAL.url, authorizationServers: ["https://auth.example.com"] };
+        },
+        fetchAuthorizationServer: async () => SLACK_AS,
+      },
+      { server: INTERNAL },
+    );
+
+    await uc.discover("memory");
+
+    expect(seen).toEqual([false]);
+  });
+});
+
+describe("a metadata read that fails", () => {
+  it("is a bad request about the server, not an internal error about us", async () => {
+    const { useCases: uc } = useCases({
+      fetchProtectedResource: async () => {
+        throw new McpMetadataError(
+          "Could not read protected resource metadata. Tried https://mcp.slack.com/.well-known/oauth-protected-resource/mcp: no usable protected resource metadata",
+        );
+      },
+    });
+
+    const error = await uc.discover("slack").catch((caught: unknown) => caught);
+
+    // 500 told an admin nothing and put `unhandled error` in the logs for a
+    // server that simply does not publish the document.
+    expect(error).toBeInstanceOf(ValidationError);
+    expect((error as ValidationError).status).toBe(400);
+    // The candidates it tried are the whole diagnosis; this endpoint is
+    // admin-only, so they belong in the answer.
+    expect((error as Error).message).toContain("oauth-protected-resource");
+  });
+
+  it("still reports a fault of our own as one", async () => {
+    const { useCases: uc } = useCases({
+      fetchProtectedResource: async () => {
+        throw new TypeError("cipher is not a function");
+      },
+    });
+
+    const error = await uc.discover("slack").catch((caught: unknown) => caught);
+
+    // Remapping everything would bury our own bugs behind a 400 that blames the
+    // MCP server for them.
+    expect(error).toBeInstanceOf(TypeError);
+  });
+
+  it("gives the authorization server's document the same treatment", async () => {
+    const { useCases: uc } = useCases({
+      fetchProtectedResource: async () => SLACK_RESOURCE,
+      fetchAuthorizationServer: async () => {
+        throw new McpMetadataError("Could not read authorization server metadata. Tried …");
+      },
+    });
+
+    const error = await uc.discover("slack").catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ValidationError);
   });
 });
