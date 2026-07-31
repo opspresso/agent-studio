@@ -147,10 +147,15 @@ export interface PromptPreview {
  * Assemble what the draft in the editor would send. Owner or admin, and it contacts
  * the bound MCP servers, so the panel calls it on demand rather than as the
  * editor changes.
+ *
+ * `versionName` names the saved version the draft started from, not the draft
+ * itself. The editor reads header overrides masked and hands them back that
+ * way, so the server needs it to resolve them into the secrets a run would
+ * actually send; omit it for a version that has never been saved.
  */
 export function previewPrompt(
   name: string,
-  input: VersionInput & { variables?: Record<string, string> },
+  input: VersionInput & { versionName?: string; variables?: Record<string, string> },
 ): Promise<PromptPreview> {
   return fetch(`/api/projects/${name}/preview`, {
     method: "POST",

@@ -46,9 +46,17 @@ function charCount(preview: PromptPreview): number {
 export function PromptPreview({
   projectName,
   draft,
+  versionName,
 }: {
   projectName: string;
   draft: VersionInput;
+  /**
+   * The saved version the draft started from, or null for one never saved. The
+   * server resolves masked header overrides against it — without it a bound MCP
+   * server is dialled with the wrong headers, and the preview would describe a
+   * request no run makes.
+   */
+  versionName: string | null;
 }) {
   const [preview, setPreview] = useState<PromptPreview | null>(null);
   const [previewOf, setPreviewOf] = useState<string>("");
@@ -67,7 +75,11 @@ export function PromptPreview({
     setLoading(true);
     setError(null);
     try {
-      const result = await previewPrompt(projectName, { ...draft, variables });
+      const result = await previewPrompt(projectName, {
+        ...draft,
+        ...(versionName ? { versionName } : {}),
+        variables,
+      });
       setPreview(result);
       setPreviewOf(JSON.stringify({ draft, variables }));
     } catch (e) {

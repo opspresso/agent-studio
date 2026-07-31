@@ -243,6 +243,35 @@ describe("mergeOutboundHeaders", () => {
     expect(b["X-Shared"]).toBe("shared-value");
   });
 
+  it("drops a masked override instead of sending it", () => {
+    // A form that read the override masked and handed it straight back. The
+    // reveal character is U+2022, outside Latin-1, so `fetch` rejects the whole
+    // request ("Cannot convert argument to a ByteString") — and a mask that did
+    // get through would hand the secret's first and last characters to the
+    // server. Skipping leaves the registry's own header standing, which is what
+    // "no override" means.
+    const merged = mergeOutboundHeaders(registry, {
+      Authorization: maskSecret("Bearer project-token"),
+      "X-Tenant": maskSecret("sample-agent"),
+    });
+
+    expect(merged.Authorization).toBe("Bearer registry-default");
+    expect(merged["X-Tenant"]).toBeUndefined();
+    for (const value of Object.values(merged)) {
+      expect(isMasked(value)).toBe(false);
+    }
+  });
+
+  it("still honours an explicit removal alongside a masked override", () => {
+    const merged = mergeOutboundHeaders(registry, {
+      Authorization: maskSecret("Bearer project-token"),
+      "X-Shared": null,
+    });
+    // A mask leaves the default alone; `null` is a decision, not an artifact.
+    expect(merged.Authorization).toBe("Bearer registry-default");
+    expect(merged["X-Shared"]).toBeUndefined();
+  });
+
   it("displaces a registry header that differs only by case", () => {
     // HTTP header names are case-insensitive; sending both would let the server
     // pick arbitrarily between the registry default and the override.

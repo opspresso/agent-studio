@@ -134,8 +134,16 @@ export const publishSchema = z.object({ versionName: z.string().min(1) });
  * A version as it stands in the editor, plus the variables to render its
  * template with. The body carries the whole draft rather than a version name
  * because the point of the preview is to see what is *not saved yet*.
+ *
+ * `versionName` is the exception, and it is not the draft's identity: it names
+ * the saved version the editor started from, so that masked header overrides
+ * can be resolved back to the secrets they stand for. A form reads them masked
+ * and echoes them back, and a mask is not a credential — without this the
+ * preview dials the bound MCP servers with the wrong headers. Absent for a
+ * version that was never saved, which has nothing to resolve against.
  */
 export const previewPromptSchema = versionInputSchema.extend({
+  versionName: z.string().min(1).optional(),
   variables: z.record(z.string(), z.string()).optional(),
 });
 

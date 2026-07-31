@@ -287,7 +287,7 @@ export default function PlaygroundPage() {
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
           <CollapsibleSection title="Preview">
-            <PromptPreview projectName={name} draft={draft} />
+            <PromptPreview projectName={name} draft={draft} versionName={selectedName || null} />
           </CollapsibleSection>
 
           <CollapsibleSection title="Run">

@@ -215,6 +215,12 @@ export function mergeHeaderOverrideUpdate(
  * otherwise both would be sent and the server would pick arbitrarily.
  *
  * Only call at dispatch time; both inputs are stored encrypted.
+ *
+ * A masked override is dropped rather than sent, and that is a safety net for a
+ * caller that failed to resolve one — see the note on the skip below. Callers
+ * that take a version from a form must still resolve masks against the stored
+ * version first ({@link mergeHeaderOverrideUpdate}); this only bounds the damage
+ * when one does not, because the alternative is silent and expensive.
  */
 export function mergeOutboundHeaders(
   registryHeaders: Record<string, string>,
@@ -222,6 +228,15 @@ export function mergeOutboundHeaders(
 ): Record<string, string> {
   const merged = decryptHeadersForOutbound(registryHeaders);
   for (const [key, value] of Object.entries(overrides ?? {})) {
+    // A mask is a display artifact a form echoed back, never a credential.
+    // Sending one is wrong twice over: `fetch` rejects it outright, because the
+    // reveal character is outside Latin-1 and a header must be a ByteString —
+    // and for the values it does not reject, it would hand the first and last
+    // characters of a real secret to a third-party server. Skipping leaves the
+    // registry's own header standing, which is what "no override" means.
+    if (value !== null && isMasked(value)) {
+      continue;
+    }
     for (const existing of Object.keys(merged)) {
       if (existing.toLowerCase() === key.toLowerCase()) {
         delete merged[existing];
