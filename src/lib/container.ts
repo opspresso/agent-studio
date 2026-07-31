@@ -54,6 +54,7 @@ import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
 import { syncToolsFromSnapshot } from "@/application/mcp/syncTools";
+import type { SyncSelection } from "@/domain/sync/types";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { CostAlertSlack } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
@@ -199,9 +200,10 @@ export const settingsUseCases = createSettingsUseCases(settingsRepository, secre
  */
 export const syncSkillsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getSkillsRepoConfig>>,
+  selection?: SyncSelection,
 ) => {
   const { fetchSkillsRepoSnapshot } = await import("@/infrastructure/github/skillsRepoClient");
-  return syncSkillsFromSnapshot(skillRepository, await fetchSkillsRepoSnapshot(repoConfig));
+  return syncSkillsFromSnapshot(skillRepository, await fetchSkillsRepoSnapshot(repoConfig), selection);
 };
 
 /**
@@ -212,9 +214,10 @@ export const syncSkillsFromRepo = async (
  */
 export const syncToolsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getToolsRepoConfig>>,
+  selection?: SyncSelection,
 ) => {
   const { fetchToolsRepoSnapshot } = await import("@/infrastructure/github/toolsRepoClient");
-  return syncToolsFromSnapshot(mcpUseCases, await fetchToolsRepoSnapshot(repoConfig));
+  return syncToolsFromSnapshot(mcpUseCases, await fetchToolsRepoSnapshot(repoConfig), selection);
 };
 
 /** A2A exposure: repositories plus the card renderer. */

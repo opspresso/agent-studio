@@ -1,10 +1,10 @@
 import type { McpServer, McpTool } from "@/domain/mcp/types";
-import type { SkippedTool, ToolSyncResult } from "@/application/mcp/syncTools";
+import type { RepoSyncResult, SyncSelection } from "@/domain/sync/types";
 import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 // Server responses carry masked (length-preserving; 9–20 chars reveal 2 at
 // each end, 21+ reveal 4) header values — never the full plaintext or ciphertext.
-export type { McpServer, McpTool, SkippedTool, ToolSyncResult };
+export type { McpServer, McpTool, RepoSyncResult, SyncSelection };
 
 export interface CreateMcpInput {
   name: string;
@@ -49,8 +49,12 @@ export async function deleteMcp(name: string): Promise<void> {
   await assertOk(await fetch(`/api/mcps/${name}`, { method: "DELETE" }));
 }
 
-export function syncTools(): Promise<ToolSyncResult> {
-  return fetch("/api/mcps/sync", { method: "POST" }).then((r) => readJson<ToolSyncResult>(r));
+export function syncTools(selection: SyncSelection = {}): Promise<RepoSyncResult> {
+  return fetch("/api/mcps/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(selection),
+  }).then((r) => readJson<RepoSyncResult>(r));
 }
 
 export function testMcpConnection(name: string): Promise<McpTool[]> {

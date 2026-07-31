@@ -350,6 +350,12 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/utf8Text.ts",
   },
   {
+    // Ten copies, and the door they all went through checked nothing.
+    what: "the entry name rule",
+    pattern: /\/\^\[a-z0-9-\]\+\$\//,
+    owner: "src/shared/slug.ts",
+  },
+  {
     what: "user-document caps",
     pattern: /MAX_DOCUMENT_CHARS_PER_TURN =/,
     owner: "src/domain/llm/documentLimits.ts",

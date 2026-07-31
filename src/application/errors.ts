@@ -39,6 +39,23 @@ export class ForbiddenError extends AppError {
 }
 
 /**
+ * Something this app called failed — GitHub, an MCP server, a provider.
+ *
+ * A distinct type because the alternative is what the sync routes used to do:
+ * re-decide the status from a substring of the message
+ * (`message.includes("GitHub") ? 502 : 500`), which is case-sensitive, blind to
+ * every message that does not happen to contain the word, and a second owner of
+ * a mapping `apiError` already owns. 502 says "not our fault, and not something
+ * retrying differently will fix", which is exactly what an operator needs to
+ * know before going to look at the other system.
+ */
+export class UpstreamError extends AppError {
+  constructor(message: string) {
+    super(message, 502);
+  }
+}
+
+/**
  * A refusal the caller can retry once a known amount of time has passed — a
  * daily spend cap that resets at UTC midnight, a concurrency slot that frees
  * when a lease expires.

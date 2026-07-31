@@ -24,7 +24,8 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
   const store = new Map(existing.map((server) => [server.name, server]));
   const created: CreateMcpInput[] = [];
   const patched: Array<{ name: string; patch: UpdateMcpInput }> = [];
-  const mcps: Pick<McpUseCases, "list" | "create" | "update"> = {
+  const removed: string[] = [];
+  const mcps: Pick<McpUseCases, "list" | "create" | "update" | "remove"> = {
     async list() {
       return [...store.values()];
     },
@@ -47,6 +48,10 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
       store.set(server.name, server);
       return server;
     },
+    async remove(name) {
+      removed.push(name);
+      store.delete(name);
+    },
     async update(name, patch) {
       const failure = refuse[name];
       if (failure) {
@@ -68,7 +73,7 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
       return next;
     },
   };
-  return { mcps, created, patched, store };
+  return { mcps, created, patched, removed, store };
 }
 
 function snapshot(files: Array<{ name: string; content: string }>, skippedPaths: string[] = []): ToolsRepoSnapshot {
@@ -113,99 +118,73 @@ describe("parseToolDoc", () => {
 });
 
 describe("syncToolsFromSnapshot", () => {
-  it("registers a tool the registry does not have", async () => {
+  const REGISTERED: McpServer = {
+    name: "mcp-url-fetch",
+    url: "https://stale.example.com/mcp",
+    description: "Edited in the console",
+    content: "console notes",
+    source: "github:opspresso/agent-tools",
+    headers: { Authorization: "enc:v1:ciphertext" },
+    auth: {
+      type: "oauth2",
+      resource: "https://stale.example.com",
+      authorizationServer: "https://as.example.com",
+      authorizationEndpoint: "https://as.example.com/authorize",
+      tokenEndpoint: "https://as.example.com/token",
+      tokenEndpointAuthMethod: "none",
+      discoveredAt: NOW,
+    },
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+
+  it("imports a tool the registry does not have", async () => {
     const { mcps, created } = fakeMcps();
     const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
 
     expect(result.created).toEqual(["mcp-url-fetch"]);
-    expect(result.skipped).toEqual([]);
-    expect(created[0]).toEqual({
+    expect(created[0]).toMatchObject({
       name: "mcp-url-fetch",
       url: "http://mcp-url-fetch.agent-mcps.svc.cluster.local:8080/mcp",
       description: "Fetches pages",
-      content: "# mcp-url-fetch\n\nOperator notes.",
       source: "github:opspresso/agent-tools",
-      // Never from the repo: a secret does not belong in git.
+      // A secret does not belong in git.
       headers: {},
     });
   });
 
-  it("replaces the document fields and keeps everything git cannot hold", async () => {
-    // The split this sync rests on: the repository owns what a TOOL.md says,
-    // the registry owns everything that cannot live in git.
-    const stored: McpServer = {
-      name: "mcp-url-fetch",
-      url: "https://stale.example.com/mcp",
-      description: "Edited in the console",
-      content: "console notes",
-      headers: { Authorization: "enc:v1:ciphertext" },
-      auth: {
-        type: "oauth2",
-        resource: "https://stale.example.com",
-        authorizationServer: "https://as.example.com",
-        authorizationEndpoint: "https://as.example.com/authorize",
-        tokenEndpoint: "https://as.example.com/token",
-        tokenEndpointAuthMethod: "none",
-        discoveredAt: NOW,
-      },
-      createdAt: NOW,
-      updatedAt: NOW,
-    };
-    const { mcps, created, store } = fakeMcps([structuredClone(stored)]);
+  it("reports what an existing entry differs by, and writes nothing", async () => {
+    const { mcps, patched, store } = fakeMcps([structuredClone(REGISTERED)]);
 
     const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
 
-    expect(created).toEqual([]);
-    expect(result.created).toEqual([]);
-    expect(result.updated).toEqual([
-      {
-        name: "mcp-url-fetch",
-        fields: ["url", "description", "content"],
-        // Moving the address discards the block discovered from the old one.
-        authDropped: true,
-      },
+    expect(result.existing).toEqual([
+      { name: "mcp-url-fetch", differs: ["url", "description", "content"] },
     ]);
+    // The stored version may be a correction someone made on purpose, and this
+    // cannot tell that apart from a document that moved on.
+    expect(patched).toEqual([]);
+    expect(store.get("mcp-url-fetch")).toEqual(REGISTERED);
+  });
 
+  it("overwrites only the entry the caller named", async () => {
+    const { mcps, store } = fakeMcps([structuredClone(REGISTERED)]);
+
+    const result = await syncToolsFromSnapshot(
+      mcps,
+      snapshot([{ name: "mcp-url-fetch", content: FETCHER }]),
+      { overwrite: ["mcp-url-fetch"] },
+    );
+
+    expect(result.overwritten).toEqual(["mcp-url-fetch"]);
     const after = store.get("mcp-url-fetch")!;
-    // The document's fields won.
     expect(after.url).toBe("http://mcp-url-fetch.agent-mcps.svc.cluster.local:8080/mcp");
     expect(after.description).toBe("Fetches pages");
-    expect(after.content).toContain("Operator notes.");
-    // What git cannot hold was not touched.
+    // What git cannot hold is untouched.
     expect(after.headers).toEqual({ Authorization: "enc:v1:ciphertext" });
   });
 
-  it("leaves the credentials alone when only the notes changed", async () => {
-    const stored: McpServer = {
-      name: "mcp-url-fetch",
-      url: "http://mcp-url-fetch.agent-mcps.svc.cluster.local:8080/mcp",
-      description: "Fetches pages",
-      content: "older notes",
-      headers: { Authorization: "enc:v1:ciphertext" },
-      auth: {
-        type: "oauth2",
-        resource: "http://mcp-url-fetch.agent-mcps.svc.cluster.local:8080",
-        authorizationServer: "https://as.example.com",
-        authorizationEndpoint: "https://as.example.com/authorize",
-        tokenEndpoint: "https://as.example.com/token",
-        tokenEndpointAuthMethod: "none",
-        discoveredAt: NOW,
-      },
-      createdAt: NOW,
-      updatedAt: NOW,
-    };
-    const { mcps, store } = fakeMcps([structuredClone(stored)]);
-
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
-
-    expect(result.updated).toEqual([{ name: "mcp-url-fetch", fields: ["content"] }]);
-    const after = store.get("mcp-url-fetch")!;
-    // The address did not move, so the OAuth block still describes this server.
-    expect(after.auth).toEqual(stored.auth);
-    expect(after.headers).toEqual(stored.headers);
-  });
-
-  it("reports an entry already identical to its document rather than rewriting it", async () => {
+  it("reports an entry that already agrees, without writing", async () => {
     const { mcps, patched } = fakeMcps([
       {
         name: "mcp-url-fetch",
@@ -218,24 +197,24 @@ describe("syncToolsFromSnapshot", () => {
       },
     ]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
+    const result = await syncToolsFromSnapshot(
+      mcps,
+      snapshot([{ name: "mcp-url-fetch", content: FETCHER }]),
+      { overwrite: ["mcp-url-fetch"] },
+    );
 
-    expect(result.unchanged).toEqual(["mcp-url-fetch"]);
-    expect(result.updated).toEqual([]);
-    // No write at all — an `updatedAt` that moved on every sync would make the
-    // registry look edited when nothing was.
+    expect(result.existing).toEqual([{ name: "mcp-url-fetch", differs: [] }]);
+    // An `updatedAt` that moved on every sync would make the registry look edited.
     expect(patched).toEqual([]);
   });
 
   it("keeps a field the document does not carry", async () => {
-    // An empty body says nothing about the notes; it does not ask for them to
-    // be erased.
     const doc = ["---", "description: Fetches pages", "url: https://a.example.com/mcp", "---", ""].join("\n");
     const { mcps, store } = fakeMcps([
       {
         name: "mcp-url-fetch",
         url: "https://a.example.com/mcp",
-        description: "Fetches pages",
+        description: "old",
         content: "notes worth keeping",
         headers: {},
         createdAt: NOW,
@@ -243,15 +222,18 @@ describe("syncToolsFromSnapshot", () => {
       },
     ]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: doc }]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: doc }]), {
+      overwrite: ["mcp-url-fetch"],
+    });
 
-    expect(result.unchanged).toEqual(["mcp-url-fetch"]);
+    // An empty body says nothing about the notes; it does not ask for them to
+    // be erased.
+    expect(result.overwritten).toEqual(["mcp-url-fetch"]);
     expect(store.get("mcp-url-fetch")?.content).toBe("notes worth keeping");
+    expect(store.get("mcp-url-fetch")?.description).toBe("Fetches pages");
   });
 
   it("will not let the repository move a managed entry's address, and says so", async () => {
-    // A managed address was recorded by the provisioner that bound the port,
-    // never typed, which is the whole basis for trusting it.
     const { mcps, store } = fakeMcps([
       {
         name: "mcp-url-fetch",
@@ -265,15 +247,57 @@ describe("syncToolsFromSnapshot", () => {
       },
     ]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]), {
+      overwrite: ["mcp-url-fetch"],
+    });
 
     expect(result.skipped).toEqual([
       { name: "mcp-url-fetch", reason: "managed-url", detail: "http://127.0.0.1:41234/mcp" },
     ]);
-    // The rest of the document still synced.
-    expect(result.updated[0]?.fields).toEqual(["description", "content"]);
+    // Its address is the basis for trusting it; the rest still applied.
     expect(store.get("mcp-url-fetch")?.url).toBe("http://127.0.0.1:41234/mcp");
     expect(store.get("mcp-url-fetch")?.description).toBe("Fetches pages");
+  });
+
+  it("reports an entry this sync created that the repo no longer carries", async () => {
+    const { mcps, removed } = fakeMcps([structuredClone(REGISTERED)]);
+
+    const result = await syncToolsFromSnapshot(mcps, snapshot([]));
+
+    expect(result.orphaned).toEqual(["mcp-url-fetch"]);
+    // An MCP entry holds credentials; a file disappearing from a branch is not
+    // enough to delete one.
+    expect(removed).toEqual([]);
+  });
+
+  it("deletes an orphan only when the caller names it", async () => {
+    const { mcps, removed, store } = fakeMcps([structuredClone(REGISTERED)]);
+
+    const result = await syncToolsFromSnapshot(mcps, snapshot([]), { remove: ["mcp-url-fetch"] });
+
+    expect(result.removed).toEqual(["mcp-url-fetch"]);
+    expect(removed).toEqual(["mcp-url-fetch"]);
+    expect(store.has("mcp-url-fetch")).toBe(false);
+  });
+
+  it("never lists an entry someone registered by hand", async () => {
+    // It was never the repository's to miss, and listing it would park a delete
+    // prompt next to it on every sync forever.
+    const { mcps } = fakeMcps([
+      {
+        name: "typed-by-hand",
+        url: "https://a.example.com/mcp",
+        description: "",
+        headers: {},
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ]);
+
+    const result = await syncToolsFromSnapshot(mcps, snapshot([]), { remove: ["typed-by-hand"] });
+
+    expect(result.orphaned).toEqual([]);
+    expect(result.removed).toEqual([]);
   });
 
   it("skips a document with no url and still syncs the rest of the snapshot", async () => {
@@ -290,9 +314,7 @@ describe("syncToolsFromSnapshot", () => {
     expect(result.skipped).toEqual([{ name: "broken", reason: "missing-url" }]);
   });
 
-  it("keeps a stored url when the document has none, rather than refusing the entry", async () => {
-    // `missing-url` is about having no address at all. An existing entry already
-    // has one, so a document that only carries notes still updates them.
+  it("keeps a stored url when the document has none", async () => {
     const { mcps, store } = fakeMcps([
       {
         name: "mcp-url-fetch",
@@ -308,11 +330,12 @@ describe("syncToolsFromSnapshot", () => {
     const result = await syncToolsFromSnapshot(
       mcps,
       snapshot([{ name: "mcp-url-fetch", content: "---\ndescription: new\n---\nnotes" }]),
+      { overwrite: ["mcp-url-fetch"] },
     );
 
     expect(result.skipped).toEqual([]);
-    expect(result.updated[0]?.fields).toEqual(["description", "content"]);
     expect(store.get("mcp-url-fetch")?.url).toBe("https://kept.example.com/mcp");
+    expect(store.get("mcp-url-fetch")?.description).toBe("new");
   });
 
   it("reports a refused url with the guard's own message and keeps going", async () => {
@@ -342,8 +365,6 @@ describe("syncToolsFromSnapshot", () => {
     const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
 
     expect(result.created).toEqual([]);
-    // Nothing is wrong with the document — the next sync finds the row and
-    // updates it, which is the ordinary path.
     expect(result.skipped).toEqual([{ name: "mcp-url-fetch", reason: "conflict" }]);
   });
 
@@ -367,5 +388,19 @@ describe("syncToolsFromSnapshot", () => {
 
     expect(result.repo).toBe("opspresso/agent-tools");
     expect(result.commitSha).toBe("abc123");
+  });
+
+  it("writes once and reports the entry as in step thereafter", async () => {
+    const { mcps, created, patched } = fakeMcps();
+    const files = [{ name: "mcp-url-fetch", content: FETCHER }];
+
+    await syncToolsFromSnapshot(mcps, snapshot(files));
+    const second = await syncToolsFromSnapshot(mcps, snapshot(files), {
+      overwrite: ["mcp-url-fetch"],
+    });
+
+    expect(second.existing).toEqual([{ name: "mcp-url-fetch", differs: [] }]);
+    expect(created).toHaveLength(1);
+    expect(patched).toEqual([]);
   });
 });

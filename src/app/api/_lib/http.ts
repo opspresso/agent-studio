@@ -1,15 +1,14 @@
 import type { ZodError } from "zod";
 import { RateLimitedError, statusForError, ValidationError } from "@/application/errors";
 import { log } from "@/shared/logger";
-
-const NAME_PATTERN = /^[a-z0-9-]+$/;
+import { isSlug } from "@/shared/slug";
 
 /**
  * Validate a route `[name]` param as a slug. Throws {@link ValidationError}
  * (→ 400 via {@link apiError}) on anything else.
  */
 export function parseName(name: string): string {
-  if (!NAME_PATTERN.test(name)) {
+  if (!isSlug(name)) {
     throw new ValidationError("Invalid name");
   }
   return name;

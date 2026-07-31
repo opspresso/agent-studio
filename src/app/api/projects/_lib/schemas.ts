@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { attachedImagesSchema } from "@/app/api/_lib/attachments";
 import type { ChannelToolCall } from "@/domain/llm/types";
 import type { McpBinding } from "@/domain/project/types";
 
 export const projectNameSchema = z
   .string()
-  .regex(/^[a-z0-9-]+$/, "name must be a slug (lowercase letters, digits, hyphens)");
+  .refine(isSlug, `name ${SLUG_RULE}`);
 
 export const createProjectSchema = z.object({
   name: projectNameSchema,
@@ -52,7 +53,7 @@ const payloadModeSchema = z.enum(["variables", "message"]);
 export const createTriggerSchema = z.object({
   triggerId: z
     .string()
-    .regex(/^[a-z0-9-]+$/, "triggerId must be a slug (lowercase letters, digits, hyphens)"),
+    .refine(isSlug, `triggerId ${SLUG_RULE}`),
   description: z.string().default(""),
   enabled: z.boolean().optional(),
   variables: z.record(z.string().min(1), z.string()).optional(),
@@ -115,7 +116,7 @@ export const versionInputSchema = z.object({
 
 export const versionNameSchema = z
   .string()
-  .regex(/^[a-z0-9-]+$/, "versionName must be a slug (lowercase letters, digits, hyphens)")
+  .refine(isSlug, `versionName ${SLUG_RULE}`)
   .refine((name) => name !== "published", {
     message: '"published" is reserved for the published-version pointer',
   });

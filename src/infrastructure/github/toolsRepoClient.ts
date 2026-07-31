@@ -5,11 +5,11 @@
  */
 
 import type { RepoToolFile, ToolsRepoSnapshot } from "@/domain/mcp/toolsRepo";
+import { isSlug } from "@/shared/slug";
 import { fetchBlobText, githubApi, type GitTreeEntry } from "./client";
 
 export type { RepoToolFile, ToolsRepoSnapshot };
 
-const SLUG = /^[a-z0-9-]+$/;
 
 export async function fetchToolsRepoSnapshot({
   repo,
@@ -52,7 +52,7 @@ export async function fetchToolsRepoSnapshot({
     // A directory name that is not a slug cannot become a registry entry name.
     // Reported rather than dropped: a document nobody ever sees is the failure
     // this repository's convention exists to prevent.
-    if (!SLUG.test(name)) {
+    if (!isSlug(name)) {
       skippedPaths.push(entry.path);
       continue;
     }

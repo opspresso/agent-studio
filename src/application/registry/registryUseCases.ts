@@ -8,6 +8,7 @@
 
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
+import { isSlug, SLUG_RULE } from "@/shared/slug";
 
 /** Minimal repository shape shared by the registry slices. */
 export interface RegistryRepository<T> {
@@ -76,6 +77,14 @@ export function createRegistryUseCases<
     },
 
     async create(input) {
+      // Checked here rather than only in the route schemas, because this is the
+      // one door every path goes through — an API body, a repo sync, a future
+      // caller nobody has written yet. A name that got past would be stored and
+      // then be unreadable: `parseName` refuses it on the way back out, so the
+      // row exists and answers 404.
+      if (!isSlug(input.name)) {
+        throw new ValidationError(`${opts.label} name ${SLUG_RULE}`);
+      }
       if (await opts.repo.get(input.name)) {
         throw new ConflictError(`${opts.label} "${input.name}" already exists`);
       }
