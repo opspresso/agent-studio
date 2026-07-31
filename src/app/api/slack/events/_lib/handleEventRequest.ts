@@ -44,13 +44,31 @@ export async function handleSlackEventRequest(
     }
     throw error;
   }
+  const timestamp = request.headers.get("x-slack-request-timestamp");
+  const signature = request.headers.get("x-slack-signature");
   const verified = verifySlackSignature({
     signingSecret: opts.signingSecret,
     body,
-    timestamp: request.headers.get("x-slack-request-timestamp"),
-    signature: request.headers.get("x-slack-signature"),
+    timestamp,
+    signature,
   });
   if (!verified) {
+    // A refusal used to be silent, which left the two states an operator has to
+    // tell apart — "Slack reached us and the signature was wrong" and "Slack
+    // never reached us" — looking identical from the outside: no log either way.
+    // Setting up a Request URL is exactly when that distinction is needed.
+    //
+    // The signature and the secret are never logged; what is logged is the
+    // shape of the failure, which is what narrows it: missing headers point at
+    // something that is not Slack, a large skew at the clock, and neither of
+    // those at the wrong signing secret being stored for this project.
+    const skew = timestamp ? Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp)) : null;
+    log.warn(
+      "slack",
+      `${opts.logLabel}: refused a request whose signature did not verify ` +
+        `(timestamp ${timestamp ? `present, ${skew}s skew` : "missing"}, ` +
+        `signature ${signature ? "present" : "missing"}, ${body.length} byte body)`,
+    );
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
