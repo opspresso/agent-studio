@@ -149,13 +149,26 @@ that is down — or a connection whose token was revoked — re-pays a failing h
 the first token of every message. The window is short because a stale failure hides a
 recovery while a stale success only serves a slightly old tool list.
 
-## Skills repository
+## Source repositories
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
 | `SKILLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `skills/<name>/SKILL.md`; the parent directory name is the skill slug. |
 | `SKILLS_REPO_BRANCH` | `main` | **runtime** | |
-| `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access. |
+| `TOOLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `tools/<name>/TOOL.md`; the parent directory name is the registry entry name. Frontmatter carries `url` and `description`; the body becomes the entry's operator notes. |
+| `TOOLS_REPO_BRANCH` | `main` | **runtime** | |
+| `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access. Shared by both syncs. |
+
+The two syncs have **opposite ownership**, which is the thing to know before editing either
+side. A skill row is entirely reconstructible from its document, so the repository is its
+source of truth and a sync overwrites. An MCP entry is not: it carries encrypted headers, an
+OAuth block discovered from the server's own metadata, and whatever an admin corrected. So a
+tools sync only ever **creates** — an existing name is left untouched and reported as skipped.
+The repository declares what should exist; it does not own what already does.
+
+A cluster-internal URL is registerable this way only if its host is covered by
+`MCP_INTERNAL_HOST_SUFFIXES` — the sync faces the same outbound guard a typed URL does, and a
+refusal is reported as a skip rather than failing the whole run.
 
 ## A2A
 
@@ -205,6 +218,8 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | A single MCP tool result | `100,000` chars | `src/infrastructure/mcp/toolManager.ts` |
 | Concurrent MCP calls per model response | `5` | `src/application/llm/engine.ts` |
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
+| Documents per turn / bytes each | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
+| Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Slack thread turns used as context | `50` | `src/application/slack/handleSlackEvent.ts` |
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |

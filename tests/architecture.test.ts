@@ -296,6 +296,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/parseList.ts",
   },
   {
+    // Two sync paths read a frontmatter block — SKILL.md and TOOL.md — and a
+    // second parser would let the same document mean different things depending
+    // on which repository it came from. The pattern matches the delimiter regex,
+    // which is where a copy starts.
+    what: "parsing a markdown frontmatter block",
+    pattern: /\^---\\r\?\\n/,
+    owner: "src/shared/frontmatter.ts",
+  },
+  {
     what: "the subagent nesting limit",
     pattern: /MAX_SUBAGENT_DEPTH\s*=/,
     owner: "src/application/execution/subagentRunner.ts",
@@ -331,6 +340,27 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "the 401 response body",
     pattern: /error: "Unauthorized"/,
     owner: "src/shared/unauthorized.ts",
+  },
+  {
+    // A second copy would inevitably be the naive `toString("utf-8")`, which
+    // never fails and so silently turns a PDF into replacement characters. That
+    // is the bug this exists to make un-writable, not a style preference.
+    what: "deciding whether bytes are UTF-8 text",
+    pattern: /Buffer\.from\(text, "utf-8"\)\.equals\(/,
+    owner: "src/shared/utf8Text.ts",
+  },
+  {
+    what: "user-document caps",
+    pattern: /MAX_DOCUMENT_CHARS_PER_TURN =/,
+    owner: "src/domain/llm/documentLimits.ts",
+  },
+  {
+    // The wrapper a model reads around an attachment. A chat replays a stored
+    // document by rebuilding it, so a second spelling would make a replayed turn
+    // differ from the one that was sent.
+    what: "how an attached document is framed in a turn",
+    pattern: /\[Attached file /,
+    owner: "src/application/llm/documentParts.ts",
   },
   {
     // Every line already carried a `[scope]` prefix by convention, and the

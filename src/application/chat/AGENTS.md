@@ -66,6 +66,16 @@ into `ChatDeps.runAgent`.
   (`toEngineMessages`), which the provider fetches: visible to the model, not editable.
   A turn with attachments and no text is a content-parts message with no text part, never
   an empty user turn.
+- **Documents are stored as their text, not as the file.** `readMessageDocuments` reads the
+  bytes exactly once; what comes back is both what this turn sends and what is persisted as
+  `documents: [{ name, text, note? }]`. Storing the text is what lets the *next* question
+  still have the document — a turn that only sent it would answer "summarise this" and then
+  fail "what does section 3 say?" — and the bytes could not be stored anyway. Both the live
+  turn and the replay wrap it with `framedDocument`, so a replayed turn is the one the chat
+  recorded rather than a differently-shaped one.
+- **Document text counts against the history budget** (`messageChars`). It sits beside
+  `content` rather than in it, so measuring `content` alone would price a turn carrying
+  40,000 characters of PDF as the sentence the user typed.
 - **Subagent chunks** (`author` set) stream to the client but are excluded from the
   persisted assistant content, tool calls and tool rows alike.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return

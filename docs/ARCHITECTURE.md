@@ -693,6 +693,13 @@ whatever budget is left goes to the newest images in the 10 most recent turns of
 history. Only humans' pictures count; the bot's own uploads are skipped, and anything skipped is
 reported in the reply.
 
+**Document attachments** are read into the turn as text (see [Attachments](#attachments)), and
+only from the current message: a document is expensive to fetch and parse where an image is
+not, and its text is already in the thread from the turn that sent it. A Slack file lives
+behind `url_private` and needs this bot's token, which is why no URL-fetching MCP tool can
+stand in for reading one. A file that is neither an image nor a readable document is the only
+thing still reported as ignored.
+
 Events are deduplicated exactly-once via `slackEventRepository.claim` (a conditional put) whose
 claim is a **lease** settled by `settle` — an instance that dies mid-processing leaves a
 reclaimable claim rather than an event recorded as handled by nobody.
@@ -720,8 +727,8 @@ Messages are append-only with a `seq`. Chat execution uses the agent engine dire
 self-call — and streams SSE to the client.
 
 `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`): a tool row
-always carries `toolCallId`, an assistant row may carry `toolCalls`/`images`, and illegal
-combinations are unrepresentable.
+always carries `toolCallId`, an assistant row may carry `toolCalls`/`images`, a user row may
+carry `images`/`documents`, and illegal combinations are unrepresentable.
 
 A run persists **one flattened assistant message** holding the accumulated text, the run's
 top-level `toolCalls` and any `warnings` it reported, preceded by its tool rows — including a
@@ -738,6 +745,43 @@ rather than made silently.
 
 > `src/application/chat/AGENTS.md` is the authority here. Read it before changing `run.ts` or
 > `messageMapping.ts`.
+
+### Attachments
+
+A turn may carry two kinds of attachment, and they take different routes.
+
+**Images** travel as bytes. They become `image_url` content parts, the engine registers a
+handle for each so a run can edit them, and the model must declare `imageInput` — sending a
+part a text-only model rejects fails the whole turn.
+
+**Documents become text at the surface that received them.** PDF, plain text, Markdown,
+CSV/TSV, JSON, XML and HTML are read into the turn as text parts rather than as
+provider-native file parts. That is a decision about this deployment rather than a
+simplification: a model id may be served by the default router **or** by its own provider's
+OpenAI-compatible endpoint (`LLM_PROVIDER_<NAME>_BASE_URL`), and those disagree about how — or
+whether — a file part may be sent, while `ModelCapabilities` is per *model* and cannot express
+a difference belonging to the channel. Text needs no capability gate at all, and it survives
+chat persistence, replay and the PII filter unchanged.
+
+| Piece | Owner |
+|---|---|
+| Caps, and which files are documents (`documentKind`) | `src/domain/llm/documentLimits.ts` |
+| Extraction (a port — it needs a PDF parser) | `DocumentExtractor`, adapter over `unpdf` |
+| Budgets, warnings, and the wrapper the model reads | `src/application/llm/documentParts.ts` |
+| Whether bytes are text at all | `decodeUtf8Text` in `src/shared/utf8Text.ts` |
+
+Two properties are load-bearing. **Nothing is lost quietly** — a truncated document, one that
+failed to parse, one past the per-turn count: each becomes a `warning`, because a document
+that contributed nothing looks exactly like a model that ignored it. And **a file that yields
+no text is a reported failure, never an empty success**: "this is a scan with no text layer"
+is actionable, while an empty string reads as "the document is empty".
+
+`decodeUtf8Text` exists because `Buffer.toString("utf-8")` never throws — invalid sequences
+become U+FFFD — so the naive decode turns a PDF into replacement characters and reports
+success. It decides on the bytes (a UTF-8 round trip, plus a NUL check for ASCII UTF-16),
+never on the declared content type, which is absent or wrong often enough to lose real files.
+The same decision guards MCP tool results: a non-image `resource.blob` that is not text is now
+named and omitted rather than dumped.
 
 ### Usage and cost attribution
 

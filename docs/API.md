@@ -90,7 +90,7 @@ list. `owner` = the project's owner or a configured admin.
 |---|---|---|
 | `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | session / admin |
 | `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | session / admin |
-| `/api/skills/sync` | `GET` `POST` | session / admin |
+| `/api/skills/sync`, `/api/mcps/sync` | `GET` `POST` | session / admin |
 | `/api/mcps/{name}/tools` | `POST` | session |
 | `/api/mcps/{name}/auth` | `POST` `DELETE` | admin |
 | `/api/mcps/managed` | `POST` | admin |
@@ -295,10 +295,10 @@ Chats are private to their owner and run only against agent projects.
 
 ```
 GET    /api/chats                         → { chats }
-POST   /api/chats                         { projectName, firstMessage, images? } → SSE
+POST   /api/chats                         { projectName, firstMessage, images?, documents? } → SSE
 GET    /api/chats/{chatId}                → { chat, messages }
 DELETE /api/chats/{chatId}                → 204
-POST   /api/chats/{chatId}/messages       { content, images? } → SSE
+POST   /api/chats/{chatId}/messages       { content, images?, documents? } → SSE
 ```
 
 The create stream starts with `{ "chat": {…} }` so clients learn the new `chatId` before
@@ -307,9 +307,21 @@ tool, and image display data. A project with neither a published version nor a r
 draft is rejected with `400`.
 
 `images` are the user's attachments as inline bytes — `[ { b64, mimeType } ]`, at most 4 per
-turn, 5MB each, `image/png|jpeg|gif|webp`. A turn needs text or at least one image (both
-empty → `400`). They reach the model as content parts and are stored (when object storage is
-configured) as URLs on the user message.
+turn, 5MB each, `image/png|jpeg|gif|webp`. They reach the model as content parts and are
+stored (when object storage is configured) as URLs on the user message.
+
+`documents` are files to read rather than look at — `[ { b64, mimeType, name } ]`, at most 4
+per turn, 10MB each: PDF, plus text, Markdown, CSV/TSV, JSON, XML and HTML. `name` is
+required and carries the decision when `mimeType` is `application/octet-stream`, which is how
+uploads commonly arrive; an unreadable type is rejected with `400`. The server extracts the
+**text** — a PDF's text layer, a text file's contents — and the turn carries that. The file
+itself is never stored; the extracted text is, as `documents: [ { name, text, note? } ]` on
+the user message, which is what lets a follow-up question still have the document. Up to
+20,000 characters are kept per document and 40,000 across a turn; anything left out is
+reported as a `warning`, as is a document that could not be read at all (a scan with no text
+layer, a password-protected PDF).
+
+A turn needs text or at least one attachment of either kind (all empty → `400`).
 
 ## Registry and integration operations
 
@@ -323,6 +335,14 @@ POST /api/skills/sync
 → { repo, commitSha, synced, unchanged, skipped } | 503 (not configured)
   skipped: [{ name, path, reason }] — attachment files skipped during collection
 
+GET  /api/mcps/sync
+→ { configured, repo, branch }
+
+POST /api/mcps/sync
+→ { repo, commitSha, created, skipped } | 503 (not configured)
+  skipped: [{ name, reason, detail? }]
+  reason: exists | missing-url | invalid-url | bad-name
+
 POST /api/mcps/{name}/tools
 → { tools } | 502 (connection failure)
 
@@ -333,9 +353,15 @@ GET /api/projects/{name}/a2a
 → { enabled, published, cardUrl }
 ```
 
-`GET /api/skills/sync` requires a session; its `POST` requires admin access. Registry test
-operations require a session and apply the same SSRF guard used during registration and
+Both sync endpoints answer `GET` to a session and require admin access for `POST`. Registry
+test operations require a session and apply the same SSRF guard used during registration and
 dispatch.
+
+The two syncs differ in who wins. `/api/skills/sync` overwrites: the repository is the source
+of truth for a synced skill. `/api/mcps/sync` only creates — an entry that already exists is
+returned under `skipped` with reason `exists` and is not modified, because a registry row
+carries headers and an OAuth block the repository cannot hold. `invalid-url` is the outbound
+guard's refusal, carried through in `detail`.
 
 Per-project Slack configuration uses these endpoints:
 
@@ -424,10 +450,14 @@ POST   /api/mcps/{name}/auth   { "authorizationServer": "https://…"? }
 DELETE /api/mcps/{name}/auth   → 204     (return the entry to static-header behaviour)
 ```
 
-Follows RFC 9728 protected-resource metadata → RFC 8414 authorization-server metadata, both
-re-validated through the SSRF policy and required to be `https`. When the resource advertises
-more than one authorization server the call returns `choose`; repeat it with
-`authorizationServer` set to one of the advertised values.
+Follows RFC 9728 protected-resource metadata → RFC 8414 authorization-server metadata, with
+every discovered endpoint re-validated through the SSRF policy and required to be `https`.
+When the resource advertises more than one authorization server the call returns `choose`;
+repeat it with `authorizationServer` set to one of the advertised values.
+
+A server that publishes no usable document — or cannot be reached — answers **400** with the
+candidate URLs it tried and why each failed. Reaching an entry on a
+[declared internal host](SECURITY.md#declared-internal-hosts) works here as it does for a run.
 
 Editing the entry's **URL** drops the `auth` block outright — it was read out of the old
 address's well-known documents.

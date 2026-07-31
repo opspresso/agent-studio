@@ -222,10 +222,12 @@ construction — a Kubernetes Service resolves to a ClusterIP the guard rejects.
 MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 ```
 
-A host under a declared suffix skips the public-URL guard at registration and at
-dispatch. **The blocked address ranges are not widened** — every other entry
-still faces exactly the check it did before. This is a second narrow exception
-alongside managed loopback, not a loosening of the guard.
+A host under a declared suffix skips the public-URL guard in the three places
+that ask — at registration, at dispatch, and when an admin reads its OAuth
+metadata — each through `skipsUrlGuard`. **The blocked address ranges are not
+widened** — every other entry still faces exactly the check it did before. This
+is a second narrow exception alongside managed loopback, not a loosening of the
+guard.
 
 Its narrowness is the whole design, and each part is pinned by
 `tests/internalHosts.test.ts`:
@@ -274,9 +276,15 @@ every argument before assembling its command.
 ## MCP OAuth
 
 Registry entries may carry an `auth` block discovered once at registration (RFC 9728
-protected-resource metadata → RFC 8414 authorization-server metadata), both re-validated
-through the URL policy and required to be `https`. **The run path never fetches a well-known
-document.**
+protected-resource metadata → RFC 8414 authorization-server metadata). Every endpoint taken
+out of either document is re-validated through the URL policy and required to be `https`.
+**The run path never fetches a well-known document.**
+
+The resource document is read from the entry's own address, so a
+[declared internal host](#declared-internal-hosts) is read the same way a run dials it. The
+**authorization server is not** — that URL comes out of a third party's document rather than
+the registry, and an operator declaring an MCP host internal says nothing about an
+authorization server that host names for itself.
 
 Credentials are **per project**, in their own `PROJECT#<name> / MCPCONN#<server>` item — not
 on the version (a snapshot of configuration history) and not on the project item (whose
@@ -369,6 +377,33 @@ characters are stripped, whitespace is collapsed to one line, the name is bounde
 characters, and an avatar is accepted only if it is an `https:` URL. That does not make prompt
 injection impossible — the message body is untrusted too — but it stops identity metadata from
 being a place to hide instructions a reader cannot see.
+
+## Attached documents
+
+A document's text goes into the turn, so **anything anyone can attach can say anything**. In a
+Slack channel that is not only the person asking — it is whoever can drop a file where the bot
+can see it.
+
+What is done about it: every document is wrapped by `framedDocument`
+(`src/application/llm/documentParts.ts`), which names the file, marks where it ends, and tells
+the model to treat the span as data and never as instructions. The name is JSON-escaped so a
+crafted filename cannot forge the end marker.
+
+**That is a mitigation, not a fix.** No wording makes injected text safe, and the message body
+was already untrusted. Size an agent's authority to it: one that reads attachments should not
+hold permissions you would not give to a stranger with a file.
+
+Other properties worth knowing:
+
+- **Documents are read, never executed or rendered.** Extraction yields text and nothing else;
+  HTML is read as its markup rather than fetched, scripted or resolved.
+- **Nothing fetches on the document's behalf.** A URL inside an attachment is text like any
+  other; only a tool the version bound can act on it, under that tool's own guard.
+- **Text goes through the PII filter** like the rest of the turn when the version opts in —
+  with the same limits (emails and phone numbers, not names).
+- **Chats store the extracted text, not the file**, under the chat's own retention and the
+  owner-private read rule. A 10MB PDF is never persisted; up to 40,000 characters per turn of
+  what was read is.
 
 ## Data exposure and retention
 
