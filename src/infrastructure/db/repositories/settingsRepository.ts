@@ -13,6 +13,8 @@ const FIELDS = [
   "llmApiKey",
   "skillsRepo",
   "skillsRepoBranch",
+  "toolsRepo",
+  "toolsRepoBranch",
   "githubToken",
   "a2aApiKey",
   "publicBaseUrl",

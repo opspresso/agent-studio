@@ -24,6 +24,8 @@ export interface AppSettings {
   llmProviders?: LlmProviderSetting[];
   skillsRepo?: string;
   skillsRepoBranch?: string;
+  toolsRepo?: string;
+  toolsRepoBranch?: string;
   /** Secret. */
   githubToken?: string;
   /** Secret. */

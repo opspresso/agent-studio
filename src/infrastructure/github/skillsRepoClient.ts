@@ -11,34 +11,11 @@ import {
   type SkillRoot,
   type SkillTreeEntry,
 } from "@/domain/skill/files";
+import { fetchBlobText, githubApi } from "./client";
 
 export type { RepoSkillFile, SkillsRepoSnapshot };
 
 const SLUG = /^[a-z0-9-]+$/;
-
-async function githubApi<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(`https://api.github.com${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`GitHub ${path} failed: ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
-
-async function fetchBlobText(repo: string, sha: string, token: string): Promise<string> {
-  const blob = await githubApi<{ content: string; encoding: string }>(
-    `/repos/${repo}/git/blobs/${sha}`,
-    token,
-  );
-  return blob.encoding === "base64"
-    ? Buffer.from(blob.content, "base64").toString("utf8")
-    : blob.content;
-}
 
 export async function fetchSkillsRepoSnapshot(
   { repo, branch, token }: { repo?: string; branch: string; token?: string },
