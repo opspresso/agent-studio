@@ -28,7 +28,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
-import { isManagedLoopback, issuerOf } from "@/domain/mcp/types";
+import { issuerOf, skipsUrlGuard } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
 import { log } from "@/shared/logger";
 
@@ -217,6 +217,8 @@ export interface McpAuthUseCasesDeps {
   authProvider: McpAuthProvider;
   /** Absolute base of this deployment; the redirect URI is built from it. */
   publicBaseUrl: () => Promise<string | undefined>;
+  /** DNS suffixes this deployment declared internal; see `skipsUrlGuard`. */
+  internalHostSuffixes?: readonly string[];
 }
 
 export interface McpAuthUseCases {
@@ -659,7 +661,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     async listTools(projectName, serverName, userEmail, headerOverrides) {
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireServer(serverName);
-      const loopback = isManagedLoopback(server);
+      const loopback = skipsUrlGuard(server, deps.internalHostSuffixes);
       if (!loopback) {
         try {
           // Re-checked here as at dispatch: the registry entry may have been

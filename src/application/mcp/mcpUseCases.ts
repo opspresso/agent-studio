@@ -1,5 +1,5 @@
 import type { McpRepository } from "@/domain/mcp/repository";
-import { isManagedLoopback, type McpServer } from "@/domain/mcp/types";
+import { skipsUrlGuard, type McpServer } from "@/domain/mcp/types";
 import { NotFoundError, ValidationError } from "@/application/errors";
 import {
   assertAllowedUrl,
@@ -47,13 +47,23 @@ export function createMcpUseCases(
   cipher: SecretCipher,
   policy: UrlPolicy,
   probe: McpToolProbe,
+  /**
+   * DNS suffixes this deployment declared internal. Registration has to honour
+   * them too, not just dispatch — a URL the run path would happily call is of no
+   * use if it cannot be saved.
+   */
+  internalHostSuffixes: readonly string[] = [],
 ): McpUseCases {
   const registry = createRegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput>({
     label: "MCP server",
     repo,
     view: (server) => masked(cipher, server),
     async build(input, now) {
-      await assertAllowedUrl(policy, input.url);
+      // A new entry is `remote` by definition — nothing has provisioned it — so
+      // the only way past the guard here is a suffix this deployment declared.
+      if (!skipsUrlGuard({ url: input.url }, internalHostSuffixes)) {
+        await assertAllowedUrl(policy, input.url);
+      }
       return {
         name: input.name,
         url: input.url,
@@ -80,7 +90,11 @@ export function createMcpUseCases(
       // refuses that. Re-running the public-URL guard over it fails the save of
       // every *other* field, which is how editing a managed server's headers
       // became impossible.
-      if (patch.url !== undefined && !isManagedLoopback(existing)) {
+      if (
+        patch.url !== undefined &&
+        !skipsUrlGuard(existing, internalHostSuffixes) &&
+        !skipsUrlGuard({ url: patch.url }, internalHostSuffixes)
+      ) {
         await assertAllowedUrl(policy, patch.url);
       }
       // The OAuth block was read out of the *old* address's well-known
@@ -131,7 +145,7 @@ export function createMcpUseCases(
       // Same decision as the run path, from the same predicate: the console's
       // own test must reach what a run can, or a managed server looks broken in
       // the one place an operator checks it.
-      const loopback = isManagedLoopback(existing);
+      const loopback = skipsUrlGuard(existing, internalHostSuffixes);
       if (!loopback) {
         try {
           await policy.assertAllowed(existing.url);

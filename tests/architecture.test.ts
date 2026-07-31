@@ -262,6 +262,18 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/mcp/types.ts",
   },
   {
+    // The two ways an MCP entry reaches an address the SSRF guard rejects:
+    // provenance (we started the container) and declaration (an operator put the
+    // host's suffix in this deployment's configuration). Four call sites ask —
+    // registration, update, the console's probe, and dispatch — and a fifth that
+    // answered for itself would be a hole in the outbound boundary rather than a
+    // duplicated constant. The pattern matches the suffix match itself, which is
+    // the part a copy would get subtly wrong.
+    what: "which hosts may skip the outbound URL guard",
+    pattern: /endsWith\(`\.\$\{/,
+    owner: "src/domain/mcp/types.ts",
+  },
+  {
     what: "which storage errors mean a lost conditional write",
     pattern: /ConditionalCheckFailedException/,
     owner: "src/application/errors.ts",

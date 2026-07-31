@@ -125,6 +125,7 @@ should mean.
 |---|---|---|---|
 | `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | How long a bound server's tool list is reused, keyed by `url + headers`. A warm entry also lets the session handshake lazily, so a turn that calls no tool makes no MCP request at all. `0` disables caching outright, and no server hint can switch it back on. |
 | `MCP_MAX_SERVER_TTL_MS` | `300000` (5 min) | — | Ceiling on the `ttlMs` a server may request on `tools/list` (SEP-2549). `0` ignores server hints entirely and returns every entry to the local TTL. |
+| `MCP_INTERNAL_HOST_SUFFIXES` | empty | — | Comma-separated DNS suffixes whose hosts an MCP entry may use despite resolving to a private address — typically `<namespace>.svc.cluster.local`. Empty leaves the SSRF guard exactly as it was. See [SECURITY.md](SECURITY.md#declared-internal-hosts). |
 | `MANAGED_MCP_INSTANCE_ID` | unset | — | The host managed MCP containers are started on, through SSM Run Command. |
 | `MANAGED_MCP_REGISTRY` | unset | — | The registry `docker login` authenticates against, so this account's own images pull without a credential being typed. Images from any other registry the host can pull from are allowed; the login is simply skipped for them. |
 | `MANAGED_MCP_NETWORK_CONTAINER` | `agent-studio` | — | The container managed workloads share a network namespace with — this app's own. Every container has its own `127.0.0.1`, so a loopback address only means anything when both ends are in the same namespace. |

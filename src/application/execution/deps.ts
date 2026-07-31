@@ -49,6 +49,13 @@ export interface ExecutionDeps extends RunBracketDeps {
   mcpSessions: McpSessionFactory;
   /** Per-project OAuth for registry servers that require it. */
   mcpAuth: McpAuthProvider;
+  /**
+   * DNS suffixes this deployment declared reachable despite resolving privately
+   * (`config.mcpInternalHostSuffixes`). Injected rather than read here, because
+   * the decision it feeds lives in the domain and the value lives in the
+   * environment. Absent means the guard applies to everything, as before.
+   */
+  internalHostSuffixes?: readonly string[];
   traces?: TraceRepository;
   traceSampleRate?: number;
   /**

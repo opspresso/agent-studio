@@ -3,7 +3,7 @@
 import type { Version } from "@/domain/project/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
-import { isManagedLoopback } from "@/domain/mcp/types";
+import { skipsUrlGuard } from "@/domain/mcp/types";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
@@ -45,11 +45,11 @@ export async function buildMcpTools(
             warning: `MCP server '${binding.name}' is no longer in the registry; its tools were not offered.`,
           };
         }
-        // A managed server is a container on this host, and its address is
-        // loopback — which the guard rejects, correctly, for anything an
-        // operator could type. Trust comes from provenance instead, decided in
-        // one place. Everything else still faces the guard here.
-        const loopback = isManagedLoopback(mcp);
+        // Two kinds of entry skip the guard: a container this app started at a
+        // loopback address, and a host whose suffix this deployment declared
+        // internal. Both decided in one place. Everything else still faces the
+        // guard here.
+        const loopback = skipsUrlGuard(mcp, deps.internalHostSuffixes);
         if (!loopback) {
           try {
             // Re-check at dispatch (like remote subagents) to narrow the DNS-rebinding

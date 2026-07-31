@@ -124,7 +124,13 @@ export {
  * has exactly one wiring site.
  */
 export const agentUseCases = createAgentUseCases(externalAgentRepository, secretCipher, urlPolicy, remoteAgents);
-export const mcpUseCases = createMcpUseCases(mcpRepository, secretCipher, urlPolicy, mcpToolProbe);
+export const mcpUseCases = createMcpUseCases(
+  mcpRepository,
+  secretCipher,
+  urlPolicy,
+  mcpToolProbe,
+  config.mcpInternalHostSuffixes,
+);
 
 /**
  * Managed MCP, when this deployment can start containers at all. Undefined
@@ -172,6 +178,7 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   probe: mcpToolProbe,
   authProvider: mcpAuthProvider,
   publicBaseUrl: getPublicBaseUrl,
+  internalHostSuffixes: config.mcpInternalHostSuffixes,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
 export const triggerUseCases = createTriggerUseCases({
@@ -261,6 +268,7 @@ export const executionDeps: ExecutionDeps = {
   remoteAgents,
   mcpSessions,
   mcpAuth: mcpAuthProvider,
+  internalHostSuffixes: config.mcpInternalHostSuffixes,
   traces: traceRepository,
   traceSampleRate,
   slack: costAlertSlack,

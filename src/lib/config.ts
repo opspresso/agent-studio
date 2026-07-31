@@ -160,6 +160,23 @@ export const config = {
   get maxConcurrentRunsA2a(): number {
     return positiveIntEnv("MAX_CONCURRENT_RUNS_A2A", 50);
   },
+  /**
+   * DNS suffixes whose hosts an MCP entry may use despite resolving privately —
+   * a Kubernetes Service name, typically `.<namespace>.svc.cluster.local`.
+   *
+   * The SSRF guard rejects private addresses, correctly, because its job is to
+   * stop a typed or model-chosen URL from reaching an internal service. On a
+   * cluster the servers this app is *meant* to call are internal by
+   * construction, so there has to be a way to say which ones — and it has to be
+   * this one: deployment configuration, not something a registry entry can
+   * claim for itself. Env-only for the same reason it is not in runtime
+   * settings: widening the outbound boundary should take a deploy, not a form.
+   *
+   * Empty (the default) leaves the guard exactly as it was.
+   */
+  get mcpInternalHostSuffixes(): string[] {
+    return parseList(process.env.MCP_INTERNAL_HOST_SUFFIXES ?? "");
+  },
   /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
   get a2aApiKey(): string | undefined {
     return process.env.A2A_API_KEY || undefined;

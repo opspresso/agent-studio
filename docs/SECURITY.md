@@ -212,6 +212,43 @@ the single outbound boundary:
 
 Any public URL is allowed. Register only trusted endpoints.
 
+### Declared internal hosts
+
+On a cluster, the MCP servers this app is *meant* to call are private by
+construction — a Kubernetes Service resolves to a ClusterIP the guard rejects.
+`MCP_INTERNAL_HOST_SUFFIXES` is how a deployment says which names those are:
+
+```
+MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
+```
+
+A host under a declared suffix skips the public-URL guard at registration and at
+dispatch. **The blocked address ranges are not widened** — every other entry
+still faces exactly the check it did before. This is a second narrow exception
+alongside managed loopback, not a loosening of the guard.
+
+Its narrowness is the whole design, and each part is pinned by
+`tests/internalHosts.test.ts`:
+
+- **Configuration only.** The list comes from the environment. A registry entry
+  cannot name its own exemption, and it is deliberately *not* a runtime setting:
+  widening the outbound boundary should take a deploy, not a form submitted by
+  whoever holds admin at the time.
+- **Label-anchored.** `agent-mcps.svc.cluster.local` admits
+  `mcp-url-fetch.agent-mcps.svc.cluster.local` and refuses
+  `evil-agent-mcps.svc.cluster.local` — the near-miss that a plain "ends with"
+  would let through. A leading dot is accepted and means the same thing.
+- **No single-label suffix.** `local` or `internal` would admit a whole namespace
+  of names; far more likely a typo than an intent, so it is not honoured.
+- **Never an IP literal.** The exemption is for a name someone published. An
+  address has no name to match, so a private address still has to earn its way
+  through provenance.
+- **`http(s)` only**, and userinfo cannot smuggle the suffix past the host check.
+
+What it costs: a host under that suffix is reachable by any URL an admin can
+store, which is the capability the guard otherwise removes. Keep the suffix as
+specific as the namespace you actually run those servers in.
+
 ### The managed-loopback exception
 
 A managed MCP server (`runtime: "managed"`) is a container this app started on its own host
