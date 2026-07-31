@@ -27,6 +27,14 @@ function toItem(version: Version): VersionItem {
  * `mcpList` was a plain `string[]` before per-version header overrides existed.
  * Rows written then are still valid bindings with no override, so normalize on
  * read rather than migrating the table.
+ *
+ * This rebuilds the binding field by field rather than spreading the stored
+ * object, so that a row can never introduce an attribute the domain type does
+ * not have. The cost is that a field added to `McpBinding` and not added here is
+ * written, stored, and then silently dropped on every read — which is exactly
+ * what happened to `tools`: narrowing a server's tool list saved without
+ * complaint and did nothing, because the run reads its version back through
+ * here. Anything added to the binding must be added below.
  */
 function toMcpBindings(raw: unknown): McpBinding[] {
   if (!Array.isArray(raw)) {
@@ -37,12 +45,21 @@ function toMcpBindings(raw: unknown): McpBinding[] {
       return entry ? [{ name: entry }] : [];
     }
     if (entry && typeof entry === "object") {
-      const binding = entry as { name?: unknown; headers?: unknown };
+      const binding = entry as { name?: unknown; headers?: unknown; tools?: unknown };
       if (typeof binding.name === "string" && binding.name) {
+        // An empty list means the same as no list — every tool — so it is
+        // dropped rather than stored as a narrowing that offers nothing.
+        const tools = Array.isArray(binding.tools)
+          ? binding.tools.filter((tool): tool is string => typeof tool === "string" && tool !== "")
+          : [];
         return [
-          binding.headers && typeof binding.headers === "object"
-            ? { name: binding.name, headers: binding.headers as McpBinding["headers"] }
-            : { name: binding.name },
+          {
+            name: binding.name,
+            ...(binding.headers && typeof binding.headers === "object"
+              ? { headers: binding.headers as McpBinding["headers"] }
+              : {}),
+            ...(tools.length > 0 ? { tools } : {}),
+          },
         ];
       }
     }

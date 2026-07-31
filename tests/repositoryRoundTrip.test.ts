@@ -202,6 +202,37 @@ describe("versionRepository mcpList normalization", () => {
     ]);
   });
 
+  it("keeps a narrowed tool list", async () => {
+    // This is read back by the run itself, so dropping it here does not fail —
+    // it silently offers every tool the server has, which is the opposite of
+    // what the version asked for.
+    writeRaw([{ name: "alpha", tools: ["search", "fetch"] }]);
+
+    const version = await versionRepository.get("legacy", "1");
+
+    expect(version?.mcpList).toEqual([{ name: "alpha", tools: ["search", "fetch"] }]);
+  });
+
+  it("carries a narrowing and an override together", async () => {
+    writeRaw([{ name: "alpha", headers: { "X-Tenant": "acme" }, tools: ["search"] }]);
+
+    const version = await versionRepository.get("legacy", "1");
+
+    expect(version?.mcpList).toEqual([
+      { name: "alpha", headers: { "X-Tenant": "acme" }, tools: ["search"] },
+    ]);
+  });
+
+  it("treats an empty or malformed tool list as no narrowing", async () => {
+    // Absent and empty mean the same thing — every tool — so an empty array must
+    // not be stored as a narrowing that would offer none.
+    writeRaw([{ name: "alpha", tools: [] }, { name: "beta", tools: "search" }]);
+
+    const version = await versionRepository.get("legacy", "1");
+
+    expect(version?.mcpList).toEqual([{ name: "alpha" }, { name: "beta" }]);
+  });
+
   it("drops entries with no usable name instead of failing the read", async () => {
     writeRaw(["ok", "", { headers: {} }, null, 42]);
 
