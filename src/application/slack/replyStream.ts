@@ -24,8 +24,17 @@ import { log } from "@/shared/logger";
 const STREAM_INTERVAL_MS = 1000;
 /** Cadence of `chat.update`. Slack documents at most one edit per three seconds. */
 const EDIT_INTERVAL_MS = 3000;
-/** Cadence of `assistant.threads.setStatus`; an unchanged status is never re-sent. */
+/** Cadence of a *changed* `assistant.threads.setStatus`. Its limit is 600/min. */
 const STATUS_INTERVAL_MS = 1000;
+/**
+ * How old a status may get before it is sent again unchanged.
+ *
+ * Slack expires a status two minutes after it is set, and a run may take longer
+ * — so a status set once and never repeated disappears while the agent is still
+ * working, which reads as an agent that died. Well inside that window, so even a
+ * missed heartbeat tick still lands before the expiry.
+ */
+const STATUS_REFRESH_MS = 45_000;
 /**
  * Appended to an edited-in-place reply that is still being written, when the
  * deployment names nothing else.
@@ -53,8 +62,16 @@ export interface ReplyTarget {
 }
 
 export interface ReplySink {
-  /** Native progress line. Throttled, deduplicated, and never fatal. */
-  status(text: string): Promise<void>;
+  /**
+   * Native progress line. Throttled and never fatal. `loadingMessages` are
+   * rotated by Slack as an animated indicator underneath it (at most ten).
+   */
+  status(text: string, loadingMessages?: string[]): Promise<void>;
+  /**
+   * Keep the current status from expiring while a run is in flight. Returns the
+   * stopper; call it in a `finally` so a failed run does not leave a timer.
+   */
+  keepStatusAlive(): () => void;
   /** The answer *so far*. The sink works out what still needs sending. */
   push(fullText: string): Promise<void>;
   /** Deliver whatever is left, plus any warnings, and clear the status. */
@@ -86,6 +103,7 @@ export function createReplySink(
   let flushed = 0;
   let lastWrite = 0;
   let lastStatus = "";
+  let lastStatusLoading: string[] | undefined;
   let lastStatusAt = 0;
   const indicator = loadingIndicator || DEFAULT_LOADING_INDICATOR;
 
@@ -126,28 +144,50 @@ export function createReplySink(
     flushed = text.length;
   }
 
-  async function sendStatus(text: string): Promise<void> {
-    if (!target.assistantThread || text === lastStatus) {
+  async function sendStatus(text: string, loadingMessages?: string[]): Promise<void> {
+    if (!target.assistantThread) {
       return;
     }
     const now = Date.now();
-    // An explicit clear always goes out; only progress text is paced.
-    if (text !== "" && now - lastStatusAt < STATUS_INTERVAL_MS) {
+    if (text === lastStatus) {
+      // Repeating a status is only worth a call when Slack is about to drop it.
+      // Nothing to keep alive once it has been cleared.
+      if (text === "" || now - lastStatusAt < STATUS_REFRESH_MS) {
+        return;
+      }
+    } else if (text !== "" && now - lastStatusAt < STATUS_INTERVAL_MS) {
+      // An explicit clear always goes out; only new progress text is paced.
       return;
     }
     lastStatus = text;
+    lastStatusLoading = loadingMessages;
     lastStatusAt = now;
     await slack
       .setStatus(token, {
         channel_id: target.channel,
         thread_ts: target.threadTs,
         status: text,
+        ...(loadingMessages && loadingMessages.length > 0
+          ? { loading_messages: loadingMessages }
+          : {}),
       })
       .catch(() => {});
   }
 
   return {
     status: sendStatus,
+
+    keepStatusAlive() {
+      if (!target.assistantThread) {
+        return () => {};
+      }
+      const timer = setInterval(() => {
+        void sendStatus(lastStatus, lastStatusLoading);
+      }, STATUS_REFRESH_MS);
+      // A pending refresh must never be what keeps the process alive.
+      (timer as unknown as { unref?: () => void }).unref?.();
+      return () => clearInterval(timer);
+    },
 
     async push(fullText) {
       if (fullText.length <= flushed) {

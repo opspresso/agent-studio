@@ -17,6 +17,13 @@ import { log } from "@/shared/logger";
 const RUN_TIMEOUT_MS = 3 * 60 * 1000;
 /** How much of the opening question names the thread in the agent's history. */
 const MAX_THREAD_TITLE_LENGTH = 60;
+/**
+ * Rotated by Slack underneath the status line while the run has nothing more
+ * specific to report. Slack prefixes each with the app's name, so they read as
+ * "<App> is thinking…". A moving indicator is what separates "still working"
+ * from "stuck", which one static line cannot say.
+ */
+const THINKING_MESSAGES = ["is thinking…", "is working through it…", "is still on it…"];
 /** Most recent thread turns carried as context; older turns are dropped. */
 const MAX_HISTORY_MESSAGES = 50;
 /**
@@ -256,7 +263,7 @@ export async function handleSlackEvent(
     },
     deps.loadingIndicator,
   );
-  await sink.status("is thinking…");
+  await sink.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
   // Name the thread from the question that opened it, so the agent's history
   // reads as a list of topics rather than of timestamps. Only the opening turn:
   // a later message would rename the thread out from under the user.
@@ -291,6 +298,11 @@ export async function handleSlackEvent(
     MAX_IMAGE_ATTACHMENTS - imageParts.length,
     warnings,
   );
+  // A run can go minutes between chunks — a slow provider, a long tool — and
+  // Slack drops a status two minutes after it is set. Refreshing on chunk
+  // arrival alone would go quiet exactly when the run is slowest, so this runs
+  // on its own clock.
+  const stopStatusHeartbeat = sink.keepStatusAlive();
   try {
     const messages: ChatMessageInput[] = [...history, { role: "user", content: userContent }];
     for await (const chunk of deps.runAgent({
@@ -343,6 +355,8 @@ export async function handleSlackEvent(
           ? error.message
           : "agent run failed",
     );
+  } finally {
+    stopStatusHeartbeat();
   }
 
   log.info(

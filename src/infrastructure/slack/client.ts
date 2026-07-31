@@ -145,11 +145,21 @@ export const slackClient = {
   /**
    * The native "<App> is thinking…" line under an agent thread. It is not a
    * message: it costs no thread real estate, clears itself when a message is
-   * sent, and an empty string clears it explicitly.
+   * sent, and an empty string clears it explicitly. Slack also expires it after
+   * two minutes, so a long run has to send it again.
+   *
+   * `loading_messages` (at most ten) are rotated underneath it as an animated
+   * indicator, which is what tells a reader the agent is still working rather
+   * than stuck on one line.
    */
   setStatus(
     token: string,
-    args: { channel_id: string; thread_ts: string; status: string },
+    args: {
+      channel_id: string;
+      thread_ts: string;
+      status: string;
+      loading_messages?: string[];
+    },
   ): Promise<void> {
     return slackApi(token, "assistant.threads.setStatus", args).then(() => undefined);
   },

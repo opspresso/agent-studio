@@ -49,7 +49,12 @@ export interface SlackClientPort {
   ): Promise<void>;
   setStatus(
     token: string,
-    args: { channel_id: string; thread_ts: string; status: string },
+    args: {
+      channel_id: string;
+      thread_ts: string;
+      status: string;
+      loading_messages?: string[];
+    },
   ): Promise<void>;
   setSuggestedPrompts(
     token: string,

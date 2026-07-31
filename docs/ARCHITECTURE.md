@@ -650,7 +650,12 @@ Streaming into a channel additionally names the recipient (`recipient_user_id` /
 The **agent experience** is answered natively where the surface offers it (a DM, not a channel
 thread): progress goes to `assistant.threads.setStatus` — "is thinking…", then each tool by
 name — rather than overwriting the message body, and the opening question of a new thread names
-it via `assistant.threads.setTitle`. Opening the agent container is its own event, handled by
+it via `assistant.threads.setTitle`. The thinking status carries `loading_messages`, which Slack
+rotates as an animated indicator, and **a heartbeat re-sends it every 45 seconds**: Slack expires
+a status two minutes after it is set, and a run may take longer, so a status set once would
+vanish while the agent was still working. The heartbeat runs on its own clock rather than on
+chunk arrival, because the case it exists for — a slow provider, a long tool — is exactly the one
+where no chunks arrive. Opening the agent container is its own event, handled by
 `handleThreadStart` rather than by a run: `app_home_opened` on the Messages tab (the agent
 messaging experience) pins the project's suggested prompts, and the legacy
 `assistant_thread_started` also introduces the project, because unlike `app_home_opened` it
