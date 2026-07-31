@@ -112,6 +112,7 @@ about to make copy number two.
 | Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
+| Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/application/execution/mcpTools.ts` |
 | How many agents one dispatch may run | `src/application/llm/engine.ts` |
@@ -123,6 +124,9 @@ about to make copy number two.
 | Which project type runs which way | `src/application/execution/deps.ts` |
 | How a Slack reply is delivered | `src/application/slack/replyStream.ts` |
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |
+| Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
+| User-document caps | `src/domain/llm/documentLimits.ts` |
+| How an attached document is framed in a turn | `src/application/llm/documentParts.ts` |
 
 Other decisions with a single owner that the test cannot express as a pattern, but that the
 same rule applies to:
@@ -207,6 +211,20 @@ One line each — the linked section is the authority.
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
   composers, API bodies and Slack all read them) and the `data:` encoding in
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.
+  Documents have their own caps in `src/domain/llm/documentLimits.ts`, kept separate because
+  they bound a different thing: an image is bounded by what a provider accepts, a document by
+  the prompt its text has to fit and by the 400KB item a chat message is stored as.
+- **An attachment that is not an image becomes text, at the surface that received it.** A
+  model id here may be served by the default router or by its own provider's
+  OpenAI-compatible endpoint, and those disagree about file content parts — while capability
+  is modelled per *model*, which cannot express a difference that belongs to the channel.
+  Text needs no capability gate and survives persistence, replay and the PII filter unchanged.
+  `src/application/llm/documentParts.ts` owns the framing; extraction is a port
+  (`DocumentExtractor`) because it needs a PDF parser.
+- **Bytes are text only when they really are.** `Buffer.toString("utf-8")` never throws — it
+  turns a PDF into replacement characters and reports success — so `decodeUtf8Text`
+  (`src/shared/utf8Text.ts`) decides, and a caller that cannot use the answer says what it
+  dropped. A `try/catch` around a decode is the shape of the bug, not a guard against it.
 - **Report what was lost.** Truncation goes in the tool-result text; a binding that could not
   be used, a truncated transcript, a dropped history run — all become `warning` chunks. Silent
   loss is the bug, not the truncation.
@@ -217,6 +235,10 @@ One line each — the linked section is the authority.
   vitest.
 - **Secrets on update**: a masked or empty value preserves what is stored; a masked value with
   no stored counterpart is dropped. A mask can only confirm a secret, never create one.
+- **The two repo syncs own opposite ends.** `SKILLS_REPO` overwrites — a skill is its
+  document. `TOOLS_REPO` only ever creates: an MCP entry also carries encrypted headers and an
+  OAuth block discovered from the server, so an existing name is left untouched and reported as
+  `skipped`. Making the tools sync upsert "for consistency" destroys credentials.
 - **Docs record the current state, not history.** Completed milestones are deleted from
   `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
   accumulate changelogs in comments or docs.
