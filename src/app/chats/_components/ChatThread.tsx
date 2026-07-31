@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
 import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
+import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
 import { Composer, GeneratedImage, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
@@ -16,6 +17,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
   const [pendingUser, setPendingUser] = useState<{
     content: string;
     attachments: Attachment[];
+    documents: DocumentAttachment[];
   } | null>(null);
   const [live, setLive] = useState<LiveTurn | null>(null);
   // Fallback when image persistence is unconfigured (no S3 bucket): keep the
@@ -50,17 +52,21 @@ export function ChatThread({ chatId }: { chatId: string }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, live, pendingUser]);
 
-  async function handleSend(content: string, attachments: Attachment[]) {
+  async function handleSend(
+    content: string,
+    attachments: Attachment[],
+    documents: DocumentAttachment[],
+  ) {
     setSending(true);
     setError(null);
-    setPendingUser({ content, attachments });
+    setPendingUser({ content, attachments, documents });
     setLive(EMPTY_TURN);
     const streamedImages: LiveImage[] = [];
     try {
       const res = await fetch(`/api/chats/${chatId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, images: toRequestImages(attachments) }),
+        body: JSON.stringify({ content, images: toRequestImages(attachments), documents }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -145,6 +151,10 @@ export function ChatThread({ chatId }: { chatId: string }) {
                 seq: -1,
                 role: "user",
                 content: pendingUser.content,
+                documents: pendingUser.documents.map((document) => ({
+                  name: document.name,
+                  text: "",
+                })),
                 images: pendingUser.attachments.map((attachment) => ({
                   url: attachmentSrc(attachment),
                 })),

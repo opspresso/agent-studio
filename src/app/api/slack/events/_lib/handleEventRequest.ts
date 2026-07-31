@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
+import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
 import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
@@ -19,6 +20,7 @@ const slackEventDeps: SlackEventDeps = {
   projects: projectRepository,
   versions: versionRepository,
   slack: slackClient,
+  documents: documentExtractor,
   loadingIndicator: config.slackLoadingIndicator,
 };
 

@@ -1,5 +1,6 @@
 import type { ExecuteAgentInput } from "@/application/execution/runProject";
 import type { RunCaller } from "@/domain/execution/actor";
+import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { SlackMessage, SlackSuggestedPrompt } from "@/domain/slack/types";
@@ -81,6 +82,13 @@ export interface SlackEventDeps {
   projects: ProjectRepository;
   versions: VersionRepository;
   slack: SlackClientPort;
+  /**
+   * Reads an attached document into the text a turn carries. Required rather
+   * than optional: a deployment that forgot to wire it would drop every attached
+   * file with the same warning the old image-only path used, which is exactly
+   * the silence this replaced.
+   */
+  documents: DocumentExtractor;
   /**
    * What marks a reply as still being written, on the edit-in-place path only —
    * a streamed reply is marked as unfinished by Slack itself. Injected rather

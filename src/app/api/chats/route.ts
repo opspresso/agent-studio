@@ -40,6 +40,7 @@ export const POST = withAuth(async (user, request: Request) => {
       projectName: parsed.data.projectName,
       firstMessage: parsed.data.firstMessage,
       ...(parsed.data.images ? { images: parsed.data.images } : {}),
+      ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
       userEmail: user.email,
       signal: abortController.signal,
     });

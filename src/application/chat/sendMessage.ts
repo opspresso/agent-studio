@@ -1,10 +1,11 @@
 import type { ChatMessage } from "@/domain/chat/types";
-import type { AttachedImage, ChatDeps } from "./deps";
+import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { toEngineMessages } from "./messageMapping";
 import {
   resolveVersion,
   runAndPersist,
+  readMessageDocuments,
   storeMessageImages,
   userTurnContent,
   withLeadingWarnings,
@@ -16,6 +17,7 @@ export interface SendMessageInput {
   content: string;
   /** Images the user attached to this turn. */
   images?: AttachedImage[];
+  documents?: AttachedDocumentInput[];
   userEmail: string;
   signal?: AbortSignal;
 }
@@ -55,12 +57,14 @@ export async function sendMessage(
     const now = new Date().toISOString();
     const attachments = input.images ?? [];
     const uploaded = await storeMessageImages(deps, attachments);
+    const read = await readMessageDocuments(deps, input.documents ?? []);
     const userMessage: ChatMessage = {
       chatId: input.chatId,
       seq: userSeq,
       role: "user",
       content: input.content,
       ...(uploaded.stored.length > 0 ? { images: uploaded.stored } : {}),
+      ...(read.stored.length > 0 ? { documents: read.stored } : {}),
       createdAt: now,
     };
     await deps.chats.appendMessage(userMessage);
@@ -73,7 +77,7 @@ export async function sendMessage(
       // themselves, which is what lets the agent edit what was just sent.
       messages: [
         ...history.messages,
-        { role: "user", content: userTurnContent(input.content, attachments) },
+        { role: "user", content: userTurnContent(input.content, attachments, read.stored) },
       ],
       actor: { kind: "user", id: input.userEmail },
       signal: input.signal,
@@ -84,7 +88,7 @@ export async function sendMessage(
     return runAndPersist(
       deps,
       chat,
-      withLeadingWarnings([...uploaded.warnings, ...history.warnings], source),
+      withLeadingWarnings([...uploaded.warnings, ...read.warnings, ...history.warnings], source),
       runId,
     );
   } catch (error) {

@@ -10,6 +10,12 @@ import {
   SUPPORTED_IMAGE_TYPES,
 } from "@/domain/llm/imageLimits";
 import type { ChatMessageInput, ContentPart } from "@/domain/llm/types";
+import { documentKind, MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
+import {
+  documentParts,
+  withinDocumentCount,
+  type AttachedDocument,
+} from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
 
 /** Hard deadline for one agent run, enforced by an abort signal so a run that
@@ -125,9 +131,18 @@ async function collectImageParts(
     return [];
   }
   const images = files.filter((file) => (file.mimetype ?? "").startsWith("image/"));
-  const others = files.length - images.length;
-  if (others > 0) {
-    warnings.push(`Ignored ${others} non-image attachment(s).`);
+  // Only files nothing here can read. Documents are counted out because they
+  // have their own path now; calling them "ignored" while they were being read
+  // would report a loss that did not happen.
+  const unreadable = files.filter(
+    (file) =>
+      !(file.mimetype ?? "").startsWith("image/") &&
+      documentKind(file.mimetype ?? "", file.name ?? "") === null,
+  );
+  if (unreadable.length > 0) {
+    warnings.push(
+      `Ignored ${unreadable.length} attachment(s): neither an image nor a readable document.`,
+    );
   }
   if (images.length > budget) {
     warnings.push(`Read only ${budget} of ${images.length} attached images.`);
@@ -169,6 +184,62 @@ async function collectImageParts(
     }
   }
   return parts;
+}
+
+/**
+ * Download the message's document attachments and read them into text parts.
+ *
+ * Only the current message. An older turn's attachments are left alone: a
+ * document is expensive to fetch and parse where an image is not, and unlike
+ * "edit the picture I sent earlier" there is no request shape that needs the
+ * bytes of a file from three turns ago — the text it contributed is already in
+ * the thread.
+ *
+ * A Slack file lives behind `url_private` and needs this bot's token, which is
+ * why no URL-fetching MCP tool can stand in for this.
+ */
+async function collectDocumentParts(
+  deps: SlackEventDeps,
+  token: string,
+  files: SlackEventFile[],
+  warnings: string[],
+): Promise<ContentPart[]> {
+  const candidates = files.filter(
+    (file) => documentKind(file.mimetype ?? "", file.name ?? "") !== null,
+  );
+  if (candidates.length === 0) {
+    return [];
+  }
+  const downloaded: AttachedDocument[] = [];
+  // Capped before anything is fetched: past the cap these are bytes nobody will
+  // read, and each one may be 10MB through the bot token.
+  for (const file of withinDocumentCount(candidates, warnings)) {
+    const label = file.name ?? file.id ?? "attachment";
+    if ((file.size ?? 0) > MAX_DOCUMENT_BYTES) {
+      warnings.push(`Document is larger than 10MB (${label}).`);
+      continue;
+    }
+    const url = file.url_private_download ?? file.url_private;
+    if (!url) {
+      warnings.push(`Attachment has no download url (${label}).`);
+      continue;
+    }
+    try {
+      const data = await deps.slack.downloadFile(token, url);
+      // Slack's declared size can be absent; the real byte count is authoritative.
+      if (data.byteLength > MAX_DOCUMENT_BYTES) {
+        warnings.push(`Document is larger than 10MB (${label}).`);
+        continue;
+      }
+      downloaded.push({ bytes: data, mimeType: file.mimetype ?? "", name: label });
+    } catch (error) {
+      log.error("slack", "document download failed", error);
+      warnings.push(
+        `Could not read attachment ${label}: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+    }
+  }
+  return documentParts(deps.documents, downloaded, warnings);
 }
 
 /**
@@ -384,19 +455,27 @@ export async function handleSlackEvent(
   let text = "";
   const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
   const deadline = AbortSignal.timeout(RUN_TIMEOUT_MS);
-  const imageParts =
-    event.files && event.files.length > 0
-      ? await collectImageParts(deps, token, event.files, warnings)
-      : [];
+  const attached = event.files ?? [];
+  const imageParts = attached.length > 0 ? await collectImageParts(deps, token, attached, warnings) : [];
+  const documents =
+    attached.length > 0 ? await collectDocumentParts(deps, token, attached, warnings) : [];
   // Labelled on the same terms as the history: leaving the newest turn bare
   // while every older one is named invites the model to attribute the question
   // to whoever spoke last.
   const currentSpeaker = event.user ? named.nameByUser?.get(event.user) : undefined;
   const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
-  // An image-only message must not become an empty user turn.
+  // An attachment-only message must not become an empty user turn.
+  //
+  // Documents lead: they are the long context, and the question reads better
+  // after the material it is about than before it. Images stay where they were,
+  // after the text.
   const userContent: string | ContentPart[] =
-    imageParts.length > 0
-      ? [...(askText ? [{ type: "text" as const, text: askText }] : []), ...imageParts]
+    imageParts.length > 0 || documents.length > 0
+      ? [
+          ...documents,
+          ...(askText ? [{ type: "text" as const, text: askText }] : []),
+          ...imageParts,
+        ]
       : askText;
   // Whatever budget the current message left goes to the newest thread images,
   // so "make the picture I sent blue" still has the picture.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
@@ -128,6 +129,14 @@ function makeDeps(repo: ChatRepository, overrides: Partial<ChatDeps> = {}): Chat
     projects: emptyProjects,
     versions: emptyVersions,
     runAgent: () => emptyAgent(),
+    // Extraction has its own tests; here it only has to turn bytes into text so
+    // a document's route through persistence and replay is what is exercised.
+    documents: {
+      extract: async ({ bytes, maxChars }) => {
+        const text = Buffer.from(bytes).toString("utf-8");
+        return text.length <= maxChars ? { text } : { text: text.slice(0, maxChars), note: "cut" };
+      },
+    },
     ...overrides,
   };
 }
@@ -869,5 +878,134 @@ describe("chat run lease", () => {
     await stream.return(undefined);
 
     expect(state.activeRunId).toBeUndefined();
+  });
+});
+
+/**
+ * Documents in a chat. The file is never stored — only the text read out of it —
+ * and storing that text is what lets the *next* question still have the
+ * document. A turn that only sent it to the engine would answer "summarise this"
+ * and then fail "what does section 3 say?".
+ */
+describe("attached documents", () => {
+  const agentProjects: ProjectRepository = {
+    ...emptyProjects,
+    async get() {
+      return {
+        name: "agent",
+        displayName: "Agent",
+        description: "",
+        projectType: "agent",
+        ownerEmail: "owner@x.com",
+        publishedVersion: "1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+    },
+  };
+  const publishedVersions: VersionRepository = {
+    ...emptyVersions,
+    async get() {
+      return {
+        projectName: "agent",
+        versionName: "1",
+        systemPrompt: "",
+        userPromptTemplate: "",
+        model: "google/gemini-2.5-flash",
+        parameters: { piiFiltering: false },
+        mcpList: [],
+        skillList: [],
+        subagentList: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+      };
+    },
+  };
+
+  it("sends the extracted text to the engine and keeps it on the stored turn", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const seenMessages: unknown[] = [];
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      runAgent: (params) => {
+        seenMessages.push(...params.messages);
+        return emptyAgent();
+      },
+    });
+
+    const stream = await sendMessage(deps, {
+      chatId: "c1",
+      content: "summarise this",
+      documents: [
+        {
+          b64: Buffer.from("Q3 revenue rose 12%", "utf-8").toString("base64"),
+          mimeType: "text/plain",
+          name: "q3.txt",
+        },
+      ],
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain so the run completes and persistence happens
+    }
+
+    const sent = seenMessages[0] as { content: Array<{ type: string; text: string }> };
+    expect(sent.content[0]?.text).toContain('[Attached file "q3.txt"');
+    expect(sent.content[0]?.text).toContain("Q3 revenue rose 12%");
+    expect(sent.content[1]?.text).toBe("summarise this");
+
+    const stored = await repo.listMessages("c1");
+    const user = stored.find((message) => message.role === "user");
+    // The text, not the bytes: a 10MB file does not fit in a DynamoDB item, and
+    // the text is what the turn actually carried.
+    expect((user as { documents?: unknown }).documents).toEqual([
+      { name: "q3.txt", text: "Q3 revenue rose 12%" },
+    ]);
+  });
+
+  it("replays a stored document exactly as the turn that sent it", () => {
+    const first = message({ seq: 0, role: "user", content: "summarise this" });
+    (first as { documents?: unknown }).documents = [{ name: "q3.txt", text: "revenue rose" }];
+
+    const replayed = toEngineMessages([first]).messages[0] as {
+      content: Array<{ type: string; text: string }>;
+    };
+
+    // Same wrapper, same order — otherwise a follow-up turn would put the model
+    // in a different conversation than the one the chat recorded.
+    expect(replayed.content[0]?.text).toContain('[Attached file "q3.txt"');
+    expect(replayed.content[0]?.text).toContain("revenue rose");
+    expect(replayed.content[1]?.text).toBe("summarise this");
+  });
+
+  it("answers, and says why, when the document could not be read", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      documents: {
+        extract: async () => {
+          throw new DocumentExtractionError("it is password-protected");
+        },
+      },
+    });
+
+    const chunks: unknown[] = [];
+    const stream = await sendMessage(deps, {
+      chatId: "c1",
+      content: "summarise this",
+      documents: [{ b64: "AAAA", mimeType: "application/pdf", name: "locked.pdf" }],
+      userEmail: "owner@x.com",
+    });
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    // Ahead of the answer, on the same channel an unusable binding uses.
+    expect(JSON.stringify(chunks)).toContain("Could not read locked.pdf");
+    expect(JSON.stringify(chunks)).toContain("password-protected");
+    // Nothing to store: the turn carried no document.
+    const stored = await repo.listMessages("c1");
+    expect(stored.find((message) => message.role === "user")).not.toHaveProperty("documents");
   });
 });

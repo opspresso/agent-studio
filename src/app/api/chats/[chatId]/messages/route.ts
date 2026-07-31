@@ -31,6 +31,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       chatId,
       content: parsed.data.content,
       ...(parsed.data.images ? { images: parsed.data.images } : {}),
+      ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
       userEmail: user.email,
       signal: abortController.signal,
     });

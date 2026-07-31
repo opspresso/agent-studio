@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
 import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
+import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type AgentProject, type LiveTurn } from "../_lib/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { LiveAssistant, MessageView } from "./parts";
@@ -32,10 +33,12 @@ export function NewChatPanel() {
   const [sentMessage, setSentMessage] = useState<{
     content: string;
     attachments: Attachment[];
+    documents: DocumentAttachment[];
   } | null>(null);
   // Staged attachments survive an error for a retry, the same way the typed
   // message does; a successful start navigates away and unmounts them.
-  const { attachments, attachError, addFiles, removeAt } = useAttachments();
+  const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt } =
+    useAttachments({ documents: true });
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,12 +64,16 @@ export function NewChatPanel() {
 
   async function start() {
     const trimmed = message.trim();
-    if (!projectName || (!trimmed && attachments.length === 0) || starting) {
+    if (
+      !projectName ||
+      (!trimmed && attachments.length === 0 && documents.length === 0) ||
+      starting
+    ) {
       return;
     }
     setStarting(true);
     setError(null);
-    setSentMessage({ content: trimmed, attachments });
+    setSentMessage({ content: trimmed, attachments, documents });
     setLive(EMPTY_TURN);
     let newChatId: string | undefined;
     try {
@@ -77,6 +84,7 @@ export function NewChatPanel() {
           projectName,
           firstMessage: trimmed,
           images: toRequestImages(attachments),
+          documents,
         }),
       });
       if (!res.ok) {
@@ -138,6 +146,10 @@ export function NewChatPanel() {
                 seq: 0,
                 role: "user",
                 content: sentMessage.content,
+                documents: sentMessage.documents.map((document) => ({
+                  name: document.name,
+                  text: "",
+                })),
                 images: sentMessage.attachments.map((attachment) => ({
                   url: attachmentSrc(attachment),
                 })),
@@ -172,9 +184,15 @@ export function NewChatPanel() {
               }))}
             />
           </Group>
-          <AttachmentBar attachments={attachments} attachError={attachError} onRemove={removeAt} />
+          <AttachmentBar
+            attachments={attachments}
+            documents={documents}
+            attachError={attachError}
+            onRemove={removeAt}
+            onRemoveDocument={removeDocumentAt}
+          />
           <Group gap="xs" align="flex-end" wrap="nowrap">
-            <AttachButton onPick={(files) => void addFiles(files)} disabled={starting} />
+            <AttachButton onPick={(files) => void addFiles(files)} disabled={starting} documents />
             <Textarea
               value={message}
               onChange={(event) => setMessage(event.currentTarget.value)}

@@ -5,6 +5,7 @@ import type {
   UserChatMessage,
 } from "@/domain/chat/types";
 import type { ChannelToolCall, ChatMessageInput } from "@/domain/llm/types";
+import { framedDocument } from "@/application/llm/documentParts";
 
 /**
  * How many earlier assistant turns replay their tool calls and results. Without
@@ -43,12 +44,20 @@ const MAX_HISTORY_MESSAGES = 200;
  */
 function userMessage(message: UserChatMessage): ChatMessageInput {
   const images = message.images ?? [];
-  if (images.length === 0) {
+  const documents = message.documents ?? [];
+  if (images.length === 0 && documents.length === 0) {
     return { role: "user", content: message.content };
   }
   return {
     role: "user",
+    // The same order the turn was sent in, and wrapped by the same function:
+    // a replay that framed a document differently would be a different turn
+    // than the one this chat recorded.
     content: [
+      ...documents.map((document) => ({
+        type: "text" as const,
+        text: framedDocument(document.name, document.text, document.note),
+      })),
       ...(message.content ? [{ type: "text" as const, text: message.content }] : []),
       ...images.map((image) => ({
         type: "image_url" as const,
@@ -56,6 +65,12 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
       })),
     ],
   };
+}
+
+/** What a stored message costs the history budget, attachments included. */
+function messageChars(message: ChatMessage): number {
+  const documents = message.role === "user" ? (message.documents ?? []) : [];
+  return documents.reduce((total, document) => total + document.text.length, message.content.length);
 }
 
 /** One stored call and the result stored for it, already matched. */
@@ -103,7 +118,11 @@ function withinHistoryBudget(runs: ChatMessage[][]): { kept: ChatMessage[][]; dr
   let dropped = 0;
   let full = false;
   for (const run of [...runs].reverse()) {
-    const size = run.reduce((total, message) => total + message.content.length, 0);
+    // Document text counts. It is stored beside `content` rather than in it, so
+    // measuring `content` alone would price a turn carrying 40,000 characters of
+    // PDF as though it were the sentence the user typed, and the budget this
+    // exists to keep would be spent without ever being charged.
+    const size = run.reduce((total, message) => total + messageChars(message), 0);
     if (full || (kept.length > 0 && (chars + size > MAX_HISTORY_CHARS || count + run.length > MAX_HISTORY_MESSAGES))) {
       full = true;
       dropped += 1;

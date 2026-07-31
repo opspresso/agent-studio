@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
+import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type {
   SlackClientPort,
   SlackEventBody,
@@ -157,6 +158,17 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
       for (const chunk of chunks) {
         yield chunk;
       }
+    },
+    // The real extractor has its own tests; here it only has to be the thing
+    // that turns bytes into text, so a document's route through the handler is
+    // what is under test.
+    documents: {
+      extract: async ({ bytes, name, maxChars }) => {
+        const text = Buffer.from(bytes).toString("utf-8");
+        return text.length <= maxChars
+          ? { text }
+          : { text: text.slice(0, maxChars), note: `the first ${maxChars} characters of ${name}` };
+      },
     },
     projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
     versions: {
@@ -565,6 +577,7 @@ describe("handleSlackEvent", () => {
               url_private_download: "https://files.slack.com/f/svg",
             },
             { name: "notes.pdf", mimetype: "application/pdf" },
+            { name: "archive.zip", mimetype: "application/zip" },
           ],
         },
       },
@@ -575,7 +588,12 @@ describe("handleSlackEvent", () => {
     expect(finalText()).toContain("answer");
     expect(finalText()).toContain("larger than 5MB");
     expect(finalText()).toContain("Unsupported image type image/svg+xml");
-    expect(finalText()).toContain("Ignored 1 non-image attachment");
+    // The PDF is a document now, so it is attempted and reported on its own
+    // terms — Slack gave this one no download url. Calling it "ignored" would
+    // describe a decision this no longer makes.
+    expect(finalText()).toContain("Attachment has no download url (notes.pdf)");
+    // The zip is the only thing left that nothing here can read.
+    expect(finalText()).toContain("Ignored 1 attachment(s)");
   });
 
   it("keeps answering when an attachment download fails", async () => {
@@ -1216,5 +1234,119 @@ describe("falling back when a workspace cannot stream", () => {
     await handleSlackEvent(makeDeps(chunks, slack), EVENT, BINDING);
 
     expect(appended.join("")).toBe("생각 중");
+  });
+});
+
+/**
+ * Documents attached in Slack. Before this they were dropped with a warning that
+ * said the file was "ignored" — a Slack file lives behind `url_private` and needs
+ * this bot's token, so no URL-fetching tool could stand in for reading it either.
+ */
+describe("a document attached to a Slack message", () => {
+  it("reaches the run as text, ahead of the question it is about", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack } = makeSlackFake();
+    slack.downloadFile = async () => Buffer.from("Q3 revenue rose 12%", "utf-8");
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { delta: { content: "answer" } };
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          subtype: "file_share",
+          files: [
+            {
+              name: "q3.pdf",
+              mimetype: "application/pdf",
+              url_private_download: "https://files.slack.com/f/q3",
+            },
+          ],
+        },
+      },
+      BINDING,
+    );
+
+    const parts = seen.at(-1)?.content;
+    expect(Array.isArray(parts)).toBe(true);
+    const texts = (parts as Array<{ type: string; text?: string }>).map((part) => part.text ?? "");
+    expect(texts[0]).toContain('[Attached file "q3.pdf"');
+    expect(texts[0]).toContain("Q3 revenue rose 12%");
+    // The long context leads and the ask follows it.
+    expect(texts[1]).toBe("hello");
+  });
+
+  it("keeps answering, and says why, when the document cannot be read", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, finalText } = makeSlackFake();
+    slack.downloadFile = async () => Buffer.from("scanned", "utf-8");
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+    deps.documents = {
+      extract: async () => {
+        throw new DocumentExtractionError("it has 3 page(s) but no extractable text layer");
+      },
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          subtype: "file_share",
+          files: [
+            {
+              name: "scan.pdf",
+              mimetype: "application/pdf",
+              url_private_download: "https://files.slack.com/f/scan",
+            },
+          ],
+        },
+      },
+      BINDING,
+    );
+
+    expect(finalText()).toContain("answer");
+    expect(finalText()).toContain("Could not read scan.pdf");
+    expect(finalText()).toContain("no extractable text layer");
+  });
+
+  it("refuses a document past the size cap without downloading it", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, downloads, finalText } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "answer" } }, { done: true }], slack);
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        event: {
+          ...EVENT.event,
+          subtype: "file_share",
+          files: [
+            {
+              name: "huge.pdf",
+              mimetype: "application/pdf",
+              size: 11 * 1024 * 1024,
+              url_private_download: "https://files.slack.com/f/huge",
+            },
+          ],
+        },
+      },
+      BINDING,
+    );
+
+    expect(downloads).toEqual([]);
+    expect(finalText()).toContain("larger than 10MB");
   });
 });
