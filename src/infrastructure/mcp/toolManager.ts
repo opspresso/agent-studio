@@ -23,6 +23,7 @@ import type { McpToolResult } from "@/domain/llm/types";
 import { getCachedDiscovery, setCachedFailure, setCachedTools } from "./discoveryCache";
 import { McpHttpError, McpSession, type McpTool } from "./session";
 import { log } from "@/shared/logger";
+import { decodeUtf8Text } from "@/shared/utf8Text";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 const PROVIDER_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -352,11 +353,23 @@ function extractBlock(block: unknown): ExtractedBlock {
       if (mime.startsWith("image/")) {
         return imageBlock(b.resource.blob, mime);
       }
-      try {
-        return { text: Buffer.from(b.resource.blob, "base64").toString("utf-8") };
-      } catch {
-        return { text: `Unsupported binary resource (mimeType: ${mime})` };
+      const bytes = Buffer.from(b.resource.blob, "base64");
+      const text = decodeUtf8Text(bytes);
+      if (text !== null) {
+        return { text: text || "No result" };
       }
+      // Decided on the bytes, not on `mime`: servers label a real PDF
+      // `application/octet-stream` often enough that the declared type cannot
+      // carry this, and they label text as octet-stream too.
+      //
+      // This branch used to be a `catch`, which could never run —
+      // `toString("utf-8")` turns arbitrary bytes into replacement characters
+      // rather than throwing — so a PDF arrived as a page of U+FFFD presented as
+      // a successful result. Said plainly instead, in the same shape an omitted
+      // image takes, so a multi-block result still composes.
+      return {
+        text: `[binary resource omitted: ${mime}, ${bytes.byteLength} bytes — not text, so it cannot be read here. Ask the server for a text representation.]`,
+      };
     }
     return { text: "Invalid resource content: missing text and blob" };
   }
