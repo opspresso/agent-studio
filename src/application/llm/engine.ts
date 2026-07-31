@@ -73,6 +73,14 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
  */
 const MAX_DISPATCH_TASKS = 4;
 const DEFAULT_MAX_TURN = 50;
+/**
+ * What separates one turn's words from the next turn's in the flattened answer.
+ *
+ * A blank line rather than a space: these are separate statements a step apart,
+ * not a continued sentence, and every surface that renders the answer — Slack,
+ * the chat bubble, an OpenAI client — reads a blank line as a paragraph break.
+ */
+const TURN_SEPARATOR = "\n\n";
 
 /** An image this run can edit, addressed by a short id the model can quote. */
 interface ImageHandle {
@@ -1555,6 +1563,21 @@ export async function* runAgent(
   // Ids already spoken for, across every turn: what the assistant message a
   // chat persists must not repeat.
   const usedCallIds = new Set<string>();
+  /**
+   * Whether a previous turn already said something visible.
+   *
+   * A tool-using run speaks more than once — "let me look that up", tools, then
+   * the answer — and every consumer flattens those turns into one string by
+   * appending deltas. Within a turn that is right, it is how streaming works;
+   * across turns it ran the last sentence of one into the first word of the
+   * next: `…확인해볼게요."demo" 데이터소스를 찾았어요.`
+   *
+   * The break belongs here rather than in each consumer. Chat, Slack and the
+   * OpenAI-compatible response all did the same concatenation, and a boundary
+   * only the producer knows about is not something three of them should each
+   * re-derive.
+   */
+  let saidSomething = false;
   while (true) {
     if (turn >= maxTurn) {
       return; // turn guard
@@ -1586,9 +1609,17 @@ export async function* runAgent(
         // tool_calls in one delta, and an `else if` would silently drop the
         // tool call — the loop would then finish as if the model never asked.
         if (delta.content) {
+          // First visible word of a turn that follows one which already spoke:
+          // separate them. `assistantText` is this turn's own buffer, so it is
+          // empty exactly once per turn, and a turn that only calls tools never
+          // reaches here — no stray break before an answer that follows silence.
+          if (assistantText === "" && saidSomething) {
+            yield { author, delta: { content: TURN_SEPARATOR } };
+          }
           assistantText += delta.content;
           const content = contentRestorer?.push(delta.content) ?? delta.content;
           if (content) {
+            saidSomething = true;
             yield { author, delta: { content } };
           }
         }

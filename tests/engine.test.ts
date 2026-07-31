@@ -153,11 +153,13 @@ describe("runAgent tool loop", () => {
 
     expect(callMcpTool).toHaveBeenCalledWith("getWeather", { city: "Seoul" });
     // The text that shared the delta still streams, and the loop continues.
+    // Two turns spoke, so a blank line separates them — this used to read
+    // "Let me check. It is sunny." with the turns run together.
     const text = chunks
       .filter((c) => c.delta?.content)
       .map((c) => c.delta?.content)
       .join("");
-    expect(text).toBe("Let me check. It is sunny.");
+    expect(text).toBe("Let me check. \n\nIt is sunny.");
     expect(chunks.some((c) => c.done)).toBe(true);
   });
 
@@ -861,5 +863,68 @@ describe("runAgent skill system prompt", () => {
     const content = String(channel.seenParams[0]?.messages[0]?.content);
     expect(content).toContain("| wrapped | line one line two |");
     expect(content).toContain("| blank | No description |");
+  });
+});
+
+/**
+ * A tool-using run speaks more than once, and every consumer flattens those
+ * turns by appending deltas. Within a turn that is how streaming works; across
+ * turns it ran one statement into the next with nothing between them.
+ */
+describe("runAgent separates what consecutive turns say", () => {
+  const deps = (channel: FakeChannel): AgentDeps => ({
+    channel,
+    recordUsage: async () => {},
+    callMcpTool: async () => ({ text: "ok" }),
+  });
+  const input = (): RunAgentInput => ({
+    projectName: "p",
+    model: MODEL,
+    systemPrompt: "",
+    messages: [{ role: "user", content: "go" }],
+    mcpTools: [{ type: "function", function: { name: "look", description: "", parameters: {} } }],
+  });
+  const joined = (chunks: EngineChunk[]) =>
+    chunks
+      .filter((c) => c.delta?.content)
+      .map((c) => c.delta?.content)
+      .join("");
+
+  it("puts a blank line between a turn that spoke and the next that speaks", async () => {
+    const channel = new FakeChannel([
+      [contentChunk("확인해볼게요."), toolCallChunk(0, "c1", "look", "{}"), usageChunk(1, 1)],
+      [contentChunk('"demo" 를 찾았어요.'), usageChunk(1, 1)],
+    ]);
+
+    expect(joined(await collect(runAgent(deps(channel), input())))).toBe(
+      '확인해볼게요.\n\n"demo" 를 찾았어요.',
+    );
+  });
+
+  it("does not break up one turn's own stream", async () => {
+    const channel = new FakeChannel([[contentChunk("한"), contentChunk("문장"), usageChunk(1, 1)]]);
+
+    expect(joined(await collect(runAgent(deps(channel), input())))).toBe("한문장");
+  });
+
+  it("adds nothing before an answer that follows a silent tool turn", async () => {
+    // The common shape: the model calls a tool without commentary, then answers.
+    // A separator here would open the reply with a blank line.
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "c1", "look", "{}"), usageChunk(1, 1)],
+      [contentChunk("답입니다."), usageChunk(1, 1)],
+    ]);
+
+    expect(joined(await collect(runAgent(deps(channel), input())))).toBe("답입니다.");
+  });
+
+  it("separates three turns, not just the first pair", async () => {
+    const channel = new FakeChannel([
+      [contentChunk("하나"), toolCallChunk(0, "c1", "look", "{}"), usageChunk(1, 1)],
+      [contentChunk("둘"), toolCallChunk(1, "c2", "look", "{}"), usageChunk(1, 1)],
+      [contentChunk("셋"), usageChunk(1, 1)],
+    ]);
+
+    expect(joined(await collect(runAgent(deps(channel), input())))).toBe("하나\n\n둘\n\n셋");
   });
 });

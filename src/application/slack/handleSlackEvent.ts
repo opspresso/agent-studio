@@ -75,6 +75,19 @@ export interface SlackEventBody {
 }
 
 const UPDATE_INTERVAL_MS = 1000;
+/**
+ * Appended to a reply that is still being written.
+ *
+ * An interim update is indistinguishable from a finished answer otherwise — the
+ * message is edited in place, so a reader who arrives mid-run sees what looks
+ * like a complete reply that stops mid-sentence. This marks it as still going,
+ * and the final edit drops it.
+ *
+ * A custom workspace emoji: Slack renders an unknown name as literal `:loading:`
+ * text, so a workspace without one should change this to a built-in such as
+ * `:hourglass_flowing_sand:`.
+ */
+const STILL_WRITING = ":loading:";
 /** Hard deadline for one agent run, enforced by an abort signal so a run that
  * stops producing chunks entirely (hung provider or tool) still ends and
  * reports a timeout instead of leaving the placeholder up. */
@@ -382,7 +395,7 @@ export async function handleSlackEvent(
             .updateMessage(token, {
               channel: placeholder.channel,
               ts: placeholder.ts,
-              text: `${text} …`,
+              text: `${text} ${STILL_WRITING}`,
             })
             .catch(() => {});
         }

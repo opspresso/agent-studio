@@ -25,6 +25,12 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   shared by every turn. Results are keyed by id, and a chat persists one assistant message
   holding every turn's calls — per-response uniqueness would put duplicate `tool_call_id`s
   on it and the next request would be rejected.
+- When a turn speaks and a **later turn speaks too**, the engine yields `TURN_SEPARATOR`
+  (a blank line) as a content delta before the later turn's first word. Consumers flatten the
+  stream by appending deltas, so without it one statement runs into the next —
+  `…확인해볼게요."demo" 데이터소스를 찾았어요.` Emitted lazily, from the producer: a turn that only
+  calls tools never triggers one, and chat, Slack and the OpenAI response would otherwise
+  each have to re-derive a boundary only the loop knows about.
 - One turn's tool-result text is capped (`MAX_TOOL_RESULT_CHARS_PER_TURN`), spent in call
   order. A truncated result says so; one that no longer fits is returned as `Error: …`, which
   also surfaces the exhaustion as a failed span in the trace.
