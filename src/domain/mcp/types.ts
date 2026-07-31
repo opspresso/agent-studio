@@ -233,9 +233,10 @@ export interface McpServer {
   /**
    * Provenance marker for entries created by a repo sync, e.g.
    * `"github:opspresso/agent-tools"`. Recorded once at creation and never
-   * revisited: unlike a skill, a synced entry is not owned by the repository
-   * afterwards — the stored row wins every later sync — so this says where the
-   * entry came from, not who may change it.
+   * revisited, because it answers "where did this come from" rather than "who
+   * may change it" — a later sync updates an entry's document fields whatever
+   * this says, and an entry an operator typed by hand is updated the same way if
+   * the repository later carries its name.
    */
   source?: string;
   /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */

@@ -146,30 +146,47 @@ export default function ToolsPage() {
 
 /** What a skip means, in the words an operator can act on. */
 const SKIP_REASONS: Record<SkippedTool["reason"], string> = {
-  exists: "already registered — the stored entry wins",
-  "missing-url": "no url in the frontmatter",
+  "missing-url": "no url in the frontmatter, and no stored entry to keep one",
   "invalid-url": "url refused",
   "bad-name": "directory name is not a usable entry name",
+  "managed-url": "managed entry — its address comes from the provisioner, not the repo",
+  conflict: "registered by someone else mid-sync; the next sync picks it up",
 };
 
 /**
- * The outcome of a sync, skips included.
+ * The outcome of a sync.
  *
- * A count alone would read as success: `exists` is the ordinary case, but
- * `invalid-url` is a server nobody can call and `missing-url` is a document
- * someone wrote that produced nothing. Those are named, with their reason.
+ * A count alone would read as success. `invalid-url` is a server nobody can
+ * call and `missing-url` is a document someone wrote that produced nothing, so
+ * every skip is named with its reason — and so is an entry whose address moved,
+ * because that silently discarded the OAuth block discovered from the old one
+ * and only a re-run of Discover brings it back.
  */
 function SyncSummary({ result }: { result: ToolSyncResult }) {
-  const notable = result.skipped.filter((skip) => skip.reason !== "exists");
-  const alreadyThere = result.skipped.length - notable.length;
+  const reauthorize = result.updated.filter((entry) => entry.authDropped);
+  const wrong = result.skipped.length > 0 || reauthorize.length > 0;
   return (
-    <Alert color={notable.length > 0 ? "yellow" : "teal"} variant="light">
+    <Alert color={wrong ? "yellow" : "teal"} variant="light">
       <Text fz="sm">
-        Registered {result.created.length} · already there {alreadyThere}
-        {notable.length > 0 ? ` · skipped ${notable.length}` : ""}
+        Registered {result.created.length} · updated {result.updated.length} · unchanged{" "}
+        {result.unchanged.length}
+        {result.skipped.length > 0 ? ` · skipped ${result.skipped.length}` : ""}
       </Text>
-      {notable.map((skip) => (
-        <Text key={skip.name} fz="xs" mt={4}>
+      {result.updated
+        .filter((entry) => entry.fields.length > 0)
+        .map((entry) => (
+          <Text key={`updated-${entry.name}`} fz="xs" mt={4} c="dimmed">
+            {entry.name} — updated {entry.fields.join(", ")}
+          </Text>
+        ))}
+      {reauthorize.map((entry) => (
+        <Text key={`auth-${entry.name}`} fz="xs" mt={4}>
+          {entry.name} — its address changed, so its OAuth configuration was dropped. Run
+          Discover again before any project can connect.
+        </Text>
+      ))}
+      {result.skipped.map((skip) => (
+        <Text key={`skipped-${skip.name}`} fz="xs" mt={4}>
           {skip.name} — {SKIP_REASONS[skip.reason]}
           {skip.detail ? `: ${skip.detail}` : ""}
         </Text>
