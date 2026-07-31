@@ -24,8 +24,6 @@ import { log } from "@/shared/logger";
 const STREAM_INTERVAL_MS = 1000;
 /** Cadence of `chat.update`. Slack documents at most one edit per three seconds. */
 const EDIT_INTERVAL_MS = 3000;
-/** Cadence of a *changed* `assistant.threads.setStatus`. Its limit is 600/min. */
-const STATUS_INTERVAL_MS = 1000;
 /**
  * How old a status may get before it is sent again unchanged.
  *
@@ -149,14 +147,14 @@ export function createReplySink(
       return;
     }
     const now = Date.now();
-    if (text === lastStatus) {
-      // Repeating a status is only worth a call when Slack is about to drop it.
-      // Nothing to keep alive once it has been cleared.
-      if (text === "" || now - lastStatusAt < STATUS_REFRESH_MS) {
-        return;
-      }
-    } else if (text !== "" && now - lastStatusAt < STATUS_INTERVAL_MS) {
-      // An explicit clear always goes out; only new progress text is paced.
+    // Repeating a status is only worth a call when Slack is about to drop it;
+    // nothing to keep alive once it has been cleared. A *changed* status is
+    // always sent — it is the whole point of the line, and a paced version of
+    // this dropped the second of two tool names and then left the first one on
+    // screen for the rest of the run. Nothing else paces it: `setStatus` allows
+    // 600/min, one call per distinct text, and each is awaited inside the chunk
+    // loop, so the round trip is already the limit.
+    if (text === lastStatus && (text === "" || now - lastStatusAt < STATUS_REFRESH_MS)) {
       return;
     }
     lastStatus = text;
@@ -256,11 +254,19 @@ export function createReplySink(
       // that already reached the user.
       try {
         if (mode === "unopened") {
-          await slack.postMessage(token, {
-            channel: target.channel,
-            thread_ts: target.threadTs,
-            text: withSuffix(fullText, suffix) || "(no response)",
-          });
+          const text = withSuffix(fullText, suffix);
+          // Nothing was ever opened and there is nothing to say. The sink used
+          // to invent a "(no response)" line here, which is how a run that
+          // answered purely with an uploaded image ended up captioned as having
+          // said nothing — it cannot see what else the run delivered. Whoever
+          // knows that decides, and says so as a warning.
+          if (text) {
+            await slack.postMessage(token, {
+              channel: target.channel,
+              thread_ts: target.threadTs,
+              text,
+            });
+          }
         } else if (mode === "stream") {
           const remaining = withSuffix(fullText.slice(flushed), suffix);
           await slack.stopStream(token, {
@@ -270,10 +276,12 @@ export function createReplySink(
           });
           flushed = fullText.length;
         } else {
+          // An opened message must not be left holding the loading indicator,
+          // so unlike the unopened case this always writes something.
           await slack.updateMessage(token, {
             channel: messageChannel,
             ts: messageTs,
-            text: withSuffix(fullText, suffix) || "(no response)",
+            text: withSuffix(fullText, suffix) || "_(no answer)_",
           });
           flushed = fullText.length;
         }

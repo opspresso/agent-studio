@@ -358,8 +358,17 @@ people's names into prompts and into whatever the provider logs.
 
 The opt-in gates the lookup as well as the prompt. A version with it off causes no `users.info`
 call at all, so a project that has not opted in never sends a member's id to Slack's profile
-API. Resolved profiles are cached in memory per workspace (an hour; a failure, a minute) and are
-never persisted.
+API. Resolved profiles are cached in memory per workspace (an hour; a failure, a minute), bounded
+in size, and never persisted.
+
+**A display name is attacker-controlled.** Anyone can set their own to anything, and it lands in
+the system prompt — through the speaker labels on a shared thread, in *other people's*
+conversations, not only their own. `callerFrom` (`src/domain/execution/actor.ts`) is the single
+place a `RunCaller` is built and therefore the single place its name is made safe: control
+characters are stripped, whitespace is collapsed to one line, the name is bounded at 60
+characters, and an avatar is accepted only if it is an `https:` URL. That does not make prompt
+injection impossible — the message body is untrusted too — but it stops identity metadata from
+being a place to hide instructions a reader cannot see.
 
 ## Data exposure and retention
 

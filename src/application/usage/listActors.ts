@@ -8,6 +8,8 @@ import { log } from "@/shared/logger";
 
 /** The prefix an actor key carries when the caller came from Slack. */
 const SLACK_ACTOR_PREFIX = "slack:";
+/** How many profiles are resolved at once; the rest wait their turn. */
+const PROFILE_BATCH_SIZE = 8;
 
 /**
  * One caller's spend, with a human face on it when there is one to put there.
@@ -56,23 +58,30 @@ export async function listProjectActors(
   }
 
   const profiles = new Map<string, RunCaller>();
-  await Promise.all(
-    [...slackIds].map(async (userId) => {
-      try {
-        const profile = await deps.resolveSlackProfile(runtime.botToken, userId);
-        if (profile) {
-          profiles.set(userId, profile);
+  const pending = [...slackIds];
+  // In batches rather than all at once. The set is one entry per person who
+  // used this project in the range, which a six-month window makes unbounded —
+  // firing all of them concurrently would put a workspace-sized burst on Slack
+  // for one page load.
+  for (let start = 0; start < pending.length; start += PROFILE_BATCH_SIZE) {
+    await Promise.all(
+      pending.slice(start, start + PROFILE_BATCH_SIZE).map(async (userId) => {
+        try {
+          const profile = await deps.resolveSlackProfile(runtime.botToken, userId);
+          if (profile) {
+            profiles.set(userId, profile);
+          }
+        } catch (error) {
+          log.warn(
+            "usage",
+            `could not resolve Slack profile ${userId} for ${project.name}: ${
+              error instanceof Error ? error.message : "unknown"
+            }`,
+          );
         }
-      } catch (error) {
-        log.warn(
-          "usage",
-          `could not resolve Slack profile ${userId} for ${project.name}: ${
-            error instanceof Error ? error.message : "unknown"
-          }`,
-        );
-      }
-    }),
-  );
+      }),
+    );
+  }
 
   return rows.map((row) => {
     const profile = row.actor.startsWith(SLACK_ACTOR_PREFIX)

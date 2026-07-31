@@ -183,6 +183,9 @@ const DM_EVENT: SlackEventBody = {
 
 const BINDING = { projectName: "painter", botToken: "tok" };
 
+/** A run that yields nothing but `done`. */
+const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -274,6 +277,38 @@ describe("handleSlackEvent", () => {
 
     expect(finalText()).toContain("Here is your answer.");
     expect(finalText()).toContain(":warning:");
+  });
+
+  it("does not caption a picture-only answer as having said nothing", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, posted, finalText } = makeSlackFake();
+    const uploads: string[] = [];
+    slack.uploadImage = async (_token, args) => {
+      uploads.push(args.filename);
+    };
+    const deps = makeDeps(
+      [{ image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } }, { done: true }],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(uploads).toHaveLength(1);
+    // The run answered — with a picture. The reply transport cannot see that,
+    // so it must not be the thing deciding there was no answer.
+    expect(finalText()).not.toContain("no response");
+    expect(posted).toEqual([]);
+  });
+
+  it("says so when the run really produced nothing at all", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, finalText } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), EVENT, BINDING);
+
+    expect(finalText()).toContain("without producing an answer");
   });
 
   it("replies with guidance when the project is not a runnable agent", async () => {
@@ -918,13 +953,55 @@ describe("telling the run who is asking", () => {
     );
 
     // Every turn is `role: "user"` whoever typed it, so without a label a
-    // three-way conversation reaches the model as one person's monologue.
+    // three-way conversation reaches the model as one person's monologue — and
+    // the newest turn is labelled on the same terms, or the model is invited to
+    // attribute the question to whoever spoke last.
     expect(seen.map((message) => message.content)).toEqual([
       "Bruce: what does this cost?",
       "about ten dollars",
       "Dana: per day or per month?",
-      "hello",
+      "Bruce: hello",
     ]);
+  });
+
+  it("acknowledges the message before it starts resolving anybody", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, calls, profiles } = makeSlackFake();
+    profiles.set("U1", { displayName: "Bruce" });
+    const deps = makeDeps([{ done: true }], slack);
+    withCallerContext(deps, true);
+
+    await handleSlackEvent(deps, { ...DM_EVENT, event: { ...DM_EVENT.event, user: "U1" } }, BINDING);
+
+    // A cold profile cache is several round trips, and making the user wait for
+    // them before anything acknowledges the message is exactly what the status
+    // line exists to prevent.
+    expect(calls.indexOf("setStatus")).toBeLessThan(calls.indexOf("userProfile"));
+  });
+
+  it("resolves only the speakers that survived the history slice", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, replies, profileLookups } = makeSlackFake();
+    // Older than the 50 turns the run carries, so their names would never be
+    // used — and a lookup for them is a Slack round trip bought for nothing.
+    for (let index = 0; index < 60; index += 1) {
+      replies.push({ ts: `0.${index}`, user: `U-old-${index}`, text: `turn ${index}` });
+    }
+    replies.push({ ts: "0.99", user: "U2", text: "still here" });
+    const deps = makeDeps([{ done: true }], slack);
+    withCallerContext(deps, true);
+
+    await handleSlackEvent(
+      deps,
+      { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "0.0", user: "U1" } },
+      BINDING,
+    );
+
+    expect(profileLookups).not.toContain("U-old-0");
+    expect(profileLookups).toContain("U2");
+    expect(profileLookups.length).toBeLessThanOrEqual(51);
   });
 
   it("labels nothing when only one human is in the thread", async () => {
@@ -981,6 +1058,53 @@ describe("the native agent affordances", () => {
     // Every tool is named, not just the first: the status line costs no room in
     // the answer, unlike overwriting the message body.
     expect(statuses).toEqual(["is thinking…", "is using search…", "is using fetch…", ""]);
+  });
+
+  it("names every tool a single chunk announced", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, statuses } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        // A model fanning calls out in one response puts them side by side here.
+        {
+          delta: {
+            toolCalls: [{ function: { name: "search" } }, { function: { name: "fetch" } }],
+          },
+        },
+        { done: true },
+      ] as EngineChunk[],
+      slack,
+    );
+
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+
+    expect(statuses).toContain("is using search, fetch…");
+  });
+
+  it("does not drop a tool that follows hard on the previous one", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    // Same millisecond throughout: a paced status would drop the second name
+    // and then leave the first one on screen for the rest of the run.
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, statuses } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        { delta: { toolCalls: [{ function: { name: "search" } }] } },
+        { delta: { toolCalls: [{ function: { name: "fetch" } }] } },
+        { done: true },
+      ] as EngineChunk[],
+      slack,
+    );
+
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+
+    expect(statuses).toEqual([
+      "is thinking…",
+      "is using search…",
+      "is using fetch…",
+      "",
+    ]);
   });
 
   it("leaves the status alone in a channel, which has none", async () => {

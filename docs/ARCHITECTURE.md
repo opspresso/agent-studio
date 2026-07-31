@@ -674,12 +674,17 @@ manifest and changing them means applying the manifest again.
 **Who is asking** reaches the model only when the version opts in
 (`parameters.callerContext`). The opt-in gates the *lookup*, not just the prompt — a project
 that did not ask does not send anyone's id to Slack's profile API either. With it on,
-`users.info` resolves the asker into a `RunCaller` (name, timezone, avatar **URL**; deliberately
-no email) which the engine renders as a caller block next to the run clock, and when a thread
-holds more than one human each history turn is prefixed with its speaker. One human needs no
-labels. Profiles are cached per workspace for an hour
-(`src/infrastructure/slack/profileCache.ts`); a failed lookup is cached for a minute and costs
-the reply nothing.
+`users.info` resolves the asker through `callerFrom`, the single place a `RunCaller` is built
+and its attacker-controlled name is made prompt-safe (name, timezone, avatar **URL**;
+deliberately no email — see [SECURITY.md](SECURITY.md#caller-context)). The engine renders it as
+a caller block next to the run clock, and when a thread holds more than one human every turn —
+including the newest — is prefixed with its speaker. One human needs no labels.
+
+Resolution happens **after** the status line goes out and over **the turns that survived the
+history slice**, not the whole thread Slack returned: a cold cache is several round trips, and
+neither the acknowledgement nor a dropped turn should pay for them. Profiles are cached per
+workspace, bounded in size (`src/infrastructure/slack/profileCache.ts`), and a failed lookup
+costs the reply nothing.
 
 A mention inside a thread carries the thread (its 50 most recent turns) as multi-turn context.
 Image attachments are downloaded with the bot token — the mention's own images first, then

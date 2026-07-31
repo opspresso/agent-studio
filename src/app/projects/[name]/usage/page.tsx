@@ -30,18 +30,17 @@ function totalsByCaller(rows: ActorUsageView[]): CallerTotal[] {
   const byActor = new Map<string, CallerTotal>();
   for (const row of rows) {
     const existing = byActor.get(row.actor);
-    const entry = existing ?? {
+    byActor.set(row.actor, {
       actor: row.actor,
       // The raw key is the honest fallback: an unresolved Slack id is still
       // more useful than a blank, and it is what the endpoint returned before.
-      name: row.display?.name ?? row.actor,
-      ...(row.display?.avatarUrl ? { avatarUrl: row.display.avatarUrl } : {}),
-      calls: 0,
-      costUsd: 0,
-    };
-    entry.calls += sumRecord(row.calls);
-    entry.costUsd += sumRecord(row.costUsd);
-    byActor.set(row.actor, entry);
+      name: existing?.name ?? row.display?.name ?? row.actor,
+      ...(existing?.avatarUrl ?? row.display?.avatarUrl
+        ? { avatarUrl: existing?.avatarUrl ?? row.display?.avatarUrl }
+        : {}),
+      calls: (existing?.calls ?? 0) + sumRecord(row.calls),
+      costUsd: (existing?.costUsd ?? 0) + sumRecord(row.costUsd),
+    });
   }
   return [...byActor.values()].sort((a, b) => b.costUsd - a.costUsd);
 }

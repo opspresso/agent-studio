@@ -21,6 +21,16 @@ const TTL_MS = 60 * 60 * 1000;
  * granted should start working promptly, while a deleted user never will.
  */
 const FAILURE_TTL_MS = 60 * 1000;
+/**
+ * Hard ceiling on remembered profiles.
+ *
+ * Expiry alone does not bound this map: an entry is only dropped when it is
+ * *read* after expiring, and the whole point of a cache is that most entries
+ * are never read again. The key space here is every Slack user who ever talks
+ * to any project bot — plus a fresh set on every bot-token rotation — so without
+ * a ceiling a long-lived process grows one entry per person, forever.
+ */
+const MAX_ENTRIES = 2000;
 
 interface CacheEntry {
   /** `null` is a remembered miss, not an empty profile. */
@@ -62,10 +72,19 @@ export function rememberProfile(
   value: RunCaller | null,
   now: number = Date.now(),
 ): void {
-  cache.set(cacheKey(token, userId), {
-    value,
-    expiresAt: now + (value ? TTL_MS : FAILURE_TTL_MS),
-  });
+  const key = cacheKey(token, userId);
+  // Re-insert rather than update, so the entry moves to the back and eviction
+  // below drops the least recently *written* one.
+  cache.delete(key);
+  cache.set(key, { value, expiresAt: now + (value ? TTL_MS : FAILURE_TTL_MS) });
+  while (cache.size > MAX_ENTRIES) {
+    // `Map` iterates in insertion order, so this is the oldest entry.
+    const oldest = cache.keys().next();
+    if (oldest.done) {
+      return;
+    }
+    cache.delete(oldest.value);
+  }
 }
 
 /** Test seam only. */

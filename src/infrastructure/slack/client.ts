@@ -1,6 +1,6 @@
 /** Minimal Slack Web API client over fetch — no SDK dependency. */
 
-import type { RunCaller } from "@/domain/execution/actor";
+import { callerFrom, type RunCaller } from "@/domain/execution/actor";
 import type { SlackMessage } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
 import { getCachedProfile, rememberProfile } from "./profileCache";
@@ -149,21 +149,18 @@ export const slackClient = {
         throw new Error(`Slack users.info failed: ${data.error ?? res.status}`);
       }
       const user = data.user;
-      const displayName = firstNonEmpty(
-        user.profile?.display_name,
-        user.profile?.real_name,
-        user.real_name,
-        user.name,
-      );
-      if (displayName) {
-        resolved = {
-          displayName,
-          ...(firstNonEmpty(user.tz) ? { timezone: user.tz as string } : {}),
-          ...(firstNonEmpty(user.profile?.image_512)
-            ? { avatarUrl: user.profile?.image_512 as string }
-            : {}),
-        };
-      }
+      // `callerFrom` owns what is safe to hand a prompt; this only decides which
+      // of Slack's several name fields is the one to offer it.
+      resolved = callerFrom({
+        displayName: firstNonEmpty(
+          user.profile?.display_name,
+          user.profile?.real_name,
+          user.real_name,
+          user.name,
+        ),
+        timezone: firstNonEmpty(user.tz),
+        avatarUrl: firstNonEmpty(user.profile?.image_512),
+      });
     } catch (error) {
       log.warn(
         "slack",

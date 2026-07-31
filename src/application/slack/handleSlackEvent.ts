@@ -51,6 +51,8 @@ const HISTORY_IMAGE_LOOKBACK = 10;
 export interface ThreadTurn {
   message: ChatMessageInput;
   files: SlackEventFile[];
+  /** The human who wrote it, when one did. Absent on the bot's own turns. */
+  userId?: string;
 }
 
 /**
@@ -58,36 +60,54 @@ export interface ThreadTurn {
  * user. A message with no text is kept when it carried files — an image posted
  * on its own is still part of the conversation.
  *
- * `nameByUser` labels each human turn with its speaker. Callers pass it only
- * when the thread has more than one human: every turn is `role: "user"`
- * regardless of who typed it, so without a label a three-way conversation
- * reaches the model as one person's monologue — and *with* one on a two-party
- * thread it is just noise on every line.
+ * Speakers are *not* named here. Labelling needs profile lookups, and doing them
+ * from inside this mapping meant resolving everyone in the thread Slack returned
+ * — up to ten pages of it — when only the last {@link MAX_HISTORY_MESSAGES}
+ * turns survive. So this records who wrote each turn and
+ * {@link withSpeakerLabels} labels whatever is left after the slice.
+ */
+export function threadToTurns(replies: SlackMessage[], currentTs: string): ThreadTurn[] {
+  return replies
+    .filter(
+      (m) => m.ts !== currentTs && ((m.text ?? "").trim() !== "" || (m.files ?? []).length > 0),
+    )
+    .map((m) => ({
+      message: {
+        role: m.bot_id ? ("assistant" as const) : ("user" as const),
+        content: (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim(),
+      },
+      files: m.files ?? [],
+      ...(m.bot_id || !m.user ? {} : { userId: m.user }),
+    }));
+}
+
+/**
+ * Prefix each human turn with who wrote it.
+ *
+ * Every turn is `role: "user"` regardless of who typed it, so without this a
+ * three-way conversation reaches the model as one person's monologue. Callers
+ * pass names only when the thread holds more than one human — on a two-party
+ * thread the same name on every line is pure noise.
  *
  * The label goes in the text rather than in `ChatMessageInput.name`: OpenAI
  * constrains that field's character set, so a display name with a space or any
  * non-Latin script cannot go there, and providers disagree about the rest.
  */
-export function threadToTurns(
-  replies: SlackMessage[],
-  currentTs: string,
-  nameByUser?: ReadonlyMap<string, string>,
+export function withSpeakerLabels(
+  turns: ThreadTurn[],
+  nameByUser: ReadonlyMap<string, string> | undefined,
 ): ThreadTurn[] {
-  return replies
-    .filter(
-      (m) => m.ts !== currentTs && ((m.text ?? "").trim() !== "" || (m.files ?? []).length > 0),
-    )
-    .map((m) => {
-      const text = (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim();
-      const speaker = m.bot_id ? undefined : (m.user && nameByUser?.get(m.user)) || undefined;
-      return {
-        message: {
-          role: m.bot_id ? ("assistant" as const) : ("user" as const),
-          content: speaker && text ? `${speaker}: ${text}` : text,
-        },
-        files: m.files ?? [],
-      };
-    });
+  if (!nameByUser || nameByUser.size === 0) {
+    return turns;
+  }
+  return turns.map((turn) => {
+    const speaker = turn.userId ? nameByUser.get(turn.userId) : undefined;
+    const text = typeof turn.message.content === "string" ? turn.message.content : "";
+    if (!speaker || !text) {
+      return turn;
+    }
+    return { ...turn, message: { ...turn.message, content: `${speaker}: ${text}` } };
+  });
 }
 
 /**
@@ -216,13 +236,16 @@ async function withHistoryImages(
 async function resolveSpeakers(
   deps: SlackEventDeps,
   token: string,
-  replies: SlackMessage[],
+  turns: ThreadTurn[],
   currentUser: string | undefined,
 ): Promise<{ caller?: RunCaller; nameByUser?: Map<string, string> }> {
+  // The turns that survived the history slice, not every message in the thread:
+  // resolving someone whose turn was already dropped buys a Slack round trip and
+  // nothing else.
   const humans = new Set<string>();
-  for (const reply of replies) {
-    if (!reply.bot_id && reply.user) {
-      humans.add(reply.user);
+  for (const turn of turns) {
+    if (turn.userId) {
+      humans.add(turn.userId);
     }
   }
   if (currentUser) {
@@ -315,13 +338,7 @@ export async function handleSlackEvent(
     }
   }
 
-  // The version's opt-in gates the *lookup*, not just the prompt: a project that
-  // did not ask to know who is asking should not be sending anyone's id to
-  // Slack's profile API either.
-  const named = version.parameters.callerContext
-    ? await resolveSpeakers(deps, token, replies, event.user)
-    : { caller: undefined, nameByUser: undefined };
-  const turns = threadToTurns(replies, event.ts, named.nameByUser).slice(-MAX_HISTORY_MESSAGES);
+  const rawTurns = threadToTurns(replies, event.ts).slice(-MAX_HISTORY_MESSAGES);
 
   // A DM is an agent thread: it has a native status line and a title. A channel
   // mention has neither, and streaming into one needs the recipient named.
@@ -339,7 +356,18 @@ export async function handleSlackEvent(
     },
     deps.loadingIndicator,
   );
+  // Ahead of every lookup below. Profile resolution is several round trips on a
+  // cold cache, and making the user wait for them before anything acknowledges
+  // the message is the one thing the status line exists to prevent.
   await sink.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
+
+  // The version's opt-in gates the *lookup*, not just the prompt: a project that
+  // did not ask to know who is asking should not be sending anyone's id to
+  // Slack's profile API either.
+  const named = version.parameters.callerContext
+    ? await resolveSpeakers(deps, token, rawTurns, event.user)
+    : { caller: undefined, nameByUser: undefined };
+  const turns = withSpeakerLabels(rawTurns, named.nameByUser);
   // Name the thread from the question that opened it, so the agent's history
   // reads as a list of topics rather than of timestamps. Only the opening turn:
   // a later message would rename the thread out from under the user.
@@ -360,11 +388,16 @@ export async function handleSlackEvent(
     event.files && event.files.length > 0
       ? await collectImageParts(deps, token, event.files, warnings)
       : [];
+  // Labelled on the same terms as the history: leaving the newest turn bare
+  // while every older one is named invites the model to attribute the question
+  // to whoever spoke last.
+  const currentSpeaker = event.user ? named.nameByUser?.get(event.user) : undefined;
+  const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
   // An image-only message must not become an empty user turn.
   const userContent: string | ContentPart[] =
     imageParts.length > 0
-      ? [...(message ? [{ type: "text" as const, text: message }] : []), ...imageParts]
-      : message;
+      ? [...(askText ? [{ type: "text" as const, text: askText }] : []), ...imageParts]
+      : askText;
   // Whatever budget the current message left goes to the newest thread images,
   // so "make the picture I sent blue" still has the picture.
   const history = await withHistoryImages(
@@ -409,11 +442,14 @@ export async function handleSlackEvent(
       // Report tool activity through the status line rather than the answer:
       // a tool-heavy first turn shows progress without spending the message
       // body on it, so every tool can be named, not just the first.
-      const toolCall = chunk.delta?.toolCalls?.[0] as
-        | { function?: { name?: string } }
-        | undefined;
-      if (toolCall?.function?.name) {
-        await sink.status(`is using ${toolCall.function.name}…`);
+      // Every tool the chunk announced, not just the first: a model that fans
+      // out calls in one response puts them side by side in this array, and
+      // reading index 0 alone reported one of them and hid the rest.
+      const toolNames = ((chunk.delta?.toolCalls ?? []) as Array<{ function?: { name?: string } }>)
+        .map((call) => call.function?.name)
+        .filter((name): name is string => Boolean(name));
+      if (toolNames.length > 0) {
+        await sink.status(`is using ${toolNames.join(", ")}…`);
       }
       if (chunk.image) {
         images.push(chunk.image);
@@ -454,6 +490,12 @@ export async function handleSlackEvent(
       log.error("slack", "image upload failed", error);
       warnings.push(`Image upload failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
+  }
+  // Only this scope knows whether *anything* reached the thread — the sink sees
+  // the text and not the uploaded images, which is how a run that answered
+  // purely with a picture used to be captioned "(no response)".
+  if (!text && images.length === 0 && warnings.length === 0) {
+    warnings.push("The run finished without producing an answer.");
   }
   await sink.finish(text, warnings.map((warning) => `:warning: ${warning}`).join("\n"));
 }

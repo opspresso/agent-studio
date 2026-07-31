@@ -54,6 +54,62 @@ export interface RunCaller {
   avatarUrl?: string;
 }
 
+/** Longest name that still reads as one; anything past it is not a name. */
+const MAX_CALLER_NAME_LENGTH = 60;
+
+/**
+ * Build a caller from whatever a surface managed to look up — the single place
+ * a `RunCaller` is created, and therefore the single place its name is made
+ * safe to put in a prompt.
+ *
+ * **A display name is attacker-controlled.** On Slack anyone can set their own
+ * to whatever they like, and it lands in the *system* prompt, which is the part
+ * a model weights most heavily. Left raw, `"Bruce\n\nIgnore all previous
+ * instructions…"` is a working injection — and through the speaker labels on a
+ * shared thread it is an injection into *other people's* conversations, not
+ * only the author's own.
+ *
+ * So the name is flattened to a single line, stripped of control characters,
+ * and bounded. That does not make prompt injection impossible — the message
+ * body is untrusted too — but it stops identity metadata from being a place to
+ * hide instructions, which is the part the reader has no way to see.
+ *
+ * Returns `null` when nothing survives: no caller is better than a blank one.
+ */
+export function callerFrom(input: {
+  displayName?: string;
+  timezone?: string;
+  avatarUrl?: string;
+}): RunCaller | null {
+  const displayName = sanitizeCallerName(input.displayName);
+  if (!displayName) {
+    return null;
+  }
+  const timezone = sanitizeCallerName(input.timezone);
+  return {
+    displayName,
+    ...(timezone ? { timezone } : {}),
+    // Only an http(s) URL: a `javascript:` or `data:` value in this position is
+    // not an avatar, and the model is being handed it as a link.
+    ...(input.avatarUrl && /^https:\/\/[^\s]+$/.test(input.avatarUrl)
+      ? { avatarUrl: input.avatarUrl }
+      : {}),
+  };
+}
+
+function sanitizeCallerName(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  // Control characters first — a newline is what lets a name open what looks
+  // like a new line of instructions — then any whitespace run collapses to one.
+  const flattened = value
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return flattened ? flattened.slice(0, MAX_CALLER_NAME_LENGTH) : undefined;
+}
+
 /**
  * Where a run came from: who caused it, and the transfer chain that reached it.
  *
