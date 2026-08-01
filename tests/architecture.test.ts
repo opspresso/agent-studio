@@ -443,6 +443,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/execution/traceLifecycle.ts",
   },
   {
+    // "When does this schedule fire" is a wall-clock question, and reading a
+    // wall clock in an arbitrary timezone goes through `Intl`'s part formatter.
+    // A second reader would be a second cron semantics — the DST and dom/dow
+    // decisions live with the one that exists.
+    what: "evaluating when a schedule fires",
+    pattern: /formatToParts\(/,
+    owner: "src/domain/trigger/cron.ts",
+  },
+  {
     // Three call sites used to ask this for themselves, so a new project type
     // meant finding all three. They now ask the facade and only decide how to
     // serialise its answer.

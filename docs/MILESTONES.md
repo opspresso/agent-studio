@@ -30,7 +30,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 **선행 관계**
 
 ```
-schedule-trigger   (durable worker 결정 대기)
 context-budget     (run-termination 선행 — 예산 소진으로 루프를 끝내려면 종료 이유가 먼저)
 ```
 
@@ -143,43 +142,26 @@ Slack / A2A / webhook trigger는 받은 `messages`를 그대로 넘긴다. 같�
 - 예산 계산은 한 곳에만 있다. `tests/architecture.test.ts`의 single-owner 불변식으로 고정한다.
 - 예산에 여유가 있는 run의 요청 본문은 바이트 단위로 동일하다.
 
-## schedule-trigger — 스케줄 트리거
+## trigger-durability — Slack·webhook 발화의 급사 복구
 
-**이유**: 정기 작업으로 published project를 실행할 수 있어야 한다. Webhook과 달리
-단일 Next.js process 내부 timer로는 만족스럽게 구현할 수 없어 durable scheduler/worker
-경계가 필요하며, 이 인프라 결정이 `webhook-trigger`와 규모를 다르게 만든다.
+**이유**: `schedule-trigger`가 남긴 스케줄러 결정문(ARCHITECTURE.md의 *Schedules*)은 세
+소비자 — schedule, Slack 이벤트, webhook 딜리버리 — 를 놓고 평가했지만, 앞의 둘을 옮기는
+일은 의도적으로 범위에서 뺐다: 배포 환경 결정 하나가 실행 경로 세 개의 재작성이 되기
+때문이다. 그 결과 지금은 schedule 발화만 급사에서 복구된다 — scan이 lease 지난 `running`
+row를 `failed`로 마감한다. Slack은 claim lease가 회수될 뿐 재처리가 없고, webhook은 이력
+row가 `running`인 채 남는다(OPERATIONS.md의 multi-instance 표).
 
-**선행**: 없음. 트리거 저장 구조·실행 이력·중복 제거 규약은 webhook 쪽이 확정했다
-(`domain/trigger/`, `PROJECT#{name} / TRIGGER#…` 및 `TRIGGERRUN#…`).
+**선행**: 없음. 복구 패턴(claim + lease + 스캔 마감)은 schedule 쪽이 확정했고
+`scanSchedules.ts`에 있다.
 
 **범위**
 
-- 실행 환경에 맞는 durable scheduler/worker 경계를 선택하고 그 결정을
-  `docs/ARCHITECTURE.md`에 기록한다. **이 선택이 끝나기 전에는 구현에 착수하지 않는다.**
-- 프로젝트별 schedule 트리거: cron expression과 timezone.
-- 동일 schedule 시각의 중복 실행 방지(조건부 쓰기 기반).
-- 실행 이력·중첩 정책은 webhook 트리거의 구조를 재사용한다 — `TriggerRepository`,
-  `TriggerRun`, 그리고 중첩 방지에 쓰는 run slot lease.
-- `TriggerKind`에 `"schedule"`을 더하고, cron 평가만 새로 만든다.
+- webhook 딜리버리의 잔류 `running` row를 schedule과 같은 lease 기준으로 `failed` 마감한다.
+  schedule과 달리 webhook 트리거에는 cross-project 열거 인덱스가 없다 — 열거 경로(GSI 부여
+  vs 프로젝트 순회)를 정하는 것이 이 작업의 설계 절반이다.
+- Slack 이벤트의 재처리 여부를 결정하고 기록한다. 재처리 없음(현행)을 유지한다면 그 근거를
+  결정으로 남긴다 — 재처리는 run의 비멱등성(도구 부수효과)과 충돌하는, schedule이 이미 한 번
+  내린 판단이다.
 
-**설계 메모 — 이 결정에는 이미 고객이 둘 더 있다.** Slack 이벤트와 webhook 딜리버리는
-모두 즉시 ack하고 `after()`로 백그라운드에서 돈다. 그래서 작업을 claim한 인스턴스가
-급사하면 처리가 중단된다 — Slack은 claim lease가 회수되지만 재처리는 없고, webhook은
-이력 row가 `running`인 채로 남는다. 같은 durable worker 경계가 두 공백을 함께 메운다.
-후보를 평가할 때 schedule 하나가 아니라 **세 소비자**(schedule, Slack, webhook)를 놓고
-판단하고, 앞의 둘을 옮길지 여부를 결정에 함께 기록한다.
-
-이 마일스톤이 남아 있는 이유도 이것이다: 나머지는 코드 결정이지만 이건 배포 환경
-결정이고(EKS + ArgoCD가 현재 타깃), 무엇을 쓸지는 저장소 안에서 판단할 수 없다.
-
-**단, Slack·webhook을 같은 worker로 옮기는 작업은 이 마일스톤의 완료 조건에 넣지
-않는다** — 결정문에는 세 소비자를 함께 평가한 근거만 남기고, 이관 자체는 별도
-마일스톤으로 세운다. 셋을 한 번에 옮기는 순간 이 항목은 배포 환경 결정 하나가 아니라
-실행 경로 세 개의 재작성이 된다.
-
-**완료 조건**: schedule이 published version을 지정 시각에 실행하고, 비활성 트리거는
-실행하지 않는다. 여러 Agent Studio 인스턴스가 동시에 동작해도 동일 schedule 시각의
-**claim은 정확히 한 번 성공한다**(조건부 쓰기 — "정확히 한 번 실행"은 분산 환경에서
-claim까지만 보장할 수 있는 말이다). claim 후 인스턴스가 급사한 실행은 lease 만료 뒤
-재처리되는지, 실패로 기록되는지 결정에 명시하고 그대로 동작한다. 중복 제거·실패·재시작
-후 복구를 테스트로 검증한다.
+**완료 조건**: 급사한 webhook 딜리버리 row가 lease 만료 뒤 `failed`로 마감되는 것을
+테스트로 검증한다. Slack 재처리 결정이 문서에 있고 구현이 그 결정과 일치한다.

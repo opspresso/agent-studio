@@ -214,6 +214,22 @@ guard, tool-result caps) bound one run, and the chat run lease bounds one chat, 
 stops the same person opening twenty chats or calling `/predict` in a loop — and the daily
 cost guard only reacts once the money is spent.
 
+## Schedule ticker
+
+Schedule triggers fire only when something ticks `POST /api/triggers/scan` with
+`X-Scan-Token: $SCHEDULE_SCAN_TOKEN` — on the EKS target, a Kubernetes CronJob (manifests
+live in the GitOps repository). The contract the ticker has to meet, and nothing more:
+
+- **Cadence ≤ 1 minute.** The scan looks back a fixed 10-minute catch-up window, so a missed
+  tick or a short outage loses nothing; an outage longer than the window drops those
+  occurrences for good (bounded on purpose — it also bounds how many runs a recovery can
+  start at once).
+- **Duplicates are safe.** Any number of tickers may call any instance concurrently; each
+  occurrence is claimed with a conditional write and exactly one claim wins
+  ([ARCHITECTURE.md](ARCHITECTURE.md#schedules)).
+- The response summary is worth scraping: `repaired` > 0 means an instance died mid-firing,
+  `invalid` > 0 means a stored cron/timezone no longer parses.
+
 ## Multi-instance caveats
 
 | Behaviour | Bound by | Consequence |
@@ -222,7 +238,7 @@ cost guard only reacts once the money is spent.
 | MCP registry edits | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | An edit made on one instance goes unseen on the others for up to that window. |
 | Managed MCP | — | **One app instance per host.** A managed container joins exactly one network namespace. |
 | Metrics counters | — | Per-process. Aggregate across instances at the scrape layer. |
-| Background work (`after()`) | — | A Slack event or webhook delivery interrupted by an abrupt instance loss is not resumed; the delivery row stays `running`. Tracked as the `schedule-trigger` milestone. |
+| Background work (`after()`) | — | A Slack event or webhook delivery interrupted by an abrupt instance loss is not resumed; the delivery row stays `running`. Schedule firings share the gap but their rows are repaired to `failed` by the next scan; extending that to Slack/webhook is the `trigger-durability` milestone. |
 
 ### Managed MCP after a redeploy
 
@@ -253,3 +269,4 @@ liveness is what made this class of failure invisible.
 - [ ] LB health check → `/api/ready` (or `/api/health` on a scaled fleet), restart check → `/api/health`
 - [ ] Container `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
 - [ ] Prometheus scraping `/api/metrics`; alerts on `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total`
+- [ ] If schedule triggers are used: `SCHEDULE_SCAN_TOKEN` provisioned as a secret and a CronJob ticking `/api/triggers/scan` at most a minute apart

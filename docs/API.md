@@ -19,8 +19,8 @@ Design rationale for *why* a surface looks like this lives in
   instead of a session cookie; the token acts on the project owner's behalf and is scoped to
   that project (see [Project API token](#project-api-token)). Machine surfaces are gated
   differently: `/api/a2a/*` by `X-A2A-Key`, `/api/slack/events/*` by the Slack signing secret,
-  `/api/triggers/*` by the trigger's own secret. `/api/health`, `/api/ready` and
-  `/api/metrics` are open.
+  `/api/triggers/{project}/{trigger}` by the trigger's own secret, `/api/triggers/scan` by the
+  deployment's `SCHEDULE_SCAN_TOKEN`. `/api/health`, `/api/ready` and `/api/metrics` are open.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner and configured admins may mutate one (update/delete/publish, version
   create/update, Slack config), otherwise
@@ -123,6 +123,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
 | `/api/triggers/{project}/{trigger}` | `POST` | `X-Trigger-Secret` |
+| `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/health` | `GET` | open |
 | `/api/ready` | `GET` | open |
 | `/api/metrics` | `GET` | open |
@@ -684,29 +685,33 @@ Range validation matches `/api/usages/summary` (both dates required, `from ≤ t
 days). Subagent transfers are attributed to whoever started the run, not to the project
 they transferred into.
 
-## Webhook triggers
+## Triggers
 
 Configuration (owner/admin):
 
 ```
 GET    /api/projects/{name}/triggers                     → 200 { triggers: [ … ] }
-POST   /api/projects/{name}/triggers                     → 201 { …, secret }   | 409
+POST   /api/projects/{name}/triggers                     → 201 { …, secret? }  | 409
 PUT    /api/projects/{name}/triggers/{trigger}           → 200 { … }           | 404
 DELETE /api/projects/{name}/triggers/{trigger}           → 204                 | 404
 POST   /api/projects/{name}/triggers/{trigger}/reveal    → 200 { secret, createdAt }
 GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }
 ```
 
-Create body: `{ triggerId (slug), description?, enabled?, variables?, payloadMode?,
-allowConcurrent? }`. `triggerId` follows the same rule as a project name
+Create body: `{ triggerId (slug), kind?, description?, enabled?, variables?, payloadMode?,
+allowConcurrent?, cron?, timezone?, message? }`. `kind` defaults to `webhook`; a `schedule`
+requires `cron` (five fields) and `timezone` (IANA), and each kind refuses the other's fields
+with 400 rather than ignoring them — `rotateSecret`/`payloadMode` belong to webhooks,
+`cron`/`timezone`/`message` to schedules. `triggerId` follows the same rule as a project name
 (`^[a-z0-9-]+$`); the console normalises what you type through the same `toSlug` helper the
 project form uses, and the API rejects anything else regardless of client.
 
-Ordinary reads return `secretMasked` only. The secret is stored AES-encrypted rather than
-hashed, so — exactly like a project API token — it can be **read back** through
-`POST …/reveal` (a POST because the body is a live credential; owner/admin only, and every
-reveal is logged with the caller's email). `PUT` with `rotateSecret: true` re-issues it and
-returns the new one; the previous secret stops working immediately.
+Ordinary reads return `secretMasked` only (webhooks; a schedule has no secret). The secret is
+stored AES-encrypted rather than hashed, so — exactly like a project API token — it can be
+**read back** through `POST …/reveal` (a POST because the body is a live credential;
+owner/admin only, and every reveal is logged with the caller's email). `PUT` with
+`rotateSecret: true` re-issues it and returns the new one; the previous secret stops working
+immediately.
 
 Delivery (no session — the secret is the authentication):
 
@@ -734,6 +739,22 @@ rendered as `[object Object]`.
 
 `allowConcurrent` is false by default: a second delivery while one is still running is
 recorded as `skipped` rather than piling runs up.
+
+Scheduler tick (no session — the shared token is the authentication):
+
+```
+POST /api/triggers/scan
+  X-Scan-Token: <SCHEDULE_SCAN_TOKEN>
+→ 200 { checked, fired, alreadyClaimed, skipped, repaired, invalid }
+→ 401 (wrong or missing token) | 503 (SCHEDULE_SCAN_TOKEN not configured)
+```
+
+What a Kubernetes CronJob calls once a minute. The ticker holds no state: which occurrences
+are due and who wins each one is decided server-side, per occurrence, with a conditional
+write — so ticking twice, from several places, or late never double-fires. Admitted firings
+run in the background exactly like webhook deliveries; their outcomes land on the trigger's
+history rows (`scheduledFor` carries the occurrence). `alreadyClaimed` counts occurrences
+another tick had already won — expected noise from overlapping windows, not an anomaly.
 
 ## Traces
 
