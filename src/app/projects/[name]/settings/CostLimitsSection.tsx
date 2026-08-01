@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Group, NumberInput, Stack, Text, TextInput } from "@mantine/core";
+import { Alert, Badge, Button, Group, NumberInput, Stack, Text, TextInput } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { stateColor } from "@/app/_components/badgeColors";
 import { getProject, updateProject, type CostLimits } from "../../lib/api";
 
 /**
@@ -71,8 +72,22 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
     }
   }
 
+  // Readable while collapsed: the two thresholds as `alert / block`, a dash
+  // for the one left open, `none` when the guard is off entirely.
+  const usd = (value: number | "") => (value === "" ? "–" : `$${value}`);
+  const configured = alertUsd !== "" || blockUsd !== "";
+
   return (
-    <CollapsibleSection title="Daily cost limits">
+    <CollapsibleSection
+      title="Daily cost limits"
+      badge={
+        loading ? undefined : (
+          <Badge color={stateColor(configured)} radius="xl">
+            {configured ? `${usd(alertUsd)} / ${usd(blockUsd)}` : "none"}
+          </Badge>
+        )
+      }
+    >
       <Stack gap="md">
         <Text fz="sm" c="dimmed">
           Spend is measured per UTC day across every model this project runs. Leave a field empty

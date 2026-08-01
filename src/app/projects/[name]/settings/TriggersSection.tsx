@@ -17,6 +17,7 @@ import {
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { stateColor } from "@/app/_components/badgeColors";
 import { toSlug } from "@/shared/slug";
 import { formatDateTime } from "@/shared/date";
 import {
@@ -122,7 +123,18 @@ export function TriggersSection({ projectName }: { projectName: string }) {
     (newKind === "schedule" && (!newCron.trim() || !newTimezone.trim()));
 
   return (
-    <CollapsibleSection title="Triggers">
+    <CollapsibleSection
+      title="Triggers"
+      // Readable while collapsed, like the token's set/none: how many triggers
+      // exist, before anyone opens the section.
+      badge={
+        loading ? undefined : (
+          <Badge color={stateColor(triggers.length > 0)} radius="xl">
+            {triggers.length > 0 ? triggers.length : "none"}
+          </Badge>
+        )
+      }
+    >
       <Stack gap="lg">
         <Text fz="sm" c="dimmed">
           An outside system can start a run by posting to a webhook trigger&apos;s URL with its

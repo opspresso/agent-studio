@@ -144,7 +144,7 @@ export default function SettingsPage() {
 
       <A2aSection projectName={name} />
 
-      <CollapsibleSection title="Danger zone">
+      <CollapsibleSection title="Danger zone" danger>
         <Stack gap="sm" align="flex-start">
           <Text fz="sm" c="dimmed">
             Deleting a project removes all its versions and usage records.
