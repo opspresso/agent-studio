@@ -157,6 +157,14 @@ export const config = {
     return parseList(process.env.TRUSTED_PROXY_CIDRS ?? "");
   },
   /**
+   * The token the schedule ticker presents (SCHEDULE_SCAN_TOKEN). Unset means
+   * this deployment has no ticker and the scan endpoint answers 503 — the
+   * feature is off rather than open.
+   */
+  get scheduleScanToken(): string | undefined {
+    return process.env.SCHEDULE_SCAN_TOKEN || undefined;
+  },
+  /**
    * How many runs one caller may have in flight at once, and the separate
    * ceiling for inbound A2A.
    *
