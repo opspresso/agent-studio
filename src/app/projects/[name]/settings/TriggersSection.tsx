@@ -38,14 +38,21 @@ const STATUS_COLOR: Record<TriggerRun["status"], string> = {
 };
 
 /**
- * Webhook triggers: the delivery URL, the secret, and what recent deliveries
- * did. The secret is shown in the clear exactly once — on create and on
- * rotation — so the panel keeps it in state until the page is left.
+ * Triggers: webhooks (a delivery URL and its secret) and schedules (a cron in
+ * a timezone), plus what recent firings did. A webhook secret is shown in the
+ * clear exactly once — on create and on rotation — so the panel keeps it in
+ * state until the page is left.
  */
 export function TriggersSection({ projectName }: { projectName: string }) {
   const [triggers, setTriggers] = useState<TriggerView[]>([]);
   const [runs, setRuns] = useState<Record<string, TriggerRun[]>>({});
   const [newId, setNewId] = useState("");
+  const [newKind, setNewKind] = useState<"webhook" | "schedule">("webhook");
+  const [newCron, setNewCron] = useState("");
+  const [newTimezone, setNewTimezone] = useState(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+  const [newMessage, setNewMessage] = useState("");
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -108,14 +115,16 @@ export function TriggersSection({ projectName }: { projectName: string }) {
       ? `/api/triggers/${projectName}/${triggerId}`
       : `${window.location.origin}/api/triggers/${projectName}/${triggerId}`;
 
+  const createDisabled =
+    !toSlug(newId) || busy || loading || (newKind === "schedule" && !newCron.trim());
+
   return (
-    <CollapsibleSection title="Webhook triggers">
+    <CollapsibleSection title="Triggers">
       <Stack gap="lg">
         <Text fz="sm" c="dimmed">
-          An outside system can start a run by posting to a trigger&apos;s URL with its secret.
-          Triggers always run the project&apos;s <strong>published</strong>{" "}
-          version, and answer immediately — the delivery&apos;s outcome shows up in the table
-          below rather than in the response.
+          An outside system can start a run by posting to a webhook trigger&apos;s URL with its
+          secret; a schedule trigger fires on its own cron. Triggers always run the project&apos;s{" "}
+          <strong>published</strong> version, and their outcomes show up in the table below.
         </Text>
         {error && (
           <Alert color="red" variant="light">
@@ -123,80 +132,155 @@ export function TriggersSection({ projectName }: { projectName: string }) {
           </Alert>
         )}
 
-        <Group align="flex-end" gap="sm">
-          <TextInput
-            label="New trigger id"
-            placeholder="nightly-report"
-            value={newId}
-            onChange={(e) => setNewId(e.currentTarget.value)}
-            // Same rule and same moment as a project name: normalised on blur so
-            // typing stays unsurprising, and the id that reaches the slug-only
-            // API is always one it accepts.
-            onBlur={() => setNewId(toSlug(newId))}
-            description="Lowercase letters, digits, and hyphens only."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-            disabled={loading}
-          />
-          <Button
-            disabled={!toSlug(newId) || busy || loading}
-            onClick={() =>
-              act(async () => {
-                const created = await createTrigger(projectName, { triggerId: toSlug(newId) });
-                if (created.secret) {
-                  setRevealed((prev) => ({ ...prev, [created.triggerId]: created.secret! }));
-                }
-                setNewId("");
-              })
-            }
-          >
-            Create
-          </Button>
-        </Group>
+        <Stack gap="sm">
+          <Group align="flex-end" gap="sm">
+            <TextInput
+              label="New trigger id"
+              placeholder="nightly-report"
+              value={newId}
+              onChange={(e) => setNewId(e.currentTarget.value)}
+              // Same rule and same moment as a project name: normalised on blur so
+              // typing stays unsurprising, and the id that reaches the slug-only
+              // API is always one it accepts.
+              onBlur={() => setNewId(toSlug(newId))}
+              description="Lowercase letters, digits, and hyphens only."
+              inputWrapperOrder={["label", "input", "description", "error"]}
+              disabled={loading}
+            />
+            <Select
+              label="Kind"
+              data={[
+                { value: "webhook", label: "Webhook" },
+                { value: "schedule", label: "Schedule" },
+              ]}
+              w={140}
+              value={newKind}
+              onChange={(value) => value && setNewKind(value as "webhook" | "schedule")}
+              disabled={loading}
+            />
+            <Button
+              disabled={createDisabled}
+              onClick={() =>
+                act(async () => {
+                  const created = await createTrigger(projectName, {
+                    triggerId: toSlug(newId),
+                    ...(newKind === "schedule"
+                      ? {
+                          kind: "schedule" as const,
+                          cron: newCron.trim(),
+                          timezone: newTimezone.trim(),
+                          ...(newMessage.trim() ? { message: newMessage } : {}),
+                        }
+                      : {}),
+                  });
+                  if (created.secret) {
+                    setRevealed((prev) => ({ ...prev, [created.triggerId]: created.secret! }));
+                  }
+                  setNewId("");
+                  setNewCron("");
+                  setNewMessage("");
+                })
+              }
+            >
+              Create
+            </Button>
+          </Group>
+          {newKind === "schedule" && (
+            <Group align="flex-end" gap="sm">
+              <TextInput
+                label="Cron"
+                placeholder="30 9 * * 1-5"
+                description="minute hour day-of-month month day-of-week"
+                inputWrapperOrder={["label", "input", "description", "error"]}
+                value={newCron}
+                onChange={(e) => setNewCron(e.currentTarget.value)}
+                w={180}
+              />
+              <TextInput
+                label="Timezone"
+                placeholder="Asia/Seoul"
+                value={newTimezone}
+                onChange={(e) => setNewTimezone(e.currentTarget.value)}
+                w={180}
+              />
+              <TextInput
+                label="Message"
+                placeholder="What each firing asks the project"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.currentTarget.value)}
+                style={{ flex: 1 }}
+              />
+            </Group>
+          )}
+        </Stack>
 
         {triggers.map((trigger) => (
           <Stack key={trigger.triggerId} gap="xs">
             <Group gap="sm">
               <Text fw={600}>{trigger.triggerId}</Text>
+              <Badge variant="outline" color="gray">
+                {trigger.kind}
+              </Badge>
               <Badge color={trigger.enabled ? "teal" : "gray"} variant="light">
                 {trigger.enabled ? "enabled" : "disabled"}
               </Badge>
             </Group>
-            <CopyableUrl url={deliveryUrl(trigger.triggerId)} />
-            {revealed[trigger.triggerId] ? (
-              <Alert color="yellow" variant="light" p="sm">
-                <Group gap="xs" wrap="nowrap">
-                  <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
-                    {revealed[trigger.triggerId]}
-                  </Code>
-                  <CopyButton text={revealed[trigger.triggerId]!} />
-                  <Button variant="default" size="compact-xs" onClick={() => hide(trigger.triggerId)}>
-                    Hide
-                  </Button>
-                </Group>
-                <Text fz="xs" mt={4}>
-                  Send it as <Code>X-Trigger-Secret</Code>. Anyone holding it can start this
-                  project&apos;s published version.
-                </Text>
-              </Alert>
-            ) : (
-              <Group gap="xs" wrap="nowrap">
-                <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
-                  {trigger.secretMasked}
-                </Code>
-                <Button
-                  variant="default"
-                  size="compact-xs"
-                  disabled={busy}
-                  onClick={() =>
-                    act(async () => {
-                      const secret = await revealTriggerSecret(projectName, trigger.triggerId);
-                      setRevealed((prev) => ({ ...prev, [trigger.triggerId]: secret }));
-                    })
-                  }
-                >
-                  Reveal
-                </Button>
-              </Group>
+            {trigger.kind === "webhook" && (
+              <>
+                <CopyableUrl url={deliveryUrl(trigger.triggerId)} />
+                {revealed[trigger.triggerId] ? (
+                  <Alert color="yellow" variant="light" p="sm">
+                    <Group gap="xs" wrap="nowrap">
+                      <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                        {revealed[trigger.triggerId]}
+                      </Code>
+                      <CopyButton text={revealed[trigger.triggerId]!} />
+                      <Button
+                        variant="default"
+                        size="compact-xs"
+                        onClick={() => hide(trigger.triggerId)}
+                      >
+                        Hide
+                      </Button>
+                    </Group>
+                    <Text fz="xs" mt={4}>
+                      Send it as <Code>X-Trigger-Secret</Code>. Anyone holding it can start this
+                      project&apos;s published version.
+                    </Text>
+                  </Alert>
+                ) : (
+                  <Group gap="xs" wrap="nowrap">
+                    <Code style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                      {trigger.secretMasked}
+                    </Code>
+                    <Button
+                      variant="default"
+                      size="compact-xs"
+                      disabled={busy}
+                      onClick={() =>
+                        act(async () => {
+                          const secret = await revealTriggerSecret(projectName, trigger.triggerId);
+                          setRevealed((prev) => ({ ...prev, [trigger.triggerId]: secret }));
+                        })
+                      }
+                    >
+                      Reveal
+                    </Button>
+                  </Group>
+                )}
+              </>
+            )}
+            {trigger.kind === "schedule" && (
+              <ScheduleFields
+                key={`${trigger.triggerId}:${trigger.updatedAt}`}
+                trigger={trigger}
+                busy={busy}
+                onSave={(input) =>
+                  act(async () => {
+                    await updateTrigger(projectName, trigger.triggerId, input);
+                  })
+                }
+              />
             )}
             <Group gap="md" align="center">
               <Switch
@@ -223,50 +307,54 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                   })
                 }
               />
-              <Select
-                label="Payload"
-                data={[
-                  { value: "message", label: "User message (agent)" },
-                  { value: "variables", label: "Template variables (prompt)" },
-                ]}
-                w={220}
-                value={trigger.payloadMode}
-                disabled={busy}
-                onChange={(value) =>
-                  value &&
-                  act(async () => {
-                    await updateTrigger(projectName, trigger.triggerId, {
-                      payloadMode: value as "variables" | "message",
-                    });
-                  })
-                }
-              />
+              {trigger.kind === "webhook" && (
+                <Select
+                  label="Payload"
+                  data={[
+                    { value: "message", label: "User message (agent)" },
+                    { value: "variables", label: "Template variables (prompt)" },
+                  ]}
+                  w={220}
+                  value={trigger.payloadMode}
+                  disabled={busy}
+                  onChange={(value) =>
+                    value &&
+                    act(async () => {
+                      await updateTrigger(projectName, trigger.triggerId, {
+                        payloadMode: value as "variables" | "message",
+                      });
+                    })
+                  }
+                />
+              )}
             </Group>
             <Group gap="sm">
-              <Button
-                variant="default"
-                size="xs"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    !confirm(
-                      `Regenerate the secret for "${trigger.triggerId}"? The current secret stops working immediately.`,
-                    )
-                  ) {
-                    return;
-                  }
-                  void act(async () => {
-                    const rotated = await updateTrigger(projectName, trigger.triggerId, {
-                      rotateSecret: true,
-                    });
-                    if (rotated.secret) {
-                      setRevealed((prev) => ({ ...prev, [trigger.triggerId]: rotated.secret! }));
+              {trigger.kind === "webhook" && (
+                <Button
+                  variant="default"
+                  size="xs"
+                  disabled={busy}
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        `Regenerate the secret for "${trigger.triggerId}"? The current secret stops working immediately.`,
+                      )
+                    ) {
+                      return;
                     }
-                  });
-                }}
-              >
-                Regenerate secret
-              </Button>
+                    void act(async () => {
+                      const rotated = await updateTrigger(projectName, trigger.triggerId, {
+                        rotateSecret: true,
+                      });
+                      if (rotated.secret) {
+                        setRevealed((prev) => ({ ...prev, [trigger.triggerId]: rotated.secret! }));
+                      }
+                    });
+                  }}
+                >
+                  Regenerate secret
+                </Button>
+              )}
               <Button
                 variant="default"
                 color="red"
@@ -332,5 +420,59 @@ export function TriggersSection({ projectName }: { projectName: string }) {
         )}
       </Stack>
     </CollapsibleSection>
+  );
+}
+
+/**
+ * A schedule's own fields, drafted locally and saved as one update. Keyed by
+ * `updatedAt` upstream, so an edit that lands elsewhere re-syncs the draft.
+ */
+function ScheduleFields({
+  trigger,
+  busy,
+  onSave,
+}: {
+  trigger: TriggerView;
+  busy: boolean;
+  onSave: (input: { cron: string; timezone: string; message: string }) => void;
+}) {
+  const [cron, setCron] = useState(trigger.cron ?? "");
+  const [timezone, setTimezone] = useState(trigger.timezone ?? "");
+  const [message, setMessage] = useState(trigger.message ?? "");
+  const dirty =
+    cron !== (trigger.cron ?? "") ||
+    timezone !== (trigger.timezone ?? "") ||
+    message !== (trigger.message ?? "");
+  return (
+    <Group align="flex-end" gap="sm">
+      <TextInput
+        label="Cron"
+        description="minute hour day-of-month month day-of-week"
+        inputWrapperOrder={["label", "input", "description", "error"]}
+        value={cron}
+        onChange={(e) => setCron(e.currentTarget.value)}
+        w={180}
+      />
+      <TextInput
+        label="Timezone"
+        value={timezone}
+        onChange={(e) => setTimezone(e.currentTarget.value)}
+        w={180}
+      />
+      <TextInput
+        label="Message"
+        placeholder="What each firing asks the project"
+        value={message}
+        onChange={(e) => setMessage(e.currentTarget.value)}
+        style={{ flex: 1 }}
+      />
+      <Button
+        variant="default"
+        disabled={busy || !dirty || !cron.trim() || !timezone.trim()}
+        onClick={() => onSave({ cron: cron.trim(), timezone: timezone.trim(), message })}
+      >
+        Save
+      </Button>
+    </Group>
   );
 }

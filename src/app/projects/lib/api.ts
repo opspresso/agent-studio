@@ -494,11 +494,18 @@ export async function listProjectMcpTools(
 
 export type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 
-export interface TriggerView extends Omit<import("@/domain/trigger/types").WebhookTrigger, "secret"> {
-  secretMasked: string;
-  /** Returned once, on create and on rotation. */
-  secret?: string;
-}
+// The server's own view and input types, re-exported type-only so the client
+// cannot drift from what the API actually accepts and returns.
+export type {
+  CreateTriggerInput,
+  TriggerView,
+  UpdateTriggerInput,
+} from "@/application/trigger/triggerUseCases";
+import type {
+  CreateTriggerInput,
+  TriggerView,
+  UpdateTriggerInput,
+} from "@/application/trigger/triggerUseCases";
 
 export function listTriggers(name: string): Promise<{ triggers: TriggerView[] }> {
   return fetch(`/api/projects/${name}/triggers`).then((r) =>
@@ -506,10 +513,7 @@ export function listTriggers(name: string): Promise<{ triggers: TriggerView[] }>
   );
 }
 
-export function createTrigger(
-  name: string,
-  input: { triggerId: string; description?: string; payloadMode?: "variables" | "message"; allowConcurrent?: boolean },
-): Promise<TriggerView> {
+export function createTrigger(name: string, input: CreateTriggerInput): Promise<TriggerView> {
   return fetch(`/api/projects/${name}/triggers`, {
     method: "POST",
     headers: jsonHeaders,
@@ -520,13 +524,7 @@ export function createTrigger(
 export function updateTrigger(
   name: string,
   triggerId: string,
-  input: {
-    description?: string;
-    enabled?: boolean;
-    payloadMode?: "variables" | "message";
-    allowConcurrent?: boolean;
-    rotateSecret?: boolean;
-  },
+  input: UpdateTriggerInput,
 ): Promise<TriggerView> {
   return fetch(`/api/projects/${name}/triggers/${triggerId}`, {
     method: "PUT",
