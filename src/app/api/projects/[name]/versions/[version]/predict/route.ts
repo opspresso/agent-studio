@@ -2,12 +2,7 @@ import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { executionDeps, imageDeps, projectRepository, versionRepository } from "@/lib/container";
 import { generateImage } from "@/application/image/generateImage";
-import {
-  executeAgent,
-  executeProjectStream,
-  executeVersion,
-} from "@/application/execution/runProject";
-import { collectRun } from "@/app/api/projects/_lib/openai";
+import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
@@ -51,9 +46,8 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       messages: parsed.data.messages ?? [],
       actor: principalActor(principal),
     };
-    // Dispatch on projectType like /chat/completions does: an agent project run
-    // through the single-shot path would silently lose every skill, MCP server
-    // and subagent its version declares.
+    // The strategy→executor mapping lives in runProject; this route only
+    // decides how to serialise the answer.
     if (parsed.data.stream) {
       const abortController = new AbortController();
       return await sseResponse(
@@ -61,26 +55,13 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         abortController,
       );
     }
-    if (runStrategyFor(project) === "agent") {
-      const run = await collectRun(
-        executeAgent(executionDeps, {
-          project,
-          version: versionEntity,
-          messages: params.messages,
-          actor: principalActor(principal),
-          signal: request.signal,
-        }),
-        versionEntity.model,
-      );
-      return Response.json({
-        result: run.content,
-        model: run.model,
-        usage: run.usage,
-        ...(run.images.length > 0 ? { images: run.images } : {}),
-      });
-    }
-    const result = await executeVersion(executionDeps, { ...params, signal: request.signal });
-    return Response.json({ result: result.content, model: result.model, usage: result.usage });
+    const run = await executeProject(executionDeps, { ...params, signal: request.signal });
+    return Response.json({
+      result: run.content,
+      model: run.model,
+      usage: run.usage,
+      ...(run.images.length > 0 ? { images: run.images } : {}),
+    });
   } catch (error) {
     return apiError(error);
   }

@@ -22,24 +22,20 @@ vi.mock("@/app/api/projects/_lib/executionAuth", async (importOriginal) => ({
 }));
 
 vi.mock("@/application/execution/runProject", async (importOriginal) => ({
-  // The dispatch decision itself is real — that is what this test exercises.
+  // The image branch still asks the real strategy; the completion dispatch
+  // itself lives in executeProject and is exercised in runProject.test.ts —
+  // here the assertion is that the route hands the run to the facade and only
+  // serialises its answer.
   runStrategyFor: (
     await importOriginal<typeof import("@/application/execution/runProject")>()
   ).runStrategyFor,
-  executeAgent: () => {
-    calls.push("executeAgent");
-    return (async function* (): AsyncGenerator<EngineChunk> {
-      yield { delta: { content: "answer from the tool loop" } };
-      yield { usage: { inputTokens: 1, outputTokens: 2, costUsd: 0.1 } };
-      yield { done: true };
-    })();
-  },
-  executeVersion: async () => {
-    calls.push("executeVersion");
+  executeProject: async () => {
+    calls.push("executeProject");
     return {
-      content: "single-shot answer",
+      content: "collected answer",
       model: "openai/gpt-5-mini",
-      usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 },
+      usage: { inputTokens: 1, outputTokens: 2, costUsd: 0.1 },
+      images: [],
     };
   },
   executeProjectStream: () => {
@@ -77,9 +73,7 @@ beforeEach(() => {
 });
 
 describe("POST /predict dispatches on project type", () => {
-  it("runs an agent project through the tool loop", async () => {
-    // Sending an agent project down the single-shot path silently drops every
-    // skill, MCP server and subagent the version declares.
+  it("hands an agent project to the non-streaming facade", async () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
@@ -89,11 +83,11 @@ describe("POST /predict dispatches on project type", () => {
     const res = await POST(req({ messages: [{ role: "user", content: "hi" }] }), ctx);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ result: "answer from the tool loop" });
-    expect(calls).toEqual(["executeAgent"]);
+    expect(await res.json()).toMatchObject({ result: "collected answer" });
+    expect(calls).toEqual(["executeProject"]);
   });
 
-  it("keeps the single-shot path for a prompt project", async () => {
+  it("hands a prompt project to the same facade", async () => {
     projectRepo.get.mockResolvedValue({
       name: "proj",
       ownerEmail: "owner@example.com",
@@ -102,8 +96,8 @@ describe("POST /predict dispatches on project type", () => {
 
     const res = await POST(req({ variables: { topic: "otters" } }), ctx);
 
-    expect(await res.json()).toMatchObject({ result: "single-shot answer" });
-    expect(calls).toEqual(["executeVersion"]);
+    expect(await res.json()).toMatchObject({ result: "collected answer" });
+    expect(calls).toEqual(["executeProject"]);
   });
 
   it("streams through the shared type dispatch", async () => {

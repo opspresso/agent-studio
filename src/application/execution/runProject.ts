@@ -1,14 +1,16 @@
 /**
  * Execution use cases — the composition point that resolves a version's skills,
  * MCP tools and subagents from repositories, runs the LLM engine, and records
- * usage. Route handlers import EXACTLY `executeVersion`, `executeVersionStream`
- * and `executeAgent` from here; keep these signatures stable.
+ * usage. Surfaces dispatch through `executeProjectStream` / `executeProject`
+ * rather than picking an executor themselves; keep these signatures stable.
  *
  * The concrete OpenAI-compatible channel is the default, but `ExecutionDeps`
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import type { EngineChunk, RunResult } from "@/domain/llm/types";
+import { isTopLevelChunk } from "@/domain/llm/types";
+import type { EngineChunk, RunResult, UsageInfo } from "@/domain/llm/types";
+import { ValidationError } from "@/application/errors";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
@@ -139,15 +141,32 @@ export async function* executeVersionStream(
 }
 
 /**
+ * An image project draws through the dedicated generateImage use case, and each
+ * surface serialises that answer for itself. Refusing here is what keeps a
+ * completion surface from silently sending it down the single-shot text path —
+ * which is exactly how the two route copies of this dispatch had diverged.
+ */
+function imageRunRefusal(projectName: string): ValidationError {
+  return new ValidationError(
+    `Project "${projectName}" is an image project; it generates through its image surface, not a completion`,
+  );
+}
+
+/**
  * Single streaming dispatch point: how a projectType runs is decided here, not
  * in each entry point. `agent` projects run the multi-turn tool loop; anything
- * else streams a single-shot completion. (`image` projects generate through
- * the dedicated generateImage use case, not a chunk stream.)
+ * else streams a single-shot completion. `image` projects are refused — they
+ * generate through the dedicated generateImage use case, not a chunk stream —
+ * and every image-capable surface (predict, triggers, A2A) branches to it
+ * before asking here.
  */
 export function executeProjectStream(
   deps: ExecutionDeps,
   input: ExecuteProjectInput,
 ): AsyncGenerator<EngineChunk> {
+  if (runStrategyFor(input.project) === "image") {
+    throw imageRunRefusal(input.project.name);
+  }
   if (runStrategyFor(input.project) === "agent") {
     return executeAgent(deps, {
       project: input.project,
@@ -165,6 +184,89 @@ export function executeProjectStream(
     ...(input.actor ? { actor: input.actor } : {}),
     signal: input.signal,
   });
+}
+
+/**
+ * An image produced during a run. OpenAI's chat schema has no field for these,
+ * so serialisers carry them as an `images` extension rather than dropping them.
+ */
+export interface RunImage {
+  b64: string;
+  mimeType: string;
+  prompt?: string;
+}
+
+/** Drain an agent stream into a single collected answer. */
+export async function collectRun(
+  source: AsyncGenerator<EngineChunk>,
+  model: string,
+): Promise<RunResult & { images: RunImage[] }> {
+  let content = "";
+  const images: RunImage[] = [];
+  const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  for await (const chunk of source) {
+    if (chunk.error) {
+      // Same as the streaming path: a subagent failure is a tool error the
+      // parent may still answer from, so it does not fail the request.
+      if (isTopLevelChunk(chunk)) {
+        throw new Error(chunk.error);
+      }
+      continue;
+    }
+    if (isTopLevelChunk(chunk) && chunk.delta?.content) {
+      content += chunk.delta.content;
+    }
+    // Images are collected from subagent turns too: an image subagent is how an
+    // agent project delegates drawing, and the picture is the answer.
+    if (chunk.image) {
+      images.push(chunk.image);
+    }
+    // Usage counts every chunk, subagent turns included, so the reported
+    // usage matches what the run actually billed.
+    if (chunk.usage) {
+      usage.inputTokens += chunk.usage.inputTokens;
+      usage.outputTokens += chunk.usage.outputTokens;
+      usage.costUsd += chunk.usage.costUsd;
+    }
+  }
+  return { content, model, usage, images };
+}
+
+/**
+ * Single non-streaming dispatch point — {@link executeProjectStream}'s
+ * counterpart for surfaces that answer with one collected body. Two route
+ * handlers each mapped strategy→executor for themselves, and the copies had
+ * already diverged on the image case; the mapping is answered here once, and a
+ * route only decides how to serialise the result.
+ */
+export async function executeProject(
+  deps: ExecutionDeps,
+  input: ExecuteProjectInput,
+): Promise<RunResult & { images: RunImage[] }> {
+  if (runStrategyFor(input.project) === "image") {
+    throw imageRunRefusal(input.project.name);
+  }
+  if (runStrategyFor(input.project) === "agent") {
+    return collectRun(
+      executeAgent(deps, {
+        project: input.project,
+        version: input.version,
+        messages: input.messages,
+        ...(input.actor ? { actor: input.actor } : {}),
+        signal: input.signal,
+      }),
+      input.version.model,
+    );
+  }
+  const result = await executeVersion(deps, {
+    project: input.project,
+    version: input.version,
+    variables: input.variables,
+    messages: input.messages,
+    ...(input.actor ? { actor: input.actor } : {}),
+    signal: input.signal,
+  });
+  return { ...result, images: [] };
 }
 
 // --- Agent execution --------------------------------------------------------

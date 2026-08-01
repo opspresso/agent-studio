@@ -1,18 +1,9 @@
 import { isTopLevelChunk } from "@/domain/llm/types";
-import type { EngineChunk, RunResult, UsageInfo } from "@/domain/llm/types";
+import type { EngineChunk, RunResult } from "@/domain/llm/types";
+import type { RunImage } from "@/application/execution/runProject";
 
 function newChatId(): string {
   return `chatcmpl-${crypto.randomUUID().replace(/-/g, "")}`;
-}
-
-/**
- * An image produced during a run. OpenAI's chat schema has no field for these,
- * so they ride along as an `images` extension rather than being dropped.
- */
-export interface RunImage {
-  b64: string;
-  mimeType: string;
-  prompt?: string;
 }
 
 /** Wrap a single-shot result as an OpenAI ChatCompletion object. */
@@ -91,40 +82,4 @@ export async function* toChatCompletionChunks(
   if (!finished) {
     yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "length" }] };
   }
-}
-
-/** Drain an agent stream into a single assistant answer (non-stream chat/completions). */
-export async function collectRun(
-  source: AsyncGenerator<EngineChunk>,
-  model: string,
-): Promise<RunResult & { images: RunImage[] }> {
-  let content = "";
-  const images: RunImage[] = [];
-  const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
-  for await (const chunk of source) {
-    if (chunk.error) {
-      // Same as the streaming path: a subagent failure is a tool error the
-      // parent may still answer from, so it does not fail the request.
-      if (isTopLevelChunk(chunk)) {
-        throw new Error(chunk.error);
-      }
-      continue;
-    }
-    if (isTopLevelChunk(chunk) && chunk.delta?.content) {
-      content += chunk.delta.content;
-    }
-    // Images are collected from subagent turns too: an image subagent is how an
-    // agent project delegates drawing, and the picture is the answer.
-    if (chunk.image) {
-      images.push(chunk.image);
-    }
-    // Usage counts every chunk, subagent turns included, so the reported
-    // usage matches what the run actually billed.
-    if (chunk.usage) {
-      usage.inputTokens += chunk.usage.inputTokens;
-      usage.outputTokens += chunk.usage.outputTokens;
-      usage.costUsd += chunk.usage.costUsd;
-    }
-  }
-  return { content, model, usage, images };
 }

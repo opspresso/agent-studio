@@ -611,8 +611,9 @@ With `"stream": true`, the response is SSE.
 
 ### `POST /api/projects/{name}/versions/{version}/chat/completions`
 
-OpenAI Chat Completions-compatible. `agent` projects run the multi-turn tool loop; others do a
-single completion.
+OpenAI Chat Completions-compatible. `agent` projects run the multi-turn tool loop; `llm`
+projects do a single completion. An `image` project is refused with `400` — an image has no
+chat completion; run it through `/predict`.
 
 ```json
 // request
