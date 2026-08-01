@@ -306,7 +306,7 @@ describe("executeDelivery", () => {
     const f = fixture();
     await executeDelivery(f.deps, await accept(f), {});
     expect(f.runs[0]?.actorKind).toBe("webhook");
-    expect(triggerActor("p", "nightly")).toEqual({ kind: "webhook", id: "p:nightly" });
+    expect(triggerActor(trigger())).toEqual({ kind: "webhook", id: "p:nightly" });
   });
 
   it("ignores a subagent's text when accumulating the answer", async () => {
