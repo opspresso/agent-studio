@@ -394,6 +394,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/execution/runBracket.ts",
   },
   {
+    // The version path and the image path each derived this, with opposite
+    // comparison operators — one rejected on `>= rate`, the other accepted on
+    // `< rate`. The pattern matches the rate fallback, which is where a copy
+    // starts.
+    what: "whether a run's trace is sampled",
+    pattern: /traceSampleRate \?\?/,
+    owner: "src/application/execution/traceLifecycle.ts",
+  },
+  {
     // Three call sites used to ask this for themselves, so a new project type
     // meant finding all three. They now ask the facade and only decide how to
     // serialise its answer.

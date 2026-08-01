@@ -7,11 +7,24 @@ import { TraceRecorder } from "@/application/trace/recorder";
 import type { ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
 
+/**
+ * Whether this run's trace is recorded — the ONE place the sampling draw is
+ * compared against the rate. The version path and the image path used to each
+ * derive it, with opposite comparison operators; a third copy is exactly how
+ * they would drift apart. `sample` is injected like `now` so a test can pin
+ * the outcome at a fractional rate.
+ */
+export function traceSampled(
+  deps: Pick<ExecutionDeps, "traces" | "traceSampleRate" | "sample">,
+): boolean {
+  return deps.traces !== undefined && (deps.sample ?? Math.random)() < (deps.traceSampleRate ?? 0);
+}
+
 export function sampledTraceRecorder(
   deps: ExecutionDeps,
   input: ExecuteVersionInput,
 ): TraceRecorder | undefined {
-  if (!deps.traces || Math.random() >= (deps.traceSampleRate ?? 0)) {
+  if (!deps.traces || !traceSampled(deps)) {
     return undefined;
   }
   return createTraceRecorder(
