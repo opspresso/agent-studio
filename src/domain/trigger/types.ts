@@ -7,8 +7,8 @@
  * A2A are published-only (`resolveRunnableVersion`).
  */
 
-/** The kinds a stored trigger row can be. `schedule` is not implemented yet. */
-export type TriggerKind = "webhook";
+/** The kinds a stored trigger row can be. */
+export type TriggerKind = "webhook" | "schedule";
 
 /** How a delivery's payload reaches the run. */
 export type TriggerPayloadMode =
@@ -20,28 +20,50 @@ export type TriggerPayloadMode =
   /** The payload is serialised into the user message. What an agent project wants. */
   | "message";
 
-export interface WebhookTrigger {
+/** What every trigger kind shares; each kind adds what only it needs. */
+interface TriggerBase {
   projectName: string;
-  /** Slug, unique within the project; part of the delivery URL. */
+  /** Slug, unique within the project; part of the delivery URL for webhooks. */
   triggerId: string;
-  kind: TriggerKind;
   description: string;
-  /** A disabled trigger accepts nothing — the URL stays valid but never runs. */
+  /** A disabled trigger never runs — a webhook's URL stays valid, a schedule's occurrences pass. */
   enabled: boolean;
-  /** AES-encrypted at rest, masked on read, compared in constant time. */
-  secret: string;
-  /** Fixed variables every delivery starts from; the payload layers over them. */
+  /** Fixed variables every run starts from. */
   variables?: Record<string, string>;
-  payloadMode: TriggerPayloadMode;
   /**
-   * Whether a delivery may start while a run from this trigger is still going.
+   * Whether a firing may start while a run from this trigger is still going.
    * False is the safer default — a webhook that fires faster than the run takes
-   * would otherwise pile runs up until the cost guard notices.
+   * (or a schedule tighter than its run) would otherwise pile runs up until the
+   * cost guard notices.
    */
   allowConcurrent: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface WebhookTrigger extends TriggerBase {
+  kind: "webhook";
+  /** AES-encrypted at rest, masked on read, compared in constant time. */
+  secret: string;
+  payloadMode: TriggerPayloadMode;
+}
+
+/**
+ * Fires the published version at cron occurrences. No secret and no payload:
+ * nothing external presents credentials — the scan endpoint authenticates the
+ * ticker itself — and every firing runs the same fixed input.
+ */
+export interface ScheduleTrigger extends TriggerBase {
+  kind: "schedule";
+  /** Five-field cron expression, read in `timezone`. `src/domain/trigger/cron.ts` evaluates it. */
+  cron: string;
+  /** IANA zone the cron fields are read in, e.g. `Asia/Seoul`. */
+  timezone: string;
+  /** The user message each firing runs with; an agent project needs one. */
+  message?: string;
+}
+
+export type Trigger = WebhookTrigger | ScheduleTrigger;
 
 export type TriggerRunStatus =
   | "running"
@@ -57,6 +79,8 @@ export interface TriggerRun {
   status: TriggerRunStatus;
   /** The caller's `Idempotency-Key`, when one was sent. */
   idempotencyKey?: string;
+  /** The UTC instant of the cron occurrence a schedule firing was claimed for. */
+  scheduledFor?: string;
   startedAt: string;
   endedAt?: string;
   /** Bounded preview of the answer — a run's whole output does not belong here. */
