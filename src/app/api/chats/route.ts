@@ -1,9 +1,9 @@
 import { withAuth } from "@/lib/session";
 import { bodyTooLarge, BodyTooLargeError, readTurnBody } from "@/app/api/_lib/body";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { createChat } from "@/application/chat/createChat";
 import { listChats } from "@/application/chat/listChats";
-import { ChatError } from "@/application/chat/errors";
 import type { Chat } from "@/domain/chat/types";
 import { chatDeps } from "./_deps";
 import { createChatSchema } from "./_lib/schemas";
@@ -32,10 +32,7 @@ export const POST = withAuth(async (user, request: Request) => {
 
   const parsed = createChatSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json(
-      { error: parsed.error.issues[0]?.message ?? "projectName and firstMessage are required" },
-      { status: 400 },
-    );
+    return invalidRequest(parsed.error);
   }
 
   try {
@@ -50,9 +47,6 @@ export const POST = withAuth(async (user, request: Request) => {
     });
     return await sseResponse(withChatMeta(chat, stream), abortController);
   } catch (error) {
-    if (error instanceof ChatError) {
-      return Response.json({ error: error.message }, { status: error.status });
-    }
-    throw error;
+    return apiError(error);
   }
 });

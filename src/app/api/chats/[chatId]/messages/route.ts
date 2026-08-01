@@ -1,8 +1,8 @@
 import { withAuth } from "@/lib/session";
 import { bodyTooLarge, BodyTooLargeError, readTurnBody } from "@/app/api/_lib/body";
+import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { sendMessage } from "@/application/chat/sendMessage";
-import { ChatError } from "@/application/chat/errors";
 import { chatDeps } from "../../_deps";
 import { sendMessageSchema } from "../../_lib/schemas";
 
@@ -23,10 +23,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
 
   const parsed = sendMessageSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json(
-      { error: parsed.error.issues[0]?.message ?? "content is required" },
-      { status: 400 },
-    );
+    return invalidRequest(parsed.error);
   }
 
   try {
@@ -41,9 +38,6 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     });
     return await sseResponse(stream, abortController);
   } catch (error) {
-    if (error instanceof ChatError) {
-      return Response.json({ error: error.message }, { status: error.status });
-    }
-    throw error;
+    return apiError(error);
   }
 });
