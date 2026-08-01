@@ -19,11 +19,7 @@ import {
   type ReadDocument,
 } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
-
-/** Hard deadline for one agent run, enforced by an abort signal so a run that
- * stops producing chunks entirely (hung provider or tool) still ends and
- * reports a timeout instead of leaving the status up forever. */
-const RUN_TIMEOUT_MS = 3 * 60 * 1000;
+import { INTERACTIVE_RUN_TIMEOUT_MS } from "@/shared/runDeadline";
 /** How much of the opening question names the thread in the agent's history. */
 const MAX_THREAD_TITLE_LENGTH = 60;
 /**
@@ -464,7 +460,10 @@ export async function handleSlackEvent(
 
   let text = "";
   const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
-  const deadline = AbortSignal.timeout(RUN_TIMEOUT_MS);
+  // Enforced by an abort signal so a run that stops producing chunks entirely
+  // (hung provider or tool) still ends and reports a timeout instead of
+  // leaving the status up forever.
+  const deadline = AbortSignal.timeout(INTERACTIVE_RUN_TIMEOUT_MS);
   const attached = event.files ?? [];
   const imageParts = attached.length > 0 ? await collectImageParts(deps, token, attached, warnings) : [];
   const readDocuments =
