@@ -164,7 +164,7 @@ Better Auth unique-field lookups.
 
 ## Request flow
 
-Seven execution entry points converge on the facades in
+Eight execution entry points converge on the facades in
 `src/application/execution/runProject.ts` (`executeVersion` / `executeVersionStream` /
 `executeProjectStream` / `executeProject` / `executeAgent`) — the composition point that resolves a version's
 skills, MCP tools and subagents from repositories, assembles the injected engine deps, and
@@ -646,9 +646,14 @@ deployment choice and becomes a rewrite of three execution paths.
   `schedule:{instant}`. Any number of instances may scan concurrently; one write wins.
 - **A claim is permanent — a crashed firing is not re-executed.** A run is not idempotent (its
   tools have side effects) and the next occurrence is the natural retry. What a lost instance
-  leaves behind is a row stuck in `running`; once its lease (`RUN_LEASE_SECONDS`, derived from
-  the run deadline) can no longer be live, the next scan finishes it as `failed` — the ledger
-  says what happened, nothing runs twice.
+  leaves behind is a row stuck in `running`; once no lease could still be live, a later scan
+  finishes it as `failed` — the ledger says what happened, nothing runs twice. The repair
+  waits a full catch-up window beyond `RUN_LEASE_SECONDS` (`startedAt` is stamped at admit
+  time, not when the backgrounded run starts) and reads history only every fifth minute.
+- **One trigger's failure is its own.** Every repository call in the tick is fenced per
+  trigger and per occurrence; a throw after a claim was won writes a skip row — the claim is
+  never offered again — and lands in the summary's `errors` count instead of aborting the
+  tick with earlier claims stranded.
 - **Cron evaluation has one owner**, `src/domain/trigger/cron.ts`: five standard fields read
   as wall clock in the trigger's IANA timezone, occurrences keyed by UTC instant — so DST
   needs no special cases (a spring-forward time never occurs; a fall-back time occurs twice,
@@ -656,6 +661,11 @@ deployment choice and becomes a rewrite of three execution paths.
 - The scan looks back a bounded **catch-up window** (10 minutes): a missed tick or a short
   scanner outage loses nothing, anything older is missed for good — which also bounds how many
   runs a recovery can start at once. Overlapping windows are safe; the claim deduplicates.
+  Occurrences older than the trigger's **last edit** never fire, so creating or re-enabling a
+  schedule mid-window cannot back-fire instants from before the operator's decision. With
+  overlap disallowed, catch-up runs the **newest** occurrence and records the stale ones as
+  superseded rather than executing them late. One tick's admitted firings are driven through
+  a bounded pool (8), not one background task each.
 - Schedule rows alone carry `GSI1` (`TYPE#SCHEDULE`), so one index query enumerates them
   across projects and webhook rows stay invisible to the scan.
 - A schedule has **no secret and no payload**: nothing external presents credentials, and

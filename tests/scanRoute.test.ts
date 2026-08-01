@@ -18,7 +18,15 @@ vi.mock("@/application/trigger/runTrigger", () => ({
 
 import { POST } from "@/app/api/triggers/scan/route";
 
-const SUMMARY = { checked: 1, fired: 1, alreadyClaimed: 0, skipped: 0, repaired: 0, invalid: 0 };
+const SUMMARY = {
+  checked: 1,
+  fired: 1,
+  alreadyClaimed: 0,
+  skipped: 0,
+  repaired: 0,
+  invalid: 0,
+  errors: 0,
+};
 const FIRING = {
   status: "accepted",
   runId: "run-1",
@@ -51,12 +59,22 @@ describe("POST /api/triggers/scan", () => {
   });
 
   it("refuses a missing or wrong token the same way every 401 reads", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const req of [request(), request("wrong")]) {
       const response = await POST(req);
       expect(response.status).toBe(401);
       expect(await response.json()).toEqual({ error: "Unauthorized" });
     }
     expect(scanSchedules).not.toHaveBeenCalled();
+    // A refused tick leaves a trace — it would otherwise 401 forever in silence.
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("survives the trailing newline a file-built Kubernetes Secret carries", async () => {
+    process.env.SCHEDULE_SCAN_TOKEN = "tick-token\n";
+    const response = await POST(request("tick-token"));
+    expect(response.status).toBe(200);
   });
 
   it("scans, drives each firing in the background, and answers the summary", async () => {

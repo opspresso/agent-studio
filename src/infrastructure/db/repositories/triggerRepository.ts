@@ -116,7 +116,7 @@ export const triggerRepository: TriggerRepository = {
       TableName: getTableName(),
       IndexName: "GSI1",
       KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.schedulePartition() },
+      ExpressionAttributeValues: { ":pk": keys.typePartition("SCHEDULE") },
     });
     return items.map(toTrigger).filter((t): t is ScheduleTrigger => t.kind === "schedule");
   },

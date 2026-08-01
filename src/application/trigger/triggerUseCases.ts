@@ -156,6 +156,9 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         if (input.cron === undefined || input.timezone === undefined) {
           throw new ValidationError("A schedule trigger needs a cron expression and a timezone");
         }
+        if (input.payloadMode !== undefined) {
+          throw new ValidationError("A schedule trigger has no payload");
+        }
         assertScheduleFields(input);
         trigger = {
           ...base,
@@ -165,6 +168,16 @@ export function createTriggerUseCases(deps: TriggerDeps) {
           ...(input.message ? { message: input.message } : {}),
         };
       } else {
+        // The same refusal update gives: cron fields on a webhook are a caller
+        // who meant kind: "schedule", and dropping them would mint a webhook
+        // secret for a schedule that then silently never fires.
+        if (
+          input.cron !== undefined ||
+          input.timezone !== undefined ||
+          input.message !== undefined
+        ) {
+          throw new ValidationError("Only a schedule trigger has cron, timezone or message");
+        }
         secret = newSecret();
         trigger = {
           ...base,

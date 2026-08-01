@@ -18,8 +18,8 @@ const MAX_BODY_BYTES = 1_000_000;
  * and no webhook sender waits that long; the delivery's outcome goes on its
  * history row, which the console reads. That does mean an instance lost
  * mid-delivery leaves a row stuck in `running` — the same gap the Slack path
- * has, and the one a durable worker (see the schedule-trigger milestone) would
- * close for both.
+ * has; extending the schedule scan's repair to both is the trigger-durability
+ * milestone.
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
   const { project, trigger } = await ctx.params;
