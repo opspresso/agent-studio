@@ -166,29 +166,32 @@ Better Auth unique-field lookups.
 
 Seven execution entry points converge on the facades in
 `src/application/execution/runProject.ts` (`executeVersion` / `executeVersionStream` /
-`executeProjectStream` / `executeAgent`) — the composition point that resolves a version's
+`executeProjectStream` / `executeProject` / `executeAgent`) — the composition point that resolves a version's
 skills, MCP tools and subagents from repositories, assembles the injected engine deps, and
 records usage. To trace any request, start there.
 
 | Entry point | Caller | Facade used |
 |---|---|---|
-| Predict | `POST …/predict` | `executeProjectStream` (stream) / `collectRun(executeAgent)` for agent projects, `executeVersion` otherwise — so an agent project runs its tool loop here too, and `variables` (which only a prompt template consumes) are ignored for it; image projects → `generateImage`, which edits the request's source `images` when any are sent and generates otherwise |
-| OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream); `executeVersion` / `collectRun(executeAgent)` (non-stream) |
+| Predict | `POST …/predict` | `executeProjectStream` (stream) / `executeProject` (non-stream) — so an agent project runs its tool loop here too, and `variables` (which only a prompt template consumes) are ignored for it; image projects → `generateImage`, which edits the request's source `images` when any are sent and generates otherwise |
+| OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream) / `executeProject` (non-stream); an image project is refused with 400 — an image has no chat completion |
 | Agent SSE | `POST …/agent` | `executeAgent` |
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent`) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
 | Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `executeProjectStream` (bound in `container.ts` as `triggerRunnerDeps.run`) |
 
-Two thin wrappers sit alongside: `generateImage`
-(`src/application/image/generateImage.ts`, the image predict path) and `collectRun`
-(`src/app/api/projects/_lib/openai.ts`, which drains `executeAgent` for the non-stream
-OpenAI response).
+One thin wrapper sits alongside: `generateImage`
+(`src/application/image/generateImage.ts`, the image predict path). `collectRun` — which
+drains an agent stream into one collected answer — lives with the facades in
+`runProject.ts`, where `executeProject` uses it for the non-stream agent case.
 
-`executeProjectStream` is the canonical `projectType` → strategy dispatch (`agent` runs the
-multi-turn tool loop; anything else streams a single-shot completion). **New entry points
-should call it instead of re-encoding that decision** — three call sites used to ask it for
-themselves, so a new project type meant finding all three. A subagent transfer dispatches on
+`executeProjectStream` (and `executeProject`, its non-streaming counterpart) is the
+canonical `projectType` → strategy dispatch: `agent` runs the multi-turn tool loop, `llm`
+runs a single-shot completion, and an `image` project is refused — its run is the dedicated
+`generateImage` use case, and every image-capable surface branches to it before asking here.
+**New entry points should call these instead of re-encoding that decision** — three call
+sites used to ask it for themselves, and the two non-streaming routes had diverged on the
+image case. A subagent transfer dispatches on
 the same axis inside `runLocalSubagent`: an `image` child generates, a prompt child runs its
 user prompt template with the transfer message as the user turn, and only an `agent` child
 enters the tool loop.
