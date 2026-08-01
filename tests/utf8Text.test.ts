@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
+import { cutCodePoints, cutUtf8Bytes, decodeUtf8Text } from "@/shared/utf8Text";
 
 /**
  * The decision this exists for: `Buffer.toString("utf-8")` never fails, so the
@@ -101,5 +101,42 @@ describe("cutCodePoints", () => {
 
   it("survives a zero limit", () => {
     expect(cutCodePoints("\u{1F600}", 0)).toBe("");
+  });
+});
+
+describe("cutUtf8Bytes", () => {
+  it("returns text under the budget unchanged", () => {
+    expect(cutUtf8Bytes("hello", 5)).toBe("hello");
+  });
+
+  it("cuts ASCII exactly at the budget", () => {
+    expect(cutUtf8Bytes("abcdef", 4)).toBe("abcd");
+  });
+
+  it("backs off instead of cutting through a two-byte character", () => {
+    // "é" is 2 bytes; a budget of 2 lands between its bytes.
+    const cut = cutUtf8Bytes("aé", 2);
+    expect(cut).toBe("a");
+    expect(cut.isWellFormed()).toBe(true);
+  });
+
+  it("backs off instead of cutting through a four-byte character", () => {
+    const text = "ab\u{1F600}";
+    for (const budget of [3, 4, 5]) {
+      const cut = cutUtf8Bytes(text, budget);
+      expect(cut).toBe("ab");
+      // The whole point: no U+FFFD is manufactured at the boundary.
+      expect(cut.includes("�")).toBe(false);
+    }
+    expect(cutUtf8Bytes(text, 6)).toBe(text);
+  });
+
+  it("keeps a multi-byte character that ends exactly at the budget", () => {
+    expect(cutUtf8Bytes("한국", 3)).toBe("한");
+    expect(cutUtf8Bytes("한국", 6)).toBe("한국");
+  });
+
+  it("survives a zero budget", () => {
+    expect(cutUtf8Bytes("\u{1F600}", 0)).toBe("");
   });
 });
