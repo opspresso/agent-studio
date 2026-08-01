@@ -6,6 +6,16 @@
 const encoder = new TextEncoder();
 
 /**
+ * Idle middleboxes cut silent connections — the ALB in front of the deployed
+ * app kills any connection with no bytes for 60s, which is shorter than one
+ * image generation or a long tool call, during which the engine yields nothing.
+ * SSE comments keep bytes flowing without entering the protocol: spec parsers
+ * and `readSse` both discard frames that do not start with `data:`.
+ */
+const KEEPALIVE_INTERVAL_MS = 15_000;
+const KEEPALIVE_FRAME = encoder.encode(": keepalive\n\n");
+
+/**
  * Pull the first chunk before the response exists.
  *
  * A run is refused — over its daily cost limit, out of concurrency slots — on
@@ -28,6 +38,11 @@ async function createSseResponse(
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const keepalive = setInterval(() => {
+        if (!cancelled) {
+          controller.enqueue(KEEPALIVE_FRAME);
+        }
+      }, KEEPALIVE_INTERVAL_MS);
       try {
         if (!first.done) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(first.value)}\n\n`));
@@ -46,6 +61,7 @@ async function createSseResponse(
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`));
         }
       } finally {
+        clearInterval(keepalive);
         if (!cancelled) {
           controller.close();
         }

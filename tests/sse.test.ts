@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { apiError } from "@/app/api/_lib/http";
 import { RateLimitedError } from "@/application/errors";
@@ -34,6 +34,46 @@ describe("sseResponse", () => {
     expect(body).toBe(
       'data: {"delta":"one"}\n\ndata: {"delta":"two"}\n\ndata: [DONE]\n\n',
     );
+  });
+});
+
+describe("sseResponse keepalive", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * The ALB in front of the deployed app kills any connection silent for 60s,
+   * which is shorter than one image generation. Comments keep bytes flowing
+   * while the generator is silent, and readSse discards them.
+   */
+  it("emits comment frames while the generator is silent, none after it ends", async () => {
+    vi.useFakeTimers();
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    async function* source(): AsyncGenerator<unknown> {
+      yield { delta: "first" };
+      await gate;
+      yield { delta: "second" };
+    }
+
+    const response = await sseResponse(source());
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const read = async () => decoder.decode((await reader.read()).value);
+
+    expect(await read()).toBe('data: {"delta":"first"}\n\n');
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await read()).toBe(": keepalive\n\n");
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await read()).toBe(": keepalive\n\n");
+
+    release();
+    expect(await read()).toBe('data: {"delta":"second"}\n\n');
+    expect(await read()).toBe("data: [DONE]\n\n");
+    await expect(reader.read()).resolves.toMatchObject({ done: true });
   });
 });
 
