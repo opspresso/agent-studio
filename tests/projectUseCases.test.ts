@@ -7,13 +7,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * Project mutation is "owner or admin", so these cases have to be able to say
  * which. Default: no admin configured, which is what every ownership case below
- * assumes and what a deployment that never set ADMIN_EMAILS has.
+ * assumes and what a deployment that never set ADMIN_EMAILS has. Wired through
+ * `setAdminCheck` exactly as the composition root does it.
  */
-const { admins } = vi.hoisted(() => ({ admins: { emails: [] as string[] } }));
-vi.mock("@/lib/runtime-settings", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/runtime-settings")>()),
-  isConfiguredAdmin: async (email: string) => admins.emails.includes(email.toLowerCase()),
-}));
+const admins = { emails: [] as string[] };
+const adminListCheck = async (email: string) => admins.emails.includes(email.toLowerCase());
+setAdminCheck(adminListCheck);
 beforeEach(() => {
   admins.emails = [];
 });
@@ -38,7 +37,12 @@ import {
   isEncrypted,
   isMasked,
 } from "@/infrastructure/crypto/secretEncryption";
-import { createProject, deleteProject, updateProject } from "@/application/project/projectUseCases";
+import {
+  createProject,
+  deleteProject,
+  setAdminCheck,
+  updateProject,
+} from "@/application/project/projectUseCases";
 import {
   chatMessageSchema,
   predictSchema,
@@ -888,17 +892,16 @@ describe("the admin override, per mutation path", () => {
      * 403 — the authorization answer would become a function of the store's
      * availability. It has to fail closed and stay a ForbiddenError.
      */
-    const settings = await import("@/lib/runtime-settings");
-    const spy = vi
-      .spyOn(settings, "isConfiguredAdmin")
-      .mockRejectedValue(new Error("DynamoDB unavailable"));
+    setAdminCheck(async () => {
+      throw new Error("DynamoDB unavailable");
+    });
     vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await expect(
         updateProject(makeProjectRepo([projectFixture("p")]), "p", { displayName: "X" }, OTHER),
       ).rejects.toBeInstanceOf(ForbiddenError);
     } finally {
-      spy.mockRestore();
+      setAdminCheck(adminListCheck);
     }
   });
 });

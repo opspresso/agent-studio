@@ -1,9 +1,31 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { CostLimits, Project, ProjectType } from "@/domain/project/types";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
-import { isConfiguredAdmin } from "@/lib/runtime-settings";
 import { nextUpdatedAt } from "./timestamps";
 import { log } from "@/shared/logger";
+
+/** The admin-list reader the write override consults. See {@link setAdminCheck}. */
+type AdminCheck = (userEmail: string) => Promise<boolean>;
+
+/**
+ * Deny until wired: a composition that forgot the check keeps plain owner-only
+ * writes — the same posture as a deployment with no admin list — rather than
+ * opening every project or crashing.
+ */
+let configuredAdminCheck: AdminCheck = async () => false;
+
+/**
+ * Wire the admin-list reader the override consults. Called once by the
+ * composition root. Pushed in rather than imported, because the reader lives in
+ * `lib/runtime-settings` on top of the settings store — a static import here
+ * would pull the DynamoDB client into the application layer through the side
+ * door. And pushed once rather than threaded through call sites, because a
+ * caller that forgot the argument would silently narrow the rule back to
+ * owner-only for its path alone.
+ */
+export function setAdminCheck(check: AdminCheck): void {
+  configuredAdminCheck = check;
+}
 
 export interface CreateProjectInput {
   name: string;
@@ -48,10 +70,10 @@ export async function getProject(repo: ProjectRepository, name: string): Promise
  * The admin case is checked here rather than threaded through those call sites
  * as a flag: the rule is "owner or admin", and a flag any one caller forgot to
  * pass would silently narrow it back to owner-only for that path alone.
- * `isConfiguredAdmin` reads the effective admin list, so demoting an admin on
- * the settings page takes effect without a redeploy — and it is the *configured*
- * check, so a deployment with no admin list keeps plain owner-only writes rather
- * than opening every project to everyone.
+ * The wired check ({@link setAdminCheck}) reads the effective admin list, so
+ * demoting an admin on the settings page takes effect without a redeploy — and
+ * it is the *configured* check, so a deployment with no admin list keeps plain
+ * owner-only writes rather than opening every project to everyone.
  */
 export async function assertProjectWritable(
   repo: ProjectRepository,
@@ -87,7 +109,7 @@ export async function assertProjectWritable(
  */
 async function isAdminOverride(userEmail: string): Promise<boolean> {
   try {
-    return await isConfiguredAdmin(userEmail);
+    return await configuredAdminCheck(userEmail);
   } catch (error) {
     log.error("authz", "admin list unavailable; denying the override", error);
     return false;

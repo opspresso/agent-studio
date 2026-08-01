@@ -60,13 +60,20 @@ import type { CostAlertSlack } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
+import { setAdminCheck } from "@/application/project/projectUseCases";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
   getPublicBaseUrl,
   getSkillsRepoConfig,
   getToolsRepoConfig,
+  isConfiguredAdmin,
 } from "./runtime-settings";
+
+// The write override's admin list is pushed into the use case here rather than
+// imported by it — a static import would drag the settings store (and its
+// DynamoDB client) into the application layer.
+setAdminCheck(isConfiguredAdmin);
 
 /**
  * Reading runtime settings is the composition root's job: the LLM adapters take
