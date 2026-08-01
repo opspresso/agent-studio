@@ -54,6 +54,31 @@ export function cutCodePoints(text: string, maxChars: number): string {
   return text.slice(0, Math.max(end, 0));
 }
 
+/**
+ * Cut `text` to at most `maxBytes` of UTF-8, never through a character.
+ *
+ * The byte-budget sibling of {@link cutCodePoints}, for callers bounded by
+ * storage rather than by characters (a DynamoDB item, a request body). A bare
+ * `Buffer.subarray(0, n).toString("utf-8")` cuts through whatever multi-byte
+ * sequence straddles `n` and hands back U+FFFD where the boundary fell —
+ * persisted as content, which is exactly the corruption `decodeUtf8Text`
+ * exists to refuse. Backing off to the previous character boundary costs at
+ * most three bytes and keeps the result real text.
+ */
+export function cutUtf8Bytes(text: string, maxBytes: number): string {
+  const bytes = Buffer.from(text, "utf-8");
+  if (bytes.byteLength <= maxBytes) {
+    return text;
+  }
+  let end = Math.max(maxBytes, 0);
+  // A UTF-8 continuation byte is 0b10xxxxxx; the character boundary is the
+  // first byte below the cut that is not one.
+  while (end > 0 && ((bytes[end] ?? 0) & 0b1100_0000) === 0b1000_0000) {
+    end -= 1;
+  }
+  return bytes.subarray(0, end).toString("utf-8");
+}
+
 export function decodeUtf8Text(bytes: Uint8Array): string | null {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (buffer.includes(0)) {

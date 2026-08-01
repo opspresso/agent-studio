@@ -10,6 +10,7 @@ import {
 } from "@/application/llm/documentParts";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { log } from "@/shared/logger";
+import { cutUtf8Bytes } from "@/shared/utf8Text";
 
 /**
  * Chat is an interactive surface, so it may fall back to the newest draft
@@ -128,7 +129,9 @@ function truncateForPersist(content: string): string {
   }
   const marker = "\n…[truncated]";
   const budget = MAX_PERSISTED_CONTENT_BYTES - Buffer.byteLength(marker, "utf8");
-  return Buffer.from(content, "utf8").subarray(0, budget).toString("utf8") + marker;
+  // Byte-boundary-safe: a bare subarray cut would persist U+FFFD where the
+  // budget fell inside a multi-byte character.
+  return cutUtf8Bytes(content, budget) + marker;
 }
 
 /**
