@@ -178,6 +178,29 @@ const RULES: Rule[] = [
     allow: [],
   },
   {
+    // The direct rule above reads clean while a use case reaches the AWS SDK
+    // through `lib`: three lib modules compose infrastructure, and importing
+    // one of them is pulling what should be injected — which is exactly how
+    // the admin check once dragged the settings store into the application
+    // layer. Only lib leaves with no imports of their own stay importable.
+    name: "application imports nothing from lib but its pure leaves",
+    from: "application",
+    banned: (spec) => spec.startsWith("@/lib/") && spec !== "@/lib/runMetrics",
+    allow: [],
+  },
+  {
+    // The other half of the side door: a lib module that composes
+    // infrastructure is a wiring module and is named here, so every module
+    // this rule does not name stays a leaf and the rule above keeps meaning
+    // "no side door" as lib grows.
+    name: "lib imports no infrastructure outside its wiring modules",
+    from: "lib",
+    banned: (spec) => targetLayer(spec) === "infrastructure",
+    exempt: (relPath) =>
+      ["src/lib/container.ts", "src/lib/auth.ts", "src/lib/runtime-settings.ts"].includes(relPath),
+    allow: [],
+  },
+  {
     name: "app imports no infrastructure outside its wiring sites",
     from: "app",
     banned: (spec) => targetLayer(spec) === "infrastructure",
