@@ -144,7 +144,10 @@ export function TriggersSection({ projectName }: { projectName: string }) {
               // API is always one it accepts.
               onBlur={() => setNewId(toSlug(newId))}
               description="Lowercase letters, digits, and hyphens only."
-              inputWrapperOrder={["label", "input", "description", "error"]}
+              // Description above the input, so in this `flex-end` row the input
+              // box itself is the wrapper's bottom edge and lines up with the
+              // description-less fields and buttons beside it.
+              inputWrapperOrder={["label", "description", "input", "error"]}
               disabled={loading}
             />
             <Select
@@ -191,7 +194,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                 label="Cron"
                 placeholder="30 9 * * 1-5"
                 description="minute hour day-of-month month day-of-week"
-                inputWrapperOrder={["label", "input", "description", "error"]}
+                inputWrapperOrder={["label", "description", "input", "error"]}
                 value={newCron}
                 onChange={(e) => setNewCron(e.currentTarget.value)}
                 w={180}
@@ -448,7 +451,7 @@ function ScheduleFields({
       <TextInput
         label="Cron"
         description="minute hour day-of-month month day-of-week"
-        inputWrapperOrder={["label", "input", "description", "error"]}
+        inputWrapperOrder={["label", "description", "input", "error"]}
         value={cron}
         onChange={(e) => setCron(e.currentTarget.value)}
         w={180}
