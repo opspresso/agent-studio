@@ -29,7 +29,7 @@ const DOMAINS = [
   {
     label: "mcp",
     title: "MCP tools",
-    body: "Register MCP servers once; their tools join every agent run with encrypted headers.",
+    body: "Register MCP servers once; any version can attach their tools, headers encrypted at rest.",
   },
   {
     label: "skills",
@@ -42,9 +42,19 @@ const DOMAINS = [
     body: "Talk to any agent project over streaming SSE, with tool results inline.",
   },
   {
+    label: "images",
+    title: "Images",
+    body: "Draw or edit images from a prompt — as a project type, as agent builtins, or as an image subagent.",
+  },
+  {
+    label: "surfaces",
+    title: "Slack, A2A & webhooks",
+    body: "Per-project Slack bots, both A2A directions, webhook triggers — every entry point runs the same engine.",
+  },
+  {
     label: "cost",
     title: "Cost",
-    body: "Every call priced from the model registry and rolled up per project, per day.",
+    body: "Every call priced from the model registry and rolled up per project, per caller, per day.",
   },
 ] as const;
 
@@ -59,9 +69,25 @@ const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: stri
     kind: "tool",
     text: 'data: {"toolResult":{"toolCallId":"call_1","name":"Skill: triage-rules","content":"# Triage rules…"}}',
   },
-  { kind: "author", text: 'data: {"author":"escalation-agent","delta":{"content":"Severity: P2"}}' },
+  {
+    kind: "tool",
+    text: 'data: {"delta":{"toolCalls":[{"id":"call_2","type":"function","function":{"name":"transfer_to_agent","arguments":"{\\"agent_name\\":\\"escalation-agent\\",\\"message\\":\\"Rate this crash report.\\"}"}}]}}',
+  },
+  {
+    kind: "author",
+    text: 'data: {"author":"escalation-agent","authorPath":["escalation-agent"],"delta":{"content":"Severity: P2"}}',
+  },
+  {
+    kind: "author",
+    text: 'data: {"author":"escalation-agent","authorPath":["escalation-agent"],"authorDone":true}',
+  },
+  {
+    kind: "tool",
+    text: `data: {"toolResult":{"toolCallId":"call_2","name":"transfer_to_agent: escalation-agent","content":"Transferred to 'escalation-agent'; its answer follows.","displayOnly":true}}`,
+  },
   { kind: "text", text: 'data: {"delta":{"content":"Filed as P2 with repro steps."}}' },
   { kind: "meta", text: 'data: {"usage":{"inputTokens":812,"outputTokens":164,"costUsd":0.0031}}' },
+  { kind: "meta", text: 'data: {"done":true}' },
 ];
 
 export default async function Home() {
@@ -93,7 +119,7 @@ export default async function Home() {
           <Group mt="xl" gap="md" wrap="wrap">
             <SignInButton />
             <Text fz="sm" c="dimmed">
-              Sign-in required for every workspace.
+              Sign-in required for the whole workspace.
             </Text>
           </Group>
         </GridCol>
@@ -178,7 +204,7 @@ export default async function Home() {
       </section>
 
       <Text ta="center" fz="xs" c="dimmed">
-        Next.js · DynamoDB · one OpenAI-compatible channel for every model
+        Next.js · DynamoDB · OpenAI-compatible channels for every model
       </Text>
     </Stack>
   );
