@@ -68,6 +68,7 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 | `BETTER_AUTH_URL` | — | — | Base URL Better Auth builds its callback against. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | Required for real login only. |
 | `ALLOWED_EMAIL_DOMAINS` | empty | **runtime** | Comma-separated domains allowed to sign in. Empty = any domain. |
+| `TRUSTED_PROXY_CIDRS` | empty | — | Comma-separated IPs/CIDR ranges of the reverse proxies in front of this deployment (e.g. the VPC CIDR when ALB + Istio both append to `X-Forwarded-For`). Better Auth strips these hops from the right of the chain to resolve the client IP its rate limiting keys on; empty trusts only a single-value header, so behind two proxies every request falls into one shared bucket. |
 | `ADMIN_EMAILS` | empty | **runtime** | Comma-separated. Grants registry/settings mutation, and grants write access to projects owned by someone else. Empty means *no restriction* for the first and *nobody* for the second — the two questions are answered by different predicates on purpose ([SECURITY.md](SECURITY.md#authorization-model)). |
 
 ## LLM channels

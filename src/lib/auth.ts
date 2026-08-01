@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { dynamodbAdapter } from "@/infrastructure/db/authAdapter";
+import { config } from "./config";
 import { getAllowedEmailDomains } from "./runtime-settings";
 
 async function assertAllowedEmailDomain(email: string): Promise<void> {
@@ -44,6 +45,11 @@ export const auth = betterAuth({
           return { data: session };
         },
       },
+    },
+  },
+  advanced: {
+    ipAddress: {
+      trustedProxies: config.trustedProxyCidrs,
     },
   },
   plugins: [nextCookies()],

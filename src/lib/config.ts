@@ -142,6 +142,17 @@ export const config = {
     return parseList(process.env.ADMIN_EMAILS ?? "");
   },
   /**
+   * IPs or CIDR ranges of the reverse proxies this deployment sits behind
+   * (TRUSTED_PROXY_CIDRS, comma-separated). Better Auth resolves the client IP
+   * for its per-IP rate limiting by stripping these hops from the right of
+   * X-Forwarded-For; without them a multi-hop chain (ALB + Istio gateway both
+   * append) is untrusted and every request shares one rate-limit bucket.
+   * Empty leaves Better Auth's single-hop default.
+   */
+  get trustedProxyCidrs(): string[] {
+    return parseList(process.env.TRUSTED_PROXY_CIDRS ?? "");
+  },
+  /**
    * How many runs one caller may have in flight at once, and the separate
    * ceiling for inbound A2A.
    *
