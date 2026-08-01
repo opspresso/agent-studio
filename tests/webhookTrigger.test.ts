@@ -333,6 +333,24 @@ describe("executeDelivery", () => {
     expect(f.rows[0]).toMatchObject({ status: "failed", error: "over the daily cost limit" });
   });
 
+  it("finishes the row and releases the slot when the payload itself cannot be shaped", async () => {
+    // JSON.parse can hand back a body whose serialisation throws (deep
+    // nesting); the toJSON throw stands in for that deterministically. The
+    // regression this pins: a shaping failure once escaped the firing's
+    // finally, leaving the row running and the overlap slot held for a lease.
+    const f = fixture();
+    const poison = {
+      toJSON() {
+        throw new Error("payload too deep");
+      },
+    };
+    await expect(executeDelivery(f.deps, await accept(f), poison)).resolves.toBeUndefined();
+    expect(f.rows[0]).toMatchObject({ status: "failed", error: "payload too deep" });
+    expect(f.runs).toHaveLength(0);
+    // The slot came back: the next delivery is admitted, not busy.
+    expect((await admitDelivery(f.deps, "p", "nightly", SECRET, null)).status).toBe("accepted");
+  });
+
   it("still finishes the row when history writes fail", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const f = fixture();

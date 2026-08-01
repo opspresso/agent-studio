@@ -188,6 +188,10 @@ export async function admitRun<T extends Trigger>(
 > {
   const project = await deps.projects.get(trigger.projectName);
   if (!project) {
+    // A row too, like every refusal below: a schedule can outlive its project,
+    // and "skipped: 1" in a scan summary with nothing in the history explaining
+    // it is exactly what skip rows exist to prevent.
+    await recordSkip(deps, trigger, extra, "Project not found.");
     return { status: "not-configured" };
   }
   // Published only. A draft is configuration in progress; an external system
@@ -276,7 +280,21 @@ export async function executeDelivery(
   admitted: AdmittedDelivery,
   payload: unknown,
 ): Promise<void> {
-  await executeFiring(deps, admitted, payloadInput(admitted.trigger, payload));
+  let input: { variables?: Record<string, string>; message?: string };
+  try {
+    input = payloadInput(admitted.trigger, payload);
+  } catch (caught) {
+    // Shaping the payload is part of the firing: a body the serialiser refuses
+    // (deep nesting overflows JSON.stringify) must finish the row and release
+    // the overlap slot like any other failure, or the trigger reads busy for a
+    // whole lease and the row stays running forever.
+    await admitted.release();
+    await finishFiring(deps, admitted.run, {
+      error: caught instanceof Error ? caught.message : String(caught),
+    });
+    return;
+  }
+  await executeFiring(deps, admitted, input);
 }
 
 /**
@@ -318,13 +336,22 @@ export async function executeFiring(
   } finally {
     await admitted.release();
   }
+  await finishFiring(deps, run, { text, ...(error ? { error } : {}), ...(traceId ? { traceId } : {}) });
+}
+
+/** Close a firing's history row with whatever the attempt produced. */
+async function finishFiring(
+  deps: FiringDeps,
+  run: TriggerRun,
+  outcome: { text?: string; error?: string; traceId?: string },
+): Promise<void> {
   const finished: TriggerRun = {
     ...run,
-    status: error ? "failed" : "succeeded",
+    status: outcome.error ? "failed" : "succeeded",
     endedAt: new Date().toISOString(),
-    ...(text ? { result: text.slice(0, MAX_RESULT_CHARS) } : {}),
-    ...(error ? { error: error.slice(0, MAX_RESULT_CHARS) } : {}),
-    ...(traceId ? { traceId } : {}),
+    ...(outcome.text ? { result: outcome.text.slice(0, MAX_RESULT_CHARS) } : {}),
+    ...(outcome.error ? { error: outcome.error.slice(0, MAX_RESULT_CHARS) } : {}),
+    ...(outcome.traceId ? { traceId: outcome.traceId } : {}),
   };
   try {
     await deps.triggers.finishRun(finished);
