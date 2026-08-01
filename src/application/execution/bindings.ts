@@ -5,7 +5,7 @@ import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
-import { buildMcpTools, closeMcp, type ResolvedMcp } from "./mcpTools";
+import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
 import { log } from "@/shared/logger";
 
 /**
@@ -16,7 +16,7 @@ import { log } from "@/shared/logger";
  */
 export type SkillReader = (name: string) => Promise<Skill | null>;
 
-export function createSkillReader(deps: ExecutionDeps): SkillReader {
+export function createSkillReader(deps: Pick<ExecutionDeps, "skills">): SkillReader {
   const cache = new Map<string, Promise<Skill | null>>();
   return (name) => {
     const hit = cache.get(name);
@@ -68,7 +68,7 @@ export async function resolveSkills(
 
 /** Same for subagents: an unresolvable target is not offered as a transfer. */
 export async function resolveSubagents(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects">,
   subagentList: SubagentRef[] | undefined,
 ): Promise<{ subagents: engine.SubagentInfo[]; warnings: string[] }> {
   const resolved = await Promise.all(
@@ -122,7 +122,7 @@ export function buildSkillLoader(
  * server-side until that server times it out.
  */
 export async function resolveRunTools(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects"> & McpToolDeps,
   version: Version,
   readSkill: SkillReader,
   signal?: AbortSignal,

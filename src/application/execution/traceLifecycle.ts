@@ -21,7 +21,7 @@ export function traceSampled(
 }
 
 export function sampledTraceRecorder(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "traces" | "traceSampleRate" | "sample">,
   input: ExecuteVersionInput,
 ): TraceRecorder | undefined {
   if (!deps.traces || !traceSampled(deps)) {
