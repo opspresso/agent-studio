@@ -37,9 +37,14 @@ const DOW_NAMES: Record<string, number> = {
 };
 
 function parseValue(raw: string, names?: Record<string, number>): number | null {
-  const named = names?.[raw.toLowerCase()];
-  if (named !== undefined) {
-    return named;
+  if (names) {
+    const lower = raw.toLowerCase();
+    // Own keys only: a plain lookup would find Object.prototype's members, and
+    // "constructor" as a month must be a parse error, not a spec that can
+    // never match.
+    if (Object.hasOwn(names, lower)) {
+      return names[lower] ?? null;
+    }
   }
   return /^\d+$/.test(raw) ? Number(raw) : null;
 }
@@ -117,6 +122,22 @@ function normalizeSunday(field: CronField): CronField {
   return values;
 }
 
+// A set that allows every value the field can take is `*` in disguise, and the
+// dom/dow OR quirk must not read it as a restriction: `0 0 1 * */1` means "the
+// 1st of the month", not "every day" — which is what a restricted-looking
+// full-range day-of-week would turn it into.
+function fullRangeAsAny(field: CronField, min: number, max: number): CronField {
+  if (field === "any") {
+    return field;
+  }
+  for (let value = min; value <= max; value += 1) {
+    if (!field.has(value)) {
+      return field;
+    }
+  }
+  return "any";
+}
+
 /** Parse a five-field cron expression, or say it is not one. */
 export function parseCron(expr: string): CronSpec | null {
   const fields = expr.trim().split(/\s+/);
@@ -132,7 +153,14 @@ export function parseCron(expr: string): CronSpec | null {
   if (!minute || !hour || !dayOfMonth || !month || !dayOfWeek) {
     return null;
   }
-  return { minute, hour, dayOfMonth, month, dayOfWeek: normalizeSunday(dayOfWeek) };
+  return {
+    minute: fullRangeAsAny(minute, 0, 59),
+    hour: fullRangeAsAny(hour, 0, 23),
+    dayOfMonth: fullRangeAsAny(dayOfMonth, 1, 31),
+    month: fullRangeAsAny(month, 1, 12),
+    // Sunday first: `0-7` covers the effective 0–6 domain only once 7 folds in.
+    dayOfWeek: fullRangeAsAny(normalizeSunday(dayOfWeek), 0, 6),
+  };
 }
 
 /** Whatever `Intl` can resolve — which is the resolver `dueSlots` will use. */
@@ -148,10 +176,16 @@ export function isValidTimezone(timeZone: string): boolean {
 /** Formatters are expensive to build and the scan asks per minute per trigger. */
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
+/** More zones than exist; bounds the cache against arbitrary key strings. */
+const MAX_FORMATTERS = 500;
+
 function formatterFor(timeZone: string): Intl.DateTimeFormat {
   const cached = formatters.get(timeZone);
   if (cached) {
     return cached;
+  }
+  if (formatters.size >= MAX_FORMATTERS) {
+    formatters.clear();
   }
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,

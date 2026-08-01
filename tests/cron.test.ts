@@ -43,6 +43,18 @@ describe("parseCron", () => {
       expect(parseCron(expr), expr).toBeNull();
     }
   });
+
+  it("rejects Object.prototype members posing as month or weekday names", () => {
+    // A plain object lookup would resolve these to functions, producing a spec
+    // that parses fine and can never match — a silently dead schedule.
+    for (const expr of [
+      "0 9 * constructor *",
+      "0 0 * * __proto__",
+      "0 0 * hasOwnProperty *",
+    ]) {
+      expect(parseCron(expr), expr).toBeNull();
+    }
+  });
 });
 
 describe("dueSlots", () => {
@@ -110,6 +122,26 @@ describe("dueSlots", () => {
     expect(slots("0 0 13 * *", "UTC", "2026-08-13T23:59:00Z", "2026-08-14T00:01:00Z")).toEqual([]);
     // Day-of-week alone: the 13th does not fire.
     expect(slots("0 0 * * 5", "UTC", "2026-08-12T23:59:00Z", "2026-08-13T00:01:00Z")).toEqual([]);
+  });
+
+  it("reads a full-range day field as unrestricted, not as the OR quirk's trigger", () => {
+    // `*/1` in day-of-week covers every weekday; treated as restricted it would
+    // turn "the 1st of the month" into "every day" — ~30x the intended runs.
+    expect(slots("0 0 1 * */1", "UTC", "2026-08-01T23:59:00Z", "2026-08-03T00:01:00Z")).toEqual(
+      [],
+    );
+    expect(slots("0 0 1 * */1", "UTC", "2026-08-31T23:59:00Z", "2026-09-01T00:01:00Z")).toEqual([
+      "2026-09-01T00:00:00.000Z",
+    ]);
+    // The mirror image: a full-range day-of-month must not defeat "weekdays
+    // only". 2026-08-01 is a Saturday.
+    expect(slots("0 9 */1 * 1-5", "UTC", "2026-08-01T08:59:00Z", "2026-08-01T09:01:00Z")).toEqual(
+      [],
+    );
+    // `0-7` in day-of-week is every day too, once 7 folds into Sunday.
+    expect(slots("0 0 13 * 0-7", "UTC", "2026-08-12T23:59:00Z", "2026-08-13T00:01:00Z")).toEqual([
+      "2026-08-13T00:00:00.000Z",
+    ]);
   });
 
   it("fires a fall-back wall-clock time once per UTC instant — twice that night", () => {
