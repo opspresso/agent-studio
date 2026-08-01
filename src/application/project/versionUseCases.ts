@@ -184,6 +184,50 @@ function resolveMcpBindings(
 }
 
 /**
+ * Resolve a draft's masked header overrides against the stored version, for
+ * previewing an unsaved draft. The console reads overrides masked, so a draft
+ * round-tripped through the editor carries `ab••••••yz` where a secret was.
+ * The save path above already resolves those against what is stored, and a
+ * preview claims to show what a run would send, so it has to resolve the same
+ * way or it is describing a different request. This is deliberately the only
+ * sibling of that path: a third reading of what a mask means lived in a route
+ * handler once, and the two had no reason to stay identical.
+ *
+ * Anything with no counterpart in the saved version is left as it came — a
+ * freshly typed value is not a mask, and `mergeHeaderOverrideUpdate` drops a
+ * mask that matches nothing rather than passing it on.
+ */
+export async function resolveDraftMcpBindings(
+  versions: Pick<VersionRepository, "get">,
+  cipher: SecretCipher,
+  projectName: string,
+  versionName: string | undefined,
+  bindings: McpBinding[],
+): Promise<McpBinding[]> {
+  if (!versionName || !bindings.some((binding) => binding.headers)) {
+    return bindings;
+  }
+  const saved = await versions.get(projectName, versionName);
+  if (!saved) {
+    // Editing a version that no longer exists. Nothing to resolve against, and
+    // the masks that remain are dropped at dispatch rather than sent.
+    return bindings;
+  }
+  const storedByName = new Map(saved.mcpList.map((binding) => [binding.name, binding]));
+  return bindings.map((binding) =>
+    binding.headers
+      ? {
+          ...binding,
+          headers: cipher.mergeHeaderOverrideUpdate(
+            storedByName.get(binding.name)?.headers ?? {},
+            binding.headers,
+          ),
+        }
+      : binding,
+  );
+}
+
+/**
  * A version as an API response may carry it. Versions hold secrets now that MCP
  * bindings can override headers, so every route that returns one masks it here.
  * Execution paths deliberately do NOT: they read the repository value and

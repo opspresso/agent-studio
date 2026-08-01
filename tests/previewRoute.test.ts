@@ -17,7 +17,14 @@ vi.mock("@/lib/session", () => ({
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
 }));
 
-vi.mock("@/lib/container", () => ({ executionDeps: {}, projectRepository: projectRepo }));
+vi.mock("@/lib/container", () => ({
+  executionDeps: {},
+  projectRepository: projectRepo,
+  // Referenced by the draft-mask resolution the route hands to
+  // resolveDraftMcpBindings; a draft with no masked overrides never reads them.
+  versionRepository: { get: vi.fn().mockResolvedValue(null) },
+  secretCipher: {},
+}));
 
 vi.mock("@/application/execution/runProject", () => ({
   previewPrompt: async (
