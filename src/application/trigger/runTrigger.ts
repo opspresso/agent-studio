@@ -250,7 +250,7 @@ export async function admitRun<T extends Trigger>(
 }
 
 /** A firing that never ran, recorded so the console can say why. */
-async function recordSkip(
+export async function recordSkip(
   deps: FiringDeps,
   trigger: Pick<Trigger, "projectName" | "triggerId">,
   extra: FiringExtra,

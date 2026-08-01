@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   SCHEDULE_CATCHUP_WINDOW_MS,
+  SCHEDULE_REPAIR_AFTER_SECONDS,
+  driveFirings,
   scanSchedules,
   scheduleInput,
+  type ScheduleFiring,
 } from "@/application/trigger/scanSchedules";
 import { executeFiring, type FiringDeps } from "@/application/trigger/runTrigger";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -85,6 +88,7 @@ function fixture(
     schedules?: ScheduleTrigger[];
     seededRows?: TriggerRun[];
     published?: Version | null;
+    projectMissing?: boolean;
     chunks?: EngineChunk[];
     runThrows?: Error;
     slotsBusy?: boolean;
@@ -130,7 +134,12 @@ function fixture(
     runs,
     deps: {
       triggers,
-      projects: { get: async () => project, list: async () => [], put: async () => {}, delete: async () => {} } as never,
+      projects: {
+        get: async () => (opts.projectMissing ? null : project),
+        list: async () => [],
+        put: async () => {},
+        delete: async () => {},
+      } as never,
       versions: {
         get: async () => (opts.published === undefined ? version : opts.published),
         list: async () => (opts.published === undefined ? [version] : []),
@@ -203,16 +212,90 @@ describe("scanSchedules", () => {
     expect(f.runs).toHaveLength(1);
   });
 
-  it("catches up every occurrence a short outage missed, each with its own claim", async () => {
+  it("catches up every occurrence a short outage missed when overlap is allowed", async () => {
     const f = fixture({ schedules: [schedule({ cron: "*/5 * * * *", allowConcurrent: true })] });
     const { summary } = await scanAndExecute(f);
-    // 00:20:30 back to 00:30:30 UTC contains 00:25 and 00:30.
+    // 00:20:30 back to 00:30:30 UTC contains 00:25 and 00:30, newest first.
     expect(summary.fired).toBe(2);
     expect(f.runs).toHaveLength(2);
     expect(f.rows.map((r) => r.scheduledFor)).toEqual([
-      "2026-08-01T00:25:00.000Z",
       "2026-08-01T00:30:00.000Z",
+      "2026-08-01T00:25:00.000Z",
     ]);
+  });
+
+  it("runs only the newest caught-up occurrence when overlap is not allowed", async () => {
+    const f = fixture({ schedules: [schedule({ cron: "*/5 * * * *" })] });
+    const { summary } = await scanAndExecute(f);
+    // The current occurrence runs; the stale one is claimed and recorded as
+    // superseded rather than executed late or blamed on a phantom in-flight run.
+    expect(summary).toMatchObject({ fired: 1, skipped: 1 });
+    expect(f.rows.find((r) => r.scheduledFor === "2026-08-01T00:30:00.000Z")).toMatchObject({
+      status: "succeeded",
+    });
+    expect(f.rows.find((r) => r.scheduledFor === "2026-08-01T00:25:00.000Z")).toMatchObject({
+      status: "skipped",
+      error: expect.stringContaining("Superseded"),
+    });
+  });
+
+  it("never fires an occurrence older than the trigger's last edit", async () => {
+    // Created (or re-enabled — an update too) one minute ago: the 00:30
+    // occurrence is due, the 00:25 one predates the operator's decision.
+    const f = fixture({
+      schedules: [
+        schedule({
+          cron: "*/5 * * * *",
+          allowConcurrent: true,
+          updatedAt: "2026-08-01T00:29:30Z",
+        }),
+      ],
+    });
+    const { summary } = await scanAndExecute(f);
+    expect(summary.fired).toBe(1);
+    expect(f.claimed).toEqual(new Set(["schedule:2026-08-01T00:30:00.000Z"]));
+  });
+
+  it("fences one trigger's failure off from the rest of the tick", async () => {
+    const broken = schedule({ triggerId: "broken" });
+    const healthy = schedule({ triggerId: "healthy" });
+    const f = fixture({ schedules: [broken, healthy] });
+    const claim = f.deps.triggers.claimIdempotencyKey.bind(f.deps.triggers);
+    f.deps.triggers.claimIdempotencyKey = async (p, t, key) => {
+      if (t === "broken") {
+        throw new Error("throttled");
+      }
+      return claim(p, t, key);
+    };
+    const { summary } = await scanAndExecute(f);
+    expect(summary.errors).toBe(1);
+    expect(summary.fired).toBe(1);
+    expect(f.runs).toHaveLength(1);
+  });
+
+  it("records a row for an occurrence whose claim was won but whose admit failed", async () => {
+    const f = fixture();
+    f.deps.projects.get = async () => {
+      throw new Error("dynamo down");
+    };
+    const { summary } = await scanAndExecute(f);
+    // The claim is permanent, so without a row the occurrence would silently
+    // not exist anywhere.
+    expect(summary.errors).toBe(1);
+    expect(f.rows).toEqual([
+      expect.objectContaining({
+        status: "skipped",
+        scheduledFor: "2026-08-01T00:30:00.000Z",
+        error: expect.stringContaining("could not admit"),
+      }),
+    ]);
+  });
+
+  it("records a skip row when the schedule's project is gone", async () => {
+    const f = fixture({ projectMissing: true });
+    const { summary } = await scanAndExecute(f);
+    expect(summary).toMatchObject({ fired: 0, skipped: 1 });
+    expect(f.rows[0]).toMatchObject({ status: "skipped", error: "Project not found." });
   });
 
   it("records a claimed occurrence it cannot run as a skipped row", async () => {
@@ -239,18 +322,40 @@ describe("scanSchedules", () => {
       triggerId: "nightly",
       runId: "lost-run",
       status: "running",
+      startedAt: new Date(AT.getTime() - (SCHEDULE_REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
+    };
+    // Old enough that a one-tick margin would already have branded it lost —
+    // but startedAt is stamped at admit time, and the run may not have started
+    // until a tick later, so this must survive the repair pass.
+    const slowButAlive: TriggerRun = {
+      ...lost,
+      runId: "alive-run",
       startedAt: new Date(AT.getTime() - (RUN_LEASE_SECONDS + 60) * 1000).toISOString(),
     };
-    const fresh: TriggerRun = { ...lost, runId: "fresh-run", startedAt: AT.toISOString() };
-    const f = fixture({ schedules: [schedule({ enabled: false })], seededRows: [lost, fresh] });
+    const f = fixture({
+      schedules: [schedule({ enabled: false })],
+      seededRows: [lost, slowButAlive],
+    });
     const { summary } = await scanAndExecute(f);
     expect(summary.repaired).toBe(1);
     expect(f.rows.find((r) => r.runId === "lost-run")).toMatchObject({
       status: "failed",
       error: expect.stringContaining("lost"),
     });
-    // A row whose lease could still be live is left alone.
-    expect(f.rows.find((r) => r.runId === "fresh-run")?.status).toBe("running");
+    expect(f.rows.find((r) => r.runId === "alive-run")?.status).toBe("running");
+  });
+
+  it("reads history only on repair ticks", async () => {
+    const f = fixture({ schedules: [schedule({ enabled: false })] });
+    let reads = 0;
+    f.deps.triggers.listRuns = async () => {
+      reads += 1;
+      return [];
+    };
+    // AT's minute is 30 — a repair tick; one minute later is not.
+    await scanSchedules(f.deps, AT);
+    await scanSchedules(f.deps, new Date(AT.getTime() + 60_000));
+    expect(reads).toBe(1);
   });
 
   it("counts an unusable stored cron instead of killing the tick", async () => {
@@ -277,9 +382,33 @@ describe("scheduleInput", () => {
     });
   });
 
-  it("still gives the run a user turn when no message is configured", () => {
-    const input = scheduleInput(schedule({ message: undefined }));
-    expect(input.message).toBe("Schedule fired with no configured message.");
+  it("invents no synthetic turn when no message is configured", () => {
+    // A prompt project runs its rendered template and an image project its own
+    // prompt; a made-up sentence would reach both with nothing in the trigger
+    // configuration explaining it.
+    expect(scheduleInput(schedule({ message: undefined }))).toEqual({});
+    expect(scheduleInput(schedule({ message: "  " }))).toEqual({});
+  });
+});
+
+describe("driveFirings", () => {
+  it("bounds how many firings run at once and still drives them all", async () => {
+    let active = 0;
+    let peak = 0;
+    const driven: string[] = [];
+    const firings = Array.from(
+      { length: 5 },
+      (_, i) => ({ runId: `run-${i}` }) as unknown as ScheduleFiring,
+    );
+    await driveFirings(firings, 2, async (firing) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      driven.push(firing.runId);
+      active -= 1;
+    });
+    expect(driven).toHaveLength(5);
+    expect(peak).toBeLessThanOrEqual(2);
   });
 });
 

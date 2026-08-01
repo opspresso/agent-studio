@@ -13,13 +13,18 @@
  * and the next occurrence is the natural retry. What a lost instance leaves
  * behind is a row stuck in `running`; once its lease could no longer be live,
  * the scan finishes it as `failed` so the ledger says what happened.
+ *
+ * One trigger's failure is its own: every repository call here is fenced per
+ * trigger and per occurrence, because a thrown claim would otherwise abort the
+ * tick with earlier occurrences already claimed — and a claim, once won, is
+ * never offered again.
  */
 
 import type { ScheduleTrigger, TriggerRun } from "@/domain/trigger/types";
 import { dueSlots, isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
-import { admitRun, type AdmittedFiring, type FiringDeps } from "./runTrigger";
+import { admitRun, recordSkip, type AdmittedFiring, type FiringDeps } from "./runTrigger";
 
 /**
  * How far back a tick looks. Occurrences older than this were missed for good
@@ -29,6 +34,32 @@ import { admitRun, type AdmittedFiring, type FiringDeps } from "./runTrigger";
  * deduplicates.
  */
 export const SCHEDULE_CATCHUP_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * How many firings one tick's caller may drive concurrently. One 09:00 shared
+ * by every project must not become that many simultaneous runs on whichever
+ * instance served the tick — the per-actor concurrency guard cannot bound this
+ * fan-out, because each trigger is its own actor.
+ */
+export const MAX_CONCURRENT_FIRINGS = 8;
+
+/**
+ * When a row stuck in `running` is surely dead. `startedAt` is stamped when the
+ * firing is *admitted*, not when the backgrounded run actually starts, so the
+ * margin over the run deadline is a full catch-up window rather than one tick —
+ * repairing late is cosmetic, repairing a live run brands a healthy instance
+ * as lost.
+ */
+export const SCHEDULE_REPAIR_AFTER_SECONDS =
+  RUN_LEASE_SECONDS + SCHEDULE_CATCHUP_WINDOW_MS / 1000;
+
+/**
+ * Repair reads history; due occurrences do not. Gating the read to every fifth
+ * minute keeps the steady-state tick at one index query instead of one query
+ * per trigger, at the cost of a repair landing a few minutes later — against
+ * `SCHEDULE_REPAIR_AFTER_SECONDS` that delay is noise.
+ */
+const REPAIR_EVERY_MINUTES = 5;
 
 /**
  * How many recent history rows one repair pass reads. Newest first, so this
@@ -43,12 +74,14 @@ export interface ScheduleScanSummary {
   fired: number;
   /** Occurrences another tick or instance had already claimed — expected noise. */
   alreadyClaimed: number;
-  /** Occurrences claimed but refused (overlap, no published version); each is a row. */
+  /** Occurrences claimed but refused (overlap, superseded, no published version); each is a row. */
   skipped: number;
   /** Rows stuck in `running` past any live lease, finished as failed. */
   repaired: number;
   /** Rows whose cron or timezone no longer parses; logged, never fatal. */
   invalid: number;
+  /** Repository throws fenced off from the rest of the tick; each is logged. */
+  errors: number;
 }
 
 export type ScheduleFiring = AdmittedFiring<ScheduleTrigger>;
@@ -58,15 +91,37 @@ export interface ScheduleScanResult {
   firings: ScheduleFiring[];
 }
 
-/** What a schedule firing runs: its fixed variables and configured message. */
+/**
+ * What a schedule firing runs: its fixed variables, and the configured message
+ * when there is one. Deliberately no synthetic fallback turn — a prompt
+ * project runs on its rendered template and an image project on its own
+ * prompt, and an invented sentence would reach both with nothing in the
+ * trigger's configuration explaining it.
+ */
 export function scheduleInput(trigger: ScheduleTrigger): {
   variables?: Record<string, string>;
-  message: string;
+  message?: string;
 } {
+  const message = trigger.message?.trim() ? trigger.message : undefined;
   return {
     ...(trigger.variables ? { variables: trigger.variables } : {}),
-    message: trigger.message?.trim() ? trigger.message : "Schedule fired with no configured message.",
+    ...(message ? { message } : {}),
   };
+}
+
+/** Drive firings through a bounded pool; `drive` must not throw (and does not). */
+export async function driveFirings(
+  firings: ScheduleFiring[],
+  limit: number,
+  drive: (firing: ScheduleFiring) => Promise<void>,
+): Promise<void> {
+  const queue = [...firings];
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    for (let firing = queue.shift(); firing; firing = queue.shift()) {
+      await drive(firing);
+    }
+  });
+  await Promise.all(workers);
 }
 
 /**
@@ -81,31 +136,71 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
     skipped: 0,
     repaired: 0,
     invalid: 0,
+    errors: 0,
   };
   const firings: ScheduleFiring[] = [];
-  const windowStart = new Date(at.getTime() - SCHEDULE_CATCHUP_WINDOW_MS);
+  const windowStart = at.getTime() - SCHEDULE_CATCHUP_WINDOW_MS;
+  const repairTick = at.getUTCMinutes() % REPAIR_EVERY_MINUTES === 0;
   for (const trigger of await deps.triggers.listSchedules()) {
     summary.checked += 1;
-    // Repair before the enabled check: disabling a schedule must not strand a
+    // Repair regardless of `enabled`: disabling a schedule must not strand a
     // row its last firing left in `running`.
-    summary.repaired += await repairLostRuns(deps, trigger, at);
+    if (repairTick) {
+      summary.repaired += await repairLostRuns(deps, trigger, at);
+    }
     if (!trigger.enabled) {
       continue;
     }
-    const spec = parseCron(trigger.cron);
-    if (!spec || !isValidTimezone(trigger.timezone)) {
-      // CRUD validation makes this unreachable; a row that got here anyway must
-      // not kill the tick, and must not be silent either.
-      log.warn(
+    try {
+      await fireDueOccurrences(deps, trigger, windowStart, at, summary, firings);
+    } catch (error) {
+      log.error(
         "trigger",
-        `schedule '${trigger.projectName}/${trigger.triggerId}' has an unusable cron or timezone`,
+        `scan of schedule '${trigger.projectName}/${trigger.triggerId}' failed`,
+        error,
       );
-      summary.invalid += 1;
-      continue;
+      summary.errors += 1;
     }
-    for (const slot of dueSlots(spec, trigger.timezone, windowStart, at)) {
-      const scheduledFor = slot.toISOString();
-      const claimed = await deps.triggers.claimIdempotencyKey(
+  }
+  return { summary, firings };
+}
+
+/** One trigger's due occurrences, each fenced so a throw costs only itself. */
+async function fireDueOccurrences(
+  deps: FiringDeps,
+  trigger: ScheduleTrigger,
+  windowStart: number,
+  at: Date,
+  summary: ScheduleScanSummary,
+  firings: ScheduleFiring[],
+): Promise<void> {
+  const spec = parseCron(trigger.cron);
+  if (!spec || !isValidTimezone(trigger.timezone)) {
+    // CRUD validation makes this unreachable; a row that got here anyway must
+    // not kill the tick, and must not be silent either.
+    log.warn(
+      "trigger",
+      `schedule '${trigger.projectName}/${trigger.triggerId}' has an unusable cron or timezone`,
+    );
+    summary.invalid += 1;
+    return;
+  }
+  // An occurrence older than the trigger's last edit never fires: a schedule
+  // created — or re-enabled, which is an update too — mid-window must not
+  // back-fire instants from before the operator's decision.
+  const updatedAt = Date.parse(trigger.updatedAt);
+  const after = new Date(
+    Math.max(windowStart, Number.isFinite(updatedAt) ? updatedAt : windowStart),
+  );
+  // Newest first: with overlap disallowed, one tick catching up several missed
+  // occurrences should run the *current* one — the stale ones are recorded as
+  // superseded rather than executed late.
+  let winner = false;
+  for (const slot of dueSlots(spec, trigger.timezone, after, at).reverse()) {
+    const scheduledFor = slot.toISOString();
+    let claimed = false;
+    try {
+      claimed = await deps.triggers.claimIdempotencyKey(
         trigger.projectName,
         trigger.triggerId,
         `schedule:${scheduledFor}`,
@@ -116,16 +211,43 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
       }
       // The occurrence is ours from here on: whatever refuses it now is
       // recorded as a skipped row rather than retried by anyone else.
+      if (!trigger.allowConcurrent && winner) {
+        await recordSkip(
+          deps,
+          trigger,
+          { scheduledFor },
+          "Superseded by a newer occurrence caught up in the same tick.",
+        );
+        summary.skipped += 1;
+        continue;
+      }
       const admitted = await admitRun(deps, trigger, { scheduledFor });
       if (admitted.status === "accepted") {
         summary.fired += 1;
+        winner = true;
         firings.push(admitted);
       } else {
         summary.skipped += 1;
       }
+    } catch (error) {
+      log.error(
+        "trigger",
+        `could not admit occurrence ${scheduledFor} of '${trigger.projectName}/${trigger.triggerId}'`,
+        error,
+      );
+      summary.errors += 1;
+      if (claimed) {
+        // The claim is already won and will never be offered again; without a
+        // row the occurrence would just silently not exist.
+        await recordSkip(
+          deps,
+          trigger,
+          { scheduledFor },
+          "The scan could not admit this occurrence; see the server log.",
+        );
+      }
     }
   }
-  return { summary, firings };
 }
 
 /** Finish rows a lost instance left in `running`, per the crash policy above. */
@@ -134,7 +256,7 @@ async function repairLostRuns(
   trigger: ScheduleTrigger,
   at: Date,
 ): Promise<number> {
-  const cutoff = at.getTime() - RUN_LEASE_SECONDS * 1000;
+  const cutoff = at.getTime() - SCHEDULE_REPAIR_AFTER_SECONDS * 1000;
   let rows: TriggerRun[];
   try {
     rows = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT);
