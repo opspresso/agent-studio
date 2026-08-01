@@ -129,6 +129,11 @@ export async function admitDelivery(
   if (!trigger) {
     return { status: "not-configured" };
   }
+  if (trigger.kind !== "webhook") {
+    // A schedule trigger has no delivery URL. Answering exactly like an unknown
+    // trigger keeps the 404 from confirming the id exists.
+    return { status: "not-configured" };
+  }
   // The secret is checked before anything else observable happens, and in
   // constant time — a disabled trigger must not answer differently to a wrong
   // secret than an enabled one would.

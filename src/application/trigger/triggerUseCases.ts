@@ -6,9 +6,22 @@
 
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
+import { isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type { TriggerRun, TriggerPayloadMode, WebhookTrigger } from "@/domain/trigger/types";
-import { ConflictError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
+import type {
+  ScheduleTrigger,
+  Trigger,
+  TriggerKind,
+  TriggerRun,
+  TriggerPayloadMode,
+  WebhookTrigger,
+} from "@/domain/trigger/types";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+  isConditionalWriteFailure,
+} from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
@@ -21,11 +34,16 @@ export interface TriggerDeps {
 
 export interface CreateTriggerInput {
   triggerId: string;
+  /** Defaults to `webhook`, the kind that existed before there were two. */
+  kind?: TriggerKind;
   description?: string;
   enabled?: boolean;
   variables?: Record<string, string>;
   payloadMode?: TriggerPayloadMode;
   allowConcurrent?: boolean;
+  cron?: string;
+  timezone?: string;
+  message?: string;
 }
 
 export interface UpdateTriggerInput {
@@ -36,20 +54,42 @@ export interface UpdateTriggerInput {
   allowConcurrent?: boolean;
   /** True re-issues the secret; the previous one stops working immediately. */
   rotateSecret?: boolean;
+  cron?: string;
+  timezone?: string;
+  message?: string;
 }
 
 /**
- * What a client sees. The secret is masked exactly like every other stored
- * credential, and returned in the clear only once — from `create` and from a
- * rotation, which are the two moments the caller has to copy it.
+ * What a client sees: the union flattened to one serialisable shape, each
+ * kind's fields present only on that kind. A webhook's secret is masked exactly
+ * like every other stored credential, and returned in the clear only once —
+ * from `create` and from a rotation, the two moments the caller has to copy it.
  */
-export interface TriggerView extends Omit<WebhookTrigger, "secret"> {
-  secretMasked: string;
+export interface TriggerView {
+  projectName: string;
+  triggerId: string;
+  kind: TriggerKind;
+  description: string;
+  enabled: boolean;
+  variables?: Record<string, string>;
+  allowConcurrent: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** Webhook only. */
+  payloadMode?: TriggerPayloadMode;
+  secretMasked?: string;
   /** Present only on create/rotate. */
   secret?: string;
+  /** Schedule only. */
+  cron?: string;
+  timezone?: string;
+  message?: string;
 }
 
-function toView(trigger: WebhookTrigger, cipher: SecretCipher, plaintext?: string): TriggerView {
+function toView(trigger: Trigger, cipher: SecretCipher, plaintext?: string): TriggerView {
+  if (trigger.kind === "schedule") {
+    return { ...trigger };
+  }
   const { secret: _stored, ...rest } = trigger;
   return {
     ...rest,
@@ -58,13 +98,25 @@ function toView(trigger: WebhookTrigger, cipher: SecretCipher, plaintext?: strin
   };
 }
 
+/** The cron and timezone rules, enforced where both create and update pass. */
+function assertScheduleFields(input: { cron?: string; timezone?: string }): void {
+  if (input.cron !== undefined && !parseCron(input.cron)) {
+    throw new ValidationError(
+      "cron must be a five-field cron expression (minute hour day-of-month month day-of-week)",
+    );
+  }
+  if (input.timezone !== undefined && !isValidTimezone(input.timezone)) {
+    throw new ValidationError(`Unknown timezone "${input.timezone}" — use an IANA zone name`);
+  }
+}
+
 /** `asw_…` — traceable to this product and to what it opens, like the others. */
 function newSecret(): string {
   return generateSecretValue("triggerSecret");
 }
 
 export function createTriggerUseCases(deps: TriggerDeps) {
-  async function load(projectName: string, triggerId: string): Promise<WebhookTrigger> {
+  async function load(projectName: string, triggerId: string): Promise<Trigger> {
     const trigger = await deps.triggers.get(projectName, triggerId);
     if (!trigger) {
       throw new NotFoundError(`Trigger "${triggerId}" not found`);
@@ -86,22 +138,41 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     ): Promise<TriggerView> {
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const now = new Date().toISOString();
-      const secret = newSecret();
-      const trigger: WebhookTrigger = {
+      const base = {
         projectName,
         triggerId: input.triggerId,
-        kind: "webhook",
         description: input.description ?? "",
         enabled: input.enabled ?? true,
-        secret: deps.cipher.encrypt(secret),
         ...(input.variables ? { variables: input.variables } : {}),
-        payloadMode: input.payloadMode ?? "message",
-        // Overlap is off unless asked for: a webhook that fires faster than the
+        // Overlap is off unless asked for: a firing that comes faster than the
         // run takes would otherwise pile runs up until the cost guard notices.
         allowConcurrent: input.allowConcurrent ?? false,
         createdAt: now,
         updatedAt: now,
       };
+      let trigger: Trigger;
+      let secret: string | undefined;
+      if (input.kind === "schedule") {
+        if (input.cron === undefined || input.timezone === undefined) {
+          throw new ValidationError("A schedule trigger needs a cron expression and a timezone");
+        }
+        assertScheduleFields(input);
+        trigger = {
+          ...base,
+          kind: "schedule",
+          cron: input.cron,
+          timezone: input.timezone,
+          ...(input.message ? { message: input.message } : {}),
+        };
+      } else {
+        secret = newSecret();
+        trigger = {
+          ...base,
+          kind: "webhook",
+          secret: deps.cipher.encrypt(secret),
+          payloadMode: input.payloadMode ?? "message",
+        };
+      }
       try {
         await deps.triggers.create(trigger);
       } catch (error) {
@@ -121,16 +192,42 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     ): Promise<TriggerView> {
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const existing = await load(projectName, triggerId);
-      const rotated = input.rotateSecret ? newSecret() : undefined;
-      const updated: WebhookTrigger = {
-        ...existing,
+      const shared = {
         description: input.description ?? existing.description,
         enabled: input.enabled ?? existing.enabled,
         variables: input.variables ?? existing.variables,
-        payloadMode: input.payloadMode ?? existing.payloadMode,
         allowConcurrent: input.allowConcurrent ?? existing.allowConcurrent,
-        ...(rotated ? { secret: deps.cipher.encrypt(rotated) } : {}),
         updatedAt: new Date().toISOString(),
+      };
+      if (existing.kind === "schedule") {
+        // Explicit refusal over silent no-op: a caller asking a schedule for a
+        // secret rotation is confused about what it is talking to.
+        if (input.rotateSecret || input.payloadMode !== undefined) {
+          throw new ValidationError("A schedule trigger has no secret and no payload");
+        }
+        assertScheduleFields(input);
+        // An empty string clears the message; undefined keeps what is stored.
+        const { message: stored, ...rest } = existing;
+        const message = input.message ?? stored ?? "";
+        const updated: ScheduleTrigger = {
+          ...rest,
+          ...shared,
+          cron: input.cron ?? existing.cron,
+          timezone: input.timezone ?? existing.timezone,
+          ...(message ? { message } : {}),
+        };
+        await deps.triggers.put(updated);
+        return toView(updated, deps.cipher);
+      }
+      if (input.cron !== undefined || input.timezone !== undefined || input.message !== undefined) {
+        throw new ValidationError("Only a schedule trigger has cron, timezone or message");
+      }
+      const rotated = input.rotateSecret ? newSecret() : undefined;
+      const updated: WebhookTrigger = {
+        ...existing,
+        ...shared,
+        payloadMode: input.payloadMode ?? existing.payloadMode,
+        ...(rotated ? { secret: deps.cipher.encrypt(rotated) } : {}),
       };
       await deps.triggers.put(updated);
       return toView(updated, deps.cipher, rotated);
@@ -151,6 +248,9 @@ export function createTriggerUseCases(deps: TriggerDeps) {
     ): Promise<{ secret: string; createdAt: string }> {
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const trigger = await load(projectName, triggerId);
+      if (trigger.kind !== "webhook") {
+        throw new ValidationError("A schedule trigger has no secret");
+      }
       // Secret access is worth a trail even when it is authorized.
       log.warn(
         "trigger",
