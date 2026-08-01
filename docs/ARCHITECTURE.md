@@ -111,9 +111,9 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
 | Project API token | `PROJECT#{name}` | `APITOKEN` | — | — |
 | Project MCP OAuth connection | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
-| Webhook trigger | `PROJECT#{name}` | `TRIGGER#{triggerId}` | — | — |
-| Trigger delivery | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
-| Trigger idempotency claim | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
+| Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule only: `TYPE#SCHEDULE` | schedule only: `{name}#{triggerId}` |
+| Trigger run (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
+| Trigger dedup claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
 | Chat message | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
 | Skill | `SKILL#{name}` | `META` | `TYPE#SKILL` | `{name}` |
@@ -179,6 +179,7 @@ records usage. To trace any request, start there.
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
 | Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `executeProjectStream` (bound in `container.ts` as `triggerRunnerDeps.run`) |
+| Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `executeProjectStream` (same `triggerRunnerDeps.run`) |
 
 One thin wrapper sits alongside: `generateImage`
 (`src/application/image/generateImage.ts`, the image predict path). `collectRun` — which
@@ -592,9 +593,10 @@ The protocol-level checks (PKCE, `resource`, `iss`, issuer binding) are in
 ### Triggers
 
 ```ts
-WebhookTrigger { projectName, triggerId (slug), kind, description, enabled,
-                 secret (AES-encrypted, masked on read), variables?, payloadMode,
-                 allowConcurrent, createdAt, updatedAt }
+WebhookTrigger  { projectName, triggerId (slug), kind: "webhook", description, enabled,
+                  secret (AES-encrypted, masked on read), variables?, payloadMode,
+                  allowConcurrent, createdAt, updatedAt }
+ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), message? }
 ```
 
 - Triggers and their delivery history both live in the **project partition**, so the project
@@ -621,8 +623,44 @@ WebhookTrigger { projectName, triggerId (slug), kind, description, enabled,
   to tell "it never fired" from "it fired and failed" without reading logs.
 - The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
   last ten minutes and no webhook sender waits that long. Same durability gap as Slack, too —
-  an instance lost mid-delivery leaves a row stuck in `running`, which is what the durable
-  worker in the `schedule-trigger` milestone would close for both.
+  an instance lost mid-delivery leaves a row stuck in `running` (the schedule scan repairs its
+  own kind's rows; extending that to these two is the `trigger-durability` milestone).
+
+#### Schedules
+
+**The scheduler boundary** — the deployment decision this feature waited on — is a
+**Kubernetes CronJob ticking an authenticated endpoint** (`POST /api/triggers/scan`, shared
+token, once a minute). The ticker holds no state and no cron knowledge: which occurrences are
+due, who wins each one, and what runs is all decided in `scanSchedules`, so ticking twice,
+from two places, or late is safe. The alternatives lost on state: EventBridge Scheduler puts
+per-trigger CRUD in the AWS control plane — a second copy of the trigger table that can drift
+from the real one — and a dedicated worker Deployment duplicates the whole runtime for a poll
+loop the app can already serve. Three consumers were weighed, not one: Slack events and
+webhook deliveries share the same ack-then-`after()` durability gap, and a stateless tick
+against claimed work generalises to both — but migrating them is deliberately **not** part of
+this decision (see the `trigger-durability` milestone); at three consumers it stops being a
+deployment choice and becomes a rewrite of three execution paths.
+
+- **"Exactly once" is the claim's property, not the ticker's.** Each occurrence (a UTC minute
+  instant) is claimed with the same conditional write that dedups webhook deliveries, key
+  `schedule:{instant}`. Any number of instances may scan concurrently; one write wins.
+- **A claim is permanent — a crashed firing is not re-executed.** A run is not idempotent (its
+  tools have side effects) and the next occurrence is the natural retry. What a lost instance
+  leaves behind is a row stuck in `running`; once its lease (`RUN_LEASE_SECONDS`, derived from
+  the run deadline) can no longer be live, the next scan finishes it as `failed` — the ledger
+  says what happened, nothing runs twice.
+- **Cron evaluation has one owner**, `src/domain/trigger/cron.ts`: five standard fields read
+  as wall clock in the trigger's IANA timezone, occurrences keyed by UTC instant — so DST
+  needs no special cases (a spring-forward time never occurs; a fall-back time occurs twice,
+  each instant its own claim).
+- The scan looks back a bounded **catch-up window** (10 minutes): a missed tick or a short
+  scanner outage loses nothing, anything older is missed for good — which also bounds how many
+  runs a recovery can start at once. Overlapping windows are safe; the claim deduplicates.
+- Schedule rows alone carry `GSI1` (`TYPE#SCHEDULE`), so one index query enumerates them
+  across projects and webhook rows stay invisible to the scan.
+- A schedule has **no secret and no payload**: nothing external presents credentials, and
+  every firing runs the trigger's fixed `variables`/`message` against the published version,
+  attributed to the `schedule` actor kind.
 
 ### External agents (registry)
 
@@ -811,6 +849,7 @@ spender. `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names one:
 | `slack` | Slack user id | Slack hands over no email, and guessing a mapping would bill the wrong person |
 | `a2a` | the constant `shared-key` | The key is shared, so there is nobody to name |
 | `webhook` | `{project}:{triggerId}` | — |
+| `schedule` | `{project}:{triggerId}` | — |
 
 The split into a separate `ACTOR#{date}#{actor}` row is deliberate. `UsageRow` holds a map per
 metric keyed by model; keying those by `actor|model` instead would grow one item with the

@@ -177,6 +177,7 @@ Four surfaces authenticate without a session cookie:
 | Slack events | Slack signing secret | HMAC + `timingSafeEqualString`, 5-minute replay window, per-project secret |
 | Inbound A2A | `X-A2A-Key` | Constant-time compare against `A2A_API_KEY`; unset disables the endpoints |
 | Webhook triggers | `X-Trigger-Secret` | `cipher.decryptEquals` (constant time) |
+| Schedule scan | `X-Scan-Token` | `timingSafeEqualString` against `SCHEDULE_SCAN_TOKEN`; unset answers 503 |
 
 The trigger secret is compared **before** the enabled flag is read, so a disabled trigger
 cannot answer a wrong secret differently from an enabled one — that difference is an oracle

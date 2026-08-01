@@ -115,6 +115,7 @@ what the configured channels actually serve — see [DEVELOPMENT.md](DEVELOPMENT
 | `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | Runs one caller may have in flight. `0` disables the limit. |
 | `MAX_CONCURRENT_RUNS_A2A` | `50` | — | Separate ceiling for inbound A2A, because its actor id is a constant: the inbound key is shared, so one identity stands for every machine caller and the per-caller limit would otherwise cap the whole A2A surface. |
+| `SCHEDULE_SCAN_TOKEN` | unset | — | What the schedule ticker presents to `POST /api/triggers/scan` (`X-Scan-Token`). Unset means this deployment has no ticker: schedule triggers never fire and the endpoint answers 503 — off rather than open. |
 
 Invalid values (non-integer, negative) degrade to the default with a warning rather than to
 `0` — `Number("abc") || 0` would read as "limit off", which is the opposite of what a typo
@@ -231,6 +232,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Slack status refresh (Slack expires it at `2m`) | `45s` | `src/application/slack/replyStream.ts` |
 | Slack profile cache (success / failure / entries) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |
+| Schedule catch-up window (bounds what an outage can fire at once) | `10` min | `src/application/trigger/scanSchedules.ts` |
 
 There is deliberately **no run-wide context budget** yet: every limit above is per-item or
 per-turn, so a long tool-heavy run can still overflow a small `contextWindow` and surface as
