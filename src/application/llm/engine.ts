@@ -37,6 +37,7 @@ import type {
 } from "@/domain/llm/types";
 import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
+import { createRunContextBudget, type RunContextBudget } from "./contextBudget";
 import { PiiFilter } from "./pii";
 import { renderTemplate } from "./template";
 import { formatRunClock } from "@/shared/date";
@@ -308,24 +309,51 @@ async function mapWithLimit<T, R>(
 }
 
 /**
+ * Below this, a run-budget-truncated result reads as data while carrying none
+ * of it — the same judgement {@link MIN_TRANSFER_LINE_CHARS} makes for a
+ * transcript line — so the result is omitted with a reason instead.
+ */
+const MIN_KEPT_RESULT_CHARS = 500;
+
+/**
  * Spend one turn's tool-result budget in call order. Truncation is explicit so
  * the model can narrow its next call instead of silently working from a cut-off
  * payload; an entirely omitted result is reported as an error, which also makes
  * budget exhaustion visible as a failed span in the trace.
+ *
+ * The run-level context budget sits underneath: what survives the per-turn cap
+ * must still fit what the whole run may accumulate, so a small-window model
+ * truncates below the per-turn cap instead of overflowing into a provider 400.
  */
-function createToolResultBudget(total: number): (content: string) => string {
+function createToolResultBudget(
+  total: number,
+  runBudget?: RunContextBudget,
+): (content: string) => string {
   let remaining = total;
   return (content) => {
+    let text: string;
     if (content.length <= remaining) {
       remaining -= content.length;
-      return content;
+      text = content;
+    } else {
+      const room = remaining;
+      remaining = 0;
+      if (room <= 0) {
+        return "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
+      }
+      text = `${content.slice(0, room)}\n…(truncated: kept ${room} of ${content.length} chars, this turn's tool output budget is exhausted)`;
     }
-    const room = remaining;
-    remaining = 0;
-    if (room <= 0) {
-      return "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
+    if (!runBudget) {
+      return text;
     }
-    return `${content.slice(0, room)}\n…(truncated: kept ${room} of ${content.length} chars, this turn's tool output budget is exhausted)`;
+    const fitted = runBudget.fitText(text);
+    if (!fitted.truncated) {
+      return text;
+    }
+    if (fitted.text.length < MIN_KEPT_RESULT_CHARS) {
+      return "Error: tool result omitted — the run's context budget is exhausted. Answer from what you already have.";
+    }
+    return `${fitted.text}\n…(truncated: kept ${fitted.text.length} of ${text.length} chars, the run's context budget is exhausted)`;
   };
 }
 
@@ -1611,6 +1639,28 @@ export async function* runAgent(
     ...(filter ? input.messages.map((message) => maskMessage(filter, message)) : input.messages),
   );
 
+  // One ceiling for everything this run accumulates, derived from the model's
+  // own context window (min with the configured fallback's — a mid-run switch
+  // must still fit). The input and the declared tools are charged up front;
+  // everything the loop adds is charged — or cut to fit, with a report — as it
+  // enters. A run with headroom is byte-identical to an unbudgeted one.
+  const contextBudget = createRunContextBudget(
+    input.model,
+    input.fallbackModel,
+    input.parameters?.maxTokens,
+  );
+  if (contextBudget) {
+    for (const message of messages) {
+      contextBudget.chargeMessage(message);
+    }
+    if (tools.length > 0) {
+      contextBudget.chargeText(JSON.stringify(tools));
+    }
+  }
+  // Reported once, at the first cut: a run that never fills the budget should
+  // never mention it.
+  let contextTruncationReported = false;
+
   let turn = input.startTurn ?? 0;
   // Ids already spoken for, across every turn: what the assistant message a
   // chat persists must not repeat.
@@ -1786,7 +1836,7 @@ export async function* runAgent(
       });
     }
 
-    const spendResultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN);
+    const spendResultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, contextBudget);
 
     for (const { call, args, displayArgs, builtin } of prepared) {
       if (builtin && call.name === TRANSFER_TOOL_NAME) {
@@ -1871,11 +1921,21 @@ export async function* runAgent(
           tool_call_id: call.id,
           content: JSON.stringify({ result: null }),
         });
+        // A transfer's answer used to enter the context with no bound at all —
+        // the one unbudgeted spot. The user already saw the child's full
+        // answer stream by; only what re-enters the parent's context is cut.
+        const fittedChild = contextBudget?.fitText(childText) ?? {
+          text: childText,
+          truncated: false,
+        };
+        const childAnswer = fittedChild.truncated
+          ? `${fittedChild.text}\n…[truncated: the run's context budget is exhausted]`
+          : childText;
         postContextMessages.push({
           role: "user",
           content:
-            filter?.mask(subagentContextMessage(agentName, childText)) ??
-            subagentContextMessage(agentName, childText),
+            filter?.mask(subagentContextMessage(agentName, childAnswer)) ??
+            subagentContextMessage(agentName, childAnswer),
         });
         nextTurn = Math.max(nextTurn, turn + 2);
         continue;
@@ -2209,10 +2269,21 @@ export async function* runAgent(
       toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedContent });
     }
 
+    // Reported once per run, on the turn the first cut happened: the model
+    // already saw each cut in its result text, and this is the user's copy.
+    if (contextBudget?.truncated() && !contextTruncationReported) {
+      contextTruncationReported = true;
+      yield {
+        author,
+        warning:
+          "The run filled the model's context budget; further tool output and transferred answers are truncated to fit.",
+      };
+    }
+
     if (attachedImages.length > 0) {
       // A tool message is text-only, so the bytes enter as a user turn — the
       // same route a transfer's "For context" answer takes.
-      postContextMessages.push({
+      const imagesMessage: ChannelMessage = {
         role: "user",
         content: [
           { type: "text", text: "Images returned by the tool calls above:" },
@@ -2221,7 +2292,11 @@ export async function* runAgent(
             image_url: { url: imageDataUrl(image) },
           })),
         ],
-      });
+      };
+      // Charged at the flat per-image rate — the base64 url's length says
+      // nothing about what the provider charges for an image.
+      contextBudget?.chargeMessage(imagesMessage);
+      postContextMessages.push(imagesMessage);
       // The context now carries images, so a fallback that cannot read them
       // would turn a retryable failure into a hard one.
       fallbackModel = imageEligibleFallback(fallbackModel, true);
@@ -2235,6 +2310,10 @@ export async function* runAgent(
     if (reasoningText) {
       assistantMessage.reasoning_content = reasoningText;
     }
+    // The model's own turn is context now too; the tool results were already
+    // charged as they were fitted, and the engine's small control strings ride
+    // on the budget's protocol headroom.
+    contextBudget?.chargeMessage(assistantMessage);
     messages.push(assistantMessage, ...toolMessages, ...postContextMessages);
     turn = nextTurn;
   }

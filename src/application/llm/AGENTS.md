@@ -34,6 +34,17 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - One turn's tool-result text is capped (`MAX_TOOL_RESULT_CHARS_PER_TURN`), spent in call
   order. A truncated result says so; one that no longer fits is returned as `Error: …`, which
   also surfaces the exhaustion as a failed span in the trace.
+- The **run context budget** (`contextBudget.ts`, single owner of the derivation and the
+  chars→tokens estimate) sits under every per-turn cap. Charge sites, all of them: the
+  assembled `messages` and the tool-definition JSON at run start, each turn's assistant
+  message, every tool result as `createToolResultBudget` fits it, a transfer's answer before
+  it becomes a "For context" message, and the MCP-image companion message at the flat
+  per-image rate — never the base64 length. The engine's small control strings ride on the
+  budget's protocol headroom, unmeasured. A cut is never silent: the result text carries a
+  marker and the run warns once. Exhaustion does not end the loop — the model reads the
+  omission errors and wraps up, and the turn guard stays the hard stop. No budget exists for
+  an unregistered model (no window to derive from) or for single-shot runs (nothing
+  accumulates).
 - A tool result that begins with `Error: ` means the call failed — the shared convention for
   every producer (engine builtins, the skill loader, `ToolManager`). The trace recorder reads
   that prefix; a new producer that invents its own wording records failures as successes.

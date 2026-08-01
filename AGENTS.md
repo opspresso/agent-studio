@@ -119,6 +119,7 @@ about to make copy number two.
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/application/execution/mcpTools.ts` |
 | How many agents one dispatch may run | `src/application/llm/engine.ts` |
+| Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |
 | Whether a run's trace is sampled | `src/application/execution/traceLifecycle.ts` |
 | Evaluating when a schedule fires | `src/domain/trigger/cron.ts` |
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |

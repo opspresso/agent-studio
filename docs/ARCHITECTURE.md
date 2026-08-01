@@ -417,6 +417,20 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
     call order; results, tool messages and the assistant `tool_calls` all stay in call order.
   - One turn's tool-result text is capped (200KB, spent in call order): a truncated result
     says so, and one that no longer fits becomes `Error: …`.
+  - Underneath the per-turn caps sits the **run-wide context budget**
+    (`src/application/llm/contextBudget.ts`, the single owner): a ceiling derived from the
+    model's `contextWindow` — the minimum of primary and fallback, minus the version's
+    `maxTokens` and a headroom — that the input, tool definitions, every turn's output, tool
+    results and a transfer's answer (the one spot nothing bounded) are charged against.
+    What no longer fits is cut with a marker and reported once as a `warning`, so a
+    tool-heavy run on a small-window model truncates instead of dying on a provider 400.
+    Tokens are estimated conservatively from character classes (the values and their
+    rationale are in [CONFIGURATION.md](CONFIGURATION.md#the-run-wide-context-budget));
+    an unregistered model has no window to derive from and runs unbudgeted. The budget
+    bounds what the run *adds* — the input `messages` stay the caller's: only chat trims
+    history (its server-side store is the one unbounded input source), while every other
+    surface relays what the caller composed, because silently rewriting a caller's request
+    is worse than the provider's own overflow answer.
   - Both image deps are injected **only** when the version opts in via
     `parameters.imageGeneration: true`; the model is `parameters.imageModel` when set and
     still image-capable, else the registry's default image model. Whether that model's
