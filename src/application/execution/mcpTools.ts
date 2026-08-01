@@ -17,8 +17,14 @@ export const MAX_MCP_TOOLS_PER_RUN = 120;
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 
+/** What resolving a version's MCP bindings actually reads off the run's deps. */
+export type McpToolDeps = Pick<
+  ExecutionDeps,
+  "mcps" | "cipher" | "urlPolicy" | "mcpSessions" | "mcpAuth" | "internalHostSuffixes"
+>;
+
 export async function buildMcpTools(
-  deps: ExecutionDeps,
+  deps: McpToolDeps,
   version: Version,
   signal?: AbortSignal,
 ): Promise<{

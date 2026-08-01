@@ -19,7 +19,7 @@ export const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imag
  * disabling the tool the version opted into.
  */
 export function buildImageGenerator(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "imageChannel">,
   version: Version,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
@@ -68,7 +68,7 @@ export function buildImageGenerator(
  * comes back as a tool-result error rather than hiding the tool.
  */
 export function buildImageEditor(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "imageChannel">,
   version: Version,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
@@ -107,7 +107,7 @@ export function buildImageEditor(
  * the images the parent handed over, or draws from scratch when there are none.
  */
 export async function* runImageSubagent(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "imageChannel" | "traces">,
   agentName: string,
   project: Project,
   version: Version,
