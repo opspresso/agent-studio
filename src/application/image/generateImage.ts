@@ -10,6 +10,7 @@ import { actorKey, type RunActor } from "@/domain/execution/actor";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/shared/runDeadline";
 import { openRun, type RunBracketDeps } from "@/application/execution/runBracket";
+import { traceSampled } from "@/application/execution/traceLifecycle";
 import { log } from "@/shared/logger";
 
 /**
@@ -23,6 +24,8 @@ export interface ImageGenerationDeps extends RunBracketDeps {
   usage: UsageRepository;
   traces?: TraceRepository;
   traceSampleRate?: number;
+  /** The sampling draw, injected like `ExecutionDeps.now`; unset means `Math.random`. */
+  sample?: () => number;
 }
 
 export interface GenerateImageInput {
@@ -85,7 +88,7 @@ export async function generateImage(
   // still tell a misconfigured version apart from an exhausted budget.
   const bracket = await openRun(deps, input.project, input.actor);
   const recorder =
-    deps.traces && Math.random() < (deps.traceSampleRate ?? 0)
+    deps.traces && traceSampled(deps)
       ? new TraceRecorder(deps.traces, {
           projectName: input.project.name,
           versionName: input.version.versionName,

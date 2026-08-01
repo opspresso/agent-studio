@@ -64,6 +64,12 @@ export interface ExecutionDeps extends RunBracketDeps {
    * Unset means the real clock (see {@link runClock}).
    */
   now?: () => Date;
+  /**
+   * The draw the trace sampling decision compares against `traceSampleRate`,
+   * in `[0, 1)`. Injected like {@link now} so a test can pin the outcome at a
+   * fractional rate. Unset means `Math.random` (see `traceSampled`).
+   */
+  sample?: () => number;
 }
 
 export interface ExecuteVersionInput {
