@@ -745,7 +745,7 @@ Scheduler tick (no session — the shared token is the authentication):
 ```
 POST /api/triggers/scan
   X-Scan-Token: <SCHEDULE_SCAN_TOKEN>
-→ 200 { checked, fired, alreadyClaimed, skipped, repaired, invalid }
+→ 200 { checked, fired, alreadyClaimed, skipped, repaired, invalid, errors }
 → 401 (wrong or missing token) | 503 (SCHEDULE_SCAN_TOKEN not configured)
 ```
 
@@ -754,7 +754,8 @@ are due and who wins each one is decided server-side, per occurrence, with a con
 write — so ticking twice, from several places, or late never double-fires. Admitted firings
 run in the background exactly like webhook deliveries; their outcomes land on the trigger's
 history rows (`scheduledFor` carries the occurrence). `alreadyClaimed` counts occurrences
-another tick had already won — expected noise from overlapping windows, not an anomaly.
+another tick had already won — expected noise from overlapping windows, not an anomaly. The
+same summary is logged server-side on every tick, which is what an operator alerts on.
 
 ## Traces
 

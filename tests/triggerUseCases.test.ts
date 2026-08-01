@@ -203,4 +203,21 @@ describe("schedule triggers", () => {
       useCases.update("p", "hook", { cron: "0 9 * * *" }, "owner@example.com"),
     ).rejects.toBeInstanceOf(ValidationError);
   });
+
+  it("refuses the other kind's fields on create too, exactly like update", async () => {
+    const { useCases, stored } = fixture();
+    // cron without kind is a caller who meant kind: "schedule" — silently
+    // minting a webhook would leave a schedule that never fires.
+    await expect(
+      useCases.create("p", { triggerId: "t", cron: "0 9 * * *" }, "owner@example.com"),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      useCases.create(
+        "p",
+        { ...schedule, payloadMode: "message" as const },
+        "owner@example.com",
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(stored.size).toBe(0);
+  });
 });

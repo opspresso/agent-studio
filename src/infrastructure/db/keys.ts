@@ -51,10 +51,9 @@ export const keys = {
    * carry these GSI1 attributes; webhook rows stay invisible to the index.
    */
   scheduleIndex: (projectName: string, triggerId: string) => ({
-    GSI1PK: keys.schedulePartition(),
+    GSI1PK: keys.typePartition("SCHEDULE"),
     GSI1SK: `${projectName}#${triggerId}`,
   }),
-  schedulePartition: () => "TYPE#SCHEDULE",
   triggerRun: (projectName: string, triggerId: string, startedAt: string, runId: string) => ({
     PK: `PROJECT#${projectName}`,
     SK: `TRIGGERRUN#${triggerId}#${startedAt}#${runId}`,
@@ -120,5 +119,6 @@ export const keys = {
   }),
   traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
 
-  typePartition: (entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT") => `TYPE#${entityType}`,
+  typePartition: (entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT" | "SCHEDULE") =>
+    `TYPE#${entityType}`,
 } as const;

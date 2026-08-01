@@ -169,7 +169,7 @@ never enough to reconstruct the token.
 
 ## Request authentication for machine callers
 
-Four surfaces authenticate without a session cookie:
+Five surfaces authenticate without a session cookie:
 
 | Surface | Credential | Verification |
 |---|---|---|

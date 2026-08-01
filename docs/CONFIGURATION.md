@@ -233,6 +233,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Slack profile cache (success / failure / entries) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |
 | Schedule catch-up window (bounds what an outage can fire at once) | `10` min | `src/application/trigger/scanSchedules.ts` |
+| Schedule firings one scan tick drives concurrently | `8` | `src/application/trigger/scanSchedules.ts` |
 
 There is deliberately **no run-wide context budget** yet: every limit above is per-item or
 per-turn, so a long tool-heavy run can still overflow a small `contextWindow` and surface as

@@ -159,10 +159,12 @@ export const config = {
   /**
    * The token the schedule ticker presents (SCHEDULE_SCAN_TOKEN). Unset means
    * this deployment has no ticker and the scan endpoint answers 503 — the
-   * feature is off rather than open.
+   * feature is off rather than open. Trimmed because a Kubernetes Secret built
+   * from a file routinely carries a trailing newline the header never can —
+   * untrimmed, that would 401 every tick forever.
    */
   get scheduleScanToken(): string | undefined {
-    return process.env.SCHEDULE_SCAN_TOKEN || undefined;
+    return process.env.SCHEDULE_SCAN_TOKEN?.trim() || undefined;
   },
   /**
    * How many runs one caller may have in flight at once, and the separate

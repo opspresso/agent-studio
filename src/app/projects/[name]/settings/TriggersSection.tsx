@@ -116,7 +116,10 @@ export function TriggersSection({ projectName }: { projectName: string }) {
       : `${window.location.origin}/api/triggers/${projectName}/${triggerId}`;
 
   const createDisabled =
-    !toSlug(newId) || busy || loading || (newKind === "schedule" && !newCron.trim());
+    !toSlug(newId) ||
+    busy ||
+    loading ||
+    (newKind === "schedule" && (!newCron.trim() || !newTimezone.trim()));
 
   return (
     <CollapsibleSection title="Triggers">
@@ -275,7 +278,6 @@ export function TriggersSection({ projectName }: { projectName: string }) {
             )}
             {trigger.kind === "schedule" && (
               <ScheduleFields
-                key={`${trigger.triggerId}:${trigger.updatedAt}`}
                 trigger={trigger}
                 busy={busy}
                 onSave={(input) =>
@@ -427,8 +429,13 @@ export function TriggersSection({ projectName }: { projectName: string }) {
 }
 
 /**
- * A schedule's own fields, drafted locally and saved as one update. Keyed by
- * `updatedAt` upstream, so an edit that lands elsewhere re-syncs the draft.
+ * A schedule's own fields, drafted locally and saved as one update.
+ *
+ * Not keyed by `updatedAt`: the Enabled and overlap switches beside this also
+ * update-and-reload, and a remount would silently discard a cron edit in
+ * progress. Instead the draft re-syncs to the server values only when they
+ * change while the draft is clean — a dirty draft survives unrelated toggles,
+ * and Save is what resolves a conflict with an edit that landed elsewhere.
  */
 function ScheduleFields({
   trigger,
@@ -439,13 +446,27 @@ function ScheduleFields({
   busy: boolean;
   onSave: (input: { cron: string; timezone: string; message: string }) => void;
 }) {
-  const [cron, setCron] = useState(trigger.cron ?? "");
-  const [timezone, setTimezone] = useState(trigger.timezone ?? "");
-  const [message, setMessage] = useState(trigger.message ?? "");
-  const dirty =
-    cron !== (trigger.cron ?? "") ||
-    timezone !== (trigger.timezone ?? "") ||
-    message !== (trigger.message ?? "");
+  const server = {
+    cron: trigger.cron ?? "",
+    timezone: trigger.timezone ?? "",
+    message: trigger.message ?? "",
+  };
+  const [draft, setDraft] = useState(server);
+  const [seen, setSeen] = useState(server);
+  const same = (a: typeof server, b: typeof server) =>
+    a.cron === b.cron && a.timezone === b.timezone && a.message === b.message;
+  if (!same(server, seen)) {
+    // Render-time state adjustment, the React-sanctioned key-less reset.
+    setSeen(server);
+    if (same(draft, seen)) {
+      setDraft(server);
+    }
+  }
+  const { cron, timezone, message } = draft;
+  const setCron = (value: string) => setDraft((d) => ({ ...d, cron: value }));
+  const setTimezone = (value: string) => setDraft((d) => ({ ...d, timezone: value }));
+  const setMessage = (value: string) => setDraft((d) => ({ ...d, message: value }));
+  const dirty = !same(draft, server);
   return (
     <Group align="flex-end" gap="sm">
       <TextInput
