@@ -17,7 +17,9 @@ export type RunActorKind =
   /** An inbound A2A call, authenticated by the shared app key. */
   | "a2a"
   /** A webhook trigger delivery, identified by `{project}:{triggerId}`. */
-  | "webhook";
+  | "webhook"
+  /** A schedule trigger occurrence, identified the same way. */
+  | "schedule";
 
 export interface RunActor {
   kind: RunActorKind;

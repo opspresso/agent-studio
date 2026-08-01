@@ -1,10 +1,16 @@
 /**
- * One webhook delivery.
+ * One trigger firing — a webhook delivery or a schedule occurrence.
  *
- * Everything a delivery can be refused for is decided here and recorded the
+ * Everything a firing can be refused for is decided here and recorded the
  * same way: a run row with a status. An operator looking at the console should
  * be able to tell "it never fired" from "it fired and failed" without reading
  * logs, so a skip is a row too.
+ *
+ * The webhook-specific steps (secret, idempotency key, payload shaping) live in
+ * `admitDelivery`/`payloadInput`; everything from "resolve the published
+ * version" on is `admitRun`/`executeFiring`, shared with the schedule scan
+ * (`scanSchedules.ts`) so the two kinds cannot drift on overlap policy, run
+ * rows, or how an answer is previewed.
  */
 
 import { randomUUID } from "node:crypto";
@@ -16,12 +22,12 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
+import type { Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 
-/** Bounded preview of a run's answer, kept on the delivery row. */
+/** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
 /** Bounded serialisation of a payload into the user message. */
 const MAX_PAYLOAD_CHARS = 20_000;
@@ -46,17 +52,26 @@ export interface TriggerRunnerDeps {
   runSlots?: RunSlotRepository;
 }
 
+/** What `admitRun` reads: everything but the webhook secret's cipher. */
+export type FiringDeps = Omit<TriggerRunnerDeps, "cipher">;
+
+/** An admitted firing: everything `executeFiring` needs to proceed. */
+export interface AdmittedFiring<T extends Trigger = Trigger> {
+  status: "accepted";
+  runId: string;
+  trigger: T;
+  project: Project;
+  version: Version;
+  run: TriggerRun;
+  release: () => Promise<void>;
+}
+
+/** The webhook case, which is what `executeDelivery` takes. */
+export type AdmittedDelivery = AdmittedFiring<WebhookTrigger>;
+
 /** Why a delivery was refused, or everything the run needs to proceed. */
 export type AdmitResult =
-  | {
-      status: "accepted";
-      runId: string;
-      trigger: WebhookTrigger;
-      project: Project;
-      version: Version;
-      run: TriggerRun;
-      release: () => Promise<void>;
-    }
+  | AdmittedDelivery
   | { status: "duplicate" }
   | { status: "disabled" }
   | { status: "not-configured" }
@@ -64,17 +79,22 @@ export type AdmitResult =
   | { status: "busy" }
   | { status: "no-published-version" };
 
-/** The accepted case, which is what `executeDelivery` takes. */
-export type AdmittedDelivery = Extract<AdmitResult, { status: "accepted" }>;
-
-/** The actor a trigger run is attributed to. */
-export function triggerActor(projectName: string, triggerId: string): RunActor {
-  return { kind: "webhook", id: `${projectName}:${triggerId}` };
+/** The actor a firing is attributed to; the trigger kind is the actor kind. */
+export function triggerActor(
+  trigger: Pick<Trigger, "kind" | "projectName" | "triggerId">,
+): RunActor {
+  return { kind: trigger.kind, id: `${trigger.projectName}:${trigger.triggerId}` };
 }
 
 /** The overlap lease's key. Distinct from the actor's own slot partition. */
 function overlapKey(projectName: string, triggerId: string): string {
   return `trigger-overlap:${projectName}:${triggerId}`;
+}
+
+/** What a firing row carries beyond its outcome: how it was deduplicated. */
+interface FiringExtra {
+  idempotencyKey?: string;
+  scheduledFor?: string;
 }
 
 /**
@@ -149,8 +169,24 @@ export async function admitDelivery(
       return { status: "duplicate" };
     }
   }
+  return admitRun(deps, trigger, idempotencyKey ? { idempotencyKey } : {});
+}
 
-  const project = await deps.projects.get(projectName);
+/**
+ * Admit a firing whose dedup claim is already won: resolve the published
+ * version, guard overlap, and open the history row. Both kinds pass here.
+ */
+export async function admitRun<T extends Trigger>(
+  deps: FiringDeps,
+  trigger: T,
+  extra: FiringExtra,
+): Promise<
+  | AdmittedFiring<T>
+  | { status: "not-configured" }
+  | { status: "busy" }
+  | { status: "no-published-version" }
+> {
+  const project = await deps.projects.get(trigger.projectName);
   if (!project) {
     return { status: "not-configured" };
   }
@@ -158,20 +194,23 @@ export async function admitDelivery(
   // firing at one would run whatever an editor happened to have saved.
   const version = await resolveRunnableVersion(deps.versions, project);
   if (!version) {
-    await recordSkip(deps, projectName, triggerId, idempotencyKey, "No published version.");
+    await recordSkip(deps, trigger, extra, "No published version.");
     return { status: "no-published-version" };
   }
 
   let release = async () => {};
   if (!trigger.allowConcurrent && deps.runSlots) {
     const leaseUntil = Math.floor(Date.now() / 1000) + RUN_LEASE_SECONDS;
-    const slot = await deps.runSlots.acquire(overlapKey(projectName, triggerId), 1, leaseUntil);
+    const slot = await deps.runSlots.acquire(
+      overlapKey(trigger.projectName, trigger.triggerId),
+      1,
+      leaseUntil,
+    );
     if (!slot) {
       await recordSkip(
         deps,
-        projectName,
-        triggerId,
-        idempotencyKey,
+        trigger,
+        extra,
         "A run from this trigger was already in flight and overlap is not allowed.",
       );
       return { status: "busy" };
@@ -179,79 +218,88 @@ export async function admitDelivery(
     const slots = deps.runSlots;
     release = async () => {
       try {
-        await slots.release(overlapKey(projectName, triggerId), slot);
+        await slots.release(overlapKey(trigger.projectName, trigger.triggerId), slot);
       } catch (error) {
         // The lease expires on its own; a failed release costs one window, not
         // a permanently blocked trigger.
-        log.warn("trigger", `could not release overlap lease for ${triggerId}`, error);
+        log.warn("trigger", `could not release overlap lease for ${trigger.triggerId}`, error);
       }
     };
   }
 
   const run: TriggerRun = {
-    projectName,
-    triggerId,
+    projectName: trigger.projectName,
+    triggerId: trigger.triggerId,
     runId: randomUUID(),
     status: "running",
-    ...(idempotencyKey ? { idempotencyKey } : {}),
+    ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
+    ...(extra.scheduledFor ? { scheduledFor: extra.scheduledFor } : {}),
     startedAt: new Date().toISOString(),
   };
   try {
     await deps.triggers.appendRun(run);
   } catch (error) {
-    // History is a log; losing a row must not cost the delivery.
-    log.error("trigger", "could not record the start of a delivery", error);
+    // History is a log; losing a row must not cost the firing.
+    log.error("trigger", "could not record the start of a firing", error);
   }
   return { status: "accepted", runId: run.runId, trigger, project, version, run, release };
 }
 
-/** A delivery that never ran, recorded so the console can say why. */
+/** A firing that never ran, recorded so the console can say why. */
 async function recordSkip(
-  deps: TriggerRunnerDeps,
-  projectName: string,
-  triggerId: string,
-  idempotencyKey: string | null,
+  deps: FiringDeps,
+  trigger: Pick<Trigger, "projectName" | "triggerId">,
+  extra: FiringExtra,
   reason: string,
 ): Promise<void> {
   const now = new Date().toISOString();
   try {
     await deps.triggers.appendRun({
-      projectName,
-      triggerId,
+      projectName: trigger.projectName,
+      triggerId: trigger.triggerId,
       runId: randomUUID(),
       status: "skipped",
-      ...(idempotencyKey ? { idempotencyKey } : {}),
+      ...(extra.idempotencyKey ? { idempotencyKey: extra.idempotencyKey } : {}),
+      ...(extra.scheduledFor ? { scheduledFor: extra.scheduledFor } : {}),
       startedAt: now,
       endedAt: now,
       error: reason,
     });
   } catch (error) {
-    log.error("trigger", "could not record a skipped delivery", error);
+    log.error("trigger", "could not record a skipped firing", error);
   }
 }
 
-/**
- * Drive an admitted delivery to completion and finish its history row.
- *
- * Never throws: it runs after the response went out, so there is nobody left to
- * throw to. Everything it learns goes on the row instead.
- */
+/** Drive an admitted webhook delivery with its payload shaped for the run. */
 export async function executeDelivery(
   deps: TriggerRunnerDeps,
   admitted: AdmittedDelivery,
   payload: unknown,
+): Promise<void> {
+  await executeFiring(deps, admitted, payloadInput(admitted.trigger, payload));
+}
+
+/**
+ * Drive an admitted firing to completion and finish its history row.
+ *
+ * Never throws: it runs after the response went out, so there is nobody left to
+ * throw to. Everything it learns goes on the row instead.
+ */
+export async function executeFiring(
+  deps: FiringDeps,
+  admitted: AdmittedFiring,
+  input: { variables?: Record<string, string>; message?: string },
 ): Promise<void> {
   const { trigger, project, version, run } = admitted;
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
   try {
-    const input = payloadInput(trigger, payload);
     for await (const chunk of deps.run({
       project,
       version,
       ...input,
-      actor: triggerActor(trigger.projectName, trigger.triggerId),
+      actor: triggerActor(trigger),
     })) {
       // Top-level only, like every other consumer: a subagent's text is not the
       // run's answer (see `isTopLevelChunk`).
@@ -281,6 +329,6 @@ export async function executeDelivery(
   try {
     await deps.triggers.finishRun(finished);
   } catch (writeError) {
-    log.error("trigger", "could not record the end of a delivery", writeError);
+    log.error("trigger", "could not record the end of a firing", writeError);
   }
 }
