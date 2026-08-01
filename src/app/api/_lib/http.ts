@@ -14,9 +14,19 @@ export function parseName(name: string): string {
   return name;
 }
 
-/** 400 response for a failed zod parse. */
+/**
+ * 400 response for a failed zod parse. `error` carries the first issue so a
+ * client that only reads the field (the chat panel does) still learns what was
+ * wrong; `issues` carries the rest.
+ */
 export function invalidRequest(error: ZodError): Response {
-  return Response.json({ error: "Invalid request", issues: error.issues }, { status: 400 });
+  const first = error.issues[0];
+  const detail = first
+    ? first.path.length
+      ? `${first.path.join(".")}: ${first.message}`
+      : first.message
+    : "Invalid request";
+  return Response.json({ error: detail, issues: error.issues }, { status: 400 });
 }
 
 /** Map an application error to its HTTP response; unknown errors become 500. */

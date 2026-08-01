@@ -1,5 +1,6 @@
 import { withAuth } from "@/lib/session";
 import { usageRepository } from "@/lib/container";
+import { invalidRequest } from "@/app/api/_lib/http";
 import { summaryQuerySchema } from "./validation";
 
 export const GET = withAuth(async (_user, request: Request) => {
@@ -11,10 +12,7 @@ export const GET = withAuth(async (_user, request: Request) => {
   });
 
   if (!parsed.success) {
-    return Response.json(
-      { error: parsed.error.issues[0]?.message ?? "invalid query" },
-      { status: 400 },
-    );
+    return invalidRequest(parsed.error);
   }
 
   const { from, to, project } = parsed.data;
