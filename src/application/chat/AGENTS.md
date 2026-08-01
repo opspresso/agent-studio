@@ -80,6 +80,12 @@ into `ChatDeps.runAgent`.
 - **Document text counts against the history budget** (`messageChars`). It sits beside
   `content` rather than in it, so measuring `content` alone would price a turn carrying
   40,000 characters of PDF as the sentence the user typed.
+- **A run's termination persists as its warning, not as a field.** The turn guard announces
+  itself twice — a `warning` naming the limit and a `finishReason` chunk (see
+  `chunkTermination` in `src/domain/llm/types.ts`) — and the chat keeps only the warning,
+  on the assistant message like every other one. The `finishReason` chunk is stream
+  protocol: replay reconstructs nothing from it, because why a finished run ended is for
+  the reader, not context for the next turn.
 - **Subagent chunks** (`author` set) stream to the client but are excluded from the
   persisted assistant content, tool calls and tool rows alike.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return

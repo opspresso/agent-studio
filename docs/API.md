@@ -47,7 +47,9 @@ Design rationale for *why* a surface looks like this lives in
 - **SSE framing**: each event is `data: {json}\n\n`; OpenAI-style streams end with
   `data: [DONE]\n\n`. On a mid-stream failure a final `data: {"error":"…"}` frame is sent.
   `chat/completions` streams always carry exactly one `finish_reason` chunk: `stop` when the
-  model finished on its own, `length` when an agent run ended at its turn budget.
+  model finished on its own, `length` when an agent run ended at its turn budget — read from
+  the termination the engine announces, so a cancellation or a mid-stream error is never
+  dressed up as a length stop. The non-streaming response reports the same two values.
 
 ## Route index
 
@@ -650,7 +652,8 @@ frames in a stream. Clients that do not know the field simply ignore it.
 ### `POST /api/projects/{name}/versions/{version}/agent`
 
 Agent SSE stream. Body `{ "messages": [ … ] }`. Emits `EngineChunk` frames
-(`delta.content`, `toolResult`, `warning`, `image`, `author` for subagent turns, `error`) then
+(`delta.content`, `toolResult`, `warning`, `image`, `author` for subagent turns, `error`,
+and a terminal `done: true` or `finishReason` naming why the run ended) then
 `data: [DONE]`. The full field contract is in
 [ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-contract).
 

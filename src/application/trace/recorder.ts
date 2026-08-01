@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { chunkTermination, isTopLevelChunk } from "@/domain/llm/types";
 import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
@@ -58,6 +59,12 @@ export class TraceRecorder {
   private readonly subagents = new Map<string, SubagentEntry>();
   private readonly warnings: string[] = [];
   private error: string | undefined;
+  /**
+   * Whether this run's own turn guard ended it. Read from the top level only:
+   * an authored termination is a child's, absorbed into the parent's tool
+   * result, and must not mark the parent's trace.
+   */
+  private turnLimited = false;
 
   constructor(
     private readonly repository: TraceRepository,
@@ -73,6 +80,9 @@ export class TraceRecorder {
     const now = new Date();
     if (chunk.warning && this.warnings.length < MAX_WARNINGS) {
       this.warnings.push(preview(chunk.warning));
+    }
+    if (isTopLevelChunk(chunk) && chunkTermination(chunk) === "turn-limit") {
+      this.turnLimited = true;
     }
     for (const call of chunk.delta?.toolCalls ?? []) {
       const id = call.id;
@@ -207,7 +217,13 @@ export class TraceRecorder {
         ? { ancestry: this.context.ancestry }
         : {}),
       ...(this.context.actor ? { actor: this.context.actor } : {}),
-      status: this.error ? "failed" : cancelled ? "cancelled" : "completed",
+      status: this.error
+        ? "failed"
+        : cancelled
+          ? "cancelled"
+          : this.turnLimited
+            ? "turn-limit"
+            : "completed",
       spans: this.spans,
       ...(this.spansDropped > 0 ? { spansDropped: this.spansDropped } : {}),
       ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}),

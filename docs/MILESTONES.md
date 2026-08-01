@@ -27,66 +27,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
   `(M4)`는 지금 어느 것도 가리키지 못한다.
 - 동작 보존 작업은 기존 테스트를 수정해서 통과시키면 완료가 아니다.
 
-**선행 관계**
-
-```
-context-budget     (run-termination 선행 — 예산 소진으로 루프를 끝내려면 종료 이유가 먼저)
-```
-
----
-
-## run-termination — run이 왜 끝났는지 말한다
-
-**이유**: 이 저장소는 잃은 것을 반드시 말하는 규약을 일관되게 지킨다 — tool 결과 절단은 결과
-텍스트에 적히고, transcript 절단·해석 실패한 스킬/에이전트/MCP·채팅 히스토리 절단은 모두
-`warning` chunk가 된다. 그런데 **가장 큰 절단인 "답 없이 run이 끝난다"만 조용하다.** turn
-guard는 `engine.ts`의 루프 첫머리에서 `return;` 한 줄이다(`turn >= maxTurn`). warning도,
-`done`도, 아무 chunk도 없이 스트림이 닫힌다.
-
-그 침묵이 아래로 번진다:
-
-- **OpenAI 레이어가 `finish_reason`을 부재로 역산한다.** `src/app/api/projects/_lib/openai.ts`는
-  `done`이 오면 `stop`, 안 오면 `length`를 보낸다. 그런데 `done`이 없는 경우는 turn guard만이
-  아니다 — 취소(abort)와 mid-stream 에러도 `done`을 내지 않는다. **사용자가 중단한 run이
-  "출력 길이 초과"로 보고된다.**
-- **트레이스가 turn guard 종료를 성공으로 기록한다.** generator가 정상 반환하므로
-  `executeAgent`의 `completed`가 `true`가 되고, `finishTrace`는 에러도 취소도 아닌 완료로
-  남긴다. 답을 주지 못한 run이 관측 위에서 정상이다.
-- 채팅·Slack·콘솔은 애초에 구분할 방법이 없다. 사용자는 답이 왜 없는지 알 수 없다.
-
-**근본 원인**: 종료 이유에 소유자가 없다. `done: true` 하나가 정상 종료만 표현하고 나머지는
-전부 *부재로부터의 추론*이며, 그 추론이 소비자마다 흩어져 있다. `isTopLevelChunk`가 author
-semantics를 한 곳에 소유해 재유도를 막은 것과 정확히 같은 문제이고, 같은 해법이 필요하다.
-
-**선행**: 없음. `context-budget`이 이것을 선행으로 갖는다.
-
-**범위**
-
-- 종료 이유를 `EngineChunk`에 **명시적으로** 싣는다 — 정상 종료, turn 한도, 취소, 에러가
-  서로 다른 값이다. `src/domain/llm/types.ts`가 그 값의 단일 소유자이며, 판별은
-  `isTopLevelChunk`처럼 owned predicate로 노출한다.
-- turn guard가 이유와 함께 `warning`을 내고 끝낸다.
-- `openai.ts`가 역산을 멈추고 이유를 읽는다. 취소는 `length`가 아니다.
-- 트레이스가 turn 한도 종료를 정상 완료와 구분해 기록한다.
-- 채팅·Slack·콘솔이 이유를 사용자에게 보여주고, A2A executor도 이유를 전달한다.
-- **서브에이전트 계층을 정의한다**: 자식 run의 종료 이유는 부모의 tool 결과로 흡수되고
-  자식 스트림의 끝은 이미 `authorDone`이 말한다 — top-level 이유만이 스트림의 끝을
-  말하는지, 자식 이유도 authored chunk로 표면화하는지 먼저 정한다.
-- **종료 이유가 채팅 영속화와 replay를 어떻게 통과하는지 결정한다** — 저장할지, 재생 시
-  재구성할지. 저장 역순·run 단위 pairing·3중 예산의 trap이 있는 경로다
-  (`src/application/chat/AGENTS.md`).
-- 하위 호환: 지금 `done`을 읽는 소비자가 전부 있으므로, 기존 필드의 의미를 바꾸는 대신
-  이유를 더하는 쪽이 안전한지 먼저 판단하고 결정을 기록한다.
-
-**완료 조건**
-
-- `maxTurn`에 걸린 run이 turn 한도를 이유로 든 종료 chunk와 `warning`을 낸다.
-- 취소된 run과 mid-stream 에러가 `finish_reason: "length"`로 보고되지 않는다.
-- 트레이스에서 turn 한도로 끝난 run이 정상 완료와 구분된다.
-- 어떤 소비자도 `done`의 부재로 이유를 추론하지 않는다 —
-  `tests/architecture.test.ts`의 single-owner 불변식으로 고정한다.
-- 정상 종료 경로의 출력은 바이트 단위로 동일하다.
-
 ---
 
 ## context-budget — run이 컨텍스트에 쌓는 총량의 소유자
@@ -107,9 +47,9 @@ transfer가 자식 답변을 넣는 `postContextMessages`는 상한이 아예 �
 Slack / A2A / webhook trigger는 받은 `messages`를 그대로 넘긴다. 같은 모델에 같은 크기의
 입력을 주면서 한 경로만 보호된다.
 
-**선행**: `run-termination`. 예산 소진을 이유로 루프를 끝내는 선택지를 쓰려면 종료 이유를
-말할 수 있어야 한다. 절단만으로 끝낼 수 있다면 선행 없이 착수 가능하며, 어느 쪽인지 설계
-단계에서 먼저 정한다.
+**선행**: 없음. 종료 이유는 이미 명시적이다 — `RunTerminationReason`과 `chunkTermination`
+(`src/domain/llm/types.ts`)이 소유하므로, 예산 소진을 이유로 루프를 끝내는 선택지는 값 하나를
+더하는 일이다. 절단만으로 끝낼지, 종료까지 갈지는 설계 단계에서 정한다.
 
 **범위**
 

@@ -660,6 +660,8 @@ async function* runSubagentWithPii(
         restored.toolResult ||
         restored.usage ||
         restored.error ||
+        restored.warning ||
+        restored.finishReason ||
         restored.done
       ) {
         yield restored;
@@ -1630,7 +1632,17 @@ export async function* runAgent(
   let saidSomething = false;
   while (true) {
     if (turn >= maxTurn) {
-      return; // turn guard
+      // The turn guard is the largest thing a run can lose — its own ending —
+      // so it is the one ending that must not be silent: the warning tells the
+      // user why there is no answer, and the termination chunk tells consumers
+      // why the stream ended instead of leaving them to infer it from the
+      // absence of `done`.
+      yield {
+        author,
+        warning: `The run stopped at its turn limit (${maxTurn} turns) before the model finished answering.`,
+      };
+      yield { author, finishReason: "turn-limit" };
+      return;
     }
 
     input.signal?.throwIfAborted();

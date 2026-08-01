@@ -84,7 +84,16 @@ export default function TracesPage() {
                     </Text>
                   </div>
                   <Group gap="md">
-                    <Text fz="sm" c={trace.status === "completed" ? "teal" : "red"}>
+                    <Text
+                      fz="sm"
+                      c={
+                        trace.status === "completed"
+                          ? "teal"
+                          : trace.status === "turn-limit"
+                            ? "yellow"
+                            : "red"
+                      }
+                    >
                       {trace.status}
                     </Text>
                     <Text fz="sm" c="dimmed">

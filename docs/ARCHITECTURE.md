@@ -298,15 +298,23 @@ consumers must use it instead of re-deriving author semantics.
 | `image` | GenerateImage / EditImage builtins, and image-project subagents | consumed **regardless of author** (delegating to an image subagent is how an agent draws): chat image persistence (S3), Slack upload, OpenAI `images` extension, client gallery |
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
 | `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | every consumer surfaces it, but only a **top-level** error ends the stream — an authored one is a tool error the parent may still answer from |
-| `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | OpenAI `finish_reason` (`stop` with `done`, `length` without), client finalize |
+| `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | read through `chunkTermination` (below): OpenAI `finish_reason: "stop"`, client finalize |
+| `finishReason` | engine when a run ends for a reason `done` cannot say — today the turn guard (`turn-limit`), alongside a `warning` naming it | read through `chunkTermination`: OpenAI `finish_reason: "length"`, trace status `turn-limit`, A2A terminal status message |
 | `author` | subagent chunks only — the **innermost** agent | consumers filter via `isTopLevelChunk`; client shows the running agent |
 | `authorPath` | subagent chunks only — the chain, outermost first | client renders `sample-agent → simple-image`; the trace recorder groups a transfer by its first element |
 | `authorDone` | the `runSubagent` wrapper when an authored run returns | consumers stop showing that chain as active |
 | `traceId` | subagent chunks (stamped by `runProject`) | client correlates a chunk to its subagent's trace |
 
-> The `done`-absence inference is a known weak spot: cancellation and mid-stream errors also
-> produce no `done`, so a cancelled run is currently reported as `finish_reason: "length"`.
-> Tracked as the `run-termination` milestone in [MILESTONES.md](MILESTONES.md).
+> **Why a run ended is announced, never inferred.** `RunTerminationReason`
+> (`completed` / `turn-limit` / `cancelled` / `error`) lives in
+> `src/domain/llm/types.ts`, and `chunkTermination()` is the owned predicate every
+> consumer reads it through — reasoning from the *absence* of `done` is what used
+> to report a cancellation as `finish_reason: "length"`. Normal completion stays
+> `done: true` on the wire (byte-identical to the pre-reason contract);
+> `cancelled` never appears as a chunk, because a cancelled generator throws or is
+> returned — only the consumer's own signal can say it. Only a **top-level**
+> termination speaks for the stream: an authored one is a child's, absorbed into
+> the parent's tool result, its stream-end already said by `authorDone`.
 
 ## Error handling
 
@@ -391,7 +399,9 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
   [CONFIGURATION.md](CONFIGURATION.md#llm-channels).
 - `runPrompt(input): Promise<RunResult>` — single-shot, with `runPromptStream` for streaming.
 - `runAgent(input): AsyncGenerator<EngineChunk>` — the recursive multi-turn tool loop:
-  - A turn guard (`currentTurn >= maxTurn`, default 50) stops the loop.
+  - A turn guard (`currentTurn >= maxTurn`, default 50) stops the loop — announced, not
+    silent: a `warning` names the limit for the reader and a `finishReason: "turn-limit"`
+    chunk names it for consumers (see the termination note under the EngineChunk contract).
   - **All `tool_calls` of one response aggregate into ONE assistant message**, then tool
     results append, then the loop recurses with `turn + 1`.
   - A builtin serves a call only when that builtin was **offered** this run — the offered

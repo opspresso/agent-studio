@@ -232,4 +232,44 @@ describe("TraceRecorder", () => {
     expect(traces[0]?.status).toBe("failed");
     expect(traces[0]?.error).toBe("provider unavailable");
   });
+
+  it("distinguishes a turn-limit ending from a normal completion", async () => {
+    // The turn guard ends the generator normally, so before the reason was
+    // explicit this run recorded `completed` — a run that produced no answer
+    // read as normal on the traces page.
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "p",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({ warning: "The run stopped at its turn limit (2 turns)…" });
+    recorder.observe({ finishReason: "turn-limit" });
+    await recorder.finish();
+
+    expect(traces[0]?.status).toBe("turn-limit");
+    expect(traces[0]?.error).toBeUndefined();
+  });
+
+  it("does not mark the parent's trace from a child's turn limit", async () => {
+    // An authored termination is the child's — absorbed into the parent's tool
+    // result — and the parent may still answer normally.
+    const { repository, traces } = memoryRepository();
+    const recorder = new TraceRecorder(repository, {
+      projectName: "p",
+      versionName: "1",
+      projectType: "agent",
+      model: "openai/gpt-5-mini",
+      messageCount: 1,
+    });
+
+    recorder.observe({ author: "child", finishReason: "turn-limit" });
+    recorder.observe({ done: true });
+    await recorder.finish();
+
+    expect(traces[0]?.status).toBe("completed");
+  });
 });

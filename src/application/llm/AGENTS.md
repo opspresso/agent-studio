@@ -102,7 +102,11 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
     task came back empty; a child never throws, it yields an `error` chunk and returns `""`.
   - The message a task carries comes from `args`, **not** `displayArgs` — see the PII
     boundaries below. A child is on the far side of that boundary, like a transfer's.
-- Turn guard: `turn >= maxTurn` (default 50) silently ends the loop. Transfer guard:
+- Turn guard: `turn >= maxTurn` (default 50) ends the loop, and it announces itself: a
+  `warning` chunk names the limit for the user, then a `finishReason: "turn-limit"` chunk
+  names it for consumers. It is the one ending `done` cannot express — normal completion
+  stays `done: true`, byte-identical, and `chunkTermination` (`src/domain/llm/types.ts`)
+  is the only reader of the done/finishReason/error → reason mapping. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
   charged against the parent's budget — the parent always resumes at `turn + 2` — but the
@@ -148,6 +152,11 @@ Top-level chunks are **unauthored** (`author === undefined`); only subagent chun
 every consumer (chat persistence, Slack, OpenAI reshaping, A2A, browser client) filters with
 it. Do not tag top-level chunks with an author; three consumers persist/accumulate only
 unauthored content.
+
+Termination chunks follow the same rule: only a **top-level** `done`/`finishReason` speaks
+for the stream. An authored one is informational — a child's ending is absorbed into the
+parent's tool result, and the end of the child's stream is already said by `authorDone` — so
+a consumer must never read a child's turn limit as the run's.
 
 `author` is the **innermost** agent and `authorPath` is the chain that produced the chunk,
 outermost first — `["sample-agent", "simple-image"]` for a depth-3 run. The `authored()`
