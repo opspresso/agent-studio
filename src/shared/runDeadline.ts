@@ -52,3 +52,15 @@ export function withRunDeadline(signal: AbortSignal | undefined): AbortSignal {
   const deadline = AbortSignal.timeout(MAX_RUN_DURATION_MS);
   return signal ? AbortSignal.any([signal, deadline]) : deadline;
 }
+
+/**
+ * The tighter cap an interactive surface layers over the run deadline. A Slack
+ * thread shows a live "thinking" status while a run works, and three minutes is
+ * where that stops being worth waiting on. The surface passes this as the
+ * caller signal, so the run's own deadline above still applies — the cap can
+ * only shorten a run, never extend one. It lives here because this module is
+ * the one place that says how long a run may last; the Slack path once kept a
+ * bare timeout constant of its own, which is a second deadline nobody tuning
+ * `MAX_RUN_DURATION_MS` could see.
+ */
+export const INTERACTIVE_RUN_TIMEOUT_MS = 3 * 60 * 1000;
