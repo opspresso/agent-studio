@@ -50,15 +50,21 @@ export const updateProjectSchema = z.object({
 /** Trigger payload handling; see `TriggerPayloadMode`. */
 const payloadModeSchema = z.enum(["variables", "message"]);
 
+// Cron/timezone validity and which kind may carry which field are enforced in
+// `triggerUseCases` — the rules live beside the code that reads them.
 export const createTriggerSchema = z.object({
   triggerId: z
     .string()
     .refine(isSlug, `triggerId ${SLUG_RULE}`),
+  kind: z.enum(["webhook", "schedule"]).optional(),
   description: z.string().default(""),
   enabled: z.boolean().optional(),
   variables: z.record(z.string().min(1), z.string()).optional(),
   payloadMode: payloadModeSchema.optional(),
   allowConcurrent: z.boolean().optional(),
+  cron: z.string().optional(),
+  timezone: z.string().optional(),
+  message: z.string().optional(),
 });
 
 export const updateTriggerSchema = z.object({
@@ -68,6 +74,9 @@ export const updateTriggerSchema = z.object({
   payloadMode: payloadModeSchema.optional(),
   allowConcurrent: z.boolean().optional(),
   rotateSecret: z.boolean().optional(),
+  cron: z.string().optional(),
+  timezone: z.string().optional(),
+  message: z.string().optional(),
 });
 
 export const versionParametersSchema = z.object({

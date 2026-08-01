@@ -1,16 +1,20 @@
-import type { TriggerRun, WebhookTrigger } from "./types";
+import type { ScheduleTrigger, Trigger, TriggerRun } from "./types";
 
 export interface TriggerRepository {
-  get(projectName: string, triggerId: string): Promise<WebhookTrigger | null>;
-  listByProject(projectName: string): Promise<WebhookTrigger[]>;
+  get(projectName: string, triggerId: string): Promise<Trigger | null>;
+  listByProject(projectName: string): Promise<Trigger[]>;
+  /** Every project's schedule triggers — the rows a scan tick walks. */
+  listSchedules(): Promise<ScheduleTrigger[]>;
   /** Create; fails if the id is taken within the project. */
-  create(trigger: WebhookTrigger): Promise<void>;
-  put(trigger: WebhookTrigger): Promise<void>;
+  create(trigger: Trigger): Promise<void>;
+  put(trigger: Trigger): Promise<void>;
   delete(projectName: string, triggerId: string): Promise<void>;
 
   /**
-   * Claim a delivery's `Idempotency-Key`. True exactly once per
-   * (project, trigger, key); false for a redelivery.
+   * Claim a firing's dedup key: a delivery's `Idempotency-Key`, or a schedule
+   * occurrence's `schedule:{UTC instant}`. True exactly once per
+   * (project, trigger, key); false for a redelivery or a slot another instance
+   * already claimed.
    *
    * A conditional write rather than a read-then-write, because the whole point
    * is the case where the same key arrives at two instances at once.

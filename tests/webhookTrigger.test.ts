@@ -97,6 +97,7 @@ function fixture(
   const triggers: TriggerRepository = {
     get: async () => (opts.stored === undefined ? trigger() : opts.stored),
     listByProject: async () => [],
+    listSchedules: async () => [],
     create: async () => {},
     put: async () => {},
     delete: async () => {},

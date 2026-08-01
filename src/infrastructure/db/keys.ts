@@ -46,6 +46,15 @@ export const keys = {
     SK: `TRIGGER#${triggerId}`,
   }),
   triggerPrefix: () => "TRIGGER#",
+  /**
+   * The cross-project schedule listing a scan tick walks. Only schedule rows
+   * carry these GSI1 attributes; webhook rows stay invisible to the index.
+   */
+  scheduleIndex: (projectName: string, triggerId: string) => ({
+    GSI1PK: keys.schedulePartition(),
+    GSI1SK: `${projectName}#${triggerId}`,
+  }),
+  schedulePartition: () => "TYPE#SCHEDULE",
   triggerRun: (projectName: string, triggerId: string, startedAt: string, runId: string) => ({
     PK: `PROJECT#${projectName}`,
     SK: `TRIGGERRUN#${triggerId}#${startedAt}#${runId}`,
