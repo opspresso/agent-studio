@@ -77,9 +77,9 @@ swapped:
 
 Using the first for project ownership would hand every signed-in user write access to every
 project on a deployment that never set `ADMIN_EMAILS`. Both flags are sent to the browser by
-`GET /api/me` under the same two names, because the console gate for "may I edit this
-project" must mirror `assertProjectWritable` exactly — reading `isAdmin` there once offered
-every user an edit form for every project, and every save 403'd.
+`GET /api/me` — as `isAdmin` and `isConfiguredAdmin` — because the console gate for "may I
+edit this project" must mirror `assertProjectWritable` exactly: reading `isAdmin` there once
+offered every user an edit form for every project, and every save 403'd.
 
 The admin override is checked *inside* `assertProjectWritable` rather than threaded in by its
 twenty-odd callers: the rule is "owner or admin", and a flag one caller forgot to pass would
@@ -178,6 +178,11 @@ Five surfaces authenticate without a session cookie:
 | Inbound A2A | `X-A2A-Key` | Constant-time compare against `A2A_API_KEY`; unset disables the endpoints |
 | Webhook triggers | `X-Trigger-Secret` | `cipher.decryptEquals` (constant time) |
 | Schedule scan | `X-Scan-Token` | `timingSafeEqualString` against `SCHEDULE_SCAN_TOKEN`; unset answers 503 |
+
+One sibling carries no credential at all: a published project's A2A **Agent Card**
+(`/.well-known/agent-card.json`) is served to anyone once `A2A_API_KEY` is configured — that
+is what makes the agent discoverable. It exposes the project's name, description and skills;
+invoking the agent still takes the key.
 
 The trigger secret is compared **before** the enabled flag is read, so a disabled trigger
 cannot answer a wrong secret differently from an enabled one — that difference is an oracle
@@ -409,12 +414,19 @@ Other properties worth knowing:
 ## Data exposure and retention
 
 - Traces store **bounded metadata only** — character counts, tokens, cost, duration, subagent
-  trace ids. Raw prompts and tool results are not persisted.
+  trace ids. Raw prompts and tool results are not persisted, but a trace's `error` and
+  `warnings` keep up to 1,000 characters of failure text verbatim, and a provider or tool
+  error string can embed content.
 - `/api/metrics` names no project, user or model. The only label any metric carries is a
   histogram's `le`.
 - Log lines carry a run correlation id, never prompt content.
 - Traces, usage rows, chats, trigger deliveries and inbound A2A tasks all expire via DynamoDB
   TTL — see [OPERATIONS.md](OPERATIONS.md#row-retention).
+- **Generated images are the exception to both rules above.** With `S3_BUCKET_NAME` set they
+  upload to a **public-read** bucket under an unguessable UUID key, cacheable for a year, and
+  **nothing expires them** — no code path deletes an object and no lifecycle rule ships with
+  the app. Anyone holding a chat transcript or Slack message holds working image URLs
+  indefinitely; attach a bucket lifecycle rule if that is not acceptable.
 
 ## Operational notes
 
@@ -425,4 +437,9 @@ Other properties worth knowing:
   on instances that did not serve the write until their settings cache expires
   (`SETTINGS_CACHE_TTL_MS`, default 5s). Immediate cross-instance revocation would need a
   shared invalidation signal, which does not exist yet.
+- **Auth rate limiting keys on the client IP**, which behind proxies is resolved through
+  `TRUSTED_PROXY_CIDRS` — see
+  [CONFIGURATION.md](CONFIGURATION.md#authentication-and-access-control). Left empty behind
+  two proxies, every request resolves to the same hop and falls into one shared bucket, so
+  the limiter throttles the fleet rather than an abuser.
 - **AWS credentials come from the task/instance role** — never bake keys into the image.

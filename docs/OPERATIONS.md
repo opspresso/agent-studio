@@ -121,7 +121,7 @@ Every top-level run gets a **correlation id** when the run bracket admits it, ca
 `AsyncLocalStorage` and stamped on every log line the run produces:
 
 ```
-[mcp run=… trace=…] session 404 — re-handshaking
+[mcp run=… trace=…] skipping server 'shared-mcp': …
 ```
 
 It is deliberately **not** the trace id: traces are sampled on the non-agent paths
@@ -132,8 +132,10 @@ runs worth reading logs for. Where a trace does exist, both ids appear.
 Work started outside a request uses the id an operator can already see: a **webhook delivery**
 carries the delivery id from its history row, a **Slack event** carries the Slack event id.
 
-`src/shared/logger.ts` is the only place in the codebase that writes to the console, pinned by
-`tests/architecture.test.ts`.
+`src/shared/logger.ts` owns writing to the console, pinned by `tests/architecture.test.ts`
+with two standing exemptions: `domain`, which imports nothing and so cannot reach the logger —
+the `[cost] unknown model id` warn above is one, and carries no `run=` suffix for exactly that
+reason — and the API-reference page, whose SDK sample merely *displays* a `console.log`.
 
 ## Tracing
 
@@ -143,12 +145,17 @@ Agent runs are **always** traced. Non-agent and image predict runs are sampled a
 Traces are visible on each project's **Traces** tab to the owner and configured admins only —
 they hold other users' runtime inputs and outputs. Spans keep only bounded metadata: character
 counts, tokens, cost, duration, subagent trace ids. **Raw prompts and tool results are not
-stored.** Each trace also carries the `actor` that caused the run.
+stored** — with one caveat: a trace's `error` and `warnings` keep up to 1,000 characters of
+the failure text verbatim, and a provider or tool error string can embed content. Each trace
+also carries the `actor` that caused the run.
 
 ## Row retention
 
 Traces, usage rows, chats and their messages, trigger deliveries, inbound A2A tasks, Slack
-dedup claims and Better Auth session rows all carry a unix-seconds `expiresAt`.
+dedup claims and Better Auth session rows all carry a unix-seconds `expiresAt`, as do three
+fixed-lifetime row kinds: webhook idempotency claims (24h), MCP OAuth in-flight states
+(10 min) and run concurrency slots (the lease length — concurrency stays correct without TTL,
+but the rows accumulate one per run).
 
 > **Enable TTL on the `expiresAt` attribute of the production table.** Nothing in the
 > application does this; `scripts/init-local-table.ts` does it for local only. Without it,
@@ -168,6 +175,10 @@ deletion reference share one expiry so the reference never dangles.
 DynamoDB's physical purge is only eventually consistent (up to ~48h), so **reads also filter
 out already-expired rows**. `traceRepository` keeps pulling bounded pages until its `Limit` is
 filled with live rows, because DynamoDB applies `Limit` before the app-side filter.
+
+Generated images live outside the table entirely: `S3_BUCKET_NAME` is a public-read bucket
+and **nothing expires its objects** — attach a bucket lifecycle rule if image retention
+matters. See [SECURITY.md](SECURITY.md#data-exposure-and-retention).
 
 ## Spend and load guards
 

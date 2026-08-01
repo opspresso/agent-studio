@@ -148,6 +148,9 @@ DELETE /api/skills/{name}     → 204                     | 404
 - `mcps` also accept an optional `content` (markdown operator notes). `description` is the
   one-line summary the model sees in an agent run's server table; `content` is console-only
   and never reaches the model.
+- `skills` items may also carry `files?` (attachment files loadable on demand through the
+  Skill tool) and `source?` (provenance of a repo-synced entry, e.g.
+  `github:opspresso/agent-skills`).
 - `projects` mutations are owner-gated (403). `POST /api/projects` body:
 
 ```json
@@ -188,7 +191,7 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 
 Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
-structuredOutput?, jsonSchema?, imageGeneration?, imageModel? }`,
+structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
 image-capable registry model is rejected with 400. `mcpList`/`skillList`/`subagentList`
@@ -252,8 +255,8 @@ PUT /api/settings → 200 {…same shape…} | 400
 ```
 
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
-  `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `githubToken`, `a2aApiKey`,
-  `publicBaseUrl`.
+  `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `toolsRepo`, `toolsRepoBranch`,
+  `githubToken`, `a2aApiKey`, `publicBaseUrl`.
 
 ```
 POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
@@ -341,16 +344,13 @@ GET  /api/skills/sync
 → { configured, repo, branch }
 
 POST /api/skills/sync
-→ { repo, commitSha, synced, unchanged, skipped } | 503 (not configured)
-  skipped: [{ name, path, reason }] — attachment files skipped during collection
+→ the sync report described below | 503 (not configured)
 
 GET  /api/mcps/sync
 → { configured, repo, branch }
 
 POST /api/mcps/sync
-→ { repo, commitSha, created, skipped } | 503 (not configured)
-  skipped: [{ name, reason, detail? }]
-  reason: exists | missing-url | invalid-url | bad-name
+→ the sync report described below | 503 (not configured)
 
 POST /api/mcps/{name}/tools
 → { tools } | 502 (connection failure)
@@ -359,8 +359,10 @@ POST /api/agents/{name}/message   { "message": "hello" }
 → { text } | 502 (remote failure)
 
 GET /api/projects/{name}/a2a
-→ { enabled, published, cardUrl }
+→ { enabled, published, cardUrl, card }
 ```
+
+`card` is the Agent Card the project publishes, or `null` while no version is published.
 
 Both sync endpoints answer `GET` to a session and require admin access for `POST`. Registry
 test operations require a session and apply the same SSRF guard used during registration and
@@ -382,10 +384,11 @@ POST /api/mcps/sync     { "overwrite"?: ["name"], "remove"?: ["name"] }
 - **orphaned** — created by a previous sync of this repository and no longer in it. **Nothing
   is deleted** unless the name is in `remove`. Entries someone registered by hand never
   appear: they were never the repository's to miss.
-- **skipped** — `bad-name`, `missing-url`, `invalid-url` (the outbound guard's message in
-  `detail`), `managed-url` (a managed MCP entry's address comes from the provisioner, so the
-  document's was ignored while its other fields applied), `conflict` (the name was taken
-  mid-sync), `attachment` (a skill synced but one of its files did not).
+- **skipped** — `[{ name, reason, detail? }]` with `reason` one of `bad-name`, `missing-url`,
+  `invalid-url` (the outbound guard's message in `detail`), `managed-url` (a managed MCP
+  entry's address comes from the provisioner, so the document's was ignored while its other
+  fields applied), `conflict` (the name was taken mid-sync), `attachment` (a skill synced but
+  one of its files did not).
 
 An overwrite replaces only what the document owns — a skill's description, content and
 attachments; an MCP entry's `url`, `description` and `content`. Encrypted headers, a
@@ -412,8 +415,10 @@ stored.
 Slack reads return masked credential state plus `eventsUrl`, `suggestedPrompts` and a generated
 app manifest.
 All four endpoints are limited to the owner and to configured admins (403 for anyone else) — the masked view still exposes the
-bot token / signing secret edges. Masked or omitted secrets are preserved on update. The test endpoint returns
-`{ ok: true, team, botUser }` or `502` for a Slack API failure.
+bot token / signing secret edges. Masked or omitted secrets are preserved on update, and a
+`PUT` on a non-agent project is a 400 — a Slack bot only attaches to an agent project. The
+test endpoint returns `{ ok: true, team, botUser }`, `400` when Slack is unconfigured or
+disabled for the project, or `502` for a Slack API failure.
 
 ## Managed MCP servers
 

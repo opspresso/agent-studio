@@ -112,7 +112,8 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 ## System prompt assembly (`buildAgentSystemPrompt`)
 
 The version's own text comes first, then — when the run has anything to append — a `---`
-break and the engine's blocks: the **run clock**, then a `# Runtime capabilities` block
+break and the engine's blocks: the **run clock**, then the **caller block** (who is asking,
+for versions that opt into `callerContext`), then a `# Runtime capabilities` block
 holding the `##` sections (that one only when the run resolved at least one capability).
 `withEngineBlocks` owns that boundary for this and for the single-shot assembly
 (`buildPromptMessages`) alike; a second copy of the rule would drift the moment one path
@@ -150,7 +151,7 @@ unauthored content.
 
 `author` is the **innermost** agent and `authorPath` is the chain that produced the chunk,
 outermost first — `["sample-agent", "simple-image"]` for a depth-3 run. The `authored()`
-wrapper in `runProject.ts` stamps both once per transfer level: it preserves an existing
+wrapper in `subagentRunner.ts` stamps both once per transfer level: it preserves an existing
 author (a middle hop must not claim a grandchild's output) and prepends its own name to the
 path. `traceId` is the opposite — each level overwrites it with its own, because a parent's
 trace links one step down, not to the deepest run.

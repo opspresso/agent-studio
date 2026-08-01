@@ -58,7 +58,7 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 | `DYNAMODB_ENDPOINT` | unset | — | DynamoDB Local only. **Must be empty in alpha/prod**; a leftover value points the app at a localhost that is not there. |
 | `AES_ENCRYPTION_KEY` | — (required) | — | 32-byte base64. Encrypts every stored secret. See [SECURITY.md](SECURITY.md#secrets-at-rest). |
 | `S3_BUCKET_NAME` | unset | — | Public-read bucket for generated images. Unset disables persistence — chat images then render only during the live stream. |
-| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, else the request origin | **runtime** | Scheme + host used to build outward-facing URLs (A2A Agent Cards, Slack manifests, the OAuth callback). Behind a reverse proxy the request URL reflects the bind address, so this has to come from configuration. |
+| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, else the request origin, else `http://localhost:3000` | **runtime** | Scheme + host used to build outward-facing URLs (A2A Agent Cards, Slack manifests, the OAuth callback). Behind a reverse proxy the request URL reflects the bind address, so this has to come from configuration. The request-origin step applies only where a request is at hand — the A2A Agent Card path has none, so with both variables unset a card advertises `localhost`. |
 
 ## Authentication and access control
 
@@ -79,7 +79,7 @@ All traffic speaks the OpenAI Chat Completions protocol. Model ids are `provider
 |---|---|---|---|
 | `LLM_BASE_URL` | — (required) | **runtime** | The default channel — a router such as OpenRouter or LiteLLM. Every model id goes here unless a provider channel claims it. |
 | `LLM_API_KEY` | — (required) | **runtime** | Credential for that channel. |
-| `LLM_PROVIDER_<NAME>_BASE_URL` | unset | **runtime** | Registers a per-provider channel. `<NAME>` is the model id's provider prefix, upper-cased: `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`. |
+| `LLM_PROVIDER_<NAME>_BASE_URL` | unset | **runtime** | Registers a per-provider channel. `<NAME>` is the model id's provider prefix, upper-cased. The registry's providers are `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`; the env parser accepts any `[A-Z0-9_]+` name, but a channel outside that list can never match a model id — the `/settings` override path refuses one outright. |
 | `LLM_PROVIDER_<NAME>_API_KEY` | unset | **runtime** | Credential for that channel. |
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | Provider channels receive the bare model name (the `provider/` prefix stripped). Set this when the channel is itself a router that expects full ids. |
 
@@ -112,7 +112,7 @@ what the configured channels actually serve — see [DEVELOPMENT.md](DEVELOPMENT
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. |
+| `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. The Slack path additionally applies the fixed 3-minute interactive deadline (below), which can only shorten a run. Two derived values move with this one: the run-slot lease (this value plus 60s) and the MCP OAuth token refresh margin (this value plus 5 min). |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | Runs one caller may have in flight. `0` disables the limit. |
 | `MAX_CONCURRENT_RUNS_A2A` | `50` | — | Separate ceiling for inbound A2A, because its actor id is a constant: the inbound key is shared, so one identity stands for every machine caller and the per-caller limit would otherwise cap the whole A2A surface. |
 | `SCHEDULE_SCAN_TOKEN` | unset | — | What the schedule ticker presents to `POST /api/triggers/scan` (`X-Scan-Token`). Unset means this deployment has no ticker: schedule triggers never fire and the endpoint answers 503 — off rather than open. |
@@ -146,7 +146,8 @@ is the opposite trade — hence a separate knob. Single-instance deployments can
 `MCP_MAX_SERVER_TTL_MS` freely; multi-instance ones should keep it near the staleness they
 are willing to wear.
 
-Failed discoveries are cached too, for at most 30s (not configurable). Without it, a server
+Failed discoveries are cached too, for the smaller of `MCP_DISCOVERY_CACHE_TTL_MS` and 30s.
+Without it, a server
 that is down — or a connection whose token was revoked — re-pays a failing handshake before
 the first token of every message. The window is short because a stale failure hides a
 recovery while a stale success only serves a slightly old tool list.
@@ -157,7 +158,7 @@ recovery while a stale success only serves a slightly old tool list.
 |---|---|---|---|
 | `SKILLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `skills/<name>/SKILL.md`; the parent directory name is the skill slug. |
 | `SKILLS_REPO_BRANCH` | `main` | **runtime** | |
-| `TOOLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `tools/<name>/TOOL.md`; the parent directory name is the registry entry name. Frontmatter carries `url` and `description`; the body becomes the entry's operator notes. A sync replaces those three fields on an entry that already exists and touches nothing else — headers and OAuth stay put. |
+| `TOOLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `tools/<name>/TOOL.md`; the parent directory name is the registry entry name. Frontmatter carries `url` and `description`; the body becomes the entry's operator notes. An existing entry is reported, never written, until the caller names it for overwrite — and an overwrite replaces only those three fields, so headers and OAuth stay put. |
 | `TOOLS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access. Shared by both syncs. |
 
@@ -173,11 +174,16 @@ A cluster-internal URL is registerable this way only if its host is covered by
 `MCP_INTERNAL_HOST_SUFFIXES` — the sync faces the same outbound guard a typed URL does, and a
 refusal is reported as a skip rather than failing the whole run.
 
-## A2A
+## Slack
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
 | `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Appended to a Slack reply while it is still being written, then dropped by the final edit. **Only on the edit-in-place fallback** — a streamed reply is marked as still arriving by Slack itself. A workspace with its own spinner emoji names it here; the default is built in, because a custom name a workspace has not defined renders as literal text. |
+
+## A2A
+
+| Variable | Default | Runtime | Notes |
+|---|---|---|---|
 | `A2A_API_KEY` | unset | **runtime** | Shared key for inbound A2A JSON-RPC (`X-A2A-Key`). Unset disables the `/api/a2a` endpoints entirely. Issue one from `/settings` rather than inventing it. |
 
 Agent Card URLs are built from `PUBLIC_BASE_URL`.
@@ -186,8 +192,8 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, applied to non-agent predict runs. Agent runs are always traced. |
-| `SETTINGS_CACHE_TTL_MS` | `5000` | — | In-memory TTL for the settings row. Bounds cross-instance staleness of every runtime override — see [Resolution order](#resolution-order). |
+| `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, applied to top-level predict and image runs. Agent runs are always traced. Unlike the limits above, an out-of-range value clamps into the range silently; only a non-numeric one falls back to the default. |
+| `SETTINGS_CACHE_TTL_MS` | `5000` | — | In-memory TTL for the settings row. Bounds cross-instance staleness of every runtime override — see [Resolution order](#resolution-order). Floors at `1`, so `0` degrades to the default rather than disabling the cache. |
 | `TRACE_RETENTION_DAYS` | `30` | — | DynamoDB TTL on the row's `expiresAt`. |
 | `USAGE_RETENTION_DAYS` | `400` | — | Kept well beyond the dashboard's 184-day query window. |
 | `CHAT_RETENTION_DAYS` | `180` | — | Measured from the chat's last activity. |
@@ -219,21 +225,31 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Subagent nesting depth | `5` | `src/application/execution/subagentRunner.ts` |
 | MCP tools declared per run | `120` | `src/application/execution/mcpTools.ts` |
 | A single MCP tool result | `100,000` chars | `src/infrastructure/mcp/toolManager.ts` |
+| An MCP server's HTTP response | `2MB` | `src/infrastructure/mcp/session.ts` |
+| MCP OAuth metadata / token response | `256KB` each | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
+| MCP discovery cache entries | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
+| A remote agent's (A2A / external) response | `2MB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
 | Concurrent MCP calls per model response | `5` | `src/application/llm/engine.ts` |
+| Interactive (Slack) run deadline | `3` min | `src/shared/runDeadline.ts` |
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | Documents per turn / bytes each | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
 | Chat request body (derived from the attachment caps) | ~`84MB` | `src/app/api/_lib/body.ts` |
 | Transfer transcript line kept when a turn overflows | `500` chars minimum | `src/application/llm/engine.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
+| Chat tool traffic replayed into context | `3` turns / `20,000` chars | `src/application/chat/messageMapping.ts` |
+| Inbound webhook trigger / Slack event body | `1MB` each | `src/app/api/triggers/[project]/[trigger]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts` |
 | Slack thread turns used as context | `50` | `src/application/slack/handleSlackEvent.ts` |
+| Slack thread title / history image lookback | `60` chars / `10` messages | `src/application/slack/handleSlackEvent.ts` |
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |
+| Slack prompt title / message / agent description | `80` / `500` / `300` chars | `src/domain/slack/types.ts` |
 | Slack reply write cadence (stream / edit) | `1s` / `3s` | `src/application/slack/replyStream.ts` |
 | Slack status refresh (Slack expires it at `2m`) | `45s` | `src/application/slack/replyStream.ts` |
 | Slack profile cache (success / failure / entries) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |
 | Schedule catch-up window (bounds what an outage can fire at once) | `10` min | `src/application/trigger/scanSchedules.ts` |
 | Schedule firings one scan tick drives concurrently | `8` | `src/application/trigger/scanSchedules.ts` |
+| Schedule repair sweep (lost-run recovery) | every `5` min, `50` rows | `src/application/trigger/scanSchedules.ts` |
 
 There is deliberately **no run-wide context budget** yet: every limit above is per-item or
 per-turn, so a long tool-heavy run can still overflow a small `contextWindow` and surface as

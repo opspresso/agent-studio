@@ -29,20 +29,20 @@ llm, agents (subagents + external agent registry), skills, mcp, chat, cost/usage
 src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
-    execution/  security/  slack/  trigger/
+    execution/  security/  slack/  trigger/  sync/
   application/      # Use cases. Depends on domain ports only.
   infrastructure/   # Adapters (app-facing code reaches them via the composition root).
     db/             # Single-table client, key builders, repositories
     llm/            # OpenAI-compatible provider channels, streaming
     mcp/            # MCP HTTP client, session, discovery cache
     a2a/  agent/  slack/  github/  storage/  net/  crypto/  health/
-                    # A2A + external-agent clients, Slack, skills-repo sync, S3 image
-                    # store, SSRF guard, AES, readiness probes
+                    # A2A + external-agent clients, Slack, the skills- and tools-repo
+                    # clients, S3 image store, SSRF guard, AES, readiness probes
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
-    _components/    # The shared UI kit: Modal, Badge, CardGrid, HeaderRows, form styles,
-                    # code blocks, copy buttons. A piece of UI that repeats across pages
-                    # belongs here, with one owner
+    _components/    # The shared UI kit: CardGrid, HeaderRows, form styles, code blocks,
+                    # copy buttons. A piece of UI that repeats across pages belongs here,
+                    # with one owner
   components/       # App chrome: the header the root layout mounts (theme toggle, user
                     # menu), and the landing page's sign-in button
   lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
@@ -111,6 +111,7 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
 | Project API token | `PROJECT#{name}` | `APITOKEN` | — | — |
 | Project MCP OAuth connection | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
+| MCP OAuth authorization in flight | `MCPOAUTH#{state}` | `META` | — | — |
 | Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule only: `TYPE#SCHEDULE` | schedule only: `{name}#{triggerId}` |
 | Trigger run (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
 | Trigger dedup claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
@@ -209,8 +210,8 @@ Each of those four used to open the in-flight metric for itself, which is exactl
 cost guard had four places it could be forgotten. `tests/architecture.test.ts` now pins the
 bracket, so a fifth entry point that skips it is missing its metric as loudly as its guard.
 
-It is *not* "the execution facade", because `generateImage` is not in one: the predict route
-and the A2A executor call that module directly.
+It is *not* "the execution facade", because `generateImage` is not in one: the predict
+route, the A2A executor and the trigger runner call that module directly.
 
 **Order is load-bearing at both ends.** The guards run **before** the metric opens, so a
 refused run is never counted, traced, or recorded. `close()` runs **after** the caller has
@@ -275,8 +276,10 @@ Streaming entry points call the generator's first `next()` **before constructing
 `Response`** (`src/app/api/_lib/sse.ts`). A run refused by a guard throws on that first call,
 before producing anything; building the response first would send `200 text/event-stream` and
 then deliver the refusal as a data frame, so an SSE caller would never see the 429 or its
-`Retry-After`. Holding one chunk lets the throw reach `apiError`, and the stream is otherwise
-byte-identical.
+`Retry-After`. Holding one chunk lets the throw reach `apiError`; beyond that the data frames
+are unchanged, though the stream also carries a `: keepalive` comment frame every 15s — idle
+middleboxes (the ALB in front of the deployed app) cut a connection with no bytes for 60s,
+which is shorter than one image generation, and SSE parsers discard comment frames.
 
 ### EngineChunk contract
 
@@ -298,6 +301,7 @@ consumers must use it instead of re-deriving author semantics.
 | `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | OpenAI `finish_reason` (`stop` with `done`, `length` without), client finalize |
 | `author` | subagent chunks only — the **innermost** agent | consumers filter via `isTopLevelChunk`; client shows the running agent |
 | `authorPath` | subagent chunks only — the chain, outermost first | client renders `sample-agent → simple-image`; the trace recorder groups a transfer by its first element |
+| `authorDone` | the `runSubagent` wrapper when an authored run returns | consumers stop showing that chain as active |
 | `traceId` | subagent chunks (stamped by `runProject`) | client correlates a chunk to its subagent's trace |
 
 > The `done`-absence inference is a known weak spot: cancellation and mid-stream errors also
@@ -309,8 +313,9 @@ consumers must use it instead of re-deriving author semantics.
 Two deliberate strategies coexist, split by whether a stream has started.
 
 **HTTP path (before a stream starts)** — use cases throw `AppError` subclasses
-(`src/application/errors.ts`: Validation / NotFound / Forbidden / Conflict / RateLimited; chat
-adds `Chat*` subclasses on the same base). `RateLimitedError` carries the seconds to wait,
+(`src/application/errors.ts`: Validation / NotFound / Forbidden / Conflict / RateLimited /
+Upstream — the last a 502 for another system's failure; chat adds `Chat*` subclasses on the
+same base). `RateLimitedError` carries the seconds to wait,
 because the thing that knows *why* a request was refused is the only thing that knows when it
 stops being refused; `apiError` (`src/app/api/_lib/http.ts`) turns that into `Retry-After` and
 maps any thrown error, falling back to a generic 500. `parseName` validates `[name]` params as
@@ -334,9 +339,10 @@ Project { name (slug, immutable id), displayName, description,
           projectType: 'llm' | 'agent' | 'image', ownerEmail, departmentCode?,
           publishedVersion?, slack?, costLimits?, createdAt, updatedAt }
 
-Version { versionName, systemPrompt, userPromptTemplate, model, fallbackModel?,
+Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fallbackModel?,
           parameters { temperature, maxTokens, reasoningEffort?, piiFiltering,
-                       structuredOutput?/jsonSchema, imageGeneration?/imageModel? },
+                       callerContext?, structuredOutput?/jsonSchema,
+                       imageGeneration?/imageModel? },
           mcpList: McpBinding[], skillList: string[],
           subagentList: { name, type: 'local' | 'remote' }[], maxTurn?, createdAt }
 ```
@@ -467,11 +473,14 @@ Sync reads `skills/<name>/SKILL.md` from the configured GitHub repo — the pare
 name is the slug — and collects supported text attachments (`src/domain/skill/files.ts`:
 `ALLOWED_SKILL_FILE_EXTENSIONS`) under each `SKILL.md` directory, bounded by per-file,
 per-skill and file-count caps and excluding symlinks. `file_path` is normalised and confined
-to the skill root: no absolute paths, no `..`, no cross-skill access. Replacing the skill item
-on re-sync drops stale attachments; skipped files are reported with reasons.
+to the skill root: no absolute paths, no `..`, no cross-skill access. An overwrite replaces
+the whole skill item, so stale attachments drop with it; skipped files are reported with
+reasons.
 
-**The repo is the source of truth for synced skills**; locally created skills with other names
-are untouched.
+**A sync imports what is missing and reports the rest** (`src/domain/sync/types.ts` owns the
+report shape): an existing skill is rewritten, and an orphaned one deleted, only when the
+caller names it — see the sync contract in [API.md](API.md#registry-and-integration-operations).
+Locally created skills with other names are untouched.
 
 ### MCP
 
@@ -486,6 +495,14 @@ McpServer { name, url, description?, content?, runtime?: 'remote' | 'managed',
 in the system prompt's server table. `content` is markdown operator notes shown in the console
 only; unlike a skill's content it never reaches the model. Descriptions are escaped when
 rendered into the table, so a legacy multi-line value cannot break it.
+
+Registry entries can also sync from a GitHub repo (`TOOLS_REPO`, `tools/<name>/TOOL.md`:
+frontmatter `url` + `description`, body → operator notes), under the same rule as skills —
+import what is missing, report the rest (`syncToolsFromSnapshot`,
+`src/application/mcp/syncTools.ts`). The stakes are higher here: an entry also holds
+encrypted headers and a discovered OAuth block, so even a caller-named overwrite replaces
+only the three document-owned fields, and each URL faces the same outbound guard a typed one
+does — a refusal is a skip, not a failed sync.
 
 Agent runs append a **"Connected MCP Servers"** table (server name, description, aliased tool
 names) to the system prompt so the model knows which server a tool group belongs to; servers
@@ -778,6 +795,13 @@ Chat { chatId, title, ownerEmail, projectName?, createdAt, updatedAt }
 Messages are append-only with a `seq`. Chat execution uses the agent engine directly — no HTTP
 self-call — and streams SSE to the client.
 
+One chat carries **one run at a time**: `claimChatRun` (`src/application/chat/runLease.ts`)
+takes a conditional-write lease on the chat row (`activeRunId`, expiring after
+`RUN_LEASE_SECONDS`), a second send while it holds is a `ChatConflictError` (409), and the
+run releases the lease in its `finally`. This is separate from the per-caller run-slot guard:
+that bounds a *person's* concurrency, this keeps two runs from interleaving one chat's
+append-only history.
+
 `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`): a tool row
 always carries `toolCallId`, an assistant row may carry `toolCalls`/`images`, a user row may
 carry `images`/`documents`, and illegal combinations are unrepresentable.
@@ -791,9 +815,10 @@ replay refuses them.
 declared it and re-emits it *after* that message — storage order within a turn is the reverse
 of the wire order. Pairing is scoped to the run a user message delimits, because a tool-call id
 is only unique within the run that made it. A call with no stored result is dropped rather than
-orphaned. The context is bounded three ways — the last N assistant turns, a tool-text budget,
-and a history budget over whole runs — and **every drop is reported as a `warning` chunk**
-rather than made silently.
+orphaned. The context is bounded three ways: the last N assistant turns (older tool traffic
+is simply not replayed), a tool-text budget (a truncated result carries an inline
+`…[truncated]` marker the model can see), and a history budget over whole runs — whose drops
+are the ones **reported as a `warning` chunk**.
 
 > `src/application/chat/AGENTS.md` is the authority here. Read it before changing `run.ts` or
 > `messageMapping.ts`.
@@ -807,7 +832,7 @@ handle for each so a run can edit them, and the model must declare `imageInput` 
 part a text-only model rejects fails the whole turn.
 
 **Documents become text at the surface that received them.** PDF, plain text, Markdown,
-CSV/TSV, JSON, XML and HTML are read into the turn as text parts rather than as
+CSV/TSV, JSON, YAML, XML and HTML are read into the turn as text parts rather than as
 provider-native file parts. That is a decision about this deployment rather than a
 simplification: a model id may be served by the default router **or** by its own provider's
 OpenAI-compatible endpoint (`LLM_PROVIDER_<NAME>_BASE_URL`), and those disagree about how — or
@@ -873,9 +898,11 @@ is additive — a path that cannot name its caller still records the spend it ca
 
 **The actor is the run's, not the turn's.** `createUsageAggregator` is bound with it once, so
 the calls a subagent transfer makes on another project are still attributed to whoever started
-the run. `RunOrigin { actor?, ancestry }` carries both down every transfer hop — they always
-travel together, so they are one value rather than two parameters threaded side by side through
-eight signatures.
+the run. `RunOrigin { actor?, caller?, ancestry }` carries them down every transfer hop —
+`caller` being who the actor is *in words*, for versions that opt into caller context; a
+subagent is answering, and billing, the same person as its parent, so the values always
+travel together as one rather than as parameters threaded side by side through eight
+signatures.
 
 ### Traces
 

@@ -12,7 +12,11 @@ into `ChatDeps.runAgent`.
 - `title.ts` — first-message → title, truncated to 50 chars.
 - `messageMapping.ts` — stored `ChatMessage[]` → OpenAI-shaped engine messages.
 - `run.ts` — `resolveVersion` (published → latest fallback) and `runAndPersist`
-  (tee the engine stream to the client, persist afterward).
+  (tee the engine stream to the client, persist afterward, release the run lease in
+  its `finally`).
+- `runLease.ts` — `claimChatRun`: one in-flight run per chat, taken as a conditional
+  write on the chat row (`activeRunId`, `RUN_LEASE_SECONDS`); a losing claim is a
+  `ChatConflictError` (409).
 - `createChat.ts` / `sendMessage.ts` / `listChats.ts` / `getChat.ts` / `deleteChat.ts`.
 
 ## Design decisions (read before changing)

@@ -81,12 +81,13 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
 - `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
   directly**; get repositories and `executionDeps` from a wiring site.
 - `src/lib/` — cross-cutting glue: composition root, auth, session, config, runtime-settings.
-  Application and infrastructure may import it; domain never does.
+  Infrastructure may import it; application may reach only its pure leaves (today
+  `runMetrics`); domain never touches it.
 - `src/shared/` — dependency-free helpers. The bottom of the graph: it imports nothing from
   `@/`.
 
 Composition happens at exactly four wiring sites: `src/lib/container.ts` (repositories, the
-domain ports, the four registry-slice singletons, `executionDeps`/`imageDeps`),
+domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 `src/app/api/chats/_deps.ts` (`ChatDeps`), `src/app/api/slack/events/_lib/`
 (`SlackEventDeps`), and `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
 handler assembly over `executionDeps`).
@@ -109,6 +110,7 @@ about to make copy number two.
 | Decision | Owner |
 |---|---|
 | The shape of an MCP tool | `src/domain/mcp/types.ts` |
+| Which hosts may skip the outbound URL guard | `src/domain/mcp/types.ts` |
 | Which storage errors mean a lost conditional write | `src/application/errors.ts` |
 | Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
@@ -126,6 +128,7 @@ about to make copy number two.
 | Writing to the console | `src/shared/logger.ts` |
 | What wraps a top-level run | `src/application/execution/runBracket.ts` |
 | Which project type runs which way | `src/application/execution/deps.ts` |
+| How the execution facade dispatches an agent project | `src/application/execution/deps.ts` |
 | How a Slack reply is delivered | `src/application/slack/replyStream.ts` |
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
@@ -212,8 +215,10 @@ One line each — the linked section is the authority.
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three
   traps: storage order within a turn is the *reverse* of the wire order, call/result pairing
-  is scoped to one run (ids are unique only there), and three separate budgets can drop
-  content — each drop reported as a `warning`. Read `src/application/chat/AGENTS.md` before
+  is scoped to one run (ids are unique only there), and three separate budgets bound the
+  context — only the history budget warns; a truncated tool result carries an inline
+  `…[truncated]` marker, and turns past the replay window drop silently by design. Read
+  `src/application/chat/AGENTS.md` before
   changing `run.ts` or `messageMapping.ts`; the mechanics are in
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#chat).
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client

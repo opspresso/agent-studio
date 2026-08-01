@@ -46,8 +46,9 @@ pnpm dev                             # http://localhost:3000
 > `DYNAMODB_TABLE_NAME`, and never run `docker compose down -v` (the volume belongs to every
 > project) or `--remove-orphans` (it would take out containers another repository started).
 
-DynamoDB Local namespaces tables by access key **and** region, so the app and
-`init-local-table` must run with the same `AWS_REGION` (default `ap-northeast-2`).
+DynamoDB Local namespaces tables by access key and region *unless started with `-sharedDb`* —
+which both `compose.yaml` services are, so a region or credential mismatch between the app and
+`init-local-table` does not split them into invisible parallel table sets.
 
 `init-local-table` refuses to run against a non-local endpoint, so alpha/prod can never be
 touched by it.
@@ -93,7 +94,7 @@ instrumentation import.
 |---|---|
 | `scripts/init-local-table.ts` | Create the single table with `GSI1`/`GSI2` on DynamoDB Local. Refuses non-local endpoints. |
 | `scripts/dev-session.ts` | Write a dev user + session straight to DynamoDB and print a signed session cookie — exercises authenticated routes without the OAuth round-trip. |
-| `scripts/mock-llm.ts` | Standalone mock OpenAI-compatible server on `127.0.0.1:8002`. Streams and non-streams; requests a `Skill` tool call once when tools are offered. |
+| `scripts/mock-llm.ts` | Standalone mock OpenAI-compatible server on `127.0.0.1:8002`. Streams and non-streams; requests a `Skill` tool call once when tools are offered *and* the messages mention `skill named "<slug>"`. |
 | `scripts/seed-skills.ts` | Seed sample skills, idempotently. |
 | `scripts/integration-check.ts` | End-to-end repository round-trips + the engine (single-shot and agent loop). |
 | `scripts/check-models.ts` | Diff `src/domain/llm/models.ts` against the ids the configured channels serve. |
@@ -149,7 +150,7 @@ single credential and region.
 
 ## Tests
 
-95 test files under `tests/`. Conventions:
+Unit tests live under `tests/`. Conventions:
 
 - **Mock at boundaries.** `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
   `vi.mock("@/infrastructure/db/client")`. Do not mock application code to test application
@@ -163,11 +164,13 @@ single credential and region.
 
 This is the structural gate, and it fails loudly rather than warning. It enforces:
 
-1. **Seven layer rules**, each with an **empty allowlist** — `domain` imports nothing else and
-   no framework/AWS/auth library; `application` imports no `infrastructure` or `app`;
-   `infrastructure` imports no `application` or `app`; `shared` imports nothing from `@/`;
-   adapters and use cases do not import the composition root; `app` imports no
-   `infrastructure` outside its wiring sites.
+1. **Ten layer rules**, each with an **empty allowlist** — `domain` imports nothing else and
+   no framework/AWS/auth library; `application` imports no `infrastructure` or `app`, and
+   nothing from `lib` beyond its pure leaves; `infrastructure` imports no `application` or
+   `app`; `shared` imports nothing from `@/`; adapters and use cases do not import the
+   composition root; `app` imports no `infrastructure` outside its wiring sites; `lib`
+   imports no `infrastructure` outside its wiring modules; `components` imports no
+   `infrastructure` or `application`.
 2. **Single-owner invariants** — a named decision plus the file that owns it. A second copy
    fails, *and so does the owner losing the definition*. The list is in
    [../AGENTS.md](../AGENTS.md#single-owner-invariants).
@@ -176,7 +179,10 @@ This is the structural gate, and it fails loudly rather than warning. It enforce
    React batches.
 4. **Edge runtime compatibility** — imports that would pull `node:crypto` or the AWS SDK into
    the edge bundle.
-5. **The scanner's own tests**, so a rule that silently stopped matching is caught.
+5. **Create modals reset what they declare** — every field a create modal holds in `useState`
+   is cleared before `onCreated()`, so a reopened modal never shows the previous entry's
+   values.
+6. **The scanner's own tests**, so a rule that silently stopped matching is caught.
 
 > When one of these fails, **fix the import — do not widen the rule.** The allowlists are
 > empty on purpose: adding a violation is meant to be a visible decision, not a quiet one.

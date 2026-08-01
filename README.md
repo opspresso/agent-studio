@@ -152,7 +152,7 @@ Always runs the **published** version, answers `202` immediately and runs in the
 deduplicates on `Idempotency-Key` for 24 hours, and refuses overlapping runs by default. Every
 refusal — disabled, duplicate, busy, no published version — is a history row with a status, so
 "it never fired" is distinguishable from "it fired and failed" without reading logs. See
-[docs/API.md](docs/API.md#webhook-triggers).
+[docs/API.md](docs/API.md#triggers).
 
 ### Slack
 
@@ -203,7 +203,7 @@ The build artifact is a container image.
 
 ```bash
 docker build -t agent-studio .        # multi-stage, Next standalone output
-docker compose up --build             # local container + DynamoDB Local
+docker compose up --build             # local container + both DynamoDB Local instances
 ```
 
 Version tags (`v*`) build and push to ECR via GitHub OIDC and trigger a GitOps deploy. Point
