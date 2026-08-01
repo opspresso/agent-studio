@@ -236,6 +236,8 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
 | Chat request body (derived from the attachment caps) | ~`84MB` | `src/app/api/_lib/body.ts` |
 | Transfer transcript line kept when a turn overflows | `500` chars minimum | `src/application/llm/engine.ts` |
+| Context-budget estimate (ASCII / other / image part / headroom) | `3` chars per token / `2` tokens per char / `1,000` tokens / `2,000` tokens | `src/application/llm/contextBudget.ts` |
+| Tool result kept when the run's context budget cuts it | `500` chars minimum | `src/application/llm/engine.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Chat tool traffic replayed into context | `3` turns / `20,000` chars | `src/application/chat/messageMapping.ts` |
 | Inbound webhook trigger / Slack event body | `1MB` each | `src/app/api/triggers/[project]/[trigger]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts` |
@@ -251,7 +253,19 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Schedule firings one scan tick drives concurrently | `8` | `src/application/trigger/scanSchedules.ts` |
 | Schedule repair sweep (lost-run recovery) | every `5` min, `50` rows | `src/application/trigger/scanSchedules.ts` |
 
-There is deliberately **no run-wide context budget** yet: every limit above is per-item or
-per-turn, so a long tool-heavy run can still overflow a small `contextWindow` and surface as
-a provider `400`. That gap is tracked as the `context-budget` milestone in
-[MILESTONES.md](MILESTONES.md).
+### The run-wide context budget
+
+The per-item limits above say nothing about their sum, so
+`src/application/llm/contextBudget.ts` owns one more bound: an agent run's total context,
+derived from the model's `contextWindow` (the **minimum** of primary and fallback when a
+fallback is configured) minus the version's `maxTokens` and a protocol headroom. The input,
+the tool definitions, every turn's output, tool results and transferred answers are charged
+against it; what no longer fits is truncated with a marker the model can read and reported
+once as a `warning` chunk — instead of overflowing into a provider `400` mid-run.
+
+Tokens are estimated, conservatively, from characters (per class: ASCII at 3 chars/token,
+everything else at 2 tokens/char; an image part at a flat 1,000 tokens) — exact counts would
+need each provider's tokenizer. A model missing from the registry gets **no budget**: there
+is no window to derive one from, so such a run stays unbudgeted exactly as every run was
+before the budget existed. Single-shot (`llm`) runs are also unbudgeted — nothing
+accumulates in one call, and the input is the caller's own.

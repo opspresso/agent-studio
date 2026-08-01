@@ -29,59 +29,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 
 ---
 
-## context-budget — run이 컨텍스트에 쌓는 총량의 소유자
-
-**이유**: 상한은 많지만 **합계를 보는 곳이 없다.** 지금 있는 것은 전부 항목별·turn별이다 —
-tool 결과 `MAX_TOOL_RESULT_CHARS_PER_TURN`(200,000자, **turn당**), 이미지
-`MAX_ATTACHMENTS`(4, turn당), transcript `MAX_TRANSFER_CONTEXT_CHARS`(8,000자), 그리고 채팅
-진입에만 있는 `MAX_HISTORY_CHARS`/`MAX_HISTORY_MESSAGES`. 루프의 `messages` 배열은 turn마다
-자라고 `maxTurn`은 기본 50이다. 즉 **한 run이 컨텍스트에 넣을 수 있는 총량에는 상한이 없다.**
-transfer가 자식 답변을 넣는 `postContextMessages`는 상한이 아예 없는 자리다.
-
-`contextWindow`는 이미 모델마다 정의돼 있다(`src/domain/llm/models.ts`). **엔진이 그것을 읽지
-않는다** — 정보는 있는데 쓰이지 않는 상태다. 그래서 컨텍스트 초과는 예산 초과로 처리되지
-못하고 provider의 400으로 나타나며, 첫 chunk 이후라면 재시도 없이 `{error}` chunk가 된다.
-도구를 많이 쓰는 긴 run이 원인 불명으로 죽는다.
-
-**진입점별 방어도 고르지 않다.** 채팅만 히스토리 예산을 갖고, predict / OpenAI 호환 /
-Slack / A2A / webhook trigger는 받은 `messages`를 그대로 넘긴다. 같은 모델에 같은 크기의
-입력을 주면서 한 경로만 보호된다.
-
-**선행**: 없음. 종료 이유는 이미 명시적이다 — `RunTerminationReason`과 `chunkTermination`
-(`src/domain/llm/types.ts`)이 소유하므로, 예산 소진을 이유로 루프를 끝내는 선택지는 값 하나를
-더하는 일이다. 절단만으로 끝낼지, 종료까지 갈지는 설계 단계에서 정한다.
-
-**범위**
-
-- run 단위 누적 예산의 **단일 소유자**를 만든다. 모델의 `contextWindow`에서 유도하고,
-  기존 항목별 상한은 그 아래에 남긴다 — 상한을 없애는 작업이 아니라 합계를 아는 작업이다.
-- `postContextMessages`(transfer 답변, MCP 반환 이미지의 동반 메시지)를 예산 안으로 넣는다.
-- 절단은 기존 규약대로 `warning`으로 보고한다. 조용히 버리지 않는다.
-- 문자 수와 토큰의 관계를 어떻게 근사할지 결정하고 기록한다. 정확한 토큰 계산은 provider별
-  tokenizer를 요구하므로, 보수적 문자 기반 근사로 시작할지 판단한다.
-- **`messages` 밖의 컨텍스트 소비자를 예산이 어떻게 다루는지 결정한다** — 이미지 첨부(문자
-  근사가 보지 못하는 provider 이미지 토큰), 도구 정의 JSON schema(한 run에 MCP 도구 최대
-  120개 — 이것만으로 수만 토큰), 시스템 프롬프트와 스킬 테이블. 근사에서 제외한다면 그
-  몫을 예산 여유분(headroom)으로 명시한다.
-- **`fallbackModel`로 전환될 수 있는 run은 어느 모델의 `contextWindow`가 기준인지 정한다** —
-  두 모델의 최솟값이 안전한 기본값이다.
-- 진입점별 불균형을 정리한다 — 히스토리 예산을 모든 진입점이 지나는 자리로 옮길지, 아니면
-  채팅 전용임을 근거와 함께 문서에 남길지 결정한다.
-
-**설계 메모**: `MAX_TOOL_RESULT_CHARS_PER_TURN`이 200,000자라는 것은 **한 turn만으로도** 작은
-컨텍스트 창을 넘길 수 있다는 뜻이다. 즉 이 마일스톤은 "긴 run"만의 문제가 아니라 per-turn
-상한이 모델과 무관하게 정해져 있다는 문제이기도 하다. 예산을 모델에서 유도하면 두 문제가
-같은 곳에서 해결된다.
-
-**완료 조건**
-
-- 작은 `contextWindow`를 가진 모델로 도구를 반복 호출하는 run이 provider 400 대신 예산
-  절단과 `warning`으로 처리된다.
-- transfer 답변이 예산에 포함된다 — 자식 답변을 크게 만든 fake로 절단이 보고되는 것을
-  확인한다.
-- 예산 계산은 한 곳에만 있다. `tests/architecture.test.ts`의 single-owner 불변식으로 고정한다.
-- 예산에 여유가 있는 run의 요청 본문은 바이트 단위로 동일하다.
-
 ## trigger-durability — Slack·webhook 발화의 급사 복구
 
 **이유**: `schedule-trigger`가 남긴 스케줄러 결정문(ARCHITECTURE.md의 *Schedules*)은 세

@@ -1,0 +1,220 @@
+import { describe, expect, it } from "vitest";
+import {
+  createRunContextBudget,
+  estimateContextTokens,
+  IMAGE_PART_TOKENS,
+} from "@/application/llm/contextBudget";
+import { runAgent, type AgentDeps, type RunAgentInput } from "@/application/llm/engine";
+import type { EngineChunk } from "@/domain/llm/types";
+import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+
+async function collect(gen: AsyncGenerator<EngineChunk>): Promise<EngineChunk[]> {
+  const chunks: EngineChunk[] = [];
+  for await (const chunk of gen) {
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+
+/**
+ * 200k-token window, so `maxTokens: 190_000` leaves a small, predictable
+ * budget (200_000 − 190_000 − headroom) without megabyte test strings.
+ */
+const SMALL_WINDOW_MODEL = "anthropic/claude-haiku-4.5";
+const SMALL_BUDGET_PARAMS = { maxTokens: 190_000, piiFiltering: false };
+/** 1M-token window: every test payload fits with room to spare. */
+const HUGE_WINDOW_MODEL = "google/gemini-2.5-flash";
+
+describe("estimateContextTokens", () => {
+  it("charges ASCII at 3 chars per token, rounding up", () => {
+    expect(estimateContextTokens("abc")).toBe(1);
+    expect(estimateContextTokens("abcd")).toBe(2);
+  });
+
+  it("charges non-ASCII at 2 tokens per char", () => {
+    expect(estimateContextTokens("가나다")).toBe(6);
+  });
+
+  it("charges mixed text per class", () => {
+    // "ab" → 1 token, "가" → 2 tokens.
+    expect(estimateContextTokens("ab가")).toBe(3);
+  });
+});
+
+describe("createRunContextBudget", () => {
+  it("returns undefined for a model the registry does not know", () => {
+    expect(createRunContextBudget("custom/unknown", undefined, undefined)).toBeUndefined();
+  });
+
+  it("derives the window from the smaller of primary and fallback", () => {
+    const withFallback = createRunContextBudget(HUGE_WINDOW_MODEL, SMALL_WINDOW_MODEL, 190_000);
+    const primaryOnly = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000);
+    expect(withFallback?.remaining()).toBe(primaryOnly?.remaining());
+  });
+
+  it("ignores an unregistered fallback rather than guessing a window", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, "custom/unknown", 190_000);
+    expect(budget?.remaining()).toBe(
+      createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)?.remaining(),
+    );
+  });
+
+  it("reserves the version's maxTokens for the response", () => {
+    const tight = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000);
+    const loose = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 1_000);
+    expect(tight!.remaining()).toBeLessThan(loose!.remaining());
+  });
+});
+
+describe("RunContextBudget charging and fitting", () => {
+  it("charges an image part at the flat rate, not its base64 length", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
+    const before = budget.remaining();
+    budget.chargeMessage({
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: `data:image/png;base64,${"A".repeat(500_000)}` } },
+      ],
+    });
+    expect(before - budget.remaining()).toBe(IMAGE_PART_TOKENS);
+  });
+
+  it("fits text that has room without touching it", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
+    const text = "x".repeat(600);
+    const before = budget.remaining();
+    expect(budget.fitText(text)).toEqual({ text, truncated: false });
+    expect(budget.remaining()).toBe(before - 200);
+    expect(budget.truncated()).toBe(false);
+  });
+
+  it("cuts text past the remaining budget and remembers the cut", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
+    const fitted = budget.fitText("x".repeat(100_000));
+    expect(fitted.truncated).toBe(true);
+    expect(fitted.text.length).toBeLessThan(100_000);
+    expect(fitted.text.length).toBeGreaterThan(0);
+    expect(budget.truncated()).toBe(true);
+    // What was kept was charged: nothing more fits.
+    expect(budget.fitText("y".repeat(10_000)).text.length).toBeLessThan(10_000);
+  });
+
+  it("returns nothing once the budget is exhausted", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
+    budget.fitText("x".repeat(100_000));
+    while (budget.remaining() > 0) {
+      budget.chargeText("z".repeat(3_000));
+    }
+    expect(budget.fitText("more")).toEqual({ text: "", truncated: true });
+  });
+});
+
+describe("runAgent context budget", () => {
+  const TOOL = [{ type: "function" as const, function: { name: "search", parameters: {} } }];
+
+  function toolLoopChannel(): FakeChannel {
+    return new FakeChannel([
+      [toolCallChunk(0, "call_1", "search", "{}"), usageChunk(1, 1)],
+      [contentChunk("answered"), usageChunk(1, 1)],
+    ]);
+  }
+
+  it("truncates tool output to the model's context budget and warns once", async () => {
+    const channel = toolLoopChannel();
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: "x".repeat(100_000) }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: SMALL_WINDOW_MODEL,
+      parameters: SMALL_BUDGET_PARAMS,
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    const result = chunks.find((c) => c.toolResult)?.toolResult?.content ?? "";
+    expect(result).toContain("the run's context budget is exhausted");
+    expect(result.length).toBeLessThan(40_000);
+    expect(
+      chunks.filter((c) => c.warning?.includes("context budget")),
+    ).toHaveLength(1);
+    // The next request carries the truncated result, bounded well below the
+    // raw 100k chars — this is the provider 400 not happening.
+    const toolMessage = channel.seenParams[1]?.messages.find((m) => m.role === "tool");
+    expect(String(toolMessage?.content).length).toBeLessThan(40_000);
+  });
+
+  it("counts a transfer's answer against the budget", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"do it"}'), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      // eslint-disable-next-line require-yield
+      runSubagent: async function* () {
+        return "y".repeat(80_000);
+      },
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: SMALL_WINDOW_MODEL,
+      parameters: SMALL_BUDGET_PARAMS,
+      messages: [{ role: "user", content: "go" }],
+      subagents: [{ name: "child", description: "", type: "local" }],
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    expect(chunks.some((c) => c.warning?.includes("context budget"))).toBe(true);
+    const context = channel.seenParams[1]?.messages.at(-1);
+    const text = String(context?.content);
+    expect(text).toContain("…[truncated: the run's context budget is exhausted]");
+    expect(text.length).toBeLessThan(40_000);
+  });
+
+  it("leaves a run with headroom byte-identical", async () => {
+    const payload = "x".repeat(50_000);
+    const channel = toolLoopChannel();
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: payload }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: HUGE_WINDOW_MODEL,
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toBe(payload);
+    expect(chunks.some((c) => c.warning)).toBe(false);
+    const toolMessage = channel.seenParams[1]?.messages.find((m) => m.role === "tool");
+    expect(toolMessage?.content).toBe(payload);
+  });
+
+  it("runs an unregistered model unbudgeted, exactly as before the budget", async () => {
+    const payload = "x".repeat(100_000);
+    const channel = toolLoopChannel();
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: payload }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: "custom/private-model",
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toBe(payload);
+    expect(chunks.some((c) => c.warning)).toBe(false);
+  });
+});

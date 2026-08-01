@@ -413,6 +413,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/llm/documentLimits.ts",
   },
   {
+    // Every other bound is per item or per turn; this is the one that knows the
+    // sum a run may accumulate, derived from the model's context window. The
+    // pattern matches reading `.contextWindow` — a second derivation starts by
+    // reading the window somewhere else, with its own chars-per-token guess.
+    what: "deriving a run's context budget from the model's window",
+    pattern: /\.contextWindow\b/,
+    owner: "src/application/llm/contextBudget.ts",
+  },
+  {
     // The wrapper a model reads around an attachment. A chat replays a stored
     // document by rebuilding it, so a second spelling would make a replayed turn
     // differ from the one that was sent.
