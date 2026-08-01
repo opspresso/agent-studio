@@ -102,6 +102,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Its own job so a deploy-trigger failure reads as exactly that — the image
+  # is already in ECR and rerunning this job alone redeploys without a rebuild.
+  # `needs: release` keeps the ordering the single job had: never point the
+  # GitOps repo at a tag whose image does not exist yet.
+  gitops:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # No OIDC here — the only credential is the app installation token below.
+    permissions:
+      contents: read
+    steps:
       # A repository_dispatch to another repository cannot use GITHUB_TOKEN: it
       # is scoped to the repository running the workflow. This mints a
       # short-lived installation token instead, scoped to argocd-env-demo alone,
