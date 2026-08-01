@@ -2,6 +2,7 @@ import { z } from "zod";
 import { managedMcpUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { MANAGED_NAME } from "@/shared/slug";
 import { managedMcpUnavailable } from "./_unavailable";
 
 /**
@@ -10,7 +11,7 @@ import { managedMcpUnavailable } from "./_unavailable";
  * it is also the container's name; args remain an argv array, never a shell command.
  */
 const bodySchema = z.object({
-  name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  name: z.string().regex(MANAGED_NAME),
   image: z.string().trim().min(1),
   containerPort: z.number().int().min(1).max(65535),
   envRefs: z.array(z.string().trim().min(1)).optional(),

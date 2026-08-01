@@ -30,7 +30,7 @@ const MAX_THREAD_TITLE_LENGTH = 60;
  */
 const THINKING_MESSAGES = ["is thinking…", "is working through it…", "is still on it…"];
 /** Most recent thread turns carried as context; older turns are dropped. */
-const MAX_HISTORY_MESSAGES = 50;
+const MAX_THREAD_HISTORY_MESSAGES = 50;
 /**
  * Message subtypes still worth handling. Subtyped messages are mostly channel
  * bookkeeping (joins, edits, …), but a user's file upload arrives as
@@ -74,7 +74,7 @@ export interface ThreadTurn {
  *
  * Speakers are *not* named here. Labelling needs profile lookups, and doing them
  * from inside this mapping meant resolving everyone in the thread Slack returned
- * — up to ten pages of it — when only the last {@link MAX_HISTORY_MESSAGES}
+ * — up to ten pages of it — when only the last {@link MAX_THREAD_HISTORY_MESSAGES}
  * turns survive. So this records who wrote each turn and
  * {@link withSpeakerLabels} labels whatever is left after the slice.
  */
@@ -415,7 +415,7 @@ export async function handleSlackEvent(
     }
   }
 
-  const rawTurns = threadToTurns(replies, event.ts).slice(-MAX_HISTORY_MESSAGES);
+  const rawTurns = threadToTurns(replies, event.ts).slice(-MAX_THREAD_HISTORY_MESSAGES);
 
   // A DM is an agent thread: it has a native status line and a title. A channel
   // mention has neither, and streaming into one needs the recipient named.

@@ -85,10 +85,11 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
 - `src/shared/` — dependency-free helpers. The bottom of the graph: it imports nothing from
   `@/`.
 
-Composition happens at exactly three wiring sites: `src/lib/container.ts` (repositories, the
+Composition happens at exactly four wiring sites: `src/lib/container.ts` (repositories, the
 domain ports, the four registry-slice singletons, `executionDeps`/`imageDeps`),
-`src/app/api/chats/_deps.ts` (`ChatDeps`), and `src/app/api/slack/events/_lib/`
-(`SlackEventDeps`).
+`src/app/api/chats/_deps.ts` (`ChatDeps`), `src/app/api/slack/events/_lib/`
+(`SlackEventDeps`), and `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
+handler assembly over `executionDeps`).
 
 `tests/architecture.test.ts` enforces all of this with **empty allowlists**. When it fails,
 **fix the import — do not widen the rule.**
@@ -116,6 +117,8 @@ about to make copy number two.
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/application/execution/mcpTools.ts` |
 | How many agents one dispatch may run | `src/application/llm/engine.ts` |
+| Whether a run's trace is sampled | `src/application/execution/traceLifecycle.ts` |
+| The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |
@@ -142,6 +145,7 @@ same rule applies to:
 | User-image caps | `src/domain/llm/imageLimits.ts` |
 | `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
 | Row TTLs | `src/infrastructure/db/ttl.ts` |
+| The UTC day a usage row is keyed by | `utcDay` in `src/shared/date.ts` |
 | What a repo sync did, and what it left to a person | `src/domain/sync/types.ts` |
 | The brand palette and component defaults | `src/app/theme.ts` |
 
@@ -199,9 +203,10 @@ One line each — the linked section is the authority.
   `src/infrastructure/db/keys.ts`.
 - **Never leave a list query unpaginated.** A single Query page caps at 1MB and silently
   truncates. Use `queryAll()`.
-- **A new execution entry point calls `executeProjectStream`** rather than re-encoding the
-  `projectType` dispatch, and opens the run bracket. Three call sites used to answer that
-  question for themselves.
+- **A new execution entry point calls `executeProjectStream`** (or `executeProject` for a
+  collected, non-streaming answer) rather than re-encoding the `projectType` dispatch, and
+  opens the run bracket. Three call sites used to answer that question for themselves, and
+  the two non-streaming routes had already diverged on the image case.
 - **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three

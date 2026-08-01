@@ -12,6 +12,8 @@ export const MAX_SUGGESTED_PROMPTS = 4;
 /** Per-field cap. Slack does not document one; these keep a chip readable. */
 export const MAX_PROMPT_TITLE_LENGTH = 80;
 export const MAX_PROMPT_MESSAGE_LENGTH = 500;
+/** Slack's cap on the agent overview shown above the Messages tab. */
+export const MAX_AGENT_DESCRIPTION_LENGTH = 300;
 
 /** A Slack message as the Web API returns it, narrowed to what a run reads. */
 export interface SlackMessage {

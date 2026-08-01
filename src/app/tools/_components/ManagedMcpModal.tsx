@@ -26,6 +26,7 @@ import {
 import { monoInput } from "@/app/_components/monoInput";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { createManagedMcp } from "../api";
+import { MANAGED_NAME } from "@/shared/slug";
 
 
 export function ManagedMcpModal({
@@ -116,7 +117,7 @@ export function ManagedMcpModal({
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
             placeholder="image-fetch"
-            pattern="[a-z0-9][a-z0-9-]*"
+            pattern={MANAGED_NAME.source}
             required
             description="Also the container's name, so the two stay findable together."
             inputWrapperOrder={["label", "input", "description", "error"]}

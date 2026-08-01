@@ -18,6 +18,7 @@ import {
   SendCommandCommand,
   GetCommandInvocationCommand,
 } from "@aws-sdk/client-ssm";
+import { MANAGED_NAME } from "@/shared/slug";
 import type {
   ManagedWorkload,
   ManagedWorkloadSpec,
@@ -25,7 +26,7 @@ import type {
 } from "@/domain/mcp/provisioner";
 
 /** Container/entry names are slugs, the same shape the registry already allows. */
-const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const NAME = MANAGED_NAME;
 /** `host/path:tag` or `…@sha256:…`. No spaces, quotes, or shell metacharacters. */
 const IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
 /** SSM parameter paths this app is allowed to name. */

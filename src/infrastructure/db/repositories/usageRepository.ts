@@ -16,6 +16,7 @@ import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
+import { utcDay } from "@/shared/date";
 import type { ActorUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
 
 /**
@@ -32,7 +33,7 @@ function eachDate(from: string, to: string): string[] {
   const start = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
   for (let d = start; d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-    dates.push(d.toISOString().slice(0, 10));
+    dates.push(utcDay(d));
   }
   return dates;
 }

@@ -18,6 +18,15 @@ export function isSlug(value: string): boolean {
 /** What a name that is not a slug should say, wherever it is refused. */
 export const SLUG_RULE = "must be a slug (lowercase letters, digits, hyphens)";
 
+/**
+ * The managed-workload name rule: a slug that is also a valid DNS label —
+ * starts alphanumeric, 63 characters at most — because the name is reused as
+ * the Docker container's name and inside an SSM parameter path. Four call
+ * sites (the create route, both provisioners, the console form) each spelled
+ * it out before it had an owner.
+ */
+export const MANAGED_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
 // Normalizes user input to the slug format {@link isSlug} accepts.
 export function toSlug(value: string): string {
   return value

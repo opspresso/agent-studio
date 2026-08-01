@@ -1,13 +1,15 @@
 /** Shared date-range helpers for the usage/trace date pickers. */
 
+import { utcDay } from "@/shared/date";
+
 export interface DateRange {
   from: string;
   to: string;
 }
 
-/** YYYY-MM-DD in UTC. */
+/** YYYY-MM-DD in UTC — the usage rows' own day derivation. */
 export function toISODate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return utcDay(date);
 }
 
 /** A range ending today, spanning `days` days inclusive. */
