@@ -8,7 +8,13 @@ vi.mock("@/infrastructure/a2a/client", () => ({
   sendA2aMessage: sendA2aMessageMock,
 }));
 
-import { executeAgent, executeVersion } from "@/application/execution/runProject";
+import {
+  executeAgent,
+  executeProject,
+  executeProjectStream,
+  executeVersion,
+} from "@/application/execution/runProject";
+import { ValidationError } from "@/application/errors";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
@@ -1558,5 +1564,50 @@ describe("execution tracing policy", () => {
       version: versionFixture({ piiFiltering: false }),
     });
     expect(traced).toHaveLength(1);
+  });
+});
+
+describe("executeProject non-streaming dispatch", () => {
+  it("collects an agent run, images and usage included", async () => {
+    const channel = new FakeChannel([[contentChunk("agent answer"), usageChunk(3, 5)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const run = await executeProject(deps, {
+      project: projectFixture(),
+      version: versionFixture({ piiFiltering: false }),
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(run.content).toBe("agent answer");
+    expect(run.images).toEqual([]);
+    expect(run.usage.inputTokens).toBe(3);
+    expect(run.usage.outputTokens).toBe(5);
+  });
+
+  it("runs an llm project through the single-shot path", async () => {
+    const channel = new FakeChannel([[contentChunk("plain answer"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const run = await executeProject(deps, {
+      project: { ...projectFixture(), projectType: "llm" },
+      version: versionFixture({ piiFiltering: false }),
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(run.content).toBe("plain answer");
+    expect(run.images).toEqual([]);
+  });
+
+  it("refuses an image project instead of running it as text", async () => {
+    const channel = new FakeChannel([]);
+    const { deps } = executionDepsFixture(channel);
+    const input = {
+      project: { ...projectFixture(), projectType: "image" as const },
+      version: versionFixture({ piiFiltering: false }),
+      messages: [],
+    };
+
+    await expect(executeProject(deps, input)).rejects.toBeInstanceOf(ValidationError);
+    expect(() => executeProjectStream(deps, input)).toThrow(ValidationError);
   });
 });

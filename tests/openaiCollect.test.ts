@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  collectRun,
-  toChatCompletion,
-  toChatCompletionChunks,
-} from "@/app/api/projects/_lib/openai";
+import { toChatCompletion, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
+import { collectRun } from "@/application/execution/runProject";
 import type { EngineChunk } from "@/domain/llm/types";
 
 async function* stream(chunks: EngineChunk[]): AsyncGenerator<EngineChunk> {
