@@ -22,6 +22,16 @@ export function formatDateTime(iso: string): string {
 }
 
 /**
+ * YYYY-MM-DD in UTC — the day a usage row is keyed by. The writer (the usage
+ * repository's atomic ADD) and the readers (the dashboard's date pickers) must
+ * resolve the same instant to the same day, so both sides import it from here
+ * rather than each spelling the truncation out.
+ */
+export function utcDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * A run's wall clock for a system prompt — `2026-07-30 (Thursday) 06:12 UTC`.
  *
  * UTC, and labelled as such. A model that knows the zone can convert; an

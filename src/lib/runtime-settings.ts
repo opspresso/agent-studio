@@ -18,31 +18,16 @@ import type { AppSettings } from "@/domain/settings/types";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
-import { config } from "./config";
+import { config, positiveIntEnv } from "./config";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { log } from "@/shared/logger";
 
 const DEFAULT_TTL_MS = 5_000;
 
-/**
- * `SETTINGS_CACHE_TTL_MS` override. A non-positive or unparseable value would
- * either disable caching entirely or (negative) make every read a cache hit
- * forever, so anything outside the domain falls back to the default.
- */
-function parseTtlMs(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === "") {
-    return DEFAULT_TTL_MS;
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    log.warn("settings", `ignoring invalid SETTINGS_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`);
-    return DEFAULT_TTL_MS;
-  }
-  return value;
-}
-
-const TTL_MS = parseTtlMs(process.env.SETTINGS_CACHE_TTL_MS);
+// A non-positive TTL would either disable caching entirely or (negative) make
+// every read a cache hit forever, so the floor is 1ms.
+const TTL_MS = positiveIntEnv("SETTINGS_CACHE_TTL_MS", DEFAULT_TTL_MS, 1);
 
 let cache: { value: AppSettings | null; fetchedAt: number } | undefined;
 

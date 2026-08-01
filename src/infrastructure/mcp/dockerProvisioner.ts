@@ -12,6 +12,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { MANAGED_NAME } from "@/shared/slug";
 import type {
   ManagedWorkload,
   ManagedWorkloadSpec,
@@ -20,7 +21,7 @@ import type {
 
 const run = promisify(execFile);
 
-const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const NAME = MANAGED_NAME;
 const IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
 const PORT_BASE = 3100;
 

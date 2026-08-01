@@ -207,6 +207,15 @@ const RULES: Rule[] = [
     exempt: (relPath) => APP_WIRING_SITES.some((site) => relPath.startsWith(site)),
     allow: [],
   },
+  {
+    // App chrome (the header the root layout mounts, the sign-in button) is
+    // presentation like `app`, but lived outside every rule above — the one
+    // slice of the tree where an adapter import would have passed unnoticed.
+    name: "components imports no infrastructure or application",
+    from: "components",
+    banned: (spec) => ["infrastructure", "application"].includes(targetLayer(spec) ?? ""),
+    allow: [],
+  },
 ];
 
 /** `relative()` yields OS separators; the allowlists are written with `/`. */
@@ -376,6 +385,14 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // Ten copies, and the door they all went through checked nothing.
     what: "the entry name rule",
     pattern: /\/\^\[a-z0-9-\]\+\$\//,
+    owner: "src/shared/slug.ts",
+  },
+  {
+    // The stricter sibling: a slug that must also be a DNS label, because it
+    // names a Docker container and an SSM parameter path. The create route,
+    // both provisioners and the console form each spelled it out.
+    what: "the managed-workload name rule",
+    pattern: /\[a-z0-9\]\[a-z0-9-\]\{0,62\}/,
     owner: "src/shared/slug.ts",
   },
   {

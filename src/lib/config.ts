@@ -55,14 +55,18 @@ export function assertAccessControlConfig(): void {
  * A non-negative integer setting, falling back to `fallback` on anything else.
  * A misconfigured value degrades to the default with a warning rather than
  * silently disabling a limit — `Number("abc") || 0` would read as "off".
+ *
+ * Exported for the one other numeric env read (`runtime-settings`' cache TTL),
+ * which once kept a near-identical parser of its own; `min` is for values
+ * where zero is not a configuration but an off-switch nothing intends.
  */
-function positiveIntEnv(name: string, fallback: number): number {
+export function positiveIntEnv(name: string, fallback: number, min = 0): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") {
     return fallback;
   }
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0) {
+  if (!Number.isInteger(value) || value < min) {
     log.warn("config", `ignoring invalid ${name}="${raw}"; using ${fallback}`);
     return fallback;
   }

@@ -6,14 +6,12 @@ import type { Project, SlackIntegration } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { SlackSuggestedPrompt } from "@/domain/slack/types";
 import {
+  MAX_AGENT_DESCRIPTION_LENGTH,
   MAX_PROMPT_MESSAGE_LENGTH,
   MAX_PROMPT_TITLE_LENGTH,
   MAX_SUGGESTED_PROMPTS,
 } from "@/domain/slack/types";
 import { nextUpdatedAt } from "@/application/project/timestamps";
-
-/** Slack's cap on the agent overview shown above the Messages tab. */
-const MAX_AGENT_DESCRIPTION_LENGTH = 300;
 
 export interface ProjectSlackView {
   enabled: boolean;
