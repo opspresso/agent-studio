@@ -1,52 +1,125 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
 import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
-import { Composer, GeneratedImage, LiveAssistant, MessageView, liveImageSrc } from "./parts";
+import type { ChatMessageImage } from "@/domain/chat/types";
+import { Composer, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 import { Alert, Badge, Box, Flex, Group, ScrollArea, Stack, Text } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
 
-export function ChatThread({ chatId }: { chatId: string }) {
-  const [chat, setChat] = useState<Chat | null>(null);
+/** Streamed first turn handed over from NewChatPanel so the thread paints
+ * without a loading gap; the persisted copy replaces it in one commit. */
+export interface ThreadHandoff {
+  chat: Chat;
+  pendingUser: {
+    content: string;
+    attachments: Attachment[];
+    documents: DocumentAttachment[];
+  };
+  live: LiveTurn;
+}
+
+export function ChatThread({ chatId, initial }: { chatId: string; initial?: ThreadHandoff }) {
+  const [chat, setChat] = useState<Chat | null>(initial?.chat ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingUser, setPendingUser] = useState<{
     content: string;
     attachments: Attachment[];
     documents: DocumentAttachment[];
-  } | null>(null);
-  const [live, setLive] = useState<LiveTurn | null>(null);
-  // Fallback when image persistence is unconfigured (no S3 bucket): keep the
-  // images streamed this session and pin them to the message they arrived with.
-  const [imagesBySeq, setImagesBySeq] = useState<Record<number, LiveImage[]>>({});
-  const [status, setStatus] = useState<"loading" | "ready" | "not-found">("loading");
+  } | null>(initial?.pendingUser ?? null);
+  const [live, setLive] = useState<LiveTurn | null>(initial?.live ?? null);
+  // Images already on screen this session, keyed by the message they persisted
+  // to. Substituted for that message's stored copies at render, because the
+  // stored URL points at an object the browser has never fetched — swapping the
+  // src would blank the image for a network round-trip, which is the flicker
+  // this exists to prevent. Doubles as the only copy when storage is
+  // unconfigured and the stored message carries no images at all.
+  const [sessionImagesBySeq, setSessionImagesBySeq] = useState<
+    Record<number, ChatMessageImage[]>
+  >({});
+  const [status, setStatus] = useState<"loading" | "ready" | "not-found">(
+    initial ? "ready" : "loading",
+  );
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async (): Promise<ChatMessage[] | null> => {
+  // Replace whatever is on screen with the persisted thread in a single
+  // commit: fetch first, then batch all state updates, so the streamed bubble
+  // and the pending user message never disappear before their persisted
+  // replacements are ready. On a failed fetch the screen is left untouched.
+  const syncFromServer = useCallback(async (): Promise<ChatMessage[] | null> => {
     const res = await fetch(`/api/chats/${chatId}`);
     if (res.status === 404) {
       setStatus("not-found");
       return null;
     }
-    if (res.ok) {
-      const data = (await res.json()) as { chat?: Chat; messages?: ChatMessage[] };
-      setChat(data.chat ?? null);
-      setMessages(data.messages ?? []);
-      setStatus("ready");
-      return data.messages ?? [];
+    if (!res.ok) {
+      return null;
     }
-    return null;
+    const data = (await res.json()) as { chat?: Chat; messages?: ChatMessage[] };
+    setChat(data.chat ?? null);
+    setMessages(data.messages ?? []);
+    setLive(null);
+    setPendingUser(null);
+    setStatus("ready");
+    return data.messages ?? [];
   }, [chatId]);
 
+  // Sync, then pin the turn's images — the user's attachments to the user
+  // message, the generated ones to the assistant message — so the persisted
+  // thread keeps rendering the bytes already on screen.
+  const syncAndPin = useCallback(
+    async (streamedImages: LiveImage[], attachments: Attachment[]) => {
+      const fresh = await syncFromServer();
+      if (!fresh) {
+        return fresh;
+      }
+      const pinned: Record<number, ChatMessageImage[]> = {};
+      if (attachments.length > 0) {
+        const lastUser = [...fresh].reverse().find((message) => message.role === "user");
+        if (lastUser) {
+          pinned[lastUser.seq] = attachments.map((attachment) => ({
+            url: attachmentSrc(attachment),
+          }));
+        }
+      }
+      if (streamedImages.length > 0) {
+        const lastAssistant = [...fresh]
+          .reverse()
+          .find((message) => message.role === "assistant");
+        if (lastAssistant) {
+          pinned[lastAssistant.seq] = streamedImages.map((image) =>
+            image.prompt === undefined
+              ? { url: liveImageSrc(image) }
+              : { url: liveImageSrc(image), prompt: image.prompt },
+          );
+        }
+      }
+      if (Object.keys(pinned).length > 0) {
+        setSessionImagesBySeq((prev) => ({ ...prev, ...pinned }));
+      }
+      return fresh;
+    },
+    [syncFromServer],
+  );
+
+  // Consumed once: a later re-sync (e.g. a chatId change) must not pin the
+  // handed-over first turn's images onto another thread's messages.
+  const handoff = useRef(
+    initial ? { images: initial.live.images, attachments: initial.pendingUser.attachments } : null,
+  );
+
   useEffect(() => {
-    void load();
-  }, [load]);
+    const carried = handoff.current;
+    handoff.current = null;
+    void syncAndPin(carried?.images ?? [], carried?.attachments ?? []);
+  }, [syncAndPin]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -86,16 +159,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
     } catch (streamError) {
       setError(streamError instanceof Error ? streamError.message : "stream error");
     } finally {
-      setLive(null);
-      setPendingUser(null);
       setSending(false);
-      const fresh = await load();
-      const lastMessage = fresh?.[fresh.length - 1];
-      const persisted =
-        lastMessage?.role === "assistant" && (lastMessage.images?.length ?? 0) > 0;
-      if (streamedImages.length > 0 && lastMessage !== undefined && !persisted) {
-        setImagesBySeq((prev) => ({ ...prev, [lastMessage.seq]: streamedImages }));
-      }
+      await syncAndPin(streamedImages, attachments);
       refreshChats();
     }
   }
@@ -131,19 +196,12 @@ export function ChatThread({ chatId }: { chatId: string }) {
               Loading…
             </Text>
           )}
-          {messages.map((message) => (
-            <Fragment key={`${message.seq}`}>
-              <MessageView message={message} />
-              {(imagesBySeq[message.seq] ?? []).map((image, index) => (
-                <Group key={`image-${message.seq}-${index}`} justify="flex-start">
-                  <GeneratedImage
-                    src={liveImageSrc(image)}
-                    alt={image.prompt ?? "Generated image"}
-                  />
-                </Group>
-              ))}
-            </Fragment>
-          ))}
+          {messages.map((message) => {
+            const pinned = sessionImagesBySeq[message.seq];
+            const shown =
+              pinned && message.role !== "tool" ? { ...message, images: pinned } : message;
+            return <MessageView key={`${message.seq}`} message={shown} />;
+          })}
           {pendingUser !== null && (
             <MessageView
               message={{

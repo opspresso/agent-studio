@@ -234,6 +234,10 @@ export const chatRepository: ChatRepository = {
           },
           ScanIndexForward: true,
           ExclusiveStartKey: lastKey,
+          // The client refetches this list the moment a stream finishes; an
+          // eventually-consistent read can miss the just-persisted assistant
+          // message and make the answer vanish from the thread.
+          ConsistentRead: true,
         }),
       );
       for (const item of notExpired(res.Items ?? [], Date.now())) {

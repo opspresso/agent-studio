@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
 import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
-import { EMPTY_TURN, type AgentProject, type LiveTurn } from "../_lib/types";
+import { EMPTY_TURN, type AgentProject, type Chat, type LiveTurn } from "../_lib/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import { ChatThread } from "./ChatThread";
 import { LiveAssistant, MessageView } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 import {
@@ -25,7 +25,6 @@ import {
 import { IconSend } from "@tabler/icons-react";
 
 export function NewChatPanel() {
-  const router = useRouter();
   const [projects, setProjects] = useState<AgentProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -42,6 +41,12 @@ export function NewChatPanel() {
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The created chat, captured from the stream's envelope chunk. Once the
+  // first turn finishes, the panel renders ChatThread in place instead of
+  // navigating — a route change here would unmount the streamed answer and
+  // flash a loading screen, which reads as a page reload.
+  const [handoffChat, setHandoffChat] = useState<Chat | null>(null);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     async function loadProjects() {
@@ -75,7 +80,6 @@ export function NewChatPanel() {
     setError(null);
     setSentMessage({ content: trimmed, attachments, documents });
     setLive(EMPTY_TURN);
-    let newChatId: string | undefined;
     try {
       const res = await fetch("/api/chats", {
         method: "POST",
@@ -96,7 +100,10 @@ export function NewChatPanel() {
       }
       for await (const chunk of readSse(res)) {
         if (chunk.chat) {
-          newChatId = chunk.chat.chatId;
+          setHandoffChat(chunk.chat);
+          // Shallow URL swap only — the panel keeps rendering the stream. A
+          // hard refresh from here serves /chats/[chatId] as usual.
+          window.history.replaceState(null, "", `/chats/${chunk.chat.chatId}`);
           continue;
         }
         if (chunk.error) {
@@ -110,10 +117,17 @@ export function NewChatPanel() {
     } finally {
       setStarting(false);
       refreshChats();
-      if (newChatId) {
-        router.push(`/chats/${newChatId}`);
-      }
+      setDone(true);
     }
+  }
+
+  if (done && handoffChat && sentMessage) {
+    return (
+      <ChatThread
+        chatId={handoffChat.chatId}
+        initial={{ chat: handoffChat, pendingUser: sentMessage, live: live ?? EMPTY_TURN }}
+      />
+    );
   }
 
   if (projectsLoaded && projects.length === 0) {
