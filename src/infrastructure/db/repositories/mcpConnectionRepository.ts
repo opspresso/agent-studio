@@ -6,11 +6,24 @@ import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connec
 
 const ENTITY_TYPE = "MCPCONNECTION";
 
+/**
+ * The domain's ISO `expiresAt` is parked under this name for the same reason
+ * `authAdapter` parks Better Auth's: the `expiresAt` attribute is the table's
+ * unix-seconds TTL, and DynamoDB silently ignores a string there. Nothing was
+ * ever deleted by the collision — a connection must outlive its token anyway —
+ * but a numeric write under that name would silently enrol the row in the TTL
+ * sweep. Legacy rows still carry the string under `expiresAt`; reads fall back
+ * to it and every write clears it.
+ */
+const EXPIRES_AT_ISO = "expiresAtIso";
+
 function toItem(connection: McpConnection): Record<string, unknown> {
+  const { expiresAt, ...rest } = connection;
   return {
     ...keys.mcpConnection(connection.projectName, connection.serverName),
     entityType: ENTITY_TYPE,
-    ...connection,
+    ...rest,
+    ...(expiresAt === undefined ? {} : { [EXPIRES_AT_ISO]: expiresAt }),
   };
 }
 
@@ -31,7 +44,7 @@ function fromItem(item: Record<string, unknown>): McpConnection {
     scopes: (item.scopes as string[] | undefined) ?? [],
     accessToken: optionalString(item.accessToken),
     refreshToken: optionalString(item.refreshToken),
-    expiresAt: optionalString(item.expiresAt),
+    expiresAt: optionalString(item[EXPIRES_AT_ISO] ?? item.expiresAt),
     status: item.status as McpConnection["status"],
     connectedBy: optionalString(item.connectedBy),
     connectedAt: optionalString(item.connectedAt),
@@ -86,7 +99,10 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     // above is the condition that decides a race, and a stored NULL would
     // satisfy `attribute_exists` while carrying no token.
     const sets = ["#status = :status", "updatedAt = :updatedAt"];
-    const removes: string[] = [];
+    // Legacy attribute cleanup: rows written before the rename hold the ISO
+    // string under the TTL attribute name, which would shadow a later REMOVE
+    // of `expiresAtIso` through the read fallback.
+    const removes: string[] = ["expiresAt"];
     const values: Record<string, unknown> = {
       ...expected.values,
       ":status": next.status,
@@ -95,7 +111,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     for (const [name, value] of [
       ["accessToken", next.accessToken],
       ["refreshToken", next.refreshToken],
-      ["expiresAt", next.expiresAt],
+      [EXPIRES_AT_ISO, next.expiresAt],
     ] as const) {
       if (value === undefined) {
         removes.push(name);
