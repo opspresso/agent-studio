@@ -7,8 +7,8 @@
 import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
-import { isTopLevelChunk, messageText } from "@/domain/llm/types";
-import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+import { chunkTermination, isTopLevelChunk, messageText } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineChunk, RunTerminationReason } from "@/domain/llm/types";
 import {
   executeProjectStream,
   runStrategyFor,
@@ -111,6 +111,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
         signal: controller.signal,
       });
       let isFirstChunk = true;
+      let termination: RunTerminationReason | undefined;
       for await (const chunk of source) {
         if (controller.signal.aborted) {
           this.publishStatus(eventBus, taskId, contextId, "canceled", true);
@@ -119,6 +120,9 @@ export class ProjectA2aExecutor implements AgentExecutor {
         if (chunk.error) {
           this.publishStatus(eventBus, taskId, contextId, "failed", true, chunk.error);
           return;
+        }
+        if (isTopLevelChunk(chunk)) {
+          termination = chunkTermination(chunk) ?? termination;
         }
         const parts = this.chunkParts(chunk);
         if (parts.length === 0) {
@@ -136,6 +140,19 @@ export class ProjectA2aExecutor implements AgentExecutor {
           append: !isFirstChunk,
         });
         isFirstChunk = false;
+      }
+      // A run its turn guard ended still completes the task — the partial
+      // answer was delivered — but the caller is told why it stopped rather
+      // than being left to read a truncated artifact as the whole answer.
+      if (termination === "turn-limit") {
+        await this.publishTerminal(
+          eventBus,
+          taskId,
+          contextId,
+          controller,
+          "The run stopped at its turn limit before the model finished answering.",
+        );
+        return;
       }
     } catch (error) {
       // An abort here means the cancel watcher fired mid-run — report canceled.
@@ -165,6 +182,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
     taskId: string,
     contextId: string,
     controller: AbortController,
+    message?: string,
   ): Promise<void> {
     if (!controller.signal.aborted) {
       let current: Task | undefined;
@@ -174,7 +192,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
         log.error("a2a", "terminal cancel check failed", error);
       }
       if (current?.status.state !== "canceled") {
-        this.publishStatus(eventBus, taskId, contextId, "completed", true);
+        this.publishStatus(eventBus, taskId, contextId, "completed", true, message);
         return;
       }
     }
@@ -249,7 +267,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
     contextId: string,
     state: TaskState,
     final: boolean,
-    errorMessage?: string,
+    message?: string,
   ): void {
     eventBus.publish({
       kind: "status-update",
@@ -259,13 +277,13 @@ export class ProjectA2aExecutor implements AgentExecutor {
       status: {
         state,
         timestamp: new Date().toISOString(),
-        ...(errorMessage
+        ...(message
           ? {
               message: {
                 kind: "message",
                 messageId: crypto.randomUUID(),
                 role: "agent",
-                parts: [{ kind: "text", text: errorMessage }],
+                parts: [{ kind: "text", text: message }],
                 taskId,
                 contextId,
               },

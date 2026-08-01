@@ -43,6 +43,21 @@ export interface ChatMessageInput {
   reasoning_content?: string;
 }
 
+/**
+ * Why a run's stream ended. The four endings are distinct values, not
+ * inferences: a consumer that reasons "no `done` seen → stopped at a limit"
+ * misreads a cancellation and a mid-stream error as a length stop, which is
+ * exactly the bug this type exists to make un-writable.
+ *
+ * - `completed` — the model finished on its own (`done: true` on the wire).
+ * - `turn-limit` — the turn guard ended the loop (`finishReason` on the wire).
+ * - `error` — the run failed mid-stream (`error` on the wire).
+ * - `cancelled` — never a chunk: a cancelled generator throws or is returned,
+ *   so only the consumer's own signal can say it. The value exists so code
+ *   classifying a run's ending has one vocabulary for all four.
+ */
+export type RunTerminationReason = "completed" | "turn-limit" | "cancelled" | "error";
+
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
   /** Internal correlation id for a traced subagent execution. */
@@ -91,6 +106,14 @@ export interface EngineChunk {
   warning?: string;
   error?: string;
   done?: boolean;
+  /**
+   * Why the run ended, when `done` cannot say it. Normal completion stays
+   * `done: true` — byte-identical to what every existing consumer reads — and
+   * an ending that is *not* a normal completion carries its reason here
+   * instead, so a consumer written before this field behaves exactly as it did.
+   * Read through {@link chunkTermination}, never by field presence.
+   */
+  finishReason?: RunTerminationReason;
 }
 
 /**
@@ -103,6 +126,30 @@ export interface EngineChunk {
  */
 export function isTopLevelChunk(chunk: { author?: string }): boolean {
   return chunk.author === undefined;
+}
+
+/**
+ * The termination a chunk announces, or undefined for a chunk that is not a
+ * run's ending. The single owned reader of the `done` / `finishReason` /
+ * `error` fields — like {@link isTopLevelChunk}, consumers call this instead
+ * of re-deriving the mapping, because the re-derivation every consumer used to
+ * make ("no `done` → cut off at a limit") misreads a cancellation and a
+ * mid-stream error as a length stop.
+ *
+ * Only a top-level chunk's termination speaks for the stream. An authored one
+ * is informational: a child's ending is absorbed into the parent's tool result,
+ * and the end of the child's stream is already said by `authorDone`.
+ */
+export function chunkTermination(
+  chunk: Pick<EngineChunk, "done" | "finishReason" | "error">,
+): RunTerminationReason | undefined {
+  if (chunk.error !== undefined) {
+    return "error";
+  }
+  if (chunk.finishReason !== undefined) {
+    return chunk.finishReason;
+  }
+  return chunk.done ? "completed" : undefined;
 }
 
 /**

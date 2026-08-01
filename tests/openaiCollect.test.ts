@@ -159,11 +159,40 @@ describe("toChatCompletionChunks finish_reason", () => {
     expect(finishReasons(frames)).toEqual(["stop"]);
   });
 
-  it("reports length when the agent loop ended at its turn guard (no done chunk)", async () => {
-    // engine.runAgent returns without `done` when the turn budget runs out; an
-    // OpenAI client would otherwise see the stream just cut off.
-    const frames = await collectFrames([{ delta: { content: "partial" } }]);
+  it("reports length when the turn guard announced the run's ending", async () => {
+    // The guard says so explicitly now; `length` is read from the announced
+    // reason, never inferred from the absence of `done`.
+    const frames = await collectFrames([
+      { delta: { content: "partial" } },
+      { warning: "The run stopped at its turn limit (2 turns) before the model finished answering." },
+      { finishReason: "turn-limit" },
+    ]);
     expect(finishReasons(frames)).toEqual(["length"]);
+  });
+
+  it("fails a stream that ends without announcing a termination", async () => {
+    // The inference this used to make ("no done → length") reported a
+    // cancellation and a mid-stream error as a length stop. An unannounced
+    // ending is a defect, not a length stop.
+    await expect(async () => {
+      for await (const _frame of toChatCompletionChunks(
+        stream([{ delta: { content: "partial" } }]),
+        "m",
+      )) {
+        void _frame;
+      }
+    }).rejects.toThrow("without announcing a termination");
+  });
+
+  it("does not read a child's termination as the stream's", async () => {
+    // A child that hit its own turn limit is absorbed into the parent's tool
+    // result; only the top-level termination speaks for the stream.
+    const frames = await collectFrames([
+      { author: "child", finishReason: "turn-limit" },
+      { delta: { content: "answered anyway" } },
+      { done: true },
+    ]);
+    expect(finishReasons(frames)).toEqual(["stop"]);
   });
 
   it("emits exactly one terminal frame", async () => {
@@ -173,5 +202,31 @@ describe("toChatCompletionChunks finish_reason", () => {
       { done: true },
     ]);
     expect(finishReasons(frames)).toHaveLength(1);
+  });
+});
+
+describe("collected termination", () => {
+  it("reports length on a collected run the turn guard ended", async () => {
+    const result = await collectRun(
+      stream([{ delta: { content: "partial" } }, { finishReason: "turn-limit" }]),
+      "m",
+    );
+    expect(result.termination).toBe("turn-limit");
+    const completion = toChatCompletion(result);
+    expect((completion.choices as Array<{ finish_reason: unknown }>)[0]?.finish_reason).toBe(
+      "length",
+    );
+  });
+
+  it("reports stop on a collected run that completed", async () => {
+    const result = await collectRun(
+      stream([{ delta: { content: "full answer" } }, { done: true }]),
+      "m",
+    );
+    expect(result.termination).toBe("completed");
+    const completion = toChatCompletion(result);
+    expect((completion.choices as Array<{ finish_reason: unknown }>)[0]?.finish_reason).toBe(
+      "stop",
+    );
   });
 });

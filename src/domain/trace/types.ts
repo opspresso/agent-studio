@@ -1,6 +1,11 @@
 import type { RunActor } from "@/domain/execution/actor";
 
-export type TraceStatus = "completed" | "failed" | "cancelled";
+/**
+ * `turn-limit` is distinct from `completed` because a run the turn guard ended
+ * produced no final answer — recording it as completed made the one run worth
+ * investigating read as normal on the traces page.
+ */
+export type TraceStatus = "completed" | "turn-limit" | "failed" | "cancelled";
 export type TraceSpanKind = "model" | "tool" | "subagent";
 
 export interface TraceSpan {

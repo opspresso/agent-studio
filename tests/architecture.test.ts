@@ -369,6 +369,18 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/app/_lib/authorPaths.ts",
   },
   {
+    // Every stream consumer used to reason "no `done` seen → cut off at a
+    // limit", which misreports a cancellation and a mid-stream error as a
+    // length stop. `chunkTermination` owns the done / finishReason / error →
+    // reason mapping; a consumer reads the reason through it, never the raw
+    // fields. The engine is exempt as the producer: it writes the fields and
+    // its pass-through keep-list mentions them without deciding anything.
+    what: "deriving why a run ended from its chunks",
+    pattern: /chunk\.done\b|\.finishReason\b/,
+    owner: "src/domain/llm/types.ts",
+    alsoAllowedUnder: ["src/application/llm/engine.ts"],
+  },
+  {
     what: "the 401 response body",
     pattern: /error: "Unauthorized"/,
     owner: "src/shared/unauthorized.ts",

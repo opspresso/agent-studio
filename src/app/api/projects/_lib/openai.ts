@@ -1,14 +1,18 @@
-import { isTopLevelChunk } from "@/domain/llm/types";
-import type { EngineChunk, RunResult } from "@/domain/llm/types";
+import { chunkTermination, isTopLevelChunk } from "@/domain/llm/types";
+import type { EngineChunk, RunResult, RunTerminationReason } from "@/domain/llm/types";
 import type { RunImage } from "@/application/execution/runProject";
 
 function newChatId(): string {
   return `chatcmpl-${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
-/** Wrap a single-shot result as an OpenAI ChatCompletion object. */
+/**
+ * Wrap a single-shot result as an OpenAI ChatCompletion object. A run that
+ * ended at its turn limit reports `length` — OpenAI's value for "stopped at a
+ * limit" — and every other collected run finished on its own.
+ */
 export function toChatCompletion(
-  result: RunResult & { images?: RunImage[] },
+  result: RunResult & { images?: RunImage[]; termination?: RunTerminationReason },
 ): Record<string, unknown> {
   return {
     id: newChatId(),
@@ -16,7 +20,11 @@ export function toChatCompletion(
     created: Math.floor(Date.now() / 1000),
     model: result.model,
     choices: [
-      { index: 0, message: { role: "assistant", content: result.content }, finish_reason: "stop" },
+      {
+        index: 0,
+        message: { role: "assistant", content: result.content },
+        finish_reason: result.termination === "turn-limit" ? "length" : "stop",
+      },
     ],
     usage: {
       prompt_tokens: result.usage.inputTokens,
@@ -32,11 +40,13 @@ export function toChatCompletion(
  * Only top-level content reaches the OpenAI client; nested subagent chunks are
  * internal to the agent loop and hidden here.
  *
- * Every stream ends with exactly one finish_reason chunk. `done` means the
- * model stopped on its own → `stop`. An agent loop that exhausts its turn
- * budget ends without `done` (see the turn guard in engine.runAgent) → `length`,
- * the OpenAI signal for "stopped at a limit". Without this an OpenAI client
- * would see the stream simply cut off.
+ * Every stream ends with exactly one finish_reason chunk, read from the
+ * termination the engine announces (`chunkTermination`): a normal completion is
+ * `stop`, a run ended by its turn guard is `length` — the OpenAI signal for
+ * "stopped at a limit". The reason used to be inferred from the *absence* of
+ * `done`, which misreported a cancellation and a mid-stream error as `length`;
+ * a stream that ends without announcing anything is now a defect and fails the
+ * request rather than being dressed up as a length stop.
  */
 export async function* toChatCompletionChunks(
   source: AsyncGenerator<EngineChunk>,
@@ -74,12 +84,16 @@ export async function* toChatCompletionChunks(
       sentRole = true;
       yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
     }
-    if (chunk.done) {
+    const termination = chunkTermination(chunk);
+    if (termination === "completed") {
       finished = true;
       yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] };
+    } else if (termination === "turn-limit") {
+      finished = true;
+      yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "length" }] };
     }
   }
   if (!finished) {
-    yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "length" }] };
+    throw new Error("run ended without announcing a termination reason");
   }
 }

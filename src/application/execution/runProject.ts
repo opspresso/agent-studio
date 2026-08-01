@@ -8,8 +8,8 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import { isTopLevelChunk } from "@/domain/llm/types";
-import type { EngineChunk, RunResult, UsageInfo } from "@/domain/llm/types";
+import { chunkTermination, isTopLevelChunk } from "@/domain/llm/types";
+import type { EngineChunk, RunResult, RunTerminationReason, UsageInfo } from "@/domain/llm/types";
 import { ValidationError } from "@/application/errors";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
@@ -200,10 +200,14 @@ export interface RunImage {
 export async function collectRun(
   source: AsyncGenerator<EngineChunk>,
   model: string,
-): Promise<RunResult & { images: RunImage[] }> {
+): Promise<RunResult & { images: RunImage[]; termination?: RunTerminationReason }> {
   let content = "";
   const images: RunImage[] = [];
   const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  // Why the run ended, as the engine announced it. Only the top level speaks
+  // for the stream: an authored termination is a child's, already absorbed
+  // into the parent's tool result.
+  let termination: RunTerminationReason | undefined;
   for await (const chunk of source) {
     if (chunk.error) {
       // Same as the streaming path: a subagent failure is a tool error the
@@ -212,6 +216,9 @@ export async function collectRun(
         throw new Error(chunk.error);
       }
       continue;
+    }
+    if (isTopLevelChunk(chunk)) {
+      termination = chunkTermination(chunk) ?? termination;
     }
     if (isTopLevelChunk(chunk) && chunk.delta?.content) {
       content += chunk.delta.content;
@@ -229,7 +236,7 @@ export async function collectRun(
       usage.costUsd += chunk.usage.costUsd;
     }
   }
-  return { content, model, usage, images };
+  return { content, model, usage, images, ...(termination ? { termination } : {}) };
 }
 
 /**
@@ -242,7 +249,7 @@ export async function collectRun(
 export async function executeProject(
   deps: ExecutionDeps,
   input: ExecuteProjectInput,
-): Promise<RunResult & { images: RunImage[] }> {
+): Promise<RunResult & { images: RunImage[]; termination?: RunTerminationReason }> {
   if (runStrategyFor(input.project) === "image") {
     throw imageRunRefusal(input.project.name);
   }
@@ -266,7 +273,9 @@ export async function executeProject(
     ...(input.actor ? { actor: input.actor } : {}),
     signal: input.signal,
   });
-  return { ...result, images: [] };
+  // A single-shot completion that returned is a normal ending by construction —
+  // its failures throw rather than ending the stream early.
+  return { ...result, images: [], termination: "completed" };
 }
 
 // --- Agent execution --------------------------------------------------------

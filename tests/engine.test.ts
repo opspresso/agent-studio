@@ -223,6 +223,11 @@ describe("runAgent tool loop", () => {
     // turn 0 and turn 1 run; turn 2 hits the guard and returns with no answer.
     expect(recorded).toHaveLength(2);
     expect(chunks.some((c) => c.done)).toBe(false);
+    // The guard is not silent: the user is told why there is no answer, and
+    // consumers are told why the stream ended instead of inferring it from the
+    // absence of `done`.
+    expect(chunks.some((c) => c.warning?.includes("turn limit (2 turns)"))).toBe(true);
+    expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
   });
 
   it("rejects a transfer when fewer than two turns remain", async () => {

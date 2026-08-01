@@ -124,6 +124,7 @@ about to make copy number two.
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
+| Deriving why a run ended from its chunks | `chunkTermination` in `src/domain/llm/types.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |
 | Writing to the console | `src/shared/logger.ts` |
 | What wraps a top-level run | `src/application/execution/runBracket.ts` |
