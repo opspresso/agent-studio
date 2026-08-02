@@ -63,6 +63,28 @@ src/
 - Route handlers and pages must not import `infrastructure/` directly — only through a
   wiring site.
 
+```mermaid
+flowchart TB
+  app["app<br/>pages · API route handlers"]
+  application["application<br/>use cases · LLM engine · execution facade"]
+  domain["domain<br/>entities · repository ports — pure TS"]
+  infrastructure["infrastructure<br/>DynamoDB · LLM channel · MCP · Slack · A2A · net · crypto"]
+  lib["lib<br/>composition root · auth/session · runtime settings"]
+  shared["shared<br/>dependency-free helpers — imports nothing from @/"]
+
+  app --> application
+  application --> domain
+  infrastructure --> domain
+  infrastructure --> lib
+  app -->|"only through the wiring sites<br/>container.ts · chats _deps.ts · slack events _lib · per-request A2A assembly"| lib
+  lib -->|"wiring modules only"| infrastructure
+  application -.->|"pure leaves only — runMetrics"| lib
+  app --> shared
+  application --> shared
+  infrastructure --> shared
+  lib --> shared
+```
+
 ### Composition, in a few deliberate places
 
 Composition is distributed rather than centralised in one file, because the three execution
@@ -181,6 +203,57 @@ records usage. To trace any request, start there.
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
 | Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `executeProjectStream` (bound in `container.ts` as `triggerRunnerDeps.run`) |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `executeProjectStream` (same `triggerRunnerDeps.run`) |
+
+```mermaid
+flowchart LR
+  subgraph surfaces["Eight entry points"]
+    predict["predict"]
+    cc["chat/completions"]
+    agentsse["agent SSE"]
+    chat["chat messages"]
+    slack["Slack events"]
+    a2a["A2A JSON-RPC"]
+    webhook["webhook trigger"]
+    schedule["schedule scan"]
+  end
+
+  facade["runProject facades<br/>executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → tool loop, llm → single-shot,<br/>image → refused here"]
+  imageuc["generateImage use case<br/>image projects, branched before the facade"]
+  bracket["run bracket — openRun<br/>1. daily cost guard, fails open<br/>2. per-caller concurrency slots, fail closed<br/>3. in-flight metric + correlation id"]
+  resolve["resolve the version's bindings<br/>skills · MCP sessions · subagents<br/>an unusable binding becomes a warning chunk"]
+  engine["engine<br/>runAgent · runPrompt(Stream)"]
+  channel["OpenAI-compatible channel"]
+  imagechannel["image channel"]
+  tools["MCP tools ≤5 concurrent · Skill loads<br/>transfer_to_agent / dispatch_agents · image builtins"]
+  usage["usage recording<br/>agent runs buffer, flush once → atomic ADD"]
+  trace["trace recorder<br/>agent runs always, others sampled"]
+
+  predict --> facade
+  cc --> facade
+  agentsse --> facade
+  chat --> facade
+  slack --> facade
+  a2a --> facade
+  webhook --> facade
+  schedule --> facade
+  predict -.-> imageuc
+  a2a -.-> imageuc
+  webhook -.-> imageuc
+  schedule -.-> imageuc
+  facade --> bracket
+  imageuc --> bracket
+  bracket -->|"agent run"| resolve --> engine
+  bracket -->|"llm single-shot"| engine
+  bracket -->|"image run"| imagechannel
+  engine <--> channel
+  engine <--> tools
+  engine --> usage
+  engine --> trace
+```
+
+The dashed edges are the image branch: every image-capable surface asks `runStrategyFor`
+and hands an `image` project to `generateImage` *before* asking the facade, which refuses it.
+The bracket admits both paths — it is what wraps a top-level run however it started.
 
 One thin wrapper sits alongside: `generateImage`
 (`src/application/image/generateImage.ts`, the image predict path). `collectRun` — which
@@ -321,6 +394,33 @@ consumers must use it instead of re-deriving author semantics.
 > child's, absorbed into the parent's tool result, its stream-end already said by
 > `authorDone`.
 
+```mermaid
+flowchart LR
+  engine["engine announces the ending"]
+  term["top-level termination<br/>done · finishReason · error<br/>read through runTermination"]
+  warning["warning chunks<br/>the human-readable half"]
+
+  openai["OpenAI surfaces<br/>finish_reason stop / length"]
+  tracestatus["trace status<br/>completed · turn-limit · failed · cancelled"]
+  a2aout["A2A terminal status<br/>warnings ride the status message"]
+  predictout["predict non-streaming<br/>finishReason field"]
+  chatui["chat — persisted on the message,<br/>banner in the client"]
+  slackout["Slack — warning suffix on the reply"]
+  console["playground — warning alert"]
+  triggerrow["trigger history row<br/>warning beside a succeeded status"]
+
+  engine --> term
+  engine --> warning
+  term --> openai
+  term --> tracestatus
+  term --> predictout
+  warning --> a2aout
+  warning --> chatui
+  warning --> slackout
+  warning --> console
+  warning --> triggerrow
+```
+
 ## Error handling
 
 Two deliberate strategies coexist, split by whether a stream has started.
@@ -398,6 +498,35 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
 
 > `src/application/llm/AGENTS.md` is the authority on the loop invariants. Read it before
 > editing `engine.ts` or `pii.ts`.
+
+```mermaid
+flowchart TB
+  start["turn start"]
+  guard{"turn ≥ maxTurn?"}
+  turnlimit["warning +<br/>finishReason: turn-limit"]
+  call["model call — stream<br/>retryable failure before the first chunk:<br/>one fallback retry"]
+  miderr["mid-stream failure:<br/>error chunk, no retry — stream ends"]
+  hascalls{"tool calls?"}
+  cut{"provider said<br/>finish_reason length?"}
+  outputlimit["warning +<br/>finishReason: output-limit"]
+  finished["done: true"]
+  dispatch["announce every call, then dispatch:<br/>builtins in call order · MCP concurrently ≤5"]
+  budget["per-turn cap + run context budget<br/>a cut carries a marker, the run warns once"]
+  append["ONE assistant message + tool results<br/>+ post-context messages — all charged"]
+
+  start --> guard
+  guard -->|yes| turnlimit
+  guard -->|no| call
+  call -.-> miderr
+  call --> hascalls
+  hascalls -->|no| cut
+  cut -->|yes| outputlimit
+  cut -->|no| finished
+  hascalls -->|yes| dispatch --> budget --> append -->|"turn + 1<br/>(a transfer: + 2)"| start
+```
+
+Every exit is announced — `done` for a finish, `finishReason` for a limit, an `error` chunk
+for a failure — which is what lets consumers read the ending instead of inferring it.
 
 - All text generation speaks the **OpenAI Chat Completions protocol**; model ids are
   `provider/model`. Routing is described in
