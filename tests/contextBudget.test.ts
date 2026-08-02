@@ -64,6 +64,20 @@ describe("createRunContextBudget", () => {
     const loose = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 1_000);
     expect(tight!.remaining()).toBeLessThan(loose!.remaining());
   });
+
+  it("reserves the larger output cap when maxTokens is unset and a fallback exists", () => {
+    // With no explicit maxTokens the wire carries none, so whichever model
+    // serves the call may generate up to its own registry maximum — reserving
+    // only the primary's would let a bigger-output fallback overflow the
+    // window the minimum was taken against.
+    const withFallback = createRunContextBudget(
+      SMALL_WINDOW_MODEL,
+      "anthropic/claude-sonnet-5",
+      undefined,
+    )!;
+    const alone = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, undefined)!;
+    expect(withFallback.remaining()).toBeLessThan(alone.remaining());
+  });
 });
 
 describe("RunContextBudget charging and fitting", () => {
@@ -83,9 +97,40 @@ describe("RunContextBudget charging and fitting", () => {
     const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
     const text = "x".repeat(600);
     const before = budget.remaining();
-    expect(budget.fitText(text)).toEqual({ text, truncated: false });
+    expect(budget.fitText(text)).toEqual({ text, truncated: false, kept: true });
     expect(budget.remaining()).toBe(before - 200);
     expect(budget.truncated()).toBe(false);
+  });
+
+  it("reserves the suffix inside the fit instead of appending it on top", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
+    const capacity = budget.remaining();
+    const suffix = "\n…(truncated)";
+    const fitted = budget.fitText("x".repeat(100_000), { suffix });
+    expect(fitted.truncated).toBe(true);
+    expect(fitted.kept).toBe(true);
+    expect(fitted.text.endsWith(suffix)).toBe(true);
+    // Everything inserted — kept text AND marker — fits what the budget had.
+    expect(estimateContextTokens(fitted.text)).toBeLessThanOrEqual(capacity);
+  });
+
+  it("keeps nothing under minKeepChars and charges nothing for it", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
+    budget.chargeText("z".repeat(3 * (budget.remaining() - 100)));
+    const before = budget.remaining();
+    const fitted = budget.fitText("x".repeat(10_000), { minKeepChars: 500 });
+    expect(fitted).toEqual({ text: "", truncated: true, kept: false });
+    expect(budget.remaining()).toBe(before);
+  });
+
+  it("tracks post-exhaustion protocol strings as debt", () => {
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000)!;
+    budget.chargeText("z".repeat(3 * budget.remaining()));
+    expect(budget.remaining()).toBe(0);
+    budget.chargeText("Error: tool result omitted");
+    // Still zero outwardly, but the debt keeps later fits at zero too.
+    expect(budget.remaining()).toBe(0);
+    expect(budget.fitText("anything")).toEqual({ text: "", truncated: true, kept: false });
   });
 
   it("cuts text past the remaining budget and remembers the cut", () => {
@@ -105,7 +150,7 @@ describe("RunContextBudget charging and fitting", () => {
     while (budget.remaining() > 0) {
       budget.chargeText("z".repeat(3_000));
     }
-    expect(budget.fitText("more")).toEqual({ text: "", truncated: true });
+    expect(budget.fitText("more")).toEqual({ text: "", truncated: true, kept: false });
   });
 });
 

@@ -39,12 +39,14 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   assembled `messages` and the tool-definition JSON at run start, each turn's assistant
   message, every tool result as `createToolResultBudget` fits it, a transfer's answer before
   it becomes a "For context" message, and the MCP-image companion message at the flat
-  per-image rate — never the base64 length. The engine's small control strings ride on the
-  budget's protocol headroom, unmeasured. A cut is never silent: the result text carries a
-  marker and the run warns once. Exhaustion does not end the loop — the model reads the
-  omission errors and wraps up, and the turn guard stays the hard stop. No budget exists for
-  an unregistered model (no window to derive from) or for single-shot runs (nothing
-  accumulates).
+  per-image rate — never the base64 length. **Everything inserted is charged**: a truncation
+  marker is reserved *inside* the fit (`fitText`'s `suffix`), never appended on top of one,
+  and the wrapper and omission strings are charged where they are appended — post-exhaustion
+  ones as debt, since the tool protocol forces a result message per call. A cut is never
+  silent: the result text carries a marker and the run warns once. Exhaustion does not end
+  the loop — the model reads the omission errors and wraps up, and the turn guard stays the
+  hard stop. No budget exists for an unregistered model (no window to derive from) or for
+  single-shot runs (nothing accumulates).
 - A tool result that begins with `Error: ` means the call failed — the shared convention for
   every producer (engine builtins, the skill loader, `ToolManager`). The trace recorder reads
   that prefix; a new producer that invents its own wording records failures as successes.

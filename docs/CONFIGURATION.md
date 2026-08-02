@@ -258,10 +258,14 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 The per-item limits above say nothing about their sum, so
 `src/application/llm/contextBudget.ts` owns one more bound: an agent run's total context,
 derived from the model's `contextWindow` (the **minimum** of primary and fallback when a
-fallback is configured) minus the version's `maxTokens` and a protocol headroom. The input,
-the tool definitions, every turn's output, tool results and transferred answers are charged
-against it; what no longer fits is truncated with a marker the model can read and reported
-once as a `warning` chunk — instead of overflowing into a provider `400` mid-run.
+fallback is configured) minus the output reserve and a protocol headroom. The reserve is the
+version's `maxTokens` when set; when it is not, no `max_tokens` goes on the wire and
+whichever model serves the call may generate up to its own registry maximum, so the reserve
+is the **larger** of the two models'. The input, the tool definitions, every turn's output,
+tool results and transferred answers are charged against it — truncation markers, wrappers
+and omission strings included; a marker is reserved inside the cut, never appended on top of
+one. What no longer fits is truncated with a marker the model can read and reported once as
+a `warning` chunk — instead of overflowing into a provider `400` mid-run.
 
 Tokens are estimated, conservatively, from characters (per class: ASCII at 3 chars/token,
 everything else at 2 tokens/char; an image part at a flat 1,000 tokens) — exact counts would

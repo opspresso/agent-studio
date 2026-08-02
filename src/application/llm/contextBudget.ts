@@ -23,9 +23,11 @@
  *
  * Both classes round *against* the run on purpose: an overestimate truncates
  * tool output a little early and says so; an underestimate is a provider 400
- * that kills the run mid-stream. What the estimate cannot see at all — message
- * framing, tool-call envelopes, protocol overhead, small control strings the
- * engine appends unmeasured — is covered by {@link PROTOCOL_HEADROOM_TOKENS}.
+ * that kills the run mid-stream. Everything inserted is charged — truncation
+ * markers are reserved *inside* a fit, wrappers and omission strings are
+ * charged where they are appended — so {@link PROTOCOL_HEADROOM_TOKENS}
+ * covers only what no string measurement can see: message framing, tool-call
+ * envelopes, provider protocol overhead.
  *
  * A model absent from the registry gets **no budget** (`undefined`): there is
  * no window to derive one from, and inventing a number would truncate runs
@@ -59,16 +61,43 @@ export function estimateContextTokens(text: string): number {
   return Math.ceil(ascii / ASCII_CHARS_PER_TOKEN) + wide * NON_ASCII_TOKENS_PER_CHAR;
 }
 
+export interface FitOptions {
+  /**
+   * Appended to the text whenever it is cut — the truncation marker. Reserved
+   * *before* the cut point is chosen and charged with what is kept, so the
+   * marker itself can never push the message past the budget.
+   */
+  suffix?: string;
+  /**
+   * Below this many kept characters a cut text reads as data while carrying
+   * none — the caller substitutes its own omission text instead (and charges
+   * it; see {@link RunContextBudget.chargeText}).
+   */
+  minKeepChars?: number;
+}
+
 export interface FittedText {
+  /** What to insert: the text, with the suffix already appended on a cut. */
   text: string;
   /** True when the text had to be cut to fit the remaining budget. */
   truncated: boolean;
+  /**
+   * False when nothing worth keeping fit (the budget is exhausted, or the cut
+   * fell under `minKeepChars`). Nothing was charged; `text` is empty and the
+   * caller substitutes and charges its own omission text.
+   */
+  kept: boolean;
 }
 
 export interface RunContextBudget {
   /** Estimated tokens still spendable on context. Never negative. */
   remaining(): number;
-  /** Record text that entered the context as-is. */
+  /**
+   * Record text that entered the context as-is. Charges past zero into debt,
+   * so a string the tool protocol forces in after exhaustion (an omission
+   * error — a tool call must have a result message) is still counted rather
+   * than silently widening the gap between the estimate and the wire.
+   */
   chargeText(text: string | null | undefined): void;
   /**
    * Record a whole message: text (and `reasoning_content`, and the tool-call
@@ -77,15 +106,17 @@ export interface RunContextBudget {
    */
   chargeMessage(message: ChannelMessage): void;
   /**
-   * Cut text to what still fits and charge what is kept. The caller owns the
-   * wording of the truncation marker — this only owns the arithmetic.
+   * Cut text to what still fits and charge what is kept — suffix included, so
+   * the marker the caller appends is inside the budget, not on top of it. The
+   * caller owns every wording; this owns only the arithmetic.
    */
-  fitText(text: string): FittedText;
+  fitText(text: string, options?: FitOptions): FittedText;
   /** True once any {@link fitText} call had to cut. */
   truncated(): boolean;
 }
 
 class Budget implements RunContextBudget {
+  /** May go negative: debt from post-exhaustion protocol strings is tracked. */
   private left: number;
   private didTruncate = false;
 
@@ -94,11 +125,11 @@ class Budget implements RunContextBudget {
   }
 
   remaining(): number {
-    return this.left;
+    return Math.max(0, this.left);
   }
 
   private charge(tokens: number): void {
-    this.left = Math.max(0, this.left - tokens);
+    this.left -= tokens;
   }
 
   chargeText(text: string | null | undefined): void {
@@ -126,27 +157,32 @@ class Budget implements RunContextBudget {
     }
   }
 
-  fitText(text: string): FittedText {
+  fitText(text: string, options?: FitOptions): FittedText {
     const total = estimateContextTokens(text);
     if (total <= this.left) {
       this.charge(total);
-      return { text, truncated: false };
+      return { text, truncated: false, kept: true };
     }
     this.didTruncate = true;
-    if (this.left <= 0) {
-      return { text: "", truncated: true };
+    const suffix = options?.suffix ?? "";
+    const room = this.left - estimateContextTokens(suffix);
+    if (room <= 0) {
+      return { text: "", truncated: true, kept: false };
     }
     // Cut proportionally, then walk down: a prefix denser in wide characters
     // than the whole can still overshoot, so the first guess is corrected
     // rather than trusted. Each step drops 10%, so this terminates fast.
-    let keep = Math.floor(text.length * (this.left / total));
+    let keep = Math.floor(text.length * (room / total));
     let cut = cutCodePoints(text, keep);
-    while (keep > 0 && estimateContextTokens(cut) > this.left) {
+    while (keep > 0 && estimateContextTokens(cut) > room) {
       keep = Math.floor(keep * 0.9);
       cut = cutCodePoints(text, keep);
     }
-    this.charge(estimateContextTokens(cut));
-    return { text: cut, truncated: true };
+    if (cut.length < (options?.minKeepChars ?? 1)) {
+      return { text: "", truncated: true, kept: false };
+    }
+    this.charge(estimateContextTokens(cut) + estimateContextTokens(suffix));
+    return { text: cut + suffix, truncated: true, kept: true };
   }
 
   truncated(): boolean {
@@ -159,9 +195,12 @@ class Budget implements RunContextBudget {
  * (no window to derive from — such a run stays unbudgeted, exactly as every
  * run was before the budget existed).
  *
- * The output reserve is the version's `maxTokens` when set, else the primary
- * model's registry maximum: it is what the provider may spend on the response
- * in flight, which context must leave room for on every turn.
+ * The output reserve is the version's `maxTokens` when set — it bounds both
+ * models' calls on the wire. When it is not set, no `max_tokens` is sent and
+ * whichever model serves the call may generate up to its own registry maximum,
+ * so the reserve is the **larger** of the two: reserving only the primary's
+ * would let a fallback with a bigger output cap overflow the very window the
+ * minimum above was taken against.
  */
 export function createRunContextBudget(
   model: string,
@@ -176,6 +215,8 @@ export function createRunContextBudget(
   const window = fallback
     ? Math.min(primary.contextWindow, fallback.contextWindow)
     : primary.contextWindow;
-  const reserve = (maxOutputTokens ?? primary.maxTokens) + PROTOCOL_HEADROOM_TOKENS;
+  const reserve =
+    (maxOutputTokens ?? Math.max(primary.maxTokens, fallback?.maxTokens ?? 0)) +
+    PROTOCOL_HEADROOM_TOKENS;
   return new Budget(window - reserve);
 }
