@@ -86,6 +86,13 @@ export interface TriggerRun {
   /** Bounded preview of the answer — a run's whole output does not belong here. */
   result?: string;
   error?: string;
+  /**
+   * What the run reported without failing — a turn or budget limit it hit, a
+   * binding it could not use. Without this a firing the turn guard ended was a
+   * green `succeeded` row while its own trace said `turn-limit`, and an
+   * unattended surface has nobody watching the stream to notice.
+   */
+  warning?: string;
   /** Set when the run was sampled into a trace, so the two can be joined. */
   traceId?: string;
 }

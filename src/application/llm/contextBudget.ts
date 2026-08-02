@@ -16,8 +16,12 @@
  * uses a conservative character-class estimate instead:
  *
  * - ASCII: 3 chars per token (real English averages ~4 — overestimates usage).
- * - Everything else: 2 tokens per char (Hangul/CJK reach ~2 on older
- *   tokenizers — the worst published case, so this overestimates too).
+ * - Everything else: 1.5 tokens per char — above what modern tokenizers charge
+ *   for Hangul/CJK (~0.7–1.5), below the worst legacy case (~2–3). The worst
+ *   case was tried first and rejected by what it did to legitimate input: a
+ *   chat replaying 67,000 Korean characters (well inside a 200k window) was
+ *   estimated over the whole budget, and every tool call of a run that used
+ *   to work answered "budget exhausted" from turn 0.
  * - An image part: a flat {@link IMAGE_PART_TOKENS}, because its `data:` URL's
  *   base64 length says nothing about what the provider charges for the image.
  *
@@ -41,9 +45,15 @@ import type { ChannelMessage } from "@/domain/llm/channel";
 import { cutCodePoints } from "@/shared/utf8Text";
 
 const ASCII_CHARS_PER_TOKEN = 3;
-const NON_ASCII_TOKENS_PER_CHAR = 2;
-/** Flat token charge for one image content part, whatever its byte size. */
-export const IMAGE_PART_TOKENS = 1_000;
+/** Applied as ×3/2 so the arithmetic stays in integers. */
+const NON_ASCII_TOKENS_PER_2_CHARS = 3;
+/**
+ * Flat token charge for one image content part, whatever its byte size. At the
+ * top of the published provider range (OpenAI high-detail ~2,500; Anthropic
+ * ~1,600) — the one estimate that used to round *for* the run, which let a
+ * screenshot-heavy agent believe it had headroom right up to the provider 400.
+ */
+export const IMAGE_PART_TOKENS = 2_500;
 /** Reserve for everything the character estimate cannot see. */
 const PROTOCOL_HEADROOM_TOKENS = 2_000;
 
@@ -58,7 +68,9 @@ export function estimateContextTokens(text: string): number {
       wide += 1;
     }
   }
-  return Math.ceil(ascii / ASCII_CHARS_PER_TOKEN) + wide * NON_ASCII_TOKENS_PER_CHAR;
+  return (
+    Math.ceil(ascii / ASCII_CHARS_PER_TOKEN) + Math.ceil((wide * NON_ASCII_TOKENS_PER_2_CHARS) / 2)
+  );
 }
 
 export interface FitOptions {
@@ -218,5 +230,13 @@ export function createRunContextBudget(
   const reserve =
     (maxOutputTokens ?? Math.max(primary.maxTokens, fallback?.maxTokens ?? 0)) +
     PROTOCOL_HEADROOM_TOKENS;
+  if (window - reserve <= 0) {
+    // A `maxTokens` at or above the model's window leaves no capacity to
+    // derive: a zero budget would answer every tool call "budget exhausted"
+    // from turn 0 and blame a budget the run never got to fill. Nothing
+    // meaningful can be enforced from an impossible configuration, so the run
+    // stays unbudgeted — the provider is the one that rejects it coherently.
+    return undefined;
+  }
   return new Budget(window - reserve);
 }

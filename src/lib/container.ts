@@ -342,6 +342,10 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
         actor: input.actor,
       });
       yield { image: { b64: image.imageBase64, mimeType: image.mimeType } };
+      // Every stream producer announces its ending ("Why a run ended is
+      // announced, never inferred" — ARCHITECTURE.md); this was the one that
+      // did not, latent only until a termination-reading consumer met it.
+      yield { done: true };
       return;
     }
     yield* executeProjectStream(executionDeps, {

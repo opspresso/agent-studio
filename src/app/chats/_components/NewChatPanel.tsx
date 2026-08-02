@@ -6,6 +6,7 @@ import { reduceChunk } from "../_lib/stream";
 import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type AgentProject, type Chat, type LiveTurn } from "../_lib/types";
+import { isTopLevelChunk } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { ChatThread } from "./ChatThread";
 import { LiveAssistant, MessageView } from "./parts";
@@ -107,7 +108,11 @@ export function NewChatPanel() {
           continue;
         }
         if (chunk.error) {
-          setError(chunk.error);
+          // Same rule as ChatThread: only a top-level error is the run's — an
+          // authored one is a subagent failure the parent may answer past.
+          if (isTopLevelChunk(chunk)) {
+            setError(chunk.error);
+          }
           continue;
         }
         setLive((prev) => reduceChunk(prev ?? EMPTY_TURN, chunk));

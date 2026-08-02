@@ -272,7 +272,12 @@ export interface RunAgentInput {
 // ---------------------------------------------------------------------------
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  // Never an empty string: an `{error: ""}` chunk is truthy-skipped by every
+  // consumer's error gate yet classified "error" by `chunkTermination` — an
+  // ending nobody handles, surfaced as a generic protocol failure instead of
+  // the real one.
+  return message || "unknown error";
 }
 
 /** MCP calls of one response that may be in flight at once. */
@@ -765,7 +770,14 @@ export async function runPrompt(deps: EngineDeps, input: RunPromptInput): Promis
   const usage = toUsageInfo(modelUsed, completion.usage);
   await recordUsageIfPossible(deps, input.projectName, modelUsed, usage);
 
-  const result: RunResult = { content, model: modelUsed, usage };
+  const result: RunResult = {
+    content,
+    model: modelUsed,
+    usage,
+    // The provider's own verdict: "length" is a response cut at the output
+    // cap, not a finish — the difference `finish_reason: "stop"` used to erase.
+    termination: choice?.finish_reason === "length" ? "output-limit" : "completed",
+  };
   if (choice?.message.tool_calls && choice.message.tool_calls.length > 0) {
     result.toolCalls = filter
       ? (restoreValues(filter, choice.message.tool_calls) as ChannelToolCall[])
@@ -790,6 +802,9 @@ export async function* runPromptStream(
   );
   const state = { model: input.model };
   let usage: ChannelUsage | null = null;
+  // What the provider said about its own ending: "length" means the response
+  // was cut at the output cap, which `done: true` must not claim was a finish.
+  let outputCut = false;
   const contentRestorer = filter?.createStreamRestorer();
   const reasoningRestorer = filter?.createStreamRestorer();
 
@@ -802,6 +817,9 @@ export async function* runPromptStream(
     )) {
       if (chunk.usage) {
         usage = chunk.usage;
+      }
+      if (chunk.choices[0]?.finish_reason === "length") {
+        outputCut = true;
       }
       const delta = chunk.choices[0]?.delta;
       if (!delta) {
@@ -848,6 +866,14 @@ export async function* runPromptStream(
 
   const usageInfo = toUsageInfo(state.model, usage);
   await recordUsageIfPossible(deps, input.projectName, state.model, usageInfo);
+  if (outputCut) {
+    // The provider cut the answer at its output cap. `done` would claim the
+    // model finished on its own — the reason a truncated reply used to be
+    // reported as a normal stop.
+    yield { warning: "The answer was cut at the model's output limit before it finished." };
+    yield { usage: usageInfo, finishReason: "output-limit" };
+    return;
+  }
   yield { usage: usageInfo, done: true };
 }
 
@@ -1655,13 +1681,18 @@ export async function* runAgent(
   );
 
   // One ceiling for everything this run accumulates, derived from the model's
-  // own context window (min with the configured fallback's — a mid-run switch
-  // must still fit). The input and the declared tools are charged up front;
-  // everything the loop adds is charged — or cut to fit, with a report — as it
-  // enters. A run with headroom is byte-identical to an unbudgeted one.
+  // own context window (min with the fallback's — a mid-run switch must still
+  // fit). The *effective* fallback, not the configured one: an image run drops
+  // a fallback that cannot read images before the first call, and capping the
+  // budget to a window that model will never serve starved runs at ~7% of
+  // their real capacity. A fallback dropped later mid-run only leaves the min
+  // over-conservative, which errs the safe way. The input and the declared
+  // tools are charged up front; everything the loop adds is charged — or cut
+  // to fit, with a report — as it enters. A run with headroom is
+  // byte-identical to an unbudgeted one.
   const contextBudget = createRunContextBudget(
     input.model,
-    input.fallbackModel,
+    fallbackModel,
     input.parameters?.maxTokens,
   );
   if (contextBudget) {
@@ -1702,9 +1733,17 @@ export async function* runAgent(
       // user why there is no answer, and the termination chunk tells consumers
       // why the stream ended instead of leaving them to infer it from the
       // absence of `done`.
+      //
+      // The warning names its run: warnings surface without author labels on
+      // every consumer, so a subagent's guard saying "the run stopped" reads
+      // as the parent's ending next to the parent's finished answer. A child
+      // is recognisable here by its continued turn counter.
+      const isSubagentRun = (input.startTurn ?? 0) > 0;
       yield {
         author,
-        warning: `The run stopped at its turn limit (${maxTurn} turns) before the model finished answering.`,
+        warning: isSubagentRun
+          ? `Transferred agent '${input.projectName}' stopped at its turn limit (${maxTurn} turns) before finishing; the main run continues.`
+          : `The run stopped at its turn limit (${maxTurn} turns) before the model finished answering.`,
       };
       yield { author, finishReason: "turn-limit" };
       return;
@@ -1716,6 +1755,9 @@ export async function* runAgent(
     let assistantText = "";
     let reasoningText = "";
     let usage: ChannelUsage | null = null;
+    // The provider's own ending for this turn: "length" means the text was cut
+    // at the output cap — an ending `done` must not report as a finish.
+    let outputCut = false;
     const accumulator = new ToolCallAccumulator(usedCallIds);
     const contentRestorer = filter?.createStreamRestorer();
     const reasoningRestorer = filter?.createStreamRestorer();
@@ -1724,6 +1766,9 @@ export async function* runAgent(
       for await (const chunk of streamWithFallback(deps.channel, params, fallbackModel, state)) {
         if (chunk.usage) {
           usage = chunk.usage;
+        }
+        if (chunk.choices[0]?.finish_reason === "length") {
+          outputCut = true;
         }
         const delta = chunk.choices[0]?.delta;
         if (!delta) {
@@ -1793,6 +1838,17 @@ export async function* runAgent(
 
     const calls = accumulator.finalize();
     if (calls.length === 0) {
+      if (outputCut) {
+        // The turn that would have been the answer was cut at the provider's
+        // output cap — announced like the turn guard's ending, because a
+        // truncated answer reported as a finish is the same silence.
+        yield {
+          author,
+          warning: "The answer was cut at the model's output limit before it finished.",
+        };
+        yield { author, finishReason: "output-limit" };
+        return;
+      }
       yield { author, done: true };
       return;
     }
@@ -1945,6 +2001,10 @@ export async function* runAgent(
         contextBudget?.chargeText(subagentContextMessage(agentName, ""));
         const fittedChild = contextBudget?.fitText(childText, {
           suffix: "\n…[truncated: the run's context budget is exhausted]",
+          // Same floor as a tool result: a few dozen characters of a child's
+          // introduction read as its whole answer, which is worse than saying
+          // the answer could not be included.
+          minKeepChars: MIN_KEPT_RESULT_CHARS,
         }) ?? { text: childText, truncated: false, kept: true };
         let childAnswer = fittedChild.text;
         if (!fittedChild.kept) {
@@ -2160,6 +2220,10 @@ export async function* runAgent(
             resultText = `Error: image generation failed. ${errorMessage(error)}`;
           }
         }
+        // Through both budgets like every other result: the failure path
+        // carries a provider error body of unbounded length, and a string that
+        // bypasses the spender enters the context unmeasured.
+        resultText = spendResultBudget(resultText);
         const maskedResultText = filter?.mask(resultText) ?? resultText;
         yield {
           author,
@@ -2204,6 +2268,9 @@ export async function* runAgent(
             resultText = `Error: image edit failed. ${errorMessage(error)}`;
           }
         }
+        // Same as GenerateImage above: the error path's provider body is
+        // unbounded, so the result goes through both budgets.
+        resultText = spendResultBudget(resultText);
         const maskedEditText = filter?.mask(resultText) ?? resultText;
         yield {
           author,

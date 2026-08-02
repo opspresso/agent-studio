@@ -93,6 +93,10 @@ export function RunPanel({
   const [activePaths, setActivePaths] = useState<string[][]>([]);
   const [visitedPaths, setVisitedPaths] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);
+  // What the run reported alongside its answer — an unusable binding, a turn
+  // or budget limit. The other surfaces already show these; the playground was
+  // the one that stayed silent.
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [cost, setCost] = useState<number | null>(null);
   const [image, setImage] = useState<ImageResult | null>(null);
   const [agentImages, setAgentImages] = useState<
@@ -126,6 +130,7 @@ export function RunPanel({
     setActivePaths([]);
     setVisitedPaths([]);
     setError(null);
+    setWarnings([]);
     setCost(null);
     setImage(null);
     setAgentImages([]);
@@ -169,13 +174,18 @@ export function RunPanel({
 
       for await (const chunk of readSse(res) as AsyncGenerator<EngineChunk>) {
         if (chunk.error) {
-          setError(chunk.error);
           // A subagent failure is reported to the parent as a tool error and the
-          // parent may still answer; only a top-level error ends the run.
+          // parent may still answer; only a top-level error is the run's — an
+          // authored one in the banner reported a finished run as failed.
           if (isTopLevelChunk(chunk)) {
+            setError(chunk.error);
             break;
           }
           continue;
+        }
+        if (chunk.warning) {
+          const reported = chunk.warning;
+          setWarnings((prev) => (prev.includes(reported) ? prev : [...prev, reported]));
         }
         // Track who is running: an authored chunk names a chain that is running
         // now and joins the set; an unauthored one means control is back at the
@@ -340,6 +350,18 @@ export function RunPanel({
       {error && (
         <Alert color="red" variant="light">
           {error}
+        </Alert>
+      )}
+
+      {warnings.length > 0 && (
+        <Alert color="yellow" variant="light">
+          <Stack gap={4}>
+            {warnings.map((warning) => (
+              <Text key={warning} fz="sm">
+                {warning}
+              </Text>
+            ))}
+          </Stack>
         </Alert>
       )}
 

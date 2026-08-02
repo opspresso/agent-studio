@@ -993,3 +993,81 @@ describe("buildTransferTranscript with an oversized turn", () => {
     expect(text.isWellFormed()).toBe(true);
   });
 });
+
+describe("provider output cut (finish_reason: length)", () => {
+  it("announces output-limit instead of done when the final turn was cut", async () => {
+    const { finishReasonChunk } = await import("./fakeChannel");
+    const channel = new FakeChannel([
+      [contentChunk("partial answ"), finishReasonChunk("length"), usageChunk(2, 1)],
+    ]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
+    );
+
+    expect(chunks.some((c) => c.done)).toBe(false);
+    expect(chunks.some((c) => c.warning?.includes("output limit"))).toBe(true);
+    expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "output-limit" });
+  });
+
+  it("keeps a finished turn announced as done", async () => {
+    const { finishReasonChunk } = await import("./fakeChannel");
+    const channel = new FakeChannel([
+      [contentChunk("whole answer"), finishReasonChunk("stop"), usageChunk(2, 1)],
+    ]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
+    );
+
+    expect(chunks.some((c) => c.done)).toBe(true);
+    expect(chunks.some((c) => c.finishReason)).toBe(false);
+  });
+});
+
+describe("subagent turn guard wording", () => {
+  it("names the transferred agent instead of claiming the run stopped", async () => {
+    const channel = new FakeChannel([]);
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "child-proj",
+        model: MODEL,
+        messages: [{ role: "user", content: "go" }],
+        maxTurn: 2,
+        startTurn: 2,
+      }),
+    );
+
+    const warning = chunks.find((c) => c.warning)?.warning ?? "";
+    expect(warning).toContain("Transferred agent 'child-proj'");
+    expect(warning).toContain("the main run continues");
+    expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
+  });
+});
+
+describe("empty provider errors", () => {
+  it("never yields an error chunk with an empty message", async () => {
+    const channel = {
+      async chatCompletion(): Promise<never> {
+        throw new Error("");
+      },
+      // eslint-disable-next-line require-yield
+      async *chatCompletionStream(): AsyncGenerator<never> {
+        // An Error("") has a message every truthy gate skips while
+        // chunkTermination still classifies the chunk as an ending.
+        throw new Error("");
+      },
+    };
+    const deps: AgentDeps = { channel, recordUsage: async () => {} };
+
+    const chunks = await collect(
+      runAgent(deps, { projectName: "p", model: MODEL, messages: [{ role: "user", content: "go" }] }),
+    );
+
+    expect(chunks.at(-1)?.error).toBe("unknown error");
+  });
+});

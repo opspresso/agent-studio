@@ -8,7 +8,7 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import { chunkTermination, isTopLevelChunk } from "@/domain/llm/types";
+import { isTopLevelChunk, runTermination } from "@/domain/llm/types";
 import type { EngineChunk, RunResult, RunTerminationReason, UsageInfo } from "@/domain/llm/types";
 import { ValidationError } from "@/application/errors";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
@@ -217,9 +217,7 @@ export async function collectRun(
       }
       continue;
     }
-    if (isTopLevelChunk(chunk)) {
-      termination = chunkTermination(chunk) ?? termination;
-    }
+    termination = runTermination(chunk) ?? termination;
     if (isTopLevelChunk(chunk) && chunk.delta?.content) {
       content += chunk.delta.content;
     }
@@ -273,9 +271,10 @@ export async function executeProject(
     ...(input.actor ? { actor: input.actor } : {}),
     signal: input.signal,
   });
-  // A single-shot completion that returned is a normal ending by construction —
-  // its failures throw rather than ending the stream early.
-  return { ...result, images: [], termination: "completed" };
+  // The termination is the engine's: `runPrompt` reads the provider's
+  // finish_reason, so a response cut at the output cap is not stamped
+  // "completed" here — that stamp is what once erased the difference.
+  return { ...result, images: [] };
 }
 
 // --- Agent execution --------------------------------------------------------

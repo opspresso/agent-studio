@@ -31,12 +31,15 @@ describe("estimateContextTokens", () => {
     expect(estimateContextTokens("abcd")).toBe(2);
   });
 
-  it("charges non-ASCII at 2 tokens per char", () => {
-    expect(estimateContextTokens("가나다")).toBe(6);
+  it("charges non-ASCII at 1.5 tokens per char, rounding up", () => {
+    // Above the ~0.7–1.5 modern tokenizers charge for Hangul, below the legacy
+    // worst case that priced legitimate Korean input over the whole budget.
+    expect(estimateContextTokens("가나다")).toBe(5);
+    expect(estimateContextTokens("가나")).toBe(3);
   });
 
   it("charges mixed text per class", () => {
-    // "ab" → 1 token, "가" → 2 tokens.
+    // "ab" → 1 token, "가" → 2 (1.5 rounded up).
     expect(estimateContextTokens("ab가")).toBe(3);
   });
 });
@@ -63,6 +66,22 @@ describe("createRunContextBudget", () => {
     const tight = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 190_000);
     const loose = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 1_000);
     expect(tight!.remaining()).toBeLessThan(loose!.remaining());
+  });
+
+  it("does not let legitimate Korean input exhaust the budget by itself", () => {
+    // 67,000 Hangul chars sit well inside haiku's 200k-token window; the old
+    // 2-tokens/char estimate priced them over the whole default budget and
+    // every tool call answered "budget exhausted" from turn 0.
+    const budget = createRunContextBudget(SMALL_WINDOW_MODEL, undefined, undefined)!;
+    budget.chargeMessage({ role: "user", content: "가".repeat(67_000) });
+    expect(budget.remaining()).toBeGreaterThan(0);
+  });
+
+  it("returns undefined when maxTokens leaves no capacity to derive", () => {
+    // A zero budget would answer every tool call "budget exhausted" from turn
+    // 0 and blame a budget the run never got to fill; the provider is the one
+    // that rejects an impossible maxTokens coherently.
+    expect(createRunContextBudget(SMALL_WINDOW_MODEL, undefined, 200_000)).toBeUndefined();
   });
 
   it("reserves the larger output cap when maxTokens is unset and a fallback exists", () => {

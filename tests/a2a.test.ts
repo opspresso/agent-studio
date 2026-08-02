@@ -18,7 +18,7 @@ import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import type { LlmChannel } from "@/domain/llm/channel";
-import { contentChunk, FakeChannel } from "./fakeChannel";
+import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -329,6 +329,65 @@ describe("ProjectA2aExecutor", () => {
     ]);
     const last = bus.events.at(-1);
     expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+  });
+
+  it("completes past an authored (subagent) error instead of failing the task", async () => {
+    // The transfer target's version repo rejects, so the child fails on entry —
+    // an *authored* error chunk. The parent answers past it, exactly as chat,
+    // Slack and the OpenAI surface treat it; failing the task here threw that
+    // answer away.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("recovered without the child"), usageChunk(1, 1)],
+    ]);
+    const deps = executionDepsFixture(channel);
+    // The subagent resolves (the transfer tool is offered), but running it hits
+    // the rejecting version repo — the authored-error shape under test.
+    (deps as { projects: unknown }).projects = {
+      get: async () => projectFixture({ name: "child", projectType: "agent" }),
+      list: () => Promise.reject(new Error("not used")),
+      put: () => Promise.reject(new Error("not used")),
+      delete: () => Promise.reject(new Error("not used")),
+    };
+    const executor = new ProjectA2aExecutor(
+      deps,
+      projectFixture({ projectType: "agent" }),
+      versionFixture({ subagentList: [{ name: "child", type: "local" }] }),
+      fakeStore(),
+    );
+    const bus = new CollectingBus();
+    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+
+    const last = bus.events.at(-1);
+    expect(last?.kind).toBe("status-update");
+    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+    const artifact = bus.events.find((event) => event.kind === "artifact-update");
+    expect(artifact && "artifact" in artifact ? artifact.artifact.parts : []).toEqual([
+      { kind: "text", text: "recovered without the child" },
+    ]);
+  });
+
+  it("forwards the run's warnings on the terminal status", async () => {
+    // maxTurn 0 trips the turn guard before the first model call; the engine's
+    // warning must reach the A2A caller — it is the only channel that says why
+    // the artifact is short.
+    const executor = new ProjectA2aExecutor(
+      executionDepsFixture(new FakeChannel([])),
+      projectFixture({ projectType: "agent" }),
+      versionFixture({ maxTurn: 0 }),
+      fakeStore(),
+    );
+    const bus = new CollectingBus();
+    await executor.execute(new RequestContext(userMessage("hi"), "t1", "c1"), bus);
+
+    const last = bus.events.at(-1);
+    expect(last && "status" in last ? last.status.state : undefined).toBe("completed");
+    const message = last && "status" in last ? last.status.message : undefined;
+    const text = message?.parts.map((part) => (part.kind === "text" ? part.text : "")).join("");
+    expect(text).toContain("turn limit");
   });
 });
 

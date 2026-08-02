@@ -184,6 +184,15 @@ describe("toChatCompletionChunks finish_reason", () => {
     }).rejects.toThrow("without announcing a termination");
   });
 
+  it("reports length when the provider cut the answer at its output cap", async () => {
+    const frames = await collectFrames([
+      { delta: { content: "partial" } },
+      { warning: "The answer was cut at the model's output limit before it finished." },
+      { finishReason: "output-limit" },
+    ]);
+    expect(finishReasons(frames)).toEqual(["length"]);
+  });
+
   it("does not read a child's termination as the stream's", async () => {
     // A child that hit its own turn limit is absorbed into the parent's tool
     // result; only the top-level termination speaks for the stream.

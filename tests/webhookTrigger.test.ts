@@ -326,6 +326,34 @@ describe("executeDelivery", () => {
     expect(f.rows[0]).toMatchObject({ status: "failed", error: "model exploded" });
   });
 
+  it("records the run's warnings on a succeeded row", async () => {
+    // An unattended firing has nobody watching the stream: without the warning
+    // on the row, a run its turn guard ended was a green `succeeded` while its
+    // own trace said `turn-limit`.
+    const f = fixture({
+      chunks: [
+        { delta: { content: "partial" } },
+        { warning: "The run stopped at its turn limit (2 turns) before the model finished answering." },
+        { finishReason: "turn-limit" },
+      ],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]).toMatchObject({ status: "succeeded", result: "partial" });
+    expect(f.rows[0]?.warning).toContain("turn limit");
+  });
+
+  it("does not record a subagent's warning as the run's", async () => {
+    const f = fixture({
+      chunks: [
+        { author: "child", warning: "Transferred agent 'child' stopped at its turn limit (2 turns) before finishing; the main run continues." },
+        { delta: { content: "answer" } },
+        { done: true },
+      ],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]?.warning).toBeUndefined();
+  });
+
   it("records a thrown error as a failure rather than escaping", async () => {
     // Nothing is left to throw to: the response went out before this ran.
     const f = fixture({ runThrows: new Error("over the daily cost limit") });

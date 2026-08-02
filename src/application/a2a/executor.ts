@@ -7,8 +7,8 @@
 import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
-import { chunkTermination, isTopLevelChunk, messageText } from "@/domain/llm/types";
-import type { ChatMessageInput, EngineChunk, RunTerminationReason } from "@/domain/llm/types";
+import { isTopLevelChunk, messageText } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import {
   executeProjectStream,
   runStrategyFor,
@@ -111,18 +111,27 @@ export class ProjectA2aExecutor implements AgentExecutor {
         signal: controller.signal,
       });
       let isFirstChunk = true;
-      let termination: RunTerminationReason | undefined;
+      // What the run reported alongside its answer — a binding it could not
+      // use, a turn or budget limit it hit. A2A has no warning frame, so these
+      // ride out on the terminal status message; dropping them left an A2A
+      // caller as the one consumer that could never learn why an answer came
+      // back short.
+      const warnings: string[] = [];
       for await (const chunk of source) {
         if (controller.signal.aborted) {
           this.publishStatus(eventBus, taskId, contextId, "canceled", true);
           return;
         }
-        if (chunk.error) {
+        // Only a top-level error fails the task. An authored one is a subagent
+        // failure the engine reports to the parent as a tool error — the
+        // parent usually answers past it, and failing here threw that answer
+        // away (and left the trace recorded as cancelled).
+        if (chunk.error && isTopLevelChunk(chunk)) {
           this.publishStatus(eventBus, taskId, contextId, "failed", true, chunk.error);
           return;
         }
-        if (isTopLevelChunk(chunk)) {
-          termination = chunkTermination(chunk) ?? termination;
+        if (chunk.warning && isTopLevelChunk(chunk)) {
+          warnings.push(chunk.warning);
         }
         const parts = this.chunkParts(chunk);
         if (parts.length === 0) {
@@ -141,17 +150,14 @@ export class ProjectA2aExecutor implements AgentExecutor {
         });
         isFirstChunk = false;
       }
-      // A run its turn guard ended still completes the task — the partial
-      // answer was delivered — but the caller is told why it stopped rather
-      // than being left to read a truncated artifact as the whole answer.
-      if (termination === "turn-limit") {
-        await this.publishTerminal(
-          eventBus,
-          taskId,
-          contextId,
-          controller,
-          "The run stopped at its turn limit before the model finished answering.",
-        );
+      // A limited run still completes the task — the partial answer was
+      // delivered — but the caller is told what the run reported (its turn or
+      // output limit, a binding it could not use, budget truncation) rather
+      // than being left to read a short artifact as the whole answer. The
+      // engine's own warning text travels as-is; a second spelling of it here
+      // had already drifted once.
+      if (warnings.length > 0) {
+        await this.publishTerminal(eventBus, taskId, contextId, controller, warnings.join("\n"));
         return;
       }
     } catch (error) {

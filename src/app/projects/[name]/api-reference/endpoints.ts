@@ -300,7 +300,12 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             description: "Completion choices.",
             children: [
               { name: "message", type: "object", description: "Assistant message (role, content)." },
-              { name: "finish_reason", type: "string", description: 'e.g. "stop".' },
+              {
+                name: "finish_reason",
+                type: "string",
+                description:
+                  '"stop" when the model finished on its own; "length" when the run ended at a limit (its turn budget, or the model\'s output cap).',
+              },
             ],
           },
         ],
@@ -336,7 +341,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           path: agentPath,
           title: "Agent stream",
           description:
-            "SSE stream of EngineChunk frames (delta.content, toolResult, author for subagent turns, error), terminated by data: [DONE].",
+            "SSE stream of EngineChunk frames (delta.content, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE].",
           auth: "token",
           streaming: true,
           requestFields: [

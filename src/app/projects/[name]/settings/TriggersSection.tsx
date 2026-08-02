@@ -421,7 +421,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                           {run.status}
                         </Badge>
                       </Table.Td>
-                      <Table.Td>{run.error ?? run.result ?? ""}</Table.Td>
+                      <Table.Td>{run.error ?? run.warning ?? run.result ?? ""}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
