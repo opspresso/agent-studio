@@ -339,21 +339,36 @@ function createToolResultBudget(
       const room = remaining;
       remaining = 0;
       if (room <= 0) {
-        return "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
+        // The tool protocol forces a result message per call, so this string
+        // enters the context regardless — charged, so the budget stays honest
+        // about it instead of the gap widening silently.
+        const omitted =
+          "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
+        runBudget?.chargeText(omitted);
+        return omitted;
       }
       text = `${content.slice(0, room)}\n…(truncated: kept ${room} of ${content.length} chars, this turn's tool output budget is exhausted)`;
     }
     if (!runBudget) {
       return text;
     }
-    const fitted = runBudget.fitText(text);
+    // The marker is reserved inside the fit, not appended after it — a marker
+    // on top of a fit that spent the whole budget is how uncharged strings
+    // accumulate until the overflow the budget exists to prevent returns.
+    const fitted = runBudget.fitText(text, {
+      suffix: "\n…(truncated: the run's context budget is exhausted)",
+      minKeepChars: MIN_KEPT_RESULT_CHARS,
+    });
     if (!fitted.truncated) {
       return text;
     }
-    if (fitted.text.length < MIN_KEPT_RESULT_CHARS) {
-      return "Error: tool result omitted — the run's context budget is exhausted. Answer from what you already have.";
+    if (!fitted.kept) {
+      const omitted =
+        "Error: tool result omitted — the run's context budget is exhausted. Answer from what you already have.";
+      runBudget.chargeText(omitted);
+      return omitted;
     }
-    return `${fitted.text}\n…(truncated: kept ${fitted.text.length} of ${text.length} chars, the run's context budget is exhausted)`;
+    return fitted.text;
   };
 }
 
@@ -1924,13 +1939,19 @@ export async function* runAgent(
         // A transfer's answer used to enter the context with no bound at all —
         // the one unbudgeted spot. The user already saw the child's full
         // answer stream by; only what re-enters the parent's context is cut.
-        const fittedChild = contextBudget?.fitText(childText) ?? {
-          text: childText,
-          truncated: false,
-        };
-        const childAnswer = fittedChild.truncated
-          ? `${fittedChild.text}\n…[truncated: the run's context budget is exhausted]`
-          : childText;
+        // The wrapper is charged first and the marker is reserved inside the
+        // fit, so the whole message this pushes — wrapper, answer, marker —
+        // is inside the budget, not riding on its headroom.
+        contextBudget?.chargeText(subagentContextMessage(agentName, ""));
+        const fittedChild = contextBudget?.fitText(childText, {
+          suffix: "\n…[truncated: the run's context budget is exhausted]",
+        }) ?? { text: childText, truncated: false, kept: true };
+        let childAnswer = fittedChild.text;
+        if (!fittedChild.kept) {
+          childAnswer =
+            "…[the agent's answer could not be included: the run's context budget is exhausted]";
+          contextBudget?.chargeText(childAnswer);
+        }
         postContextMessages.push({
           role: "user",
           content:
@@ -2310,9 +2331,9 @@ export async function* runAgent(
     if (reasoningText) {
       assistantMessage.reasoning_content = reasoningText;
     }
-    // The model's own turn is context now too; the tool results were already
-    // charged as they were fitted, and the engine's small control strings ride
-    // on the budget's protocol headroom.
+    // The model's own turn is context now too; the tool results — markers,
+    // wrappers and omission strings included — were already charged as they
+    // were fitted or inserted.
     contextBudget?.chargeMessage(assistantMessage);
     messages.push(assistantMessage, ...toolMessages, ...postContextMessages);
     turn = nextTurn;
