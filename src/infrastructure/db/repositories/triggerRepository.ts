@@ -78,6 +78,7 @@ function toRun(item: Record<string, unknown>): TriggerRun {
     ...(item.endedAt ? { endedAt: String(item.endedAt) } : {}),
     ...(item.result ? { result: String(item.result) } : {}),
     ...(item.error ? { error: String(item.error) } : {}),
+    ...(item.warning ? { warning: String(item.warning) } : {}),
     ...(item.traceId ? { traceId: String(item.traceId) } : {}),
   };
 }

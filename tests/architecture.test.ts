@@ -373,12 +373,23 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // limit", which misreports a cancellation and a mid-stream error as a
     // length stop. `chunkTermination` owns the done / finishReason / error →
     // reason mapping; a consumer reads the reason through it, never the raw
-    // fields. The engine is exempt as the producer: it writes the fields and
-    // its pass-through keep-list mentions them without deciding anything.
+    // fields. The pattern matches ANY `.done` property read — the first
+    // spelling (`chunk\.done`) pinned only the literal receiver name, so a
+    // consumer that called its loop variable anything else walked straight
+    // past the guard. The exemptions are the files that read an
+    // `IteratorResult`'s `.done` (generator plumbing, not chunk semantics) —
+    // plus the engine, whose pass-through keep-list mentions the fields
+    // without deciding anything from them.
     what: "deriving why a run ended from its chunks",
-    pattern: /chunk\.done\b|\.finishReason\b/,
+    pattern: /\.done\b|\.finishReason\b/,
     owner: "src/domain/llm/types.ts",
-    alsoAllowedUnder: ["src/application/llm/engine.ts"],
+    alsoAllowedUnder: [
+      "src/application/llm/engine.ts",
+      "src/application/execution/subagentRunner.ts",
+      "src/app/api/_lib/sse.ts",
+      "src/shared/mergeGenerators.ts",
+      "src/infrastructure/slack/profileCache.ts",
+    ],
   },
   {
     what: "the 401 response body",

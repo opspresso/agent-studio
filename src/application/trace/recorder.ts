@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chunkTermination, isTopLevelChunk } from "@/domain/llm/types";
+import { runTermination } from "@/domain/llm/types";
 import type { EngineChunk, RunResult } from "@/domain/llm/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
@@ -81,7 +81,7 @@ export class TraceRecorder {
     if (chunk.warning && this.warnings.length < MAX_WARNINGS) {
       this.warnings.push(preview(chunk.warning));
     }
-    if (isTopLevelChunk(chunk) && chunkTermination(chunk) === "turn-limit") {
+    if (runTermination(chunk) === "turn-limit") {
       this.turnLimited = true;
     }
     for (const call of chunk.delta?.toolCalls ?? []) {

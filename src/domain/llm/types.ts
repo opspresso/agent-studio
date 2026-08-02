@@ -51,12 +51,21 @@ export interface ChatMessageInput {
  *
  * - `completed` — the model finished on its own (`done: true` on the wire).
  * - `turn-limit` — the turn guard ended the loop (`finishReason` on the wire).
+ * - `output-limit` — the provider cut the response at its output cap
+ *   (`finish_reason: "length"` from the channel; `finishReason` on the wire).
+ *   Distinct from `turn-limit`: there the loop stopped but no text was cut,
+ *   here the answer itself is truncated.
  * - `error` — the run failed mid-stream (`error` on the wire).
  * - `cancelled` — never a chunk: a cancelled generator throws or is returned,
  *   so only the consumer's own signal can say it. The value exists so code
- *   classifying a run's ending has one vocabulary for all four.
+ *   classifying a run's ending has one vocabulary for all of them.
  */
-export type RunTerminationReason = "completed" | "turn-limit" | "cancelled" | "error";
+export type RunTerminationReason =
+  | "completed"
+  | "turn-limit"
+  | "output-limit"
+  | "cancelled"
+  | "error";
 
 /** A single streamed unit emitted by the engine's async generators. */
 export interface EngineChunk {
@@ -153,6 +162,19 @@ export function chunkTermination(
 }
 
 /**
+ * The termination this chunk announces *for the run* — {@link isTopLevelChunk}
+ * and {@link chunkTermination} composed, because every consumer that asked the
+ * two questions separately was one forgotten gate away from reading a child's
+ * ending as the stream's (which is exactly how an authored error once failed a
+ * whole A2A task).
+ */
+export function runTermination(
+  chunk: Pick<EngineChunk, "author" | "done" | "finishReason" | "error">,
+): RunTerminationReason | undefined {
+  return isTopLevelChunk(chunk) ? chunkTermination(chunk) : undefined;
+}
+
+/**
  * Flatten a message body to plain text — the single owned reader for code that
  * needs the words of a turn (templates, prompts, logs). Image parts contribute
  * nothing; callers that care about images use {@link hasImageParts}.
@@ -218,6 +240,12 @@ export interface RunResult {
   model: string;
   usage: UsageInfo;
   toolCalls?: ChannelToolCall[];
+  /**
+   * Why the run ended — for a single-shot run, `completed` or `output-limit`
+   * (the provider cut the response at its output cap, which used to be
+   * indistinguishable from a finish).
+   */
+  termination?: RunTerminationReason;
 }
 
 /** Sampling / generation parameters resolved from a version. */

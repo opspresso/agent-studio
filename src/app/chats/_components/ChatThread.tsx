@@ -7,6 +7,7 @@ import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imag
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
 import type { ChatMessageImage } from "@/domain/chat/types";
+import { isTopLevelChunk } from "@/domain/llm/types";
 import { Composer, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
 import { Alert, Badge, Box, Flex, Group, ScrollArea, Stack, Text } from "@mantine/core";
@@ -148,7 +149,12 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
       }
       for await (const chunk of readSse(res)) {
         if (chunk.error) {
-          setError(chunk.error);
+          // An authored error is a subagent failure the parent usually answers
+          // past; a page-level banner would report a finished conversation as
+          // failed. Only a top-level error is the run's.
+          if (isTopLevelChunk(chunk)) {
+            setError(chunk.error);
+          }
           continue;
         }
         if (chunk.image) {

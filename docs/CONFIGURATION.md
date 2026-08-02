@@ -236,7 +236,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
 | Chat request body (derived from the attachment caps) | ~`84MB` | `src/app/api/_lib/body.ts` |
 | Transfer transcript line kept when a turn overflows | `500` chars minimum | `src/application/llm/engine.ts` |
-| Context-budget estimate (ASCII / other / image part / headroom) | `3` chars per token / `2` tokens per char / `1,000` tokens / `2,000` tokens | `src/application/llm/contextBudget.ts` |
+| Context-budget estimate (ASCII / other / image part / headroom) | `3` chars per token / `1.5` tokens per char / `2,500` tokens / `2,000` tokens | `src/application/llm/contextBudget.ts` |
 | Tool result kept when the run's context budget cuts it | `500` chars minimum | `src/application/llm/engine.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Chat tool traffic replayed into context | `3` turns / `20,000` chars | `src/application/chat/messageMapping.ts` |
@@ -268,8 +268,10 @@ one. What no longer fits is truncated with a marker the model can read and repor
 a `warning` chunk — instead of overflowing into a provider `400` mid-run.
 
 Tokens are estimated, conservatively, from characters (per class: ASCII at 3 chars/token,
-everything else at 2 tokens/char; an image part at a flat 1,000 tokens) — exact counts would
-need each provider's tokenizer. A model missing from the registry gets **no budget**: there
-is no window to derive one from, so such a run stays unbudgeted exactly as every run was
-before the budget existed. Single-shot (`llm`) runs are also unbudgeted — nothing
+everything else at 1.5 tokens/char; an image part at a flat 2,500 tokens) — exact counts
+would need each provider's tokenizer. A model missing from the registry gets **no budget**:
+there is no window to derive one from, so such a run stays unbudgeted exactly as every run
+was before the budget existed — as does a version whose `maxTokens` leaves the window no
+capacity at all, because a zero budget would refuse every tool call while blaming a budget
+the run never got to fill. Single-shot (`llm`) runs are also unbudgeted — nothing
 accumulates in one call, and the input is the caller's own.

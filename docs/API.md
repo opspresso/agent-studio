@@ -47,9 +47,10 @@ Design rationale for *why* a surface looks like this lives in
 - **SSE framing**: each event is `data: {json}\n\n`; OpenAI-style streams end with
   `data: [DONE]\n\n`. On a mid-stream failure a final `data: {"error":"…"}` frame is sent.
   `chat/completions` streams always carry exactly one `finish_reason` chunk: `stop` when the
-  model finished on its own, `length` when an agent run ended at its turn budget — read from
-  the termination the engine announces, so a cancellation or a mid-stream error is never
-  dressed up as a length stop. The non-streaming response reports the same two values.
+  model finished on its own, `length` when the run ended at a limit — its turn budget, or the
+  provider cutting the response at its output cap — read from the termination the engine
+  announces, so a cancellation or a mid-stream error is never dressed up as a length stop.
+  The non-streaming response reports the same two values.
 
 ## Route index
 
@@ -607,6 +608,7 @@ therefore ignored for an agent project — an agent run has no prompt template t
 // response
 { "result": "…assistant text…", "model": "openai/gpt-5-mini",
   "usage": { "inputTokens": 12, "outputTokens": 34, … },
+  "finishReason": "completed",  // why the run ended: "turn-limit" / "output-limit" mark a partial answer
   "images": [ { "b64": "…", "mimeType": "image/png" } ]?  // only when the run drew something
 }
 ```
@@ -738,7 +740,9 @@ its outcome is recorded, which is where an operator looks. Only `accepted` start
 
 The endpoint answers immediately and runs in the background — a run can last ten minutes and
 no webhook sender waits that long, so the result is on the delivery's history row rather than
-in the response. A trigger always runs the project's **published** version.
+in the response. A trigger always runs the project's **published** version. A `succeeded` row
+may carry a `warning` — what the run reported without failing (a turn or budget limit it hit,
+a binding it could not use): a firing is unattended, and the row is its only channel for it.
 
 `payloadMode: "message"` (the default) serialises the payload into the user turn — what an
 agent project reads. `"variables"` flattens the payload's scalar top-level fields over the

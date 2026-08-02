@@ -19,9 +19,13 @@ export class FakeChannel implements LlmChannel {
     let content = "";
     let toolCalls: ChannelToolCall[] | undefined;
     let usage = null;
+    let finishReason: string | null = null;
     for (const chunk of script) {
       if (chunk.usage) {
         usage = chunk.usage;
+      }
+      if (chunk.choices[0]?.finish_reason) {
+        finishReason = chunk.choices[0].finish_reason;
       }
       const delta = chunk.choices[0]?.delta;
       if (delta?.content) {
@@ -32,7 +36,12 @@ export class FakeChannel implements LlmChannel {
       }
     }
     return {
-      choices: [{ message: { role: "assistant", content: content || null, tool_calls: toolCalls } }],
+      choices: [
+        {
+          message: { role: "assistant", content: content || null, tool_calls: toolCalls },
+          finish_reason: finishReason,
+        },
+      ],
       usage,
     };
   }
@@ -115,4 +124,9 @@ export function usageChunk(promptTokens: number, completionTokens: number): Chan
     choices: [],
     usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens },
   };
+}
+
+/** The provider's own verdict on a turn's ending — "length" is an output cut. */
+export function finishReasonChunk(reason: string): ChannelChunk {
+  return { choices: [{ delta: {}, finish_reason: reason }] };
 }

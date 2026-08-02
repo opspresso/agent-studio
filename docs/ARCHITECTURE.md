@@ -299,22 +299,27 @@ consumers must use it instead of re-deriving author semantics.
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
 | `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | every consumer surfaces it, but only a **top-level** error ends the stream — an authored one is a tool error the parent may still answer from |
 | `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | read through `chunkTermination` (below): OpenAI `finish_reason: "stop"`, client finalize |
-| `finishReason` | engine when a run ends for a reason `done` cannot say — today the turn guard (`turn-limit`), alongside a `warning` naming it | read through `chunkTermination`: OpenAI `finish_reason: "length"`, trace status `turn-limit`, A2A terminal status message |
+| `finishReason` | engine when a run ends for a reason `done` cannot say — the turn guard (`turn-limit`) and a provider output cut (`output-limit`), each alongside a `warning` naming it | read through `chunkTermination`/`runTermination`: OpenAI `finish_reason: "length"`, trace status `turn-limit`, A2A terminal status message, predict's `finishReason` field |
 | `author` | subagent chunks only — the **innermost** agent | consumers filter via `isTopLevelChunk`; client shows the running agent |
 | `authorPath` | subagent chunks only — the chain, outermost first | client renders `sample-agent → simple-image`; the trace recorder groups a transfer by its first element |
 | `authorDone` | the `runSubagent` wrapper when an authored run returns | consumers stop showing that chain as active |
 | `traceId` | subagent chunks (stamped by `runProject`) | client correlates a chunk to its subagent's trace |
 
 > **Why a run ended is announced, never inferred.** `RunTerminationReason`
-> (`completed` / `turn-limit` / `cancelled` / `error`) lives in
-> `src/domain/llm/types.ts`, and `chunkTermination()` is the owned predicate every
-> consumer reads it through — reasoning from the *absence* of `done` is what used
-> to report a cancellation as `finish_reason: "length"`. Normal completion stays
-> `done: true` on the wire (byte-identical to the pre-reason contract);
-> `cancelled` never appears as a chunk, because a cancelled generator throws or is
-> returned — only the consumer's own signal can say it. Only a **top-level**
-> termination speaks for the stream: an authored one is a child's, absorbed into
-> the parent's tool result, its stream-end already said by `authorDone`.
+> (`completed` / `turn-limit` / `output-limit` / `cancelled` / `error`) lives in
+> `src/domain/llm/types.ts`; `chunkTermination()` is the owned reader of the raw
+> fields and `runTermination()` composes it with the author gate — consumers that
+> asked the two questions separately were one forgotten gate away from reading a
+> child's ending as the stream's. Reasoning from the *absence* of `done` is what
+> used to report a cancellation as `finish_reason: "length"`, and ignoring the
+> provider's own `finish_reason` is what reported a response cut at `max_tokens`
+> as a normal stop (`output-limit` now says it, engine-read from the channel).
+> Normal completion stays `done: true` on the wire (byte-identical to the
+> pre-reason contract); `cancelled` never appears as a chunk, because a cancelled
+> generator throws or is returned — only the consumer's own signal can say it.
+> Only a **top-level** termination speaks for the stream: an authored one is a
+> child's, absorbed into the parent's tool result, its stream-end already said by
+> `authorDone`.
 
 ## Error handling
 

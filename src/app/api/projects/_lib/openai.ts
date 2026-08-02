@@ -7,10 +7,34 @@ function newChatId(): string {
 }
 
 /**
- * Wrap a single-shot result as an OpenAI ChatCompletion object. A run that
- * ended at its turn limit reports `length` — OpenAI's value for "stopped at a
- * limit" — and every other collected run finished on its own.
+ * The one OpenAI spelling of a run's ending — the collected and streaming
+ * responses used to each keep their own mapping, and they had already
+ * disagreed (`turn-limit` was `length` on the stream and `stop` collected).
+ * Exhaustive on purpose: a reason added to `RunTerminationReason` fails to
+ * compile here instead of silently folding into `stop`.
  */
+function wireFinishReason(termination: RunTerminationReason | undefined): "stop" | "length" {
+  switch (termination) {
+    case "turn-limit":
+    case "output-limit":
+      return "length";
+    case "completed":
+      return "stop";
+    case "error":
+    case "cancelled":
+      // Neither reaches a finish_reason frame: an error throws before mapping
+      // and a cancellation never yields a terminal chunk. Refusing loudly
+      // beats minting a `stop` for a run that did not stop.
+      throw new Error(`termination "${termination}" has no finish_reason frame`);
+    case undefined:
+      // A collected run whose stream announced nothing (only synthetic test
+      // streams do; the engine always announces). The stream path refuses
+      // instead — it watched the whole stream, so absence there is a defect.
+      return "stop";
+  }
+}
+
+/** Wrap a single-shot result as an OpenAI ChatCompletion object. */
 export function toChatCompletion(
   result: RunResult & { images?: RunImage[]; termination?: RunTerminationReason },
 ): Record<string, unknown> {
@@ -23,7 +47,7 @@ export function toChatCompletion(
       {
         index: 0,
         message: { role: "assistant", content: result.content },
-        finish_reason: result.termination === "turn-limit" ? "length" : "stop",
+        finish_reason: wireFinishReason(result.termination),
       },
     ],
     usage: {
@@ -41,12 +65,13 @@ export function toChatCompletion(
  * internal to the agent loop and hidden here.
  *
  * Every stream ends with exactly one finish_reason chunk, read from the
- * termination the engine announces (`chunkTermination`): a normal completion is
- * `stop`, a run ended by its turn guard is `length` — the OpenAI signal for
- * "stopped at a limit". The reason used to be inferred from the *absence* of
- * `done`, which misreported a cancellation and a mid-stream error as `length`;
- * a stream that ends without announcing anything is now a defect and fails the
- * request rather than being dressed up as a length stop.
+ * termination the engine announces (`chunkTermination`) and spelled by
+ * {@link wireFinishReason}: a normal completion is `stop`; the turn guard and
+ * a provider output cut are `length` — the OpenAI signal for "stopped at a
+ * limit". The reason used to be inferred from the *absence* of `done`, which
+ * misreported a cancellation and a mid-stream error as `length`; a stream that
+ * ends without announcing anything is now a defect and fails the request
+ * rather than being dressed up as a length stop.
  */
 export async function* toChatCompletionChunks(
   source: AsyncGenerator<EngineChunk>,
@@ -85,12 +110,12 @@ export async function* toChatCompletionChunks(
       yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
     }
     const termination = chunkTermination(chunk);
-    if (termination === "completed") {
+    if (termination !== undefined) {
       finished = true;
-      yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] };
-    } else if (termination === "turn-limit") {
-      finished = true;
-      yield { ...base, choices: [{ index: 0, delta: {}, finish_reason: "length" }] };
+      yield {
+        ...base,
+        choices: [{ index: 0, delta: {}, finish_reason: wireFinishReason(termination) }],
+      };
     }
   }
   if (!finished) {

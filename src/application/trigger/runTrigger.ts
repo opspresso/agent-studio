@@ -312,6 +312,13 @@ export async function executeFiring(
   let text = "";
   let error: string | undefined;
   let traceId: string | undefined;
+  // What the run reported without failing — a turn or budget limit, a binding
+  // it could not use. A firing is unattended, so nobody watched the stream:
+  // dropping these left a run the turn guard ended as a green `succeeded` row
+  // while its own trace said `turn-limit`. Recorded beside the result rather
+  // than as an error: the delivery did run, and a partial answer is not a
+  // failure — but the row must say why it is partial.
+  const warnings: string[] = [];
   try {
     for await (const chunk of deps.run({
       project,
@@ -328,6 +335,9 @@ export async function executeFiring(
         if (chunk.error) {
           error = chunk.error;
         }
+        if (chunk.warning) {
+          warnings.push(chunk.warning);
+        }
       }
       traceId ??= chunk.traceId;
     }
@@ -336,14 +346,19 @@ export async function executeFiring(
   } finally {
     await admitted.release();
   }
-  await finishFiring(deps, run, { text, ...(error ? { error } : {}), ...(traceId ? { traceId } : {}) });
+  await finishFiring(deps, run, {
+    text,
+    ...(error ? { error } : {}),
+    ...(warnings.length > 0 ? { warning: warnings.join("\n") } : {}),
+    ...(traceId ? { traceId } : {}),
+  });
 }
 
 /** Close a firing's history row with whatever the attempt produced. */
 async function finishFiring(
   deps: FiringDeps,
   run: TriggerRun,
-  outcome: { text?: string; error?: string; traceId?: string },
+  outcome: { text?: string; error?: string; warning?: string; traceId?: string },
 ): Promise<void> {
   const finished: TriggerRun = {
     ...run,
@@ -351,6 +366,7 @@ async function finishFiring(
     endedAt: new Date().toISOString(),
     ...(outcome.text ? { result: outcome.text.slice(0, MAX_RESULT_CHARS) } : {}),
     ...(outcome.error ? { error: outcome.error.slice(0, MAX_RESULT_CHARS) } : {}),
+    ...(outcome.warning ? { warning: outcome.warning.slice(0, MAX_RESULT_CHARS) } : {}),
     ...(outcome.traceId ? { traceId: outcome.traceId } : {}),
   };
   try {

@@ -35,18 +35,23 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   order. A truncated result says so; one that no longer fits is returned as `Error: …`, which
   also surfaces the exhaustion as a failed span in the trace.
 - The **run context budget** (`contextBudget.ts`, single owner of the derivation and the
-  chars→tokens estimate) sits under every per-turn cap. Charge sites, all of them: the
-  assembled `messages` and the tool-definition JSON at run start, each turn's assistant
-  message, every tool result as `createToolResultBudget` fits it, a transfer's answer before
-  it becomes a "For context" message, and the MCP-image companion message at the flat
-  per-image rate — never the base64 length. **Everything inserted is charged**: a truncation
-  marker is reserved *inside* the fit (`fitText`'s `suffix`), never appended on top of one,
-  and the wrapper and omission strings are charged where they are appended — post-exhaustion
-  ones as debt, since the tool protocol forces a result message per call. A cut is never
-  silent: the result text carries a marker and the run warns once. Exhaustion does not end
-  the loop — the model reads the omission errors and wraps up, and the turn guard stays the
-  hard stop. No budget exists for an unregistered model (no window to derive from) or for
-  single-shot runs (nothing accumulates).
+  chars→tokens estimate) sits under every per-turn cap. Its window is the minimum with the
+  **effective** fallback — the one left after `imageEligibleFallback`, because capping to a
+  window the dropped fallback will never serve starved image runs at a fraction of their
+  capacity. Charge sites, all of them: the assembled `messages` and the tool-definition JSON
+  at run start, each turn's assistant message, every tool result — the image builtins'
+  result strings included, whose failure path carries an unbounded provider error body — as
+  `createToolResultBudget` fits it, a transfer's answer before it becomes a "For context"
+  message, and the MCP-image companion message at the flat per-image rate — never the base64
+  length. **Everything inserted is charged**: a truncation marker is reserved *inside* the
+  fit (`fitText`'s `suffix`), never appended on top of one, and the wrapper and omission
+  strings are charged where they are appended — post-exhaustion ones as debt, since the tool
+  protocol forces a result message per call. A cut is never silent: the result text carries
+  a marker and the run warns once. Exhaustion does not end the loop — the model reads the
+  omission errors and wraps up, and the turn guard stays the hard stop. No budget exists for
+  an unregistered model (no window to derive from), for a `maxTokens` that leaves the window
+  no capacity (the provider rejects that coherently; a zero budget only blames itself), or
+  for single-shot runs (nothing accumulates).
 - A tool result that begins with `Error: ` means the call failed — the shared convention for
   every producer (engine builtins, the skill loader, `ToolManager`). The trace recorder reads
   that prefix; a new producer that invents its own wording records failures as successes.
@@ -117,9 +122,14 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
     boundaries below. A child is on the far side of that boundary, like a transfer's.
 - Turn guard: `turn >= maxTurn` (default 50) ends the loop, and it announces itself: a
   `warning` chunk names the limit for the user, then a `finishReason: "turn-limit"` chunk
-  names it for consumers. It is the one ending `done` cannot express — normal completion
-  stays `done: true`, byte-identical, and `chunkTermination` (`src/domain/llm/types.ts`)
-  is the only reader of the done/finishReason/error → reason mapping. Transfer guard:
+  names it for consumers. A subagent run's warning names its agent instead of "the run" —
+  warnings surface without author labels everywhere, so the generic wording next to the
+  parent's finished answer read as the parent's ending. A final turn the provider cut at
+  its output cap (`finish_reason: "length"` on the channel) is announced the same way as
+  `finishReason: "output-limit"` — `done` would claim the model finished on its own.
+  Normal completion stays `done: true`, byte-identical, and `chunkTermination` /
+  `runTermination` (`src/domain/llm/types.ts`) are the only readers of the
+  done/finishReason/error → reason mapping. Transfer guard:
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
   charged against the parent's budget — the parent always resumes at `turn + 2` — but the

@@ -60,6 +60,10 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       result: run.content,
       model: run.model,
       usage: run.usage,
+      // Why the run ended. Without it a partial answer — the turn guard, a
+      // provider output cut — was indistinguishable from a finished one on the
+      // one surface that returns a bare `result`.
+      ...(run.termination ? { finishReason: run.termination } : {}),
       ...(run.images.length > 0 ? { images: run.images } : {}),
     });
   } catch (error) {
