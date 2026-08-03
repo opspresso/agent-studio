@@ -71,6 +71,11 @@ const SECTIONS: SectionDef[] = [
     fields: [
       { key: "llmBaseUrl", label: "LLM_BASE_URL", placeholder: "https://api.openai.com/v1" },
       { key: "llmApiKey", label: "LLM_API_KEY" },
+      {
+        key: "unknownModelPolicy",
+        label: "UNKNOWN_MODEL_POLICY",
+        placeholder: "allow | refuse",
+      },
     ],
   },
   {

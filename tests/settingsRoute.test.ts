@@ -54,4 +54,21 @@ describe("PUT /api/settings", () => {
     expect(res.status).toBe(400);
     expect(useCases.update).not.toHaveBeenCalled();
   });
+
+  it("forwards unknownModelPolicy, which the run bracket reads", async () => {
+    // The same trap toolsRepo fell into: the field exists on AppSettings and the
+    // bracket reads it, so a schema that forgets it makes "refuse" an
+    // unreachable setting — a 200 that changed nothing.
+    const res = await put({ unknownModelPolicy: "refuse" });
+    expect(res.status).toBe(200);
+    expect(useCases.update).toHaveBeenCalledWith({ unknownModelPolicy: "refuse" }, "admin@example.com");
+  });
+
+  it("400s on an unknownModelPolicy outside the two values", async () => {
+    // Stored as-is, a typo would read back as `allow` — silently leaving a
+    // deployment that asked to refuse running unpriced models.
+    const res = await put({ unknownModelPolicy: "refus" });
+    expect(res.status).toBe(400);
+    expect(useCases.update).not.toHaveBeenCalled();
+  });
 });

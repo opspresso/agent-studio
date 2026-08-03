@@ -95,32 +95,3 @@ read와 replay가 각각 유효기간을 가진 서명 URL을 받음을 테스�
 아키텍처 테스트의 single-owner 불변식에 등록된다. 행이 보존 변수로 계산된 `expiresAt`을
 갖는 것을 테스트로 검증한다.
 
-## unknown-model-fail-closed — 미등록 모델 실행의 거부 옵션
-
-**이유**: 레지스트리에 없는 모델은 실행되고 $0로 계상된다(CONFIGURATION.md). 사내에선
-대시보드 오염이지만, 과금이 실제 청구가 되는 순간 매출 누수가 된다. 기본 동작은
-유지하되(기존 배포 호환), 배포가 거부를 선택할 수 있어야 한다.
-
-**선행**: 없음.
-
-**범위**
-
-- 런타임 설정 하나(allow | refuse, 기본 allow) — `runtime-settings.ts` 경유, env fallback.
-  키를 늘릴 때의 알려진 함정: `PUT /api/settings`의 zod 스키마는 키를 손으로 나열하므로,
-  거기 빠뜨리면 요청이 400도 없이 조용히 버려진다. `toolsRepo`가 이미 그렇게 한 번 새어
-  나갔다(`4d0c1d9`).
-- refuse: 실행 admission에서 primary와 fallback 모두 레지스트리를 조회해 dispatch 전
-  `ValidationError`로 거부한다(스트림 시작 전 HTTP 에러 계약 — SSE 라우트는 첫 chunk를 당겨본
-  뒤에 응답을 만들므로 이 throw는 스트림이 아니라 400으로 나간다). 검사 위치는 **run bracket
-  한 곳**이다: top-level run을 admit하는 네 함수가 모두 지나는 유일한 지점이고, 파사드는
-  그렇지 않다.
-- 이미지 런은 이미 닫혀 있다 — `generateImage`가 모델의 `imageGeneration` capability를 보고
-  거부하는데 미등록 모델은 `getModelConfig`가 `undefined`라 같은 `ValidationError`에 걸린다.
-  bracket에 붙이면 정책이 한 겹 더 얹힐 뿐 동작은 바뀌지 않는다.
-- 버전 저장의 "경고와 함께 허용" 계약은 그대로 둔다 — 막는 것은 실행이지 편집이 아니다.
-- allow는 현행과 byte-identical.
-
-**완료 조건**: refuse 설정에서 미등록 primary/fallback 실행이 dispatch 전 거부됨을 테스트로
-검증한다. 새 설정 키가 `PUT /api/settings`를 통해 실제로 저장되는 것을 테스트로 검증한다 —
-위 함정이 조용히 재발하는 것을 막는 유일한 조건이다. allow 설정에서 기존 테스트가 무수정
-통과한다.

@@ -67,6 +67,7 @@ import {
   getPublicBaseUrl,
   getSkillsRepoConfig,
   getToolsRepoConfig,
+  getUnknownModelPolicy,
   isConfiguredAdmin,
 } from "./runtime-settings";
 
@@ -303,6 +304,7 @@ export const executionDeps: ExecutionDeps = {
   slack: costAlertSlack,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
+  unknownModelPolicy: getUnknownModelPolicy,
 };
 
 /** Dependencies for image-generation projects. */
@@ -315,6 +317,7 @@ export const imageDeps: ImageGenerationDeps = {
   slack: costAlertSlack,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
+  unknownModelPolicy: getUnknownModelPolicy,
 };
 
 /**

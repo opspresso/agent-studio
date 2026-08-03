@@ -102,11 +102,23 @@ Anthropic serves `claude-opus-4-8` and 404s on the dotted form — set `wireId` 
 it is what gets sent once a provider-direct channel strips the prefix. Renaming the entry
 instead would orphan every stored version that referenced the old id.
 
-**A model missing from the registry still runs, but its usage is priced at $0** — so the gap
-is invisible in the cost dashboard it corrupts. Each miss logs `[cost] unknown model id`
-once and increments `agent_studio_unknown_model_calls_total`; alert on a non-zero rate
-rather than waiting to notice the cost. `pnpm check-models` compares the registry against
+**A model missing from the registry still runs by default, but its usage is priced at $0** —
+so the gap is invisible in the cost dashboard it corrupts. Each miss logs `[cost] unknown
+model id` once and increments `agent_studio_unknown_model_calls_total`; alert on a non-zero
+rate rather than waiting to notice the cost. `pnpm check-models` compares the registry against
 what the configured channels actually serve — see [DEVELOPMENT.md](DEVELOPMENT.md#scripts).
+
+| Variable | Default | Runtime | Notes |
+|---|---|---|---|
+| `UNKNOWN_MODEL_POLICY` | `allow` | **runtime** | `allow` \| `refuse`. Whether a run may execute a model the registry cannot price. Anything else reads as `allow`, so a malformed value never becomes the reason a deployment stops running. |
+
+`refuse` is checked in the **run bracket**, the one point all four admitting functions pass,
+and it covers the version's `fallbackModel` as well as its `model` — a fallback carries the
+whole run whenever the primary is rate-limited, so an unpriced one leaks exactly as much, only
+intermittently. It throws before dispatch, so the caller gets a `400` rather than a stream
+that opens and then fails. **Saving a version is untouched**: storing an id the registry has
+not caught up with is how a new model is adopted, and that path keeps its warning. What the
+setting bounds is spending money under an id nothing can price.
 
 ## Execution limits
 
