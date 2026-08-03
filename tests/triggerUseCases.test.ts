@@ -4,6 +4,8 @@ import { createTriggerSchema } from "@/app/api/projects/_lib/schemas";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { toSlug } from "@/shared/slug";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
+import { setAuditSink } from "@/application/audit/auditLog";
+import type { AuditEvent } from "@/domain/audit/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project } from "@/domain/project/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
@@ -219,5 +221,35 @@ describe("schedule triggers", () => {
       ),
     ).rejects.toBeInstanceOf(ValidationError);
     expect(stored.size).toBe(0);
+  });
+});
+
+describe("trigger secret audit trail", () => {
+  it("records a rotation and a reveal, never the secret itself", async () => {
+    const recorded: AuditEvent[] = [];
+    setAuditSink(async (event) => {
+      recorded.push(event);
+    });
+    const { useCases } = fixture();
+    await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
+    const rotated = await useCases.update("p", "t1", { rotateSecret: true }, "owner@example.com");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await useCases.reveal("p", "t1", "owner@example.com");
+    warn.mockRestore();
+
+    expect(recorded.map((event) => event.action)).toEqual(["secret.issue", "secret.reveal"]);
+    expect(recorded.every((event) => event.target === "project:p/trigger/t1")).toBe(true);
+    expect(JSON.stringify(recorded)).not.toContain(rotated.secret);
+  });
+
+  it("records nothing for an update that does not touch the secret", async () => {
+    const recorded: AuditEvent[] = [];
+    setAuditSink(async (event) => {
+      recorded.push(event);
+    });
+    const { useCases } = fixture();
+    await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
+    await useCases.update("p", "t1", { description: "renamed" }, "owner@example.com");
+    expect(recorded).toEqual([]);
   });
 });

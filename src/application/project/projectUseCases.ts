@@ -2,6 +2,7 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { CostLimits, Project, ProjectType } from "@/domain/project/types";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "./timestamps";
+import { recordAudit } from "@/application/audit/auditLog";
 import { log } from "@/shared/logger";
 
 /** The admin-list reader the write override consults. See {@link setAdminCheck}. */
@@ -87,11 +88,19 @@ export async function assertProjectWritable(
   if (await isAdminOverride(userEmail)) {
     // The owner cannot see this happen from the data — a deleted project takes
     // the row that would have named who deleted it — so the override is the
-    // thing worth recording, not the eventual write.
+    // thing worth recording, not the eventual write. It is recorded twice, in
+    // two places with different lifetimes: the log line for whoever is watching
+    // now, the audit row for whoever asks in six months.
     log.warn(
       "authz",
       `admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
     );
+    await recordAudit({
+      action: "authz.admin-override",
+      actorEmail: userEmail,
+      target: `project:${name}`,
+      detail: `owned by ${project.ownerEmail}`,
+    });
     return project;
   }
   throw new ForbiddenError(`You do not have permission to modify project "${name}"`);
@@ -187,6 +196,14 @@ export async function deleteProject(
   name: string,
   userEmail: string,
 ): Promise<void> {
-  await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectWritable(repo, name, userEmail);
   await repo.delete(name);
+  // After the delete, and naming the owner: the row that would have said whose
+  // project this was is exactly what the delete took away.
+  await recordAudit({
+    action: "project.delete",
+    actorEmail: userEmail,
+    target: `project:${name}`,
+    detail: `owned by ${project.ownerEmail}`,
+  });
 }

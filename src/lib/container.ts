@@ -61,6 +61,8 @@ import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import { setAdminCheck } from "@/application/project/projectUseCases";
+import { setAuditSink } from "@/application/audit/auditLog";
+import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -74,6 +76,11 @@ import {
 // imported by it — a static import would drag the settings store (and its
 // DynamoDB client) into the application layer.
 setAdminCheck(isConfiguredAdmin);
+
+// Same seam, same reason: a record point sits wherever a sensitive act is
+// decided, which is often a use case that has no other business holding a
+// repository.
+setAuditSink((event) => auditRepository.append(event));
 
 /**
  * Reading runtime settings is the composition root's job: the LLM adapters take
@@ -117,6 +124,7 @@ const mcpSessions: McpSessionFactory = {
 export {
   channel,
   imageChannel,
+  auditRepository,
   projectRepository,
   versionRepository,
   traceRepository,

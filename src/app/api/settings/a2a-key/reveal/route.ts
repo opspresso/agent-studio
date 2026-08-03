@@ -1,4 +1,5 @@
 import { apiError } from "@/app/api/_lib/http";
+import { recordAudit } from "@/application/audit/auditLog";
 import { NotFoundError } from "@/application/errors";
 import { getA2aApiKey } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
@@ -18,8 +19,14 @@ export const POST = withAdminAuth(async (user) => {
     if (!key) {
       throw new NotFoundError("A2A_API_KEY is not configured");
     }
-    // Secret access is worth a trail even when it is authorized.
+    // Secret access is worth a trail even when it is authorized — one for
+    // whoever is watching the logs now, one for whoever asks in six months.
     log.warn("settings", `A2A_API_KEY revealed by ${user.email}`);
+    await recordAudit({
+      action: "secret.reveal",
+      actorEmail: user.email,
+      target: "settings:a2a-key",
+    });
     return Response.json({ key });
   } catch (error) {
     return apiError(error);

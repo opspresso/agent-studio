@@ -1,4 +1,5 @@
 import { ValidationError } from "@/application/errors";
+import { recordAudit } from "@/application/audit/auditLog";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type {
   AppSettings,
@@ -310,6 +311,14 @@ export function createSettingsUseCases(
 
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
+      // Which keys, never their values: this row is read by people who are not
+      // allowed to see what was written, only that it was.
+      await recordAudit({
+        action: "settings.update",
+        actorEmail: userEmail,
+        target: "settings:app",
+        detail: `keys: ${Object.keys(patch).sort().join(", ") || "none"}`,
+      });
       return toView(cipher, env, parseProviderConfigs, specs, next);
     },
   };

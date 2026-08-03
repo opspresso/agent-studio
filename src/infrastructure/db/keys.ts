@@ -32,6 +32,18 @@ export const keys = {
 
   settings: () => ({ PK: "SETTINGS#app", SK: "META" }),
 
+  /**
+   * One audited act, partitioned by the UTC day it happened on. Written far
+   * more often than it is read, so the key bounds the write partition and a
+   * reader assembles a range from the days in it — no index, because nothing
+   * asks a second question of these rows.
+   */
+  auditEvent: (day: string, createdAt: string, id: string) => ({
+    PK: `AUDIT#${day}`,
+    SK: `EVENT#${createdAt}#${id}`,
+  }),
+  auditDayPartition: (day: string) => `AUDIT#${day}`,
+
   skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
   externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),

@@ -115,6 +115,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
 | `/api/settings/a2a-key/reveal` | `POST` | admin |
+| `/api/audit` | `GET` | admin |
 
 ### Unauthenticated / machine surfaces
 
@@ -776,6 +777,28 @@ It covers **webhook deliveries as well as schedule firings** — both are admitt
 driven in the background, so both strand the same row — which is why a deployment with
 webhook triggers and no schedules still wants a ticker. Only every fifth tick sweeps for
 them; the rest answer `repaired: 0` without reading history.
+
+## Audit trail
+
+```
+GET /api/audit?from=2026-08-01&to=2026-08-07
+→ 200 { "events": [ { id, action, actorEmail, target, detail?, createdAt, expiresAt? }, … ] }
+→ 400 { "error": "…" }   (missing, backwards, or wider than 31 days)
+```
+
+Admin-only, and both dates are required. The rows are partitioned by UTC day and read one
+Query per day, so the range is capped at **31 days** and a caller who did not say how far
+back they meant is told rather than served a guess. Events come back newest first.
+
+`action` is one of `secret.reveal`, `secret.issue`, `secret.revoke`, `settings.update`,
+`project.delete`, `registry.delete`, `authz.admin-override`. `target` is `kind:name`
+(`project:my-bot/api-token`, `settings:a2a-key`, `mcp:shared-mcp`). **A row never carries the
+secret it is about** — it records that a credential was seen or replaced, which is the thing
+a second copy of the credential would undermine.
+
+Rows are append-only: nothing updates or deletes one, and the only thing that removes one is
+`AUDIT_RETENTION_DAYS` (365 by default). This is the durable half of a pair — the same acts
+also log a line, which is what an operator greps while it is happening.
 
 ## Traces
 

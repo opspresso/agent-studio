@@ -23,6 +23,7 @@ import {
   isConditionalWriteFailure,
 } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { recordAudit } from "@/application/audit/auditLog";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
 
@@ -243,6 +244,14 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         ...(rotated ? { secret: deps.cipher.encrypt(rotated) } : {}),
       };
       await deps.triggers.put(updated);
+      if (rotated) {
+        await recordAudit({
+          action: "secret.issue",
+          actorEmail: userEmail,
+          target: `project:${projectName}/trigger/${triggerId}`,
+          detail: "secret rotated; the previous one stopped working",
+        });
+      }
       return toView(updated, deps.cipher, rotated);
     },
 
@@ -269,6 +278,11 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         "trigger",
         `secret of trigger '${projectName}/${triggerId}' revealed by ${userEmail}`,
       );
+      await recordAudit({
+        action: "secret.reveal",
+        actorEmail: userEmail,
+        target: `project:${projectName}/trigger/${triggerId}`,
+      });
       return { secret: deps.cipher.decrypt(trigger.secret), createdAt: trigger.createdAt };
     },
 

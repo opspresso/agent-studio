@@ -424,6 +424,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/llm/documentLimits.ts",
   },
   {
+    // Record points are added one at a time — a reveal here, a delete there —
+    // and each one that assembles its own row is a row the reader cannot group
+    // with the others. The pattern matches building the event (stamping the id
+    // and timestamp), not calling `recordAudit`, which every record point does.
+    what: "writing an audit row",
+    pattern: /action: input\.action/,
+    owner: "src/application/audit/auditLog.ts",
+  },
+  {
     // Every other bound is per item or per turn; this is the one that knows the
     // sum a run may accumulate, derived from the model's context window. The
     // pattern matches reading `.contextWindow` — a second derivation starts by

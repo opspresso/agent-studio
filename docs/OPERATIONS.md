@@ -168,6 +168,7 @@ but the rows accumulate one per run).
 | Chats + messages | 180 days | `CHAT_RETENTION_DAYS` | last activity / message `createdAt` |
 | Trigger deliveries | 30 days | `TRIGGER_RUN_RETENTION_DAYS` | delivery start |
 | Inbound A2A tasks | 1 day | `A2A_TASK_RETENTION_DAYS` | last write |
+| Audit records | 365 days | `AUDIT_RETENTION_DAYS` | the recorded act |
 
 Usage is kept longest because the dashboard queries up to 184 days back. A trace and its
 deletion reference share one expiry so the reference never dangles.

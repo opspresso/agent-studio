@@ -1,5 +1,6 @@
 import { settingsUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
+import { recordAudit } from "@/application/audit/auditLog";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
@@ -17,6 +18,15 @@ export const POST = withAdminAuth(async (user) => {
     const key = generateSecretValue("a2aApiKey");
     const view = await settingsUseCases.update({ a2aApiKey: key }, user.email);
     invalidateSettingsCache();
+    // Named separately from the `settings.update` the write above records: the
+    // act here is issuing a credential, and reissuing it stops the previous one
+    // working for every inbound A2A caller at once.
+    await recordAudit({
+      action: "secret.issue",
+      actorEmail: user.email,
+      target: "settings:a2a-key",
+      detail: "reissued; the previous key stopped working immediately",
+    });
     return Response.json({ key, view });
   } catch (error) {
     return apiError(error);

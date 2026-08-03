@@ -152,6 +152,7 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
 | Trace deletion reference | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
+| Audit record | `AUDIT#{yyyy-MM-dd}` | `EVENT#{createdAt}#{id}` | — | — |
 | App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
 
 **Why one table and two GSIs.** Primary-key access covers everything item-scoped: a project

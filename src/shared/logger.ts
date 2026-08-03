@@ -19,6 +19,7 @@ import { currentRunContext } from "./runContext";
 export type LogScope =
   | "a2a"
   | "api"
+  | "audit"
   | "authz"
   | "boot"
   | "chat"

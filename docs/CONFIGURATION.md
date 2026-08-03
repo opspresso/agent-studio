@@ -199,6 +199,7 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 | `CHAT_RETENTION_DAYS` | `180` | — | Measured from the chat's last activity. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | Delivery history is an operational log, not a record to keep. |
 | `A2A_TASK_RETENTION_DAYS` | `1` | — | Ephemeral job state, kept just long enough for `tasks/get`/`tasks/cancel` after `message/send`. |
+| `AUDIT_RETENTION_DAYS` | `365` | — | Audit rows — who revealed a credential, who overrode an ownership check. The longest window here, because the question they answer is asked long after the fact. |
 
 Retention values must be positive numbers; anything else falls back to the default. TTL has
 to be **enabled on the `expiresAt` attribute of the production table** — see

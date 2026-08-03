@@ -9,6 +9,8 @@ import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 const createSettingsUseCases = (repo: Parameters<typeof createSettingsUseCasesImpl>[0]) =>
   createSettingsUseCasesImpl(repo, secretCipher, process.env, parseProviderConfigs);
 import { ValidationError } from "@/application/errors";
+import { setAuditSink } from "@/application/audit/auditLog";
+import type { AuditEvent } from "@/domain/audit/types";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type { AppSettings } from "@/domain/settings/types";
 import { decryptSecret, encryptSecret, isEncrypted } from "@/infrastructure/crypto/secretEncryption";
@@ -232,5 +234,32 @@ describe("settingsUseCases.update", () => {
     await expect(
       createSettingsUseCases(repo).update({ adminEmails: "" }, ADMIN),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+describe("audit trail", () => {
+  it("records which keys a write touched, and none of their values", async () => {
+    const recorded: AuditEvent[] = [];
+    setAuditSink(async (event) => {
+      recorded.push(event);
+    });
+    const { repo } = fakeRepo();
+
+    await createSettingsUseCases(repo).update(
+      { llmApiKey: "sk-live-secret", adminEmails: ADMIN },
+      ADMIN,
+    );
+
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        action: "settings.update",
+        actorEmail: ADMIN,
+        target: "settings:app",
+      }),
+    ]);
+    // The keys answer "what was changed" for a reviewer; the values are the
+    // credentials this row exists to keep an eye on, not to copy.
+    expect(recorded[0]?.detail).toBe("keys: adminEmails, llmApiKey");
+    expect(JSON.stringify(recorded)).not.toContain("sk-live-secret");
   });
 });

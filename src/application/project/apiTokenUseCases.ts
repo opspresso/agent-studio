@@ -3,6 +3,7 @@ import { NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { assertProjectWritable, getProject } from "./projectUseCases";
+import { recordAudit } from "@/application/audit/auditLog";
 import { log } from "@/shared/logger";
 
 export interface ApiTokenStatus {
@@ -32,6 +33,12 @@ export async function generateApiToken(
   const masked = cipher.mask(token);
   const createdAt = new Date().toISOString();
   await repo.setApiToken(name, { token: cipher.encrypt(token), masked, createdAt });
+  await recordAudit({
+    action: "secret.issue",
+    actorEmail: userEmail,
+    target: `project:${name}/api-token`,
+    detail: "generated or regenerated; any previous token stopped working",
+  });
   return { token, masked, createdAt };
 }
 
@@ -85,8 +92,15 @@ export async function revealApiToken(
       "This token was issued before tokens could be shown again, so only its hash is stored. Regenerate it to get a token you can read back.",
     );
   }
-  // Secret access is worth a trail even when it is authorized.
+  // Secret access is worth a trail even when it is authorized. Two trails, in
+  // fact: the log line an operator greps, and the audit row a reviewer queries
+  // months later — they answer different questions and have different lifetimes.
   log.warn("token", `API token of project '${name}' revealed by ${userEmail}`);
+  await recordAudit({
+    action: "secret.reveal",
+    actorEmail: userEmail,
+    target: `project:${name}/api-token`,
+  });
   return { token: cipher.decrypt(stored.token), createdAt: stored.createdAt };
 }
 
@@ -98,6 +112,11 @@ export async function revokeApiToken(
 ): Promise<void> {
   await assertProjectWritable(repo, name, userEmail);
   await repo.deleteApiToken(name);
+  await recordAudit({
+    action: "secret.revoke",
+    actorEmail: userEmail,
+    target: `project:${name}/api-token`,
+  });
 }
 
 /**

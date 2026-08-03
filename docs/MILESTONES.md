@@ -29,29 +29,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 
 ---
 
-## audit-log-entity — 감사 기록의 일급 엔티티 승격
-
-**이유**: 민감 행위 — 시크릿 reveal 3종, 관리자 override 쓰기, 설정 변경, 토큰 발급·회전 —
-는 지금 로그 라인으로만 남는다(SECURITY.md: "Every reveal is logged server-side"). 로그에는
-보존·조회·내보내기 계약이 없어 "누가 언제 무엇을"이라는 감사 질문에 답하지 못한다.
-
-**선행**: 없음.
-
-**범위**
-
-- `AuditEvent` 도메인 엔티티 + repository 포트: actor, action, target, detail, createdAt,
-  `expiresAt`(보존 변수). 키는 `keys.ts`에 추가한다.
-- 기록 지점: a2a-key/프로젝트 토큰/트리거 시크릿 reveal, `assertProjectWritable`의 admin
-  override 경로, `PUT /api/settings`, 토큰·시크릿 발급/회전, 프로젝트·레지스트리 삭제.
-  기존 로그 라인은 유지한다 — 로그와 감사는 소비자가 다르다.
-- 조회는 admin 전용 API(기간 필터, `queryAll()` 페이지네이션). UI·내보내기는 별도 작업.
-- 기록자는 단일 소유 모듈 하나로 만들고 `SINGLE_OWNERS`에 등록한다 — 기록 지점이 늘 때마다
-  포맷이 복제되는 것이 이 작업이 막는 실패다.
-
-**완료 조건**: 위 기록 지점 각각이 감사 행을 남기는 것을 테스트로 검증한다. 감사 기록자가
-아키텍처 테스트의 single-owner 불변식에 등록된다. 행이 보존 변수로 계산된 `expiresAt`을
-갖는 것을 테스트로 검증한다.
-
 ## unknown-model-fail-closed — 미등록 모델 실행의 거부 옵션
 
 **이유**: 레지스트리에 없는 모델은 실행되고 $0로 계상된다(CONFIGURATION.md). 사내에선

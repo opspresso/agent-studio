@@ -135,6 +135,7 @@ about to make copy number two.
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
 | User-document caps | `src/domain/llm/documentLimits.ts` |
+| Writing an audit row | `src/application/audit/auditLog.ts` |
 | How an attached document is framed in a turn | `src/application/llm/documentParts.ts` |
 | The name every entry is addressed by | `isSlug` in `src/shared/slug.ts` |
 

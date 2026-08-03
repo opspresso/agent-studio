@@ -137,8 +137,9 @@ Three secrets this app issues can be read back in plaintext:
 | Webhook trigger secret | `POST /api/projects/{name}/triggers/{trigger}/reveal` | owner or admin |
 
 All three are **POST although they read**: the response body is a live credential, so it
-stays out of caches, browser history and prefetches. Every reveal is logged server-side with
-the caller's email.
+stays out of caches, browser history and prefetches. Every reveal leaves two records: a log
+line for whoever is watching now, and an **audit row** for whoever asks months later
+([Audit trail](#audit-trail)).
 
 These three are therefore stored **encrypted rather than hashed**, which is a deliberate
 trade: the datastore alone is not enough to use one, but the datastore *plus*
@@ -410,6 +411,37 @@ Other properties worth knowing:
 - **Chats store the extracted text, not the file**, under the chat's own retention and the
   owner-private read rule. A 10MB PDF is never persisted; up to 40,000 characters per turn of
   what was read is.
+
+## Audit trail
+
+Sensitive acts leave a durable row, not only a log line. A log has no retention contract and
+no way to be queried later; "who revealed that token in March" is a question that has to
+survive a pod restart and a log-retention policy nobody was consulted about.
+
+Recorded (`src/application/audit/auditLog.ts` is the only writer):
+
+| Act | Action | Where it is recorded |
+|---|---|---|
+| A2A key / project token / trigger secret shown in plaintext | `secret.reveal` | the three reveal paths |
+| A credential generated, regenerated or rotated | `secret.issue` | token `POST`, a2a-key `POST`, trigger `rotateSecret` |
+| A project API token deleted | `secret.revoke` | token `DELETE` |
+| App settings written | `settings.update` | `PUT /api/settings` — **key names only, never values** |
+| A project deleted | `project.delete` | with the owner it named, since the row is gone |
+| A shared skill / MCP server / external agent deleted | `registry.delete` | the three registry `DELETE`s |
+| An admin writing a project owned by someone else | `authz.admin-override` | inside `assertProjectWritable`, so no call site can forget |
+
+Properties that matter:
+
+- **A row never carries the secret it is about.** It records that a credential was seen or
+  replaced; carrying the value would make the trail a second copy of the thing it protects.
+- **Rows are append-only and admin-read.** Nothing updates or deletes one, and the read
+  endpoint is admin-only because the rows name individuals
+  ([API.md](API.md#audit-trail)).
+- **A failed audit write never fails the act.** The caller already revealed the token;
+  answering 500 afterwards would tell them it did not happen. The failure is logged loudly
+  instead, and an unwired sink says so on the first event rather than discarding in silence.
+- **The log lines stayed.** Logs and audit rows have different readers, different lifetimes
+  and different failure modes; replacing one with the other would lose a reader.
 
 ## Data exposure and retention
 

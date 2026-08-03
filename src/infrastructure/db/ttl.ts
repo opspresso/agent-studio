@@ -36,6 +36,14 @@ export const RETENTION = {
   get a2aTaskDays(): number {
     return retentionDays("A2A_TASK_RETENTION_DAYS", 1);
   },
+  /**
+   * Audit records — the longest window here, because the question they answer
+   * ("who revealed that credential?") is usually asked long after the fact, and
+   * a year is the shortest span that covers an annual review.
+   */
+  get auditDays(): number {
+    return retentionDays("AUDIT_RETENTION_DAYS", 365);
+  },
 };
 
 /** Unix-seconds TTL: `retentionDays` after `baseIso`. Falls back to now for an
