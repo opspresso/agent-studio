@@ -136,3 +136,16 @@ export async function getA2aApiKey(): Promise<string | undefined> {
 export async function getPublicBaseUrl(): Promise<string | undefined> {
   return (await loadSettings())?.publicBaseUrl ?? config.publicBaseUrl;
 }
+
+/**
+ * Whether this deployment dispatches a model missing from the registry.
+ *
+ * Anything but the exact string `refuse` reads as `allow`, including a typo:
+ * the strict reading would be to refuse on anything unrecognised, but that
+ * turns a misspelled setting into a platform-wide outage, and the value this
+ * guard protects is a billing figure.
+ */
+export async function getUnknownModelPolicy(): Promise<"allow" | "refuse"> {
+  const stored = (await loadSettings())?.unknownModelPolicy ?? config.unknownModelPolicy;
+  return stored?.trim().toLowerCase() === "refuse" ? "refuse" : "allow";
+}

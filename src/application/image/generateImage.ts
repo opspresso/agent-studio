@@ -86,7 +86,10 @@ export async function generateImage(
 
   // After the validation above, before anything is spent: a refused run should
   // still tell a misconfigured version apart from an exhausted budget.
-  const bracket = await openRun(deps, input.project, input.actor);
+  // The image model was resolved out of the registry above, so the bracket's
+  // unknown-model check can only pass here — it is declared anyway, because a
+  // run that does not say what it dispatches is a run nothing can decide about.
+  const bracket = await openRun(deps, input.project, input.actor, { model });
   const recorder =
     deps.traces && traceSampled(deps)
       ? new TraceRecorder(deps.traces, {

@@ -295,7 +295,16 @@ refused run is never counted, traced, or recorded. `close()` runs **after** the 
 flushed its usage — an agent run buffers usage until the end, so a settle before the flush
 would always read a total that excludes the run being settled.
 
-The two guards fail in opposite directions, on purpose:
+Ahead of both sits a third check that is not a guard on load but on configuration: when
+`UNKNOWN_MODEL_POLICY=refuse`, a version naming a model **or fallback** missing from the
+registry is refused with a 400 before anything is spent. It is first because a version this
+deployment will not dispatch is misconfigured rather than over budget, and saying so costs no
+I/O beyond a cached settings read. The default is `allow`, byte-identical to the path before
+it existed — the *refusal* is the option, because the run works and only the price is wrong
+([CONFIGURATION.md](CONFIGURATION.md#execution-limits)). It fails open on a settings read
+failure, for the same reason the cost guard does.
+
+The two load guards fail in opposite directions, on purpose:
 
 - The **cost guard** protects money, so a storage blip must not stop the platform: it fails
   **open**.
@@ -304,8 +313,8 @@ The two guards fail in opposite directions, on purpose:
   costs nothing extra, since every run reads its project and version from the same table and
   a store that cannot answer was about to fail the run anyway.
 
-Cost is checked first: a project over budget should be told so rather than made to queue for
-a slot it would be refused on regardless.
+Cost is checked before concurrency: a project over budget should be told so rather than made
+to queue for a slot it would be refused on regardless.
 
 **Concurrency is a slot index, not a counter** (`src/domain/execution/runSlot.ts`). A counter
 is exact only while every process lives to decrement it; an instance killed mid-run leaks its

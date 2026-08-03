@@ -198,13 +198,16 @@ describe("acquireRunSlot", () => {
   });
 });
 
+/** What the bracket is told a run will dispatch; irrelevant to these cases. */
+const MODELS = { model: "openai/gpt-5-mini" };
+
 describe("openRun with a concurrency limit", () => {
   it("refuses past the limit without counting the run", async () => {
     resetRunMetrics();
     const d = { usage, ...deps() };
-    const first = await openRun(d, project, user);
-    const second = await openRun(d, project, user);
-    await expect(openRun(d, project, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    const first = await openRun(d, project, user, MODELS);
+    const second = await openRun(d, project, user, MODELS);
+    await expect(openRun(d, project, user, MODELS)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 2, runsStarted: 2 });
     await first.close();
     await second.close();
@@ -212,19 +215,19 @@ describe("openRun with a concurrency limit", () => {
 
   it("releases the slot when the run closes", async () => {
     const d = { usage, ...deps() };
-    const first = await openRun(d, project, user);
-    await openRun(d, project, user);
+    const first = await openRun(d, project, user, MODELS);
+    await openRun(d, project, user, MODELS);
     await first.close();
-    await expect(openRun(d, project, user)).resolves.toBeDefined();
+    await expect(openRun(d, project, user, MODELS)).resolves.toBeDefined();
   });
 
   it("releases a slot only once, however the generator unwinds", async () => {
     const slots = memorySlots();
     const d = { usage, runSlots: slots.repo, limits: LIMITS };
-    const bracket = await openRun(d, project, user);
+    const bracket = await openRun(d, project, user, MODELS);
     await bracket.close();
     // A second close must not free a slot a later run has since taken.
-    const later = await openRun(d, project, user);
+    const later = await openRun(d, project, user, MODELS);
     await bracket.close();
     expect(slots.held.get("user:a@example.com")?.size).toBe(1);
     await later.close();

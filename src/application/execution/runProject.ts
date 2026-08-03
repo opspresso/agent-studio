@@ -63,7 +63,7 @@ export async function executeVersion(
   const actorKey = input.actor ? toActorKey(input.actor) : undefined;
   // Before the recorder: a run refused by the cost guard leaves no trace, no
   // metric and no usage — it never started.
-  const bracket = await openRun(deps, input.project, input.actor);
+  const bracket = await openRun(deps, input.project, input.actor, input.version);
   const recorder = sampledTraceRecorder(deps, input);
   let failed = false;
   try {
@@ -104,7 +104,7 @@ export async function* executeVersionStream(
 ): AsyncGenerator<EngineChunk> {
   const channel = deps.channel;
   const actorKey = input.actor ? toActorKey(input.actor) : undefined;
-  const bracket = await openRun(deps, input.project, input.actor);
+  const bracket = await openRun(deps, input.project, input.actor, input.version);
   const recorder = sampledTraceRecorder(deps, input);
   let thrown: unknown;
   let completed = false;
@@ -293,7 +293,7 @@ export async function* executeAgent(
     ...(input.actor ? { actor: input.actor } : {}),
   };
   const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
-  const bracket = await openRun(deps, input.project, input.actor);
+  const bracket = await openRun(deps, input.project, input.actor, input.version);
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, origin)
     : undefined;

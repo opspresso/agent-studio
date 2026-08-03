@@ -31,6 +31,12 @@ export interface AppSettings {
   /** Secret. */
   a2aApiKey?: string;
   publicBaseUrl?: string;
+  /**
+   * `allow` (the default) or `refuse`. A model missing from the registry runs
+   * either way as far as the provider is concerned — what this decides is
+   * whether *this app* dispatches it, given that it cannot price one.
+   */
+  unknownModelPolicy?: string;
   updatedAt: string;
 }
 

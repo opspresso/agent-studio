@@ -57,6 +57,12 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   { key: "githubToken", secret: true, env: () => env.GITHUB_TOKEN || undefined },
   { key: "a2aApiKey", secret: true, env: () => env.A2A_API_KEY || undefined },
   {
+    key: "unknownModelPolicy",
+    secret: false,
+    env: () => env.UNKNOWN_MODEL_POLICY || undefined,
+    defaultValue: "allow",
+  },
+  {
     key: "publicBaseUrl",
     secret: false,
     // Same precedence as `config.publicBaseUrl`: the explicit setting wins,

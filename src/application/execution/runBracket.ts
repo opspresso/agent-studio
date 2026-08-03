@@ -13,9 +13,11 @@
  * executor, never through `runProject`.
  *
  * Order matters at every step. The guards run *before* the metric opens, so a
- * refused run is never counted as one that ran. Concurrency is taken after cost:
- * a project that is over budget should be told so rather than made to queue for
- * a slot it will be refused on anyway. `close()` runs *after* the caller has
+ * refused run is never counted as one that ran. Models are checked first, ahead
+ * of both: a version this deployment will not dispatch is misconfigured rather
+ * than over budget, and telling it so costs no I/O beyond a cached settings
+ * read. Concurrency is taken after cost: a project that is over budget should be
+ * told so rather than made to queue for a slot it will be refused on anyway. `close()` runs *after* the caller has
  * flushed its usage, so the settle step sees the spend of the run it is
  * settling — an agent run buffers usage until the end, and a settle before the
  * flush would always be reading the previous run's total.
@@ -27,8 +29,9 @@ import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
 import { acquireRunSlot, type ConcurrencyGuardDeps } from "./concurrencyGuard";
+import { assertModelsRunnable, type ModelAdmissionDeps, type RunModels } from "./modelAdmission";
 
-export type RunBracketDeps = CostGuardDeps & ConcurrencyGuardDeps;
+export type RunBracketDeps = CostGuardDeps & ConcurrencyGuardDeps & ModelAdmissionDeps;
 
 export interface RunBracket {
   /**
@@ -46,15 +49,21 @@ export interface RunBracket {
 /**
  * Admit a top-level run, or refuse it.
  *
- * Throws `CostLimitExceededError` when the project is over its daily block
- * threshold, or `ConcurrencyLimitError` when the caller already has every slot
- * in flight. Both are 429s carrying `Retry-After`, and nothing has been
- * counted or recorded when either is thrown.
+ * Throws `UnknownModelError` (400) when the deployment refuses unregistered
+ * models and this version names one, `CostLimitExceededError` when the project
+ * is over its daily block threshold, or `ConcurrencyLimitError` when the caller
+ * already has every slot in flight. The latter two are 429s carrying
+ * `Retry-After`, and nothing has been counted or recorded when any is thrown.
+ *
+ * `models` is required rather than optional: every run knows what it intends to
+ * dispatch, and a caller allowed to omit it would be a caller allowed to skip
+ * the decision.
  */
 export async function openRun(
   deps: RunBracketDeps,
   project: Project,
-  actor?: RunActor,
+  actor: RunActor | undefined,
+  models: RunModels,
 ): Promise<RunBracket> {
   // Before the first `await`, and therefore before this function leaves the
   // caller's async context. `enterWith` binds the store to the context it runs
@@ -65,6 +74,7 @@ export async function openRun(
   // The cost is that a refused run also mints an id. That is the better trade:
   // the refusal's own log line is correlated too.
   const context = enterRunContext();
+  await assertModelsRunnable(deps, models);
   await assertWithinCostLimit(deps, project);
   const slot = await acquireRunSlot(deps, actor);
   const startedAt = Date.now();

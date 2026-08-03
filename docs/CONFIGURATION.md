@@ -105,8 +105,10 @@ instead would orphan every stored version that referenced the old id.
 **A model missing from the registry still runs, but its usage is priced at $0** — so the gap
 is invisible in the cost dashboard it corrupts. Each miss logs `[cost] unknown model id`
 once and increments `agent_studio_unknown_model_calls_total`; alert on a non-zero rate
-rather than waiting to notice the cost. `pnpm check-models` compares the registry against
-what the configured channels actually serve — see [DEVELOPMENT.md](DEVELOPMENT.md#scripts).
+rather than waiting to notice the cost. A deployment that *bills* on those numbers can set
+[`UNKNOWN_MODEL_POLICY=refuse`](#execution-limits) and have such a run refused before dispatch
+instead. `pnpm check-models` compares the registry against what the configured channels
+actually serve — see [DEVELOPMENT.md](DEVELOPMENT.md#scripts).
 
 ## Execution limits
 
@@ -115,6 +117,7 @@ what the configured channels actually serve — see [DEVELOPMENT.md](DEVELOPMENT
 | `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. The Slack path additionally applies the fixed 3-minute interactive deadline (below), which can only shorten a run. Two derived values move with this one: the run-slot lease (this value plus 60s) and the MCP OAuth token refresh margin (this value plus 5 min). |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | Runs one caller may have in flight. `0` disables the limit. |
 | `MAX_CONCURRENT_RUNS_A2A` | `50` | — | Separate ceiling for inbound A2A, because its actor id is a constant: the inbound key is shared, so one identity stands for every machine caller and the per-caller limit would otherwise cap the whole A2A surface. |
+| `UNKNOWN_MODEL_POLICY` | `allow` | **runtime** | `allow` \| `refuse`. On `refuse`, a run whose model **or fallback** is missing from `src/domain/llm/models.ts` is rejected before dispatch with a 400 — the alternative is a run booked at $0. Anything other than the exact string `refuse` reads as `allow`, including a typo: refusing on an unrecognised value would turn a misspelled setting into an outage. Version *writes* are unaffected; what this gates is execution. |
 | `SCHEDULE_SCAN_TOKEN` | unset | — | What the schedule ticker presents to `POST /api/triggers/scan` (`X-Scan-Token`). Unset means this deployment has no ticker: schedule triggers never fire and the endpoint answers 503 — off rather than open. |
 
 Invalid values (non-integer, negative) degrade to the default with a warning rather than to

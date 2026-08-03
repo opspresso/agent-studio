@@ -213,6 +213,15 @@ export const config = {
   get slackLoadingIndicator(): string | undefined {
     return process.env.SLACK_LOADING_INDICATOR || undefined;
   },
+  /**
+   * `refuse` makes a run whose model is missing from the registry fail before
+   * dispatch. Anything else (including unset) allows it, which is what every
+   * deployment did before the setting existed — an unregistered model runs and
+   * its usage books at $0.
+   */
+  get unknownModelPolicy(): string | undefined {
+    return process.env.UNKNOWN_MODEL_POLICY || undefined;
+  },
   /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
   get a2aApiKey(): string | undefined {
     return process.env.A2A_API_KEY || undefined;

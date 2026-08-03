@@ -12,6 +12,7 @@ import {
   getAdminEmails,
   getLlmChannelConfig,
   getLlmProviderConfigs,
+  getUnknownModelPolicy,
   invalidateSettingsCache,
   isAdminEmail,
   isConfiguredAdmin,
@@ -146,5 +147,29 @@ describe("admin predicates", () => {
   it("treats an admin list set to empty the same as unset", async () => {
     stub({ adminEmails: "  ,  " } as AppSettings);
     await expect(isConfiguredAdmin("anyone@example.com")).resolves.toBe(false);
+  });
+});
+
+describe("unknown model policy", () => {
+  it("defaults to allow, which is what every deployment had before it existed", async () => {
+    delete process.env.UNKNOWN_MODEL_POLICY;
+    stub(null);
+    expect(await getUnknownModelPolicy()).toBe("allow");
+  });
+
+  it("reads refuse from the environment and from a stored override", async () => {
+    process.env.UNKNOWN_MODEL_POLICY = "refuse";
+    stub(null);
+    expect(await getUnknownModelPolicy()).toBe("refuse");
+
+    delete process.env.UNKNOWN_MODEL_POLICY;
+    invalidateSettingsCache();
+    stub({ unknownModelPolicy: "REFUSE", updatedAt: "2026-01-01T00:00:00Z" });
+    expect(await getUnknownModelPolicy()).toBe("refuse");
+  });
+
+  it("reads anything else as allow, so a typo cannot take the platform down", async () => {
+    stub({ unknownModelPolicy: "refuze", updatedAt: "2026-01-01T00:00:00Z" });
+    expect(await getUnknownModelPolicy()).toBe("allow");
   });
 });

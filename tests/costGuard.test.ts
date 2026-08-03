@@ -20,6 +20,9 @@ import type { CostLimits, Project, Version } from "@/domain/project/types";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
 
+/** What the bracket is told a run will dispatch; irrelevant to these cases. */
+const MODELS = { model: "openai/gpt-5-mini" };
+
 const TODAY = new Date().toISOString().slice(0, 10);
 
 function project(costLimits?: CostLimits, slackEnabled = false): Project {
@@ -322,7 +325,7 @@ describe("openRun", () => {
   it("does not count a run the guard refused", async () => {
     resetRunMetrics();
     const f = fixture({ day: row({ m: 50 }) });
-    await expect(openRun(f.deps, project({ blockThresholdUsd: 10 }))).rejects.toBeInstanceOf(
+    await expect(openRun(f.deps, project({ blockThresholdUsd: 10 }), undefined, MODELS)).rejects.toBeInstanceOf(
       CostLimitExceededError,
     );
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsStarted: 0 });
@@ -331,7 +334,7 @@ describe("openRun", () => {
   it("counts an admitted run and releases it exactly once", async () => {
     resetRunMetrics();
     const f = fixture({ day: null });
-    const bracket = await openRun(f.deps, project({ blockThresholdUsd: 10 }));
+    const bracket = await openRun(f.deps, project({ blockThresholdUsd: 10 }), undefined, MODELS);
     expect(runMetricsSnapshot().activeRuns).toBe(1);
     await bracket.close();
     // A generator reaches its `finally` through both a return and a consumer's

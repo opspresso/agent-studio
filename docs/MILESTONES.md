@@ -29,26 +29,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 
 ---
 
-## unknown-model-fail-closed — 미등록 모델 실행의 거부 옵션
-
-**이유**: 레지스트리에 없는 모델은 실행되고 $0로 계상된다(CONFIGURATION.md). 사내에선
-대시보드 오염이지만, 과금이 실제 청구가 되는 순간 매출 누수가 된다. 기본 동작은
-유지하되(기존 배포 호환), 배포가 거부를 선택할 수 있어야 한다.
-
-**선행**: 없음.
-
-**범위**
-
-- 런타임 설정 하나(allow | refuse, 기본 allow) — `runtime-settings.ts` 경유, env fallback.
-- refuse: 실행 admission에서 primary와 fallback 모두 레지스트리를 조회해 dispatch 전
-  `ValidationError`로 거부한다(스트림 시작 전 HTTP 에러 계약). 검사 위치는 실행
-  파사드(`runProject.ts`)의 버전 resolve 직후 한 곳.
-- 버전 저장의 "경고와 함께 허용" 계약은 그대로 둔다 — 막는 것은 실행이지 편집이 아니다.
-- allow는 현행과 byte-identical.
-
-**완료 조건**: refuse 설정에서 미등록 primary/fallback 실행이 dispatch 전 거부됨을 테스트로
-검증한다. allow 설정에서 기존 테스트가 무수정 통과한다.
-
 ## tenant-key-scheme — 테넌트 엔티티와 키 스킴
 
 **이유**: 멀티테넌트 전환의 첫 단추. 모든 DynamoDB 키 문자열이 `keys.ts` 한 곳에서 나오므로

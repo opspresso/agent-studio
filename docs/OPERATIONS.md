@@ -109,7 +109,9 @@ deadline itself — so anything past it is a run that outlived its own limit.
 **Alert on a non-zero `agent_studio_unknown_model_calls_total` rate.** A model id missing from
 `src/domain/llm/models.ts` still runs, but its usage is booked at **$0** — the miss is
 invisible in exactly the cost dashboard it corrupts. Each miss also logs `[cost] unknown model
-id` once.
+id` once. Where those numbers are billed on, set `UNKNOWN_MODEL_POLICY=refuse` and the run is
+rejected instead of quietly costing nothing; the metric then counts what the alert is for
+rather than what already leaked.
 
 Counters are per-process and name **no project, user or model**; the only label any of them
 carries is a histogram's `le`. A label whose values are unbounded turns one metric into a time
