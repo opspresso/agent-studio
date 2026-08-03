@@ -75,6 +75,22 @@ function belongsToTenant(pk: string): boolean {
 /** Every GSI partition attribute is a key too, and misses here leak across tenants. */
 const INDEX_PARTITION_ATTRIBUTES = ["GSI1PK"] as const;
 
+/**
+ * Attributes that *hold* a key rather than being one.
+ *
+ * A `TRACE_REF` row stores the partition key of the trace body it points at, so
+ * that deleting a project can delete the bodies without querying for them.
+ * Moving the row and the body while leaving the pointer at the old address
+ * makes it a pointer to nothing: `projectRepository.delete` reads `tracePK`,
+ * batch-deletes that key, and every one of those deletes is a no-op against a
+ * row that moved. The bodies then sit until their TTL expires, unreferenced and
+ * unfindable by the code meant to remove them — and a re-run does not fix it,
+ * because the row is already at its new key.
+ *
+ * `traceSK` is not here: a sort key carries no tenant prefix.
+ */
+const KEY_BEARING_ATTRIBUTES = ["tracePK"] as const;
+
 function argValue(name: string): string | undefined {
   const arg = process.argv.find((value) => value.startsWith(`--${name}=`));
   return arg?.slice(name.length + 3);
@@ -112,6 +128,14 @@ export async function retenantTable(opts: {
       for (const attribute of INDEX_PARTITION_ATTRIBUTES) {
         const value = item[attribute];
         if (typeof value === "string" && !value.startsWith("T#")) {
+          moved_item[attribute] = `${prefix}${value}`;
+        }
+      }
+      for (const attribute of KEY_BEARING_ATTRIBUTES) {
+        const value = item[attribute];
+        // Only when the address it holds is itself moving; a pointer at a row
+        // this migration leaves alone must keep pointing where it points.
+        if (typeof value === "string" && !value.startsWith("T#") && belongsToTenant(value)) {
           moved_item[attribute] = `${prefix}${value}`;
         }
       }

@@ -465,7 +465,21 @@ describe("scanSchedules", () => {
       }
       return listByProject(name);
     };
-    expect((await scanAndExecute(f)).summary.repaired).toBe(1);
+    const { summary } = await scanAndExecute(f);
+    expect(summary.repaired).toBe(1);
+    // And says it swept less than it was asked to. `errors` is the field the
+    // scan route tells operators to alert on, so a sweep that could not read a
+    // partition reporting a clean summary is the stranded rows going unnoticed.
+    expect(summary.errors).toBe(1);
+  });
+
+  it("counts a repair sweep that could not start at all", async () => {
+    const f = fixture({ schedules: [], webhooks: [webhook()] });
+    f.deps.projects.list = async () => {
+      throw new Error("throttled");
+    };
+    const { summary } = await scanAndExecute(f);
+    expect(summary).toMatchObject({ repaired: 0, errors: 1 });
   });
 
   it("reads history only on repair ticks", async () => {

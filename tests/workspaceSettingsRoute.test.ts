@@ -60,13 +60,28 @@ describe("PUT /api/settings/workspace", () => {
   });
 
   it("takes the tenant from the session, never from the body", async () => {
-    // A workspace admin is an admin of theirs, not of one they can name.
-    await put({ tenant: "globex", llmBaseUrl: "https://x" });
+    // A workspace admin is an admin of theirs, not of one they can name — and
+    // naming one is refused rather than quietly ignored, because a caller who
+    // wrote `tenant` believed it was doing something.
+    expect((await put({ tenant: "globex", llmBaseUrl: "https://x" })).status).toBe(400);
+    expect(useCases.update).not.toHaveBeenCalled();
+
+    await put({ llmBaseUrl: "https://x" });
     expect(useCases.update).toHaveBeenCalledWith(
       "acme",
       { llmBaseUrl: "https://x" },
       "admin@example.com",
     );
+  });
+
+  it("refuses a key a workspace cannot override instead of dropping it", async () => {
+    // The use case rejects one by name; zod's default strips unknown keys, so
+    // that guard was unreachable from here and the answer was a 200 with no
+    // mention of the key that will never take effect.
+    const response = await put({ adminEmails: "a@b.com", llmBaseUrl: "https://x" });
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(await response.json())).toContain("adminEmails");
+    expect(useCases.update).not.toHaveBeenCalled();
   });
 
   it("400s a provider list that is not one, rather than storing it", async () => {

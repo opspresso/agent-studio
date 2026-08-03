@@ -20,12 +20,18 @@ import { withAdminAuth } from "@/lib/session";
  */
 
 /**
- * Narrowed to what a workspace may decide, and typed rather than trusted. The
- * use case rejects an unknown key by name, but only a schema can stop
- * `llmProviders: "abc"` — which is `length === 3`, so it was stored verbatim
- * and broke every run in the workspace on the next provider read.
+ * Narrowed to what a workspace may decide, and typed rather than trusted. Only
+ * a schema can stop `llmProviders: "abc"` — which is `length === 3`, so it was
+ * stored verbatim and broke every run in the workspace on the next provider
+ * read.
+ *
+ * `.strict()`, because zod's default is to *strip* what it does not know. That
+ * made the use case's "named rather than silently dropped" rejection of a
+ * non-overridable key unreachable from the only route that calls it: the key
+ * was gone before the check saw it, and the answer was a 200 that mentioned
+ * nothing. Rejecting here is what makes the guard behind it true.
  */
-const updateSchema = z.object({
+const updateSchema = z.strictObject({
   llmBaseUrl: z.string().max(4000).optional(),
   llmApiKey: z.string().max(4000).optional(),
   llmProviders: z
@@ -62,7 +68,8 @@ export const PUT = withAdminAuth(async (user, request: Request) => {
   }
   try {
     const view = await tenantSettingsUseCases.update(user.tenant, parsed.data, user.email);
-    invalidateSettingsCache();
+    // This workspace's entry, not the whole map: one row changed.
+    invalidateSettingsCache(user.tenant);
     return Response.json(view);
   } catch (error) {
     return apiError(error);

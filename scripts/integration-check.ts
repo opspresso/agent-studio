@@ -69,7 +69,8 @@ async function main() {
   const { retenantTable } = await import("./retenant-table");
   const { keys } = await import("@/infrastructure/db/keys");
   const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
-  const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
+  const { DeleteCommand, GetCommand } = await import("@aws-sdk/lib-dynamodb");
+  const { traceRepository } = await import("@/infrastructure/db/repositories/traceRepository");
   type Project = Awaited<ReturnType<typeof projectRepository.list>>[number];
 
   /** Remove rows whose repository has no delete, so a run leaves the table as it found it. */
@@ -552,6 +553,7 @@ async function main() {
   // — which is also why it only ever runs against the `-inMemory` test
   // instance, wiped on every container start.
   const migrating = `it-migrate-${suffix}`;
+  const traceId = `it-trace-${suffix}`;
   try {
     await projectRepository.create(defaultTenantProject(migrating));
     // Two rows that share the `SETTINGS#` stem and do not share a fate: the
@@ -563,6 +565,23 @@ async function main() {
     await settingsRepository.putTenant(DEFAULT_TENANT, {
       llmBaseUrl: "https://workspace.example/v1",
       updatedAt: now,
+    });
+
+    // A trace and the ref row that points at it. The ref *stores* the body's
+    // partition key, so a migration that moves both and leaves the pointer at
+    // the old address turns project deletion's trace cleanup into a batch of
+    // no-ops against rows that are no longer there.
+    await traceRepository.put({
+      traceId,
+      projectName: migrating,
+      versionName: "v1",
+      projectType: "llm",
+      status: "completed",
+      spans: [],
+      startedAt: now,
+      endedAt: now,
+      durationMs: 1,
+      createdAt: now,
     });
 
     await retenantTable({ tenant: "it-moved", apply: true });
@@ -594,6 +613,22 @@ async function main() {
       appSettings.llmBaseUrl,
       "while the deployment's own settings row stayed where it is",
     );
+    const movedRef = await getDocumentClient().send(
+      new GetCommand({
+        TableName: getTableName(),
+        Key: keys.traceRef("it-moved", migrating, now, traceId),
+      }),
+    );
+    assert.equal(
+      movedRef.Item?.tracePK,
+      keys.trace("it-moved", traceId).PK,
+      "the trace pointer moved with the trace it points at",
+    );
+    assert.notEqual(
+      await withTenant("it-moved", () => traceRepository.get(traceId)),
+      null,
+      "and the body is where the pointer says",
+    );
     pass("re-keying a default-tenant deployment onto a named tenant");
   } finally {
     await withTenant("it-moved", () => projectRepository.delete(migrating)).catch(() => {});
@@ -606,6 +641,11 @@ async function main() {
       keys.settings(),
       keys.tenantSettings(DEFAULT_TENANT),
       keys.tenantSettings("it-moved"),
+      // The project delete above takes these through the pointer this case
+      // exists to check — which is exactly why they are also removed by hand: a
+      // run that fails the assertion is a run where the pointer did not work.
+      keys.trace("it-moved", traceId),
+      keys.traceRef("it-moved", migrating, now, traceId),
     ]);
   }
 

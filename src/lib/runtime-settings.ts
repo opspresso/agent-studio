@@ -95,7 +95,20 @@ async function loadSettings(): Promise<AppSettings | null> {
   return { ...(app ?? { updatedAt: workspace.updatedAt }), ...pickTenantOverrides(workspace) };
 }
 
-export function invalidateSettingsCache(): void {
+/**
+ * Drop the cached settings after a write.
+ *
+ * With no argument this is the app row changing, and every workspace's resolved
+ * view inherits from it — so every entry goes. Naming a workspace drops that
+ * one and leaves the rest: its row is the only thing that changed, and clearing
+ * the map would make one admin's save cost every other workspace on this
+ * instance a fresh read of something that did not.
+ */
+export function invalidateSettingsCache(tenant?: string): void {
+  if (tenant !== undefined && tenant !== DEFAULT_TENANT) {
+    tenantCache.delete(tenant);
+    return;
+  }
   cache = undefined;
   tenantCache.clear();
 }

@@ -114,6 +114,55 @@ describe("resolution order", () => {
   });
 });
 
+describe("invalidation", () => {
+  it("drops only the workspace that changed", async () => {
+    // A workspace save used to clear the whole map, so one admin pressing Save
+    // charged every other workspace on the instance a fresh read of a row that
+    // had not changed.
+    rows.tenants.set("acme", { llmBaseUrl: "https://acme.example/v1", updatedAt: "" });
+    rows.tenants.set("globex", { llmBaseUrl: "https://globex.example/v1", updatedAt: "" });
+    let reads = 0;
+    const counting = { ...settingsRepository };
+    vi.spyOn(settingsRepository, "getTenant").mockImplementation(async (tenant: string) => {
+      reads += 1;
+      return counting.getTenant(tenant);
+    });
+
+    for (const tenant of ["acme", "globex"]) {
+      await withTenant(tenant, () => getLlmChannelConfig());
+    }
+    expect(reads).toBe(2);
+
+    invalidateSettingsCache("acme");
+    expect(
+      (await withTenant("globex", () => getLlmChannelConfig())).baseUrl,
+    ).toBe("https://globex.example/v1");
+    expect(reads).toBe(2);
+
+    rows.tenants.set("acme", { llmBaseUrl: "https://acme-2.example/v1", updatedAt: "" });
+    expect((await withTenant("acme", () => getLlmChannelConfig())).baseUrl).toBe(
+      "https://acme-2.example/v1",
+    );
+    expect(reads).toBe(3);
+    vi.mocked(settingsRepository.getTenant).mockRestore();
+  });
+
+  it("drops every workspace when the deployment's own row changes", async () => {
+    // The app row is what a workspace view inherits from, so a change to it
+    // invalidates all of them.
+    rows.tenants.set("acme", { llmApiKey: encryptSecret("sk-acme"), updatedAt: "" });
+    rows.app = { llmBaseUrl: "https://app.example/v1", updatedAt: "" };
+    expect((await withTenant("acme", () => getLlmChannelConfig())).baseUrl).toBe(
+      "https://app.example/v1",
+    );
+    rows.app = { llmBaseUrl: "https://app-2.example/v1", updatedAt: "" };
+    invalidateSettingsCache();
+    expect((await withTenant("acme", () => getLlmChannelConfig())).baseUrl).toBe(
+      "https://app-2.example/v1",
+    );
+  });
+});
+
 describe("the overridable list", () => {
   it("is defined in one place and drops everything else", () => {
     expect(

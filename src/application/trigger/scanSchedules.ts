@@ -171,7 +171,13 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
   const firings: ScheduleFiring[] = [];
   const windowStart = at.getTime() - SCHEDULE_CATCHUP_WINDOW_MS;
   if (at.getUTCMinutes() % REPAIR_EVERY_MINUTES === 0) {
-    summary.repaired += await repairLostFirings(deps, at);
+    const repair = await repairLostFirings(deps, at);
+    summary.repaired += repair.repaired;
+    // Counted, not just logged. `errors` is the field the route's own note says
+    // to alert on, so a sweep that read nothing and a sweep that found nothing
+    // both reporting `repaired=0 errors=0` is the operator being told the
+    // stranded rows are not there.
+    summary.errors += repair.errors;
   }
   // Fenced like every other read here. Unfenced it was the one call that could
   // throw out of this function, and the tick drives *every* workspace: one
@@ -297,14 +303,25 @@ async function fireDueOccurrences(
  * Enabled is not consulted: disabling a trigger, or never firing it again, must
  * not strand the row its last firing left behind. Each project and each trigger
  * is fenced, so one unreadable partition costs its own rows and not the sweep.
+ *
+ * Every fence **counts** what it swallowed. A sweep that could read nothing and
+ * a sweep that found nothing both return `repaired: 0`, and the difference is
+ * the whole question an operator is asking: the first leaves stranded rows
+ * sitting in `running` and needs a person, the second is a quiet minute.
  */
-async function repairLostFirings(deps: FiringDeps, at: Date): Promise<number> {
+interface RepairOutcome {
+  repaired: number;
+  /** Reads or writes this sweep could not do; each one is rows left stranded. */
+  errors: number;
+}
+
+async function repairLostFirings(deps: FiringDeps, at: Date): Promise<RepairOutcome> {
   let projects;
   try {
     projects = await deps.projects.list();
   } catch (error) {
     log.warn("trigger", "could not list projects for firing repair", error);
-    return 0;
+    return { repaired: 0, errors: 1 };
   }
   // Bounded-concurrent rather than serial: the reads are independent — one
   // trigger list per project, one run list per trigger — and awaiting them one
@@ -316,18 +333,26 @@ async function repairLostFirings(deps: FiringDeps, at: Date): Promise<number> {
   // 8 projects each running 8 triggers is 64 in flight against a table the
   // scheduler has to use for its claims in the same tick, and the number in
   // `REPAIR_CONCURRENCY` would say 8.
+  let errors = 0;
   const triggerLists = await runBounded(projects, REPAIR_CONCURRENCY, async (project) => {
     try {
       return await deps.triggers.listByProject(project.name);
     } catch (error) {
       log.warn("trigger", `could not list triggers of '${project.name}' for repair`, error);
+      errors += 1;
       return [] as Trigger[];
     }
   });
-  const counts = await runBounded(triggerLists.flat(), REPAIR_CONCURRENCY, (trigger) =>
+  const outcomes = await runBounded(triggerLists.flat(), REPAIR_CONCURRENCY, (trigger) =>
     repairLostRuns(deps, trigger, at),
   );
-  return counts.reduce((total, count) => total + count, 0);
+  return outcomes.reduce(
+    (total, outcome) => ({
+      repaired: total.repaired + outcome.repaired,
+      errors: total.errors + outcome.errors,
+    }),
+    { repaired: 0, errors },
+  );
 }
 
 /** One trigger's stranded rows. */
@@ -335,15 +360,16 @@ async function repairLostRuns(
   deps: FiringDeps,
   trigger: Pick<Trigger, "projectName" | "triggerId">,
   at: Date,
-): Promise<number> {
+): Promise<RepairOutcome> {
   const cutoff = at.getTime() - FIRING_REPAIR_AFTER_SECONDS * 1000;
   let rows: TriggerRun[];
   try {
     rows = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT);
   } catch (error) {
     log.warn("trigger", `could not read runs of '${trigger.triggerId}' for repair`, error);
-    return 0;
+    return { repaired: 0, errors: 1 };
   }
+  let errors = 0;
   let repaired = 0;
   for (const row of rows) {
     // An unparseable startedAt cannot prove the run is fresh, so it repairs
@@ -361,7 +387,8 @@ async function repairLostRuns(
       repaired += 1;
     } catch (error) {
       log.error("trigger", "could not repair a lost firing", error);
+      errors += 1;
     }
   }
-  return repaired;
+  return { repaired, errors };
 }

@@ -63,6 +63,18 @@ describe("size", () => {
     expect(cache.get("c")).toBe("4");
   });
 
+  it("drops one key without touching the others", () => {
+    // What an invalidation usually means: one row changed. Clearing the map
+    // would charge every other key on this instance for a read of something
+    // that did not.
+    const cache = createTtlCache<number>({ ttlMs: 60_000, maxEntries: 10 });
+    cache.set("acme", 1);
+    cache.set("globex", 2);
+    cache.delete("acme");
+    expect(cache.get("acme")).toBeUndefined();
+    expect(cache.get("globex")).toBe(2);
+  });
+
   it("drops everything on clear", () => {
     const cache = createTtlCache<number>({ ttlMs: 60_000, maxEntries: 10 });
     cache.set("a", 1);

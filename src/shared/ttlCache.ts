@@ -26,6 +26,12 @@ export interface TtlCache<V> {
   /** The cached value, or `undefined` when absent or expired. */
   get(key: string): V | undefined;
   set(key: string, value: V): void;
+  /**
+   * Drop one key. What an invalidation usually means: a write changed one
+   * workspace's row, and clearing the map costs every *other* workspace on this
+   * instance a fresh read of something that did not change.
+   */
+  delete(key: string): void;
   clear(): void;
   /** Live entries, expired ones included — for tests asserting the cap. */
   readonly size: number;
@@ -60,6 +66,10 @@ export function createTtlCache<V>(opts: { ttlMs: number; maxEntries: number }): 
         }
         entries.delete(oldest);
       }
+    },
+
+    delete(key) {
+      entries.delete(key);
     },
 
     clear() {

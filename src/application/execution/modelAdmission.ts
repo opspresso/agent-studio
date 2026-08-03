@@ -8,9 +8,12 @@
  * invisible in exactly the report it spoils.
  *
  * So the behaviour stays the default and the *refusal* is the option: a
- * deployment that bills says `refuse`, and every other deployment keeps running
- * exactly as it did. `allow` is byte-identical to the path before this module
- * existed — no lookup, no settings read, nothing.
+ * deployment that bills says `refuse`, and every other deployment dispatches
+ * exactly what it did before. What `allow` costs is the policy read itself —
+ * the composition root wires the reader unconditionally, so this runs on every
+ * dispatch. That read is the same cached settings resolution the channel does
+ * a moment later for the base URL and key, so on the hot path it is a map
+ * lookup; the fast path below is for a caller that wired no reader at all.
  *
  * The check covers the fallback as well as the primary. A fallback is reached
  * on a retryable failure of the primary, which is to say at the worst possible
