@@ -619,6 +619,46 @@ for a failure — which is what lets consumers read the ending instead of inferr
   [CONFIGURATION.md](CONFIGURATION.md#model-registry-and-wireid) for `wireId` and drift
   checking.
 
+### Images
+
+Three paths draw a picture, and they meet at one port — `ImageChannel`
+(`src/domain/llm/imageChannel.ts`) — rather than at one use case, because each answers to a
+different caller:
+
+| Path | Runs in | Model |
+|---|---|---|
+| An `image` project | `generateImage` (`src/application/image/generateImage.ts`) | the version's own `model` |
+| The `GenerateImage` / `EditImage` builtins of an agent run | `src/application/execution/imageTool.ts` | `parameters.imageModel` while it is still image-capable, else `DEFAULT_IMAGE_MODEL` — the first registry entry carrying the capability |
+| An `image` project reached through a transfer | `runImageSubagent` (same file) | the child version's own `model` |
+
+**Generating and editing is one decision, read off the input.** Every path calls `editImage`
+when it holds source bytes and `generateImage` when it does not — the distinction the Images
+API itself draws. That is what lets "now make it night" land on a picture the user attached,
+one the run drew, or one a transfer handed to an image child through its `image_ids`, without
+any of them needing a separate tool.
+
+**Where the capability is checked decides what a refusal looks like.** `generateImage`
+validates `capabilities.imageGeneration` and renders the prompt *before* opening the run
+bracket, so a misconfigured version is a `400` rather than a run that spent a slot. The
+builtins answer the same question at wiring time — a version that did not opt into
+`parameters.imageGeneration` is never offered them, and a stored `imageModel` that has since
+left the registry falls back to the default instead of silently disabling the tool. An image
+subagent can only answer it mid-stream, so it does, as an authored `error` chunk. Whether the
+resolved model's provider implements the *edit* endpoint is unknowable until dispatch, which
+is why that refusal is a tool-result error rather than a hidden tool.
+
+**Usage collapses in exactly one place.** An image model bills three token counts and a usage
+row carries two; `toImageUsageRecord` (`src/domain/llm/models.ts`) owns that collapse for all
+three paths. Recording it is telemetry — the provider has already drawn and billed the image,
+so a failed write is logged rather than turned into a 500 that throws the result away.
+
+**Where the bytes go is the consumer's decision.** An `image` chunk is consumed *regardless of
+author*, because delegating to an image subagent is how an agent draws: chats upload through
+the optional `storeImage` port and persist a URL, Slack uploads each image to the thread once
+the run ends, the OpenAI-compatible surface carries them as an `images` extension, and predict
+returns them alongside the text. With no object storage configured a chat image renders during
+the live stream only — and the chat says so rather than showing a gap.
+
 ### Skills
 
 A skill is markdown behaviour instructions delivered by **progressive disclosure**: the system
