@@ -153,6 +153,9 @@ same rule applies to:
 | A process-local cache with both a TTL and an entry cap | `src/shared/ttlCache.ts` |
 | Running work over a list with a bound on what is in flight | `runBounded` in `src/shared/pool.ts` |
 | Which key prefixes the re-keying migration must move | `keys.ts`, cross-checked against `scripts/retenant-table.ts` by `tests/architecture.test.ts` |
+| Which attributes *hold* a key the migration must rewrite too | `KEY_BEARING_ATTRIBUTES` in `scripts/retenant-table.ts` |
+| The one spelling of an address | `normalizeEmail` in `src/shared/email.ts` |
+| Which admin question has no empty-list fail-open | `isNamedAdmin` in `src/lib/session.ts` |
 | Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
 | Which pages are public | `src/proxy.ts` |
 | Whether a chunk is top-level | `isTopLevelChunk()` in `src/domain/llm/types.ts` |
@@ -217,7 +220,9 @@ One line each — the linked section is the authority.
 - **Never hand-write a DynamoDB key string.** They come from
   `src/infrastructure/db/keys.ts`.
 - **Never leave a list query unpaginated.** A single Query page caps at 1MB and silently
-  truncates. Use `queryAll()`.
+  truncates. Use `queryAll()`. A partition with no natural bound gets its `limit` as well —
+  a cap applied to the assembled array bounds the answer and not the memory that produced it —
+  and the caller says what it left behind.
 - **A new execution entry point calls `executeProjectStream`** (or `executeProject` for a
   collected, non-streaming answer) rather than re-encoding the `projectType` dispatch, and
   opens the run bracket. Three call sites used to answer that question for themselves, and

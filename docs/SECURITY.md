@@ -114,7 +114,8 @@ a key every other tenant depends on, or provisioning containers on shared infras
 
 | Gate | Admits | Guards |
 |---|---|---|
-| `withAdminAuth` | this workspace's admins | that workspace's shared registries, its settings, its members, its audit log |
+| `withAdminAuth` | this workspace's admins | that workspace's shared registries, its settings, its members |
+| `withNamedAdminAuth` | the same, minus the empty-list fail-open | `GET /api/audit` |
 | `withDeploymentAdminAuth` | `ADMIN_EMAILS` | `PUT /api/settings`, the A2A key and its reveal, `/api/mcps/managed/*`, registering and deleting a workspace |
 
 `ADMIN_EMAILS` answers the deployment question **whatever workspace the caller is in** — the
@@ -127,13 +128,38 @@ no membership resolves to the default workspace however many workspaces exist, s
 that would make every such person an operator on a deployment whose admin list happens to be
 empty. The registry read behind the second half fails **closed** — an unreadable registry
 counts as "there are workspaces", because widening the fail-open is the only thing this answer
-can do.
+can do, and the closed answer is cached like the open one so an index that is throttling is not
+re-asked once per request.
+
+**Creating the first workspace requires a configured admin list.** The fail-open ends the
+moment a workspace exists — for everybody — so a caller admitted only *by* that fail-open who
+registers one locks the whole deployment out of every deployment-admin surface, including the
+settings write that would name an operator. `POST /api/organizations` therefore answers 409
+unless the caller is on the list. It is not an extra permission: anyone who can reach the
+route can write the list first, which is the step being asked for.
+
+`GET /api/audit` is the one workspace-level surface with no fail-open. Those rows say who
+revealed which credential and when, and who overrode whose project; "nobody was named, so
+everybody" is defensible for editing a shared skill and not for reading that. The role still
+answers inside a workspace — what is refused is the empty list, not the admin.
 
 Managing members is answered by `isAdminOfOrganization` against the workspace **named in the
 URL**, not the ambient one: a person in several workspaces is resolved into exactly one for
 the duration of a request, and that one cannot speak for the others. A deployment operator may
 reach any workspace's members, because otherwise a workspace whose last admin left is
 unreachable by anyone.
+
+**One person, one workspace.** A membership grant is refused when the address already belongs
+to another workspace. Resolution picks a single workspace and breaks a tie by id, so a second
+membership does not add — it *moves*, and an admin of a low-sorting workspace could otherwise
+take any address they knew: on that person's next request their projects, chats and settings
+are gone, with no switcher to get back. Lifting the rule is what a workspace switcher would be
+for.
+
+Addresses are compared **lowercased**, at both ends (`src/shared/email.ts`). A membership is
+keyed by email, so an identity provider returning `Bruce@Corp.com` would otherwise miss the row
+written for `bruce@corp.com` — and the miss does not look like one, it looks like a person with
+no membership, which is the default workspace and the pre-tenant rules.
 
 A membership lookup that *fails* refuses the request (503) rather than resolving to the
 default workspace. The fallback reads as safe — the default tenant's rows are not any named
@@ -518,9 +544,13 @@ Properties that matter:
 
 - **A row never carries the secret it is about.** It records that a credential was seen or
   replaced; carrying the value would make the trail a second copy of the thing it protects.
-- **Rows are append-only and admin-read.** Nothing updates or deletes one, and the read
-  endpoint is admin-only because the rows name individuals
+- **Rows are append-only, and read by a *named* admin.** Nothing updates or deletes one, and
+  the read endpoint refuses the empty-`ADMIN_EMAILS` fail-open the rest of the admin surface
+  allows — see [Workspace admin vs deployment admin](#workspace-admin-vs-deployment-admin)
   ([API.md](API.md#audit-trail)).
+- **A read is bounded in what it retains, not only in what it returns.** Each day partition is
+  queried with the response cap, so a range over busy days cannot be assembled in memory and
+  then thrown away; a day that came back full reports `truncated`.
 - **A row lands in the workspace it is about, not the actor's.** Rows are tenant-scoped like
   everything else and `withAuth` enters the *caller's* workspace, so a deployment operator
   managing someone else's workspace would otherwise leave that workspace's trail incomplete

@@ -126,7 +126,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/organizations/{id}` | `PATCH` `DELETE` | workspace admin (`PATCH`) / deployment admin (`DELETE`) |
 | `/api/organizations/{id}/members` | `GET` `PUT` | workspace admin |
 | `/api/organizations/{id}/members/{email}` | `DELETE` | workspace admin |
-| `/api/audit` | `GET` | workspace admin |
+| `/api/audit` | `GET` | workspace admin, named (no empty-list fail-open) |
 
 **Deployment admin** is not the same gate as **workspace admin**: the app settings row, the
 inbound A2A key and the managed MCP servers are one per deployment and shared by every
@@ -328,6 +328,13 @@ caller's own to anyone else.
 - **The creator becomes the first admin.** A workspace with no members is one nobody can
   administer, since its member list and settings are both gated on a membership role.
 - **A workspace always keeps an admin.** Demoting or removing the last one is a `400`.
+- **One person, one workspace.** Adding an address that already belongs to another is a `409`
+  naming it. Resolution picks one workspace and breaks a tie by id, so a second membership
+  moves someone rather than adding to them — out of the workspace they were working in, with
+  no switcher to get back ([SECURITY.md](SECURITY.md#workspace-admin-vs-deployment-admin)).
+- **The first workspace needs a configured admin list.** `POST` answers `409` when the caller
+  is an operator only by the empty-`ADMIN_EMAILS` fail-open, because registering a workspace
+  is what ends that rule — for everybody, including them.
 - **`DELETE` removes the record and the memberships, not the data.** Those rows sit behind
   `T#{id}#` across every partition prefix, so removing them is a deliberate sweep rather than
   a cascade behind a button; `note` says so, and so does the audit row.
@@ -869,12 +876,17 @@ GET /api/audit?from=2026-08-01&to=2026-08-07
 → 400 { "error": "…" }   (missing, backwards, or wider than 31 days)
 ```
 
-Admin-only, and both dates are required. The rows are partitioned by UTC day and read one
-Query per day, so the range is capped at **31 days** and a caller who did not say how far
-back they meant is told rather than served a guess. Events come back newest first.
+Admin-only — and specifically an admin someone *named*: unlike the rest of the admin surface,
+an empty `ADMIN_EMAILS` does not admit everybody here. Both dates are required. The rows are
+partitioned by UTC day and read one Query per day, so the range is capped at **31 days** and a
+caller who did not say how far back they meant is told rather than served a guess. Events come
+back newest first.
 
-The row count is capped too, at 2,000, with `truncated` saying so. The day cap bounds how many
-partitions are read and nothing bounds a partition's size — rows are written on every reveal,
+The row count is capped too, at 2,000, with `truncated` saying so. The cap reaches the query
+rather than the answer — each day partition is asked for at most that many, so a range over
+busy days is never assembled in memory and then discarded — and a single day that came back
+full sets `truncated` even when the assembled range fits. The day cap bounds how many
+partitions are read and nothing bounds a partition's size: rows are written on every reveal,
 settings write, deletion and ownership override, and kept for a year. What is dropped is the
 oldest end of the range, and a page that stopped at the cap without saying so would read as a
 range that ended there.

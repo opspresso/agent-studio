@@ -250,8 +250,10 @@ live in the GitOps repository). The contract the ticker has to meet, and nothing
   ([ARCHITECTURE.md](ARCHITECTURE.md#schedules)).
 - The summary is logged on every tick (and returned in the response): `repaired` > 0 means
   an instance died mid-firing, `invalid` > 0 means a stored cron/timezone no longer parses,
-  `errors` > 0 means repository calls failed and were fenced off. A refused token logs a
-  warning server-side — a 401 ticker is otherwise invisible from inside the cluster.
+  `errors` > 0 means repository calls failed and were fenced off — **including the repair
+  sweep's own**, so a minute that swept nothing because it could not read is distinguishable
+  from a minute that had nothing to sweep. A refused token logs a warning server-side — a 401
+  ticker is otherwise invisible from inside the cluster.
 
 **The ticker is also what repairs webhook deliveries**, so a deployment that uses webhook
 triggers wants one even with no schedule configured. Every fifth tick sweeps every project's
