@@ -24,7 +24,7 @@ export const MAX_AUDIT_RANGE_DAYS = 31;
 const DAY_CONCURRENCY = 4;
 
 /**
- * The most rows one read returns.
+ * The most rows one read returns, **and the most any one day contributes**.
  *
  * `MAX_AUDIT_RANGE_DAYS` bounds the number of partitions, not their size, and
  * nothing bounds a partition: a row is written on every reveal, settings write,
@@ -33,6 +33,13 @@ const DAY_CONCURRENCY = 4;
  * Newest first, so what is dropped is the oldest end of the range — and the
  * caller is told, because a page that silently stops is a range that looks
  * empty before it was.
+ *
+ * It has to reach the query, not just the answer. A cap applied to the
+ * assembled list still reads every row of every day into one array first, so
+ * the bill is paid before the slice throws the rows away — thirty-one busy
+ * partitions is a heap the pod does not have. Each day may contribute at most
+ * the whole cap, because on a range where one day holds everything that is
+ * exactly the answer.
  */
 export const MAX_AUDIT_EVENTS = 2_000;
 
@@ -83,7 +90,16 @@ export async function listAuditEvents(
   query: AuditQuery,
 ): Promise<AuditPage> {
   const days = daysInRange(query);
-  const pages = await runBounded(days, DAY_CONCURRENCY, (day) => repo.listByDay(day));
+  const pages = await runBounded(days, DAY_CONCURRENCY, (day) =>
+    repo.listByDay(day, MAX_AUDIT_EVENTS),
+  );
   const all = pages.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return { events: all.slice(0, MAX_AUDIT_EVENTS), truncated: all.length > MAX_AUDIT_EVENTS };
+  // A day that came back full is a day that had more, whether or not the
+  // assembled range exceeds the cap — so both count as truncated. Saying
+  // otherwise would report a complete range that is missing its oldest rows.
+  const dayFilled = pages.some((page) => page.length >= MAX_AUDIT_EVENTS);
+  return {
+    events: all.slice(0, MAX_AUDIT_EVENTS),
+    truncated: dayFilled || all.length > MAX_AUDIT_EVENTS,
+  };
 }

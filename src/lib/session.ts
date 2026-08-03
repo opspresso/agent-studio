@@ -93,6 +93,21 @@ export function isAdmin(user: SessionUser): Promise<boolean> {
   return user.role ? Promise.resolve(hasRole(user.role, "admin")) : isAdminEmail(user.email);
 }
 
+/**
+ * True when this caller is an admin **somebody named** — the membership role
+ * inside a workspace, an explicitly configured `ADMIN_EMAILS` outside one.
+ *
+ * The difference from {@link isAdmin} is the empty-list fail-open, and it is
+ * the whole reason this exists. "No restriction" is a defensible default for
+ * mutating a shared registry, where the worst case is a colleague editing a
+ * skill. It is not a defensible default for *reading* what the trail records:
+ * who revealed which credential and when, who overrode whose project. An
+ * unset list must not hand that to every signed-in address.
+ */
+export function isNamedAdmin(user: SessionUser): Promise<boolean> {
+  return user.role ? Promise.resolve(hasRole(user.role, "admin")) : isConfiguredAdmin(user.email);
+}
+
 /** True when this caller may create projects — a `viewer` may run, not author. */
 export function canAuthor(user: SessionUser): Promise<boolean> {
   return user.role ? Promise.resolve(hasRole(user.role, "editor")) : Promise.resolve(true);
@@ -110,6 +125,22 @@ export function withAdminAuth<T extends unknown[]>(
   return withAuth(async (user, ...args: T) => {
     if (!(await isAdmin(user))) {
       return FORBIDDEN("Only admins can modify this resource");
+    }
+    return handler(user, ...args);
+  });
+}
+
+/**
+ * Like {@link withAdminAuth}, but without the empty-list fail-open. For the
+ * surfaces inside a workspace that an unnamed admin must not reach — see
+ * {@link isNamedAdmin}.
+ */
+export function withNamedAdminAuth<T extends unknown[]>(
+  handler: (user: SessionUser, ...args: T) => Promise<Response>,
+): (...args: T) => Promise<Response> {
+  return withAuth(async (user, ...args: T) => {
+    if (!(await isNamedAdmin(user))) {
+      return FORBIDDEN("Only a named admin can access this resource");
     }
     return handler(user, ...args);
   });

@@ -47,7 +47,10 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       // deployment's workspaces are created, which is not a workspace's to do.
       show: viewer !== null && (inWorkspace ? viewer.isAdmin : viewer.isDeploymentAdmin),
     },
-    { href: "/settings/audit", label: "Audit", show: viewer?.isAdmin === true },
+    // `isConfiguredAdmin`, not `isAdmin`: the trail is read behind the gate
+    // with no empty-list fail-open, so `isAdmin` would offer the tab to
+    // everyone on a deployment that never named an operator and then 403.
+    { href: "/settings/audit", label: "Audit", show: viewer?.isConfiguredAdmin === true },
   ].filter((tab) => tab.show);
 
   return (

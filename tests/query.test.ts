@@ -44,4 +44,36 @@ describe("queryAll", () => {
     expect(sent[0]!.ExclusiveStartKey).toBeUndefined();
     expect(sent[1]!.ExclusiveStartKey).toEqual({ PK: "cursor-1" });
   });
+
+  it("stops paginating once a limit is met, and asks for no more than it needs", async () => {
+    // A limit applied to the returned array bounds the answer and nothing
+    // about what was read to produce it — which is where an unbounded
+    // partition costs a pod its memory. It has to reach the query.
+    sent.length = 0;
+    const items = await queryAll(
+      {
+        TableName: "test-table",
+        KeyConditionExpression: "PK = :pk",
+        ExpressionAttributeValues: { ":pk": "X" },
+      },
+      2,
+    );
+    expect(items).toEqual([{ n: 1 }, { n: 2 }]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.Limit).toBe(2);
+  });
+
+  it("spends the limit across pages when one does not fill it", async () => {
+    sent.length = 0;
+    const items = await queryAll(
+      {
+        TableName: "test-table",
+        KeyConditionExpression: "PK = :pk",
+        ExpressionAttributeValues: { ":pk": "X" },
+      },
+      3,
+    );
+    expect(items).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
+    expect(sent.map((input) => input.Limit)).toEqual([3, 1]);
+  });
 });

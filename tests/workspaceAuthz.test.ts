@@ -75,9 +75,8 @@ vi.mock("@/infrastructure/db/repositories/membershipRepository", async (importOr
   };
 });
 
-const { withAuth, withAdminAuth, withAuthorAuth, withDeploymentAdminAuth } = await import(
-  "@/lib/session"
-);
+const { withAuth, withAdminAuth, withAuthorAuth, withDeploymentAdminAuth, withNamedAdminAuth } =
+  await import("@/lib/session");
 const { invalidateWorkspaceCache, machineTenant } = await import("@/lib/workspace");
 const { projectRepository } = await import(
   "@/infrastructure/db/repositories/projectRepository"
@@ -204,6 +203,23 @@ describe("role matrix", () => {
     // fail-open is exactly what a tenant boundary must not inherit.
     process.env.ADMIN_EMAILS = "";
     expect(await status(withAdminAuth, "viewer")).toBe(403);
+  });
+
+  it("does not let an unset list stand in for an admin where the trail is read", async () => {
+    // `withNamedAdminAuth` differs from `withAdminAuth` in exactly one thing:
+    // an empty list is not everybody. "No restriction" is defensible for
+    // editing a shared skill and not for reading who revealed which credential.
+    process.env.ADMIN_EMAILS = "";
+    expect(await status(withAdminAuth, undefined)).toBe(200);
+    expect(await status(withNamedAdminAuth, undefined)).toBe(403);
+    process.env.ADMIN_EMAILS = "u@x.com";
+    expect(await status(withNamedAdminAuth, undefined)).toBe(200);
+  });
+
+  it("still lets a workspace's own admin read it — what is refused is the fail-open", async () => {
+    process.env.ADMIN_EMAILS = "";
+    expect(await status(withNamedAdminAuth, "admin")).toBe(200);
+    expect(await status(withNamedAdminAuth, "editor")).toBe(403);
   });
 
   it("keeps the default tenant's rules unchanged for a caller with no membership", async () => {

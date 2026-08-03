@@ -220,6 +220,43 @@ describe("listAuditEvents", () => {
     expect(result.events[0]?.id).toBe(`e${MAX_AUDIT_EVENTS + 4}`);
   });
 
+  it("asks each day partition for no more than the read will return", async () => {
+    // Otherwise the cap is a slice: every row of every day is read and held
+    // before 99% of them are discarded, which is the cost the bound was
+    // supposed to be about.
+    const asked: (number | undefined)[] = [];
+    const recording: AuditRepository = {
+      append: async () => {},
+      listByDay: async (day, limit) => {
+        asked.push(limit);
+        return events[day] ?? [];
+      },
+    };
+    await listAuditEvents(recording, { from: "2026-08-01", to: "2026-08-02" });
+    expect(asked).toEqual([MAX_AUDIT_EVENTS, MAX_AUDIT_EVENTS]);
+  });
+
+  it("calls a day that came back full truncated, even when the range fits", async () => {
+    // The assembled range is exactly the cap, so a length test alone would
+    // report a complete answer for one that is missing that day's older rows.
+    const full: AuditRepository = {
+      append: async () => {},
+      listByDay: async (day, limit) =>
+        day === "2026-08-01"
+          ? Array.from({ length: limit ?? 0 }, (_, index) => ({
+              id: `e${index}`,
+              action: "secret.reveal" as const,
+              actorEmail: "a@x.com",
+              target: "settings:a2a-key",
+              createdAt: new Date(Date.UTC(2026, 7, 1, 0, 0, index)).toISOString(),
+            }))
+          : [],
+    };
+    const result = await listAuditEvents(full, { from: "2026-08-01", to: "2026-08-01" });
+    expect(result.events).toHaveLength(MAX_AUDIT_EVENTS);
+    expect(result.truncated).toBe(true);
+  });
+
   it("refuses a range wider than the day fan-out it would cost", async () => {
     await expect(listAuditEvents(repo, { from: "2026-01-01", to: "2026-12-31" })).rejects.toThrow(
       new RegExp(`${MAX_AUDIT_RANGE_DAYS} days`),

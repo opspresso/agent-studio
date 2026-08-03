@@ -1,6 +1,4 @@
-import { isAdmin, isDeploymentAdmin, withAuth } from "@/lib/session";
-import { hasRole } from "@/domain/organization/membership";
-import { isConfiguredAdmin } from "@/lib/runtime-settings";
+import { isAdmin, isDeploymentAdmin, isNamedAdmin, withAuth } from "@/lib/session";
 
 /**
  * Who the caller is, for the console's own gating.
@@ -41,9 +39,11 @@ export const GET = withAuth(async (user) =>
      * `isAdmin` since workspaces existed; see `isDeploymentAdmin`.
      */
     isDeploymentAdmin: await isDeploymentAdmin(user),
-    /** May write a project owned by someone else. */
-    isConfiguredAdmin: user.role
-      ? hasRole(user.role, "admin")
-      : await isConfiguredAdmin(user.email),
+    /**
+     * May write a project owned by someone else, and read the audit trail —
+     * the admin questions with no empty-list fail-open. The wire name predates
+     * `isNamedAdmin`, which is the same question asked inside a workspace too.
+     */
+    isConfiguredAdmin: await isNamedAdmin(user),
   }),
 );

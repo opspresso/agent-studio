@@ -80,4 +80,11 @@ describe("auditRepository.listByDay", () => {
     });
     expect(result.map((row) => row.id)).toEqual(["live"]);
   });
+
+  it("passes a caller's cap down to the query rather than reading the partition", async () => {
+    // Nothing bounds how many rows one day holds; the reader's cap is only a
+    // bound if the query stops there.
+    await auditRepository.listByDay("2026-08-01", 500);
+    expect(sent[0]?.input).toMatchObject({ Limit: 500 });
+  });
 });

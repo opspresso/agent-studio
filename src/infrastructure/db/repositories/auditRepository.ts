@@ -46,14 +46,17 @@ export const auditRepository: AuditRepository = {
     );
   },
 
-  async listByDay(day) {
-    const items = await queryAll({
-      TableName: getTableName(),
-      KeyConditionExpression: "PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.auditDayPartition(currentTenant(), day) },
-      // Newest first within the day; the sort key leads with `createdAt`.
-      ScanIndexForward: false,
-    });
+  async listByDay(day, limit) {
+    const items = await queryAll(
+      {
+        TableName: getTableName(),
+        KeyConditionExpression: "PK = :pk",
+        ExpressionAttributeValues: { ":pk": keys.auditDayPartition(currentTenant(), day) },
+        // Newest first within the day; the sort key leads with `createdAt`.
+        ScanIndexForward: false,
+      },
+      limit,
+    );
     return notExpired(items, Date.now()).map(toEvent);
   },
 };
