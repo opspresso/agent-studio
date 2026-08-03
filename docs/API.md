@@ -318,7 +318,7 @@ turn, 5MB each, `image/png|jpeg|gif|webp`. They reach the model as content parts
 stored (when object storage is configured) as URLs on the user message.
 
 `documents` are files to read rather than look at — `[ { b64, mimeType, name } ]`, at most 4
-per turn, 10MB each: PDF, plus text, Markdown, CSV/TSV, JSON, XML and HTML. `name` is
+per turn, 10MB each: PDF, plus text, Markdown, CSV/TSV, JSON, YAML, XML and HTML. `name` is
 required and carries the decision when `mimeType` is `application/octet-stream`, which is how
 uploads commonly arrive; an unreadable type is rejected with `400`. The server extracts the
 **text** — a PDF's text layer, a text file's contents — and the turn carries that. The file
