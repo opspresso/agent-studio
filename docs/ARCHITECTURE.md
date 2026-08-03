@@ -459,7 +459,7 @@ Project { name (slug, immutable id), displayName, description,
           publishedVersion?, slack?, costLimits?, createdAt, updatedAt }
 
 Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fallbackModel?,
-          parameters { temperature, maxTokens, reasoningEffort?, piiFiltering,
+          parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
                        callerContext?, structuredOutput?/jsonSchema,
                        imageGeneration?/imageModel? },
           mcpList: McpBinding[], skillList: string[],
@@ -537,9 +537,10 @@ for a failure — which is what lets consumers read the ending instead of inferr
 - All text generation speaks the **OpenAI Chat Completions protocol**; model ids are
   `provider/model`. Routing is described in
   [CONFIGURATION.md](CONFIGURATION.md#llm-channels).
-- `runPrompt(input): Promise<RunResult>` — single-shot, with `runPromptStream` for streaming.
-- `runAgent(input): AsyncGenerator<EngineChunk>` — the recursive multi-turn tool loop:
-  - A turn guard (`currentTurn >= maxTurn`, default 50) stops the loop — announced, not
+- `runPrompt(deps, input): Promise<RunResult>` — single-shot, with `runPromptStream` for
+  streaming.
+- `runAgent(deps, input): AsyncGenerator<EngineChunk>` — the recursive multi-turn tool loop:
+  - A turn guard (`turn >= maxTurn`, default 50) stops the loop — announced, not
     silent: a `warning` names the limit for the reader and a `finishReason: "turn-limit"`
     chunk names it for consumers (see the termination note under the EngineChunk contract).
   - **All `tool_calls` of one response aggregate into ONE assistant message**, then tool
@@ -670,8 +671,10 @@ Skill { name, description, content (markdown), files?: { path, content }[],
         source?, createdAt, updatedAt }
 ```
 
-`source` marks skills synced from the skills repo (e.g. `github:owner/repo`); `files` are
-attachment files collected under the skill root.
+`source` marks skills synced from the skills repo (e.g. `github:owner/repo`) — and it is what
+tells an orphan from an entry someone wrote in the console, so both syncs stamp what they
+create and neither ever reports a name it did not. `files` are attachment files collected
+under the skill root.
 
 Sync reads `skills/<name>/SKILL.md` from the configured GitHub repo — the parent directory
 name is the slug — and collects supported text attachments (`src/domain/skill/files.ts`:
@@ -689,9 +692,11 @@ Locally created skills with other names are untouched.
 ### MCP
 
 ```ts
-McpServer { name, url, description?, content?, runtime?: 'remote' | 'managed',
+McpServer { name, url, description?, content?, source?, runtime?: 'remote' | 'managed',
             headers: Record<string, string>,   // encrypted at rest, masked on read
-            auth?, image?, args?, endpointPath?, containerPort?,
+            auth?,
+            image?, args?, endpointPath?, containerPort?,   // managed only
+            environment?, envRefs?,                          // managed only; environment encrypted
             createdAt, updatedAt }
 ```
 
@@ -766,8 +771,12 @@ provisioner recorded the address after binding the port. The narrowness of that 
 security property; see
 [SECURITY.md](SECURITY.md#the-managed-loopback-exception).
 
-The stored row carries `image`, `args`, `endpointPath` and `containerPort` — everything a
-restart needs, because at restart time there is no operator to ask again. `containerPort` is a
+The stored row carries `image`, `args`, `endpointPath`, `containerPort` and the container's
+environment — everything a restart needs, because at restart time there is no operator to ask
+again. The environment arrives two ways for one reason: `envRefs` names SSM parameters, so
+their values never enter this table at all, while `environment` holds values that had nowhere
+else to live and is encrypted at rest like every other stored credential — with `PORT` refused
+there, because the runtime owns it. `containerPort` is a
 *request*, not a guarantee: only an adapter that publishes a port mapping can honour it, and
 the deployed one shares a network namespace instead, so it tells the container which port to
 bind (`PORT`) and ignores the stored value. `{{PORT}}` in an argument becomes the effective
