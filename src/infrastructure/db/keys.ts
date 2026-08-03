@@ -52,6 +52,18 @@ export const keys = {
   /** A tenant. Outside every tenant's scope, because it is what names them. */
   organization: (id: string) => ({ PK: `ORG#${id}`, SK: "META" }),
   organizationPartition: () => "TYPE#ORG",
+  /**
+   * One person's place in one tenant. In the organization's partition, so a
+   * tenant's members are one query — and outside tenant scope like the
+   * organization itself, because this is what *decides* the scope.
+   */
+  membership: (organizationId: string, userEmail: string) => ({
+    PK: `ORG#${organizationId}`,
+    SK: `MEMBER#${userEmail}`,
+  }),
+  membershipPrefix: () => "MEMBER#",
+  /** The reverse: every tenant one person belongs to, read on each request. */
+  membershipUserPartition: (userEmail: string) => `MEMBEROF#${userEmail}`,
 
   // --- Tenant-scoped ---------------------------------------------------------
   project: (tenant: string, name: string) => ({

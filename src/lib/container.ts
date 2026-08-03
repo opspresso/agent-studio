@@ -64,6 +64,7 @@ import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import { setAdminCheck } from "@/application/project/projectUseCases";
 import { setAuditSink } from "@/application/audit/auditLog";
 import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
+import { isWorkspaceAdmin } from "./workspace";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -74,10 +75,12 @@ import {
   isConfiguredAdmin,
 } from "./runtime-settings";
 
-// The write override's admin list is pushed into the use case here rather than
-// imported by it — a static import would drag the settings store (and its
-// DynamoDB client) into the application layer.
-setAdminCheck(isConfiguredAdmin);
+// The write override is pushed into the use case here rather than imported by
+// it — a static import would drag the settings store (and its DynamoDB client)
+// into the application layer. It answers in whatever workspace the caller is
+// acting in: a membership role inside a tenant, the configured admin list in
+// the default one.
+setAdminCheck(isWorkspaceAdmin);
 
 // Same seam, same reason: a record point sits wherever a sensitive act is
 // decided, which is often a use case that has no other business holding a

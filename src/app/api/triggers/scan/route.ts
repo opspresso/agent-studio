@@ -6,7 +6,8 @@ import {
   scanSchedules,
   scheduleInput,
 } from "@/application/trigger/scanSchedules";
-import { triggerRunnerDeps } from "@/lib/container";
+import { organizationRepository, triggerRunnerDeps } from "@/lib/container";
+import { DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
 import { config } from "@/lib/config";
 import { log } from "@/shared/logger";
 import { timingSafeEqualString } from "@/shared/timingSafe";
@@ -40,7 +41,30 @@ export async function POST(request: Request): Promise<Response> {
     return unauthorized();
   }
 
-  const { summary, firings } = await scanSchedules(triggerRunnerDeps, new Date());
+  // Every workspace, not just the default one: `listSchedules` reads the
+  // current tenant's index, so a single scan would leave every other tenant's
+  // schedules silently unfired. The ticker stays stateless — which tenants
+  // exist is read here, per tick, rather than configured into it.
+  const at = new Date();
+  const tenants = [DEFAULT_TENANT, ...(await organizationRepository.list()).map((org) => org.id)];
+  const scans = await Promise.all(
+    tenants.map(async (tenant) => ({
+      tenant,
+      result: await withTenant(tenant, () => scanSchedules(triggerRunnerDeps, at)),
+    })),
+  );
+  const summary = scans.reduce(
+    (total, scan) => ({
+      checked: total.checked + scan.result.summary.checked,
+      fired: total.fired + scan.result.summary.fired,
+      alreadyClaimed: total.alreadyClaimed + scan.result.summary.alreadyClaimed,
+      skipped: total.skipped + scan.result.summary.skipped,
+      repaired: total.repaired + scan.result.summary.repaired,
+      invalid: total.invalid + scan.result.summary.invalid,
+      errors: total.errors + scan.result.summary.errors,
+    }),
+    { checked: 0, fired: 0, alreadyClaimed: 0, skipped: 0, repaired: 0, invalid: 0, errors: 0 },
+  );
   // The summary an operator alerts on lives in the log stream, not only in a
   // response body nobody keeps.
   log.info(
@@ -52,12 +76,20 @@ export async function POST(request: Request): Promise<Response> {
   after(() =>
     // Bounded, not one task per firing: a 09:00 shared by every project must
     // not become that many simultaneous runs on the pod that served the tick.
-    driveFirings(firings, MAX_CONCURRENT_FIRINGS, (firing) =>
-      // The firing's run id, for the same reason the webhook route opens it: a
-      // log line and the history row an operator is looking at share a key.
-      withRunContext({ runId: firing.runId }, async () => {
-        await executeFiring(triggerRunnerDeps, firing, scheduleInput(firing.trigger));
-      }),
+    // Each tenant's firings run in their own scope, because `after()` leaves the
+    // request's async context and the run writes rows this tenant owns.
+    Promise.all(
+      scans.map((scan) =>
+        withTenant(scan.tenant, () =>
+          driveFirings(scan.result.firings, MAX_CONCURRENT_FIRINGS, (firing) =>
+            // The firing's run id, for the same reason the webhook route opens
+            // it: a log line and the history row share a key.
+            withRunContext({ runId: firing.runId }, async () => {
+              await executeFiring(triggerRunnerDeps, firing, scheduleInput(firing.trigger));
+            }),
+          ),
+        ),
+      ),
     ),
   );
   return Response.json(summary);

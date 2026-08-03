@@ -1,3 +1,5 @@
+import { machineTenant } from "@/lib/workspace";
+import { withTenant } from "@/shared/tenantContext";
 import { projectRepository, secretCipher } from "@/lib/container";
 import { resolveSlackEventBinding } from "@/application/slack/projectSlack";
 import { handleSlackEventRequest } from "../_lib/handleEventRequest";
@@ -11,6 +13,8 @@ type RouteContext = { params: Promise<{ project: string }> };
  * signature — no session is involved.
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
+  // Slack cannot add a header, so a multi-tenant deployment puts ?tenant= in the Request URL.
+  return withTenant(machineTenant(request), async () => {
   const { project: projectName } = await ctx.params;
   const bound = await resolveSlackEventBinding(projectRepository, projectName, secretCipher);
   if (!bound) {
@@ -20,5 +24,6 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     signingSecret: bound.signingSecret,
     binding: { projectName: bound.projectName, botToken: bound.botToken },
     logLabel: `project ${bound.projectName}`,
+  });
   });
 }

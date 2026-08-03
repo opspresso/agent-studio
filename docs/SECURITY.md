@@ -46,18 +46,56 @@ the sign-in flow becomes an open redirect.
 
 ## Authorization model
 
-**Projects are a shared catalog.** Any signed-in user may read and run any project. Only
-mutations are gated.
+**Projects are a shared catalog — inside one workspace.** Any member may read and run any
+project of their own workspace; only mutations are gated. What the tenant boundary reverses is
+who is in the room, not how open the room is.
+
+A deployment with no organization rows is a single workspace (the default tenant), and every
+rule below reads exactly as it always has. That is the compatibility contract, not a
+transitional state: an install is the same artifact with one tenant.
+
+### The boundary is the key, not a check
+
+`withAuth` resolves the caller's workspace and runs the handler inside its tenant scope, and
+every DynamoDB key builder takes that tenant. A route therefore cannot read another
+workspace's rows by forgetting a check — the query does not address them. A caller who belongs
+to no workspace reads the default tenant, where another tenant's project simply does not
+exist, so a cross-workspace read is a `404` rather than a `403` someone has to remember to
+raise.
+
+Machine surfaces (project token, webhook secret, Slack signature, inbound A2A) name their
+workspace with an `X-Tenant` header, or a `tenant` query parameter where the caller cannot set
+headers — Slack posts to the Request URL it was given. It is a **lookup hint, not a grant**:
+the credential is verified inside the named workspace, so pointing at someone else's finds no
+matching secret and authenticates nobody. Omitted means the default tenant, which is where
+every credential issued before workspaces existed lives.
+
+### Roles
+
+| Role | May |
+|---|---|
+| `viewer` | read and run every project in the workspace |
+| `editor` | …and create projects, and write their own |
+| `admin` | …and write anyone's project, mutate the shared registries, change settings |
+
+Project *ownership* is a separate axis and stays on the project (`ownerEmail`): a role says
+what someone may do in the workspace, ownership says whose thing it is.
+
+Inside a workspace the admin question is answered by the membership role, and
+**`ADMIN_EMAILS`' "an empty list means everyone" fail-open does not apply** — a workspace's
+members are named, so "nobody was named" cannot mean "everybody".
+
+Within the caller's workspace:
 
 | Resource | Read | Write |
 |---|---|---|
-| Project, versions | any signed-in user | owner or configured admin (`assertProjectWritable`) |
-| Project traces | owner or configured admin | — |
-| Project Slack config | owner or configured admin | owner or configured admin |
-| Project API token, triggers, MCP connections | owner or configured admin | owner or configured admin |
-| Per-caller usage (`usage/actors`) | owner or configured admin | — |
-| Project usage totals | any signed-in user | — |
-| Skills / MCP servers / external agents | any signed-in user | admin (`withAdminAuth`) |
+| Project, versions | any member | owner or workspace admin (`assertProjectWritable`) |
+| Project traces | owner or workspace admin | — |
+| Project Slack config | owner or workspace admin | owner or workspace admin |
+| Project API token, triggers, MCP connections | owner or workspace admin | owner or workspace admin |
+| Per-caller usage (`usage/actors`) | owner or workspace admin | — |
+| Project usage totals | any member | — |
+| Skills / MCP servers / external agents | any member | admin (`withAdminAuth`) |
 | App settings | admin | admin |
 | Chats | owner only (non-owner reads 404) | owner only |
 
@@ -74,6 +112,10 @@ swapped:
 |---|---|---|
 | `isAdminEmail` | May mutate shared registries and app settings? | **no restriction** — any signed-in user |
 | `isConfiguredAdmin` | May write a project owned by someone else? | **nobody** |
+
+Both are the **default tenant's** answers. Inside a workspace the membership role answers
+both, through the same two call sites — the predicates were split so the questions stay
+distinguishable, and adding a tenant did not merge them.
 
 Using the first for project ownership would hand every signed-in user write access to every
 project on a deployment that never set `ADMIN_EMAILS`. Both flags are sent to the browser by

@@ -1,5 +1,6 @@
-import { withAuth } from "@/lib/session";
-import { isAdminEmail, isConfiguredAdmin } from "@/lib/runtime-settings";
+import { isAdmin, withAuth } from "@/lib/session";
+import { hasRole } from "@/domain/organization/membership";
+import { isConfiguredAdmin } from "@/lib/runtime-settings";
 
 /**
  * Who the caller is, for the console's own gating.
@@ -19,13 +20,24 @@ import { isAdminEmail, isConfiguredAdmin } from "@/lib/runtime-settings";
  *
  * Server-side authorization is unchanged by this; the flags only decide what the
  * UI offers.
+ *
+ * Inside a workspace both come from the membership role instead, and the
+ * "empty list means everyone" fallback does not apply — a tenant's members are
+ * named, so "nobody was named" cannot mean "everybody". The flag names stay the
+ * same because the questions have not changed, only who answers them.
  */
 export const GET = withAuth(async (user) =>
   Response.json({
     email: user.email,
-    /** May mutate shared registries and app settings. Empty list = no restriction. */
-    isAdmin: await isAdminEmail(user.email),
-    /** May write a project owned by someone else. Empty list = nobody. */
-    isConfiguredAdmin: await isConfiguredAdmin(user.email),
+    /** The workspace this session acts in; `default` on a single-tenant deployment. */
+    tenant: user.tenant,
+    /** The caller's role in it, absent outside a workspace. */
+    ...(user.role ? { role: user.role } : {}),
+    /** May mutate shared registries and app settings. */
+    isAdmin: await isAdmin(user),
+    /** May write a project owned by someone else. */
+    isConfiguredAdmin: user.role
+      ? hasRole(user.role, "admin")
+      : await isConfiguredAdmin(user.email),
   }),
 );

@@ -174,8 +174,16 @@ registry itself, which is what says the tenants exist.
 
 The tenant reaches a repository through `withTenant`/`currentTenant`
 (`src/shared/tenantContext.ts`), an async-scoped value set at the boundary that authenticated
-the caller — the same shape as a run's correlation id. Nothing sets it yet: until membership
-exists, every request runs as the default tenant.
+the caller — the same shape as a run's correlation id. `withAuth` sets it from the caller's
+membership (`src/lib/workspace.ts`), and the machine surfaces set it from the tenant their
+request named; a caller with no membership is the default tenant, which is every deployment
+that has not opted in. Work that outlives the request — anything inside `after()` — re-enters
+the scope explicitly, because `after()` leaves the request's async context exactly as it
+leaves the run context.
+
+That is what makes isolation structural rather than a check per route: a handler running in a
+workspace cannot address another one's rows. See
+[SECURITY.md](SECURITY.md#authorization-model) for the roles layered on top.
 
 **Why one table and two GSIs.** Primary-key access covers everything item-scoped: a project
 and its versions share a partition, a chat and its messages share a partition, so a cascade

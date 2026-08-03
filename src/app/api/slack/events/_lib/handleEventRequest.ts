@@ -10,6 +10,7 @@ import { handleThreadStart } from "@/application/slack/handleThreadStart";
 import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { withRunContext } from "@/shared/runContext";
+import { currentTenant, withTenant } from "@/shared/tenantContext";
 import type { SlackBotBinding } from "@/application/slack/handleSlackEvent";
 import type { SlackEventBody, SlackEventDeps } from "@/application/slack/types";
 import { config } from "@/lib/config";
@@ -112,8 +113,13 @@ export async function handleSlackEventRequest(
   // Same reason as the webhook path: `after()` leaves the request's async
   // context. The Slack event id is the natural key — it is what the dedup claim
   // is keyed by, so a log line joins the row that says whether it was handled.
+  // `after()` leaves the request's async context, so both the run context and
+  // the workspace are re-entered here — the handler below reads this project's
+  // rows, and reading them from the default tenant would find nothing.
+  const tenant = currentTenant();
   after(() =>
-    withRunContext({ runId: eventId ?? "slack-event" }, async () => {
+    withTenant(tenant, () =>
+      withRunContext({ runId: eventId ?? "slack-event" }, async () => {
       let outcome: "done" | "failed" = "done";
       try {
         await (isThreadStart
@@ -133,7 +139,8 @@ export async function handleSlackEventRequest(
       } catch (error) {
         log.error("slack", `${opts.logLabel} event settle failed`, error);
       }
-    }),
+      }),
+    ),
   );
 
   return Response.json({ ok: true });

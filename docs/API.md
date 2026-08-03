@@ -21,6 +21,12 @@ Design rationale for *why* a surface looks like this lives in
   differently: `/api/a2a/*` by `X-A2A-Key`, `/api/slack/events/*` by the Slack signing secret,
   `/api/triggers/{project}/{trigger}` by the trigger's own secret, `/api/triggers/scan` by the
   deployment's `SCHEDULE_SCAN_TOKEN`. `/api/health`, `/api/ready` and `/api/metrics` are open.
+- **Workspace**: a session acts in the caller's workspace, resolved from their membership;
+  a deployment with no organizations is one default workspace and behaves exactly as before.
+  Machine surfaces name theirs with `X-Tenant: <id>`, or `?tenant=<id>` where the caller
+  cannot set headers (Slack). Omitted means the default workspace. It is a lookup hint: the
+  credential is verified inside the named workspace, so naming another one authenticates
+  nobody. `GET /api/me` reports the caller's `tenant` and `role`.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner and configured admins may mutate one (update/delete/publish, version
   create/update, Slack config), otherwise

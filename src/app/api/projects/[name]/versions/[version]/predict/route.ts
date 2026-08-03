@@ -6,6 +6,7 @@ import { executeProject, executeProjectStream } from "@/application/execution/ru
 import { getProject } from "@/application/project/projectUseCases";
 import { getVersion } from "@/application/project/versionUseCases";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
+import { withTenant } from "@/shared/tenantContext";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
@@ -13,10 +14,12 @@ type RouteContext = { params: Promise<{ name: string; version: string }> };
 
 export const POST = async (request: Request, ctx: RouteContext) => {
   const { name, version } = await ctx.params;
-  const principal = await authenticateExecution(request, name);
-  if (principal instanceof Response) {
-    return principal;
+  const authenticated = await authenticateExecution(request, name);
+  if (authenticated instanceof Response) {
+    return authenticated;
   }
+  const { principal, tenant } = authenticated;
+  return withTenant(tenant, async () => {
   const parsed = predictSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return invalidRequest(parsed.error);
@@ -69,4 +72,5 @@ export const POST = async (request: Request, ctx: RouteContext) => {
   } catch (error) {
     return apiError(error);
   }
+  });
 };

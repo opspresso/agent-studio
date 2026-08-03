@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
-vi.mock("@/lib/container", () => ({ triggerRunnerDeps: {} }));
+vi.mock("@/lib/container", () => ({
+  triggerRunnerDeps: {},
+  // No organizations: a single-tenant deployment, which is the shape every
+  // existing one has. The multi-tenant fan-out has its own case below.
+  organizationRepository: { list: async () => [] },
+}));
 
 const scanSchedules = vi.fn((_deps: unknown, _at: Date): Promise<unknown> => Promise.resolve(null));
 const executeFiring = vi.fn((_deps: unknown, _firing: unknown, _input: unknown) =>

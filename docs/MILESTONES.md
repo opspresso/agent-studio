@@ -29,31 +29,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 
 ---
 
-## workspace-authz — 공유 카탈로그의 워크스페이스 스코프 전환
-
-**이유**: "로그인한 누구나 모든 프로젝트를 읽고 실행"(SECURITY.md의 authorization model)은
-사내 플랫폼의 가정이고 멀티테넌트에선 성립하지 않는다. 전 구간에서 가장 침습적인 변경 —
-모든 read gate가 움직인다 — 이라 별도 마일스톤으로 격리한다.
-
-**선행**: `tenant-key-scheme`.
-
-**범위**
-
-- Membership 엔티티(user ↔ org, role). 역할 목록(예: admin / editor / viewer / billing)의
-  확정이 설계 대상.
-- 프로젝트 read/run/카탈로그 목록을 멤버십 검사 뒤로 옮긴다. **테넌트 안에서는 공유 카탈로그
-  의미론을 유지한다** — 뒤집는 것은 테넌트 경계다.
-- `assertProjectWritable`을 역할 기반으로 확장한다 — 단일 관문을 유지하고 호출자에 플래그를
-  스레딩하지 않는다(SECURITY.md가 기록한 실패 그대로). `isAdminEmail`의 "빈 목록 = 전원
-  허용" fail-open은 테넌트 문맥에서 제거한다.
-- 기계 표면(프로젝트 토큰, Slack, A2A, 트리거)은 프로젝트 스코프 자격증명이라 의미가
-  유지된다 — 단 usage/trace/actor 행이 테넌트 문맥을 갖는지 확인한다.
-- SECURITY.md 권한 표를 갱신한다.
-
-**완료 조건**: 타 테넌트 사용자의 프로젝트 read/run이 404/403임을 라우트 테스트로 검증한다.
-역할별 허용 매트릭스가 테스트로 고정된다. 같은 테넌트 안의 기존 owner/admin 시나리오
-테스트는 무수정 통과한다.
-
 ## tenant-settings-layer — 런타임 설정의 테넌트 레이어
 
 **이유**: 설정 해석(DB override → env → default)은 앱 전역 하나다(CONFIGURATION.md의

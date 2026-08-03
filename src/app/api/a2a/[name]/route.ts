@@ -1,3 +1,5 @@
+import { machineTenant } from "@/lib/workspace";
+import { withTenant } from "@/shared/tenantContext";
 import { DefaultRequestHandler, JsonRpcTransportHandler } from "@a2a-js/sdk/server";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import { a2aExposureDeps, createA2aTaskStore, executionDeps } from "@/lib/container";
@@ -25,6 +27,8 @@ function isAsyncGenerator(value: unknown): value is AsyncGenerator<unknown> {
 
 /** A2A JSON-RPC endpoint (message/send, message/stream, tasks/get, tasks/cancel). */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
+  // The key is app-wide; the project it names is not.
+  return withTenant(machineTenant(request), async () => {
   const apiKey = await getA2aApiKey();
   if (!apiKey) {
     return Response.json({ error: "A2A is not configured" }, { status: 503 });
@@ -54,4 +58,5 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     return await sseResponseRaw(result);
   }
   return Response.json(result);
+  });
 }

@@ -1,3 +1,5 @@
+import { machineTenant } from "@/lib/workspace";
+import { currentTenant, withTenant } from "@/shared/tenantContext";
 import { after } from "next/server";
 import { admitDelivery, executeDelivery } from "@/application/trigger/runTrigger";
 import { triggerRunnerDeps } from "@/lib/container";
@@ -23,6 +25,8 @@ const MAX_BODY_BYTES = 1_000_000;
  * that decides whether it fires again.
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
+  // The secret is a tenant-scoped row, so the whole delivery runs in the tenant the caller named.
+  return withTenant(machineTenant(request), async () => {
   const { project, trigger } = await ctx.params;
   let body: string;
   try {
@@ -78,10 +82,17 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   // the run bracket's `enterWith` does not survive the generator delegation
   // between here and it.
   const runId = admitted.runId;
+  // `after()` leaves the request's async context — which is why the run context
+  // is re-entered here, and why the tenant has to be too: a delivery that ran
+  // in the default scope would write its history row into the wrong workspace.
+  const tenant = currentTenant();
   after(() =>
-    withRunContext({ runId }, async () => {
-      await executeDelivery(triggerRunnerDeps, admitted, payload);
-    }),
+    withTenant(tenant, () =>
+      withRunContext({ runId }, async () => {
+        await executeDelivery(triggerRunnerDeps, admitted, payload);
+      }),
+    ),
   );
   return Response.json({ ok: true, status: "accepted", runId: admitted.runId }, { status: 202 });
+  });
 }

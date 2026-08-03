@@ -1,6 +1,8 @@
 import type { RunActor } from "@/domain/execution/actor";
 import { unauthorized } from "@/shared/unauthorized";
 import { getSessionUser } from "@/lib/session";
+import { machineTenant } from "@/lib/workspace";
+import { withTenant } from "@/shared/tenantContext";
 import { projectRepository, secretCipher } from "@/lib/container";
 import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
 
@@ -22,22 +24,35 @@ export function principalActor(principal: ExecutionPrincipal): RunActor {
 }
 
 /**
- * Authenticate an execution request scoped to `projectName`.
+ * Authenticate an execution request scoped to `projectName`, and say which
+ * workspace it runs in.
+ *
  * - `Authorization: Bearer <token>` verifies against the project's API token
- *   (the token acts on the owner's behalf).
- * - Otherwise falls back to the console session cookie.
- * Returns the acting principal, or a 401 `Response` to return directly.
+ *   (the token acts on the owner's behalf), in the tenant the request named.
+ * - Otherwise falls back to the console session cookie, in the tenant that
+ *   session belongs to.
+ *
+ * The tenant is resolved *before* the credential is checked, because the token
+ * itself is a tenant-scoped row: verifying first and scoping after would look
+ * the secret up in the wrong place. The caller runs the rest of the request
+ * inside the returned scope.
+ *
+ * Returns the acting principal and tenant, or a 401 `Response` to return
+ * directly.
  */
 export async function authenticateExecution(
   request: Request,
   projectName: string,
-): Promise<ExecutionPrincipal | Response> {
+): Promise<{ principal: ExecutionPrincipal; tenant: string } | Response> {
   const header = request.headers.get("authorization");
   const bearer = header ? /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim() : undefined;
   if (bearer) {
-    const email = await verifyProjectApiToken(projectRepository, projectName, bearer, secretCipher);
-    return email ? { email, viaToken: true } : unauthorized();
+    const tenant = machineTenant(request);
+    const email = await withTenant(tenant, () =>
+      verifyProjectApiToken(projectRepository, projectName, bearer, secretCipher),
+    );
+    return email ? { principal: { email, viaToken: true }, tenant } : unauthorized();
   }
   const user = await getSessionUser();
-  return user ? { email: user.email, viaToken: false } : unauthorized();
+  return user ? { principal: { email: user.email, viaToken: false }, tenant: user.tenant } : unauthorized();
 }

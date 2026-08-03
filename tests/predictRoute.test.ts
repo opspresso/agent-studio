@@ -18,7 +18,10 @@ vi.mock("@/lib/container", () => ({
 
 vi.mock("@/app/api/projects/_lib/executionAuth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/api/projects/_lib/executionAuth")>()),
-  authenticateExecution: async () => ({ email: "owner@example.com", viaToken: false }),
+  authenticateExecution: async () => ({
+    principal: { email: "owner@example.com", viaToken: false },
+    tenant: "default",
+  }),
 }));
 
 vi.mock("@/application/execution/runProject", async (importOriginal) => ({

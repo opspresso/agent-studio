@@ -197,7 +197,16 @@ const RULES: Rule[] = [
     from: "lib",
     banned: (spec) => targetLayer(spec) === "infrastructure",
     exempt: (relPath) =>
-      ["src/lib/container.ts", "src/lib/auth.ts", "src/lib/runtime-settings.ts"].includes(relPath),
+      [
+        "src/lib/container.ts",
+        "src/lib/auth.ts",
+        "src/lib/runtime-settings.ts",
+        // The same shape as `runtime-settings`: one repository read behind an
+        // authorization question, composed here because the answer is needed
+        // before any use case exists to be handed it — `withAuth` resolves the
+        // caller's workspace before a handler runs at all.
+        "src/lib/workspace.ts",
+      ].includes(relPath),
     allow: [],
   },
   {
@@ -578,6 +587,9 @@ const UNSCOPED_KEYS = new Set([
   // would be circular.
   "organization",
   "organizationPartition",
+  // A membership is what decides a scope, so it cannot live inside one.
+  "membership",
+  "membershipUserPartition",
 ]);
 
 /** Sort-key fragments, which carry no partition and so no tenant. */

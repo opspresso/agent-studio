@@ -15,6 +15,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: authMock.getSession } } }));
 
 const { withAuth, withAdminAuth, isAdmin } = await import("@/lib/session");
+const { DEFAULT_TENANT } = await import("@/shared/tenantContext");
 
 const okHandler = vi.fn(async () => Response.json({ ok: true }));
 const session = (email: string) => ({ user: { id: "u1", email, name: "U", image: null } });
@@ -89,7 +90,15 @@ describe("withAdminAuth", () => {
 });
 
 describe("isAdmin", () => {
-  const user = { id: "u", email: "Admin@X.com", name: "U", image: null };
+  // Default tenant: no membership, so `ADMIN_EMAILS` still answers — the
+  // compatibility contract every existing deployment relies on.
+  const user = {
+    id: "u",
+    email: "Admin@X.com",
+    name: "U",
+    image: null,
+    tenant: DEFAULT_TENANT,
+  };
 
   it("is true when the admin list is empty (no restriction)", async () => {
     adminEmails.value = [];
