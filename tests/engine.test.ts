@@ -1025,10 +1025,97 @@ describe("provider output cut (finish_reason: length)", () => {
     expect(chunks.some((c) => c.done)).toBe(true);
     expect(chunks.some((c) => c.finishReason)).toBe(false);
   });
+
+  it("announces a turn cut mid-tool-call and refuses the call whose arguments were cut", async () => {
+    // The cut lands inside the arguments JSON: the old mapping parsed the
+    // fragment to `{}` and ran the tool with empty arguments, silently.
+    const { finishReasonChunk } = await import("./fakeChannel");
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_1", "search", '{"query":"seou'),
+        finishReasonChunk("length"),
+        usageChunk(2, 1),
+      ],
+      [contentChunk("recovered"), usageChunk(2, 1)],
+    ]);
+    const callMcpTool = vi.fn(async () => ({ text: "found" }));
+    const deps: AgentDeps = { channel, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "go" }],
+        mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
+      }),
+    );
+
+    // Never dispatched with `{}` — the model never asked for that call.
+    expect(callMcpTool).not.toHaveBeenCalled();
+    expect(chunks.some((c) => c.warning?.includes("output limit"))).toBe(true);
+    const result = chunks.find((c) => c.toolResult)?.toolResult;
+    expect(result?.content).toContain("Error:");
+    expect(result?.content).toContain("output limit");
+    // The loop recovers: the model reads the error result and answers.
+    expect(chunks.some((c) => c.done)).toBe(true);
+  });
+
+  it("still runs the calls of a cut turn whose arguments arrived whole", async () => {
+    const { finishReasonChunk } = await import("./fakeChannel");
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_1", "search", '{"query":"seoul"}'),
+        finishReasonChunk("length"),
+        usageChunk(2, 1),
+      ],
+      [contentChunk("answered"), usageChunk(2, 1)],
+    ]);
+    const callMcpTool = vi.fn(async () => ({ text: "found" }));
+    const deps: AgentDeps = { channel, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "go" }],
+        mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
+      }),
+    );
+
+    expect(callMcpTool).toHaveBeenCalledWith("search", { query: "seoul" });
+    // The cut is still announced — the plan may have had more calls behind it.
+    expect(chunks.some((c) => c.warning?.includes("output limit"))).toBe(true);
+    expect(chunks.some((c) => c.done)).toBe(true);
+  });
+
+  it("reports arguments that did not parse without an output cut as a model defect", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "search", '{"query": broken'), usageChunk(2, 1)],
+      [contentChunk("recovered"), usageChunk(2, 1)],
+    ]);
+    const callMcpTool = vi.fn(async () => ({ text: "found" }));
+    const deps: AgentDeps = { channel, callMcpTool };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: MODEL,
+        messages: [{ role: "user", content: "go" }],
+        mcpTools: [{ type: "function", function: { name: "search", parameters: {} } }],
+      }),
+    );
+
+    expect(callMcpTool).not.toHaveBeenCalled();
+    const result = chunks.find((c) => c.toolResult)?.toolResult;
+    expect(result?.content).toContain("did not parse");
+    // No cut happened, so nothing is announced as one.
+    expect(chunks.some((c) => c.warning)).toBe(false);
+    expect(chunks.some((c) => c.done)).toBe(true);
+  });
 });
 
 describe("subagent turn guard wording", () => {
-  it("names the transferred agent instead of claiming the run stopped", async () => {
+  it("names the subagent instead of claiming the run stopped", async () => {
     const channel = new FakeChannel([]);
     const deps: AgentDeps = { channel, recordUsage: async () => {} };
 
@@ -1043,7 +1130,9 @@ describe("subagent turn guard wording", () => {
     );
 
     const warning = chunks.find((c) => c.warning)?.warning ?? "";
-    expect(warning).toContain("Transferred agent 'child-proj'");
+    // "Subagent", not "Transferred agent": a dispatch child continues the
+    // parent's turn counter the same way, and the wording must be true of both.
+    expect(warning).toContain("Subagent 'child-proj'");
     expect(warning).toContain("the main run continues");
     expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
   });

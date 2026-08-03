@@ -336,44 +336,53 @@ function createToolResultBudget(
 ): (content: string) => string {
   let remaining = total;
   return (content) => {
-    let text: string;
-    if (content.length <= remaining) {
-      remaining -= content.length;
-      text = content;
-    } else {
-      const room = remaining;
-      remaining = 0;
-      if (room <= 0) {
-        // The tool protocol forces a result message per call, so this string
-        // enters the context regardless — charged, so the budget stays honest
-        // about it instead of the gap widening silently.
-        const omitted =
-          "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
-        runBudget?.chargeText(omitted);
-        return omitted;
-      }
-      text = `${content.slice(0, room)}\n…(truncated: kept ${room} of ${content.length} chars, this turn's tool output budget is exhausted)`;
-    }
-    if (!runBudget) {
-      return text;
-    }
-    // The marker is reserved inside the fit, not appended after it — a marker
-    // on top of a fit that spent the whole budget is how uncharged strings
-    // accumulate until the overflow the budget exists to prevent returns.
-    const fitted = runBudget.fitText(text, {
-      suffix: "\n…(truncated: the run's context budget is exhausted)",
-      minKeepChars: MIN_KEPT_RESULT_CHARS,
-    });
-    if (!fitted.truncated) {
-      return text;
-    }
-    if (!fitted.kept) {
+    if (remaining <= 0) {
+      // The tool protocol forces a result message per call, so this string
+      // enters the context regardless — charged, so the budget stays honest
+      // about it instead of the gap widening silently.
       const omitted =
-        "Error: tool result omitted — the run's context budget is exhausted. Answer from what you already have.";
-      runBudget.chargeText(omitted);
+        "Error: tool result omitted — this turn's tool output budget is exhausted. Request less data, or call one tool at a time.";
+      runBudget?.chargeText(omitted);
       return omitted;
     }
-    return fitted.text;
+    // Never through a surrogate pair: half a character does not survive
+    // persistence or the wire, and the run-budget fit below backs off the
+    // same way.
+    const turnCut = content.length > remaining ? cutCodePoints(content, remaining) : content;
+    if (runBudget) {
+      // The bare cut text goes through the fit; the marker is chosen *after*
+      // both budgets have spoken, by whichever constraint actually bound —
+      // a per-turn "kept N of M chars" claim re-cut by the run budget would
+      // assert a length the final text no longer has.
+      const fitted = runBudget.fitText(turnCut, {
+        suffix: "\n…(truncated: the run's context budget is exhausted)",
+        minKeepChars: MIN_KEPT_RESULT_CHARS,
+      });
+      if (!fitted.kept) {
+        const omitted =
+          "Error: tool result omitted — the run's context budget is exhausted. Answer from what you already have.";
+        runBudget.chargeText(omitted);
+        remaining -= omitted.length;
+        return omitted;
+      }
+      if (fitted.truncated) {
+        // The turn is debited what actually entered the context, not what the
+        // per-turn cut would have kept — a later call this turn must not be
+        // starved against text the context never received.
+        remaining -= fitted.text.length;
+        return fitted.text;
+      }
+    }
+    let text = turnCut;
+    if (turnCut.length < content.length) {
+      const marker = `\n…(truncated: kept ${turnCut.length} of ${content.length} chars, this turn's tool output budget is exhausted)`;
+      // Appended on top of a fit that did not cut, so it is charged where it
+      // is appended — everything inserted is charged.
+      runBudget?.chargeText(marker);
+      text += marker;
+    }
+    remaining -= text.length;
+    return text;
   };
 }
 
@@ -946,7 +955,15 @@ class ToolCallAccumulator {
   }
 }
 
-function parseToolArguments(raw: string): Record<string, unknown> {
+/**
+ * The call's arguments, or `null` when the text does not parse as a JSON
+ * object. `null` is a distinct answer on purpose: a provider output cut leaves
+ * the last call's arguments as half a JSON document, and mapping that to `{}`
+ * ran the tool with empty arguments — a search with no query, reported as a
+ * success. An empty string stays `{}`: a tool with no parameters legitimately
+ * streams no argument text at all.
+ */
+function parseToolArguments(raw: string): Record<string, unknown> | null {
   if (!raw) {
     return {};
   }
@@ -955,9 +972,9 @@ function parseToolArguments(raw: string): Record<string, unknown> {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
-    return {};
+    return null;
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -1706,6 +1723,9 @@ export async function* runAgent(
   // Reported once, at the first cut: a run that never fills the budget should
   // never mention it.
   let contextTruncationReported = false;
+  // Same rule for a turn the provider cut mid-tool-call: the run goes on, so
+  // it is a warning rather than an ending, said once.
+  let outputCutReported = false;
 
   let turn = input.startTurn ?? 0;
   // Ids already spoken for, across every turn: what the assistant message a
@@ -1737,12 +1757,14 @@ export async function* runAgent(
       // The warning names its run: warnings surface without author labels on
       // every consumer, so a subagent's guard saying "the run stopped" reads
       // as the parent's ending next to the parent's finished answer. A child
-      // is recognisable here by its continued turn counter.
+      // is recognisable here by its continued turn counter — which cannot say
+      // whether a transfer or a dispatch started it, so the wording claims
+      // neither mechanism.
       const isSubagentRun = (input.startTurn ?? 0) > 0;
       yield {
         author,
         warning: isSubagentRun
-          ? `Transferred agent '${input.projectName}' stopped at its turn limit (${maxTurn} turns) before finishing; the main run continues.`
+          ? `Subagent '${input.projectName}' stopped at its turn limit (${maxTurn} turns) before finishing; the main run continues.`
           : `The run stopped at its turn limit (${maxTurn} turns) before the model finished answering.`,
       };
       yield { author, finishReason: "turn-limit" };
@@ -1853,6 +1875,20 @@ export async function* runAgent(
       return;
     }
 
+    if (outputCut && !outputCutReported) {
+      // The provider cut this turn at its output cap while the model was
+      // calling tools. The loop goes on — the model reads the error results
+      // below and can retry — but the cut is announced: a truncated call plan
+      // executed silently is the same defect as a truncated answer reported
+      // as a finish.
+      outputCutReported = true;
+      yield {
+        author,
+        warning:
+          "The model's turn was cut at its output limit while it was calling tools; the run continues.",
+      };
+    }
+
     // All tool calls of one response aggregate into ONE assistant message.
     const wireToolCalls: ChannelToolCall[] = [];
     const toolMessages: ChannelMessage[] = [];
@@ -1871,13 +1907,39 @@ export async function* runAgent(
     // `builtin` is decided by the offered set, not by the dep — an MCP tool that
     // arrived under a builtin's name is only shadowed when that builtin is offered.
     const prepared = calls.map((call) => {
-      const args = parseToolArguments(call.arguments);
+      const parsedArgs = parseToolArguments(call.arguments);
+      const args = parsedArgs ?? {};
       const displayArgs = filter
         ? (restoreValues(filter, args) as Record<string, unknown>)
         : args;
-      return { call, args, displayArgs, builtin: builtinNames.has(call.name) };
+      // A call whose arguments did not parse — half a JSON document when the
+      // provider cut the turn, or a model defect — is announced and answered
+      // but never dispatched: running it with `{}` would report a call the
+      // model never made as a success.
+      return {
+        call,
+        args,
+        displayArgs,
+        malformed: parsedArgs === null,
+        builtin: builtinNames.has(call.name),
+      };
     });
-    for (const { call, args, displayArgs } of prepared) {
+    for (const { call, args, displayArgs, malformed } of prepared) {
+      if (malformed) {
+        // The model's own text is the only truthful record of arguments that
+        // did not parse — re-encoding `{}` would claim it asked for nothing.
+        const wireCall: ChannelToolCall = {
+          id: call.id,
+          type: "function",
+          function: { name: call.name, arguments: call.arguments },
+        };
+        wireToolCalls.push(wireCall);
+        yield {
+          author,
+          delta: { toolCalls: [filter ? (restoreValues(filter, wireCall) as ChannelToolCall) : wireCall] },
+        };
+        continue;
+      }
       wireToolCalls.push(toWireToolCall(call.id, call.name, args));
       yield { author, delta: { toolCalls: [toWireToolCall(call.id, call.name, displayArgs)] } };
     }
@@ -1889,7 +1951,9 @@ export async function* runAgent(
     // Failures are settled rather than thrown, so one rejection cannot leave the
     // other in-flight calls' rejections unhandled; each is rethrown in order.
     const mcpDispatch = deps.callMcpTool;
-    const mcpCalls = mcpDispatch ? prepared.filter((entry) => !entry.builtin) : [];
+    const mcpCalls = mcpDispatch
+      ? prepared.filter((entry) => !entry.builtin && !entry.malformed)
+      : [];
     const mcpSettled = new Map<string, { ok: McpToolResult } | { err: unknown }>();
     if (mcpDispatch && mcpCalls.length > 0) {
       const settled = await mapWithLimit(mcpCalls, MAX_PARALLEL_TOOL_CALLS, async (entry) => {
@@ -1909,7 +1973,16 @@ export async function* runAgent(
 
     const spendResultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, contextBudget);
 
-    for (const { call, args, displayArgs, builtin } of prepared) {
+    for (const { call, args, displayArgs, builtin, malformed } of prepared) {
+      if (malformed) {
+        const errorText = outputCut
+          ? `Error: the arguments of this call were cut at the model's output limit and did not parse; the call was not executed. Retry it with complete arguments.`
+          : `Error: the arguments of this call did not parse as a JSON object; the call was not executed.`;
+        const spentError = spendResultBudget(errorText);
+        yield { author, toolResult: { toolCallId: call.id, name: call.name, content: spentError } };
+        toolMessages.push({ role: "tool", tool_call_id: call.id, content: spentError });
+        continue;
+      }
       if (builtin && call.name === TRANSFER_TOOL_NAME) {
         // Child runs at turn+1 and the parent resumes at turn+2, so two turns
         // must remain or the resume would trip the initial guard.
@@ -1995,17 +2068,22 @@ export async function* runAgent(
         // A transfer's answer used to enter the context with no bound at all —
         // the one unbudgeted spot. The user already saw the child's full
         // answer stream by; only what re-enters the parent's context is cut.
-        // The wrapper is charged first and the marker is reserved inside the
-        // fit, so the whole message this pushes — wrapper, answer, marker —
-        // is inside the budget, not riding on its headroom.
+        // Masked *before* it is charged and fitted: the budget must price the
+        // exact string the messages array receives (mask tokens run longer
+        // than what they replace), and a fit that cut through a raw address
+        // would leave a fragment the mask no longer recognises. The wrapper
+        // is charged first and the marker is reserved inside the fit, so the
+        // whole message this pushes — wrapper, answer, marker — is inside the
+        // budget, not riding on its headroom.
+        const maskedChildText = filter?.mask(childText) ?? childText;
         contextBudget?.chargeText(subagentContextMessage(agentName, ""));
-        const fittedChild = contextBudget?.fitText(childText, {
+        const fittedChild = contextBudget?.fitText(maskedChildText, {
           suffix: "\n…[truncated: the run's context budget is exhausted]",
           // Same floor as a tool result: a few dozen characters of a child's
           // introduction read as its whole answer, which is worse than saying
           // the answer could not be included.
           minKeepChars: MIN_KEPT_RESULT_CHARS,
-        }) ?? { text: childText, truncated: false, kept: true };
+        }) ?? { text: maskedChildText, truncated: false, kept: true };
         let childAnswer = fittedChild.text;
         if (!fittedChild.kept) {
           childAnswer =
@@ -2014,9 +2092,7 @@ export async function* runAgent(
         }
         postContextMessages.push({
           role: "user",
-          content:
-            filter?.mask(subagentContextMessage(agentName, childAnswer)) ??
-            subagentContextMessage(agentName, childAnswer),
+          content: subagentContextMessage(agentName, childAnswer),
         });
         nextTurn = Math.max(nextTurn, turn + 2);
         continue;
@@ -2182,14 +2258,15 @@ export async function* runAgent(
           : body;
         // Through the turn budget like any other tool result, which is the reason
         // the answers come back here instead of as an unbudgeted context message.
-        const spentText = spendResultBudget(dispatchText);
-        const maskedDispatch = filter?.mask(spentText) ?? spentText;
+        // Masked before it is spent: the budget prices the string the messages
+        // array receives, not the shorter unmasked one.
+        const maskedDispatch = spendResultBudget(filter?.mask(dispatchText) ?? dispatchText);
         yield {
           author,
           toolResult: {
             toolCallId: call.id,
             name: call.name,
-            content: filter?.restore(maskedDispatch) ?? spentText,
+            content: filter?.restore(maskedDispatch) ?? maskedDispatch,
           },
         };
         toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedDispatch });
@@ -2220,17 +2297,16 @@ export async function* runAgent(
             resultText = `Error: image generation failed. ${errorMessage(error)}`;
           }
         }
-        // Through both budgets like every other result: the failure path
-        // carries a provider error body of unbounded length, and a string that
-        // bypasses the spender enters the context unmeasured.
-        resultText = spendResultBudget(resultText);
-        const maskedResultText = filter?.mask(resultText) ?? resultText;
+        // Through both budgets like every other result, masked first: the
+        // failure path carries a provider error body of unbounded length, and
+        // the budget prices the string the messages array receives.
+        const maskedResultText = spendResultBudget(filter?.mask(resultText) ?? resultText);
         yield {
           author,
           toolResult: {
             toolCallId: call.id,
             name: call.name,
-            content: filter?.restore(maskedResultText) ?? resultText,
+            content: filter?.restore(maskedResultText) ?? maskedResultText,
           },
         };
         toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedResultText });
@@ -2269,15 +2345,14 @@ export async function* runAgent(
           }
         }
         // Same as GenerateImage above: the error path's provider body is
-        // unbounded, so the result goes through both budgets.
-        resultText = spendResultBudget(resultText);
-        const maskedEditText = filter?.mask(resultText) ?? resultText;
+        // unbounded, so the result goes through both budgets, masked first.
+        const maskedEditText = spendResultBudget(filter?.mask(resultText) ?? resultText);
         yield {
           author,
           toolResult: {
             toolCallId: call.id,
             name: call.name,
-            content: filter?.restore(maskedEditText) ?? resultText,
+            content: filter?.restore(maskedEditText) ?? maskedEditText,
           },
         };
         toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedEditText });
@@ -2344,14 +2419,17 @@ export async function* runAgent(
           }
         }
       }
-      content = spendResultBudget(content);
-      const maskedContent = filter?.mask(content) ?? content;
+      // Masked before it is spent: the budget must price the exact string the
+      // messages array receives — mask tokens run longer than what they
+      // replace, and a cut through a raw address would leave a fragment the
+      // mask no longer recognises.
+      const maskedContent = spendResultBudget(filter?.mask(content) ?? content);
       yield {
         author,
         toolResult: {
           toolCallId: call.id,
           name: resultName,
-          content: filter?.restore(maskedContent) ?? content,
+          content: filter?.restore(maskedContent) ?? maskedContent,
         },
       };
       toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedContent });

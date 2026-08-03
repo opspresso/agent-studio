@@ -421,7 +421,23 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                           {run.status}
                         </Badge>
                       </Table.Td>
-                      <Table.Td>{run.error ?? run.warning ?? run.result ?? ""}</Table.Td>
+                      {/* The warning rides beside the result, never instead of
+                          it: a turn-limited firing still delivered a partial
+                          answer, and hiding it left the operator unable to see
+                          what the delivery actually said. */}
+                      <Table.Td>
+                        {run.error ??
+                          (run.warning ? (
+                            <Stack gap={4}>
+                              <Alert color="yellow" variant="light" p={4}>
+                                {run.warning}
+                              </Alert>
+                              {run.result}
+                            </Stack>
+                          ) : (
+                            (run.result ?? "")
+                          ))}
+                      </Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>

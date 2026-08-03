@@ -73,10 +73,13 @@ flowchart TB
   shared["shared<br/>dependency-free helpers — imports nothing from @/"]
 
   app --> application
+  app --> domain
   application --> domain
   infrastructure --> domain
   infrastructure --> lib
   app -->|"only through the wiring sites<br/>container.ts · chats _deps.ts · slack events _lib · per-request A2A assembly"| lib
+  lib --> domain
+  lib -->|"container.ts — composes the use cases it wires"| application
   lib -->|"wiring modules only"| infrastructure
   application -.->|"pure leaves only — runMetrics"| lib
   app --> shared
@@ -510,7 +513,7 @@ flowchart TB
   cut{"provider said<br/>finish_reason length?"}
   outputlimit["warning +<br/>finishReason: output-limit"]
   finished["done: true"]
-  dispatch["announce every call, then dispatch:<br/>builtins in call order · MCP concurrently ≤5"]
+  dispatch["announce every call, then dispatch:<br/>builtins in call order · MCP concurrently ≤5<br/>an output-cut turn warns once; arguments that<br/>did not parse get an error result, never a dispatch"]
   budget["per-turn cap + run context budget<br/>a cut carries a marker, the run warns once"]
   append["ONE assistant message + tool results<br/>+ post-context messages — all charged"]
 

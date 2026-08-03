@@ -240,6 +240,157 @@ describe("runAgent context budget", () => {
     expect(text.length).toBeLessThan(40_000);
   });
 
+  it("never cuts a tool result through a surrogate pair, and the marker tells the truth", async () => {
+    // "a" + 100k emoji: the 200k per-turn boundary lands between the halves
+    // of a pair. A raw slice kept the high half — a string DynamoDB refuses
+    // and the provider receives as a lone surrogate escape.
+    const payload = `a${"😀".repeat(100_000)}`;
+    const channel = toolLoopChannel();
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: payload }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: HUGE_WINDOW_MODEL,
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    const result = chunks.find((c) => c.toolResult)?.toolResult?.content ?? "";
+    const markerAt = result.indexOf("\n…(truncated: kept");
+    expect(markerAt).toBeGreaterThan(0);
+    const kept = result.slice(0, markerAt);
+    const lastCode = kept.charCodeAt(kept.length - 1);
+    expect(lastCode >= 0xd800 && lastCode <= 0xdbff).toBe(false);
+    // Backing off the pair keeps 199,999 of the 200,001 chars — and the
+    // marker states what was actually kept, not the pre-backoff room.
+    expect(result).toContain(`kept ${kept.length} of ${payload.length} chars`);
+    expect(kept.length).toBe(199_999);
+  });
+
+  it("carries only the run budget's marker when it cut below the per-turn cap", async () => {
+    // 250k chars: the per-turn cap would keep 200k, the run budget only ~24k.
+    // The old order appended "kept 200000 of 250000 chars" first and let the
+    // run fit cut that text again — a surviving claim about a length the
+    // final text no longer had.
+    const channel = toolLoopChannel();
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: "x".repeat(250_000) }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: SMALL_WINDOW_MODEL,
+      parameters: SMALL_BUDGET_PARAMS,
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    const result = chunks.find((c) => c.toolResult)?.toolResult?.content ?? "";
+    expect(result).toContain("(truncated: the run's context budget is exhausted)");
+    expect(result).not.toContain("kept 200000");
+    expect(result.length).toBeLessThan(40_000);
+  });
+
+  it("debits the turn only what the run budget let in, so a second call is blamed on the right budget", async () => {
+    // Two 250k results in one turn. The old cut set the per-turn remainder to
+    // zero even though only ~24k entered, so the second call was refused as
+    // "this turn's tool output budget is exhausted" — telling the model to
+    // request less next time when the run's budget was what had run out.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_1", "search", "{}"),
+        toolCallChunk(1, "call_2", "search", "{}"),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("answered"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: "x".repeat(250_000) }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: SMALL_WINDOW_MODEL,
+      parameters: SMALL_BUDGET_PARAMS,
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    const results = chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content ?? "");
+    expect(results).toHaveLength(2);
+    expect(results[1]).toContain("the run's context budget is exhausted");
+    expect(results[1]).not.toContain("this turn's tool output budget");
+  });
+
+  it("prices the masked text the context actually receives, not the shorter raw one", async () => {
+    // 2,000 addresses: each mask token runs 8 chars longer than its original,
+    // so charging the raw text and inserting the masked one undercounted by
+    // ~16k chars — the drift between the estimate and the wire that the
+    // budget's headroom exists to absorb, spent silently.
+    const payload = Array.from(
+      { length: 2_000 },
+      (_, i) => `user${String(i).padStart(4, "0")}@mail.com`,
+    ).join(" ");
+    const channel = toolLoopChannel();
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: payload }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: SMALL_WINDOW_MODEL,
+      parameters: { maxTokens: 190_000, piiFiltering: true },
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    // What goes on the wire is the masked, budget-fitted text: within what the
+    // ~8k-token budget prices (~24k ASCII chars), not that plus mask growth.
+    const toolMessage = channel.seenParams[1]?.messages.find((m) => m.role === "tool");
+    expect(String(toolMessage?.content).length).toBeLessThan(26_000);
+  });
+
+  it("prices a transfer's masked answer, not its raw one", async () => {
+    const payload = Array.from(
+      { length: 2_000 },
+      (_, i) => `user${String(i).padStart(4, "0")}@mail.com`,
+    ).join(" ");
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"do it"}'), usageChunk(1, 1)],
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      // eslint-disable-next-line require-yield
+      runSubagent: async function* () {
+        return payload;
+      },
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: SMALL_WINDOW_MODEL,
+      parameters: { maxTokens: 190_000, piiFiltering: true },
+      messages: [{ role: "user", content: "go" }],
+      subagents: [{ name: "child", description: "", type: "local" }],
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    expect(chunks.some((c) => c.warning?.includes("context budget"))).toBe(true);
+    const context = channel.seenParams[1]?.messages.at(-1);
+    expect(String(context?.content).length).toBeLessThan(26_000);
+  });
+
   it("leaves a run with headroom byte-identical", async () => {
     const payload = "x".repeat(50_000);
     const channel = toolLoopChannel();

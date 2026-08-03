@@ -63,7 +63,12 @@ describe("buildApiReference — request/response field specs", () => {
   it("documents predict request and response fields", () => {
     const predict = buildApiReference(ctx({ projectType: "llm" })).find((e) => e.id === "predict");
     expect(predict?.requestFields?.map((f) => f.name)).toEqual(["variables", "messages", "stream"]);
-    expect(predict?.responseFields?.map((f) => f.name)).toEqual(["result", "model", "usage"]);
+    expect(predict?.responseFields?.map((f) => f.name)).toEqual([
+      "result",
+      "model",
+      "usage",
+      "finishReason",
+    ]);
     // usage carries nested children.
     expect(predict?.responseFields?.find((f) => f.name === "usage")?.children).toBeDefined();
   });

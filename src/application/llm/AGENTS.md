@@ -43,11 +43,18 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   result strings included, whose failure path carries an unbounded provider error body — as
   `createToolResultBudget` fits it, a transfer's answer before it becomes a "For context"
   message, and the MCP-image companion message at the flat per-image rate — never the base64
-  length. **Everything inserted is charged**: a truncation marker is reserved *inside* the
-  fit (`fitText`'s `suffix`), never appended on top of one, and the wrapper and omission
-  strings are charged where they are appended — post-exhaustion ones as debt, since the tool
-  protocol forces a result message per call. A cut is never silent: the result text carries
-  a marker and the run warns once. Exhaustion does not end the loop — the model reads the
+  length. **Everything inserted is charged, as the exact string inserted**: with PII
+  filtering on that is the *masked* text (mask tokens run longer than what they replace, so
+  pricing the raw text undercounted — and a fit that cut through a raw address would leave a
+  fragment the mask no longer recognises), the run-budget marker is reserved *inside* the
+  fit (`fitText`'s `suffix`), and the per-turn marker, wrappers and omission strings are
+  charged where they are appended — post-exhaustion ones as debt, since the tool protocol
+  forces a result message per call. When both budgets cut one result, only the binding
+  constraint's marker is appended — a per-turn "kept N of M chars" claim re-cut by the run
+  fit would assert a length the final text no longer has — and the turn is debited what
+  actually entered the context, so a later call this turn is not starved against text the
+  context never received. A cut is never silent: the result text carries a marker and the
+  run warns once. Exhaustion does not end the loop — the model reads the
   omission errors and wraps up, and the turn guard stays the hard stop. No budget exists for
   an unregistered model (no window to derive from), for a `maxTokens` that leaves the window
   no capacity (the provider rejects that coherently; a zero budget only blames itself), or
@@ -124,9 +131,15 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   `warning` chunk names the limit for the user, then a `finishReason: "turn-limit"` chunk
   names it for consumers. A subagent run's warning names its agent instead of "the run" —
   warnings surface without author labels everywhere, so the generic wording next to the
-  parent's finished answer read as the parent's ending. A final turn the provider cut at
+  parent's finished answer read as the parent's ending — and it says "subagent", not which
+  mechanism started it: the continued turn counter cannot tell a transfer from a dispatch.
+  A final turn the provider cut at
   its output cap (`finish_reason: "length"` on the channel) is announced the same way as
-  `finishReason: "output-limit"` — `done` would claim the model finished on its own.
+  `finishReason: "output-limit"` — `done` would claim the model finished on its own. A cut
+  turn that still carries tool calls does not end the run: the cut is announced once as a
+  `warning`, calls whose arguments arrived whole run normally, and one whose arguments did
+  not parse is answered `Error: …` and never dispatched — parsing the fragment to `{}`
+  would run a call the model never made and report it as a success.
   Normal completion stays `done: true`, byte-identical, and `chunkTermination` /
   `runTermination` (`src/domain/llm/types.ts`) are the only readers of the
   done/finishReason/error → reason mapping. Transfer guard:
