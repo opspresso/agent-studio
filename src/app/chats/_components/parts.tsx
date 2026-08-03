@@ -131,9 +131,19 @@ export function MessageView({ message }: { message: ChatMessage }) {
             ))}
           </Group>
         )}
-        {(message.images ?? []).map((image, index) => (
-          <GeneratedImage key={`attached-${index}`} src={image.url} alt="Attached image" />
-        ))}
+        {/* `url` is always set on the wire: the API resolves stored keys to
+            signed addresses and drops what it could not sign. */}
+        {(message.images ?? []).flatMap((image, index) =>
+          image.url
+            ? [
+                <GeneratedImage
+                  key={`attached-${index}`}
+                  src={image.url}
+                  alt="Attached image"
+                />,
+              ]
+            : [],
+        )}
         {message.content && (
           <Paper radius="lg" px="md" py="xs" bg="var(--mantine-primary-color-filled)" maw="80%">
             <Text fz="sm" c="white" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
@@ -168,13 +178,17 @@ export function MessageView({ message }: { message: ChatMessage }) {
       {(message.warnings ?? []).map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
-      {(message.images ?? []).map((image, index) => (
-        <GeneratedImage
-          key={`image-${index}`}
-          src={image.url}
-          alt={image.prompt ?? "Generated image"}
-        />
-      ))}
+      {(message.images ?? []).flatMap((image, index) =>
+        image.url
+          ? [
+              <GeneratedImage
+                key={`image-${index}`}
+                src={image.url}
+                alt={image.prompt ?? "Generated image"}
+              />,
+            ]
+          : [],
+      )}
       <div style={{ maxWidth: "80%" }}>
         <AssistantBubble>
           <MarkdownContent content={message.content} />

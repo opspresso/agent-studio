@@ -1,6 +1,8 @@
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
+import { resolveMessageImages } from "./resolveImages";
+import { VIEW_URL_TTL_SECONDS } from "./imageUrls";
 
 export interface ChatWithMessages {
   chat: Chat;
@@ -41,5 +43,12 @@ export async function getChat(
     throw new ChatNotFoundError();
   }
   const messages = await deps.chats.listMessages(chatId);
-  return { chat, messages: messages.map(forReading) };
+  // Signed for the reader who is about to look at them. A stored row holds an
+  // object key, never an address that keeps working after this response.
+  const withImages = await resolveMessageImages(
+    messages.map(forReading),
+    deps.signImageUrl,
+    VIEW_URL_TTL_SECONDS,
+  );
+  return { chat, messages: withImages };
 }

@@ -102,8 +102,8 @@ export async function storeMessageImages(
   let reason = "";
   for (const image of images) {
     try {
-      const url = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
-      stored.push(image.prompt === undefined ? { url } : { url, prompt: image.prompt });
+      const key = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
+      stored.push(image.prompt === undefined ? { key } : { key, prompt: image.prompt });
     } catch (error) {
       failed += 1;
       reason = error instanceof Error ? error.message : String(error);

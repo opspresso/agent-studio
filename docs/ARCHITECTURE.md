@@ -721,10 +721,30 @@ so a failed write is logged rather than turned into a 500 that throws the result
 **Where the bytes go is the consumer's decision, not the engine's.** The same `image` chunk
 reaches every surface — how to read one is in the [EngineChunk contract](#enginechunk-contract)
 — and each does something different with it: chats upload through the optional `storeImage`
-port and persist a URL, Slack uploads to the thread once the run ends, the OpenAI-compatible
-surface carries an `images` extension, predict returns them beside the text. With no object
-storage configured a chat image renders during the live stream only, and says so rather than
-leaving a gap.
+port and persist the **object key**, Slack uploads to the thread once the run ends, the
+OpenAI-compatible surface carries an `images` extension, predict returns them beside the text.
+With no object storage configured a chat image renders during the live stream only, and says so
+rather than leaving a gap.
+
+**A stored image is a key, and its address is minted per read.** The row used to hold a public
+URL, which made a transcript a permanent grant to whoever saw it. `resolveImageUrl`
+(`src/domain/chat/imageRefs.ts`) owns the one compatibility rule — a `key` is signed, a legacy
+`url` is passed through — because two readers ask, and a second spelling is how one of them
+quietly stops showing half the images. Both resolve *before* mapping, which is what keeps
+`toEngineMessages` the pure synchronous function its replay contract is tested through.
+
+The two lifetimes differ for a reason that is easy to get backwards: a chat view is read by a
+person who already has the page, so 15 minutes is generous, while a **replay** hands the URL to
+the model *provider*, which fetches it at whatever point in a run that may last
+`MAX_RUN_DURATION_MS`. The replay lifetime is therefore derived from the run deadline rather
+than written down, or raising the deadline would silently start failing turns on images the
+user can see in their own transcript. An image that cannot be signed is dropped from the
+message: on the replay path an unfetchable URL fails the whole turn.
+
+**Nothing in the app deletes an object.** A chat row expires by DynamoDB TTL, which the
+application never observes, so there is no moment at which it could cascade — expiry is the
+bucket's lifecycle rule, on the deployment checklist in
+[OPERATIONS.md](OPERATIONS.md#operational-checklist-for-a-new-deployment).
 
 ### Skills
 

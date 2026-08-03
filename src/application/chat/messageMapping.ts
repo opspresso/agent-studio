@@ -50,10 +50,15 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
     content: turnContent(
       message.documents ?? [],
       message.content,
-      (message.images ?? []).map((image) => ({
-        type: "image_url" as const,
-        image_url: { url: image.url },
-      })),
+      // Resolved upstream (`resolveImages.ts`); one that could not be signed
+      // carries no url and is left out rather than sent as an address the
+      // provider would fail the turn on.
+      (message.images ?? [])
+        .flatMap((image) =>
+          image.url
+            ? [{ type: "image_url" as const, image_url: { url: image.url } }]
+            : [],
+        ),
     ),
   };
 }

@@ -3,6 +3,7 @@ import type { ChatRepository } from "@/domain/chat/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+import type { SignImageUrl } from "@/domain/chat/imageRefs";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 
 export interface AgentRunParams {
@@ -18,7 +19,11 @@ export interface AgentRunParams {
 /** Bound wrapper over `executeAgent(executionDeps, params)`, injected at the route boundary. */
 export type AgentRunner = (params: AgentRunParams) => AsyncGenerator<EngineChunk>;
 
-/** Upload a generated image and return its public URL. */
+/**
+ * Upload a generated image and return its **object key**. Not a URL: the address
+ * is signed at read time, so a stored transcript holds a reference rather than a
+ * link that works forever.
+ */
 export type ImageStore = (image: { b64: string; mimeType: string }) => Promise<string>;
 
 /** An image the user attached to a turn, as inline bytes. */
@@ -45,6 +50,12 @@ export interface ChatDeps {
   runAgent: AgentRunner;
   /** Unset skips image persistence — images then render only during the live stream. */
   storeImage?: ImageStore;
+  /**
+   * Signs a stored object key for reading. Set whenever `storeImage` is: without
+   * it a new row's image cannot be displayed at all, while legacy public-URL rows
+   * still can.
+   */
+  signImageUrl?: SignImageUrl;
   /** Reads an attached document into the text the turn carries and stores. */
   documents: DocumentExtractor;
 }
