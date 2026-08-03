@@ -112,6 +112,7 @@ about to make copy number two.
 | The shape of an MCP tool | `src/domain/mcp/types.ts` |
 | Which hosts may skip the outbound URL guard | `src/domain/mcp/types.ts` |
 | Which storage errors mean a lost conditional write | `src/application/errors.ts` |
+| How an audit row is written | `src/application/audit/recordAudit.ts` |
 | Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |

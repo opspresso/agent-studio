@@ -168,9 +168,12 @@ but the rows accumulate one per run).
 | Chats + messages | 180 days | `CHAT_RETENTION_DAYS` | last activity / message `createdAt` |
 | Trigger deliveries | 30 days | `TRIGGER_RUN_RETENTION_DAYS` | delivery start |
 | Inbound A2A tasks | 1 day | `A2A_TASK_RETENTION_DAYS` | last write |
+| Audit records | 400 days | `AUDIT_RETENTION_DAYS` | the act's `createdAt` |
 
-Usage is kept longest because the dashboard queries up to 184 days back. A trace and its
-deletion reference share one expiry so the reference never dangles.
+Usage and audit rows are kept longest — the dashboard queries up to 184 days back, and the
+questions an audit row answers ("who changed the admin list last quarter") are asked long
+after the act. A trace and its deletion reference share one expiry so the reference never
+dangles.
 
 DynamoDB's physical purge is only eventually consistent (up to ~48h), so **reads also filter
 out already-expired rows**. `traceRepository` keeps pulling bounded pages until its `Limit` is

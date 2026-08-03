@@ -58,6 +58,7 @@ export function createMcpUseCases(
 ): McpUseCases {
   const registry = createRegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput>({
     label: "MCP server",
+    auditKind: "mcp",
     repo,
     view: (server) => masked(cipher, server),
     async build(input, now) {

@@ -3,6 +3,7 @@ import type { CostLimits, Project, ProjectType } from "@/domain/project/types";
 import { ConflictError, ForbiddenError, NotFoundError, isConditionalWriteFailure } from "@/application/errors";
 import { nextUpdatedAt } from "./timestamps";
 import { log } from "@/shared/logger";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 /** The admin-list reader the write override consults. See {@link setAdminCheck}. */
 type AdminCheck = (userEmail: string) => Promise<boolean>;
@@ -87,11 +88,19 @@ export async function assertProjectWritable(
   if (await isAdminOverride(userEmail)) {
     // The owner cannot see this happen from the data — a deleted project takes
     // the row that would have named who deleted it — so the override is the
-    // thing worth recording, not the eventual write.
+    // thing worth recording, not the eventual write. Recorded twice on purpose:
+    // the row is what a later question can query, the line is what survives the
+    // audit store itself being unavailable.
     log.warn(
       "authz",
       `admin ${userEmail} is acting on project "${name}" owned by ${project.ownerEmail}`,
     );
+    await recordAudit({
+      actorEmail: userEmail,
+      action: "project.admin-override",
+      target: auditTarget("project", name),
+      detail: `owned by ${project.ownerEmail}`,
+    });
     return project;
   }
   throw new ForbiddenError(`You do not have permission to modify project "${name}"`);
@@ -187,6 +196,14 @@ export async function deleteProject(
   name: string,
   userEmail: string,
 ): Promise<void> {
-  await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectWritable(repo, name, userEmail);
   await repo.delete(name);
+  // After the delete, and the one record that survives it: the cascade takes
+  // every row that could otherwise have said who the project belonged to.
+  await recordAudit({
+    actorEmail: userEmail,
+    action: "project.delete",
+    target: auditTarget("project", name),
+    detail: `owned by ${project.ownerEmail}`,
+  });
 }

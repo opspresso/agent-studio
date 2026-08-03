@@ -89,9 +89,10 @@ credentials to dispatch with, whom to notify) reads `project.ownerEmail`.
 
 Two consequences of the override are handled rather than assumed away:
 
-- It is **logged** — `[authz] admin … is acting on project …` — because the write can destroy
-  the row that would have identified who made it, and a project's API token authenticates
-  *as its owner*, so an admin reveal leaves that line plus `[token] … revealed by …`.
+- It is **recorded** — an `project.admin-override` audit row and the
+  `[authz] admin … is acting on project …` line — because the write can destroy the row that
+  would have identified who made it, and a project's API token authenticates *as its owner*,
+  so an admin reveal leaves that pair plus a `secret.reveal` row.
 - The settings read it needs **fails closed**: a settings-store outage denies the override
   rather than turning a non-owner's deterministic 403 into a 500.
 
@@ -137,8 +138,9 @@ Three secrets this app issues can be read back in plaintext:
 | Webhook trigger secret | `POST /api/projects/{name}/triggers/{trigger}/reveal` | owner or admin |
 
 All three are **POST although they read**: the response body is a live credential, so it
-stays out of caches, browser history and prefetches. Every reveal is logged server-side with
-the caller's email.
+stays out of caches, browser history and prefetches. Every reveal leaves an **audit row** with
+the caller's email, and the server-side log line beside it — the row is what a later question
+queries, the line is what survives the audit store itself being unavailable.
 
 These three are therefore stored **encrypted rather than hashed**, which is a deliberate
 trade: the datastore alone is not enough to use one, but the datastore *plus*

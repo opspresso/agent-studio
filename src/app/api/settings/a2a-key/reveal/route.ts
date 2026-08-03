@@ -3,6 +3,7 @@ import { NotFoundError } from "@/application/errors";
 import { getA2aApiKey } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
 import { log } from "@/shared/logger";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 /**
  * Return the effective A2A API key in plaintext — the stored override decrypted,
@@ -18,8 +19,16 @@ export const POST = withAdminAuth(async (user) => {
     if (!key) {
       throw new NotFoundError("A2A_API_KEY is not configured");
     }
-    // Secret access is worth a trail even when it is authorized.
+    // Secret access is worth a trail even when it is authorized. The line and
+    // the row are both kept: the row is queryable, the line is what remains if
+    // the audit store is the thing that failed.
     log.warn("settings", `A2A_API_KEY revealed by ${user.email}`);
+    await recordAudit({
+      actorEmail: user.email,
+      action: "secret.reveal",
+      target: auditTarget("settings", "app"),
+      detail: "A2A_API_KEY",
+    });
     return Response.json({ key });
   } catch (error) {
     return apiError(error);

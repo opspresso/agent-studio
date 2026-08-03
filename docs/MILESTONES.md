@@ -65,33 +65,3 @@ read와 replay가 각각 유효기간을 가진 서명 URL을 받음을 테스�
 유효기간이 `MAX_RUN_DURATION_MS`보다 긴 것을 테스트로 고정한다. 기존 공개 URL로 저장된 행이
 계속 읽히는 것을 테스트로 검증한다.
 
-## audit-log-entity — 감사 기록의 일급 엔티티 승격
-
-**이유**: 민감 행위가 남기는 흔적이 고르지 않고, 남는 쪽조차 감사 기록이 아니다.
-
-- 시크릿 reveal 3종과 `assertProjectWritable`의 admin override는 caller email과 함께 로그
-  라인을 남긴다(SECURITY.md: "Every reveal is logged server-side").
-- **`PUT /api/settings`와 프로젝트·레지스트리 삭제는 아무것도 남기지 않는다.** 설정 쓰기는
-  `userEmail`을 받아 최신 상태에만 반영하고 이력을 쓰지 않으므로, 관리자 목록이나 LLM 자격증명이
-  언제 누구 손에 바뀌었는지 되짚을 방법이 없다.
-
-그리고 로그를 남기는 쪽조차 보존·조회·내보내기 계약이 없어 "누가 언제 무엇을"이라는 감사
-질문에 답하지 못한다.
-
-**선행**: 없음.
-
-**범위**
-
-- `AuditEvent` 도메인 엔티티 + repository 포트: actor, action, target, detail, createdAt,
-  `expiresAt`(보존 변수). 키는 `keys.ts`에 추가한다.
-- 기록 지점: a2a-key/프로젝트 토큰/트리거 시크릿 reveal, `assertProjectWritable`의 admin
-  override 경로, `PUT /api/settings`, 토큰·시크릿 발급/회전, 프로젝트·레지스트리 삭제.
-  기존 로그 라인은 유지한다 — 로그와 감사는 소비자가 다르다.
-- 조회는 admin 전용 API(기간 필터, `queryAll()` 페이지네이션). UI·내보내기는 별도 작업.
-- 기록자는 단일 소유 모듈 하나로 만들고 `SINGLE_OWNERS`에 등록한다 — 기록 지점이 늘 때마다
-  포맷이 복제되는 것이 이 작업이 막는 실패다.
-
-**완료 조건**: 위 기록 지점 각각이 감사 행을 남기는 것을 테스트로 검증한다. 감사 기록자가
-아키텍처 테스트의 single-owner 불변식에 등록된다. 행이 보존 변수로 계산된 `expiresAt`을
-갖는 것을 테스트로 검증한다.
-

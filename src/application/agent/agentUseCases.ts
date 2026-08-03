@@ -44,6 +44,7 @@ export function createAgentUseCases(
 ): AgentUseCases {
   const registry = createRegistryUseCases<ExternalAgent, CreateAgentInput, UpdateAgentInput>({
     label: "External agent",
+    auditKind: "agent",
     repo,
     view: (agent) => masked(cipher, agent),
     async build(input, now) {

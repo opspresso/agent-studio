@@ -36,6 +36,7 @@ import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
+import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
@@ -61,6 +62,8 @@ import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import { setAdminCheck } from "@/application/project/projectUseCases";
+import { setAuditSink } from "@/application/audit/recordAudit";
+import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -75,6 +78,13 @@ import {
 // imported by it — a static import would drag the settings store (and its
 // DynamoDB client) into the application layer.
 setAdminCheck(isConfiguredAdmin);
+
+// Same shape, same reason: the audit store is pushed into the writer rather
+// than threaded through the eight acts that record one, because a call site
+// that forgot the argument would leave exactly one act untracked.
+setAuditSink(auditRepository);
+
+export const auditUseCases = createAuditUseCases(auditRepository);
 
 /**
  * Reading runtime settings is the composition root's job: the LLM adapters take
@@ -223,9 +233,15 @@ export const syncSkillsFromRepo = async (
 export const syncToolsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getToolsRepoConfig>>,
   selection?: SyncSelection,
+  actorEmail?: string,
 ) => {
   const { fetchToolsRepoSnapshot } = await import("@/infrastructure/github/toolsRepoClient");
-  return syncToolsFromSnapshot(mcpUseCases, await fetchToolsRepoSnapshot(repoConfig), selection);
+  return syncToolsFromSnapshot(
+    mcpUseCases,
+    await fetchToolsRepoSnapshot(repoConfig),
+    selection,
+    actorEmail,
+  );
 };
 
 /** A2A exposure: repositories plus the card renderer. */

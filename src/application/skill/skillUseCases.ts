@@ -21,6 +21,7 @@ export type SkillUseCases = RegistryUseCases<Skill, CreateSkillInput, UpdateSkil
 export function createSkillUseCases(repo: SkillRepository): SkillUseCases {
   return createRegistryUseCases<Skill, CreateSkillInput, UpdateSkillInput>({
     label: "Skill",
+    auditKind: "skill",
     repo,
     build(input, now) {
       return {

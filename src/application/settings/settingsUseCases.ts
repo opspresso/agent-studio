@@ -7,6 +7,7 @@ import type {
 } from "@/domain/settings/types";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 
 /** Reads `LLM_PROVIDER_*` env vars into channel configs. Injected. */
@@ -105,6 +106,15 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
   /** Full replacement list; empty array removes the override (env fallback). */
   llmProviders?: LlmProviderInput[];
 };
+
+/**
+ * Which keys a patch actually carried — the audit row's detail. Names only:
+ * two of these fields *are* credentials, and a third is the admin list, so
+ * recording what changed must never record what it changed to.
+ */
+function touchedKeys(patch: SettingsUpdate): string[] {
+  return Object.keys(patch).filter((key) => patch[key as keyof SettingsUpdate] !== undefined);
+}
 
 function toProviderViews(
   cipher: SecretCipher,
@@ -316,6 +326,15 @@ export function createSettingsUseCases(
 
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
+      // The row keeps only *which* keys were written, never their values: the
+      // admin list is one of them and the LLM credential is another. Without
+      // this the settings item held `updatedAt` and nothing about who moved it.
+      await recordAudit({
+        actorEmail: userEmail,
+        action: "settings.update",
+        target: auditTarget("settings", "app"),
+        detail: touchedKeys(patch).join(", ") || "no fields",
+      });
       return toView(cipher, env, parseProviderConfigs, specs, next);
     },
   };

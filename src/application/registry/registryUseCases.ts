@@ -9,6 +9,7 @@
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { isSlug, SLUG_RULE } from "@/shared/slug";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 /** Minimal repository shape shared by the registry slices. */
 export interface RegistryRepository<T> {
@@ -31,6 +32,8 @@ export async function assertAllowedUrl(policy: UrlPolicy, url: string): Promise<
 export interface RegistryUseCasesOptions<T extends { name: string }, C extends { name: string }, U> {
   /** Entity label used in error messages, e.g. "MCP server". */
   label: string;
+  /** Slug the audit row addresses this kind by, e.g. "mcp". */
+  auditKind: string;
   repo: RegistryRepository<T>;
   /** Build a new entity from create input (timestamp supplied). */
   build(input: C, now: string): T | Promise<T>;
@@ -48,8 +51,15 @@ export interface RegistryUseCases<T, C, U> {
   create(input: C): Promise<T>;
   /** Throws {@link NotFoundError} when no entity with that name exists. */
   update(name: string, patch: U): Promise<T>;
-  /** Throws {@link NotFoundError} when no entity with that name exists. */
-  remove(name: string): Promise<void>;
+  /**
+   * Throws {@link NotFoundError} when no entity with that name exists.
+   *
+   * `actorEmail` is a parameter rather than something the routes record for
+   * themselves: a registry entry is shared, its deletion takes the row that
+   * would have said anything about it, and three routes each remembering to
+   * write the same audit line is the copy this core exists to prevent.
+   */
+  remove(name: string, actorEmail: string): Promise<void>;
 }
 
 export function createRegistryUseCases<
@@ -114,7 +124,7 @@ export function createRegistryUseCases<
       return view(updated);
     },
 
-    async remove(name) {
+    async remove(name, actorEmail) {
       await require(name);
       try {
         await opts.repo.delete(name);
@@ -124,6 +134,11 @@ export function createRegistryUseCases<
         }
         throw error;
       }
+      await recordAudit({
+        actorEmail,
+        action: "registry.delete",
+        target: auditTarget(opts.auditKind, name),
+      });
     },
   };
 }
