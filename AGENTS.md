@@ -127,6 +127,7 @@ about to make copy number two.
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
 | Deriving why a run ended from its chunks | `chunkTermination`/`runTermination` in `src/domain/llm/types.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |
+| The code a refused sign-in is identified by | `src/shared/signInError.ts` |
 | Writing to the console | `src/shared/logger.ts` |
 | What wraps a top-level run | `src/application/execution/runBracket.ts` |
 | Which project type runs which way | `src/application/execution/deps.ts` |

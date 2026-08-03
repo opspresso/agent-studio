@@ -525,6 +525,16 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/execution/deps.ts",
     within: "src/application/execution/",
   },
+  {
+    // Two sides have to agree on this string and they sit in different layers:
+    // `lib/auth.ts` throws it and `/login` reads it back off the query string,
+    // with Better Auth's redirect in between. Either one spelling it inline is
+    // a refusal that silently stops explaining itself. Quoted, so importing the
+    // constant is not mistaken for writing a second one.
+    what: "the code a refused sign-in is identified by",
+    pattern: /"EMAIL_DOMAIN_NOT_ALLOWED"/,
+    owner: "src/shared/signInError.ts",
+  },
 ];
 
 describe("single owners", () => {
