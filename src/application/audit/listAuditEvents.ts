@@ -10,10 +10,31 @@
 import type { AuditRepository } from "@/domain/audit/repository";
 import type { AuditEvent } from "@/domain/audit/types";
 import { ValidationError } from "@/application/errors";
+import { runBounded } from "@/shared/pool";
 import { utcDay } from "@/shared/date";
 
 /** Days one query may span. One Query per day, so this is a fan-out bound. */
 export const MAX_AUDIT_RANGE_DAYS = 31;
+
+/**
+ * How many day partitions are read at once. The range bound above limits how
+ * many days a caller may ask for; it says nothing about doing them all
+ * simultaneously, and each one paginates until the partition is exhausted.
+ */
+const DAY_CONCURRENCY = 4;
+
+/**
+ * The most rows one read returns.
+ *
+ * `MAX_AUDIT_RANGE_DAYS` bounds the number of partitions, not their size, and
+ * nothing bounds a partition: a row is written on every reveal, settings write,
+ * deletion and ownership override, and they are kept for a year. Without this
+ * the one read described as "rare" is the only unbounded one in the codebase.
+ * Newest first, so what is dropped is the oldest end of the range — and the
+ * caller is told, because a page that silently stops is a range that looks
+ * empty before it was.
+ */
+export const MAX_AUDIT_EVENTS = 2_000;
 
 const DAY_MS = 86_400_000;
 
@@ -49,12 +70,20 @@ export function daysInRange(query: AuditQuery): string[] {
   return Array.from({ length: span }, (_, index) => utcDay(new Date(from.getTime() + index * DAY_MS)));
 }
 
-/** Every event in the range, newest first. */
+export interface AuditPage {
+  /** Newest first, capped at {@link MAX_AUDIT_EVENTS}. */
+  events: AuditEvent[];
+  /** True when the range held more than the cap; the oldest end was dropped. */
+  truncated: boolean;
+}
+
+/** Every event in the range, newest first, bounded in fan-out and in size. */
 export async function listAuditEvents(
   repo: AuditRepository,
   query: AuditQuery,
-): Promise<AuditEvent[]> {
+): Promise<AuditPage> {
   const days = daysInRange(query);
-  const pages = await Promise.all(days.map((day) => repo.listByDay(day)));
-  return pages.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const pages = await runBounded(days, DAY_CONCURRENCY, (day) => repo.listByDay(day));
+  const all = pages.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return { events: all.slice(0, MAX_AUDIT_EVENTS), truncated: all.length > MAX_AUDIT_EVENTS };
 }

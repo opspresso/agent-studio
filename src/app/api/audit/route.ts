@@ -15,11 +15,14 @@ import { withAdminAuth } from "@/lib/session";
 export const GET = withAdminAuth(async (_user, request: Request) => {
   const params = new URL(request.url).searchParams;
   try {
-    const events = await listAuditEvents(auditRepository, {
-      from: params.get("from") ?? "",
-      to: params.get("to") ?? "",
-    });
-    return Response.json({ events });
+    // `truncated` rides along rather than being left to the reader to notice: a
+    // page that stops at the cap looks like a range that ended there.
+    return Response.json(
+      await listAuditEvents(auditRepository, {
+        from: params.get("from") ?? "",
+        to: params.get("to") ?? "",
+      }),
+    );
   } catch (error) {
     return apiError(error);
   }

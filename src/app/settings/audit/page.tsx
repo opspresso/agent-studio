@@ -6,6 +6,7 @@ import type { AuditAction, AuditEvent } from "@/domain/audit/types";
 import { BADGE } from "@/app/_components/badgeColors";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { presetRange, type DateRange } from "@/app/_lib/dateRange";
+import { MAX_AUDIT_EVENTS } from "@/application/audit/listAuditEvents";
 
 /**
  * Who did what, and when.
@@ -39,6 +40,7 @@ export default function AuditPage() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [action, setAction] = useState<string>(ALL_ACTIONS);
   const [loading, setLoading] = useState(true);
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,11 +51,13 @@ export default function AuditPage() {
       .then(async (res) => {
         const data = (await res.json().catch(() => ({}))) as {
           events?: AuditEvent[];
+          truncated?: boolean;
           error?: string;
         };
         if (cancelled) {
           return;
         }
+        setTruncated(data.truncated === true);
         if (!res.ok) {
           // The range cap and the admin gate both answer here; the server's own
           // wording says which, and it is more specific than anything this page
@@ -113,6 +117,13 @@ export default function AuditPage() {
       {error && (
         <Alert color="red" variant="light">
           {error}
+        </Alert>
+      )}
+
+      {truncated && (
+        <Alert color="yellow" variant="light">
+          This range holds more than {MAX_AUDIT_EVENTS.toLocaleString()} events. The oldest are
+          not shown — narrow the range to see them.
         </Alert>
       )}
 

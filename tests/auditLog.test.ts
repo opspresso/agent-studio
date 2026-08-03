@@ -5,7 +5,11 @@ import type { Project } from "@/domain/project/types";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { recordAudit, setAuditSink } from "@/application/audit/auditLog";
-import { listAuditEvents, MAX_AUDIT_RANGE_DAYS } from "@/application/audit/listAuditEvents";
+import {
+  listAuditEvents,
+  MAX_AUDIT_EVENTS,
+  MAX_AUDIT_RANGE_DAYS,
+} from "@/application/audit/listAuditEvents";
 import { ValidationError } from "@/application/errors";
 import {
   assertProjectWritable,
@@ -187,7 +191,33 @@ describe("listAuditEvents", () => {
 
   it("assembles a range from its day partitions, newest first", async () => {
     const result = await listAuditEvents(repo, { from: "2026-08-01", to: "2026-08-03" });
-    expect(result.map((event) => event.id)).toEqual(["b", "a"]);
+    expect(result.events.map((event) => event.id)).toEqual(["b", "a"]);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("caps what one read returns, and says the oldest end was dropped", async () => {
+    // The range bound limits how many partitions are read, not how large one
+    // is — and nothing bounds a partition: a row is written on every reveal,
+    // settings write and deletion, kept for a year. A page that stops at the
+    // cap without saying so reads as a range that ended there.
+    const many: AuditRepository = {
+      append: async () => {},
+      listByDay: async (day) =>
+        day === "2026-08-01"
+          ? Array.from({ length: MAX_AUDIT_EVENTS + 5 }, (_, index) => ({
+              id: `e${index}`,
+              action: "secret.reveal" as const,
+              actorEmail: "a@x.com",
+              target: "settings:a2a-key",
+              // Descending, so the newest are the ones kept.
+              createdAt: new Date(Date.UTC(2026, 7, 1, 0, 0, index)).toISOString(),
+            }))
+          : [],
+    };
+    const result = await listAuditEvents(many, { from: "2026-08-01", to: "2026-08-01" });
+    expect(result.events).toHaveLength(MAX_AUDIT_EVENTS);
+    expect(result.truncated).toBe(true);
+    expect(result.events[0]?.id).toBe(`e${MAX_AUDIT_EVENTS + 4}`);
   });
 
   it("refuses a range wider than the day fan-out it would cost", async () => {
