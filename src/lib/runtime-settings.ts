@@ -33,6 +33,7 @@ import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config, positiveIntEnv } from "./config";
 import { createTtlCache } from "@/shared/ttlCache";
 import { parseList } from "@/shared/parseList";
+import { normalizeEmail } from "@/shared/email";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { log } from "@/shared/logger";
 
@@ -116,7 +117,7 @@ export async function getAdminEmails(): Promise<string[]> {
  */
 export async function isConfiguredAdmin(email: string): Promise<boolean> {
   const admins = await getAdminEmails();
-  return admins.length > 0 && admins.includes(email.toLowerCase());
+  return admins.length > 0 && admins.includes(normalizeEmail(email));
 }
 
 /**

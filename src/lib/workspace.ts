@@ -23,6 +23,7 @@ import { hasRole } from "@/domain/organization/membership";
 import { AppError } from "@/application/errors";
 import { currentTenant, DEFAULT_TENANT } from "@/shared/tenantContext";
 import { createTtlCache } from "@/shared/ttlCache";
+import { normalizeEmail } from "@/shared/email";
 import { isSlug } from "@/shared/slug";
 import { log } from "@/shared/logger";
 import { positiveIntEnv } from "./config";
@@ -88,14 +89,21 @@ export async function hasWorkspaces(): Promise<boolean> {
   if (cached !== undefined) {
     return cached;
   }
+  let exists: boolean;
   try {
-    const exists = (await organizationRepository.list()).length > 0;
-    workspacesExistCache.set("any", exists);
-    return exists;
+    exists = (await organizationRepository.list()).length > 0;
   } catch (error) {
     log.error("authz", "could not read the workspace registry", error);
-    return true;
+    exists = true;
   }
+  // The fail-closed answer is cached too. This question is asked on every
+  // request that reaches a deployment-admin gate, so leaving the failure
+  // uncached turns an index that is already throttling into one queried once
+  // per request, each attempt failing and logging. The value is only unsafe to
+  // *widen*; reusing it for the same few seconds narrows, and the TTL is what
+  // lets the real answer come back.
+  workspacesExistCache.set("any", exists);
+  return exists;
 }
 
 /**
@@ -115,8 +123,14 @@ export async function hasWorkspaces(): Promise<boolean> {
  * `isAdmin` then answer for with the pre-tenant `ADMIN_EMAILS` rules. And the
  * availability argument for falling back is thin: the read that failed is a
  * read of the same table every later read in the request uses.
+ *
+ * The address is normalized first, because a membership is *keyed* by it: an
+ * identity provider that returns `Bruce@Corp.com` would otherwise miss the row
+ * written for `bruce@corp.com` and take the no-membership arm — which is the
+ * fallback above, arrived at silently instead of by a failure.
  */
-export async function resolveWorkspace(userEmail: string): Promise<Workspace> {
+export async function resolveWorkspace(rawEmail: string): Promise<Workspace> {
+  const userEmail = normalizeEmail(rawEmail);
   const cached = workspaceCache.get(userEmail);
   if (cached) {
     return cached;
@@ -196,9 +210,10 @@ export async function isWorkspaceAdmin(userEmail: string): Promise<boolean> {
  * lookup failure must not turn a deterministic 403 into anything else.
  */
 export async function isAdminOfOrganization(
-  userEmail: string,
+  rawEmail: string,
   organizationId: string,
 ): Promise<boolean> {
+  const userEmail = normalizeEmail(rawEmail);
   try {
     const membership = await membershipRepository.get(organizationId, userEmail);
     return membership ? hasRole(membership.role, "admin") : false;

@@ -146,6 +146,17 @@ describe("workspace isolation", () => {
     expect(body.project.displayName).toBe("globex");
   });
 
+  it("finds the membership however the provider spelled the address", async () => {
+    // Memberships are stored lowercased, so an identity provider returning
+    // `A@X.com` used to miss the row — and the miss did not look like one: it
+    // took the no-membership arm, which drops a workspace member into the
+    // shared default catalog under the pre-tenant `ADMIN_EMAILS` rules.
+    memberships.rows = [member("a@x.com", "acme", "viewer")];
+    signedInAs("A@X.com");
+    const body = (await (await readProject()).json()) as { project: { displayName: string } };
+    expect(body.project.displayName).toBe("acme");
+  });
+
   it("shows a caller in neither workspace nothing at all", async () => {
     // Not a 403 to be checked and forgotten: the row is not addressable from
     // the default scope, so the read simply finds nothing.
@@ -258,6 +269,27 @@ describe("the deployment gate", () => {
     const list = vi.spyOn(organizationRepository, "list").mockRejectedValue(new Error("throttled"));
     invalidateWorkspaceCache();
     expect(await status(undefined)).toBe(403);
+    list.mockRestore();
+    error.mockRestore();
+  });
+
+  it("does not re-ask the index that is failing on every request", async () => {
+    // This question is asked on every request that reaches a deployment-admin
+    // gate. Leaving the fail-closed answer uncached turns a throttling index
+    // into one queried once per request — each attempt failing, each logging —
+    // which is a storm against the thing already in trouble. The answer is only
+    // unsafe to widen; reusing it for the TTL narrows.
+    process.env.ADMIN_EMAILS = "";
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const list = vi.spyOn(organizationRepository, "list").mockRejectedValue(new Error("throttled"));
+    // Deliberately not through `status`, which clears the cache each call.
+    memberships.rows = [];
+    invalidateWorkspaceCache();
+    signedInAs("u@x.com");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect((await withDeploymentAdminAuth(ok)()).status).toBe(403);
+    }
+    expect(list).toHaveBeenCalledTimes(1);
     list.mockRestore();
     error.mockRestore();
   });

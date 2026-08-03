@@ -150,6 +150,17 @@ describe("registering a workspace", () => {
     error.mockRestore();
   });
 
+  it("will not register one for someone who is already in another", async () => {
+    // The creator becomes the new workspace's admin, which is a membership like
+    // any other — so registering one would move them out of the workspace they
+    // are working in, and the record would be created before anything noticed.
+    await useCases.create({ id: "zeta", displayName: "Zeta" }, "her@x.com");
+    await expect(useCases.create({ id: "acme", displayName: "Acme" }, "her@x.com")).rejects.toThrow(
+      ConflictError,
+    );
+    expect(organizations.has("acme")).toBe(false);
+  });
+
   it("records who registered it and who can administer it", async () => {
     await useCases.create({ id: "acme", displayName: "Acme" }, "boss@x.com");
     expect(audit).toEqual([
@@ -223,6 +234,27 @@ describe("members", () => {
     expect((await useCases.listMembers("acme")).find((m) => m.userEmail === "boss@x.com")?.role).toBe(
       "admin",
     );
+  });
+
+  it("will not move someone into a second workspace", async () => {
+    // `resolveWorkspace` gives a person one workspace and breaks a tie by id,
+    // so a second membership does not add — it *moves*. Without this, an admin
+    // of a low-sorting workspace could take any address they knew: on that
+    // person's next request their projects, chats and settings are gone, with
+    // no switcher to get back.
+    await useCases.create({ id: "zeta", displayName: "Zeta" }, "her@x.com");
+    await expect(useCases.setMember("acme", "Her@X.com", "viewer", "boss@x.com")).rejects.toThrow(
+      /already a member of 'zeta'/,
+    );
+    expect(await useCases.listMembers("acme")).toHaveLength(1);
+  });
+
+  it("still lets a workspace change its own member's role", async () => {
+    // The rule is about a *second* workspace, not about touching a member.
+    await useCases.setMember("acme", "her@x.com", "viewer", "boss@x.com");
+    await expect(
+      useCases.setMember("acme", "her@x.com", "editor", "boss@x.com"),
+    ).resolves.toMatchObject({ role: "editor" });
   });
 
   it("refuses to touch a workspace that does not exist", async () => {

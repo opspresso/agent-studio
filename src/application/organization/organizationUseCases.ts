@@ -30,6 +30,7 @@ import { isRole } from "@/domain/organization/membership";
 import { recordAudit } from "@/application/audit/auditLog";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
+import { normalizeEmail } from "@/shared/email";
 import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { log } from "@/shared/logger";
 
@@ -66,13 +67,43 @@ function recordFor(organizationId: string, event: AuditEventInput): Promise<void
   return withTenant(organizationId, () => recordAudit(event));
 }
 
-/** An address is stored lowercased, because that is how every lookup spells it. */
-function normalizeEmail(value: string): string {
-  const email = value.trim().toLowerCase();
+/** An address, spelled the way every lookup spells it. */
+function requireEmail(value: string): string {
+  const email = normalizeEmail(value);
   if (!email || !email.includes("@")) {
     throw new ValidationError("A member needs an email address");
   }
   return email;
+}
+
+/**
+ * Refuse to put someone in a second workspace.
+ *
+ * `resolveWorkspace` gives a person one workspace and picks the first by id
+ * when they are in several, so a second membership does not add anything — it
+ * *moves* them, and possibly out of the one they have been working in. That
+ * makes granting a membership an act on a workspace the granting admin may not
+ * administer at all: adding a `zeta` member to `acme` takes their projects,
+ * chats and settings out from under them within the resolution cache's TTL,
+ * with no workspace switcher to get back.
+ *
+ * So the write refuses while the product has one workspace per person. Lifting
+ * this is what a switcher would be for; until then the constraint is the honest
+ * shape of what the reader can express.
+ */
+async function assertNotInAnotherWorkspace(
+  memberships: MembershipRepository,
+  email: string,
+  organizationId: string,
+): Promise<void> {
+  const held = await memberships.listByUser(email);
+  const elsewhere = held.find((membership) => membership.organizationId !== organizationId);
+  if (elsewhere) {
+    throw new ConflictError(
+      `${email} is already a member of '${elsewhere.organizationId}'. ` +
+        `Remove them there first — a person belongs to one workspace.`,
+    );
+  }
 }
 
 const NEEDS_AN_ADMIN = "A workspace needs at least one admin; promote someone else first";
@@ -146,6 +177,10 @@ export function createOrganizationUseCases(
         );
       }
       const displayName = input.displayName.trim() || id;
+      // Before the record exists, because the creator becomes its first admin
+      // and that membership would move them out of the workspace they are in.
+      const creatorEmail = requireEmail(userEmail);
+      await assertNotInAnotherWorkspace(memberships, creatorEmail, id);
       const timestamp = now().toISOString();
       const organization: Organization = {
         id,
@@ -170,7 +205,7 @@ export function createOrganizationUseCases(
        */
       const membership: Membership = {
         organizationId: id,
-        userEmail: normalizeEmail(userEmail),
+        userEmail: creatorEmail,
         role: "admin",
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -261,8 +296,11 @@ export function createOrganizationUseCases(
       if (!isRole(role)) {
         throw new ValidationError(`Unknown role '${role}'`);
       }
-      const email = normalizeEmail(userEmail);
+      const email = requireEmail(userEmail);
       const existing = await memberships.get(organizationId, email);
+      if (!existing) {
+        await assertNotInAnotherWorkspace(memberships, email, organizationId);
+      }
       // Demoting the last admin leaves a workspace nobody can administer, which
       // is the same dead end an empty membership list is.
       const demotesAnAdmin = existing?.role === "admin" && role !== "admin";
@@ -294,7 +332,7 @@ export function createOrganizationUseCases(
 
     async removeMember(organizationId, userEmail, actorEmail) {
       await requireOrganization(organizations, organizationId);
-      const email = normalizeEmail(userEmail);
+      const email = requireEmail(userEmail);
       const existing = await memberships.get(organizationId, email);
       if (!existing) {
         throw new NotFoundError(`${email} is not a member of '${organizationId}'`);

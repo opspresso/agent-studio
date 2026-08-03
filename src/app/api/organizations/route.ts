@@ -2,6 +2,7 @@ import { z } from "zod";
 import { organizationUseCases } from "@/lib/container";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { isDeploymentAdmin, withAuth, withDeploymentAdminAuth } from "@/lib/session";
+import { isConfiguredAdmin } from "@/lib/runtime-settings";
 import { invalidateWorkspaceCache } from "@/lib/workspace";
 
 /**
@@ -39,6 +40,31 @@ export const POST = withDeploymentAdminAuth(async (user, request: Request) => {
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return invalidRequest(parsed.error);
+  }
+  /*
+   * Naming the operators is a precondition of the first workspace, because
+   * creating one is what ends the rule that admitted this caller.
+   *
+   * With no admin list configured, `isDeploymentAdmin` falls open on a
+   * deployment that has no workspaces — and the moment one exists it stops,
+   * for everybody. A caller admitted by that fail-open who creates a workspace
+   * therefore locks the whole deployment out of every deployment-admin surface
+   * *including the settings write that would name an admin*, leaving an
+   * environment variable and a redeploy as the only way back.
+   *
+   * So the caller must be someone the deployment actually named. It is not an
+   * extra permission — anyone who can reach here can also write the admin list
+   * first, which is exactly the step being asked for.
+   */
+  if (!(await isConfiguredAdmin(user.email))) {
+    return Response.json(
+      {
+        error:
+          "Set the deployment's admin emails before creating the first workspace — " +
+          "otherwise creating one leaves nobody able to administer this deployment.",
+      },
+      { status: 409 },
+    );
   }
   try {
     const organization = await organizationUseCases.create(

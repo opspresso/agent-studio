@@ -14,7 +14,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { gates, useCases } = vi.hoisted(() => ({
-  gates: { deployment: false, workspaceAdminOf: new Set<string>() },
+  gates: { deployment: false, configuredAdmin: true, workspaceAdminOf: new Set<string>() },
   useCases: {
     list: vi.fn(),
     create: vi.fn(),
@@ -52,6 +52,10 @@ vi.mock("@/lib/workspace", () => ({
   invalidateWorkspaceCache: () => {},
 }));
 
+vi.mock("@/lib/runtime-settings", () => ({
+  isConfiguredAdmin: async () => gates.configuredAdmin,
+}));
+
 vi.mock("@/lib/container", () => ({ organizationUseCases: useCases }));
 
 const { GET: listOrganizations, POST: createOrganization } = await import(
@@ -74,6 +78,7 @@ const body = (value: unknown, method = "PUT") =>
 beforeEach(() => {
   vi.clearAllMocks();
   gates.deployment = false;
+  gates.configuredAdmin = true;
   gates.workspaceAdminOf.clear();
   useCases.list.mockResolvedValue([
     { id: "acme", displayName: "Acme", createdAt: "", updatedAt: "" },
@@ -104,6 +109,20 @@ describe("registering and deleting", () => {
       { id: "new", displayName: "" },
       "her@example.com",
     );
+  });
+
+  it("will not let the fail-open register the workspace that ends it", async () => {
+    // With no admin list configured, this caller is an operator only because
+    // the deployment has no workspaces — and creating one is precisely what
+    // makes that stop being true, for everybody. The settings write that would
+    // name an admin is behind the same gate, so the way back is an environment
+    // variable and a redeploy.
+    gates.deployment = true;
+    gates.configuredAdmin = false;
+    const response = await createOrganization(body({ id: "first" }, "POST"));
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: string }).error).toContain("admin emails");
+    expect(useCases.create).not.toHaveBeenCalled();
   });
 
   it("says what a delete deliberately left behind", async () => {
