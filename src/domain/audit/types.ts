@@ -32,7 +32,19 @@ export type AuditAction =
   /** A shared registry entry (skill, MCP server, external agent) was deleted. */
   | "registry.delete"
   /** An admin wrote a project owned by someone else. */
-  | "authz.admin-override";
+  | "authz.admin-override"
+  /** A workspace was registered, giving its id a key prefix of its own. */
+  | "organization.create"
+  /**
+   * A workspace record was removed. Its rows are *not* removed with it — they
+   * are spread across every partition prefix — so this row is also the record
+   * of what was left behind.
+   */
+  | "organization.delete"
+  /** Someone was given a role in a workspace, or had theirs changed. */
+  | "membership.grant"
+  /** Someone was removed from a workspace. */
+  | "membership.revoke";
 
 export interface AuditEvent {
   /** Unique within its day partition; a row is never updated, only appended. */

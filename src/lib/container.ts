@@ -24,6 +24,8 @@ import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAu
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { organizationRepository } from "@/infrastructure/db/repositories/organizationRepository";
+import { membershipRepository } from "@/infrastructure/db/repositories/membershipRepository";
+import { createOrganizationUseCases } from "@/application/organization/organizationUseCases";
 import { createChannel } from "@/infrastructure/llm/channel";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
@@ -215,6 +217,12 @@ export const settingsUseCases = createSettingsUseCases(settingsRepository, secre
 
 /** A workspace's own overrides; the resolution order lives in runtime-settings. */
 export const tenantSettingsUseCases = createTenantSettingsUseCases(settingsRepository, secretCipher);
+
+/** Registering workspaces and their members — the two ends of the tenant scheme. */
+export const organizationUseCases = createOrganizationUseCases(
+  organizationRepository,
+  membershipRepository,
+);
 
 /**
  * Pull the skills repo and upsert every SKILL.md. Assembled here so the route

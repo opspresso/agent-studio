@@ -148,11 +148,33 @@ export async function isWorkspaceAdmin(userEmail: string): Promise<boolean> {
   if (tenant === DEFAULT_TENANT) {
     return isConfiguredAdmin(userEmail);
   }
+  return isAdminOfOrganization(userEmail, tenant);
+}
+
+/**
+ * True when this person holds `admin` in the *named* workspace, whichever one
+ * they happen to be acting in.
+ *
+ * `resolveWorkspace` picks one workspace for a person who is in several, so the
+ * ambient answer cannot speak for the others. Managing members is the one place
+ * that has to: the workspace being administered is named in the URL.
+ *
+ * Fails closed, like {@link isWorkspaceAdmin} and for the same reason — a
+ * lookup failure must not turn a deterministic 403 into anything else.
+ */
+export async function isAdminOfOrganization(
+  userEmail: string,
+  organizationId: string,
+): Promise<boolean> {
   try {
-    const membership = await membershipRepository.get(tenant, userEmail);
+    const membership = await membershipRepository.get(organizationId, userEmail);
     return membership ? hasRole(membership.role, "admin") : false;
   } catch (error) {
-    log.error("authz", `could not read the membership of ${userEmail} in ${tenant}`, error);
+    log.error(
+      "authz",
+      `could not read the membership of ${userEmail} in ${organizationId}`,
+      error,
+    );
     return false;
   }
 }
