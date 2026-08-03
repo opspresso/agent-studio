@@ -185,6 +185,14 @@ Better Auth unique-field lookups.
 ### Conventions
 
 - **Key strings come from `src/infrastructure/db/keys.ts`.** Never hand-write one elsewhere.
+- **A name-keyed registry entity gets its CRUD from `createKeyedRepository`**
+  (`keyedRepository.ts`): single-item partition, SK `META`, listed from the
+  `TYPE#<entityType>` GSI1 partition, with create / update / delete each conditioned on
+  whether the partition already exists. Skills, MCP servers and external agents share it, and
+  only the `toItem`/`fromItem` mappers stay per-repository, because only they carry
+  entity-specific fields. It is the storage-side counterpart of the
+  [registry use-case core](#composition-in-a-few-deliberate-places) — the same three entities,
+  factored at both ends.
 - The published version is a **pointer attribute** `publishedVersion` on the project `META`
   item, not a copy.
 - Chat `META` owns an atomic `nextSeq`; message rows use conditionally-created sequence keys.
