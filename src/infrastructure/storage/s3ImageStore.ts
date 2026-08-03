@@ -71,4 +71,35 @@ export const s3ImageStore: ImageStore = {
       { expiresIn: expiresInSeconds },
     );
   },
+
+  /**
+   * Both address forms this bucket has ever been reachable by: virtual-hosted
+   * (`{bucket}.s3[.{region}].amazonaws.com/{key}`) and path-style
+   * (`s3[.{region}].amazonaws.com/{bucket}/{key}`).
+   *
+   * The bucket name must match. An address under someone else's bucket is not
+   * ours to re-sign, and signing a key we do not have would produce a URL that
+   * 404s instead of an honest "this could not be loaded".
+   */
+  keyFromUrl(url) {
+    const bucket = config.imageBucketName;
+    if (!bucket) {
+      return null;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return null;
+    }
+    if (!/(^|\.)s3[.-][a-z0-9-]*\.?amazonaws\.com$/.test(parsed.hostname)) {
+      return null;
+    }
+    const path = decodeURIComponent(parsed.pathname).replace(/^\//, "");
+    if (parsed.hostname.startsWith(`${bucket}.`)) {
+      return path || null;
+    }
+    const prefix = `${bucket}/`;
+    return path.startsWith(prefix) ? path.slice(prefix.length) || null : null;
+  },
 };

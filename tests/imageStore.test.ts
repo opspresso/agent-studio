@@ -66,10 +66,38 @@ describe("s3ImageStore", () => {
       "https://signed.example/images/x.png?expires=900",
     );
   });
+
+  describe("recovering the key from an address this bucket was reachable by", () => {
+    it("reads both forms S3 has ever served", () => {
+      expect(
+        s3ImageStore.keyFromUrl("https://test-bucket.s3.ap-northeast-2.amazonaws.com/images/a.png"),
+      ).toBe("images/a.png");
+      expect(s3ImageStore.keyFromUrl("https://test-bucket.s3.amazonaws.com/images/a.png")).toBe(
+        "images/a.png",
+      );
+      expect(
+        s3ImageStore.keyFromUrl("https://s3.ap-northeast-2.amazonaws.com/test-bucket/images/a.png"),
+      ).toBe("images/a.png");
+    });
+
+    it("refuses an address that is not this bucket's", () => {
+      // Signing a key we do not hold produces a URL that 404s, which is worse
+      // than an honest "this could not be loaded".
+      expect(
+        s3ImageStore.keyFromUrl("https://someone-else.s3.amazonaws.com/images/a.png"),
+      ).toBeNull();
+      expect(
+        s3ImageStore.keyFromUrl("https://s3.amazonaws.com/other-bucket/images/a.png"),
+      ).toBeNull();
+      expect(s3ImageStore.keyFromUrl("https://cdn.example.com/images/a.png")).toBeNull();
+      expect(s3ImageStore.keyFromUrl("not a url")).toBeNull();
+    });
+  });
 });
 
 describe("image URL resolution", () => {
   const store: ImageStore = {
+    keyFromUrl: () => null,
     put: async () => "images/new.png",
     signUrl: async (key, expiresIn) => `https://signed.example/${key}?expires=${expiresIn}`,
   };
@@ -85,21 +113,44 @@ describe("image URL resolution", () => {
     ]);
   });
 
-  it("passes a legacy public URL through untouched", async () => {
-    // Rows written while the bucket was public-read recorded no key, so there
-    // is nothing to sign — and the address still works.
+  it("passes a legacy URL through when it names something this store does not hold", async () => {
+    // Not ours to re-sign, and the address may still work — this is the only
+    // arm left for a row written before keys were stored.
     const { messages: [message] } = await withSignedImages(
       store,
-      [userMessage([{ url: "https://bucket.s3.example.com/images/old.png" }])],
+      [userMessage([{ url: "https://cdn.example.com/images/old.png" }])],
       IMAGE_VIEW_TTL_SECONDS,
     );
     expect(message?.role === "user" && message.images).toEqual([
-      { url: "https://bucket.s3.example.com/images/old.png" },
+      { url: "https://cdn.example.com/images/old.png" },
     ]);
+  });
+
+  it("re-signs a legacy URL that names one of its own objects", async () => {
+    // Rows written while the bucket was public-read recorded an absolute URL
+    // and no key. Passing those through was right only while the bucket stayed
+    // public — and making it private is the deployment step that ships with the
+    // change, so every one of these broke the moment an operator followed the
+    // instructions. The address still names the object.
+    const recovering: ImageStore = {
+      ...store,
+      keyFromUrl: (url) => url.split("/").slice(3).join("/") || null,
+    };
+    const { messages, warnings } = await withSignedImages(
+      recovering,
+      [userMessage([{ url: "https://test-bucket.s3.amazonaws.com/images/old.png" }])],
+      IMAGE_VIEW_TTL_SECONDS,
+    );
+    const message = messages[0];
+    expect(message?.role === "user" && message.images).toEqual([
+      { url: `https://signed.example/images/old.png?expires=${IMAGE_VIEW_TTL_SECONDS}` },
+    ]);
+    expect(warnings).toEqual([]);
   });
 
   it("drops an image it cannot sign rather than rendering a broken one", async () => {
     const failing: ImageStore = {
+      keyFromUrl: () => null,
       put: store.put,
       signUrl: async () => {
         throw new Error("AccessDenied");

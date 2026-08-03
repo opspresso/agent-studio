@@ -50,7 +50,22 @@ async function resolve(
 ): Promise<ViewableChatMessageImage | null> {
   const prompt = image.prompt === undefined ? {} : { prompt: image.prompt };
   if (!("key" in image)) {
-    return { url: image.url, ...prompt };
+    // A legacy row: an absolute URL, written while the bucket was public-read.
+    // Re-signed when the address names an object of ours, because making the
+    // bucket private is the deployment step that comes with the change — so
+    // passing it through unchanged breaks every one of these at the moment the
+    // operator follows the instructions. When it names something else, it is
+    // not ours to sign and the address is all there is.
+    const recovered = store?.keyFromUrl(image.url) ?? null;
+    if (!recovered) {
+      return { url: image.url, ...prompt };
+    }
+    try {
+      return { url: await store!.signUrl(recovered, expiresInSeconds), ...prompt };
+    } catch (error) {
+      log.error("chat", `could not re-sign legacy image '${image.url}'`, error);
+      return null;
+    }
   }
   if (!store) {
     // A key with no store to sign it: the deployment dropped `S3_BUCKET_NAME`

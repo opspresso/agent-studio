@@ -1,11 +1,18 @@
-import type { Chat, ChatMessage } from "@/domain/chat/types";
+import type { Chat, ViewableChatMessage } from "@/domain/chat/types";
 import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
 import { IMAGE_VIEW_TTL_SECONDS, withSignedImages } from "./imageUrls";
 
 export interface ChatWithMessages {
   chat: Chat;
-  messages: ChatMessage[];
+  /**
+   * `Viewable`, not `ChatMessage`: every image here is a URL a reader can
+   * fetch, because they have all been through the resolver. The wider type
+   * would compile — a resolved image satisfies the stored union — and would
+   * quietly let a future reader hand out rows that were never signed, which is
+   * the one thing the distinction exists to prevent.
+   */
+  messages: ViewableChatMessage[];
   /** What the transcript is missing — today, images that could not be signed. */
   warnings: string[];
 }
@@ -19,7 +26,7 @@ export interface ChatWithMessages {
  * 40,000 characters per turn on the wire on every chat open, for a view that
  * renders neither.
  */
-function forReading(message: ChatMessage): ChatMessage {
+function forReading(message: ViewableChatMessage): ViewableChatMessage {
   if (message.role !== "user" || !message.documents) {
     return message;
   }

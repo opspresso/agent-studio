@@ -11,4 +11,16 @@
 export interface ImageStore {
   put(image: { b64: string; mimeType: string }): Promise<string>;
   signUrl(key: string, expiresInSeconds: number): Promise<string>;
+  /**
+   * The key inside a URL a previous version of this app stored, or `null` when
+   * the address is not this store's to sign.
+   *
+   * Rows written while the bucket was public-read recorded an absolute URL and
+   * no key. Passing those through was correct only for as long as the bucket
+   * stayed public — and making it private is the deployment step that comes
+   * with the change, so every one of those images broke at exactly the moment
+   * the operator followed the instructions. The address still names the object;
+   * only the store knows whether the object is one of its own.
+   */
+  keyFromUrl(url: string): string | null;
 }

@@ -444,6 +444,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     ]);
     const deps = makeDeps(repo, {
       images: {
+        keyFromUrl: () => null,
         put: async () => {
           throw new Error("AccessDenied");
         },
@@ -550,6 +551,7 @@ describe("runAndPersist image persistence", () => {
     const uploaded: string[] = [];
     const deps = makeDeps(repo, {
       images: {
+        keyFromUrl: () => null,
         put: async (image: { b64: string; mimeType: string }) => {
           uploaded.push(image.mimeType);
           return "images/x.png";
@@ -572,6 +574,7 @@ describe("runAndPersist image persistence", () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const deps = makeDeps(repo, {
       images: {
+        keyFromUrl: () => null,
         put: async () => {
           throw new Error("upload failed");
         },
@@ -659,6 +662,7 @@ describe("ownership checks", () => {
     ]);
     const deps = makeDeps(repo, {
       images: {
+        keyFromUrl: () => null,
         put: async () => "images/a.png",
         signUrl: async (key: string, expiresIn: number) =>
           `https://signed.example/${key}?expires=${expiresIn}`,
@@ -790,6 +794,7 @@ describe("chat image attachments", () => {
       projects: agentProjects,
       versions: publishedVersions,
       images: {
+        keyFromUrl: () => null,
         put: async () => "images/a.png",
         signUrl: async (key: string) => `https://signed.example/${key}`,
       },
