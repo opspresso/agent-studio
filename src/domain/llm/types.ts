@@ -120,9 +120,12 @@ export interface EngineChunk {
    * `done: true` — byte-identical to what every existing consumer reads — and
    * an ending that is *not* a normal completion carries its reason here
    * instead, so a consumer written before this field behaves exactly as it did.
+   * Narrowed to the reasons only this field can say: `completed` is `done`,
+   * `error` has its own field, and `cancelled` is never a chunk — so a
+   * producer cannot write the ambiguous endings the reader exists to forbid.
    * Read through {@link chunkTermination}, never by field presence.
    */
-  finishReason?: RunTerminationReason;
+  finishReason?: Extract<RunTerminationReason, "turn-limit" | "output-limit">;
 }
 
 /**
