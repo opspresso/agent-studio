@@ -2,23 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { CopyButton } from "@/app/_components/CopyButton";
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Checkbox,
-  Code,
-  Group,
-  Select,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from "@mantine/core";
-import { monoInput } from "@/app/_components/monoInput";
+import { Alert, Button, Card, Code, Group, Stack, Text, Title } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
-
+import { ProviderEditor, type ProviderRow } from "./ProviderEditor";
+import { SettingField } from "./SettingField";
 
 type SettingSource = "override" | "env" | "default" | "unset";
 
@@ -28,16 +15,9 @@ interface SettingFieldView {
   secret: boolean;
 }
 
-interface LlmProviderRow {
-  name: string;
-  baseUrl: string;
-  apiKey: string;
-  keepModelPrefix: boolean;
-}
-
 interface SettingsView {
   fields: Record<string, SettingFieldView>;
-  llmProviders: { source: "override" | "env"; items: LlmProviderRow[] };
+  llmProviders: { source: "override" | "env"; items: ProviderRow[] };
   updatedAt?: string;
 }
 
@@ -97,8 +77,6 @@ const SECTIONS: SectionDef[] = [
   },
 ];
 
-const PROVIDER_OPTIONS = ["openai", "anthropic", "google", "xai"] as const;
-
 /** Where a value came from — the owned colour marks the one the DB owns. */
 const SOURCE_LABELS: Record<SettingSource, { text: string; color: string }> = {
   override: { text: "override", color: BADGE.owned },
@@ -111,7 +89,7 @@ const SOURCE_LABELS: Record<SettingSource, { text: string; color: string }> = {
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
-  const [providers, setProviders] = useState<LlmProviderRow[]>([]);
+  const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [providersDirty, setProvidersDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -132,7 +110,7 @@ export default function SettingsPage() {
     setProvidersDirty(false);
   }
 
-  function editProviders(update: (prev: LlmProviderRow[]) => LlmProviderRow[]) {
+  function editProviders(update: (prev: ProviderRow[]) => ProviderRow[]) {
     setProviders(update);
     setProvidersDirty(true);
   }
@@ -286,54 +264,17 @@ export default function SettingsPage() {
                 <Text fz="sm" fw={600} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
                   {section.title}
                 </Text>
-                {section.fields.map((field) => {
-                  const meta = view?.fields[field.key];
-                  const source = SOURCE_LABELS[meta?.source ?? "unset"];
-                  const label = (
-                    <Group component="span" gap="xs">
-                      <Text component="span" ff="monospace" fz="sm" fw={500}>
-                        {field.label}
-                      </Text>
-                      <Badge color={source.color}>{source.text}</Badge>
-                    </Group>
-                  );
-                  if (field.options) {
-                    return (
-                      <Select
-                        key={field.key}
-                        label={label}
-                        value={values[field.key] || null}
-                        // Clearing is how a field falls back to the env layer,
-                        // so `null` has to reach the patch as the empty string
-                        // every other field clears with.
-                        onChange={(value) =>
-                          setValues((prev) => ({ ...prev, [field.key]: value ?? "" }))
-                        }
-                        data={[...field.options]}
-                        placeholder="inherit"
-                        clearable
-                        w={220}
-                        styles={monoInput}
-                      />
-                    );
-                  }
-                  return (
-                    <TextInput
-                      key={field.key}
-                      label={label}
-                      value={values[field.key] ?? ""}
-                      onChange={(e) => {
-                        // Read now, not inside the updater: React nulls a
-                        // synthetic event's `currentTarget` once the handler
-                        // returns, and an updater runs on the next render.
-                        const value = e.currentTarget.value;
-                        setValues((prev) => ({ ...prev, [field.key]: value }));
-                      }}
-                      placeholder={field.placeholder}
-                      styles={monoInput}
-                    />
-                  );
-                })}
+                {section.fields.map((field) => (
+                  <SettingField
+                    key={field.key}
+                    label={field.label}
+                    badge={SOURCE_LABELS[view?.fields[field.key]?.source ?? "unset"]}
+                    value={values[field.key] ?? ""}
+                    onChange={(value) => setValues((prev) => ({ ...prev, [field.key]: value }))}
+                    {...(field.placeholder ? { placeholder: field.placeholder } : {})}
+                    {...(field.options ? { options: field.options } : {})}
+                  />
+                ))}
 
                 {section.title === "A2A" && (
                   <Stack gap="xs">
@@ -391,105 +332,18 @@ export default function SettingsPage() {
                 )}
 
                 {section.title === "LLM" && (
-                  <Stack gap="sm">
-                    <Group gap="xs">
-                      <Text ff="monospace" fz="sm" fw={500}>
-                        LLM_PROVIDER_*
-                      </Text>
-                      <Badge
-                        color={
-                          SOURCE_LABELS[
-                            providersDirty || view?.llmProviders.source === "override"
-                              ? "override"
-                              : "env"
-                          ].color
-                        }
-                      >
-                        {providersDirty || view?.llmProviders.source === "override"
+                  <ProviderEditor
+                    rows={providers}
+                    onChange={editProviders}
+                    badge={
+                      SOURCE_LABELS[
+                        providersDirty || view?.llmProviders.source === "override"
                           ? "override"
-                          : "env"}
-                      </Badge>
-                    </Group>
-                    {providers.map((provider, index) => (
-                      <Group key={index} gap="xs" wrap="wrap" align="center">
-                        <Select
-                          value={provider.name}
-                          onChange={(value) =>
-                            editProviders((prev) =>
-                              prev.map((p, i) => (i === index ? { ...p, name: value ?? "" } : p)),
-                            )
-                          }
-                          placeholder="provider…"
-                          allowDeselect={false}
-                          data={[...PROVIDER_OPTIONS]}
-                          w={144}
-                          styles={monoInput}
-                        />
-                        <TextInput
-                          value={provider.baseUrl}
-                          onChange={(e) => {
-                            const baseUrl = e.currentTarget.value;
-                            editProviders((prev) =>
-                              prev.map((p, i) => (i === index ? { ...p, baseUrl } : p)),
-                            );
-                          }}
-                          placeholder="base URL"
-                          miw={192}
-                          style={{ flex: 1 }}
-                          styles={monoInput}
-                        />
-                        <TextInput
-                          value={provider.apiKey}
-                          onChange={(e) => {
-                            const apiKey = e.currentTarget.value;
-                            editProviders((prev) =>
-                              prev.map((p, i) => (i === index ? { ...p, apiKey } : p)),
-                            );
-                          }}
-                          placeholder="API key"
-                          w={176}
-                          styles={monoInput}
-                        />
-                        <Checkbox
-                          size="xs"
-                          label="keep prefix"
-                          checked={provider.keepModelPrefix}
-                          onChange={(e) => {
-                            const keepModelPrefix = e.currentTarget.checked;
-                            editProviders((prev) =>
-                              prev.map((p, i) => (i === index ? { ...p, keepModelPrefix } : p)),
-                            );
-                          }}
-                        />
-                        <Button
-                          variant="default"
-                          size="compact-sm"
-                          onClick={() =>
-                            editProviders((prev) => prev.filter((_, i) => i !== index))
-                          }
-                        >
-                          Remove
-                        </Button>
-                      </Group>
-                    ))}
-                    <Button
-                      variant="default"
-                      size="compact-sm"
-                      style={{ alignSelf: "flex-start" }}
-                      onClick={() =>
-                        editProviders((prev) => [
-                          ...prev,
-                          { name: "", baseUrl: "", apiKey: "", keepModelPrefix: false },
-                        ])
-                      }
-                    >
-                      Add provider
-                    </Button>
-                    <Text fz="xs" c="dimmed">
-                      Saving an edited list stores it as an override; removing every row falls back
-                      to the LLM_PROVIDER_* env variables.
-                    </Text>
-                  </Stack>
+                          : "env"
+                      ]
+                    }
+                    hint="Saving an edited list stores it as an override; removing every row falls back to the LLM_PROVIDER_* env variables."
+                  />
                 )}
               </Stack>
             </Card>

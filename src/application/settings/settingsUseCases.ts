@@ -71,6 +71,21 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
   },
 ];
 
+/**
+ * Which setting keys hold a secret.
+ *
+ * Derived from the specs above rather than written out again, because the
+ * workspace settings path needs the same answer and a hand-kept second copy
+ * fails in the worst direction: a new credential added to `AppSettings` but
+ * missed there is stored *unencrypted* and returned *unmasked*. `secret` does
+ * not depend on the environment, so any environment builds the same set.
+ */
+export const SECRET_SETTING_KEYS: ReadonlySet<SettingKey> = new Set(
+  fieldSpecs({} as NodeJS.ProcessEnv)
+    .filter((spec) => spec.secret)
+    .map((spec) => spec.key),
+);
+
 export interface SettingFieldView {
   /** Masked for secrets (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4) —
    * never the full plaintext or the ciphertext. */

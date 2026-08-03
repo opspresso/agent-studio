@@ -1,6 +1,7 @@
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuditEventInput } from "@/domain/audit/types";
 import type { AppSettings } from "@/domain/settings/types";
 import { TENANT_OVERRIDABLE_KEYS, pickTenantOverrides } from "@/domain/settings/types";
 
@@ -33,6 +34,7 @@ const { settingsRepository } = await import(
 const { encryptSecret } = await import("@/infrastructure/crypto/secretEncryption");
 const { withTenant } = await import("@/shared/tenantContext");
 const { ValidationError } = await import("@/application/errors");
+const { setAuditSink } = await import("@/application/audit/auditLog");
 
 const useCases = createTenantSettingsUseCases(settingsRepository, secretCipher);
 
@@ -126,13 +128,13 @@ describe("the overridable list", () => {
 
   it("names the infrastructure keys it will not take, rather than dropping them silently", async () => {
     await expect(
-      useCases.update("acme", { a2aApiKey: "asa_x", publicBaseUrl: "https://x" }),
+      useCases.update("acme", { a2aApiKey: "asa_x", publicBaseUrl: "https://x" }, "admin@x.com"),
     ).rejects.toBeInstanceOf(ValidationError);
-    await expect(useCases.update("acme", { a2aApiKey: "asa_x" })).rejects.toThrow(/a2aApiKey/);
+    await expect(useCases.update("acme", { a2aApiKey: "asa_x" }, "admin@x.com")).rejects.toThrow(/a2aApiKey/);
   });
 
   it("refuses to give the default workspace a second row of its own", async () => {
-    await expect(useCases.update("default", { llmBaseUrl: "https://x" })).rejects.toBeInstanceOf(
+    await expect(useCases.update("default", { llmBaseUrl: "https://x" }, "admin@x.com")).rejects.toBeInstanceOf(
       ValidationError,
     );
   });
@@ -140,24 +142,24 @@ describe("the overridable list", () => {
 
 describe("workspace writes", () => {
   it("stores a secret encrypted and reads it back masked", async () => {
-    const view = await useCases.update("acme", { llmApiKey: "sk-workspace-secret" });
+    const view = await useCases.update("acme", { llmApiKey: "sk-workspace-secret" }, "admin@x.com");
     expect(rows.tenants.get("acme")?.llmApiKey).not.toBe("sk-workspace-secret");
     expect(view.fields.llmApiKey?.value).not.toContain("workspace");
     expect(view.fields.llmApiKey?.source).toBe("workspace");
   });
 
   it("keeps the stored secret when the mask is echoed back", async () => {
-    await useCases.update("acme", { llmApiKey: "sk-workspace-secret" });
+    await useCases.update("acme", { llmApiKey: "sk-workspace-secret" }, "admin@x.com");
     const stored = rows.tenants.get("acme")?.llmApiKey;
     const masked = secretCipher.mask(stored!);
-    await useCases.update("acme", { llmApiKey: masked });
+    await useCases.update("acme", { llmApiKey: masked }, "admin@x.com");
     expect(rows.tenants.get("acme")?.llmApiKey).toBe(stored);
   });
 
   it("clears an override with an empty value, falling back to the app layer", async () => {
     rows.app = { llmBaseUrl: "https://app.example/v1", updatedAt: "2026-01-01T00:00:00Z" };
-    await useCases.update("acme", { llmBaseUrl: "https://acme.example/v1" });
-    await useCases.update("acme", { llmBaseUrl: "" });
+    await useCases.update("acme", { llmBaseUrl: "https://acme.example/v1" }, "admin@x.com");
+    await useCases.update("acme", { llmBaseUrl: "" }, "admin@x.com");
     invalidateSettingsCache();
     expect(await withTenant("acme", async () => (await getLlmChannelConfig()).baseUrl)).toBe(
       "https://app.example/v1",
@@ -166,12 +168,74 @@ describe("workspace writes", () => {
 
   it("reports every overridable key, inherited until the workspace decides it", async () => {
     const view = await useCases.getView("acme");
-    const reported = new Set(Object.keys(view.fields));
+    const reported = new Set([...Object.keys(view.fields), "llmProviders"]);
     for (const key of TENANT_OVERRIDABLE_KEYS) {
-      if (key !== "llmProviders") {
-        expect(reported.has(key)).toBe(true);
-      }
+      expect(reported.has(key)).toBe(true);
     }
     expect(view.fields.llmBaseUrl?.source).toBe("inherited");
+    expect(view.llmProviders.source).toBe("inherited");
+  });
+
+  it("shows the providers it stored, so they can be seen and cleared", async () => {
+    // A key a workspace can set and cannot see is one it cannot undo: the page
+    // would show it inheriting the deployment's providers while it overrode
+    // them, and clearing needs an empty array the UI has no reason to send.
+    const set = await useCases.update(
+      "acme",
+      { llmProviders: [{ name: "openai", baseUrl: "https://acme.example/v1", apiKey: "sk-a" }] },
+      "admin@x.com",
+    );
+    expect(set.llmProviders.source).toBe("workspace");
+    expect(set.llmProviders.items[0]?.baseUrl).toBe("https://acme.example/v1");
+    expect(set.llmProviders.items[0]?.apiKey).not.toContain("sk-a");
+
+    const cleared = await useCases.update("acme", { llmProviders: [] }, "admin@x.com");
+    expect(cleared.llmProviders).toEqual({ source: "inherited", items: [] });
+  });
+
+  it("keeps a provider's stored key when its mask is echoed back", async () => {
+    await useCases.update(
+      "acme",
+      { llmProviders: [{ name: "openai", baseUrl: "https://a.example/v1", apiKey: "sk-a" }] },
+      "admin@x.com",
+    );
+    const storedKey = rows.tenants.get("acme")?.llmProviders?.[0]?.apiKey;
+    const view = await useCases.update(
+      "acme",
+      {
+        llmProviders: [
+          { name: "openai", baseUrl: "https://b.example/v1", apiKey: secretCipher.mask(storedKey!) },
+        ],
+      },
+      "admin@x.com",
+    );
+    expect(rows.tenants.get("acme")?.llmProviders?.[0]?.apiKey).toBe(storedKey);
+    expect(view.llmProviders.items[0]?.baseUrl).toBe("https://b.example/v1");
+  });
+
+  it("treats as a secret exactly what the app settings path does", async () => {
+    // Derived from one list rather than kept in step by hand: a credential
+    // missed here is stored in plaintext and read back unmasked.
+    const view = await useCases.getView("acme");
+    for (const key of ["llmApiKey", "githubToken"] as const) {
+      expect(view.fields[key]?.secret).toBe(true);
+    }
+    expect(view.fields.llmBaseUrl?.secret).toBe(false);
+  });
+
+  it("records who wrote it, and which keys — never the values", async () => {
+    const events: AuditEventInput[] = [];
+    setAuditSink(async (event) => {
+      events.push(event);
+    });
+    await useCases.update("acme", { llmApiKey: "sk-secret", llmBaseUrl: "https://x" }, "her@x.com");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: "settings.update",
+      actorEmail: "her@x.com",
+      target: "settings:workspace:acme",
+      detail: "keys: llmApiKey, llmBaseUrl",
+    });
+    expect(JSON.stringify(events[0])).not.toContain("sk-secret");
   });
 });
