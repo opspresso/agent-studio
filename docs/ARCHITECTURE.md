@@ -655,12 +655,13 @@ row carries two; `toImageUsageRecord` (`src/domain/llm/models.ts`) owns that col
 three paths. Recording it is telemetry — the provider has already drawn and billed the image,
 so a failed write is logged rather than turned into a 500 that throws the result away.
 
-**Where the bytes go is the consumer's decision.** An `image` chunk is consumed *regardless of
-author*, because delegating to an image subagent is how an agent draws: chats upload through
-the optional `storeImage` port and persist a URL, Slack uploads each image to the thread once
-the run ends, the OpenAI-compatible surface carries them as an `images` extension, and predict
-returns them alongside the text. With no object storage configured a chat image renders during
-the live stream only — and the chat says so rather than showing a gap.
+**Where the bytes go is the consumer's decision, not the engine's.** The same `image` chunk
+reaches every surface — how to read one is in the [EngineChunk contract](#enginechunk-contract)
+— and each does something different with it: chats upload through the optional `storeImage`
+port and persist a URL, Slack uploads to the thread once the run ends, the OpenAI-compatible
+surface carries an `images` extension, predict returns them beside the text. With no object
+storage configured a chat image renders during the live stream only, and says so rather than
+leaving a gap.
 
 ### Skills
 
@@ -1058,7 +1059,7 @@ chat persistence, replay and the PII filter unchanged.
 | Piece | Owner |
 |---|---|
 | Caps, and which files are documents (`documentKind`) | `src/domain/llm/documentLimits.ts` |
-| Extraction (a port — it needs a PDF parser) | `DocumentExtractor`, adapter over `unpdf` |
+| Extraction (a port — it needs a PDF parser) | `src/domain/llm/documentExtractor.ts`, adapter over `unpdf` in `src/infrastructure/llm/` |
 | Budgets, warnings, and the wrapper the model reads | `src/application/llm/documentParts.ts` |
 | Whether bytes are text at all | `decodeUtf8Text` in `src/shared/utf8Text.ts` |
 | A user turn's body, sent and replayed | `turnContent` in `src/application/llm/documentParts.ts` |
