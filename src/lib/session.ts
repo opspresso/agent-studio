@@ -4,7 +4,7 @@ import { hasRole, type OrganizationRole } from "@/domain/organization/membership
 import { DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
 import { auth } from "./auth";
 import { isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
-import { resolveWorkspace, WorkspaceUnavailableError } from "./workspace";
+import { hasWorkspaces, resolveWorkspace, WorkspaceUnavailableError } from "./workspace";
 
 export interface SessionUser {
   id: string;
@@ -139,7 +139,16 @@ export async function isDeploymentAdmin(user: SessionUser): Promise<boolean> {
   if (await isConfiguredAdmin(user.email)) {
     return true;
   }
-  return user.tenant === DEFAULT_TENANT && (await isAdminEmail(user.email));
+  // Both halves, because each covers what the other cannot. The caller must be
+  // in no workspace — a member is governed by their role, not by a list that
+  // names nobody — *and* the deployment must have none, which is the question
+  // the caller's own resolution cannot answer: on a deployment that has
+  // workspaces and an empty admin list, everyone without a membership resolves
+  // to the default tenant, and every one of them would be an operator.
+  if (user.tenant !== DEFAULT_TENANT || (await hasWorkspaces())) {
+    return false;
+  }
+  return isAdminEmail(user.email);
 }
 
 /**

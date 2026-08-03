@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/session";
 import { machineTenant } from "@/lib/workspace";
 import { withTenant } from "@/shared/tenantContext";
 import { SLUG_RULE } from "@/shared/slug";
+import { apiError } from "@/app/api/_lib/http";
 import { projectRepository, secretCipher } from "@/lib/container";
 import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
 
@@ -59,6 +60,16 @@ export async function authenticateExecution(
     );
     return email ? { principal: { email, viaToken: true }, tenant } : unauthorized();
   }
-  const user = await getSessionUser();
+  let user;
+  try {
+    user = await getSessionUser();
+  } catch (error) {
+    // `resolveWorkspace` refuses rather than guessing a tenant, and these three
+    // entry points call this above their own try/catch — an escaping throw
+    // becomes a bare 500 where `withAuth` would have answered 503. Returning
+    // the Response keeps the "principal or a Response" contract every caller
+    // already handles.
+    return apiError(error);
+  }
   return user ? { principal: { email: user.email, viaToken: false }, tenant: user.tenant } : unauthorized();
 }

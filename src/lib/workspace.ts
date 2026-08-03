@@ -18,6 +18,7 @@
 
 import type { OrganizationRole } from "@/domain/organization/membership";
 import { membershipRepository } from "@/infrastructure/db/repositories/membershipRepository";
+import { organizationRepository } from "@/infrastructure/db/repositories/organizationRepository";
 import { hasRole } from "@/domain/organization/membership";
 import { AppError } from "@/application/errors";
 import { currentTenant, DEFAULT_TENANT } from "@/shared/tenantContext";
@@ -60,9 +61,41 @@ export class WorkspaceUnavailableError extends AppError {
 const WORKSPACE_TTL_MS = positiveIntEnv("WORKSPACE_CACHE_TTL_MS", 5_000, 1);
 const workspaceCache = createTtlCache<Workspace>({ ttlMs: WORKSPACE_TTL_MS, maxEntries: 2_048 });
 
-/** Drop the cached resolutions. Called when a membership is written or removed. */
+/**
+ * Whether this deployment has any workspaces at all — the question the
+ * pre-tenant `ADMIN_EMAILS` fail-open is allowed to depend on. Cached under the
+ * same TTL: it changes only when an organization is registered or removed, and
+ * both invalidate.
+ */
+const workspacesExistCache = createTtlCache<boolean>({ ttlMs: WORKSPACE_TTL_MS, maxEntries: 1 });
+
+/** Drop the cached resolutions. Called when a membership or organization changes. */
 export function invalidateWorkspaceCache(): void {
   workspaceCache.clear();
+  workspacesExistCache.clear();
+}
+
+/**
+ * True when at least one workspace is registered.
+ *
+ * **Fails closed**: a registry that cannot be read is treated as "there are
+ * workspaces", because the only thing this answer widens is the fail-open, and
+ * widening it on a failed read is how an unset `ADMIN_EMAILS` would hand
+ * deployment administration to whoever asked during the outage.
+ */
+export async function hasWorkspaces(): Promise<boolean> {
+  const cached = workspacesExistCache.get("any");
+  if (cached !== undefined) {
+    return cached;
+  }
+  try {
+    const exists = (await organizationRepository.list()).length > 0;
+    workspacesExistCache.set("any", exists);
+    return exists;
+  } catch (error) {
+    log.error("authz", "could not read the workspace registry", error);
+    return true;
+  }
 }
 
 /**

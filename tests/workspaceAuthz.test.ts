@@ -82,6 +82,9 @@ const { invalidateWorkspaceCache, machineTenant } = await import("@/lib/workspac
 const { projectRepository } = await import(
   "@/infrastructure/db/repositories/projectRepository"
 );
+const { organizationRepository } = await import(
+  "@/infrastructure/db/repositories/organizationRepository"
+);
 const { withTenant } = await import("@/shared/tenantContext");
 
 function signedInAs(email: string) {
@@ -230,6 +233,33 @@ describe("the deployment gate", () => {
     // Inside a workspace an unset list must not promote every member; that is
     // the same fail-open the role matrix refuses above.
     expect(await status("admin")).toBe(403);
+  });
+
+  it("withdraws the unset-list rule once the deployment has a workspace", async () => {
+    // The half the caller's own resolution cannot answer: someone with no
+    // membership resolves to the default tenant however many workspaces exist,
+    // so reading only that would make every such person an operator on a
+    // multi-workspace deployment whose admin list happens to be empty.
+    process.env.ADMIN_EMAILS = "";
+    expect(await status(undefined)).toBe(200);
+    await organizationRepository.create({
+      id: "acme",
+      displayName: "Acme",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    invalidateWorkspaceCache();
+    expect(await status(undefined)).toBe(403);
+  });
+
+  it("refuses while the workspace registry is unreadable, rather than widening", async () => {
+    process.env.ADMIN_EMAILS = "";
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const list = vi.spyOn(organizationRepository, "list").mockRejectedValue(new Error("throttled"));
+    invalidateWorkspaceCache();
+    expect(await status(undefined)).toBe(403);
+    list.mockRestore();
+    error.mockRestore();
   });
 });
 
