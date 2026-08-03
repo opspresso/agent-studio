@@ -251,7 +251,7 @@ live in the GitOps repository). The contract the ticker has to meet, and nothing
 | MCP registry edits | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | An edit made on one instance goes unseen on the others for up to that window. |
 | Managed MCP | — | **One app instance per host.** A managed container joins exactly one network namespace. |
 | Metrics counters | — | Per-process. Aggregate across instances at the scrape layer. |
-| Background work (`after()`) | — | A Slack event or webhook delivery interrupted by an abrupt instance loss is not resumed; the delivery row stays `running`. Schedule firings share the gap but their rows are repaired to `failed` by the next scan; extending that to a webhook delivery is the `trigger-durability` milestone. A lost Slack event is deliberately not repaired — it leaves no row to finish, only a user without an answer. |
+| Background work (`after()`) | — | A Slack event or trigger firing interrupted by an abrupt instance loss is **not resumed** — a run is not idempotent. Trigger rows of both kinds are repaired to `failed` by the scan tick's sweep, so the ledger is right even though the work is gone. A lost Slack event is deliberately not repaired — it leaves no row to finish, only a user without an answer. |
 
 ### Managed MCP after a redeploy
 

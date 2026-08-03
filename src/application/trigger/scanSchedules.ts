@@ -12,7 +12,10 @@
  * re-executed, because a run is not idempotent (its tools have side effects)
  * and the next occurrence is the natural retry. What a lost instance leaves
  * behind is a row stuck in `running`; once its lease could no longer be live,
- * the scan finishes it as `failed` so the ledger says what happened.
+ * the tick finishes it as `failed` so the ledger says what happened. That sweep
+ * covers **both** kinds and lives in `repairLostRuns.ts` — a webhook delivery
+ * strands a row for the same reason and has no occurrence of its own to be
+ * repaired by.
  *
  * One trigger's failure is its own: every repository call here is fenced per
  * trigger and per occurrence, because a thrown claim would otherwise abort the
@@ -20,10 +23,10 @@
  * never offered again.
  */
 
-import type { ScheduleTrigger, TriggerRun } from "@/domain/trigger/types";
+import type { ScheduleTrigger } from "@/domain/trigger/types";
 import { dueSlots, isValidTimezone, parseCron } from "@/domain/trigger/cron";
-import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
+import { repairLostRuns } from "./repairLostRuns";
 import { admitRun, recordSkip, type AdmittedFiring, type FiringDeps } from "./runTrigger";
 
 /**
@@ -44,28 +47,12 @@ export const SCHEDULE_CATCHUP_WINDOW_MS = 10 * 60 * 1000;
 export const MAX_CONCURRENT_FIRINGS = 8;
 
 /**
- * When a row stuck in `running` is surely dead. `startedAt` is stamped when the
- * firing is *admitted*, not when the backgrounded run actually starts, so the
- * margin over the run deadline is a full catch-up window rather than one tick —
- * repairing late is cosmetic, repairing a live run brands a healthy instance
- * as lost.
- */
-export const SCHEDULE_REPAIR_AFTER_SECONDS =
-  RUN_LEASE_SECONDS + SCHEDULE_CATCHUP_WINDOW_MS / 1000;
-
-/**
- * Repair reads history; due occurrences do not. Gating the read to every fifth
- * minute keeps the steady-state tick at one index query instead of one query
- * per trigger, at the cost of a repair landing a few minutes later — against
- * `SCHEDULE_REPAIR_AFTER_SECONDS` that delay is noise.
+ * Repair walks every project's triggers and reads their history; firing due
+ * occurrences does neither. Gating the sweep to every fifth minute keeps the
+ * steady-state tick at one index query, at the cost of a repair landing a few
+ * minutes later — against `REPAIR_AFTER_SECONDS` that delay is noise.
  */
 const REPAIR_EVERY_MINUTES = 5;
-
-/**
- * How many recent history rows one repair pass reads. Newest first, so this
- * only needs to cover what one lease-length of firings can write.
- */
-const REPAIR_SCAN_LIMIT = 50;
 
 export interface ScheduleScanSummary {
   /** Schedule triggers walked, enabled or not. */
@@ -76,7 +63,7 @@ export interface ScheduleScanSummary {
   alreadyClaimed: number;
   /** Occurrences claimed but refused (overlap, superseded, no published version); each is a row. */
   skipped: number;
-  /** Rows stuck in `running` past any live lease, finished as failed. */
+  /** Rows of **either** kind stuck in `running` past any live lease, finished as failed. */
   repaired: number;
   /** Rows whose cron or timezone no longer parses; logged, never fatal. */
   invalid: number;
@@ -140,14 +127,16 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
   };
   const firings: ScheduleFiring[] = [];
   const windowStart = at.getTime() - SCHEDULE_CATCHUP_WINDOW_MS;
-  const repairTick = at.getUTCMinutes() % REPAIR_EVERY_MINUTES === 0;
+  if (at.getUTCMinutes() % REPAIR_EVERY_MINUTES === 0) {
+    // Once for the whole tick, not once per schedule: the sweep is by project
+    // and covers webhook deliveries too, which have no occurrence of their own
+    // to be repaired by.
+    const repair = await repairLostRuns(deps, at);
+    summary.repaired += repair.repaired;
+    summary.errors += repair.errors;
+  }
   for (const trigger of await deps.triggers.listSchedules()) {
     summary.checked += 1;
-    // Repair regardless of `enabled`: disabling a schedule must not strand a
-    // row its last firing left in `running`.
-    if (repairTick) {
-      summary.repaired += await repairLostRuns(deps, trigger, at);
-    }
     if (!trigger.enabled) {
       continue;
     }
@@ -248,40 +237,4 @@ async function fireDueOccurrences(
       }
     }
   }
-}
-
-/** Finish rows a lost instance left in `running`, per the crash policy above. */
-async function repairLostRuns(
-  deps: FiringDeps,
-  trigger: ScheduleTrigger,
-  at: Date,
-): Promise<number> {
-  const cutoff = at.getTime() - SCHEDULE_REPAIR_AFTER_SECONDS * 1000;
-  let rows: TriggerRun[];
-  try {
-    rows = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT);
-  } catch (error) {
-    log.warn("trigger", `could not read runs of '${trigger.triggerId}' for repair`, error);
-    return 0;
-  }
-  let repaired = 0;
-  for (const row of rows) {
-    // An unparseable startedAt cannot prove the run is fresh, so it repairs
-    // too; if the run is somehow still alive, its own finish overwrites this.
-    if (row.status !== "running" || Date.parse(row.startedAt) > cutoff) {
-      continue;
-    }
-    try {
-      await deps.triggers.finishRun({
-        ...row,
-        status: "failed",
-        endedAt: at.toISOString(),
-        error: "The instance running this firing was lost; its lease expired without a result.",
-      });
-      repaired += 1;
-    } catch (error) {
-      log.error("trigger", "could not repair a lost firing", error);
-    }
-  }
-  return repaired;
 }

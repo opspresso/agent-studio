@@ -907,12 +907,11 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
 - **Every refusal is a history row with a status**, including a skip: an operator must be able
   to tell "it never fired" from "it fired and failed" without reading logs.
 - The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
-  last ten minutes and no webhook sender waits that long. Same durability gap as Slack, too —
-  an instance lost mid-delivery leaves a row stuck in `running` (the schedule scan repairs its
-  own kind's rows; extending that to webhook deliveries is the `trigger-durability` milestone.
-  Slack is not part of it: a lost event leaves no ledger row to finish, only a user without an
-  answer, and re-running it collides with the non-idempotence the schedule decision already
-  ruled on).
+  last ten minutes and no webhook sender waits that long. An instance lost mid-delivery leaves
+  a row stuck in `running`, which the scan tick's [repair sweep](#repairing-a-lost-firing)
+  finishes as `failed`. Slack keeps the gap on purpose: a lost event leaves no ledger row to
+  finish, only a user without an answer, and re-running it collides with the non-idempotence
+  the schedule decision already ruled on.
 
 #### Schedules
 
@@ -926,19 +925,16 @@ from the real one — and a dedicated worker Deployment duplicates the whole run
 loop the app can already serve. Three consumers were weighed, not one: Slack events and
 webhook deliveries share the same ack-then-`after()` durability gap, and a stateless tick
 against claimed work generalises to both — but migrating them is deliberately **not** part of
-this decision (finishing a webhook's stranded row is the `trigger-durability` milestone;
-Slack's half stayed out of it, for the reason recorded there); at three consumers it stops
-being a deployment choice and becomes a rewrite of three execution paths.
+this decision; at three consumers it stops being a deployment choice and becomes a rewrite of
+three execution paths. What the tick did take on afterwards is the *ledger* half of that gap
+for webhooks, which needs no migration at all — see below.
 
 - **"Exactly once" is the claim's property, not the ticker's.** Each occurrence (a UTC minute
   instant) is claimed with the same conditional write that dedups webhook deliveries, key
   `schedule:{instant}`. Any number of instances may scan concurrently; one write wins.
 - **A claim is permanent — a crashed firing is not re-executed.** A run is not idempotent (its
   tools have side effects) and the next occurrence is the natural retry. What a lost instance
-  leaves behind is a row stuck in `running`; once no lease could still be live, a later scan
-  finishes it as `failed` — the ledger says what happened, nothing runs twice. The repair
-  waits a full catch-up window beyond `RUN_LEASE_SECONDS` (`startedAt` is stamped at admit
-  time, not when the backgrounded run starts) and reads history only every fifth minute.
+  leaves behind is a row stuck in `running`, which the repair sweep below finishes.
 - **One trigger's failure is its own.** Every repository call in the tick is fenced per
   trigger and per occurrence; a throw after a claim was won writes a skip row — the claim is
   never offered again — and lands in the summary's `errors` count instead of aborting the
@@ -956,10 +952,35 @@ being a deployment choice and becomes a rewrite of three execution paths.
   superseded rather than executing them late. One tick's admitted firings are driven through
   a bounded pool (8), not one background task each.
 - Schedule rows alone carry `GSI1` (`TYPE#SCHEDULE`), so one index query enumerates them
-  across projects and webhook rows stay invisible to the scan.
+  across projects and webhook rows stay invisible to the firing scan. The repair sweep below
+  reaches both, by a different route and for a reason.
 - A schedule has **no secret and no payload**: nothing external presents credentials, and
   every firing runs the trigger's fixed `variables`/`message` against the published version,
   attributed to the `schedule` actor kind.
+
+#### Repairing a lost firing
+
+Both kinds acknowledge first and run in `after()`, so an instance killed mid-firing leaves a
+row claiming a run is in flight when nothing is. `repairLostRuns`
+(`src/application/trigger/repairLostRuns.ts`) is the single owner of when that row is dead and
+what closes it, for **both** kinds: a `running` row older than `RUN_LEASE_SECONDS` plus a
+ten-minute margin is finished as `failed`. The margin is not a tick's worth of slack —
+`startedAt` is stamped when the firing is *admitted*, not when the backgrounded run starts, so
+it has to cover the distance between the two. Repairing late is cosmetic; repairing a live run
+brands a healthy instance as lost.
+
+It corrects the **ledger, not the work**. Re-running is what the schedule crash policy already
+ruled out, and a webhook has no next occurrence to retry into anyway.
+
+**The sweep walks projects rather than an index**, which is the design decision here. Schedule
+rows carry `TYPE#SCHEDULE` because the tick fires them every minute — enumeration is that
+scan's hot path. Repair is the opposite: gated to every fifth minute, and run only to find
+wreckage. Granting webhook rows a matching index would cover only rows written *after* it
+existed, and a webhook trigger predating the repair is exactly the one most likely to have
+stranded a row already — so the index would miss the rows it was added for. `projects.list()`
+plus one trigger query per project reads everything that exists today and needs no backfill.
+Each project and each trigger is fenced: one unreadable partition costs the sweep a count in
+`errors`, not the tick.
 
 ### External agents (registry)
 

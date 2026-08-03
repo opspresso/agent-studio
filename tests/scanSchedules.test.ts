@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   SCHEDULE_CATCHUP_WINDOW_MS,
-  SCHEDULE_REPAIR_AFTER_SECONDS,
   driveFirings,
   scanSchedules,
   scheduleInput,
   type ScheduleFiring,
 } from "@/application/trigger/scanSchedules";
+import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
 import { executeFiring, type FiringDeps } from "@/application/trigger/runTrigger";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type { ScheduleTrigger, TriggerRun } from "@/domain/trigger/types";
+import type {
+  ScheduleTrigger,
+  Trigger,
+  TriggerRun,
+  WebhookTrigger,
+} from "@/domain/trigger/types";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 
@@ -60,6 +65,22 @@ function schedule(overrides: Partial<ScheduleTrigger> = {}): ScheduleTrigger {
   };
 }
 
+function webhook(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
+  return {
+    projectName: "p",
+    triggerId: "inbound",
+    kind: "webhook",
+    description: "",
+    enabled: true,
+    secret: "enc:v1:whatever",
+    payloadMode: "message",
+    allowConcurrent: false,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function memorySlots(): RunSlotRepository {
   const held = new Map<string, number>();
   return {
@@ -86,6 +107,8 @@ interface Fixture {
 function fixture(
   opts: {
     schedules?: ScheduleTrigger[];
+    /** Non-schedule rows the project holds; the repair sweep sees these too. */
+    webhooks?: WebhookTrigger[];
     seededRows?: TriggerRun[];
     published?: Version | null;
     projectMissing?: boolean;
@@ -97,10 +120,14 @@ function fixture(
   const rows: TriggerRun[] = [...(opts.seededRows ?? [])];
   const claimed = new Set<string>();
   const runs: Fixture["runs"] = [];
+  const schedules = opts.schedules ?? [schedule()];
+  // What the project partition holds, which is what the repair sweep walks —
+  // the scan's own index read stays schedules-only.
+  const stored: Trigger[] = [...schedules, ...(opts.webhooks ?? [])];
   const triggers: TriggerRepository = {
     get: async () => null,
-    listByProject: async () => [],
-    listSchedules: async () => opts.schedules ?? [schedule()],
+    listByProject: async () => stored,
+    listSchedules: async () => schedules,
     create: async () => {},
     put: async () => {},
     delete: async () => {},
@@ -122,7 +149,9 @@ function fixture(
         rows.push(run);
       }
     },
-    listRuns: async () => rows,
+    // Scoped to the trigger, as the real query is: the repair sweep visits every
+    // trigger of the project and must not see another one's rows as its own.
+    listRuns: async (_project, triggerId) => rows.filter((r) => r.triggerId === triggerId),
   };
   const slots = memorySlots();
   if (opts.slotsBusy) {
@@ -136,7 +165,9 @@ function fixture(
       triggers,
       projects: {
         get: async () => (opts.projectMissing ? null : project),
-        list: async () => [],
+        // The repair sweep enumerates by project, since webhook rows carry no
+        // cross-project index.
+        list: async () => (opts.projectMissing ? [] : [project]),
         put: async () => {},
         delete: async () => {},
       } as never,
@@ -322,7 +353,7 @@ describe("scanSchedules", () => {
       triggerId: "nightly",
       runId: "lost-run",
       status: "running",
-      startedAt: new Date(AT.getTime() - (SCHEDULE_REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
+      startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
     };
     // Old enough that a one-tick margin would already have branded it lost —
     // but startedAt is stamped at admit time, and the run may not have started
@@ -343,6 +374,69 @@ describe("scanSchedules", () => {
       error: expect.stringContaining("lost"),
     });
     expect(f.rows.find((r) => r.runId === "alive-run")?.status).toBe("running");
+  });
+
+  it("finishes a stranded webhook delivery, which has no occurrence to repair it", async () => {
+    // The gap this closes: a delivery acks in milliseconds and runs in
+    // `after()`, so an instance lost mid-run leaves a row saying it is still
+    // going. Unlike a schedule there is no next occurrence to notice.
+    const lost: TriggerRun = {
+      projectName: "p",
+      triggerId: "inbound",
+      runId: "lost-delivery",
+      status: "running",
+      idempotencyKey: "evt-1",
+      startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
+    };
+    const alive: TriggerRun = {
+      ...lost,
+      runId: "live-delivery",
+      startedAt: new Date(AT.getTime() - (RUN_LEASE_SECONDS + 60) * 1000).toISOString(),
+    };
+    const f = fixture({
+      // Disabled, and the only schedule: a webhook is reached through the
+      // project walk, never through the schedule index the scan reads.
+      schedules: [schedule({ enabled: false })],
+      webhooks: [webhook()],
+      seededRows: [lost, alive],
+    });
+    const { summary } = await scanAndExecute(f);
+    expect(summary.repaired).toBe(1);
+    expect(f.rows.find((r) => r.runId === "lost-delivery")).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("lost"),
+    });
+    expect(f.rows.find((r) => r.runId === "live-delivery")?.status).toBe("running");
+  });
+
+  it("repairs a disabled webhook's rows too — disabling must not strand one", async () => {
+    const lost: TriggerRun = {
+      projectName: "p",
+      triggerId: "inbound",
+      runId: "lost-delivery",
+      status: "running",
+      startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
+    };
+    const f = fixture({
+      schedules: [schedule({ enabled: false })],
+      webhooks: [webhook({ enabled: false })],
+      seededRows: [lost],
+    });
+    const { summary } = await scanAndExecute(f);
+    expect(summary.repaired).toBe(1);
+  });
+
+  it("counts a project whose triggers cannot be listed as an error, and finishes the tick", async () => {
+    const f = fixture({ schedules: [schedule({ enabled: false })] });
+    f.deps.triggers.listByProject = async () => {
+      throw new Error("partition unavailable");
+    };
+    const { summary } = await scanAndExecute(f);
+    expect(summary.errors).toBe(1);
+    expect(summary.repaired).toBe(0);
+    // The tick still walked its schedules: one unreadable partition costs the
+    // sweep, not the scan.
+    expect(summary.checked).toBe(1);
   });
 
   it("reads history only on repair ticks", async () => {
