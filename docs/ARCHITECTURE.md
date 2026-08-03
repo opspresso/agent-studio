@@ -40,9 +40,12 @@ src/
                     # clients, S3 image store, SSRF guard, AES, readiness probes
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
+      _lib/         # Route-handler glue: SSE framing, `apiError`, body size limits
     _components/    # The shared UI kit: CardGrid, HeaderRows, form styles, code blocks,
                     # copy buttons. A piece of UI that repeats across pages belongs here,
                     # with one owner
+    _lib/           # Browser-side glue the pages share: the transfer chains a chunk came
+                    # from, attachment composers, tool-call display, the viewer hook
   components/       # App chrome: the header the root layout mounts (theme toggle, user
                     # menu), and the landing page's sign-in button
   lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
@@ -95,7 +98,7 @@ surfaces need genuinely different bags:
 
 | Wiring site | Wires |
 |---|---|
-| `src/lib/container.ts` | Repositories; the domain ports (`SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`); the four registry-slice singletons; `executionDeps` / `imageDeps` — including the required LLM and image channels, so a missing injection is a type error rather than a silent network call |
+| `src/lib/container.ts` | Repositories; the domain ports (`SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`); every use-case singleton — the three registry slices (`skillUseCases` / `mcpUseCases` / `agentUseCases`) plus the ones layered beside them (managed MCP, MCP OAuth, triggers, settings); `executionDeps` / `imageDeps` / `triggerRunnerDeps` — including the required LLM and image channels, so a missing injection is a type error rather than a silent network call |
 | `src/app/api/chats/_deps.ts` | The `ChatDeps` bag (bound `runAgent` + repositories) |
 | `src/app/api/slack/events/_lib/` | The `SlackEventDeps` bag (bound `runAgent` + `SlackClientPort`), mirroring `ChatDeps` |
 | `src/app/api/a2a/[name]/route.ts` | Per-request A2A assembly: the SDK's request/transport handlers around `ProjectA2aExecutor` over `executionDeps` — per request because the handler is built around one project's card |
