@@ -8,8 +8,14 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 허용 목록이 비어 있고, 이름 붙인 불변식은 저마다 소유 파일이 하나씩 지정돼 사본이
 생기면 실패한다. 아래 기능 작업은 그 위에 얹는다: 새 어댑터는 포트 뒤로 가고, 조립은
 AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이다 — 여기 복제했던
-사본은 한 번 낡았다), 새 실행 정책은 실행 파사드 한 곳
-(`src/application/execution/runProject.ts`)에 붙는다.
+사본은 한 번 낡았다), 새 실행 정책은 **run bracket** 한 곳
+(`src/application/execution/runBracket.ts`)에 붙는다.
+
+실행 파사드가 아니다. top-level run을 admit하는 네 함수 중 `generateImage`는 파사드를
+통과하지 않으므로(predict 라우트·A2A executor·트리거 러너가 그 모듈을 직접 부른다),
+파사드에 붙인 정책은 이미지 런에 적용되지 않는다. bracket은 어떻게 시작됐든 모든 top-level
+run을 감싸는 단일 소유자이고, 일일 비용 가드와 동시성 가드가 이미 거기 있다
+(ARCHITECTURE.md의 *The run bracket*).
 
 **규약**
 
@@ -29,10 +35,10 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 
 ---
 
-## trigger-durability — Slack·webhook 발화의 급사 복구
+## trigger-durability — webhook 딜리버리의 급사 복구
 
 **이유**: `schedule-trigger`가 남긴 스케줄러 결정문(ARCHITECTURE.md의 *Schedules*)은 세
-소비자 — schedule, Slack 이벤트, webhook 딜리버리 — 를 놓고 평가했지만, 앞의 둘을 옮기는
+소비자 — schedule, Slack 이벤트, webhook 딜리버리 — 를 놓고 평가했지만, 뒤의 둘을 옮기는
 일은 의도적으로 범위에서 뺐다: 배포 환경 결정 하나가 실행 경로 세 개의 재작성이 되기
 때문이다. 그 결과 지금은 schedule 발화만 급사에서 복구된다 — scan이 lease 지난 `running`
 row를 `failed`로 마감한다. Slack은 claim lease가 회수될 뿐 재처리가 없고, webhook은 이력
@@ -45,19 +51,30 @@ row가 `running`인 채 남는다(OPERATIONS.md의 multi-instance 표).
 
 - webhook 딜리버리의 잔류 `running` row를 schedule과 같은 lease 기준으로 `failed` 마감한다.
   schedule과 달리 webhook 트리거에는 cross-project 열거 인덱스가 없다 — 열거 경로(GSI 부여
-  vs 프로젝트 순회)를 정하는 것이 이 작업의 설계 절반이다.
-- Slack 이벤트의 재처리 여부를 결정하고 기록한다. 재처리 없음(현행)을 유지한다면 그 근거를
-  결정으로 남긴다 — 재처리는 run의 비멱등성(도구 부수효과)과 충돌하는, schedule이 이미 한 번
-  내린 판단이다.
+  vs 프로젝트 순회)를 정하는 것이 이 작업의 설계 절반이다. GSI를 부여하면 ARCHITECTURE.md의
+  키맵에 반영한다.
+- **Slack은 범위 밖이다.** 재처리는 schedule이 이미 내린 판단(run은 비멱등이고 도구에
+  부수효과가 있다)에 걸리고, Slack에는 schedule의 "다음 발생"에 해당하는 자연스러운 재시도가
+  없다. 급사한 Slack 이벤트가 남기는 것은 마감되지 않은 이력이 아니라 답을 받지 못한 사용자이고,
+  그건 복구가 아니라 사용자에게 이미 보이는 실패다. 이걸 다루려면 자동 확인 가능한 완료 조건이
+  따로 필요하므로, 규약대로 별도 slug가 생기기 전까지 마일스톤에 넣지 않는다.
 
 **완료 조건**: 급사한 webhook 딜리버리 row가 lease 만료 뒤 `failed`로 마감되는 것을
-테스트로 검증한다. Slack 재처리 결정이 문서에 있고 구현이 그 결정과 일치한다.
+테스트로 검증한다. 살아 있는 딜리버리는 마감되지 않는 것을 같은 테스트에서 검증한다 —
+schedule 쪽이 `repairLostRuns`에서 이미 지키는 경계다.
 
 ## audit-log-entity — 감사 기록의 일급 엔티티 승격
 
-**이유**: 민감 행위 — 시크릿 reveal 3종, 관리자 override 쓰기, 설정 변경, 토큰 발급·회전 —
-는 지금 로그 라인으로만 남는다(SECURITY.md: "Every reveal is logged server-side"). 로그에는
-보존·조회·내보내기 계약이 없어 "누가 언제 무엇을"이라는 감사 질문에 답하지 못한다.
+**이유**: 민감 행위가 남기는 흔적이 고르지 않고, 남는 쪽조차 감사 기록이 아니다.
+
+- 시크릿 reveal 3종과 `assertProjectWritable`의 admin override는 caller email과 함께 로그
+  라인을 남긴다(SECURITY.md: "Every reveal is logged server-side").
+- **`PUT /api/settings`와 프로젝트·레지스트리 삭제는 아무것도 남기지 않는다.** 설정 쓰기는
+  `userEmail`을 받아 최신 상태에만 반영하고 이력을 쓰지 않으므로, 관리자 목록이나 LLM 자격증명이
+  언제 누구 손에 바뀌었는지 되짚을 방법이 없다.
+
+그리고 로그를 남기는 쪽조차 보존·조회·내보내기 계약이 없어 "누가 언제 무엇을"이라는 감사
+질문에 답하지 못한다.
 
 **선행**: 없음.
 
@@ -87,11 +104,21 @@ row가 `running`인 채 남는다(OPERATIONS.md의 multi-instance 표).
 **범위**
 
 - 런타임 설정 하나(allow | refuse, 기본 allow) — `runtime-settings.ts` 경유, env fallback.
+  키를 늘릴 때의 알려진 함정: `PUT /api/settings`의 zod 스키마는 키를 손으로 나열하므로,
+  거기 빠뜨리면 요청이 400도 없이 조용히 버려진다. `toolsRepo`가 이미 그렇게 한 번 새어
+  나갔다(`4d0c1d9`).
 - refuse: 실행 admission에서 primary와 fallback 모두 레지스트리를 조회해 dispatch 전
-  `ValidationError`로 거부한다(스트림 시작 전 HTTP 에러 계약). 검사 위치는 실행
-  파사드(`runProject.ts`)의 버전 resolve 직후 한 곳.
+  `ValidationError`로 거부한다(스트림 시작 전 HTTP 에러 계약 — SSE 라우트는 첫 chunk를 당겨본
+  뒤에 응답을 만들므로 이 throw는 스트림이 아니라 400으로 나간다). 검사 위치는 **run bracket
+  한 곳**이다: top-level run을 admit하는 네 함수가 모두 지나는 유일한 지점이고, 파사드는
+  그렇지 않다.
+- 이미지 런은 이미 닫혀 있다 — `generateImage`가 모델의 `imageGeneration` capability를 보고
+  거부하는데 미등록 모델은 `getModelConfig`가 `undefined`라 같은 `ValidationError`에 걸린다.
+  bracket에 붙이면 정책이 한 겹 더 얹힐 뿐 동작은 바뀌지 않는다.
 - 버전 저장의 "경고와 함께 허용" 계약은 그대로 둔다 — 막는 것은 실행이지 편집이 아니다.
 - allow는 현행과 byte-identical.
 
 **완료 조건**: refuse 설정에서 미등록 primary/fallback 실행이 dispatch 전 거부됨을 테스트로
-검증한다. allow 설정에서 기존 테스트가 무수정 통과한다.
+검증한다. 새 설정 키가 `PUT /api/settings`를 통해 실제로 저장되는 것을 테스트로 검증한다 —
+위 함정이 조용히 재발하는 것을 막는 유일한 조건이다. allow 설정에서 기존 테스트가 무수정
+통과한다.
