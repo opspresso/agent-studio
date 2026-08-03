@@ -3,7 +3,7 @@ import { settingsUseCases } from "@/lib/container";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { apiError } from "@/app/api/_lib/http";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
-import { withAdminAuth } from "@/lib/session";
+import { withDeploymentAdminAuth } from "@/lib/session";
 
 const updateSchema = z.object({
   adminEmails: z.string().max(4000).optional(),
@@ -30,11 +30,11 @@ const updateSchema = z.object({
   publicBaseUrl: z.string().max(4000).optional(),
 });
 
-export const GET = withAdminAuth(async () => {
+export const GET = withDeploymentAdminAuth(async () => {
   return Response.json(await settingsUseCases.getView());
 });
 
-export const PUT = withAdminAuth(async (user, request: Request) => {
+export const PUT = withDeploymentAdminAuth(async (user, request: Request) => {
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });

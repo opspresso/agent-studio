@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { managedMcpUseCases } from "@/lib/container";
-import { withAdminAuth } from "@/lib/session";
+import { withDeploymentAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { managedMcpUnavailable as unavailable } from "../_unavailable";
 
@@ -25,7 +25,7 @@ const updateSchema = z.object({
 });
 
 /** What is actually running, which the stored entry cannot say on its own. */
-export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withDeploymentAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
   if (!managedMcpUseCases) {
     return unavailable();
   }
@@ -38,7 +38,7 @@ export const GET = withAdminAuth(async (_user, _request: Request, ctx: RouteCont
 });
 
 /** Updates stored settings and restarts automatically when the workload spec changed. */
-export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
+export const PUT = withDeploymentAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
   if (!managedMcpUseCases) {
     return unavailable();
   }
@@ -55,7 +55,7 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
 });
 
 /** Removes the container and the entry together; neither outlives the other. */
-export const DELETE = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withDeploymentAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
   if (!managedMcpUseCases) {
     return unavailable();
   }

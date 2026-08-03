@@ -1,7 +1,9 @@
 import type { ZodError } from "zod";
 import { RateLimitedError, statusForError, ValidationError } from "@/application/errors";
+import { machineTenant } from "@/lib/workspace";
+import { withTenant } from "@/shared/tenantContext";
 import { log } from "@/shared/logger";
-import { isSlug } from "@/shared/slug";
+import { isSlug, SLUG_RULE } from "@/shared/slug";
 
 /**
  * Validate a route `[name]` param as a slug. Throws {@link ValidationError}
@@ -12,6 +14,28 @@ export function parseName(name: string): string {
     throw new ValidationError("Invalid name");
   }
   return name;
+}
+
+/**
+ * Run a machine-authenticated request inside the workspace it named, refusing a
+ * name that is not one.
+ *
+ * The refusal is the point. `machineTenant` reads a value off a header or a
+ * query parameter and it becomes the key prefix for the whole request, so a
+ * typo — wrong case, a stray space — silently addresses a scope no tenant owns:
+ * the credential lookup finds no row and the caller gets a bare 401 saying
+ * their key is wrong when the key was fine. One owner so the three machine
+ * surfaces (A2A, webhooks, Slack) cannot disagree about it.
+ */
+export function withMachineTenant(
+  request: Request,
+  run: () => Promise<Response>,
+): Promise<Response> {
+  const tenant = machineTenant(request);
+  if (tenant === null) {
+    return Promise.resolve(Response.json({ error: `tenant ${SLUG_RULE}` }, { status: 400 }));
+  }
+  return withTenant(tenant, run);
 }
 
 /**

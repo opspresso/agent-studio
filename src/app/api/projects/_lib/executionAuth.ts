@@ -3,6 +3,7 @@ import { unauthorized } from "@/shared/unauthorized";
 import { getSessionUser } from "@/lib/session";
 import { machineTenant } from "@/lib/workspace";
 import { withTenant } from "@/shared/tenantContext";
+import { SLUG_RULE } from "@/shared/slug";
 import { projectRepository, secretCipher } from "@/lib/container";
 import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
 
@@ -48,6 +49,11 @@ export async function authenticateExecution(
   const bearer = header ? /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim() : undefined;
   if (bearer) {
     const tenant = machineTenant(request);
+    if (tenant === null) {
+      // Not a 401: the credential was never looked at. Saying "unauthorized"
+      // here sends the caller to rotate a token that is fine.
+      return Response.json({ error: `tenant ${SLUG_RULE}` }, { status: 400 });
+    }
     const email = await withTenant(tenant, () =>
       verifyProjectApiToken(projectRepository, projectName, bearer, secretCipher),
     );

@@ -1,4 +1,4 @@
-import { isAdmin, withAuth } from "@/lib/session";
+import { isAdmin, isDeploymentAdmin, withAuth } from "@/lib/session";
 import { hasRole } from "@/domain/organization/membership";
 import { isConfiguredAdmin } from "@/lib/runtime-settings";
 
@@ -33,8 +33,14 @@ export const GET = withAuth(async (user) =>
     tenant: user.tenant,
     /** The caller's role in it, absent outside a workspace. */
     ...(user.role ? { role: user.role } : {}),
-    /** May mutate shared registries and app settings. */
+    /** May mutate this workspace's shared registries. */
     isAdmin: await isAdmin(user),
+    /**
+     * May reach what the whole deployment shares — app settings, the A2A key,
+     * managed MCP servers, the workspace registry. A separate question from
+     * `isAdmin` since workspaces existed; see `isDeploymentAdmin`.
+     */
+    isDeploymentAdmin: await isDeploymentAdmin(user),
     /** May write a project owned by someone else. */
     isConfiguredAdmin: user.role
       ? hasRole(user.role, "admin")

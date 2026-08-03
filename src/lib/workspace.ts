@@ -19,8 +19,12 @@
 import type { OrganizationRole } from "@/domain/organization/membership";
 import { membershipRepository } from "@/infrastructure/db/repositories/membershipRepository";
 import { hasRole } from "@/domain/organization/membership";
+import { AppError } from "@/application/errors";
 import { currentTenant, DEFAULT_TENANT } from "@/shared/tenantContext";
+import { createTtlCache } from "@/shared/ttlCache";
+import { isSlug } from "@/shared/slug";
 import { log } from "@/shared/logger";
+import { positiveIntEnv } from "./config";
 import { isConfiguredAdmin } from "./runtime-settings";
 
 export interface Workspace {
@@ -32,6 +36,36 @@ export interface Workspace {
 const DEFAULT_WORKSPACE: Workspace = { tenant: DEFAULT_TENANT };
 
 /**
+ * The membership store could not be read, so which workspace this caller is in
+ * is unknown — and an unknown workspace is not a workspace we may guess at.
+ *
+ * 503 rather than 500 because it is a dependency being unavailable rather than
+ * this app being wrong, and because it is the honest answer: retrying later is
+ * exactly what a caller should do.
+ */
+export class WorkspaceUnavailableError extends AppError {
+  constructor() {
+    super("Could not determine your workspace; try again shortly", 503);
+  }
+}
+
+/**
+ * The workspace resolution is read on every authenticated request, and its
+ * answer changes only when someone edits a membership — so it is cached under
+ * the same short TTL and the same process-local honesty as the settings cache
+ * (`runtime-settings.ts`): a change lands on other instances when their entries
+ * expire. Bounded by entry count as well as by time, because the key is an
+ * email and a map keyed by anything a caller supplies grows without one.
+ */
+const WORKSPACE_TTL_MS = positiveIntEnv("WORKSPACE_CACHE_TTL_MS", 5_000, 1);
+const workspaceCache = createTtlCache<Workspace>({ ttlMs: WORKSPACE_TTL_MS, maxEntries: 2_048 });
+
+/** Drop the cached resolutions. Called when a membership is written or removed. */
+export function invalidateWorkspaceCache(): void {
+  workspaceCache.clear();
+}
+
+/**
  * The workspace this caller acts in.
  *
  * A person in exactly one tenant acts in it. A person in several acts in the
@@ -39,25 +73,36 @@ const DEFAULT_WORKSPACE: Workspace = { tenant: DEFAULT_TENANT };
  * app does not offer yet, and an arbitrary choice that changed between requests
  * would be worse than a fixed one.
  *
- * A lookup failure resolves to the default tenant rather than throwing: the
- * alternative is that a membership-store blip logs every user out of their own
- * data. It is safe in the direction that matters — the default tenant's rows
- * are not any named tenant's rows, so a failure denies rather than grants.
+ * A lookup failure **refuses the request** rather than falling back to the
+ * default tenant. The fallback reads as safe — the default tenant's rows are
+ * not any named tenant's rows — but it is safe in the wrong direction on the
+ * deployment that matters: one that migrated *some* users into workspaces and
+ * left the original catalog in the default scope. There a blip drops a
+ * workspace member into the shared catalog with no role, which `canAuthor` and
+ * `isAdmin` then answer for with the pre-tenant `ADMIN_EMAILS` rules. And the
+ * availability argument for falling back is thin: the read that failed is a
+ * read of the same table every later read in the request uses.
  */
 export async function resolveWorkspace(userEmail: string): Promise<Workspace> {
+  const cached = workspaceCache.get(userEmail);
+  if (cached) {
+    return cached;
+  }
+  let memberships;
   try {
-    const memberships = await membershipRepository.listByUser(userEmail);
-    if (memberships.length === 0) {
-      return DEFAULT_WORKSPACE;
-    }
-    const chosen = [...memberships].sort((a, b) =>
-      a.organizationId.localeCompare(b.organizationId),
-    )[0]!;
-    return { tenant: chosen.organizationId, role: chosen.role };
+    memberships = await membershipRepository.listByUser(userEmail);
   } catch (error) {
     log.error("authz", `could not resolve the workspace of ${userEmail}`, error);
-    return DEFAULT_WORKSPACE;
+    throw new WorkspaceUnavailableError();
   }
+  const chosen = [...memberships].sort((a, b) =>
+    a.organizationId.localeCompare(b.organizationId),
+  )[0];
+  const resolved: Workspace = chosen
+    ? { tenant: chosen.organizationId, role: chosen.role }
+    : DEFAULT_WORKSPACE;
+  workspaceCache.set(userEmail, resolved);
+  return resolved;
 }
 
 /**
@@ -70,14 +115,20 @@ export async function resolveWorkspace(userEmail: string): Promise<Workspace> {
  * credentials live. And a hint rather than a grant — the credential is verified
  * *inside* the named tenant, so pointing at someone else's finds no matching
  * secret and authenticates nobody.
+ *
+ * Returns `null` for a value that is not a slug, which the caller answers with
+ * a 400. An organization id is a slug and is also a key prefix, so anything
+ * else names a scope no tenant owns: without this the request would run under
+ * `T#Acme #`, find nothing, and get a bare 401 that says the credential was
+ * wrong when what was wrong was the tenant name.
  */
-export function machineTenant(request: Request): string {
+export function machineTenant(request: Request): string | null {
   const header = request.headers.get("x-tenant")?.trim();
-  if (header) {
-    return header;
+  const named = header || new URL(request.url).searchParams.get("tenant")?.trim();
+  if (!named) {
+    return DEFAULT_TENANT;
   }
-  const query = new URL(request.url).searchParams.get("tenant")?.trim();
-  return query || DEFAULT_TENANT;
+  return named === DEFAULT_TENANT || isSlug(named) ? named : null;
 }
 
 /**

@@ -31,6 +31,7 @@ import { settingsRepository } from "@/infrastructure/db/repositories/settingsRep
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
 import { config, positiveIntEnv } from "./config";
+import { createTtlCache } from "@/shared/ttlCache";
 import { parseList } from "@/shared/parseList";
 import { decryptSecret } from "@/infrastructure/crypto/secretEncryption";
 import { log } from "@/shared/logger";
@@ -42,8 +43,17 @@ const DEFAULT_TTL_MS = 5_000;
 const TTL_MS = positiveIntEnv("SETTINGS_CACHE_TTL_MS", DEFAULT_TTL_MS, 1);
 
 let cache: { value: AppSettings | null; fetchedAt: number } | undefined;
-/** Per workspace, under the same TTL and the same process-local invalidation. */
-const tenantCache = new Map<string, { value: AppSettings | null; fetchedAt: number }>();
+/**
+ * Per workspace, under the same TTL and the same process-local invalidation —
+ * and, unlike the app row above, under an entry cap as well.
+ *
+ * The app row has exactly one key. This map's key comes off a request: the A2A
+ * route enters `withTenant(machineTenant(request))` and reads the inbound key
+ * *before* checking it, so an unauthenticated caller varying `X-Tenant` chooses
+ * the keys. A TTL alone never removes an entry nobody looks up again, so the
+ * cap is what bounds the map rather than the caller's imagination.
+ */
+const tenantCache = createTtlCache<AppSettings | null>({ ttlMs: TTL_MS, maxEntries: 512 });
 
 async function loadAppSettings(): Promise<AppSettings | null> {
   const now = Date.now();
@@ -54,14 +64,13 @@ async function loadAppSettings(): Promise<AppSettings | null> {
 }
 
 async function loadTenantSettings(tenant: string): Promise<AppSettings | null> {
-  const now = Date.now();
   const cached = tenantCache.get(tenant);
-  if (!cached || now - cached.fetchedAt > TTL_MS) {
-    const value = await settingsRepository.getTenant(tenant);
-    tenantCache.set(tenant, { value, fetchedAt: now });
-    return value;
+  if (cached !== undefined) {
+    return cached;
   }
-  return cached.value;
+  const value = await settingsRepository.getTenant(tenant);
+  tenantCache.set(tenant, value);
+  return value;
 }
 
 /**

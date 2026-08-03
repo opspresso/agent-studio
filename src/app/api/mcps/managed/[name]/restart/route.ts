@@ -1,5 +1,5 @@
 import { managedMcpUseCases } from "@/lib/container";
-import { withAdminAuth } from "@/lib/session";
+import { withDeploymentAdminAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
 import { managedMcpUnavailable } from "../../_unavailable";
 
@@ -15,7 +15,7 @@ type RouteContext = { params: Promise<{ name: string }> };
  * far longer than any client will wait. The caller polls `GET` for the outcome,
  * which is also the only place the truth lives.
  */
-export const POST = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const POST = withDeploymentAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
   if (!managedMcpUseCases) {
     return managedMcpUnavailable();
   }

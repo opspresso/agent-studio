@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Route-handler tests for the two endpoints that return a live credential.
-// `withAuth`/`withAdminAuth` are stubbed so the caller and their admin status
-// are drivable from `state`; the real *owner* gate runs inside the use case.
-// These guard the blast radius: a reveal endpoint that answers the wrong caller
-// hands over a working key.
+// `withAuth`/`withDeploymentAdminAuth` are stubbed so the caller and their
+// admin status are drivable from `state`; the real *owner* gate runs inside the
+// use case. These guard the blast radius: a reveal endpoint that answers the
+// wrong caller hands over a working key.
+//
+// The A2A key is the deployment's, not a workspace's, which is why its gate is
+// the deployment one — a workspace admin reaching it would be reading a
+// credential every other tenant's inbound traffic depends on.
 const { state, projectRepo } = vi.hoisted(() => ({
   state: { email: "owner@example.com", admin: true, a2aKey: undefined as string | undefined },
   projectRepo: { get: vi.fn(), getApiToken: vi.fn() },
@@ -15,11 +19,14 @@ vi.mock("@/lib/session", () => ({
     (handler: (user: unknown, ...args: never[]) => unknown) =>
     (...args: never[]) =>
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
-  withAdminAuth:
+  withDeploymentAdminAuth:
     (handler: (user: unknown, ...args: never[]) => unknown) =>
     (...args: never[]) => {
       if (!state.admin) {
-        return Response.json({ error: "Only admins can modify this resource" }, { status: 403 });
+        return Response.json(
+          { error: "Only a deployment administrator can access this resource" },
+          { status: 403 },
+        );
       }
       return handler({ id: "u1", email: state.email, name: "U", image: null }, ...args);
     },

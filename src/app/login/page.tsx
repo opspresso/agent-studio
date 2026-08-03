@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Card, Center, Stack, Text, Title } from "@mantine/core";
 import { SignInButton } from "@/components/SignInButton";
-import { getSessionUser } from "@/lib/session";
+import { hasSession } from "@/lib/session";
 import { safeNextPath } from "@/shared/safeNextPath";
 
 export const metadata = { title: "Sign in · Agent Studio" };
@@ -21,7 +21,7 @@ export default async function LoginPage({
 }) {
   const next = safeNextPath((await searchParams).next);
 
-  if (await getSessionUser()) {
+  if (await hasSession()) {
     redirect(next);
   }
 

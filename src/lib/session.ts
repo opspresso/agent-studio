@@ -1,10 +1,10 @@
 import { unauthorized } from "@/shared/unauthorized";
 import { headers } from "next/headers";
 import { hasRole, type OrganizationRole } from "@/domain/organization/membership";
-import { withTenant } from "@/shared/tenantContext";
+import { DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
 import { auth } from "./auth";
-import { isAdminEmail } from "./runtime-settings";
-import { resolveWorkspace } from "./workspace";
+import { isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
+import { resolveWorkspace, WorkspaceUnavailableError } from "./workspace";
 
 export interface SessionUser {
   id: string;
@@ -15,6 +15,20 @@ export interface SessionUser {
   tenant: string;
   /** The caller's role in it. Absent in the default tenant. */
   role?: OrganizationRole;
+}
+
+/**
+ * Whether this request carries a valid session, without asking which workspace
+ * it belongs to.
+ *
+ * For the two pages that only need the question answered — the marketing home
+ * and `/login`, which either render or redirect. Neither reads `tenant` or
+ * `role`, and resolving one would put a membership lookup on the path of every
+ * signed-out visitor and make a sign-in page that cannot render when the
+ * membership store is unavailable.
+ */
+export async function hasSession(): Promise<boolean> {
+  return (await auth.api.getSession({ headers: await headers() })) !== null;
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
@@ -47,7 +61,18 @@ export function withAuth<T extends unknown[]>(
   handler: (user: SessionUser, ...args: T) => Promise<Response>,
 ): (...args: T) => Promise<Response> {
   return async (...args: T) => {
-    const user = await getSessionUser();
+    let user;
+    try {
+      user = await getSessionUser();
+    } catch (error) {
+      // Only this one, and only here: `resolveWorkspace` refuses rather than
+      // guessing a tenant, and the refusal has to become a status instead of an
+      // unhandled throw Next renders as 500.
+      if (!(error instanceof WorkspaceUnavailableError)) {
+        throw error;
+      }
+      return Response.json({ error: error.message }, { status: error.status });
+    }
     if (!user) {
       return unauthorized();
     }
@@ -85,6 +110,49 @@ export function withAdminAuth<T extends unknown[]>(
   return withAuth(async (user, ...args: T) => {
     if (!(await isAdmin(user))) {
       return FORBIDDEN("Only admins can modify this resource");
+    }
+    return handler(user, ...args);
+  });
+}
+
+/**
+ * True when this caller administers the *deployment* — as distinct from
+ * administering a workspace inside it.
+ *
+ * The two were one question until workspaces existed, and merging them is the
+ * hole this closes: `isAdmin` now answers "yes" for anyone holding the `admin`
+ * role in their own workspace, and a handful of admin-gated surfaces are not
+ * their workspace's at all. The app settings row, the inbound A2A key and the
+ * managed MCP containers are one per deployment and shared by every tenant, so
+ * a workspace admin reaching them could read the deployment's LLM credentials,
+ * rotate a key every other tenant depends on, or provision containers on shared
+ * infrastructure.
+ *
+ * `ADMIN_EMAILS` answers, whatever workspace the caller happens to be in — the
+ * list *is* the deployment's operators, and joining a workspace is not a reason
+ * to stop being one. The pre-tenant "an empty list means no restriction" rule
+ * still applies, but only where it always did: a deployment with no workspaces
+ * at all. Otherwise an unset list would make every member of every workspace a
+ * deployment administrator, which is the merge again with extra steps.
+ */
+export async function isDeploymentAdmin(user: SessionUser): Promise<boolean> {
+  if (await isConfiguredAdmin(user.email)) {
+    return true;
+  }
+  return user.tenant === DEFAULT_TENANT && (await isAdminEmail(user.email));
+}
+
+/**
+ * Like {@link withAdminAuth}, but for the resources one deployment shares
+ * across every workspace rather than the ones a workspace owns. See
+ * {@link isDeploymentAdmin} for which those are and why they are separate.
+ */
+export function withDeploymentAdminAuth<T extends unknown[]>(
+  handler: (user: SessionUser, ...args: T) => Promise<Response>,
+): (...args: T) => Promise<Response> {
+  return withAuth(async (user, ...args: T) => {
+    if (!(await isDeploymentAdmin(user))) {
+      return FORBIDDEN("Only a deployment administrator can access this resource");
     }
     return handler(user, ...args);
   });

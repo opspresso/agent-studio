@@ -75,7 +75,10 @@ vi.mock("@/infrastructure/db/repositories/membershipRepository", async (importOr
   };
 });
 
-const { withAuth, withAdminAuth, withAuthorAuth } = await import("@/lib/session");
+const { withAuth, withAdminAuth, withAuthorAuth, withDeploymentAdminAuth } = await import(
+  "@/lib/session"
+);
+const { invalidateWorkspaceCache, machineTenant } = await import("@/lib/workspace");
 const { projectRepository } = await import(
   "@/infrastructure/db/repositories/projectRepository"
 );
@@ -106,6 +109,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   memberships.rows = [];
   stored.items.clear();
+  invalidateWorkspaceCache();
   delete process.env.ADMIN_EMAILS;
   // The same project name in two workspaces, which is the case the key scheme
   // exists to keep apart.
@@ -155,6 +159,9 @@ describe("role matrix", () => {
     role?: OrganizationRole,
   ) => {
     memberships.rows = role ? [member("u@x.com", "acme", role)] : [];
+    // The resolution is cached per email; these cases give one email several
+    // roles in a row, which no real deployment does within a TTL.
+    invalidateWorkspaceCache();
     signedInAs("u@x.com");
     return (await wrap(ok)()).status;
   };
@@ -190,5 +197,90 @@ describe("role matrix", () => {
     expect(await status(withAdminAuth, undefined)).toBe(200);
     process.env.ADMIN_EMAILS = "someone-else@x.com";
     expect(await status(withAdminAuth, undefined)).toBe(403);
+  });
+});
+
+describe("the deployment gate", () => {
+  const ok = async () => Response.json({ ok: true });
+  const status = async (role?: OrganizationRole) => {
+    memberships.rows = role ? [member("u@x.com", "acme", role)] : [];
+    invalidateWorkspaceCache();
+    signedInAs("u@x.com");
+    return (await withDeploymentAdminAuth(ok)()).status;
+  };
+
+  it("refuses a workspace admin what the whole deployment shares", async () => {
+    // The hole this closes: `isAdmin` says yes to a workspace admin, and the
+    // app settings row, the A2A key and the managed MCP containers are not
+    // their workspace's — they are every workspace's.
+    process.env.ADMIN_EMAILS = "operator@x.com";
+    expect(await status("admin")).toBe(403);
+  });
+
+  it("admits a named operator wherever they happen to be a member", async () => {
+    // ADMIN_EMAILS *is* the list of deployment operators; joining a workspace
+    // is not a reason to stop being one.
+    process.env.ADMIN_EMAILS = "u@x.com";
+    expect(await status("viewer")).toBe(200);
+  });
+
+  it("keeps the unset-list rule, but only where there are no workspaces", async () => {
+    process.env.ADMIN_EMAILS = "";
+    expect(await status(undefined)).toBe(200);
+    // Inside a workspace an unset list must not promote every member; that is
+    // the same fail-open the role matrix refuses above.
+    expect(await status("admin")).toBe(403);
+  });
+});
+
+describe("an unreadable membership store", () => {
+  it("refuses the request instead of falling back to the default workspace", async () => {
+    // The fallback reads as safe and is not: on a deployment that migrated some
+    // users and left the original catalog in the default scope, it drops a
+    // workspace member into that catalog with no role at all.
+    const listByUser = vi.spyOn(
+      (await import("@/infrastructure/db/repositories/membershipRepository"))
+        .membershipRepository,
+      "listByUser",
+    );
+    listByUser.mockRejectedValueOnce(new Error("throttled"));
+    invalidateWorkspaceCache();
+    signedInAs("a@x.com");
+    expect((await readProject()).status).toBe(503);
+    listByUser.mockRestore();
+  });
+});
+
+describe("the machine tenant hint", () => {
+  const withHeader = (value: string) =>
+    machineTenant(new Request("https://studio.example.com/api/a2a/bot", { headers: { "x-tenant": value } }));
+
+  it("takes a slug, and the default tenant's own name", () => {
+    expect(withHeader("acme")).toBe("acme");
+    expect(withHeader("default")).toBe("default");
+  });
+
+  it("is the default tenant when nothing names one", () => {
+    expect(machineTenant(new Request("https://studio.example.com/api/a2a/bot"))).toBe("default");
+  });
+
+  it("refuses anything that is not a tenant name", () => {
+    // Silently scoping to `T#Acme #` would find no credential and answer 401 —
+    // sending the caller to rotate a key that was never the problem.
+    expect(withHeader("Acme")).toBeNull();
+    expect(withHeader("a#b")).toBeNull();
+    expect(
+      machineTenant(new Request("https://studio.example.com/api/a2a/bot?tenant=NOPE")),
+    ).toBeNull();
+  });
+
+  it("prefers the header, and falls back to the query for callers that cannot set one", () => {
+    const request = new Request("https://studio.example.com/api/a2a/bot?tenant=globex", {
+      headers: { "x-tenant": "acme" },
+    });
+    expect(machineTenant(request)).toBe("acme");
+    expect(
+      machineTenant(new Request("https://studio.example.com/api/a2a/bot?tenant=globex")),
+    ).toBe("globex");
   });
 });

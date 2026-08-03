@@ -1,5 +1,4 @@
-import { machineTenant } from "@/lib/workspace";
-import { withTenant } from "@/shared/tenantContext";
+import { withMachineTenant } from "@/app/api/_lib/http";
 import { projectRepository, secretCipher } from "@/lib/container";
 import { resolveSlackEventBinding } from "@/application/slack/projectSlack";
 import { handleSlackEventRequest } from "../_lib/handleEventRequest";
@@ -14,7 +13,7 @@ type RouteContext = { params: Promise<{ project: string }> };
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
   // Slack cannot add a header, so a multi-tenant deployment puts ?tenant= in the Request URL.
-  return withTenant(machineTenant(request), async () => {
+  return withMachineTenant(request, async () => {
   const { project: projectName } = await ctx.params;
   const bound = await resolveSlackEventBinding(projectRepository, projectName, secretCipher);
   if (!bound) {

@@ -11,7 +11,7 @@ import {
   VisuallyHidden,
 } from "@mantine/core";
 import { SignInButton } from "@/components/SignInButton";
-import { getSessionUser } from "@/lib/session";
+import { hasSession } from "@/lib/session";
 import { Dashboard } from "./_components/Dashboard";
 import classes from "./page.module.css";
 
@@ -91,8 +91,7 @@ const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: stri
 ];
 
 export default async function Home() {
-  const user = await getSessionUser();
-  if (user) {
+  if (await hasSession()) {
     return <Dashboard />;
   }
 

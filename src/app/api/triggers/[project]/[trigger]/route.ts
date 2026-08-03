@@ -1,4 +1,4 @@
-import { machineTenant } from "@/lib/workspace";
+import { withMachineTenant } from "@/app/api/_lib/http";
 import { currentTenant, withTenant } from "@/shared/tenantContext";
 import { after } from "next/server";
 import { admitDelivery, executeDelivery } from "@/application/trigger/runTrigger";
@@ -26,7 +26,7 @@ const MAX_BODY_BYTES = 1_000_000;
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
   // The secret is a tenant-scoped row, so the whole delivery runs in the tenant the caller named.
-  return withTenant(machineTenant(request), async () => {
+  return withMachineTenant(request, async () => {
   const { project, trigger } = await ctx.params;
   let body: string;
   try {

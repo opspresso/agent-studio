@@ -2,7 +2,7 @@ import { apiError } from "@/app/api/_lib/http";
 import { recordAudit } from "@/application/audit/auditLog";
 import { NotFoundError } from "@/application/errors";
 import { getA2aApiKey } from "@/lib/runtime-settings";
-import { withAdminAuth } from "@/lib/session";
+import { withDeploymentAdminAuth } from "@/lib/session";
 import { log } from "@/shared/logger";
 
 /**
@@ -13,7 +13,7 @@ import { log } from "@/shared/logger";
  * A POST rather than a GET even though it reads: the response body is a live
  * credential, and POST keeps it out of prefetches, history and caches.
  */
-export const POST = withAdminAuth(async (user) => {
+export const POST = withDeploymentAdminAuth(async (user) => {
   try {
     const key = await getA2aApiKey();
     if (!key) {

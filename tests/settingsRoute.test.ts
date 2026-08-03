@@ -13,7 +13,7 @@ const { useCases } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/session", () => ({
-  withAdminAuth:
+  withDeploymentAdminAuth:
     (handler: (user: unknown, ...args: any[]) => unknown) =>
     (...args: any[]) =>
       handler({ id: "u1", email: "admin@example.com", name: "A", image: null }, ...args),

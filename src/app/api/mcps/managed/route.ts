@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { managedMcpUseCases } from "@/lib/container";
-import { withAdminAuth } from "@/lib/session";
+import { withDeploymentAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { MANAGED_NAME } from "@/shared/slug";
 import { managedMcpUnavailable } from "./_unavailable";
@@ -29,7 +29,7 @@ const bodySchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
 });
 
-export const POST = withAdminAuth(async (_user, request: Request) => {
+export const POST = withDeploymentAdminAuth(async (_user, request: Request) => {
   if (!managedMcpUseCases) {
     return managedMcpUnavailable();
   }

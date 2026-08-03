@@ -3,7 +3,7 @@ import { apiError } from "@/app/api/_lib/http";
 import { recordAudit } from "@/application/audit/auditLog";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
-import { withAdminAuth } from "@/lib/session";
+import { withDeploymentAdminAuth } from "@/lib/session";
 
 /**
  * Issue (or reissue) the app-wide A2A API key. Admin-only, like every settings
@@ -13,7 +13,7 @@ import { withAdminAuth } from "@/lib/session";
  * Reissuing invalidates the previous key immediately — inbound A2A callers must
  * be updated before the old one stops working.
  */
-export const POST = withAdminAuth(async (user) => {
+export const POST = withDeploymentAdminAuth(async (user) => {
   try {
     const key = generateSecretValue("a2aApiKey");
     const view = await settingsUseCases.update({ a2aApiKey: key }, user.email);
