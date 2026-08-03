@@ -77,9 +77,12 @@ export const s3ImageStore: ImageStore = {
    * (`{bucket}.s3[.{region}].amazonaws.com/{key}`) and path-style
    * (`s3[.{region}].amazonaws.com/{bucket}/{key}`).
    *
-   * The bucket name must match. An address under someone else's bucket is not
-   * ours to re-sign, and signing a key we do not have would produce a URL that
-   * 404s instead of an honest "this could not be loaded".
+   * The bucket name must match **exactly**. An address under someone else's
+   * bucket is not ours to re-sign, and signing a key we do not have produces a
+   * URL that 404s instead of an honest "this could not be loaded" — replacing
+   * an address that worked with one that does not. A prefix test is not that
+   * comparison: bucket names may contain dots, so `ours.archive.s3…` starts
+   * with `ours.` while belonging to a different bucket entirely.
    */
   keyFromUrl(url) {
     const bucket = config.imageBucketName;
@@ -96,8 +99,11 @@ export const s3ImageStore: ImageStore = {
       return null;
     }
     const path = decodeURIComponent(parsed.pathname).replace(/^\//, "");
-    if (parsed.hostname.startsWith(`${bucket}.`)) {
-      return path || null;
+    // Everything left of the first `.s3` label is the bucket, whatever it
+    // contains; the regex above already established the rest is S3's.
+    const hosted = /^(.+?)\.s3[.-]/.exec(parsed.hostname)?.[1];
+    if (hosted !== undefined) {
+      return hosted === bucket ? path || null : null;
     }
     const prefix = `${bucket}/`;
     return path.startsWith(prefix) ? path.slice(prefix.length) || null : null;

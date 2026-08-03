@@ -92,6 +92,19 @@ describe("s3ImageStore", () => {
       expect(s3ImageStore.keyFromUrl("https://cdn.example.com/images/a.png")).toBeNull();
       expect(s3ImageStore.keyFromUrl("not a url")).toBeNull();
     });
+
+    it("refuses a bucket whose name merely starts with ours", async () => {
+      // Bucket names may contain dots, so a prefix test claims
+      // `test-bucket.archive` as `test-bucket` and signs its key against the
+      // wrong bucket — handing the browser a 404 in place of an address that
+      // worked.
+      expect(
+        s3ImageStore.keyFromUrl("https://test-bucket.archive.s3.amazonaws.com/images/a.png"),
+      ).toBeNull();
+      expect(
+        s3ImageStore.keyFromUrl("https://test-bucket-2.s3.amazonaws.com/images/a.png"),
+      ).toBeNull();
+    });
   });
 });
 
@@ -168,6 +181,46 @@ describe("image URL resolution", () => {
     // Dropping it is right; dropping it silently is not. A transcript one
     // picture short reads as one that never had it.
     expect(warnings).toEqual(["1 image in this conversation could not be loaded and is not shown."]);
+  });
+
+  it("leaves a user turn something to say when its only image is gone", async () => {
+    // `{role: "user", content: ""}` is rejected by providers, so a turn of one
+    // picture and no text would turn a missing image into a 400 on every later
+    // message in that conversation.
+    const failing: ImageStore = {
+      keyFromUrl: () => null,
+      put: store.put,
+      signUrl: async () => {
+        throw new Error("AccessDenied");
+      },
+    };
+    const { messages } = await withSignedImages(
+      failing,
+      [{ chatId: "c1", seq: 0, role: "user", content: "", images: [{ key: "a.png" }], createdAt: "" }],
+      IMAGE_VIEW_TTL_SECONDS,
+    );
+    expect(messages[0]?.content).not.toBe("");
+    expect(messages[0]?.content).toContain("could not be loaded");
+  });
+
+  it("does not put words in an assistant turn that is meant to be textless", async () => {
+    // A turn of pure tool calls stores no content; writing text into it would
+    // change what the model is replayed as having said.
+    const { messages } = await withSignedImages(
+      undefined,
+      [
+        {
+          chatId: "c1",
+          seq: 0,
+          role: "assistant",
+          content: "",
+          images: [{ key: "a.png" }],
+          createdAt: "",
+        },
+      ],
+      IMAGE_VIEW_TTL_SECONDS,
+    );
+    expect(messages[0]?.content).toBe("");
   });
 
   it("counts every drop across the transcript in one warning", async () => {

@@ -82,6 +82,17 @@ async function resolve(
   }
 }
 
+/**
+ * What is left of a user turn whose only content was a picture that is gone.
+ *
+ * Dropping the image is right; letting the turn become empty is not. A stored
+ * turn of one image and no text replays as `{role: "user", content: ""}`, and
+ * providers reject an empty user message — so a single unsignable object stops
+ * being one missing picture and becomes a 400 on every later message in that
+ * conversation. It reads as a broken chat, not a lost image.
+ */
+const IMAGE_UNAVAILABLE = "[an image that could not be loaded]";
+
 /** Resolve every image on a message, dropping the ones that cannot be signed. */
 async function resolveMessage(
   store: ImageStore | undefined,
@@ -98,8 +109,17 @@ async function resolveMessage(
     message.images.map((image) => resolve(store, image, expiresInSeconds)),
   );
   const images = resolved.filter((image) => image !== null);
+  // Only a user turn, and only when nothing else carries it. An assistant turn
+  // is allowed to be textless — that is what a turn of pure tool calls is — and
+  // putting words in one would change what the model is replayed as having
+  // said.
+  const emptied =
+    message.role === "user" &&
+    images.length === 0 &&
+    message.content.trim() === "" &&
+    (message.documents ?? []).length === 0;
   return {
-    message: { ...message, images },
+    message: { ...message, images, ...(emptied ? { content: IMAGE_UNAVAILABLE } : {}) },
     dropped: resolved.length - images.length,
   };
 }
