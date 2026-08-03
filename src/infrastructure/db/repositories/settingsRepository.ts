@@ -5,6 +5,7 @@ import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
 
 const ENTITY_TYPE = "SETTINGS" as const;
+const TENANT_ENTITY_TYPE = "TENANTSETTINGS" as const;
 
 const FIELDS = [
   "adminEmails",
@@ -18,6 +19,7 @@ const FIELDS = [
   "githubToken",
   "a2aApiKey",
   "publicBaseUrl",
+  "unknownModelPolicy",
 ] as const;
 
 function fromItem(item: Record<string, unknown>): AppSettings {
@@ -47,6 +49,32 @@ export const settingsRepository: SettingsRepository = {
       new PutCommand({
         TableName: getTableName(),
         Item: { ...keys.settings(), entityType: ENTITY_TYPE, ...settings },
+      }),
+    );
+  },
+
+  /**
+   * One workspace's overrides. Read through `pickTenantOverrides` at the point
+   * of use rather than filtered here: what a workspace may decide is a policy,
+   * and a stored row that predates a narrowing of that list must lose the key
+   * rather than keep it.
+   */
+  async getTenant(tenant) {
+    const res = await getDocumentClient().send(
+      new GetCommand({ TableName: getTableName(), Key: keys.tenantSettings(tenant) }),
+    );
+    return res.Item ? fromItem(res.Item) : null;
+  },
+
+  async putTenant(tenant, settings) {
+    await getDocumentClient().send(
+      new PutCommand({
+        TableName: getTableName(),
+        Item: {
+          ...keys.tenantSettings(tenant),
+          entityType: TENANT_ENTITY_TYPE,
+          ...settings,
+        },
       }),
     );
   },

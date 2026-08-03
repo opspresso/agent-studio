@@ -1,7 +1,17 @@
 /**
- * Effective runtime configuration: DB-stored overrides (managed on the
- * /settings page) take precedence over environment variables. Secrets are
- * decrypted here, at the point of use only.
+ * Effective runtime configuration, resolved in one place:
+ *
+ *   workspace override  →  app override  →  environment  →  built-in default
+ *
+ * The first two are DB rows (the admin `/settings` page writes the app one, a
+ * workspace admin writes its own); secrets are decrypted here, at the point of
+ * use only.
+ *
+ * A workspace may only decide the keys in `TENANT_OVERRIDABLE_KEYS`, and the
+ * resolution reads *through* that list rather than trusting the row — so a key
+ * that was never meant to be a workspace's cannot become one by being written,
+ * and narrowing the list takes effect on the next read rather than needing a
+ * migration.
  *
  * The DB read is cached in memory and invalidated on write, but the invalidation
  * is process-local. On a horizontally-scaled deployment a change made on one
@@ -15,6 +25,8 @@
  */
 
 import type { AppSettings } from "@/domain/settings/types";
+import { pickTenantOverrides } from "@/domain/settings/types";
+import { currentTenant, DEFAULT_TENANT } from "@/shared/tenantContext";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
@@ -30,8 +42,10 @@ const DEFAULT_TTL_MS = 5_000;
 const TTL_MS = positiveIntEnv("SETTINGS_CACHE_TTL_MS", DEFAULT_TTL_MS, 1);
 
 let cache: { value: AppSettings | null; fetchedAt: number } | undefined;
+/** Per workspace, under the same TTL and the same process-local invalidation. */
+const tenantCache = new Map<string, { value: AppSettings | null; fetchedAt: number }>();
 
-async function loadSettings(): Promise<AppSettings | null> {
+async function loadAppSettings(): Promise<AppSettings | null> {
   const now = Date.now();
   if (!cache || now - cache.fetchedAt > TTL_MS) {
     cache = { value: await settingsRepository.get(), fetchedAt: now };
@@ -39,8 +53,41 @@ async function loadSettings(): Promise<AppSettings | null> {
   return cache.value;
 }
 
+async function loadTenantSettings(tenant: string): Promise<AppSettings | null> {
+  const now = Date.now();
+  const cached = tenantCache.get(tenant);
+  if (!cached || now - cached.fetchedAt > TTL_MS) {
+    const value = await settingsRepository.getTenant(tenant);
+    tenantCache.set(tenant, { value, fetchedAt: now });
+    return value;
+  }
+  return cached.value;
+}
+
+/**
+ * The two override layers, flattened: a workspace's decisions over the
+ * deployment's, and only for the keys a workspace may decide.
+ *
+ * Every getter below reads this rather than either row, which is what keeps
+ * the order in one place — a getter that reached for the app row directly
+ * would be a key a workspace silently cannot decide.
+ */
+async function loadSettings(): Promise<AppSettings | null> {
+  const app = await loadAppSettings();
+  const tenant = currentTenant();
+  if (tenant === DEFAULT_TENANT) {
+    return app;
+  }
+  const workspace = await loadTenantSettings(tenant);
+  if (!workspace) {
+    return app;
+  }
+  return { ...(app ?? { updatedAt: workspace.updatedAt }), ...pickTenantOverrides(workspace) };
+}
+
 export function invalidateSettingsCache(): void {
   cache = undefined;
+  tenantCache.clear();
 }
 
 export async function getAdminEmails(): Promise<string[]> {

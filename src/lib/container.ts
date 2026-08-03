@@ -53,6 +53,7 @@ import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
+import { createTenantSettingsUseCases } from "@/application/settings/tenantSettingsUseCases";
 import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
 import { syncToolsFromSnapshot } from "@/application/mcp/syncTools";
 import type { SyncSelection } from "@/domain/sync/types";
@@ -211,6 +212,9 @@ export const triggerUseCases = createTriggerUseCases({
   cipher: secretCipher,
 });
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
+
+/** A workspace's own overrides; the resolution order lives in runtime-settings. */
+export const tenantSettingsUseCases = createTenantSettingsUseCases(settingsRepository, secretCipher);
 
 /**
  * Pull the skills repo and upsert every SKILL.md. Assembled here so the route

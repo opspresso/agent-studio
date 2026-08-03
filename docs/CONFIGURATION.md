@@ -10,11 +10,23 @@ values that are credentials.
 
 ## Resolution order
 
-A setting can come from three places, and the first one that has it wins:
+A setting can come from four places, and the first one that has it wins:
 
 ```
-DynamoDB SETTINGS#app override   →   environment variable   →   built-in default
+workspace override   →   DynamoDB SETTINGS#app override   →   environment variable   →   default
 ```
+
+The workspace layer applies only inside a workspace and only to the keys a workspace may
+decide (`TENANT_OVERRIDABLE_KEYS` in `src/domain/settings/types.ts`): its LLM channel and
+credentials, its skill and tool repositories, and `UNKNOWN_MODEL_POLICY`. Everything else is
+the deployment's — infrastructure the process is bound to, the sign-in domain gate, the
+inbound A2A key that gates an endpoint rather than a tenant, and `ADMIN_EMAILS`, which inside
+a workspace is answered by membership instead. The resolution reads *through* that list rather
+than trusting the stored row, so a key that was never meant to be a workspace's cannot become
+one by being written, and narrowing the list takes effect on the next read.
+
+Fallback is key by key, not row by row: a workspace deciding its LLM channel keeps the
+deployment's answer for its skills repository.
 
 The override layer is the admin-only `/settings` page. Only the keys marked **runtime** in
 the tables below can be overridden there; everything else is env-only, because it is needed
@@ -22,9 +34,9 @@ before the settings row can be read (`AES_ENCRYPTION_KEY` decrypts that row) or 
 is infrastructure the process is already bound to (`STAGE`, DynamoDB, Better Auth).
 
 Reads go through `src/lib/runtime-settings.ts`, never `process.env` directly at dispatch —
-otherwise an override would apply on the settings page and nowhere else. Values are cached
-in memory for `SETTINGS_CACHE_TTL_MS` and the cache is invalidated on write, but **the
-invalidation is process-local**: on a multi-instance deployment the TTL is how long a
+otherwise an override would apply on the settings page and nowhere else. Both override layers
+are cached in memory for `SETTINGS_CACHE_TTL_MS` (the workspace one per workspace) and the
+cache is invalidated on write, but **the invalidation is process-local**: on a multi-instance deployment the TTL is how long a
 demoted admin or a rotated A2A key keeps working on the instances that did not serve the
 write. That is why the default is 5 seconds rather than a minute.
 

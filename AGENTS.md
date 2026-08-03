@@ -146,6 +146,7 @@ same rule applies to:
 |---|---|
 | Every DynamoDB key string, and its tenant scope | `src/infrastructure/db/keys.ts` |
 | Which tenant the current work belongs to | `src/shared/tenantContext.ts` |
+| Which settings a workspace may decide | `TENANT_OVERRIDABLE_KEYS` in `src/domain/settings/types.ts` |
 | Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
 | Which pages are public | `src/proxy.ts` |
 | Whether a chunk is top-level | `isTopLevelChunk()` in `src/domain/llm/types.ts` |
@@ -181,7 +182,7 @@ One line each — the linked section is the authority.
   [SECURITY.md](docs/SECURITY.md#authorization-model)
 - **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, three revealable via POST.
   → [SECURITY.md](docs/SECURITY.md#secrets-at-rest)
-- **Runtime settings** — DB override → env fallback, cached process-locally. Never read those
+- **Runtime settings** — workspace override → app override → env → default, cached process-locally. Never read those
   env vars directly at dispatch; go through `src/lib/runtime-settings.ts`. →
   [CONFIGURATION.md](docs/CONFIGURATION.md#resolution-order)
 - **MCP** — one session owner, discovery cached per `url + headers`, managed servers on

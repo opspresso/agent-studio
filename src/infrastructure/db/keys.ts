@@ -49,6 +49,16 @@ export const keys = {
 
   settings: () => ({ PK: "SETTINGS#app", SK: "META" }),
 
+  /**
+   * One workspace's settings. A distinct name from the app row rather than a
+   * scoped copy of it: the default tenant's prefix is empty, so
+   * `SETTINGS#app` under a scope would *be* the app row.
+   */
+  tenantSettings: (tenant: string) => ({
+    PK: `${scope(tenant)}SETTINGS#workspace`,
+    SK: "META",
+  }),
+
   /** A tenant. Outside every tenant's scope, because it is what names them. */
   organization: (id: string) => ({ PK: `ORG#${id}`, SK: "META" }),
   organizationPartition: () => "TYPE#ORG",

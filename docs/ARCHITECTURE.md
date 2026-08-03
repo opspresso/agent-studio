@@ -154,7 +154,9 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | Trace deletion reference | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | Audit record | `AUDIT#{yyyy-MM-dd}` | `EVENT#{createdAt}#{id}` | — | — |
 | App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
+| Workspace settings (its own overrides) | `SETTINGS#workspace` | `META` | — | — |
 | Organization (tenant) | `ORG#{id}` | `META` | `TYPE#ORG` | `{id}` |
+| Membership (user ↔ tenant) | `ORG#{id}` | `MEMBER#{email}` | `MEMBEROF#{email}` | `{id}` |
 
 **Every key above is tenant-scoped.** A tenant's rows carry a `T#{id}#` prefix on the
 partition key *and* on the GSI partitions — a scheme that scoped only the primary key would

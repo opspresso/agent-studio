@@ -52,8 +52,15 @@ function fakeRepo(initial: AppSettings | null = null): {
   current: () => AppSettings | null;
 } {
   let stored = initial;
+  let tenantStored: AppSettings | null = null;
   return {
     repo: {
+      async getTenant() {
+        return tenantStored;
+      },
+      async putTenant(_tenant: string, next: AppSettings) {
+        tenantStored = next;
+      },
       async get() {
         return stored;
       },

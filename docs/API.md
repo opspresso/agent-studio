@@ -121,6 +121,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
 | `/api/settings/a2a-key/reveal` | `POST` | admin |
+| `/api/settings/workspace` | `GET` `PUT` | admin |
 | `/api/audit` | `GET` | admin |
 
 ### Unauthenticated / machine surfaces
@@ -267,6 +268,23 @@ PUT /api/settings → 200 {…same shape…} | 400
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `toolsRepo`, `toolsRepoBranch`,
   `githubToken`, `a2aApiKey`, `publicBaseUrl`, `unknownModelPolicy`.
+
+```
+GET /api/settings/workspace → 200 { tenant, fields: { <key>: { value, source, secret } }, updatedAt? }
+PUT /api/settings/workspace → 200 {…same shape…} | 400
+```
+
+The caller's **own** workspace — the tenant comes from the session, never from the body, so a
+workspace admin is an admin of theirs and not of one they can name. Only the keys a workspace
+may decide are accepted (`llmBaseUrl`, `llmApiKey`, `llmProviders`, `skillsRepo`,
+`skillsRepoBranch`, `toolsRepo`, `toolsRepoBranch`, `githubToken`, `unknownModelPolicy`);
+anything else is a `400` naming it rather than a silent drop, because an operator who tried to
+set one needs to know it will never take effect. `source` is `workspace` when this workspace
+decided the key and `inherited` when it falls through to the deployment; an empty value clears
+an override, which is the only way to undo one. Secrets follow the same lifecycle as
+everywhere else — masked on read, and a masked value on write keeps what is stored. The
+default workspace has no row of its own: it *is* the deployment, and a second row would let
+the two disagree.
 
 ```
 POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
