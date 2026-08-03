@@ -1119,10 +1119,39 @@ signatures.
 
 ### Traces
 
+```ts
+Trace     { traceId, projectName, versionName, projectType, actor?, ancestry?,
+            status: 'completed' | 'turn-limit' | 'failed' | 'cancelled',
+            spans: TraceSpan[], spansDropped?, warnings?,
+            startedAt, endedAt, durationMs, error?, createdAt }
+TraceSpan { spanId, kind: 'model' | 'tool' | 'subagent', name, author?,
+            startedAt, endedAt, durationMs, status: 'ok' | 'error', input?, output? }
+```
+
 Agent runs always persist model/tool/subagent spans; non-agent and image predict runs are
 sampled. Spans keep only bounded metadata — character counts, tokens, cost, duration, subagent
-trace ids. **Raw prompts and tool results are not stored.** Details in
-[OPERATIONS.md](OPERATIONS.md#tracing).
+trace ids. **Raw prompts and tool results are not stored.** Retention, sampling and who may
+read a trace are in [OPERATIONS.md](OPERATIONS.md#tracing).
+
+**A trace is assembled from the same chunks the user sees.** `TraceRecorder`
+(`src/application/trace/recorder.ts`) observes the `EngineChunk` stream instead of being
+called from instrumentation points scattered through the loop, so a new tool or builtin is
+traced without anything having to remember it. It reads the ending through `runTermination`,
+which is what keeps a child's turn limit from marking its parent's trace.
+
+**`turn-limit` is a status of its own** because a run the turn guard stopped never produced a
+final answer. Recording it as `completed` made the one run worth investigating read as the
+most ordinary kind there is.
+
+**One transfer is one span, whatever depth it reached.** A subagent entry is keyed by the
+direct child *and* its trace id, so a deeper hop rolls into the transfer that started it while
+two transfers to the same agent stay two spans. The chain is then readable in both directions:
+`ancestry` upwards to the top-level run, a span's subagent trace id downwards into the child's
+own trace.
+
+**Every accumulator is bounded**, because a trace is a single DynamoDB item: 100 spans, with
+the rest counted in `spansDropped` rather than vanishing; 20 warnings; and 1,000 characters of
+any one error or warning string.
 
 ## UI
 
