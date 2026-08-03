@@ -27,10 +27,11 @@ function wireFinishReason(termination: RunTerminationReason | undefined): "stop"
       // beats minting a `stop` for a run that did not stop.
       throw new Error(`termination "${termination}" has no finish_reason frame`);
     case undefined:
-      // A collected run whose stream announced nothing (only synthetic test
-      // streams do; the engine always announces). The stream path refuses
-      // instead — it watched the whole stream, so absence there is a defect.
-      return "stop";
+      // A run that announced nothing. The engine always announces, so absence
+      // is a producer defect — and one that has shipped (an image dispatch
+      // once ended its stream bare). The stream path already refuses; minting
+      // a `stop` here kept the same defect invisible on the collected surface.
+      throw new Error("run ended without announcing a termination reason");
   }
 }
 

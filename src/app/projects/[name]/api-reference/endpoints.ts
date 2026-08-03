@@ -251,11 +251,18 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           { name: "result", type: "string", description: "Assistant text output." },
           { name: "model", type: "string", description: "Model that served the call (provider/model)." },
           { name: "usage", type: "object", description: "Token counts and cost.", children: USAGE_FIELDS },
+          {
+            name: "finishReason",
+            type: "string",
+            description:
+              'Why the run ended: "completed" when the model finished on its own; "turn-limit" / "output-limit" mark a partial answer stopped at a limit.',
+          },
         ],
         responseExample: pretty({
           result: "…assistant text…",
           model: "openai/gpt-5-mini",
           usage: { inputTokens: 12, outputTokens: 34, costUsd: 0.0001 },
+          finishReason: "completed",
         }),
         errorCodes: [400, 401, 404],
         codeExamples: [

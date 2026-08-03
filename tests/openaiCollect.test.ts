@@ -53,7 +53,10 @@ describe("collectRun images", () => {
   });
 
   it("omits the images field when a run produced none", async () => {
-    const result = await collectRun(stream([{ delta: { content: "text only" } }]), "m");
+    const result = await collectRun(
+      stream([{ delta: { content: "text only" } }, { done: true }]),
+      "m",
+    );
     expect(result.images).toEqual([]);
     expect(toChatCompletion(result)).not.toHaveProperty("images");
   });
@@ -237,5 +240,14 @@ describe("collected termination", () => {
     expect((completion.choices as Array<{ finish_reason: unknown }>)[0]?.finish_reason).toBe(
       "stop",
     );
+  });
+
+  it("fails a collected run whose stream announced nothing", async () => {
+    // The stream path already refuses this; minting a `stop` here kept the
+    // same producer defect invisible on the collected surface — which is how
+    // an image dispatch that ended its stream bare once shipped unnoticed.
+    const result = await collectRun(stream([{ delta: { content: "partial" } }]), "m");
+    expect(result.termination).toBeUndefined();
+    expect(() => toChatCompletion(result)).toThrow("without announcing a termination");
   });
 });

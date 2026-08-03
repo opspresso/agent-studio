@@ -345,7 +345,7 @@ describe("executeDelivery", () => {
   it("does not record a subagent's warning as the run's", async () => {
     const f = fixture({
       chunks: [
-        { author: "child", warning: "Transferred agent 'child' stopped at its turn limit (2 turns) before finishing; the main run continues." },
+        { author: "child", warning: "Subagent 'child' stopped at its turn limit (2 turns) before finishing; the main run continues." },
         { delta: { content: "answer" } },
         { done: true },
       ],
