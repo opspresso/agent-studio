@@ -62,6 +62,12 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
     // then the auth URL, which is set on every deployment that has OAuth.
     env: () => env.PUBLIC_BASE_URL || env.BETTER_AUTH_URL || undefined,
   },
+  {
+    key: "unknownModelPolicy",
+    secret: false,
+    env: () => env.UNKNOWN_MODEL_POLICY || undefined,
+    defaultValue: "allow",
+  },
 ];
 
 export interface SettingFieldView {

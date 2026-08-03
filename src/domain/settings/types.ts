@@ -31,6 +31,12 @@ export interface AppSettings {
   /** Secret. */
   a2aApiKey?: string;
   publicBaseUrl?: string;
+  /**
+   * `allow` (the default) or `refuse` — whether a run may execute a model the
+   * registry cannot price. Stored as the raw string like every other field;
+   * `toUnknownModelPolicy` is what reads it.
+   */
+  unknownModelPolicy?: string;
   updatedAt: string;
 }
 

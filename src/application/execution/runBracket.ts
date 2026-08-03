@@ -13,7 +13,10 @@
  * executor, never through `runProject`.
  *
  * Order matters at every step. The guards run *before* the metric opens, so a
- * refused run is never counted as one that ran. Concurrency is taken after cost:
+ * refused run is never counted as one that ran. The model policy runs before
+ * both, being the one refusal that costs nothing to decide and says the version
+ * is misconfigured rather than that the platform is busy. Concurrency is taken
+ * after cost:
  * a project that is over budget should be told so rather than made to queue for
  * a slot it will be refused on anyway. `close()` runs *after* the caller has
  * flushed its usage, so the settle step sees the spend of the run it is
@@ -22,13 +25,24 @@
  */
 
 import type { RunActor } from "@/domain/execution/actor";
-import type { Project } from "@/domain/project/types";
+import type { Project, Version } from "@/domain/project/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
 import { acquireRunSlot, type ConcurrencyGuardDeps } from "./concurrencyGuard";
+import { assertModelsPriceable, type UnknownModelPolicy } from "./modelPolicy";
 
-export type RunBracketDeps = CostGuardDeps & ConcurrencyGuardDeps;
+export type RunBracketDeps = CostGuardDeps &
+  ConcurrencyGuardDeps & {
+    /**
+     * Whether an unregistered model may run. Injected rather than read, like
+     * every other runtime setting an application module needs — the resolution
+     * order lives in `src/lib/runtime-settings.ts`, which this layer may not
+     * import. Absent means `allow`, so a deps bag assembled before this existed
+     * behaves exactly as it did.
+     */
+    unknownModelPolicy?: () => Promise<UnknownModelPolicy>;
+  };
 
 export interface RunBracket {
   /**
@@ -46,14 +60,20 @@ export interface RunBracket {
 /**
  * Admit a top-level run, or refuse it.
  *
- * Throws `CostLimitExceededError` when the project is over its daily block
- * threshold, or `ConcurrencyLimitError` when the caller already has every slot
- * in flight. Both are 429s carrying `Retry-After`, and nothing has been
- * counted or recorded when either is thrown.
+ * Throws `ValidationError` when the version names a model this deployment
+ * refuses to price, `CostLimitExceededError` when the project is over its daily
+ * block threshold, or `ConcurrencyLimitError` when the caller already has every
+ * slot in flight. The last two are 429s carrying `Retry-After`; nothing has been
+ * counted or recorded when any of them is thrown.
+ *
+ * The version is a required argument rather than an optional one on purpose: a
+ * fifth entry point that has to supply it cannot quietly opt out of the policies
+ * that read it.
  */
 export async function openRun(
   deps: RunBracketDeps,
   project: Project,
+  version: Version,
   actor?: RunActor,
 ): Promise<RunBracket> {
   // Before the first `await`, and therefore before this function leaves the
@@ -65,6 +85,16 @@ export async function openRun(
   // The cost is that a refused run also mints an id. That is the better trade:
   // the refusal's own log line is correlated too.
   const context = enterRunContext();
+  // First, because it is the only refusal here that says the *configuration* is
+  // wrong rather than that the platform is busy. Costing nothing to check, it
+  // should not be reached by way of a queue for a slot the run would be refused
+  // on regardless.
+  if (deps.unknownModelPolicy) {
+    assertModelsPriceable(await deps.unknownModelPolicy(), {
+      model: version.model,
+      ...(version.fallbackModel ? { fallbackModel: version.fallbackModel } : {}),
+    });
+  }
   await assertWithinCostLimit(deps, project);
   const slot = await acquireRunSlot(deps, actor);
   const startedAt = Date.now();

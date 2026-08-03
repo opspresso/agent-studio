@@ -11,7 +11,7 @@ import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
-import type { Project } from "@/domain/project/types";
+import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
 const LIMITS: ConcurrencyLimits = { perActor: 2, a2a: 5 };
@@ -24,6 +24,20 @@ const project: Project = {
   ownerEmail: "owner@example.com",
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
+};
+
+/** Minimal version; the bracket reads only its model ids. */
+const version: Version = {
+  projectName: "p",
+  versionName: "v1",
+  systemPrompt: "",
+  userPromptTemplate: "",
+  model: "openai/gpt-5-mini",
+  parameters: { piiFiltering: false },
+  mcpList: [],
+  skillList: [],
+  subagentList: [],
+  createdAt: "2026-01-01T00:00:00Z",
 };
 
 const usage: UsageRepository = {
@@ -202,9 +216,9 @@ describe("openRun with a concurrency limit", () => {
   it("refuses past the limit without counting the run", async () => {
     resetRunMetrics();
     const d = { usage, ...deps() };
-    const first = await openRun(d, project, user);
-    const second = await openRun(d, project, user);
-    await expect(openRun(d, project, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    const first = await openRun(d, project, version, user);
+    const second = await openRun(d, project, version, user);
+    await expect(openRun(d, project, version, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 2, runsStarted: 2 });
     await first.close();
     await second.close();
@@ -212,19 +226,19 @@ describe("openRun with a concurrency limit", () => {
 
   it("releases the slot when the run closes", async () => {
     const d = { usage, ...deps() };
-    const first = await openRun(d, project, user);
-    await openRun(d, project, user);
+    const first = await openRun(d, project, version, user);
+    await openRun(d, project, version, user);
     await first.close();
-    await expect(openRun(d, project, user)).resolves.toBeDefined();
+    await expect(openRun(d, project, version, user)).resolves.toBeDefined();
   });
 
   it("releases a slot only once, however the generator unwinds", async () => {
     const slots = memorySlots();
     const d = { usage, runSlots: slots.repo, limits: LIMITS };
-    const bracket = await openRun(d, project, user);
+    const bracket = await openRun(d, project, version, user);
     await bracket.close();
     // A second close must not free a slot a later run has since taken.
-    const later = await openRun(d, project, user);
+    const later = await openRun(d, project, version, user);
     await bracket.close();
     expect(slots.held.get("user:a@example.com")?.size).toBe(1);
     await later.close();

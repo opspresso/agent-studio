@@ -330,6 +330,17 @@ refused run is never counted, traced, or recorded. `close()` runs **after** the 
 flushed its usage — an agent run buffers usage until the end, so a settle before the flush
 would always read a total that excludes the run being settled.
 
+One policy runs ahead of both guards: **whether the version's models can be priced at all**
+(`modelPolicy.ts`). An id the registry does not carry still dispatches and is booked at $0, so
+a deployment whose usage rows become an invoice can set `UNKNOWN_MODEL_POLICY=refuse` and have
+the run turned away before anything is spent — primary and fallback alike, since a fallback
+carries the whole run whenever the primary is rate-limited. It is first because it is the one
+refusal that costs nothing to decide and says the *configuration* is wrong rather than that
+the platform is busy; a misconfigured version should not first queue for a slot. Default
+`allow` is byte-identical to the behaviour every deployment has had, and the policy is
+injected into the bracket rather than read there, because `application` may not reach
+`src/lib/runtime-settings.ts`.
+
 The two guards fail in opposite directions, on purpose:
 
 - The **cost guard** protects money, so a storage blip must not stop the platform: it fails

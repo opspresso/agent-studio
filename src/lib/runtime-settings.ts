@@ -15,6 +15,10 @@
  */
 
 import type { AppSettings } from "@/domain/settings/types";
+import {
+  toUnknownModelPolicy,
+  type UnknownModelPolicy,
+} from "@/application/execution/modelPolicy";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { parseProviderConfigs } from "@/infrastructure/llm/providers";
 import type { ProviderChannelConfig } from "@/infrastructure/llm/providers";
@@ -135,4 +139,14 @@ export async function getA2aApiKey(): Promise<string | undefined> {
 
 export async function getPublicBaseUrl(): Promise<string | undefined> {
   return (await loadSettings())?.publicBaseUrl ?? config.publicBaseUrl;
+}
+
+/**
+ * Whether a run may execute a model the registry cannot price. Injected into
+ * the run bracket rather than read there — `application` may not import this
+ * module.
+ */
+export async function getUnknownModelPolicy(): Promise<UnknownModelPolicy> {
+  const stored = (await loadSettings())?.unknownModelPolicy;
+  return toUnknownModelPolicy(stored ?? process.env.UNKNOWN_MODEL_POLICY);
 }

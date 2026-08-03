@@ -28,6 +28,10 @@ const updateSchema = z.object({
   githubToken: z.string().max(4000).optional(),
   a2aApiKey: z.string().max(4000).optional(),
   publicBaseUrl: z.string().max(4000).optional(),
+  // An enum rather than a bounded string: the two values are the whole domain,
+  // and a typo silently stored as an override would read back as `allow` on a
+  // deployment that asked to refuse.
+  unknownModelPolicy: z.enum(["allow", "refuse"]).optional(),
 });
 
 export const GET = withAdminAuth(async () => {

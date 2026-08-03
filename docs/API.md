@@ -259,7 +259,8 @@ PUT /api/settings → 200 {…same shape…} | 400
 
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `toolsRepo`, `toolsRepoBranch`,
-  `githubToken`, `a2aApiKey`, `publicBaseUrl`.
+  `githubToken`, `a2aApiKey`, `publicBaseUrl`, `unknownModelPolicy` (`allow` | `refuse`, the
+  only key validated as an enum rather than a bounded string).
 
 ```
 POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
