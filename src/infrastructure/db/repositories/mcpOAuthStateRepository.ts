@@ -1,6 +1,7 @@
 import { DeleteCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { expiresAtFromNow, isExpired } from "../ttl";
 import type { McpOAuthState, McpOAuthStateRepository } from "@/domain/mcp/connection";
 
@@ -12,7 +13,7 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
       new PutCommand({
         TableName: getTableName(),
         Item: {
-          ...keys.mcpOAuthState(state.state),
+          ...keys.mcpOAuthState(currentTenant(), state.state),
           entityType: ENTITY_TYPE,
           ...state,
           // TTL attribute shared with the other short-lived rows in this table.
@@ -34,7 +35,7 @@ export const mcpOAuthStateRepository: McpOAuthStateRepository = {
     const result = await getDocumentClient().send(
       new DeleteCommand({
         TableName: getTableName(),
-        Key: keys.mcpOAuthState(state),
+        Key: keys.mcpOAuthState(currentTenant(), state),
         ReturnValues: "ALL_OLD",
       }),
     );

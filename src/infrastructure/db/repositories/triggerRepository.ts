@@ -11,6 +11,7 @@ import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/li
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { expiresAtFromNow, expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { TriggerRepository } from "@/domain/trigger/repository";
 import type { ScheduleTrigger, Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
@@ -56,12 +57,12 @@ function toTrigger(item: Record<string, unknown>): Trigger {
 
 function triggerItem(trigger: Trigger): Record<string, unknown> {
   return {
-    ...keys.trigger(trigger.projectName, trigger.triggerId),
+    ...keys.trigger(currentTenant(), trigger.projectName, trigger.triggerId),
     ...trigger,
     entityType: TRIGGER_ENTITY,
     // Schedule rows alone join the cross-project index the scan tick reads.
     ...(trigger.kind === "schedule"
-      ? keys.scheduleIndex(trigger.projectName, trigger.triggerId)
+      ? keys.scheduleIndex(currentTenant(), trigger.projectName, trigger.triggerId)
       : {}),
   };
 }
@@ -85,7 +86,7 @@ function toRun(item: Record<string, unknown>): TriggerRun {
 
 function runItem(run: TriggerRun): Record<string, unknown> {
   return {
-    ...keys.triggerRun(run.projectName, run.triggerId, run.startedAt, run.runId),
+    ...keys.triggerRun(currentTenant(), run.projectName, run.triggerId, run.startedAt, run.runId),
     ...run,
     entityType: TRIGGER_RUN_ENTITY,
     expiresAt: expiresAtSeconds(run.startedAt, RETENTION.triggerRunDays),
@@ -95,7 +96,7 @@ function runItem(run: TriggerRun): Record<string, unknown> {
 export const triggerRepository: TriggerRepository = {
   async get(projectName, triggerId) {
     const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.trigger(projectName, triggerId) }),
+      new GetCommand({ TableName: getTableName(), Key: keys.trigger(currentTenant(), projectName, triggerId) }),
     );
     return result.Item ? toTrigger(result.Item) : null;
   },
@@ -105,7 +106,7 @@ export const triggerRepository: TriggerRepository = {
       TableName: getTableName(),
       KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
       ExpressionAttributeValues: {
-        ":pk": keys.projectPartition(projectName),
+        ":pk": keys.projectPartition(currentTenant(), projectName),
         ":prefix": keys.triggerPrefix(),
       },
     });
@@ -117,7 +118,7 @@ export const triggerRepository: TriggerRepository = {
       TableName: getTableName(),
       IndexName: "GSI1",
       KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.typePartition("SCHEDULE") },
+      ExpressionAttributeValues: { ":pk": keys.typePartition(currentTenant(), "SCHEDULE") },
     });
     return items.map(toTrigger).filter((t): t is ScheduleTrigger => t.kind === "schedule");
   },
@@ -140,7 +141,7 @@ export const triggerRepository: TriggerRepository = {
 
   async delete(projectName, triggerId) {
     await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.trigger(projectName, triggerId) }),
+      new DeleteCommand({ TableName: getTableName(), Key: keys.trigger(currentTenant(), projectName, triggerId) }),
     );
   },
 
@@ -150,7 +151,7 @@ export const triggerRepository: TriggerRepository = {
         new PutCommand({
           TableName: getTableName(),
           Item: {
-            ...keys.triggerIdempotency(projectName, triggerId, key),
+            ...keys.triggerIdempotency(currentTenant(), projectName, triggerId, key),
             entityType: "TriggerIdempotency",
             expiresAt: expiresAtFromNow(IDEMPOTENCY_TTL_SECONDS),
           },
@@ -194,7 +195,7 @@ export const triggerRepository: TriggerRepository = {
         TableName: getTableName(),
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
-          ":pk": keys.projectPartition(projectName),
+          ":pk": keys.projectPartition(currentTenant(), projectName),
           ":prefix": keys.triggerRunPrefix(triggerId),
         },
         ScanIndexForward: false,

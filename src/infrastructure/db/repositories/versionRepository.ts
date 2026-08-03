@@ -1,6 +1,7 @@
 import { GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import type { VersionRepository } from "@/domain/project/repository";
 import type { McpBinding, Version } from "@/domain/project/types";
 
@@ -14,7 +15,7 @@ interface VersionItem extends Version {
 }
 
 function toItem(version: Version): VersionItem {
-  const key = keys.version(version.projectName, version.versionName);
+  const key = keys.version(currentTenant(), version.projectName, version.versionName);
   return {
     ...version,
     PK: key.PK,
@@ -89,7 +90,7 @@ async function resolvePublished(projectName: string): Promise<string | null> {
   const result = await getDocumentClient().send(
     new GetCommand({
       TableName: getTableName(),
-      Key: keys.project(projectName),
+      Key: keys.project(currentTenant(), projectName),
       ProjectionExpression: "publishedVersion",
     }),
   );
@@ -109,7 +110,7 @@ export const versionRepository: VersionRepository = {
     }
 
     const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.version(projectName, resolved) }),
+      new GetCommand({ TableName: getTableName(), Key: keys.version(currentTenant(), projectName, resolved) }),
     );
     return result.Item ? fromItem(result.Item) : null;
   },
@@ -126,7 +127,7 @@ export const versionRepository: VersionRepository = {
           TableName: table,
           KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
           ExpressionAttributeValues: {
-            ":pk": keys.projectPartition(projectName),
+            ":pk": keys.projectPartition(currentTenant(), projectName),
             ":prefix": keys.versionPrefix(),
           },
           ExclusiveStartKey: lastKey,
@@ -148,7 +149,7 @@ export const versionRepository: VersionRepository = {
           {
             ConditionCheck: {
               TableName: getTableName(),
-              Key: keys.project(version.projectName),
+              Key: keys.project(currentTenant(), version.projectName),
               ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
             },
           },
@@ -171,7 +172,7 @@ export const versionRepository: VersionRepository = {
           {
             ConditionCheck: {
               TableName: getTableName(),
-              Key: keys.project(version.projectName),
+              Key: keys.project(currentTenant(), version.projectName),
               ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
             },
           },
@@ -198,7 +199,7 @@ export const versionRepository: VersionRepository = {
           {
             ConditionCheck: {
               TableName: getTableName(),
-              Key: keys.project(projectName),
+              Key: keys.project(currentTenant(), projectName),
               ConditionExpression:
                 "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND updatedAt = :expectedUpdatedAt AND (attribute_not_exists(publishedVersion) OR publishedVersion <> :versionName)",
               ExpressionAttributeValues: {
@@ -210,7 +211,7 @@ export const versionRepository: VersionRepository = {
           {
             Delete: {
               TableName: getTableName(),
-              Key: keys.version(projectName, versionName),
+              Key: keys.version(currentTenant(), projectName, versionName),
               ConditionExpression: "attribute_exists(PK)",
             },
           },

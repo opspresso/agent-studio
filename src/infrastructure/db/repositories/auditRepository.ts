@@ -11,6 +11,7 @@ import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { notExpired, RETENTION, expiresAtSeconds } from "@/infrastructure/db/ttl";
 import { utcDay } from "@/shared/date";
 import type { AuditRepository } from "@/domain/audit/repository";
@@ -36,7 +37,7 @@ export const auditRepository: AuditRepository = {
       new PutCommand({
         TableName: getTableName(),
         Item: {
-          ...keys.auditEvent(utcDay(new Date(event.createdAt)), event.createdAt, event.id),
+          ...keys.auditEvent(currentTenant(), utcDay(new Date(event.createdAt)), event.createdAt, event.id),
           ...event,
           entityType: ENTITY,
           expiresAt: expiresAtSeconds(event.createdAt, RETENTION.auditDays),
@@ -49,7 +50,7 @@ export const auditRepository: AuditRepository = {
     const items = await queryAll({
       TableName: getTableName(),
       KeyConditionExpression: "PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.auditDayPartition(day) },
+      ExpressionAttributeValues: { ":pk": keys.auditDayPartition(currentTenant(), day) },
       // Newest first within the day; the sort key leads with `createdAt`.
       ScanIndexForward: false,
     });

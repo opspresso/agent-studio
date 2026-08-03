@@ -10,6 +10,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type {
@@ -42,14 +43,14 @@ function fromChatItem(item: DynamoItem): Chat {
 function chatUpdate(chat: Chat, condition: string): UpdateCommand {
   return new UpdateCommand({
     TableName: getTableName(),
-    Key: keys.chat(chat.chatId),
+    Key: keys.chat(currentTenant(), chat.chatId),
     UpdateExpression:
       "SET GSI1PK = :gsi1pk, GSI1SK = :gsi1sk, entityType = :entityType, " +
       "chatId = :chatId, title = :title, ownerEmail = :ownerEmail, " +
       "projectName = :projectName, createdAt = :createdAt, updatedAt = :updatedAt, " +
       "expiresAt = :expiresAt, nextSeq = if_not_exists(nextSeq, :zero)",
     ExpressionAttributeValues: {
-      ":gsi1pk": keys.chatOwnerPartition(chat.ownerEmail),
+      ":gsi1pk": keys.chatOwnerPartition(currentTenant(), chat.ownerEmail),
       ":gsi1sk": chat.updatedAt,
       ":entityType": CHAT_ENTITY,
       ":chatId": chat.chatId,
@@ -68,7 +69,7 @@ function chatUpdate(chat: Chat, condition: string): UpdateCommand {
 }
 
 function toMessageItem(message: ChatMessage) {
-  const { PK, SK } = keys.chatMessage(message.chatId, message.seq);
+  const { PK, SK } = keys.chatMessage(currentTenant(), message.chatId, message.seq);
   return {
     PK,
     SK,
@@ -120,7 +121,7 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
 export const chatRepository: ChatRepository = {
   async get(chatId) {
     const res = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.chat(chatId) }),
+      new GetCommand({ TableName: getTableName(), Key: keys.chat(currentTenant(), chatId) }),
     );
     if (!res.Item || isExpired(res.Item.expiresAt, Date.now())) {
       return null;
@@ -139,7 +140,7 @@ export const chatRepository: ChatRepository = {
           TableName: table,
           IndexName: "GSI1",
           KeyConditionExpression: "GSI1PK = :pk",
-          ExpressionAttributeValues: { ":pk": keys.chatOwnerPartition(ownerEmail) },
+          ExpressionAttributeValues: { ":pk": keys.chatOwnerPartition(currentTenant(), ownerEmail) },
           ScanIndexForward: false,
           ExclusiveStartKey: lastKey,
         }),
@@ -168,7 +169,7 @@ export const chatRepository: ChatRepository = {
     await client.send(
       new UpdateCommand({
         TableName: table,
-        Key: keys.chat(chatId),
+        Key: keys.chat(currentTenant(), chatId),
         UpdateExpression: "SET deletingAt = if_not_exists(deletingAt, :now)",
         ConditionExpression: "attribute_exists(PK)",
         ExpressionAttributeValues: { ":now": new Date().toISOString() },
@@ -181,7 +182,7 @@ export const chatRepository: ChatRepository = {
         new QueryCommand({
           TableName: table,
           KeyConditionExpression: "PK = :pk",
-          ExpressionAttributeValues: { ":pk": keys.chat(chatId).PK },
+          ExpressionAttributeValues: { ":pk": keys.chat(currentTenant(), chatId).PK },
           ProjectionExpression: "PK, SK",
           ExclusiveStartKey: lastKey,
           ConsistentRead: true,
@@ -212,7 +213,7 @@ export const chatRepository: ChatRepository = {
     await client.send(
       new DeleteCommand({
         TableName: table,
-        Key: keys.chat(chatId),
+        Key: keys.chat(currentTenant(), chatId),
         ConditionExpression: "attribute_exists(PK) AND attribute_exists(deletingAt)",
       }),
     );
@@ -229,7 +230,7 @@ export const chatRepository: ChatRepository = {
           TableName: table,
           KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
           ExpressionAttributeValues: {
-            ":pk": keys.chat(chatId).PK,
+            ":pk": keys.chat(currentTenant(), chatId).PK,
             ":sk": keys.chatMessagePrefix(),
           },
           ScanIndexForward: true,
@@ -255,7 +256,7 @@ export const chatRepository: ChatRepository = {
           {
             ConditionCheck: {
               TableName: getTableName(),
-              Key: keys.chat(message.chatId),
+              Key: keys.chat(currentTenant(), message.chatId),
               ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
             },
           },
@@ -276,7 +277,7 @@ export const chatRepository: ChatRepository = {
       await getDocumentClient().send(
         new UpdateCommand({
           TableName: getTableName(),
-          Key: keys.chat(chatId),
+          Key: keys.chat(currentTenant(), chatId),
           UpdateExpression: "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt",
           ConditionExpression:
             "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND " +
@@ -302,7 +303,7 @@ export const chatRepository: ChatRepository = {
       await getDocumentClient().send(
         new UpdateCommand({
           TableName: getTableName(),
-          Key: keys.chat(chatId),
+          Key: keys.chat(currentTenant(), chatId),
           UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt",
           ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
           ExpressionAttributeValues: { ":runId": runId },
@@ -318,7 +319,7 @@ export const chatRepository: ChatRepository = {
   async reserveMessageSeq(chatId) {
     const client = getDocumentClient();
     const table = getTableName();
-    const key = keys.chat(chatId);
+    const key = keys.chat(currentTenant(), chatId);
 
     for (;;) {
       const meta = await client.send(

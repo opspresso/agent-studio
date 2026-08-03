@@ -144,7 +144,8 @@ same rule applies to:
 
 | Decision | Owner |
 |---|---|
-| Every DynamoDB key string | `src/infrastructure/db/keys.ts` |
+| Every DynamoDB key string, and its tenant scope | `src/infrastructure/db/keys.ts` |
+| Which tenant the current work belongs to | `src/shared/tenantContext.ts` |
 | Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
 | Which pages are public | `src/proxy.ts` |
 | Whether a chunk is top-level | `isTopLevelChunk()` in `src/domain/llm/types.ts` |

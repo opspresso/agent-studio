@@ -62,6 +62,9 @@ async function main() {
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
+  const { withTenant } = await import("@/shared/tenantContext");
+  const { retenantTable } = await import("./retenant-table");
+  type Project = Awaited<ReturnType<typeof projectRepository.list>>[number];
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -139,6 +142,16 @@ async function main() {
 
   const suffix = Date.now().toString(36);
   const projectName = `it-proj-${suffix}`;
+  const namedProject = (owner: string, name: string): Project => ({
+    name,
+    displayName: owner,
+    description: "",
+    projectType: "llm",
+    ownerEmail: `${owner}@example.com`,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const defaultTenantProject = (name: string) => namedProject("default", name);
 
   try {
     // ---------- project + version ----------
@@ -476,6 +489,39 @@ async function main() {
       "usage rows deleted",
     );
     pass("project cascade delete (meta + versions + usage)");
+
+    // ---------- tenant isolation ----------
+    // The property the whole key scheme exists for: two tenants may hold the
+    // same project name, and neither can see the other's — not through a
+    // primary-key read, and not through the GSI listing that a scheme scoping
+    // only the primary key would leak.
+    const shared = `it-shared-${suffix}`;
+    try {
+      await withTenant("it-alpha", () => projectRepository.create(namedProject("it-alpha", shared)));
+      await withTenant("it-beta", () => projectRepository.create(namedProject("it-beta", shared)));
+
+      const alpha = await withTenant("it-alpha", () => projectRepository.get(shared));
+      const beta = await withTenant("it-beta", () => projectRepository.get(shared));
+      assert.equal(alpha?.displayName, "it-alpha", "tenant alpha reads its own project");
+      assert.equal(beta?.displayName, "it-beta", "tenant beta reads its own project");
+
+      const alphaList = await withTenant("it-alpha", () => projectRepository.list());
+      assert.equal(
+        alphaList.filter((p: Project) => p.name === shared).length,
+        1,
+        "the catalog listing shows one tenant's project, not both",
+      );
+      assert.equal(
+        await projectRepository.get(shared),
+        null,
+        "the default tenant sees neither",
+      );
+      pass("two tenants hold the same project name in isolation");
+    } finally {
+      await withTenant("it-alpha", () => projectRepository.delete(shared)).catch(() => {});
+      await withTenant("it-beta", () => projectRepository.delete(shared)).catch(() => {});
+    }
+
   } finally {
     // cleanup non-cascading fixtures
     await skillRepository.delete("integration-skill").catch(() => {});
@@ -483,6 +529,34 @@ async function main() {
     await externalAgentRepository.delete(`it-agent-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
     mock.close();
+  }
+
+  // ---------- the migration path ----------
+  // A default-tenant deployment moving onto a named tenant. Run after the
+  // fixtures above are cleaned up, because the migration sweeps the whole table
+  // — which is also why it only ever runs against the `-inMemory` test
+  // instance, wiped on every container start.
+  const migrating = `it-migrate-${suffix}`;
+  try {
+    await projectRepository.create(defaultTenantProject(migrating));
+    await retenantTable({ tenant: "it-moved", apply: true });
+    assert.equal(
+      (await withTenant("it-moved", () => projectRepository.get(migrating)))?.name,
+      migrating,
+      "the migrated row reads under its new tenant",
+    );
+    assert.equal(await projectRepository.get(migrating), null, "and not under the default one");
+    assert.equal(
+      (await withTenant("it-moved", () => projectRepository.list())).some(
+        (p: Project) => p.name === migrating,
+      ),
+      true,
+      "the GSI listing moved with it",
+    );
+    pass("re-keying a default-tenant deployment onto a named tenant");
+  } finally {
+    await withTenant("it-moved", () => projectRepository.delete(migrating)).catch(() => {});
+    await projectRepository.delete(migrating).catch(() => {});
   }
 
   console.log(`\n${results.length} integration checks passed`);

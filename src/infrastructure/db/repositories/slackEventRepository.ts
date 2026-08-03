@@ -1,6 +1,7 @@
 import { PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
+import { currentTenant } from "@/shared/tenantContext";
 
 /**
  * Slack redelivers events when the ack is slow, so processing must be
@@ -38,7 +39,7 @@ export const slackEventRepository = {
         new PutCommand({
           TableName: getTableName(),
           Item: {
-            ...keys.slackEvent(eventId),
+            ...keys.slackEvent(currentTenant(), eventId),
             entityType: "slackEvent",
             state: "claimed",
             claimedAt: new Date().toISOString(),
@@ -72,7 +73,7 @@ export const slackEventRepository = {
       await getDocumentClient().send(
         new UpdateCommand({
           TableName: getTableName(),
-          Key: keys.slackEvent(eventId),
+          Key: keys.slackEvent(currentTenant(), eventId),
           UpdateExpression: "SET #state = :state, settledAt = :at, leaseExpiresAt = :lease",
           ConditionExpression: "attribute_exists(PK)",
           ExpressionAttributeNames: { "#state": "state" },

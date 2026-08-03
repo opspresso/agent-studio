@@ -11,6 +11,7 @@ import {
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project, ProjectApiToken } from "@/domain/project/types";
 
@@ -26,12 +27,12 @@ interface ProjectItem extends Project {
 }
 
 function toItem(project: Project): ProjectItem {
-  const key = keys.project(project.name);
+  const key = keys.project(currentTenant(), project.name);
   return {
     ...project,
     PK: key.PK,
     SK: key.SK,
-    GSI1PK: keys.typePartition("PROJECT"),
+    GSI1PK: keys.typePartition(currentTenant(), "PROJECT"),
     GSI1SK: project.name,
     entityType: ENTITY_TYPE,
   };
@@ -99,7 +100,7 @@ async function deleteTracesForProject(projectName: string): Promise<void> {
     TableName: getTableName(),
     IndexName: "GSI1",
     KeyConditionExpression: "GSI1PK = :pk",
-    ExpressionAttributeValues: { ":pk": keys.traceProjectPartition(projectName) },
+    ExpressionAttributeValues: { ":pk": keys.traceProjectPartition(currentTenant(), projectName) },
     ProjectionExpression: "PK, SK",
   });
   await batchDelete(items.map(toDeleteKey));
@@ -108,7 +109,7 @@ async function deleteTracesForProject(projectName: string): Promise<void> {
 export const projectRepository: ProjectRepository = {
   async get(name: string): Promise<Project | null> {
     const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.project(name) }),
+      new GetCommand({ TableName: getTableName(), Key: keys.project(currentTenant(), name) }),
     );
     return result.Item ? fromItem(result.Item) : null;
   },
@@ -118,7 +119,7 @@ export const projectRepository: ProjectRepository = {
       TableName: getTableName(),
       IndexName: "GSI1",
       KeyConditionExpression: "GSI1PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.typePartition("PROJECT") },
+      ExpressionAttributeValues: { ":pk": keys.typePartition(currentTenant(), "PROJECT") },
     });
     return items.map(fromItem);
   },
@@ -156,7 +157,7 @@ export const projectRepository: ProjectRepository = {
           {
             ConditionCheck: {
               TableName: getTableName(),
-              Key: keys.version(project.name, versionName),
+              Key: keys.version(currentTenant(), project.name, versionName),
               ConditionExpression: "attribute_exists(PK)",
             },
           },
@@ -183,18 +184,18 @@ export const projectRepository: ProjectRepository = {
     await getDocumentClient().send(
       new UpdateCommand({
         TableName: getTableName(),
-        Key: keys.project(name),
+        Key: keys.project(currentTenant(), name),
         UpdateExpression: "SET deletingAt = if_not_exists(deletingAt, :now)",
         ConditionExpression: "attribute_exists(PK)",
         ExpressionAttributeValues: { ":now": new Date().toISOString() },
       }),
     );
-    await deletePartition(keys.usage(name, "").PK);
+    await deletePartition(keys.usage(currentTenant(), name, "").PK);
     await deleteTracesForProject(name);
     const projectItems = await queryAll({
       TableName: getTableName(),
       KeyConditionExpression: "PK = :pk",
-      ExpressionAttributeValues: { ":pk": keys.projectPartition(name) },
+      ExpressionAttributeValues: { ":pk": keys.projectPartition(currentTenant(), name) },
       ProjectionExpression: "PK, SK, tracePK, traceSK",
       ConsistentRead: true,
     });
@@ -214,7 +215,7 @@ export const projectRepository: ProjectRepository = {
     await getDocumentClient().send(
       new DeleteCommand({
         TableName: getTableName(),
-        Key: keys.project(name),
+        Key: keys.project(currentTenant(), name),
         ConditionExpression: "attribute_exists(PK) AND attribute_exists(deletingAt)",
       }),
     );
@@ -222,7 +223,7 @@ export const projectRepository: ProjectRepository = {
 
   async getApiToken(name: string): Promise<ProjectApiToken | null> {
     const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.projectApiToken(name) }),
+      new GetCommand({ TableName: getTableName(), Key: keys.projectApiToken(currentTenant(), name) }),
     );
     if (!result.Item) {
       return null;
@@ -237,7 +238,7 @@ export const projectRepository: ProjectRepository = {
   },
 
   async setApiToken(name: string, token: ProjectApiToken): Promise<void> {
-    const key = keys.projectApiToken(name);
+    const key = keys.projectApiToken(currentTenant(), name);
     await getDocumentClient().send(
       new PutCommand({
         TableName: getTableName(),
@@ -257,7 +258,7 @@ export const projectRepository: ProjectRepository = {
 
   async deleteApiToken(name: string): Promise<void> {
     await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.projectApiToken(name) }),
+      new DeleteCommand({ TableName: getTableName(), Key: keys.projectApiToken(currentTenant(), name) }),
     );
   },
 };

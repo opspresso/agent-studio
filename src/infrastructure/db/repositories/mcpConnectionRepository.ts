@@ -1,6 +1,7 @@
 import { DeleteCommand, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { queryAll } from "../query";
 import type { McpConnection, McpConnectionRepository } from "@/domain/mcp/connection";
 
@@ -20,7 +21,7 @@ const EXPIRES_AT_ISO = "expiresAtIso";
 function toItem(connection: McpConnection): Record<string, unknown> {
   const { expiresAt, ...rest } = connection;
   return {
-    ...keys.mcpConnection(connection.projectName, connection.serverName),
+    ...keys.mcpConnection(currentTenant(), connection.projectName, connection.serverName),
     entityType: ENTITY_TYPE,
     ...rest,
     ...(expiresAt === undefined ? {} : { [EXPIRES_AT_ISO]: expiresAt }),
@@ -57,7 +58,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     const result = await getDocumentClient().send(
       new GetCommand({
         TableName: getTableName(),
-        Key: keys.mcpConnection(projectName, serverName),
+        Key: keys.mcpConnection(currentTenant(), projectName, serverName),
       }),
     );
     return result.Item ? fromItem(result.Item) : null;
@@ -68,7 +69,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
       TableName: getTableName(),
       KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
       ExpressionAttributeValues: {
-        ":pk": keys.projectPartition(projectName),
+        ":pk": keys.projectPartition(currentTenant(), projectName),
         ":prefix": keys.mcpConnectionPrefix(),
       },
     });
@@ -124,7 +125,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
       await getDocumentClient().send(
         new UpdateCommand({
           TableName: getTableName(),
-          Key: keys.mcpConnection(projectName, serverName),
+          Key: keys.mcpConnection(currentTenant(), projectName, serverName),
           UpdateExpression: `SET ${sets.join(", ")}${removes.length > 0 ? ` REMOVE ${removes.join(", ")}` : ""}`,
           // The row must still exist: a connection deleted mid-refresh must not
           // be resurrected by the refresh that was already in flight.
@@ -146,7 +147,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
     await getDocumentClient().send(
       new DeleteCommand({
         TableName: getTableName(),
-        Key: keys.mcpConnection(projectName, serverName),
+        Key: keys.mcpConnection(currentTenant(), projectName, serverName),
       }),
     );
   },

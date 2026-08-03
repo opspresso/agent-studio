@@ -23,6 +23,7 @@ import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpCon
 import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAuthStateRepository";
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
+import { organizationRepository } from "@/infrastructure/db/repositories/organizationRepository";
 import { createChannel } from "@/infrastructure/llm/channel";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
@@ -126,6 +127,7 @@ export {
   channel,
   imageChannel,
   auditRepository,
+  organizationRepository,
   projectRepository,
   versionRepository,
   traceRepository,

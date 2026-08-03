@@ -2,6 +2,7 @@ import type { SkillRepository } from "@/domain/skill/repository";
 import type { Skill, SkillFile } from "@/domain/skill/types";
 import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
+import { currentTenant } from "@/shared/tenantContext";
 
 const ENTITY_TYPE = "SKILL" as const;
 
@@ -19,8 +20,8 @@ function fromItem(item: Record<string, unknown>): Skill {
 
 function toItem(skill: Skill): Record<string, unknown> {
   return {
-    ...keys.skill(skill.name),
-    GSI1PK: keys.typePartition(ENTITY_TYPE),
+    ...keys.skill(currentTenant(), skill.name),
+    GSI1PK: keys.typePartition(currentTenant(), ENTITY_TYPE),
     GSI1SK: skill.name,
     entityType: ENTITY_TYPE,
     name: skill.name,

@@ -2,6 +2,7 @@ import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { AgentProtocol, ExternalAgent } from "@/domain/agent/types";
 import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
+import { currentTenant } from "@/shared/tenantContext";
 
 const ENTITY_TYPE = "AGENT" as const;
 
@@ -19,8 +20,8 @@ function fromItem(item: Record<string, unknown>): ExternalAgent {
 
 function toItem(agent: ExternalAgent): Record<string, unknown> {
   return {
-    ...keys.externalAgent(agent.name),
-    GSI1PK: keys.typePartition(ENTITY_TYPE),
+    ...keys.externalAgent(currentTenant(), agent.name),
+    GSI1PK: keys.typePartition(currentTenant(), ENTITY_TYPE),
     GSI1SK: agent.name,
     entityType: ENTITY_TYPE,
     name: agent.name,

@@ -18,6 +18,7 @@ import type { TaskStore } from "@a2a-js/sdk/server";
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { RETENTION, expiresAtSeconds, isExpired } from "@/infrastructure/db/ttl";
 
 /** States a task never transitions away from; a stored one must not be regressed. */
@@ -87,7 +88,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
       const result = await getDocumentClient().send(
         new GetCommand({
           TableName: getTableName(),
-          Key: keys.a2aTask(projectName, taskId),
+          Key: keys.a2aTask(currentTenant(), projectName, taskId),
         }),
       );
       const item = result.Item;
@@ -100,7 +101,7 @@ export function createA2aTaskStore(projectName: string): TaskStore {
     async save(task: Task): Promise<void> {
       const now = new Date().toISOString();
       const wrapper = {
-        ...keys.a2aTask(projectName, task.id),
+        ...keys.a2aTask(currentTenant(), projectName, task.id),
         entityType: "a2aTask",
         projectName,
         taskId: task.id,

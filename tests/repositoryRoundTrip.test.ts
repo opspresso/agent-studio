@@ -78,6 +78,7 @@ vi.mock("@/infrastructure/db/client", () => ({
 
 import type { ChatMessage } from "@/domain/chat/types";
 import { keys } from "@/infrastructure/db/keys";
+import { DEFAULT_TENANT } from "@/shared/tenantContext";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
 import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
@@ -127,7 +128,7 @@ describe("project/version atomic writes", () => {
     expect(commands[0]?.TransactItems).toMatchObject([
       {
         ConditionCheck: {
-          Key: keys.version("atomic", "1"),
+          Key: keys.version(DEFAULT_TENANT, "atomic", "1"),
           ConditionExpression: "attribute_exists(PK)",
         },
       },
@@ -146,7 +147,7 @@ describe("project/version atomic writes", () => {
     expect(commands[0]?.TransactItems).toMatchObject([
       {
         ConditionCheck: {
-          Key: keys.project("atomic"),
+          Key: keys.project(DEFAULT_TENANT, "atomic"),
           ExpressionAttributeValues: {
             ":expectedUpdatedAt": NOW,
             ":versionName": "1",
@@ -155,7 +156,7 @@ describe("project/version atomic writes", () => {
       },
       {
         Delete: {
-          Key: keys.version("atomic", "1"),
+          Key: keys.version(DEFAULT_TENANT, "atomic", "1"),
           ConditionExpression: "attribute_exists(PK)",
         },
       },
@@ -164,7 +165,7 @@ describe("project/version atomic writes", () => {
 });
 
 describe("versionRepository mcpList normalization", () => {
-  const legacyKey = keys.version("legacy", "1");
+  const legacyKey = keys.version(DEFAULT_TENANT, "legacy", "1");
 
   function writeRaw(mcpList: unknown): void {
     store.set(`${legacyKey.PK}|${legacyKey.SK}`, {
@@ -282,7 +283,7 @@ describe("mcpRepository round-trip", () => {
   });
 
   it("defaults absent headers to an empty object on read", async () => {
-    const key = keys.mcp("legacy");
+    const key = keys.mcp(DEFAULT_TENANT, "legacy");
     store.set(`${key.PK}|${key.SK}`, {
       ...key,
       name: "legacy",
@@ -338,7 +339,7 @@ describe("chatRepository message round-trip", () => {
   });
 
   it("atomically reserves distinct message sequence numbers", async () => {
-    const key = keys.chat("c-seq");
+    const key = keys.chat(DEFAULT_TENANT, "c-seq");
     store.set(`${key.PK}|${key.SK}`, { ...key, nextSeq: 4 });
 
     await expect(
@@ -350,7 +351,7 @@ describe("chatRepository message round-trip", () => {
   });
 
   it("preserves every role's fields through appendMessage + listMessages", async () => {
-    const chatKey = keys.chat("c1");
+    const chatKey = keys.chat(DEFAULT_TENANT, "c1");
     store.set(`${chatKey.PK}|${chatKey.SK}`, { ...chatKey, entityType: "Chat" });
     // A user turn carries the images it attached. Reading them back is what
     // makes an attachment survive a reload — dropping them here left the upload
@@ -413,7 +414,7 @@ describe("usageRepository.record two-step ADD", () => {
     expect(updates).toHaveLength(2);
     const [materialize, add] = updates as [Record<string, unknown>, Record<string, unknown>];
 
-    const expectedKey = keys.usage("p", "2026-01-01");
+    const expectedKey = keys.usage(DEFAULT_TENANT, "p", "2026-01-01");
     expect(materialize.Key).toEqual(expectedKey);
     expect(add.Key).toEqual(expectedKey);
     expect(String(materialize.UpdateExpression)).toContain("if_not_exists(calls");
@@ -429,7 +430,7 @@ describe("usageRepository.record two-step ADD", () => {
   });
 
   it("maps raw items through toUsageRow with empty-map defaults", async () => {
-    const key = keys.usage("p2", "2026-01-02");
+    const key = keys.usage(DEFAULT_TENANT, "p2", "2026-01-02");
     store.set(`${key.PK}|${key.SK}`, {
       ...key,
       projectName: "p2",

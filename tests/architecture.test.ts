@@ -558,6 +558,55 @@ describe("single owners", () => {
 });
 
 /**
+ * Rows that belong to no tenant, each because of a decision rather than an
+ * oversight. Everything else must be scoped, and the test below is what stops a
+ * new builder joining this list by accident: a key is the only thing standing
+ * between two tenants, so an unscoped one is a cross-tenant read that looks
+ * exactly like a working query.
+ */
+const UNSCOPED_KEYS = new Set([
+  // Better Auth's own rows. A person is not a tenant's property and may belong
+  // to more than one, so the user and its unique-field locks stay global.
+  "auth",
+  "authModelPartition",
+  "authUniqueLookup",
+  "authUnique",
+  // App-wide settings: infrastructure this process is bound to. A per-tenant
+  // layer over it is its own milestone, and would be a second builder.
+  "settings",
+  // The tenant registry itself — reading the list of tenants from inside one
+  // would be circular.
+  "organization",
+  "organizationPartition",
+]);
+
+/** Sort-key fragments, which carry no partition and so no tenant. */
+const KEY_FRAGMENTS = /Prefix$/;
+
+describe("tenant scope", () => {
+  const source = readFileSync(join(ROOT, "src/infrastructure/db/keys.ts"), "utf8");
+  const builders = [...source.matchAll(/^ {2}(\w+): \(([^)]*)\)/gm)].map((match) => ({
+    name: match[1]!,
+    firstParam: (match[2] ?? "").split(",")[0]?.trim().split(":")[0]?.trim() ?? "",
+  }));
+
+  it("finds the builders it is meant to check", () => {
+    // Without this the regex could silently stop matching and the rule would
+    // pass by finding nothing — the failure every scanner here is written to
+    // avoid.
+    expect(builders.length).toBeGreaterThan(20);
+  });
+
+  it("scopes every key builder to a tenant", () => {
+    const unscoped = builders
+      .filter((builder) => !UNSCOPED_KEYS.has(builder.name) && !KEY_FRAGMENTS.test(builder.name))
+      .filter((builder) => builder.firstParam !== "tenant")
+      .map((builder) => builder.name);
+    expect(unscoped).toEqual([]);
+  });
+});
+
+/**
  * A synthetic event read from inside a state updater.
  *
  * React nulls `SyntheticEvent.currentTarget` once the handler returns — it only

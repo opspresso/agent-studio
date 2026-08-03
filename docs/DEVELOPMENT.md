@@ -98,6 +98,7 @@ instrumentation import.
 | `scripts/seed-skills.ts` | Seed sample skills, idempotently. |
 | `scripts/integration-check.ts` | End-to-end repository round-trips + the engine (single-shot and agent loop). |
 | `scripts/check-models.ts` | Diff `src/domain/llm/models.ts` against the ids the configured channels serve. |
+| `scripts/retenant-table.ts` | Move a default-tenant deployment's rows onto a named tenant. Dry-run unless `--apply`; run with the app stopped. |
 
 ### `check-models`
 

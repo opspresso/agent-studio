@@ -16,6 +16,7 @@ import { DeleteCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 
 /** Bounded retries when another instance claims the index this one picked. */
@@ -32,7 +33,7 @@ export const runSlotRepository: RunSlotRepository = {
       const items = await queryAll({
         TableName: table,
         KeyConditionExpression: "PK = :pk",
-        ExpressionAttributeValues: { ":pk": keys.runSlotPartition(actor) },
+        ExpressionAttributeValues: { ":pk": keys.runSlotPartition(currentTenant(), actor) },
         // The whole point is to see writes that just happened; an eventually
         // consistent read would let a caller past the limit by reading a stale
         // partition.
@@ -58,7 +59,7 @@ export const runSlotRepository: RunSlotRepository = {
           new PutCommand({
             TableName: table,
             Item: {
-              ...keys.runSlot(actor, index),
+              ...keys.runSlot(currentTenant(), actor, index),
               entityType: "RunSlot",
               actor,
               slotIndex: index,
@@ -86,7 +87,7 @@ export const runSlotRepository: RunSlotRepository = {
 
   async release(actor, slot): Promise<void> {
     await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.runSlot(actor, slot.index) }),
+      new DeleteCommand({ TableName: getTableName(), Key: keys.runSlot(currentTenant(), actor, slot.index) }),
     );
   },
 };

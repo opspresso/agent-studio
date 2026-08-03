@@ -2,6 +2,7 @@ import type { McpRepository } from "@/domain/mcp/repository";
 import type { McpRuntime, McpServer, McpServerAuth } from "@/domain/mcp/types";
 import { createKeyedRepository } from "../keyedRepository";
 import { keys } from "../keys";
+import { currentTenant } from "@/shared/tenantContext";
 
 const ENTITY_TYPE = "MCP" as const;
 
@@ -30,8 +31,8 @@ function fromItem(item: Record<string, unknown>): McpServer {
 
 function toItem(server: McpServer): Record<string, unknown> {
   return {
-    ...keys.mcp(server.name),
-    GSI1PK: keys.typePartition(ENTITY_TYPE),
+    ...keys.mcp(currentTenant(), server.name),
+    GSI1PK: keys.typePartition(currentTenant(), ENTITY_TYPE),
     GSI1SK: server.name,
     entityType: ENTITY_TYPE,
     name: server.name,

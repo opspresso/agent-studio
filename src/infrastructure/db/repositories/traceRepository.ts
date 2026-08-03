@@ -3,6 +3,7 @@ import type { ListTracesOptions, TraceRepository } from "@/domain/trace/reposito
 import type { Trace } from "@/domain/trace/types";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { expiresAtSeconds, isExpired, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 
 const MAX_SPANS = 100;
@@ -34,7 +35,7 @@ function fromItem(item: Record<string, unknown>): Trace {
 
 export class DynamoTraceRepository implements TraceRepository {
   async put(trace: Trace): Promise<void> {
-    const traceKey = keys.trace(trace.traceId);
+    const traceKey = keys.trace(currentTenant(), trace.traceId);
     // Body and index row share one expiry so the ref never dangles.
     const expiresAt = expiresAtSeconds(trace.createdAt, RETENTION.traceDays);
     await getDocumentClient().send(
@@ -43,7 +44,7 @@ export class DynamoTraceRepository implements TraceRepository {
           {
             ConditionCheck: {
               TableName: getTableName(),
-              Key: keys.project(trace.projectName),
+              Key: keys.project(currentTenant(), trace.projectName),
               ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
             },
           },
@@ -55,7 +56,7 @@ export class DynamoTraceRepository implements TraceRepository {
                 spans: trace.spans.slice(0, MAX_SPANS),
                 ...traceKey,
                 entityType: "TRACE",
-                GSI1PK: keys.traceProjectPartition(trace.projectName),
+                GSI1PK: keys.traceProjectPartition(currentTenant(), trace.projectName),
                 GSI1SK: `${trace.createdAt}#${trace.traceId}`,
                 expiresAt,
               },
@@ -66,7 +67,7 @@ export class DynamoTraceRepository implements TraceRepository {
             Put: {
               TableName: getTableName(),
               Item: {
-                ...keys.traceRef(trace.projectName, trace.createdAt, trace.traceId),
+                ...keys.traceRef(currentTenant(), trace.projectName, trace.createdAt, trace.traceId),
                 entityType: "TRACE_REF",
                 tracePK: traceKey.PK,
                 traceSK: traceKey.SK,
@@ -84,7 +85,7 @@ export class DynamoTraceRepository implements TraceRepository {
     const result = await getDocumentClient().send(
       new GetCommand({
         TableName: getTableName(),
-        Key: keys.trace(traceId),
+        Key: keys.trace(currentTenant(), traceId),
         ConsistentRead: true,
       }),
     );
@@ -98,7 +99,7 @@ export class DynamoTraceRepository implements TraceRepository {
     const { limit = 50, from, to } = options;
     // GSI1SK is `${createdAt}#${traceId}`; filter on the date prefix. The upper
     // bound appends ￿ so the whole "to" day (with any time/id suffix) is included.
-    const values: Record<string, unknown> = { ":pk": keys.traceProjectPartition(projectName) };
+    const values: Record<string, unknown> = { ":pk": keys.traceProjectPartition(currentTenant(), projectName) };
     let keyCondition = "GSI1PK = :pk";
     if (from && to) {
       keyCondition += " AND GSI1SK BETWEEN :from AND :to";

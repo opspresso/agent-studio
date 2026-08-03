@@ -154,6 +154,28 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | Trace deletion reference | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
 | Audit record | `AUDIT#{yyyy-MM-dd}` | `EVENT#{createdAt}#{id}` | — | — |
 | App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
+| Organization (tenant) | `ORG#{id}` | `META` | `TYPE#ORG` | `{id}` |
+
+**Every key above is tenant-scoped.** A tenant's rows carry a `T#{id}#` prefix on the
+partition key *and* on the GSI partitions — a scheme that scoped only the primary key would
+leak two tenants' catalogs into one `TYPE#PROJECT` listing. The prefix is a parameter of
+every builder in `src/infrastructure/db/keys.ts`, not something the module reads for itself:
+read implicitly, a forgotten scope is a cross-tenant read that looks exactly like a working
+query, and `tests/architecture.test.ts` fails any builder that stops taking one.
+
+**The default tenant's prefix is empty**, which is the whole migration story. A deployment
+that has always been single-tenant keeps every key it already wrote, and an install is
+defined as "the same artifact with one tenant" rather than as a branch in the code.
+`scripts/retenant-table.ts` moves such a deployment onto a named tenant when it wants one —
+re-keying rather than reading both, because a fallback read doubles every lookup forever and
+leaves two answers to where a row lives. Three key kinds stay global on purpose: Better Auth's
+user rows (a person may belong to several tenants), the app settings row, and the organization
+registry itself, which is what says the tenants exist.
+
+The tenant reaches a repository through `withTenant`/`currentTenant`
+(`src/shared/tenantContext.ts`), an async-scoped value set at the boundary that authenticated
+the caller — the same shape as a run's correlation id. Nothing sets it yet: until membership
+exists, every request runs as the default tenant.
 
 **Why one table and two GSIs.** Primary-key access covers everything item-scoped: a project
 and its versions share a partition, a chat and its messages share a partition, so a cascade

@@ -2,6 +2,7 @@ import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { getDocumentClient, getTableName } from "./client";
 import { queryAll } from "./query";
 import { keys } from "./keys";
+import { currentTenant } from "@/shared/tenantContext";
 
 /**
  * CRUD over a name-keyed registry entity (single-item partition, SK `META`)
@@ -9,8 +10,9 @@ import { keys } from "./keys";
  * mappers stay per-repository — they carry the entity-specific fields.
  */
 export function createKeyedRepository<T extends { name: string }>(opts: {
-  entityType: Parameters<typeof keys.typePartition>[0];
-  key(name: string): { PK: string; SK: string };
+  entityType: Parameters<typeof keys.typePartition>[1];
+  /** The tenant comes first, like every scoped builder — the helper supplies it. */
+  key(tenant: string, name: string): { PK: string; SK: string };
   toItem(entity: T): Record<string, unknown>;
   fromItem(item: Record<string, unknown>): T;
 }): {
@@ -24,7 +26,7 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
   return {
     async get(name) {
       const res = await getDocumentClient().send(
-        new GetCommand({ TableName: getTableName(), Key: opts.key(name) }),
+        new GetCommand({ TableName: getTableName(), Key: opts.key(currentTenant(), name) }),
       );
       return res.Item ? opts.fromItem(res.Item) : null;
     },
@@ -34,7 +36,7 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
         TableName: getTableName(),
         IndexName: "GSI1",
         KeyConditionExpression: "GSI1PK = :pk",
-        ExpressionAttributeValues: { ":pk": keys.typePartition(opts.entityType) },
+        ExpressionAttributeValues: { ":pk": keys.typePartition(currentTenant(), opts.entityType) },
       });
       return items.map(opts.fromItem);
     },
@@ -69,7 +71,7 @@ export function createKeyedRepository<T extends { name: string }>(opts: {
       await getDocumentClient().send(
         new DeleteCommand({
           TableName: getTableName(),
-          Key: opts.key(name),
+          Key: opts.key(currentTenant(), name),
           ConditionExpression: "attribute_exists(PK)",
         }),
       );

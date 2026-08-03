@@ -14,6 +14,7 @@ import { GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dy
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
+import { currentTenant } from "@/shared/tenantContext";
 import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { utcDay } from "@/shared/date";
@@ -58,8 +59,8 @@ function toActorUsageRow(item: Record<string, unknown>): ActorUsageRow {
 
 export class DynamoUsageRepository implements UsageRepository {
   async record(delta: UsageDelta): Promise<void> {
-    await this.addTo(keys.usage(delta.projectName, delta.date), delta, {
-      GSI1PK: keys.usageDatePartition(delta.date),
+    await this.addTo(keys.usage(currentTenant(), delta.projectName, delta.date), delta, {
+      GSI1PK: keys.usageDatePartition(currentTenant(), delta.date),
       GSI1SK: delta.projectName,
     });
     if (delta.actor) {
@@ -67,7 +68,7 @@ export class DynamoUsageRepository implements UsageRepository {
       // failure to write who spent it must not lose the fact that it was spent.
       // No GSI entry — this row is only ever read within its project.
       await this.addTo(
-        keys.usageActor(delta.projectName, delta.date, delta.actor),
+        keys.usageActor(currentTenant(), delta.projectName, delta.date, delta.actor),
         delta,
         { actor: delta.actor },
       );
@@ -105,7 +106,7 @@ export class DynamoUsageRepository implements UsageRepository {
           {
             ConditionCheck: {
               TableName: table,
-              Key: keys.project(delta.projectName),
+              Key: keys.project(currentTenant(), delta.projectName),
               ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
             },
           },
@@ -147,7 +148,7 @@ export class DynamoUsageRepository implements UsageRepository {
           {
             ConditionCheck: {
               TableName: table,
-              Key: keys.project(delta.projectName),
+              Key: keys.project(currentTenant(), delta.projectName),
               ConditionExpression: "attribute_exists(PK) AND attribute_not_exists(deletingAt)",
             },
           },
@@ -181,7 +182,7 @@ export class DynamoUsageRepository implements UsageRepository {
       TableName: getTableName(),
       KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
       ExpressionAttributeValues: {
-        ":pk": keys.usage(projectName, from).PK,
+        ":pk": keys.usage(currentTenant(), projectName, from).PK,
         ":from": keys.usageActorPrefix(from),
         // The upper bound has to sort after every actor on `to`, and actor ids
         // are unbounded strings — so bound by the prefix of the day after,
@@ -194,7 +195,7 @@ export class DynamoUsageRepository implements UsageRepository {
 
   async getDay(projectName: string, date: string): Promise<UsageRow | null> {
     const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.usage(projectName, date) }),
+      new GetCommand({ TableName: getTableName(), Key: keys.usage(currentTenant(), projectName, date) }),
     );
     const item = result.Item;
     if (!item) {
@@ -212,7 +213,7 @@ export class DynamoUsageRepository implements UsageRepository {
       await getDocumentClient().send(
         new UpdateCommand({
           TableName: getTableName(),
-          Key: keys.usage(projectName, date),
+          Key: keys.usage(currentTenant(), projectName, date),
           // The row exists by construction — the guard only claims after reading
           // spend off it — but requiring it here keeps a claim from materialising
           // a usage row for a project that never ran.
@@ -232,8 +233,8 @@ export class DynamoUsageRepository implements UsageRepository {
   }
 
   async listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]> {
-    const fromKey = keys.usage(projectName, from);
-    const toKey = keys.usage(projectName, to);
+    const fromKey = keys.usage(currentTenant(), projectName, from);
+    const toKey = keys.usage(currentTenant(), projectName, to);
     const items = await queryAll({
       TableName: getTableName(),
       KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
@@ -254,7 +255,7 @@ export class DynamoUsageRepository implements UsageRepository {
         TableName: table,
         IndexName: "GSI1",
         KeyConditionExpression: "GSI1PK = :pk",
-        ExpressionAttributeValues: { ":pk": keys.usageDatePartition(date) },
+        ExpressionAttributeValues: { ":pk": keys.usageDatePartition(currentTenant(), date) },
       });
       for (const item of notExpired(items, Date.now())) {
         rows.push(toUsageRow(item));
