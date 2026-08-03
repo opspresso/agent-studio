@@ -384,6 +384,26 @@ sequenceDiagram
   X->>X: usage aggregator flush (finally)
 ```
 
+### Preview assembles what a run would send, without sending it
+
+`previewPrompt` (`src/application/execution/promptPreview.ts`) answers "what will the model
+actually read", which for an agent project is never the text in the editor: the system prompt
+gains the skill table, the connected-MCP-server table with its aliased tool names, the transfer
+instructions and the image section only at dispatch.
+
+It gets that right by **calling the engine's own builders** rather than reproducing them. A
+second renderer is a copy, and this copy would drift silently — a preview that disagrees with
+the run looks exactly like one that is right. For the same reason it **opens real MCP
+sessions**, as a run does: aliases are allocated against live tool lists, so nothing else
+yields the names the model will see. Those sessions are released before it returns. It reads
+the same `runStrategyFor` axis too, so an image project previews its rendered template (which
+*is* its prompt) rather than a system prompt it has none of.
+
+PII masking is the one thing it does not apply: masking rewrites content per run and what it
+masks depends on the turn's own text, which a preview does not have. A version with the filter
+on is told so as a warning instead — the same channel that reports an agent version's unused
+user-prompt template.
+
 ### SSE responses pull the first chunk before answering
 
 Streaming entry points call the generator's first `next()` **before constructing the
