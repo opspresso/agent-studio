@@ -171,6 +171,10 @@ One line each — the linked section is the authority.
   daily cost guard, the per-caller concurrency guard, the correlation id. Exactly four
   functions admit a run. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
+- **Images** — three drawing paths (an `image` project, an agent run's builtins, an image
+  subagent) over one `ImageChannel` port; source bytes decide edit vs generate, and
+  `toImageUsageRecord` is the one collapse into a usage row. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#images)
 - **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2`; usage rows are daily
   per-project-per-model maps updated with atomic `ADD`. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
