@@ -63,6 +63,36 @@ row가 `running`인 채 남는다(OPERATIONS.md의 multi-instance 표).
 테스트로 검증한다. 살아 있는 딜리버리는 마감되지 않는 것을 같은 테스트에서 검증한다 —
 schedule 쪽이 `repairLostRuns`에서 이미 지키는 경계다.
 
+## image-store-hardening — 생성 이미지의 공개 URL 제거
+
+**이유**: 채팅 이미지는 서명 없는 공개 주소로 저장된다 — `storeImage`가 반환하는 것은
+`https://<bucket>.s3.<region>.amazonaws.com/images/<uuid>.png`이고, 그게 동작하려면 버킷이
+public-read여야 한다. 게다가 `CacheControl: public, max-age=31536000, immutable`이 붙고,
+어떤 코드 경로도 오브젝트를 지우지 않으며 라이프사이클 룰도 함께 배포되지 않는다.
+트레이스·usage·채팅·트리거 이력이 전부 TTL로 만료되는 배포에서 이미지만 만료되지 않고,
+채팅 트랜스크립트나 Slack 메시지를 쥔 누구든 유효한 URL을 무기한 보유한다.
+SECURITY.md(*Data exposure and retention*)가 스스로 "두 규칙의 예외"로 적어 둔 자리다.
+
+**선행**: 없음.
+
+**범위**
+
+- 저장은 오브젝트 **키**를 기록하고 URL 서명을 조회 시점으로 옮긴다. 채팅 replay는 저장된
+  URL을 provider가 직접 fetch하므로(chat AGENTS.md의 *Attachments are sent twice*), replay에
+  넣는 서명의 유효기간이 런 지속시간(`MAX_RUN_DURATION_MS`)을 감당해야 한다 — 읽기 시
+  재서명이 설계의 핵심이다.
+- 이미지 만료를 `CHAT_RETENTION_DAYS`와 정합시킨다. 앱이 지우는지, 버킷 라이프사이클에
+  위임하고 OPERATIONS.md 배포 체크리스트 요건으로 만드는지가 결정 대상.
+- 기존 공개 URL로 저장된 행의 하위 호환을 명시한다 — 읽기 시 판별해서 그대로 넘긴다.
+- Slack 업로드는 대상이 아니다. `handleSlackEvent`는 `slack.uploadImage`로 스레드에 직접
+  올리고 이 버킷을 거치지 않는다. 이 마일스톤이 좁히는 것은 채팅 경로 하나다.
+- 완료 시 SECURITY.md의 예외 서술과 OPERATIONS.md의 배포 체크리스트를 함께 갱신한다.
+
+**완료 조건**: 채팅 메시지에 저장되는 값이 공개 URL이 아니라 오브젝트 키임을, 그리고 chat
+read와 replay가 각각 유효기간을 가진 서명 URL을 받음을 테스트로 검증한다. replay용 서명의
+유효기간이 `MAX_RUN_DURATION_MS`보다 긴 것을 테스트로 고정한다. 기존 공개 URL로 저장된 행이
+계속 읽히는 것을 테스트로 검증한다.
+
 ## audit-log-entity — 감사 기록의 일급 엔티티 승격
 
 **이유**: 민감 행위가 남기는 흔적이 고르지 않고, 남는 쪽조차 감사 기록이 아니다.
