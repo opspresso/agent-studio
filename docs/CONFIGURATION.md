@@ -57,7 +57,7 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 | `DYNAMODB_TABLE_NAME` | `agent-studio` | — | The single table. On a shared local DynamoDB this — not the port — is what keeps projects apart. |
 | `DYNAMODB_ENDPOINT` | unset | — | DynamoDB Local only. **Must be empty in alpha/prod**; a leftover value points the app at a localhost that is not there. |
 | `AES_ENCRYPTION_KEY` | — (required) | — | 32-byte base64. Encrypts every stored secret. See [SECURITY.md](SECURITY.md#secrets-at-rest). |
-| `S3_BUCKET_NAME` | unset | — | Public-read bucket for generated images. Unset disables persistence — chat images then render only during the live stream. |
+| `S3_BUCKET_NAME` | unset | — | Bucket for generated images. **Private**: a chat row stores the object key and every read URL is pre-signed, so the role needs `s3:GetObject` as well as `s3:PutObject`. Unset disables persistence — chat images then render only during the live stream. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, else the request origin, else `http://localhost:3000` | **runtime** | Scheme + host used to build outward-facing URLs (A2A Agent Cards, Slack manifests, the OAuth callback). Behind a reverse proxy the request URL reflects the bind address, so this has to come from configuration. The request-origin step applies only where a request is at hand — the A2A Agent Card path has none, so with both variables unset a card advertises `localhost`. |
 
 ## Authentication and access control

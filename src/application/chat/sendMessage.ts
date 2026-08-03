@@ -1,6 +1,8 @@
 import type { ChatMessage } from "@/domain/chat/types";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
+import { resolveMessageImages } from "./resolveImages";
+import { REPLAY_URL_TTL_SECONDS } from "./imageUrls";
 import { toEngineMessages } from "./messageMapping";
 import {
   resolveVersion,
@@ -69,7 +71,11 @@ export async function sendMessage(
     };
     await deps.chats.appendMessage(userMessage);
 
-    const history = toEngineMessages(existing);
+    // Resolved before mapping, with the replay's own lifetime: these URLs are
+    // fetched by the *provider*, at whatever point in a run it reaches the turn.
+    const history = toEngineMessages(
+      await resolveMessageImages(existing, deps.signImageUrl, REPLAY_URL_TTL_SECONDS),
+    );
     const source = deps.runAgent({
       project,
       version,

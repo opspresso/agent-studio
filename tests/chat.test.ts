@@ -9,6 +9,10 @@ import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import { runAndPersist, userTurnContent } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
+import {
+  REPLAY_URL_TTL_SECONDS,
+  VIEW_URL_TTL_SECONDS,
+} from "@/application/chat/imageUrls";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { sendMessage } from "@/application/chat/sendMessage";
 import { ChatConflictError, ChatForbiddenError, ChatNotFoundError } from "@/application/chat/errors";
@@ -534,13 +538,13 @@ describe("runAndPersist image persistence", () => {
     yield { delta: { content: "Here is your cat." } };
   }
 
-  it("uploads images via storeImage and persists their URLs on the assistant message", async () => {
+  it("uploads images via storeImage and persists their object keys, not URLs", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const uploaded: string[] = [];
     const deps = makeDeps(repo, {
       storeImage: async (image) => {
         uploaded.push(image.mimeType);
-        return "https://bucket.s3.example.com/images/x.png";
+        return "images/x.png";
       },
     });
     for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource())) {
@@ -550,9 +554,9 @@ describe("runAndPersist image persistence", () => {
     expect(uploaded).toEqual(["image/png"]);
     const stored = await repo.listMessages("c1");
     const assistant = stored.find((m) => m.role === "assistant");
-    expect(assistant?.images).toEqual([
-      { url: "https://bucket.s3.example.com/images/x.png", prompt: "a cat" },
-    ]);
+    // The key, not an address: a transcript must not carry a link that keeps
+    // working for anyone who ever sees it.
+    expect(assistant?.images).toEqual([{ key: "images/x.png", prompt: "a cat" }]);
   });
 
   it("drops the image but keeps the message when the upload fails", async () => {
@@ -623,6 +627,37 @@ describe("runAndPersist size guard and disconnect", () => {
     expect(tool?.content.endsWith("…[truncated]")).toBe(true);
     // The turn still completes: the assistant answer is persisted alongside.
     expect(stored.some((m) => m.role === "assistant" && m.content === "done")).toBe(true);
+  });
+});
+
+describe("stored images are signed at read time", () => {
+  const sign = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
+
+  it("getChat returns a signed URL for a stored key, with the view's lifetime", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      {
+        ...message({ seq: 0, role: "assistant", content: "here" }),
+        images: [{ key: "images/x.png", prompt: "a cat" }],
+      } as ChatMessage,
+    ]);
+    const result = await getChat(makeDeps(repo, { signImageUrl: sign }), "c1", "owner@x.com");
+    const assistant = result.messages[0];
+    expect(assistant?.role === "assistant" && assistant.images).toEqual([
+      { url: `https://signed.example/images/x.png?ttl=${VIEW_URL_TTL_SECONDS}`, prompt: "a cat" },
+    ]);
+  });
+
+  it("getChat still reads a row written before keys existed", async () => {
+    const legacy = "https://bucket.s3.ap-northeast-2.amazonaws.com/images/old.png";
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      {
+        ...message({ seq: 0, role: "assistant", content: "here" }),
+        images: [{ url: legacy }],
+      } as ChatMessage,
+    ]);
+    const result = await getChat(makeDeps(repo, { signImageUrl: sign }), "c1", "owner@x.com");
+    const assistant = result.messages[0];
+    expect(assistant?.role === "assistant" && assistant.images).toEqual([{ url: legacy }]);
   });
 });
 
@@ -745,13 +780,46 @@ describe("chat image attachments", () => {
     ]);
   });
 
-  it("sends the attachment bytes to the engine and persists the uploaded url", async () => {
+  it("replays a stored image to the provider with the run-length lifetime", async () => {
+    // The provider fetches this, not the browser, and it may do so at the very
+    // end of a run allowed to last MAX_RUN_DURATION_MS.
+    const sign = async (key: string, ttl: number) => `https://signed.example/${key}?ttl=${ttl}`;
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      {
+        ...message({ seq: 0, role: "user", content: "look" }),
+        images: [{ key: "images/x.png" }],
+      } as ChatMessage,
+    ]);
+    const seenMessages: unknown[] = [];
+    const deps = makeDeps(repo, {
+      projects: agentProjects,
+      versions: publishedVersions,
+      signImageUrl: sign,
+      runAgent: (params) => {
+        seenMessages.push(...params.messages);
+        return emptyAgent();
+      },
+    });
+    const stream = await sendMessage(deps, {
+      chatId: "c1",
+      content: "and now?",
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain
+    }
+    expect(JSON.stringify(seenMessages)).toContain(
+      `https://signed.example/images/x.png?ttl=${REPLAY_URL_TTL_SECONDS}`,
+    );
+  });
+
+  it("sends the attachment bytes to the engine and persists the uploaded key", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const seenMessages: unknown[] = [];
     const deps = makeDeps(repo, {
       projects: agentProjects,
       versions: publishedVersions,
-      storeImage: async () => "https://bucket.s3.example.com/images/a.png",
+      storeImage: async () => "images/a.png",
       runAgent: (params) => {
         seenMessages.push(...params.messages);
         return emptyAgent();
@@ -779,9 +847,7 @@ describe("chat image attachments", () => {
       },
     ]);
     const user = (await repo.listMessages("c1")).find((m) => m.role === "user");
-    expect(user?.role === "user" && user.images).toEqual([
-      { url: "https://bucket.s3.example.com/images/a.png" },
-    ]);
+    expect(user?.role === "user" && user.images).toEqual([{ key: "images/a.png" }]);
   });
 
   it("still runs the turn when image persistence is unconfigured", async () => {

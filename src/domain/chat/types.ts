@@ -16,8 +16,21 @@ export type ChatRole = "user" | "assistant" | "tool";
  * generated, or one the user sent. Only the URL is stored; a b64 payload is far
  * beyond the item size limit.
  */
+/**
+ * An image kept with a chat message.
+ *
+ * Exactly one of `key` and `url` is set, and which one says when the row was
+ * written. New rows carry the **object key**: the address is signed at read
+ * time, so a transcript no longer contains a credential-free link that works
+ * forever for anyone who sees it. Rows written before that carry the public
+ * `url` and are read back as-is — the objects behind them are already public,
+ * so rewriting the row would change nothing about who can reach them.
+ */
 export interface ChatMessageImage {
-  url: string;
+  /** Object key in the image bucket. Signed on read. */
+  key?: string;
+  /** Public URL, on rows written before images were signed. */
+  url?: string;
   prompt?: string;
 }
 

@@ -179,9 +179,12 @@ DynamoDB's physical purge is only eventually consistent (up to ~48h), so **reads
 out already-expired rows**. `traceRepository` keeps pulling bounded pages until its `Limit` is
 filled with live rows, because DynamoDB applies `Limit` before the app-side filter.
 
-Generated images live outside the table entirely: `S3_BUCKET_NAME` is a public-read bucket
-and **nothing expires its objects** — attach a bucket lifecycle rule if image retention
-matters. See [SECURITY.md](SECURITY.md#data-exposure-and-retention).
+Generated images live outside the table entirely, and **only the bucket can expire them**. The
+app stores an object key and signs a URL per read, but it never deletes an object — a chat row
+disappears by DynamoDB TTL, which the application never observes, so there is no moment at
+which it could cascade. **Attach a bucket lifecycle rule matching `CHAT_RETENTION_DAYS`**; that
+is the deliberate division of the work, not an omission. See
+[SECURITY.md](SECURITY.md#data-exposure-and-retention).
 
 ## Spend and load guards
 
@@ -281,7 +284,11 @@ liveness is what made this class of failure invisible.
 - [ ] `AES_ENCRYPTION_KEY` provisioned as a secret, and backed up — losing it makes every stored credential unreadable
 - [ ] DynamoDB table created with `PK`/`SK`, `GSI1`, `GSI2`, and **TTL enabled on `expiresAt`**
 - [ ] `PUBLIC_BASE_URL` set (Agent Cards, Slack manifests, OAuth callback)
-- [ ] Task/instance role grants DynamoDB, and S3 + SSM if those features are used
+- [ ] Task/instance role grants DynamoDB, and S3 + SSM if those features are used. The S3 grant
+      needs `s3:GetObject` as well as `s3:PutObject` — read URLs are pre-signed, which signs
+      with the role's own credentials
+- [ ] If `S3_BUCKET_NAME` is set: the bucket is **private** (public-read is no longer needed),
+      with a lifecycle rule expiring `images/` on the same window as `CHAT_RETENTION_DAYS`
 - [ ] LB health check → `/api/ready` (or `/api/health` on a scaled fleet), restart check → `/api/health`
 - [ ] Container `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
 - [ ] Prometheus scraping `/api/metrics`; alerts on `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total`

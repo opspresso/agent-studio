@@ -424,11 +424,20 @@ Other properties worth knowing:
 - Log lines carry a run correlation id, never prompt content.
 - Traces, usage rows, chats, trigger deliveries and inbound A2A tasks all expire via DynamoDB
   TTL — see [OPERATIONS.md](OPERATIONS.md#row-retention).
-- **Generated images are the exception to both rules above.** With `S3_BUCKET_NAME` set they
-  upload to a **public-read** bucket under an unguessable UUID key, cacheable for a year, and
-  **nothing expires them** — no code path deletes an object and no lifecycle rule ships with
-  the app. Anyone holding a chat transcript or Slack message holds working image URLs
-  indefinitely; attach a bucket lifecycle rule if that is not acceptable.
+- **Generated images** are stored under an unguessable UUID key with `S3_BUCKET_NAME` set, and
+  a chat row keeps the **object key** — never an address. URLs are pre-signed at read time with
+  a lifetime chosen for the reader: 15 minutes for the chat view, and the whole run deadline
+  plus a margin for a replay, because that URL is fetched by the *model provider* at whatever
+  point in the run it reaches the turn. The bucket therefore does not need to be public-read,
+  and a transcript no longer carries a link that works forever for anyone who sees it.
+  - Rows written before this carry a public `url` and are read back unchanged. Rewriting them
+    would change nothing about who can reach those objects, which are already public — so
+    **if the bucket was ever public-read, its existing objects still are.** Making it private
+    is the operator's step, and old rows stop resolving when it happens.
+  - **Nothing in the app expires an object.** DynamoDB TTL removes the chat row silently — the
+    app never observes the expiry — so only the bucket can expire images on the same clock.
+    Attach a lifecycle rule matching `CHAT_RETENTION_DAYS`; it is on the deployment checklist
+    in [OPERATIONS.md](OPERATIONS.md#operational-checklist-for-a-new-deployment).
 
 ## Operational notes
 
