@@ -25,6 +25,7 @@ import {
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { log } from "@/shared/logger";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 export interface TriggerDeps {
   triggers: TriggerRepository;
@@ -243,6 +244,14 @@ export function createTriggerUseCases(deps: TriggerDeps) {
         ...(rotated ? { secret: deps.cipher.encrypt(rotated) } : {}),
       };
       await deps.triggers.put(updated);
+      if (rotated) {
+        await recordAudit({
+          actorEmail: userEmail,
+          action: "secret.rotate",
+          target: auditTarget("project", projectName),
+          detail: `webhook trigger secret '${triggerId}' reissued; the previous secret stopped working`,
+        });
+      }
       return toView(updated, deps.cipher, rotated);
     },
 
@@ -264,18 +273,31 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       if (trigger.kind !== "webhook") {
         throw new ValidationError("A schedule trigger has no secret");
       }
-      // Secret access is worth a trail even when it is authorized.
+      // Secret access is worth a trail even when it is authorized — as a row
+      // that can be queried later, and as a line that survives the audit store.
       log.warn(
         "trigger",
         `secret of trigger '${projectName}/${triggerId}' revealed by ${userEmail}`,
       );
+      await recordAudit({
+        actorEmail: userEmail,
+        action: "secret.reveal",
+        target: auditTarget("project", projectName),
+        detail: `webhook trigger secret '${triggerId}'`,
+      });
       return { secret: deps.cipher.decrypt(trigger.secret), createdAt: trigger.createdAt };
     },
 
     async remove(projectName: string, triggerId: string, userEmail: string): Promise<void> {
       await assertProjectWritable(deps.projects, projectName, userEmail);
-      await load(projectName, triggerId);
+      const removed = await load(projectName, triggerId);
       await deps.triggers.delete(projectName, triggerId);
+      await recordAudit({
+        actorEmail: userEmail,
+        action: "secret.revoke",
+        target: auditTarget("project", projectName),
+        detail: `${removed.kind} trigger '${triggerId}' deleted`,
+      });
     },
 
     async runs(

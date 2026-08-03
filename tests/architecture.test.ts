@@ -306,6 +306,16 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/mcp/types.ts",
   },
   {
+    // Eight acts record one, and each is the kind of code written once and read
+    // years later. A second writer would spell `target` its own way, and a
+    // filter that worked for reveals would silently return nothing for
+    // deletions — the failure being invisible is the whole problem with an
+    // audit trail that has drifted.
+    what: "how an audit row is written",
+    pattern: /const event: AuditEvent = \{/,
+    owner: "src/application/audit/recordAudit.ts",
+  },
+  {
     what: "which storage errors mean a lost conditional write",
     pattern: /ConditionalCheckFailedException/,
     owner: "src/application/errors.ts",

@@ -115,6 +115,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
 | `/api/settings/a2a-key/reveal` | `POST` | admin |
+| `/api/audit` | `GET` | admin |
 
 ### Unauthenticated / machine surfaces
 
@@ -274,7 +275,7 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 - `/reveal` returns the *effective* key in plaintext — the stored override decrypted, or the
   env value when there is no override — or `404` when none is configured. A POST although it
   reads, for the same reason as the project token: the body is a live credential. Every
-  reveal is logged server-side with the caller's email.
+  reveal leaves an audit row and a server-side log line naming the caller.
 - `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
   array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
   currently effective key for that provider name. Provider `name` must be one of
@@ -283,6 +284,24 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); a masked value on
   PUT keeps the stored secret, an empty string removes the override (env fallback). Setting `adminEmails` to a list that excludes
   the caller is rejected with `400`.
+
+## Audit trail
+
+```
+GET /api/audit?from=2026-08-01&to=2026-08-03
+  → 200 { events: [ { eventId, actorEmail, action, target, detail?, createdAt } ] }
+```
+
+- Admin-only: the rows name people. `from` defaults to today, `to` to `from`; both are UTC
+  days (`YYYY-MM-DD`). A range spans at most **31 days** — rows are stored one partition per
+  day and read the same way, so the span is the query count. `400` on a malformed day, a
+  reversed range, or one wider than that.
+- Newest first. `action` is one of `secret.reveal` | `secret.rotate` | `secret.revoke` |
+  `project.admin-override` | `settings.update` | `project.delete` | `registry.delete`;
+  `target` is `kind:name`.
+- **Read-only, by construction.** There is no write verb here or anywhere else — rows are
+  appended by the acts themselves and expire by TTL (`AUDIT_RETENTION_DAYS`). `detail` never
+  carries a credential: a settings write records which keys moved, never their values.
 
 ## Viewer
 

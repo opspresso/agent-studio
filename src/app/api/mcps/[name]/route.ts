@@ -12,7 +12,7 @@ const updateSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
 });
 
-export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
     return Response.json(await mcpUseCases.get(parseName(name)));
@@ -21,7 +21,7 @@ export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) 
   }
 });
 
-export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
+export const PUT = withAdminAuth(async (user, request: Request, ctx: RouteContext) => {
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return invalidRequest(parsed.error);
@@ -34,10 +34,10 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
   }
 });
 
-export const DELETE = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withAdminAuth(async (user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
-    await mcpUseCases.remove(parseName(name));
+    await mcpUseCases.remove(parseName(name), user.email);
     return new Response(null, { status: 204 });
   } catch (error) {
     return apiError(error);

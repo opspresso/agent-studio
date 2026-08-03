@@ -74,6 +74,8 @@ export async function syncToolsFromSnapshot(
   mcps: Pick<McpUseCases, "list" | "create" | "update" | "remove">,
   snapshot: ToolsRepoSnapshot,
   selection: SyncSelection = {},
+  /** Who asked for the sync; a deletion it performs is recorded against them. */
+  actorEmail = "sync",
 ): Promise<RepoSyncResult> {
   const source = `github:${snapshot.repo}`;
   const overwrite = new Set(selection.overwrite ?? []);
@@ -174,7 +176,7 @@ export async function syncToolsFromSnapshot(
       orphaned.push(server.name);
       continue;
     }
-    await mcps.remove(server.name);
+    await mcps.remove(server.name, actorEmail);
     removed.push(server.name);
   }
 

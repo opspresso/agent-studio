@@ -3,6 +3,7 @@ import { apiError } from "@/app/api/_lib/http";
 import { generateSecretValue } from "@/shared/generatedSecret";
 import { invalidateSettingsCache } from "@/lib/runtime-settings";
 import { withAdminAuth } from "@/lib/session";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 /**
  * Issue (or reissue) the app-wide A2A API key. Admin-only, like every settings
@@ -17,6 +18,16 @@ export const POST = withAdminAuth(async (user) => {
     const key = generateSecretValue("a2aApiKey");
     const view = await settingsUseCases.update({ a2aApiKey: key }, user.email);
     invalidateSettingsCache();
+    // A second row beside the `settings.update` the write itself records, and
+    // deliberately: that one says which key moved, this one says a credential
+    // was rotated. A reader asking "when was anything rotated" filters on the
+    // action, and would not find this act under a settings write.
+    await recordAudit({
+      actorEmail: user.email,
+      action: "secret.rotate",
+      target: auditTarget("settings", "app"),
+      detail: "A2A_API_KEY reissued; the previous key stopped working",
+    });
     return Response.json({ key, view });
   } catch (error) {
     return apiError(error);

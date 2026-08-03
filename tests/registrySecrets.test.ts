@@ -284,7 +284,7 @@ describe("registry conditional write errors", () => {
       throw error;
     };
 
-    await expect(createMcpUseCases(repo).remove("m")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(createMcpUseCases(repo).remove("m", "admin@example.com")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

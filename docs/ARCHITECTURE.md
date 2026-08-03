@@ -171,6 +171,7 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
 | Trace deletion reference | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
+| Audit record | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
 | App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
 
 **Why one table and two GSIs.** Primary-key access covers everything item-scoped: a project
@@ -1170,6 +1171,45 @@ success. It decides on the bytes (a UTF-8 round trip, plus a NUL check for ASCII
 never on the declared content type, which is absent or wrong often enough to lose real files.
 The same decision guards MCP tool results: a non-image `resource.blob` that is not text is now
 named and omitted rather than dumped.
+
+### Audit records
+
+A sensitive act leaves a row, not only a log line, and the two are kept side by side because
+they answer to different readers. A log line reaches whoever is already tailing the stream, is
+retained by whatever ships it, and cannot answer "who changed the admin list last quarter". An
+audit row answers exactly that and nothing else.
+
+```ts
+AuditEvent { eventId, actorEmail,
+             action: 'secret.reveal' | 'secret.rotate' | 'secret.revoke'
+                   | 'project.admin-override' | 'settings.update'
+                   | 'project.delete' | 'registry.delete',
+             target,        // `kind:name` — `project:my-bot`, `skill:pdf-reader`
+             detail?, createdAt }
+```
+
+**One writer**, `recordAudit` (`src/application/audit/recordAudit.ts`), pinned by
+`tests/architecture.test.ts`. Eight acts record one; a second writer would spell `target` its
+own way, and a filter that worked for reveals would quietly return nothing for deletions —
+which is the characteristic failure of a drifted audit trail, since it looks like an absence
+of events rather than a bug. The store is **pushed in** by the composition root for the same
+reason `setAdminCheck` is: a call site that had to pass it could forget, and one unrecorded act
+is indistinguishable from one that never happened.
+
+**A failed write is logged, not thrown.** The act already happened; refusing it afterwards
+would turn a storage blip into an outage of every sensitive operation at once. The pre-existing
+`log.warn` lines at each site are deliberately kept for exactly this case — they are what
+remains when the audit store is the thing that failed.
+
+`action` is a closed set so the reader is a filter rather than a text search, and so recording
+a new kind of act is a deliberate edit. `detail` never carries a credential: a settings write
+records *which* keys moved, never their values, and two of those keys are secrets.
+
+Rows are keyed by the **UTC day** they happened on and read a day at a time, the shape usage
+already uses — it keeps a deployment's whole history from appending to one partition. Nothing
+in the app updates or deletes one; expiry is the table's TTL. A record its subject can amend is
+not a record, and it is what makes a *deleted* project's owner still answerable, since the
+cascade takes every other row that knew.
 
 ### Usage and cost attribution
 

@@ -112,6 +112,18 @@ export const keys = {
     SK: "META",
   }),
 
+  /**
+   * Audit records, partitioned by the UTC day they happened on. A day at a time
+   * is how they are read, and it keeps every sensitive act of the deployment's
+   * whole history from appending to one partition — the same reason usage rows
+   * are keyed by date.
+   */
+  auditEvent: (day: string, createdAt: string, eventId: string) => ({
+    PK: `AUDIT#${day}`,
+    SK: `${createdAt}#${eventId}`,
+  }),
+  auditDayPartition: (day: string) => `AUDIT#${day}`,
+
   trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),
   traceRef: (projectName: string, createdAt: string, traceId: string) => ({
     PK: `PROJECT#${projectName}`,

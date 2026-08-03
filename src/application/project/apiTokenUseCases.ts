@@ -4,6 +4,7 @@ import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/gene
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { assertProjectWritable, getProject } from "./projectUseCases";
 import { log } from "@/shared/logger";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 
 export interface ApiTokenStatus {
   configured: boolean;
@@ -32,6 +33,12 @@ export async function generateApiToken(
   const masked = cipher.mask(token);
   const createdAt = new Date().toISOString();
   await repo.setApiToken(name, { token: cipher.encrypt(token), masked, createdAt });
+  await recordAudit({
+    actorEmail: userEmail,
+    action: "secret.rotate",
+    target: auditTarget("project", name),
+    detail: "API token issued; any previous one stopped working",
+  });
   return { token, masked, createdAt };
 }
 
@@ -85,8 +92,15 @@ export async function revealApiToken(
       "This token was issued before tokens could be shown again, so only its hash is stored. Regenerate it to get a token you can read back.",
     );
   }
-  // Secret access is worth a trail even when it is authorized.
+  // Secret access is worth a trail even when it is authorized. Both the line and
+  // the row: the row is queryable, the line survives an audit-store failure.
   log.warn("token", `API token of project '${name}' revealed by ${userEmail}`);
+  await recordAudit({
+    actorEmail: userEmail,
+    action: "secret.reveal",
+    target: auditTarget("project", name),
+    detail: "API token",
+  });
   return { token: cipher.decrypt(stored.token), createdAt: stored.createdAt };
 }
 
@@ -98,6 +112,12 @@ export async function revokeApiToken(
 ): Promise<void> {
   await assertProjectWritable(repo, name, userEmail);
   await repo.deleteApiToken(name);
+  await recordAudit({
+    actorEmail: userEmail,
+    action: "secret.revoke",
+    target: auditTarget("project", name),
+    detail: "API token",
+  });
 }
 
 /**
