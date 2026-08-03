@@ -195,11 +195,18 @@ Better Auth unique-field lookups.
 
 ## Request flow
 
-Eight execution entry points converge on the facades in
-`src/application/execution/runProject.ts` (`executeVersion` / `executeVersionStream` /
-`executeProjectStream` / `executeProject` / `executeAgent`) — the composition point that resolves a version's
-skills, MCP tools and subagents from repositories, assembles the injected engine deps, and
-records usage. To trace any request, start there.
+Eight execution entry points converge on `src/application/execution/runProject.ts`, which
+answers two separate questions in two tiers.
+
+| Tier | Functions | What it decides |
+|---|---|---|
+| **Dispatch** — what an entry point calls | `executeProjectStream` / `executeProject`, plus `executeAgent` for the surfaces that only ever run agent projects | which strategy a `projectType` runs |
+| **Admit** — what starts a run | `executeVersion` / `executeVersionStream` for the single-shot path, `executeAgent` for the tool loop | the [run bracket](#the-run-bracket); an agent run additionally resolves the version's skills, MCP tools and subagents from repositories, assembles the injected engine deps, and flushes usage at the end |
+
+`executeAgent` is in both tiers — an agent surface calls it directly, and it opens its own
+bracket. **Nothing outside this module calls `executeVersion` or `executeVersionStream`**, and
+nothing should: arriving at one directly is exactly how a caller skips the `projectType`
+dispatch. To trace a request, start at the dispatch tier.
 
 | Entry point | Caller | Facade used |
 |---|---|---|
@@ -263,10 +270,11 @@ The dashed edges are the image branch: every image-capable surface asks `runStra
 and hands an `image` project to `generateImage` *before* asking the facade, which refuses it.
 The bracket admits both paths — it is what wraps a top-level run however it started.
 
-One thin wrapper sits alongside: `generateImage`
-(`src/application/image/generateImage.ts`, the image predict path). `collectRun` — which
-drains an agent stream into one collected answer — lives with the facades in
-`runProject.ts`, where `executeProject` uses it for the non-stream agent case.
+`generateImage` (`src/application/image/generateImage.ts`) sits outside this module but starts
+a run the same way — the predict route, the A2A executor and the trigger runner reach it
+directly, which is why it joins the admitting functions below. `collectRun`, which drains an
+agent stream into one collected answer, stays here, where `executeProject` uses it for the
+non-stream agent case.
 
 `executeProjectStream` (and `executeProject`, its non-streaming counterpart) is the
 canonical `projectType` → strategy dispatch: `agent` runs the multi-turn tool loop, `llm`
@@ -281,11 +289,11 @@ enters the tool loop.
 
 ### The run bracket
 
-Exactly four functions admit a top-level run — `executeVersion`, `executeVersionStream`,
-`executeAgent` and `generateImage` — and each opens a bracket
-(`src/application/execution/runBracket.ts`). The bracket is the single owner of everything
-that wraps a run regardless of how it was started: the in-flight metric, the daily cost
-guard, the per-caller concurrency guard, and the log correlation id.
+Exactly four functions admit a top-level run — the [admit tier](#request-flow)'s
+`executeVersion`, `executeVersionStream` and `executeAgent`, plus `generateImage` — and each
+opens a bracket (`src/application/execution/runBracket.ts`). The bracket is the single owner
+of everything that wraps a run regardless of how it was started: the in-flight metric, the
+daily cost guard, the per-caller concurrency guard, and the log correlation id.
 
 Each of those four used to open the in-flight metric for itself, which is exactly why the
 cost guard had four places it could be forgotten. `tests/architecture.test.ts` now pins the
