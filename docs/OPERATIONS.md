@@ -258,12 +258,22 @@ triggers wants one even with no schedule configured. Every fifth tick sweeps eve
 triggers and finishes rows a lost instance left in `running` — without it those rows stay
 `running` forever and `repaired` never moves. The sweep is the only part of the tick that
 reads history, which is why it is gated: it costs one query per project plus one per trigger.
+Those reads run bounded-concurrently rather than one after another — serially they made the
+sweep as deep as the project count, and a tick that outlasts the CronJob's timeout fires
+nothing that minute.
+
+The tick scans **every workspace**, reading the registry each time so the ticker stays
+stateless. That read is fenced: if it fails, the default workspace is still scanned and the
+named ones wait for the next tick. The concurrency bound on firings is shared across all of
+them, not handed to each — otherwise a deployment with twenty workspaces would drive twenty
+times the limit on whichever pod served the tick.
 
 ## Multi-instance caveats
 
 | Behaviour | Bound by | Consequence |
 |---|---|---|
 | Runtime settings propagation | `SETTINGS_CACHE_TTL_MS` (5s) | A demoted admin or rotated A2A key keeps working elsewhere until the cache expires — invalidation on write is process-local. |
+| Workspace membership propagation | `WORKSPACE_CACHE_TTL_MS` (5s) | A member added, removed or given a different role keeps their old answer on instances that did not serve the write. Same process-local invalidation, same reason for a short default. |
 | MCP registry edits | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | An edit made on one instance goes unseen on the others for up to that window. |
 | Managed MCP | — | **One app instance per host.** A managed container joins exactly one network namespace. |
 | Metrics counters | — | Per-process. Aggregate across instances at the scrape layer. |

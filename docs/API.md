@@ -118,11 +118,19 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/me` | `GET` | session |
-| `/api/settings` | `GET` `PUT` | admin |
-| `/api/settings/a2a-key` | `POST` | admin |
-| `/api/settings/a2a-key/reveal` | `POST` | admin |
-| `/api/settings/workspace` | `GET` `PUT` | admin |
-| `/api/audit` | `GET` | admin |
+| `/api/settings` | `GET` `PUT` | deployment admin |
+| `/api/settings/a2a-key` | `POST` | deployment admin |
+| `/api/settings/a2a-key/reveal` | `POST` | deployment admin |
+| `/api/settings/workspace` | `GET` `PUT` | workspace admin |
+| `/api/organizations` | `GET` `POST` | session (`GET`) / deployment admin (`POST`) |
+| `/api/organizations/{id}` | `PATCH` `DELETE` | workspace admin (`PATCH`) / deployment admin (`DELETE`) |
+| `/api/organizations/{id}/members` | `GET` `PUT` | workspace admin |
+| `/api/organizations/{id}/members/{email}` | `DELETE` | workspace admin |
+| `/api/audit` | `GET` | workspace admin |
+
+**Deployment admin** is not the same gate as **workspace admin**: the app settings row, the
+inbound A2A key and the managed MCP servers are one per deployment and shared by every
+workspace. See [SECURITY.md](SECURITY.md#workspace-admin-vs-deployment-admin).
 
 ### Unauthenticated / machine surfaces
 
@@ -265,12 +273,18 @@ GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
 PUT /api/settings → 200 {…same shape…} | 400
 ```
 
-- Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
-  `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `toolsRepo`, `toolsRepoBranch`,
-  `githubToken`, `a2aApiKey`, `publicBaseUrl`, `unknownModelPolicy`.
+- Deployment-admin-only (both verbs) — this row is the whole installation's, not a
+  workspace's. Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`, `llmApiKey`,
+  `skillsRepo`, `skillsRepoBranch`, `toolsRepo`, `toolsRepoBranch`, `githubToken`,
+  `a2aApiKey`, `publicBaseUrl`, `unknownModelPolicy`.
+- `unknownModelPolicy` is `allow | refuse`, validated as an enum: the dispatcher refuses on
+  the exact word `refuse`, so a free string would store a typo that silently means `allow`.
 
 ```
-GET /api/settings/workspace → 200 { tenant, fields: { <key>: { value, source, secret } }, updatedAt? }
+GET /api/settings/workspace → 200 { tenant,
+                                    fields: { <key>: { value, source, secret } },
+                                    llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix } ] },
+                                    updatedAt? }
 PUT /api/settings/workspace → 200 {…same shape…} | 400
 ```
 
@@ -285,6 +299,41 @@ an override, which is the only way to undo one. Secrets follow the same lifecycl
 everywhere else — masked on read, and a masked value on write keeps what is stored. The
 default workspace has no row of its own: it *is* the deployment, and a second row would let
 the two disagree.
+
+`llmProviders` is reported the same way the app view reports it and replaced the same way — a
+full list, an empty array to inherit the deployment's. A masked `apiKey` keeps what this
+workspace already stored for that provider; unlike the app path there is no environment to
+fall back to, because a workspace's providers are its own or they are the deployment's whole
+list, never a mix.
+
+## Workspaces
+
+```
+GET    /api/organizations                        → 200 { organizations: [ { id, displayName, createdAt, updatedAt } ] }
+POST   /api/organizations                        → 201 { id, displayName, … } | 400 | 409
+PATCH  /api/organizations/{id}                   → 200 { … }  { displayName }
+DELETE /api/organizations/{id}                   → 200 { ok, note }
+GET    /api/organizations/{id}/members           → 200 { members: [ { organizationId, userEmail, role, … } ] }
+PUT    /api/organizations/{id}/members           → 200 { … }  { email, role }
+DELETE /api/organizations/{id}/members/{email}   → 200 { ok }
+```
+
+The registry that makes workspaces reachable from the product; without it the tenant scheme is
+only writable by hand. `GET` lists every workspace to a deployment operator and only the
+caller's own to anyone else.
+
+- **`id` is immutable** — it is the key prefix every row of the workspace carries, so renaming
+  one would orphan all of them. `PATCH` changes the display name only. It must be a slug, and
+  `default` is refused: that is the unprefixed workspace every deployment already is.
+- **The creator becomes the first admin.** A workspace with no members is one nobody can
+  administer, since its member list and settings are both gated on a membership role.
+- **A workspace always keeps an admin.** Demoting or removing the last one is a `400`.
+- **`DELETE` removes the record and the memberships, not the data.** Those rows sit behind
+  `T#{id}#` across every partition prefix, so removing them is a deliberate sweep rather than
+  a cascade behind a button; `note` says so, and so does the audit row.
+- A creation that loses the race is `409`, never a merge — two workspaces sharing a key prefix
+  is not something a later check could untangle.
+- Existing data stays in the default workspace. `scripts/retenant-table.ts` is what moves it.
 
 ```
 POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
@@ -311,15 +360,18 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 ## Viewer
 
 ```
-GET /api/me → 200 { email, isAdmin, isConfiguredAdmin }
+GET /api/me → 200 { email, tenant, role?, isAdmin, isConfiguredAdmin, isDeploymentAdmin }
 ```
 
-Both flags are sent because they answer different questions and the console needs both:
-`isAdmin` (may mutate shared registries and app settings — an empty `ADMIN_EMAILS` means *no
-restriction*) and `isConfiguredAdmin` (may write a project owned by someone else — an empty
-list means *nobody*). Neither is derivable in the browser, and inferring one from the other is
-what once offered every signed-in user an edit form that 403'd on save. See
-[SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
+Three flags because they answer three different questions and the console needs all of them:
+`isAdmin` (may mutate this workspace's shared registries — an empty `ADMIN_EMAILS` means *no
+restriction* outside a workspace), `isConfiguredAdmin` (may write a project owned by someone
+else — an empty list means *nobody*), and `isDeploymentAdmin` (may reach what the whole
+deployment shares). None is derivable in the browser, and inferring one from another is what
+once offered every signed-in user an edit form that 403'd on save. `role` is present exactly
+when the caller is in a named workspace, which is also how the console tells the two cases
+apart. See [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin) and
+[workspace vs deployment admin](SECURITY.md#workspace-admin-vs-deployment-admin).
 
 ## Chats
 
@@ -364,6 +416,12 @@ The chat read (`GET /api/chats/{chatId}`) returns each document's `name` and `no
 empty `text`: the extracted text is what a *later turn* replays, read server-side, and
 shipping it to the browser would put tens of thousands of characters per turn on the wire for
 a view that renders neither.
+
+It also returns `warnings: string[]` — what the transcript is missing. Today that is an image
+whose stored object could not be signed (the bucket was removed, the object is gone). It is
+dropped rather than rendered broken, and reported rather than dropped silently: a thread that
+comes back one picture short otherwise reads as one that never had it. The same loss on the
+replay path arrives as a leading `warning` chunk on the run.
 
 ## Registry and integration operations
 
@@ -865,6 +923,11 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
 `{ name, displayName, description, cardUrl }`.
 
 Missing key → `503` (not configured) or `401` (mismatch, constant-time compared).
+
+Both A2A routes take the workspace hint (`X-Tenant`, or `?tenant=`), the card as well as the
+JSON-RPC endpoint: a project published in a workspace is only found in that workspace's scope,
+and discovering an agent by its card is the protocol's normal entry point. A hint that is not
+a slug is `400` rather than a scope nobody owns.
 
 Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state (`message/send` →
 `tasks/get`/`tasks/cancel`) is persisted per project in DynamoDB, so it survives redeploys and

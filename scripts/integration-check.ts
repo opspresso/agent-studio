@@ -62,9 +62,24 @@ async function main() {
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
     "@/infrastructure/crypto/secretEncryption"
   );
-  const { withTenant } = await import("@/shared/tenantContext");
+  const { withTenant, DEFAULT_TENANT } = await import("@/shared/tenantContext");
+  const { settingsRepository } = await import(
+    "@/infrastructure/db/repositories/settingsRepository"
+  );
   const { retenantTable } = await import("./retenant-table");
+  const { keys } = await import("@/infrastructure/db/keys");
+  const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
+  const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
   type Project = Awaited<ReturnType<typeof projectRepository.list>>[number];
+
+  /** Remove rows whose repository has no delete, so a run leaves the table as it found it. */
+  const deleteRows = async (rows: { PK: string; SK: string }[]) => {
+    for (const Key of rows) {
+      await getDocumentClient()
+        .send(new DeleteCommand({ TableName: getTableName(), Key }))
+        .catch(() => {});
+    }
+  };
 
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -539,6 +554,17 @@ async function main() {
   const migrating = `it-migrate-${suffix}`;
   try {
     await projectRepository.create(defaultTenantProject(migrating));
+    // Two rows that share the `SETTINGS#` stem and do not share a fate: the
+    // workspace row is a tenant's, the app row is the deployment's. The
+    // migration used to move neither, because its prefix list had drifted from
+    // `keys.ts` — and its own re-run safety made that permanent.
+    const appSettings = { llmBaseUrl: "https://app.example/v1", updatedAt: now };
+    await settingsRepository.put(appSettings);
+    await settingsRepository.putTenant(DEFAULT_TENANT, {
+      llmBaseUrl: "https://workspace.example/v1",
+      updatedAt: now,
+    });
+
     await retenantTable({ tenant: "it-moved", apply: true });
     assert.equal(
       (await withTenant("it-moved", () => projectRepository.get(migrating)))?.name,
@@ -553,10 +579,34 @@ async function main() {
       true,
       "the GSI listing moved with it",
     );
+    assert.equal(
+      (await settingsRepository.getTenant("it-moved"))?.llmBaseUrl,
+      "https://workspace.example/v1",
+      "the workspace settings row moved with everything else",
+    );
+    assert.equal(
+      await settingsRepository.getTenant(DEFAULT_TENANT),
+      null,
+      "and is no longer at its unprefixed key",
+    );
+    assert.equal(
+      (await settingsRepository.get())?.llmBaseUrl,
+      appSettings.llmBaseUrl,
+      "while the deployment's own settings row stayed where it is",
+    );
     pass("re-keying a default-tenant deployment onto a named tenant");
   } finally {
     await withTenant("it-moved", () => projectRepository.delete(migrating)).catch(() => {});
     await projectRepository.delete(migrating).catch(() => {});
+    // The settings rows have no repository delete — they are singletons nothing
+    // removes in production. They still have to go: an `llmBaseUrl` override
+    // left in the table is read by the *next* run's engine checks, which then
+    // dial a hostname that does not resolve.
+    await deleteRows([
+      keys.settings(),
+      keys.tenantSettings(DEFAULT_TENANT),
+      keys.tenantSettings("it-moved"),
+    ]);
   }
 
   console.log(`\n${results.length} integration checks passed`);

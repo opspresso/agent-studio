@@ -96,12 +96,44 @@ Within the caller's workspace:
 | Per-caller usage (`usage/actors`) | owner or workspace admin | — |
 | Project usage totals | any member | — |
 | Skills / MCP servers / external agents | any member | admin (`withAdminAuth`) |
-| App settings | admin | admin |
+| Workspace settings | admin | admin (`PUT /api/settings/workspace`) |
+| Workspace members | admin | admin (`/api/organizations/{id}/members`) |
+| Audit log | admin | — (append-only) |
 | Chats | owner only (non-owner reads 404) | owner only |
 
 Traces and the Slack config are gated on *read* as well because they expose other users'
 runtime inputs/outputs and masked credential edges. Project *totals* stay open because the
 catalog is shared; a breakdown by caller names individuals, so `usage/actors` does not.
+
+### Workspace admin vs deployment admin
+
+Not every admin-gated surface belongs to a workspace. The app settings row, the inbound A2A
+key and the managed MCP containers are **one per deployment** and shared by every workspace,
+so a workspace admin reaching them would be reading the deployment's LLM credentials, rotating
+a key every other tenant depends on, or provisioning containers on shared infrastructure.
+
+| Gate | Admits | Guards |
+|---|---|---|
+| `withAdminAuth` | this workspace's admins | that workspace's shared registries, its settings, its members, its audit log |
+| `withDeploymentAdminAuth` | `ADMIN_EMAILS` | `PUT /api/settings`, the A2A key and its reveal, `/api/mcps/managed/*`, registering and deleting a workspace |
+
+`ADMIN_EMAILS` answers the deployment question **whatever workspace the caller is in** — the
+list *is* the operators, and joining a workspace is not a reason to stop being one. The
+pre-tenant "an empty list means no restriction" rule still applies, but only on a deployment
+with no workspaces at all; otherwise an unset list would make every member of every workspace
+a deployment administrator.
+
+Managing members is answered by `isAdminOfOrganization` against the workspace **named in the
+URL**, not the ambient one: a person in several workspaces is resolved into exactly one for
+the duration of a request, and that one cannot speak for the others. A deployment operator may
+reach any workspace's members, because otherwise a workspace whose last admin left is
+unreachable by anyone.
+
+A membership lookup that *fails* refuses the request (503) rather than resolving to the
+default workspace. The fallback reads as safe — the default tenant's rows are not any named
+tenant's rows — but on a deployment that migrated some users and left the original catalog
+unprefixed, it drops a workspace member into that catalog with no role, where the pre-tenant
+`ADMIN_EMAILS` rules answer for them.
 
 ### `isAdminEmail` vs `isConfiguredAdmin`
 
@@ -467,10 +499,14 @@ Recorded (`src/application/audit/auditLog.ts` is the only writer):
 | A2A key / project token / trigger secret shown in plaintext | `secret.reveal` | the three reveal paths |
 | A credential generated, regenerated or rotated | `secret.issue` | token `POST`, a2a-key `POST`, trigger `rotateSecret` |
 | A project API token deleted | `secret.revoke` | token `DELETE` |
-| App settings written | `settings.update` | `PUT /api/settings` — **key names only, never values** |
+| App or workspace settings written | `settings.update` | `PUT /api/settings` and `PUT /api/settings/workspace` — **key names only, never values**; the target says which row |
 | A project deleted | `project.delete` | with the owner it named, since the row is gone |
 | A shared skill / MCP server / external agent deleted | `registry.delete` | the three registry `DELETE`s |
 | An admin writing a project owned by someone else | `authz.admin-override` | inside `assertProjectWritable`, so no call site can forget |
+| A workspace registered | `organization.create` | with the first admin it named |
+| A workspace record removed | `organization.delete` | with how many memberships went, and that the data rows did not |
+| Someone given a role in a workspace, or their role changed | `membership.grant` | `PUT /api/organizations/{id}/members` |
+| Someone removed from a workspace | `membership.revoke` | the member `DELETE` |
 
 Properties that matter:
 

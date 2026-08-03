@@ -1150,8 +1150,24 @@ trace ids. **Raw prompts and tool results are not stored.** Details in
 /chats  /chats/[chatId]
 /skills  /tools (MCP)  /agents  (each + /[name] detail page)
 /dashboard            cost dashboard (range picker, group by project/provider/model)
-/settings             admin-only runtime env-var overrides
+/settings             App: the deployment's runtime env-var overrides (deployment admin)
+/settings/workspace   this workspace's own overrides (workspace admin)
+/settings/members     workspaces and who is in them
+/settings/audit       the audit trail, by date range
 ```
+
+The four administrative surfaces sit behind one nav entry as tabs (`src/app/settings/layout.tsx`),
+because they answer one question — how is this installation configured — and three of them are
+admin-only: a top-level link most users can only be refused is worse than one they never see.
+Which tabs appear is a display decision read from `GET /api/me`; every page behind them asks
+the server again, and the gate has never been the tab.
+
+`/settings/members` is what makes multi-tenancy reachable. The key scheme, the role matrix and
+the workspace settings layer all depend on organization and membership rows, and until this
+page existed nothing in the product could write one — a deployment could only become
+multi-tenant by hand-editing DynamoDB. Registering a workspace is deployment-level (the id
+becomes a key prefix), managing members is the workspace's own; see
+[SECURITY.md](SECURITY.md#workspace-admin-vs-deployment-admin).
 
 UI text is in English. Mantine components provide the structure and the styling; the theme in
 `src/app/theme.ts` is the **single owner** of the brand palette and of the component defaults

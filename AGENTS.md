@@ -147,6 +147,11 @@ same rule applies to:
 | Every DynamoDB key string, and its tenant scope | `src/infrastructure/db/keys.ts` |
 | Which tenant the current work belongs to | `src/shared/tenantContext.ts` |
 | Which settings a workspace may decide | `TENANT_OVERRIDABLE_KEYS` in `src/domain/settings/types.ts` |
+| Which settings keys are secrets | `SECRET_SETTING_KEYS` in `src/application/settings/settingsUseCases.ts` |
+| Who administers the deployment, as against a workspace | `isDeploymentAdmin` in `src/lib/session.ts` |
+| Entering the workspace a machine caller named | `withMachineTenant` in `src/app/api/_lib/http.ts` |
+| A process-local cache with both a TTL and an entry cap | `src/shared/ttlCache.ts` |
+| Which key prefixes the re-keying migration must move | `keys.ts`, cross-checked against `scripts/retenant-table.ts` by `tests/architecture.test.ts` |
 | Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
 | Which pages are public | `src/proxy.ts` |
 | Whether a chunk is top-level | `isTopLevelChunk()` in `src/domain/llm/types.ts` |

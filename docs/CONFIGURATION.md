@@ -28,7 +28,9 @@ one by being written, and narrowing the list takes effect on the next read.
 Fallback is key by key, not row by row: a workspace deciding its LLM channel keeps the
 deployment's answer for its skills repository.
 
-The override layer is the admin-only `/settings` page. Only the keys marked **runtime** in
+The override layers are the admin-only `/settings` tabs: **App** writes the deployment row and
+is deployment-admin-only, **Workspace** writes the caller's own workspace row and is that
+workspace's admins'. Only the keys marked **runtime** in
 the tables below can be overridden there; everything else is env-only, because it is needed
 before the settings row can be read (`AES_ENCRYPTION_KEY` decrypts that row) or because it
 is infrastructure the process is already bound to (`STAGE`, DynamoDB, Better Auth).
@@ -209,6 +211,7 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 |---|---|---|---|
 | `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, applied to top-level predict and image runs. Agent runs are always traced. Unlike the limits above, an out-of-range value clamps into the range silently; only a non-numeric one falls back to the default. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | In-memory TTL for the settings row. Bounds cross-instance staleness of every runtime override — see [Resolution order](#resolution-order). Floors at `1`, so `0` degrades to the default rather than disabling the cache. |
+| `WORKSPACE_CACHE_TTL_MS` | `5000` | — | In-memory TTL for "which workspace is this caller in, and with what role". Read on every authenticated request; bounds how long a membership change takes to land on instances that did not serve the write. Floors at `1`. |
 | `TRACE_RETENTION_DAYS` | `30` | — | DynamoDB TTL on the row's `expiresAt`. |
 | `USAGE_RETENTION_DAYS` | `400` | — | Kept well beyond the dashboard's 184-day query window. |
 | `CHAT_RETENTION_DAYS` | `180` | — | Measured from the chat's last activity. |
