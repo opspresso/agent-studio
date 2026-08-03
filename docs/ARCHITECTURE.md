@@ -625,8 +625,8 @@ for a failure — which is what lets consumers read the ending instead of inferr
 ### Images
 
 Three paths draw a picture, and they meet at one port — `ImageChannel`
-(`src/domain/llm/imageChannel.ts`) — rather than at one use case, because each answers to a
-different caller:
+(`src/domain/llm/imageChannel.ts`) — rather than at one use case, because what reaches them
+differs: a route, a model's tool call, a transfer.
 
 | Path | Runs in | Model |
 |---|---|---|
@@ -698,8 +698,8 @@ Locally created skills with other names are untouched.
 McpServer { name, url, description?, content?, source?, runtime?: 'remote' | 'managed',
             headers: Record<string, string>,   // encrypted at rest, masked on read
             auth?,
-            image?, args?, endpointPath?, containerPort?,   // managed only
-            environment?, envRefs?,                          // managed only; environment encrypted
+            // managed only; `environment` is encrypted at rest like `headers`
+            image?, args?, endpointPath?, containerPort?, environment?, envRefs?,
             createdAt, updatedAt }
 ```
 
@@ -776,15 +776,16 @@ security property; see
 
 The stored row carries `image`, `args`, `endpointPath`, `containerPort` and the container's
 environment — everything a restart needs, because at restart time there is no operator to ask
-again. The environment arrives two ways for one reason: `envRefs` names SSM parameters, so
-their values never enter this table at all, while `environment` holds values that had nowhere
-else to live and is encrypted at rest like every other stored credential — with `PORT` refused
-there, because the runtime owns it. `containerPort` is a
-*request*, not a guarantee: only an adapter that publishes a port mapping can honour it, and
-the deployed one shares a network namespace instead, so it tells the container which port to
-bind (`PORT`) and ignores the stored value. `{{PORT}}` in an argument becomes the effective
-listen port, so images that do not honour the `PORT` environment variable still work in both
-mapped-port and shared-network deployments.
+again. The environment arrives two ways on purpose: `envRefs` names SSM parameters, so those
+values never enter this table at all, while `environment` holds the ones that had nowhere else
+to live and is encrypted at rest like every other stored credential. `PORT` is refused in it,
+because the runtime owns that.
+
+`containerPort` is a *request*, not a guarantee: only an adapter that publishes a port mapping
+can honour it, and the deployed one shares a network namespace instead, so it tells the
+container which port to bind (`PORT`) and ignores the stored value. `{{PORT}}` in an argument
+becomes the effective listen port, so images that do not honour the `PORT` environment
+variable still work in both mapped-port and shared-network deployments.
 
 **Surviving a redeploy.** A managed container joins this app's own network namespace, which is
 the only way a loopback address means the same thing at both ends. Docker resolves that
@@ -1143,8 +1144,8 @@ traced without anything having to remember it. It reads the ending through `runT
 which is what keeps a child's turn limit from marking its parent's trace.
 
 **`turn-limit` is a status of its own** because a run the turn guard stopped never produced a
-final answer. Recording it as `completed` made the one run worth investigating read as the
-most ordinary kind there is.
+final answer. Recording it as `completed` made the one run worth investigating read as normal
+on the traces page.
 
 **One transfer is one span, whatever depth it reached.** A subagent entry is keyed by the
 direct child *and* its trace id, so a deeper hop rolls into the transfer that started it while
