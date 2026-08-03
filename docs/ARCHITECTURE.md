@@ -858,7 +858,10 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
 - The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
   last ten minutes and no webhook sender waits that long. Same durability gap as Slack, too —
   an instance lost mid-delivery leaves a row stuck in `running` (the schedule scan repairs its
-  own kind's rows; extending that to these two is the `trigger-durability` milestone).
+  own kind's rows; extending that to webhook deliveries is the `trigger-durability` milestone.
+  Slack is not part of it: a lost event leaves no ledger row to finish, only a user without an
+  answer, and re-running it collides with the non-idempotence the schedule decision already
+  ruled on).
 
 #### Schedules
 
@@ -872,8 +875,9 @@ from the real one — and a dedicated worker Deployment duplicates the whole run
 loop the app can already serve. Three consumers were weighed, not one: Slack events and
 webhook deliveries share the same ack-then-`after()` durability gap, and a stateless tick
 against claimed work generalises to both — but migrating them is deliberately **not** part of
-this decision (see the `trigger-durability` milestone); at three consumers it stops being a
-deployment choice and becomes a rewrite of three execution paths.
+this decision (finishing a webhook's stranded row is the `trigger-durability` milestone;
+Slack's half stayed out of it, for the reason recorded there); at three consumers it stops
+being a deployment choice and becomes a rewrite of three execution paths.
 
 - **"Exactly once" is the claim's property, not the ticker's.** Each occurrence (a UTC minute
   instant) is claimed with the same conditional write that dedups webhook deliveries, key
