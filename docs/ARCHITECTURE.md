@@ -59,12 +59,10 @@ src/
                     # config + runtime-settings, public URLs, run metrics
   shared/           # Dependency-free helpers (dates, slugs, timeouts, PKCE, constant-time
                     # compare, logger). The bottom of the graph: imports nothing from `@/`
-  proxy.ts          # The page sign-in gate, and the single owner of which pages are
-                    # public — the model is in SECURITY.md
+  proxy.ts          # The page sign-in gate, and the single owner of which pages are public
   instrumentation.ts
                     # Boot, before the server accepts connections: fail-fast config
-                    # validation, shutdown signal handlers, and the managed-MCP repair
-                    # sweep (which a new process is precisely the event for)
+                    # validation, shutdown signal handlers, and the managed-MCP repair sweep
 ```
 
 The last two are modules, not layers: they are what runs *around* a request rather than in
