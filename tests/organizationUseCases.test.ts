@@ -15,12 +15,14 @@ import type { Organization } from "@/domain/organization/types";
 import { createOrganizationUseCases } from "@/application/organization/organizationUseCases";
 import { setAuditSink } from "@/application/audit/auditLog";
 import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import { currentTenant, DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
 
 const NOW = new Date("2026-08-03T00:00:00.000Z");
 
 const organizations = new Map<string, Organization>();
 const memberships = new Map<string, Membership>();
-const audit: AuditEventInput[] = [];
+/** The tenant each row would be keyed under, which is the whole of the fix below. */
+const audit: (AuditEventInput & { tenant: string })[] = [];
 
 const key = (organizationId: string, email: string) => `${organizationId}|${email}`;
 
@@ -71,7 +73,9 @@ beforeEach(() => {
   memberships.clear();
   audit.length = 0;
   setAuditSink(async (event) => {
-    audit.push(event);
+    // The real sink keys on `currentTenant()`, so recording it here is what
+    // makes "which workspace's log does this land in" assertable.
+    audit.push({ ...event, tenant: currentTenant() });
   });
 });
 
@@ -175,6 +179,16 @@ describe("members", () => {
     );
   });
 
+  it("writes the trail into the workspace it is about, not the actor's", async () => {
+    // A deployment operator manages `acme` from the default workspace. Keying
+    // the row on the actor's tenant put it where `acme`'s admins cannot read
+    // it — losing exactly the acts an outsider performed on them.
+    await withTenant(DEFAULT_TENANT, () =>
+      useCases.setMember("acme", "outsider@x.com", "editor", "operator@x.com"),
+    );
+    expect(audit).toEqual([expect.objectContaining({ action: "membership.grant", tenant: "acme" })]);
+  });
+
   it("records each grant and revoke against the workspace", async () => {
     await useCases.setMember("acme", "her@x.com", "editor", "boss@x.com");
     await useCases.removeMember("acme", "her@x.com", "boss@x.com");
@@ -205,7 +219,7 @@ describe("removing a workspace", () => {
   it("takes the record and the memberships, and says what it left", async () => {
     // Deliberately not a cascade: the workspace's rows are spread across every
     // partition prefix, so removing them is a sweep somebody has to mean.
-    await useCases.remove("acme", "boss@x.com");
+    await withTenant(DEFAULT_TENANT, () => useCases.remove("acme", "boss@x.com"));
     expect(organizations.size).toBe(0);
     expect(memberships.size).toBe(0);
     expect(audit).toEqual([
@@ -213,6 +227,9 @@ describe("removing a workspace", () => {
         action: "organization.delete",
         target: "organization:acme",
         detail: expect.stringContaining("left in place"),
+        // The one act recorded against the actor: `acme`'s own partition is
+        // about to have no readers, so a row there is one nobody can reach.
+        tenant: DEFAULT_TENANT,
       }),
     ]);
   });

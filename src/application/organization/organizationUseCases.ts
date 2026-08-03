@@ -24,11 +24,12 @@ import type {
   MembershipRepository,
   OrganizationRepository,
 } from "@/domain/organization/repository";
+import type { AuditEventInput } from "@/domain/audit/types";
 import type { Organization } from "@/domain/organization/types";
 import { isRole } from "@/domain/organization/membership";
 import { recordAudit } from "@/application/audit/auditLog";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
-import { DEFAULT_TENANT } from "@/shared/tenantContext";
+import { DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
 import { isSlug, SLUG_RULE } from "@/shared/slug";
 
 export interface OrganizationUseCases {
@@ -44,6 +45,24 @@ export interface OrganizationUseCases {
     actorEmail: string,
   ): Promise<Membership>;
   removeMember(organizationId: string, userEmail: string, actorEmail: string): Promise<void>;
+}
+
+/**
+ * Record an act **against the workspace it was about**, not the one the actor
+ * happens to be acting in.
+ *
+ * Audit rows are tenant-scoped like everything else, and `withAuth` enters the
+ * *caller's* workspace. A deployment operator managing `acme` is in the default
+ * one, so without this every membership change they made landed in a partition
+ * `acme`'s admins cannot read — leaving a workspace's trail silently incomplete
+ * for exactly the acts an outsider performed on it.
+ *
+ * `organization.delete` is the deliberate exception and stays with the actor:
+ * the workspace's own partition is about to have no readers, so a row there is
+ * a record nobody can reach.
+ */
+function recordFor(organizationId: string, event: AuditEventInput): Promise<void> {
+  return withTenant(organizationId, () => recordAudit(event));
 }
 
 /** An address is stored lowercased, because that is how every lookup spells it. */
@@ -120,7 +139,7 @@ export function createOrganizationUseCases(
       };
       await memberships.put(membership);
 
-      await recordAudit({
+      await recordFor(id, {
         action: "organization.create",
         actorEmail: userEmail,
         target: `organization:${id}`,
@@ -193,7 +212,7 @@ export function createOrganizationUseCases(
         updatedAt: timestamp,
       };
       await memberships.put(membership);
-      await recordAudit({
+      await recordFor(organizationId, {
         action: "membership.grant",
         actorEmail,
         target: `organization:${organizationId}`,
@@ -220,7 +239,7 @@ export function createOrganizationUseCases(
         }
       }
       await memberships.delete(organizationId, email);
-      await recordAudit({
+      await recordFor(organizationId, {
         action: "membership.revoke",
         actorEmail,
         target: `organization:${organizationId}`,
