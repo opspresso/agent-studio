@@ -4,13 +4,23 @@ import { useEffect, useState } from "react";
 
 export interface Viewer {
   email: string;
-  /** May mutate shared registries and app settings. */
+  /** The workspace this session acts in; `default` on a single-tenant deployment. */
+  tenant: string;
+  /** The caller's role in it, absent outside a workspace. */
+  role?: "viewer" | "editor" | "admin";
+  /** May mutate this workspace's shared registries. */
   isAdmin: boolean;
   /**
    * May write a project owned by someone else. Not the same question as
    * {@link isAdmin} and not interchangeable with it — see `/api/me`.
    */
   isConfiguredAdmin: boolean;
+  /**
+   * May reach what the whole deployment shares — app settings, the A2A key,
+   * managed MCP servers, the workspace registry. A third question again: a
+   * workspace admin is an admin of theirs, not of the deployment.
+   */
+  isDeploymentAdmin: boolean;
 }
 
 /**

@@ -27,6 +27,10 @@ const updateSchema = z.object({
   toolsRepoBranch: z.string().max(4000).optional(),
   githubToken: z.string().max(4000).optional(),
   a2aApiKey: z.string().max(4000).optional(),
+  // An enum rather than a free string, because "reufse" would parse, store, and
+  // silently mean `allow` — `getUnknownModelPolicy` refuses only on the exact
+  // word. An empty string is how a field is cleared back to the env layer.
+  unknownModelPolicy: z.enum(["allow", "refuse", ""]).optional(),
   publicBaseUrl: z.string().max(4000).optional(),
 });
 

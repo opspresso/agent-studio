@@ -45,6 +45,8 @@ interface FieldDef {
   key: string;
   label: string;
   placeholder?: string;
+  /** Renders a Select instead of a text box, for a setting with a closed set of values. */
+  options?: readonly string[];
 }
 
 interface SectionDef {
@@ -71,6 +73,11 @@ const SECTIONS: SectionDef[] = [
     fields: [
       { key: "llmBaseUrl", label: "LLM_BASE_URL", placeholder: "https://api.openai.com/v1" },
       { key: "llmApiKey", label: "LLM_API_KEY" },
+      {
+        key: "unknownModelPolicy",
+        label: "UNKNOWN_MODEL_POLICY",
+        options: ["allow", "refuse"],
+      },
     ],
   },
   {
@@ -282,17 +289,38 @@ export default function SettingsPage() {
                 {section.fields.map((field) => {
                   const meta = view?.fields[field.key];
                   const source = SOURCE_LABELS[meta?.source ?? "unset"];
+                  const label = (
+                    <Group component="span" gap="xs">
+                      <Text component="span" ff="monospace" fz="sm" fw={500}>
+                        {field.label}
+                      </Text>
+                      <Badge color={source.color}>{source.text}</Badge>
+                    </Group>
+                  );
+                  if (field.options) {
+                    return (
+                      <Select
+                        key={field.key}
+                        label={label}
+                        value={values[field.key] || null}
+                        // Clearing is how a field falls back to the env layer,
+                        // so `null` has to reach the patch as the empty string
+                        // every other field clears with.
+                        onChange={(value) =>
+                          setValues((prev) => ({ ...prev, [field.key]: value ?? "" }))
+                        }
+                        data={[...field.options]}
+                        placeholder="inherit"
+                        clearable
+                        w={220}
+                        styles={monoInput}
+                      />
+                    );
+                  }
                   return (
                     <TextInput
                       key={field.key}
-                      label={
-                        <Group component="span" gap="xs">
-                          <Text component="span" ff="monospace" fz="sm" fw={500}>
-                            {field.label}
-                          </Text>
-                          <Badge color={source.color}>{source.text}</Badge>
-                        </Group>
-                      }
+                      label={label}
                       value={values[field.key] ?? ""}
                       onChange={(e) => {
                         // Read now, not inside the updater: React nulls a
