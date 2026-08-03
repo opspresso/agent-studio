@@ -1,6 +1,13 @@
-import type { Chat, ChatMessage } from "@/domain/chat/types";
+import type { Chat, ViewableChatMessage } from "@/domain/chat/types";
 
-export type { Chat, ChatMessage };
+/**
+ * What the chat API returns, which is never the stored shape: an image's object
+ * key is resolved to a signed URL before it leaves the server, so the browser
+ * only ever sees the fetchable arm.
+ */
+export type ChatMessage = ViewableChatMessage;
+
+export type { Chat };
 
 /** A single SSE frame from a chat stream. */
 export interface StreamChunk {

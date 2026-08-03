@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { ImageStore } from "@/domain/chat/imageStore";
 import { config } from "@/lib/config";
 
 let s3Client: S3Client | undefined;
@@ -22,22 +24,51 @@ export function isImageStoreConfigured(): boolean {
   return config.imageBucketName !== undefined;
 }
 
-/** Upload a generated image to the public-read bucket and return its public URL. */
-export async function storeImage(image: { b64: string; mimeType: string }): Promise<string> {
+function requireBucket(): string {
   const bucket = config.imageBucketName;
   if (!bucket) {
     throw new Error("S3_BUCKET_NAME not configured");
   }
-  const extension = EXTENSIONS[image.mimeType] ?? "png";
-  const key = `images/${randomUUID()}.${extension}`;
-  await getS3Client().send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: Buffer.from(image.b64, "base64"),
-      ContentType: image.mimeType,
-      CacheControl: "public, max-age=31536000, immutable",
-    }),
-  );
-  return `https://${bucket}.s3.${config.awsRegion}.amazonaws.com/${key}`;
+  return bucket;
 }
+
+/**
+ * Chat images in S3.
+ *
+ * Objects are written with no ACL and read through presigned GETs, so holding a
+ * transcript is no longer the same as holding the pictures in it. Nothing here
+ * deletes: the row naming an object expires by DynamoDB TTL with no code path
+ * running, so an app-side delete could never cover the case that matters. The
+ * bucket's own lifecycle rule is the only mechanism that can, which is why
+ * docs/OPERATIONS.md makes it a deployment requirement rather than an option.
+ */
+export const s3ImageStore: ImageStore = {
+  async put(image) {
+    const bucket = requireBucket();
+    const extension = EXTENSIONS[image.mimeType] ?? "png";
+    const key = `images/${randomUUID()}.${extension}`;
+    await getS3Client().send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: Buffer.from(image.b64, "base64"),
+        ContentType: image.mimeType,
+        // `private`, because the URL that reaches a reader is signed and
+        // specific to that read: a shared cache holding the response would hand
+        // the object to whoever asked next, which is the property being
+        // removed here. Still immutable and long-lived — a key is a fresh UUID
+        // per object, so the bytes behind one never change.
+        CacheControl: "private, max-age=31536000, immutable",
+      }),
+    );
+    return key;
+  },
+
+  async signUrl(key, expiresInSeconds) {
+    return getSignedUrl(
+      getS3Client(),
+      new GetObjectCommand({ Bucket: requireBucket(), Key: key }),
+      { expiresIn: expiresInSeconds },
+    );
+  },
+};

@@ -422,11 +422,20 @@ Other properties worth knowing:
 - Log lines carry a run correlation id, never prompt content.
 - Traces, usage rows, chats, trigger deliveries and inbound A2A tasks all expire via DynamoDB
   TTL — see [OPERATIONS.md](OPERATIONS.md#row-retention).
-- **Generated images are the exception to both rules above.** With `S3_BUCKET_NAME` set they
-  upload to a **public-read** bucket under an unguessable UUID key, cacheable for a year, and
-  **nothing expires them** — no code path deletes an object and no lifecycle rule ships with
-  the app. Anyone holding a chat transcript or Slack message holds working image URLs
-  indefinitely; attach a bucket lifecycle rule if that is not acceptable.
+- **Chat images live outside the table, and outside its TTL.** With `S3_BUCKET_NAME` set they
+  upload under an unguessable UUID key with **no ACL**, and what a message stores is that
+  **key**. A reader is handed a presigned GET minted at read time — an hour for the browser,
+  and for a replayed attachment long enough to outlive `MAX_RUN_DURATION_MS`, because the
+  provider fetches that URL mid-run. So a copied link stops working, and holding a transcript
+  is no longer holding the pictures in it.
+  - Rows written before this carry an absolute URL instead of a key. Those objects were
+    public-read and **stay reachable by anyone who kept the address**: the change removes the
+    exposure for new images, not for old ones. A bucket that served them should have its
+    public-read policy removed and those rows treated as already disclosed.
+  - **Nothing in the app deletes an object.** It cannot: the row naming one expires by
+    DynamoDB TTL with no code path running. A **bucket lifecycle rule is the only mechanism**
+    that can expire images, which is why it is a deployment requirement rather than an option
+    — see [OPERATIONS.md](OPERATIONS.md#row-retention).
 
 ## Operational notes
 

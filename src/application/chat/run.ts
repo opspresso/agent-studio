@@ -90,7 +90,7 @@ export async function storeMessageImages(
   if (images.length === 0) {
     return { stored, warnings };
   }
-  if (!deps.storeImage) {
+  if (!deps.images) {
     return {
       stored,
       warnings: [
@@ -102,8 +102,11 @@ export async function storeMessageImages(
   let reason = "";
   for (const image of images) {
     try {
-      const url = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
-      stored.push(image.prompt === undefined ? { url } : { url, prompt: image.prompt });
+      // The key, not a URL: what a later reader may fetch is decided when they
+      // read (`withSignedImages`), so a stored transcript is not a permanent
+      // handle on the pictures in it.
+      const key = await deps.images.put({ b64: image.b64, mimeType: image.mimeType });
+      stored.push(image.prompt === undefined ? { key } : { key, prompt: image.prompt });
     } catch (error) {
       failed += 1;
       reason = error instanceof Error ? error.message : String(error);

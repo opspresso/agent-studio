@@ -13,13 +13,34 @@ export type ChatRole = "user" | "assistant" | "tool";
 
 /**
  * An image attached to a message, uploaded to object storage — a picture the run
- * generated, or one the user sent. Only the URL is stored; a b64 payload is far
- * beyond the item size limit.
+ * generated, or one the user sent. Only a reference is stored; a b64 payload is
+ * far beyond the item size limit.
+ *
+ * Two arms, and which one a row carries says when it was written. `key` is an
+ * object key, resolved to a time-limited signed URL at read time. `url` is an
+ * absolute address, and only rows written while the bucket was public-read have
+ * one — those URLs still work, so they are passed through rather than rewritten
+ * into keys nothing would sign correctly. Resolution collapses both to the `url`
+ * arm, which is why every reader (the browser, a replayed turn) sees only that.
  */
-export interface ChatMessageImage {
+export type ChatMessageImage = ({ key: string } | { url: string }) & { prompt?: string };
+
+/** A resolved image: what a reader is handed, whichever arm was stored. */
+export interface ViewableChatMessageImage {
   url: string;
   prompt?: string;
 }
+
+/**
+ * A message whose images have been resolved to URLs a reader can fetch.
+ *
+ * The distinction is carried in the type rather than in a convention, so a
+ * consumer that reads `image.url` — the browser, a replayed turn — can only be
+ * handed messages that have been through the resolver.
+ */
+export type Viewable<T> = T extends { images?: ChatMessageImage[] }
+  ? Omit<T, "images"> & { images?: ViewableChatMessageImage[] }
+  : T;
 
 /**
  * A document the user attached, stored as the text extracted from it rather than
@@ -87,3 +108,6 @@ export interface ToolChatMessage extends ChatMessageBase {
  * assistant with one) are unrepresentable.
  */
 export type ChatMessage = UserChatMessage | AssistantChatMessage | ToolChatMessage;
+
+/** A `ChatMessage` after image resolution — see {@link Viewable}. */
+export type ViewableChatMessage = Viewable<ChatMessage>;

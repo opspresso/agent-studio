@@ -176,9 +176,16 @@ DynamoDB's physical purge is only eventually consistent (up to ~48h), so **reads
 out already-expired rows**. `traceRepository` keeps pulling bounded pages until its `Limit` is
 filled with live rows, because DynamoDB applies `Limit` before the app-side filter.
 
-Generated images live outside the table entirely: `S3_BUCKET_NAME` is a public-read bucket
-and **nothing expires its objects** — attach a bucket lifecycle rule if image retention
-matters. See [SECURITY.md](SECURITY.md#data-exposure-and-retention).
+Chat images live outside the table entirely, and the app cannot expire them: a message stores
+an object key, and the row holding it disappears by DynamoDB TTL with no code path running —
+so there is no moment at which the app could delete the object it named.
+
+> **Attach a lifecycle rule to `S3_BUCKET_NAME` expiring `images/` at or after
+> `CHAT_RETENTION_DAYS`.** Without one, images outlive the chats that referenced them
+> indefinitely, with nothing left pointing at them. Objects are written with no ACL and read
+> through presigned URLs, so an un-expired object is not *reachable* without a signature — it
+> is simply data nobody meant to keep. See
+> [SECURITY.md](SECURITY.md#data-exposure-and-retention).
 
 ## Spend and load guards
 
@@ -285,6 +292,7 @@ liveness is what made this class of failure invisible.
 - [ ] DynamoDB table created with `PK`/`SK`, `GSI1`, `GSI2`, and **TTL enabled on `expiresAt`**
 - [ ] `PUBLIC_BASE_URL` set (Agent Cards, Slack manifests, OAuth callback)
 - [ ] Task/instance role grants DynamoDB, and S3 + SSM if those features are used
+- [ ] If `S3_BUCKET_NAME` is set: bucket **not** public-read, and a lifecycle rule expiring `images/` at or after `CHAT_RETENTION_DAYS`
 - [ ] LB health check → `/api/ready` (or `/api/health` on a scaled fleet), restart check → `/api/health`
 - [ ] Container `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
 - [ ] Prometheus scraping `/api/metrics`; alerts on `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total`

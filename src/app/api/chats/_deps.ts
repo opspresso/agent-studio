@@ -3,7 +3,7 @@ import { executionDeps } from "@/lib/container";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
-import { isImageStoreConfigured, storeImage } from "@/infrastructure/storage/s3ImageStore";
+import { isImageStoreConfigured, s3ImageStore } from "@/infrastructure/storage/s3ImageStore";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import type { ChatDeps } from "@/application/chat/deps";
 
@@ -17,5 +17,5 @@ export const chatDeps: ChatDeps = {
   versions: versionRepository,
   runAgent: (params) => executeAgent(executionDeps, params),
   documents: documentExtractor,
-  ...(isImageStoreConfigured() ? { storeImage } : {}),
+  ...(isImageStoreConfigured() ? { images: s3ImageStore } : {}),
 };

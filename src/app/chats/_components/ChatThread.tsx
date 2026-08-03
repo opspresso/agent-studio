@@ -6,7 +6,7 @@ import { reduceChunk } from "../_lib/stream";
 import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
-import type { ChatMessageImage } from "@/domain/chat/types";
+import type { ViewableChatMessageImage } from "@/domain/chat/types";
 import { isTopLevelChunk } from "@/domain/llm/types";
 import { Composer, LiveAssistant, MessageView, liveImageSrc } from "./parts";
 import { refreshChats } from "./ChatSidebar";
@@ -41,7 +41,7 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
   // this exists to prevent. Doubles as the only copy when storage is
   // unconfigured and the stored message carries no images at all.
   const [sessionImagesBySeq, setSessionImagesBySeq] = useState<
-    Record<number, ChatMessageImage[]>
+    Record<number, ViewableChatMessageImage[]>
   >({});
   const [status, setStatus] = useState<"loading" | "ready" | "not-found">(
     initial ? "ready" : "loading",
@@ -81,7 +81,7 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
       if (!fresh) {
         return fresh;
       }
-      const pinned: Record<number, ChatMessageImage[]> = {};
+      const pinned: Record<number, ViewableChatMessageImage[]> = {};
       if (attachments.length > 0) {
         const lastUser = [...fresh].reverse().find((message) => message.role === "user");
         if (lastUser) {

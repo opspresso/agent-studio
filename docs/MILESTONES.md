@@ -29,29 +29,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 
 ---
 
-## image-store-hardening — 생성 이미지 저장소의 public-read 제거
-
-**이유**: `S3_BUCKET_NAME`은 public-read 버킷에 업로드하고, 어떤 코드 경로도 오브젝트를
-지우지 않으며 라이프사이클 룰도 함께 배포되지 않는다 — SECURITY.md(*Data exposure and
-retention*)가 스스로 지적하는 예외다. 채팅 트랜스크립트나 Slack 메시지를 쥔 누구든 유효한
-이미지 URL을 무기한 보유한다. 엔터프라이즈(SaaS/설치형) 전환의 기반 경화 단계.
-
-**선행**: 없음.
-
-**범위**
-
-- 저장은 오브젝트 **키**를 기록하고 URL 서명을 조회 시점으로 옮긴다. 채팅 replay는 저장된
-  URL을 provider가 직접 fetch하므로(chat AGENTS.md의 *Attachments are sent twice*), replay에
-  넣는 서명의 유효기간이 런 지속시간(`MAX_RUN_DURATION_MS`)을 감당해야 한다 — 읽기 시
-  재서명이 설계의 핵심이다.
-- 이미지 만료를 `CHAT_RETENTION_DAYS`와 정합시킨다. 앱이 지우는지, 버킷 라이프사이클에
-  위임하고 OPERATIONS.md 배포 체크리스트 요건으로 만드는지가 결정 대상.
-- 기존 public URL로 저장된 행의 하위 호환(읽기 시 판별)을 명시한다.
-
-**완료 조건**: 새 업로드가 공개 ACL 없이 저장되고, 채팅 read와 replay가 시간제한 서명 URL을
-받는 것을 테스트로 검증한다. 보존 요건이 OPERATIONS.md 체크리스트에 오르고, SECURITY.md의
-해당 예외 서술이 갱신된다.
-
 ## audit-log-entity — 감사 기록의 일급 엔티티 승격
 
 **이유**: 민감 행위 — 시크릿 reveal 3종, 관리자 override 쓰기, 설정 변경, 토큰 발급·회전 —

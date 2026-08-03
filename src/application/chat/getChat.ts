@@ -1,6 +1,7 @@
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
+import { IMAGE_VIEW_TTL_SECONDS, withSignedImages } from "./imageUrls";
 
 export interface ChatWithMessages {
   chat: Chat;
@@ -41,5 +42,8 @@ export async function getChat(
     throw new ChatNotFoundError();
   }
   const messages = await deps.chats.listMessages(chatId);
-  return { chat, messages: messages.map(forReading) };
+  // Signed here rather than at write time: the stored row names an object, and
+  // what the browser is handed is a URL that stops working on its own.
+  const viewable = await withSignedImages(deps.images, messages, IMAGE_VIEW_TTL_SECONDS);
+  return { chat, messages: viewable.map(forReading) };
 }

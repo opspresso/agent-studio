@@ -58,15 +58,24 @@ into `ChatDeps.runAgent`.
   out. `sendMessage` prepends those through `withLeadingWarnings`, so a trimmed context
   reaches the reader on the same channel an unusable binding does — never silently.
 - **Images** (generated `EngineChunk.image`, and the user's attachments) are uploaded
-  through the optional `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set)
-  by `storeMessageImages` and persisted as `images: [{ url, prompt? }]` on the message —
-  the b64 payload itself is far beyond the DynamoDB item size limit. A failed upload drops
-  that image, never the message — and says so through the warning channel, because an image
-  that was never stored is indistinguishable from one that was never made. Without
-  `storeImage`, images render only during the live stream, which is also reported.
+  through the optional `ChatDeps.images` port (S3, wired when `S3_BUCKET_NAME` is set) by
+  `storeMessageImages` and persisted as `images: [{ key, prompt? }]` on the message — the
+  b64 payload itself is far beyond the DynamoDB item size limit. A failed upload drops that
+  image, never the message — and says so through the warning channel, because an image that
+  was never stored is indistinguishable from one that was never made. Without the port,
+  images render only during the live stream, which is also reported.
+- **What is stored is a key; what a reader gets is a signature.** `withSignedImages`
+  (`imageUrls.ts`) is the single owner of that resolution and the only place that knows a
+  row may instead carry a legacy absolute `url` — written when the bucket was public-read,
+  passed through untouched because no key was ever recorded for it. It returns
+  `ViewableChatMessage`, so a consumer reading `image.url` can only be handed messages that
+  went through it. Two callers, two lifetimes: `getChat` signs for an hour, and
+  `sendMessage` signs for longer than `MAX_RUN_DURATION_MS` — the provider fetches a
+  replayed URL *during* the run, so a signature scoped to the request would 403 mid-answer.
+  An image that cannot be signed is dropped rather than rendered broken.
 - **Attachments are sent twice over, deliberately.** The turn being run carries the
   attachment *bytes* as inline `data:` content parts (`userTurnContent`) — that is what
-  gives the engine a handle it can edit. Replayed history carries the *stored URL*
+  gives the engine a handle it can edit. Replayed history carries the *signed URL*
   (`toEngineMessages`), which the provider fetches: visible to the model, not editable.
   A turn with attachments and no text is a content-parts message with no text part, never
   an empty user turn.

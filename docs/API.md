@@ -315,7 +315,9 @@ draft is rejected with `400`.
 
 `images` are the user's attachments as inline bytes — `[ { b64, mimeType } ]`, at most 4 per
 turn, 5MB each, `image/png|jpeg|gif|webp`. They reach the model as content parts and are
-stored (when object storage is configured) as URLs on the user message.
+stored (when object storage is configured) as object keys on the user message. A read hands
+back a **presigned URL** minted for that read, not the key — so a link copied out of a
+response stops working on its own.
 
 `documents` are files to read rather than look at — `[ { b64, mimeType, name } ]`, at most 4
 per turn, 10MB each: PDF, plus text, Markdown, CSV/TSV, JSON, YAML, XML and HTML. `name` is

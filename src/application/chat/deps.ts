@@ -4,6 +4,7 @@ import type { ProjectRepository, VersionRepository } from "@/domain/project/repo
 import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
+import type { ImageStore } from "@/domain/chat/imageStore";
 
 export interface AgentRunParams {
   project: Project;
@@ -18,8 +19,7 @@ export interface AgentRunParams {
 /** Bound wrapper over `executeAgent(executionDeps, params)`, injected at the route boundary. */
 export type AgentRunner = (params: AgentRunParams) => AsyncGenerator<EngineChunk>;
 
-/** Upload a generated image and return its public URL. */
-export type ImageStore = (image: { b64: string; mimeType: string }) => Promise<string>;
+export type { ImageStore };
 
 /** An image the user attached to a turn, as inline bytes. */
 export interface AttachedImage {
@@ -44,7 +44,7 @@ export interface ChatDeps {
   versions: VersionRepository;
   runAgent: AgentRunner;
   /** Unset skips image persistence — images then render only during the live stream. */
-  storeImage?: ImageStore;
+  images?: ImageStore;
   /** Reads an attached document into the text the turn carries and stores. */
   documents: DocumentExtractor;
 }

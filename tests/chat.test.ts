@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
-import type { Chat, ChatMessage } from "@/domain/chat/types";
+import type { Chat, ChatMessage, ViewableChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
+import { IMAGE_VIEW_TTL_SECONDS, withSignedImages } from "@/application/chat/imageUrls";
 import { runAndPersist, userTurnContent } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
 import { deleteChat } from "@/application/chat/deleteChat";
@@ -30,19 +31,25 @@ function chatFixture(ownerEmail: string): Chat {
 
 function message(partial: {
   seq: number;
-  role: ChatMessage["role"];
+  role: ViewableChatMessage["role"];
   content?: string;
   toolCallId?: string;
   toolName?: string;
   toolCalls?: import("@/domain/llm/types").ChannelToolCall[];
-}): ChatMessage {
+}): ViewableChatMessage {
   return {
     chatId: "c1",
     content: "",
     createdAt: "2026-01-01T00:00:00.000Z",
     ...partial,
-  } as ChatMessage;
+  } as ViewableChatMessage;
 }
+
+/**
+ * What `sendMessage` hands the replay mapping: stored rows with their image
+ * references resolved. No store here — these rows carry no keys to sign.
+ */
+const replayable = (messages: ChatMessage[]) => withSignedImages(undefined, messages, 600);
 
 function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
   const state: { deleted: boolean; activeRunId?: string } = { deleted: false };
@@ -295,7 +302,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     const assistant = stored.find((m) => m.role === "assistant");
     expect(assistant).toMatchObject({ content: "The answer is 42." });
 
-    expect(toEngineMessages(stored).messages).toEqual([
+    expect(toEngineMessages(await replayable(stored)).messages).toEqual([
       { role: "user", content: "hi" },
       {
         role: "assistant",
@@ -322,7 +329,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
 
     const stored = await repo.listMessages("c1");
     expect(stored.find((m) => m.role === "assistant")).not.toHaveProperty("toolCalls");
-    expect(toEngineMessages(stored).messages).toEqual([
+    expect(toEngineMessages(await replayable(stored)).messages).toEqual([
       { role: "user", content: "hi" },
       { role: "assistant", content: "Done." },
     ]);
@@ -371,7 +378,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     expect(rows[0]).toMatchObject({ author: "child", displayOnly: true });
     expect(rows[1]).not.toHaveProperty("displayOnly");
 
-    const replayed = toEngineMessages(stored).messages.filter((m) => m.role === "tool");
+    const replayed = toEngineMessages(await replayable(stored)).messages.filter((m) => m.role === "tool");
     expect(replayed).toEqual([{ role: "tool", content: "parent", tool_call_id: "call_1" }]);
   });
 
@@ -404,7 +411,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     });
     // The child's answer is not persisted, so replaying this marker in its place
     // would tell the model the delegation came back empty.
-    expect(toEngineMessages(stored).messages.filter((m) => m.role === "tool")).toEqual([]);
+    expect(toEngineMessages(await replayable(stored)).messages.filter((m) => m.role === "tool")).toEqual([]);
   });
 
   it("keeps each run's results with its own calls when ids repeat across runs", async () => {
@@ -420,7 +427,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       message({ seq: 5, role: "assistant", content: "a2", toolCalls: [{ id: "call_1" }] }),
     ];
 
-    const mapped = toEngineMessages(stored).messages;
+    const mapped = toEngineMessages(await replayable(stored)).messages;
 
     expect(mapped.filter((m) => m.role === "tool").map((m) => m.content)).toEqual([
       "old result",
@@ -435,8 +442,11 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       message({ seq: 0, role: "user", content: "draw a cat" }),
     ]);
     const deps = makeDeps(repo, {
-      storeImage: async () => {
-        throw new Error("AccessDenied");
+      images: {
+        put: async () => {
+          throw new Error("AccessDenied");
+        },
+        signUrl: async (key: string) => `https://signed.example/${key}`,
       },
     });
     async function* source(): AsyncGenerator<EngineChunk> {
@@ -460,7 +470,7 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       yield { image: { b64: "aW1n", mimeType: "image/png" } };
       yield { delta: { content: "Here it is." } };
     }
-    // No storeImage configured at all.
+    // No image store configured at all.
     for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
       // drain the stream
     }
@@ -534,13 +544,16 @@ describe("runAndPersist image persistence", () => {
     yield { delta: { content: "Here is your cat." } };
   }
 
-  it("uploads images via storeImage and persists their URLs on the assistant message", async () => {
+  it("uploads images and persists their object keys on the assistant message", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const uploaded: string[] = [];
     const deps = makeDeps(repo, {
-      storeImage: async (image) => {
-        uploaded.push(image.mimeType);
-        return "https://bucket.s3.example.com/images/x.png";
+      images: {
+        put: async (image: { b64: string; mimeType: string }) => {
+          uploaded.push(image.mimeType);
+          return "images/x.png";
+        },
+        signUrl: async (key: string) => `https://signed.example/${key}`,
       },
     });
     for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource())) {
@@ -550,16 +563,18 @@ describe("runAndPersist image persistence", () => {
     expect(uploaded).toEqual(["image/png"]);
     const stored = await repo.listMessages("c1");
     const assistant = stored.find((m) => m.role === "assistant");
-    expect(assistant?.images).toEqual([
-      { url: "https://bucket.s3.example.com/images/x.png", prompt: "a cat" },
-    ]);
+    // The key, not a URL: what a reader may fetch is decided when they read.
+    expect(assistant?.images).toEqual([{ key: "images/x.png", prompt: "a cat" }]);
   });
 
   it("drops the image but keeps the message when the upload fails", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const deps = makeDeps(repo, {
-      storeImage: async () => {
-        throw new Error("upload failed");
+      images: {
+        put: async () => {
+          throw new Error("upload failed");
+        },
+        signUrl: async (key: string) => `https://signed.example/${key}`,
       },
     });
     for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource())) {
@@ -572,7 +587,7 @@ describe("runAndPersist image persistence", () => {
     expect(assistant?.images).toBeUndefined();
   });
 
-  it("persists no images when storeImage is not wired", async () => {
+  it("persists no images when the image store is not wired", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     for await (const _ of runAndPersist(
       makeDeps(repo),
@@ -634,6 +649,28 @@ describe("ownership checks", () => {
     const result = await getChat(makeDeps(repo), "c1", "owner@x.com");
     expect(result.chat.chatId).toBe("c1");
     expect(result.messages).toHaveLength(1);
+  });
+
+  it("getChat hands the reader signed URLs, never the stored key", async () => {
+    const stored = message({ seq: 0, role: "user", content: "look" }) as ChatMessage;
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      { ...stored, images: [{ key: "images/a.png" }] } as ChatMessage,
+    ]);
+    const deps = makeDeps(repo, {
+      images: {
+        put: async () => "images/a.png",
+        signUrl: async (key: string, expiresIn: number) =>
+          `https://signed.example/${key}?expires=${expiresIn}`,
+      },
+    });
+
+    const result = await getChat(deps, "c1", "owner@x.com");
+    const first = result.messages[0];
+    // A key is a server-side name; what leaves the server is an address that
+    // stops working on its own.
+    expect(first?.role === "user" && first.images).toEqual([
+      { url: `https://signed.example/images/a.png?expires=${IMAGE_VIEW_TTL_SECONDS}` },
+    ]);
   });
 
   it("getChat treats a non-owner as 404", async () => {
@@ -745,13 +782,16 @@ describe("chat image attachments", () => {
     ]);
   });
 
-  it("sends the attachment bytes to the engine and persists the uploaded url", async () => {
+  it("sends the attachment bytes to the engine and persists the uploaded key", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const seenMessages: unknown[] = [];
     const deps = makeDeps(repo, {
       projects: agentProjects,
       versions: publishedVersions,
-      storeImage: async () => "https://bucket.s3.example.com/images/a.png",
+      images: {
+        put: async () => "images/a.png",
+        signUrl: async (key: string) => `https://signed.example/${key}`,
+      },
       runAgent: (params) => {
         seenMessages.push(...params.messages);
         return emptyAgent();
@@ -779,9 +819,7 @@ describe("chat image attachments", () => {
       },
     ]);
     const user = (await repo.listMessages("c1")).find((m) => m.role === "user");
-    expect(user?.role === "user" && user.images).toEqual([
-      { url: "https://bucket.s3.example.com/images/a.png" },
-    ]);
+    expect(user?.role === "user" && user.images).toEqual([{ key: "images/a.png" }]);
   });
 
   it("still runs the turn when image persistence is unconfigured", async () => {

@@ -1,8 +1,9 @@
 import type {
   AssistantChatMessage,
-  ChatMessage,
   ToolChatMessage,
   UserChatMessage,
+  Viewable,
+  ViewableChatMessage,
 } from "@/domain/chat/types";
 import type { ChannelToolCall, ChatMessageInput } from "@/domain/llm/types";
 import { turnContent } from "@/application/llm/documentParts";
@@ -42,7 +43,7 @@ const MAX_HISTORY_MESSAGES = 200;
  * replayed attachment is visible to the model but not editable — only the turn
  * that uploaded it had the bytes in hand.
  */
-function userMessage(message: UserChatMessage): ChatMessageInput {
+function userMessage(message: Viewable<UserChatMessage>): ChatMessageInput {
   return {
     role: "user",
     // Assembled by the same function the turn was sent with: a replay shaped
@@ -59,7 +60,7 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
 }
 
 /** What a stored message costs the history budget, attachments included. */
-function messageChars(message: ChatMessage): number {
+function messageChars(message: ViewableChatMessage): number {
   const documents = message.role === "user" ? (message.documents ?? []) : [];
   return documents.reduce((total, document) => total + document.text.length, message.content.length);
 }
@@ -80,9 +81,9 @@ interface ToolPair {
  * synthesized, and the counter restarts each run), so matching across the whole
  * chat would let a later run's result answer an earlier run's call.
  */
-function toRuns(messages: ChatMessage[]): ChatMessage[][] {
-  const runs: ChatMessage[][] = [];
-  let current: ChatMessage[] = [];
+function toRuns(messages: ViewableChatMessage[]): ViewableChatMessage[][] {
+  const runs: ViewableChatMessage[][] = [];
+  let current: ViewableChatMessage[] = [];
   for (const message of messages) {
     if (message.role === "user" && current.length > 0) {
       runs.push(current);
@@ -102,8 +103,8 @@ function toRuns(messages: ChatMessage[]): ChatMessage[][] {
  * declared. The newest run is always kept, even alone over budget: a request
  * without the question is worse than a long one.
  */
-function withinHistoryBudget(runs: ChatMessage[][]): { kept: ChatMessage[][]; dropped: number } {
-  const kept: ChatMessage[][] = [];
+function withinHistoryBudget(runs: ViewableChatMessage[][]): { kept: ViewableChatMessage[][]; dropped: number } {
+  const kept: ViewableChatMessage[][] = [];
   let chars = 0;
   let count = 0;
   let dropped = 0;
@@ -132,7 +133,7 @@ function withinHistoryBudget(runs: ChatMessage[][]): { kept: ChatMessage[][]; dr
  * claimed by the first unmatched call carrying its id — so even a run that
  * synthesized the same id twice pairs each call with its own result.
  */
-function pairWithinRun(run: ChatMessage[], into: Map<ChatMessage, ToolPair[]>): void {
+function pairWithinRun(run: ViewableChatMessage[], into: Map<ViewableChatMessage, ToolPair[]>): void {
   // `displayOnly` rows are excluded outright: a subagent's result and a
   // transfer's marker are stored so a reader can see what ran, but neither is
   // the answer to the call it sits next to.
@@ -186,14 +187,14 @@ export interface EngineMessages {
  * than left as an orphan the provider would reject.
  */
 export function toEngineMessages(
-  messages: ChatMessage[],
+  messages: ViewableChatMessage[],
   options: ToEngineMessagesOptions = {},
 ): EngineMessages {
   const replayTurns = options.toolReplayTurns ?? DEFAULT_TOOL_REPLAY_TURNS;
   const { kept, dropped } = withinHistoryBudget(toRuns(messages));
   const history = kept.flat();
 
-  const pairedByMessage = new Map<ChatMessage, ToolPair[]>();
+  const pairedByMessage = new Map<ViewableChatMessage, ToolPair[]>();
   for (const run of kept) {
     pairWithinRun(run, pairedByMessage);
   }
@@ -201,12 +202,12 @@ export function toEngineMessages(
   // Newest-first so the budget is spent on the turns a follow-up is most likely
   // about; a call that no longer fits is dropped with its result.
   const replayable = history.filter(
-    (message): message is AssistantChatMessage => pairedByMessage.has(message),
+    (message): message is Viewable<AssistantChatMessage> => pairedByMessage.has(message),
   );
   // Guarded rather than `slice(-replayTurns)`: `slice(-0)` is `slice(0)`, which
   // would replay everything for the one option value that means "replay none".
   const recent = replayTurns > 0 ? replayable.slice(-replayTurns) : [];
-  const replayed = new Map<ChatMessage, ToolPair[]>();
+  const replayed = new Map<ViewableChatMessage, ToolPair[]>();
   let budget = MAX_REPLAYED_TOOL_CHARS;
   for (const message of [...recent].reverse()) {
     const pairs: ToolPair[] = [];

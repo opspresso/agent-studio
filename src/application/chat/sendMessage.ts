@@ -1,6 +1,7 @@
 import type { ChatMessage } from "@/domain/chat/types";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
+import { IMAGE_REPLAY_TTL_SECONDS, withSignedImages } from "./imageUrls";
 import { toEngineMessages } from "./messageMapping";
 import {
   resolveVersion,
@@ -69,7 +70,12 @@ export async function sendMessage(
     };
     await deps.chats.appendMessage(userMessage);
 
-    const history = toEngineMessages(existing);
+    // Replayed attachments are fetched by the *provider*, not by us, and it
+    // does that at some point during the run — so the signature has to outlive
+    // the run rather than the request that minted it.
+    const history = toEngineMessages(
+      await withSignedImages(deps.images, existing, IMAGE_REPLAY_TTL_SECONDS),
+    );
     const source = deps.runAgent({
       project,
       version,
