@@ -73,9 +73,8 @@ export async function sendMessage(
     // Replayed attachments are fetched by the *provider*, not by us, and it
     // does that at some point during the run — so the signature has to outlive
     // the run rather than the request that minted it.
-    const history = toEngineMessages(
-      await withSignedImages(deps.images, existing, IMAGE_REPLAY_TTL_SECONDS),
-    );
+    const signed = await withSignedImages(deps.images, existing, IMAGE_REPLAY_TTL_SECONDS);
+    const history = toEngineMessages(signed.messages);
     const source = deps.runAgent({
       project,
       version,
@@ -94,7 +93,12 @@ export async function sendMessage(
     return runAndPersist(
       deps,
       chat,
-      withLeadingWarnings([...uploaded.warnings, ...read.warnings, ...history.warnings], source),
+      withLeadingWarnings(
+        // `signed.warnings` too: an image the model will not receive is a
+        // missing part of the conversation it is being asked about.
+        [...uploaded.warnings, ...read.warnings, ...signed.warnings, ...history.warnings],
+        source,
+      ),
       runId,
     );
   } catch (error) {

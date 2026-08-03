@@ -45,8 +45,18 @@ export async function POST(request: Request): Promise<Response> {
   // current tenant's index, so a single scan would leave every other tenant's
   // schedules silently unfired. The ticker stays stateless — which tenants
   // exist is read here, per tick, rather than configured into it.
+  //
+  // Fenced, like every other read in the scan path. The default workspace is
+  // always scanned, and a registry read that fails costs the *named* workspaces
+  // this tick rather than stopping the scheduler for all of them — including
+  // the single-tenant deployment that has no organizations to read.
   const at = new Date();
-  const tenants = [DEFAULT_TENANT, ...(await organizationRepository.list()).map((org) => org.id)];
+  const tenants = [DEFAULT_TENANT];
+  try {
+    tenants.push(...(await organizationRepository.list()).map((org) => org.id));
+  } catch (error) {
+    log.error("trigger", "could not list workspaces; scanning the default one only", error);
+  }
   const scans = await Promise.all(
     tenants.map(async (tenant) => ({
       tenant,
@@ -73,22 +83,25 @@ export async function POST(request: Request): Promise<Response> {
       ` skipped=${summary.skipped} repaired=${summary.repaired} invalid=${summary.invalid}` +
       ` errors=${summary.errors}`,
   );
+  // One flattened list, so the bound is shared. Per-workspace pools would each
+  // get the whole budget and a deployment with twenty workspaces would drive
+  // twenty times "that many simultaneous runs on the pod that served the tick"
+  // — the exact thing the bound exists to prevent.
+  const due = scans.flatMap((scan) =>
+    scan.result.firings.map((firing) => ({ tenant: scan.tenant, firing })),
+  );
   after(() =>
     // Bounded, not one task per firing: a 09:00 shared by every project must
     // not become that many simultaneous runs on the pod that served the tick.
-    // Each tenant's firings run in their own scope, because `after()` leaves the
-    // request's async context and the run writes rows this tenant owns.
-    Promise.all(
-      scans.map((scan) =>
-        withTenant(scan.tenant, () =>
-          driveFirings(scan.result.firings, MAX_CONCURRENT_FIRINGS, (firing) =>
-            // The firing's run id, for the same reason the webhook route opens
-            // it: a log line and the history row share a key.
-            withRunContext({ runId: firing.runId }, async () => {
-              await executeFiring(triggerRunnerDeps, firing, scheduleInput(firing.trigger));
-            }),
-          ),
-        ),
+    // Each firing runs in its own workspace's scope, because `after()` leaves
+    // the request's async context and the run writes rows that tenant owns.
+    driveFirings(due, MAX_CONCURRENT_FIRINGS, ({ tenant, firing }) =>
+      withTenant(tenant, () =>
+        // The firing's run id, for the same reason the webhook route opens it:
+        // a log line and the history row share a key.
+        withRunContext({ runId: firing.runId }, async () => {
+          await executeFiring(triggerRunnerDeps, firing, scheduleInput(firing.trigger));
+        }),
       ),
     ),
   );

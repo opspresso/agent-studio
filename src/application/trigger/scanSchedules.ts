@@ -77,6 +77,14 @@ const REPAIR_EVERY_MINUTES = 5;
  */
 const REPAIR_SCAN_LIMIT = 50;
 
+/**
+ * How many of the repair sweep's reads are in flight at once. The sweep walks
+ * every project and every trigger, and the tick that carries it has to return
+ * in seconds — but it is also the read half of a scheduler, so it must not be
+ * the thing that throttles the table.
+ */
+const REPAIR_CONCURRENCY = 8;
+
 export interface ScheduleScanSummary {
   /** Schedule triggers walked, enabled or not. */
   checked: number;
@@ -119,19 +127,38 @@ export function scheduleInput(trigger: ScheduleTrigger): {
   };
 }
 
-/** Drive firings through a bounded pool; `drive` must not throw (and does not). */
-export async function driveFirings(
-  firings: ScheduleFiring[],
+/**
+ * Drive firings through a bounded pool; `drive` must not throw (and does not).
+ *
+ * Generic in the item so the caller can carry whatever the drive needs — the
+ * scan tick pairs each firing with the workspace it belongs to. The bound is
+ * per *call*, which is the whole point: one call over every workspace's firings
+ * keeps the limit a limit, where a call per workspace multiplies it by however
+ * many exist.
+ */
+export async function driveFirings<T>(
+  firings: T[],
   limit: number,
-  drive: (firing: ScheduleFiring) => Promise<void>,
+  drive: (firing: T) => Promise<void>,
 ): Promise<void> {
-  const queue = [...firings];
+  await pool(firings, limit, drive);
+}
+
+/** At most `limit` of `work` in flight at once. `work` must not throw. */
+async function pool<T, R>(
+  items: T[],
+  limit: number,
+  work: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const queue = items.map((item, index) => ({ item, index }));
+  const results: R[] = new Array<R>(items.length);
   const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
-    for (let firing = queue.shift(); firing; firing = queue.shift()) {
-      await drive(firing);
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      results[next.index] = await work(next.item);
     }
   });
   await Promise.all(workers);
+  return results;
 }
 
 /**
@@ -273,20 +300,25 @@ async function repairLostFirings(deps: FiringDeps, at: Date): Promise<number> {
     log.warn("trigger", "could not list projects for firing repair", error);
     return 0;
   }
-  let repaired = 0;
-  for (const project of projects) {
+  // Bounded-concurrent rather than serial. The reads are independent — one
+  // trigger list per project, one run list per trigger — and awaiting them one
+  // at a time makes the sweep 1 + P + T round trips deep, which on a few
+  // hundred projects can outlast the tick a CronJob is waiting on. A tick that
+  // times out fires nothing that minute.
+  const perProject = await pool(projects, REPAIR_CONCURRENCY, async (project) => {
     let triggers: Trigger[];
     try {
       triggers = await deps.triggers.listByProject(project.name);
     } catch (error) {
       log.warn("trigger", `could not list triggers of '${project.name}' for repair`, error);
-      continue;
+      return 0;
     }
-    for (const trigger of triggers) {
-      repaired += await repairLostRuns(deps, trigger, at);
-    }
-  }
-  return repaired;
+    const counts = await pool(triggers, REPAIR_CONCURRENCY, (trigger) =>
+      repairLostRuns(deps, trigger, at),
+    );
+    return counts.reduce((total, count) => total + count, 0);
+  });
+  return perProject.reduce((total, count) => total + count, 0);
 }
 
 /** One trigger's stranded rows. */

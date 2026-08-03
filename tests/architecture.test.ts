@@ -616,6 +616,30 @@ describe("tenant scope", () => {
       .map((builder) => builder.name);
     expect(unscoped).toEqual([]);
   });
+
+  it("gives the re-keying migration every prefix it has to move", () => {
+    /*
+     * `scripts/retenant-table.ts` holds a second spelling of what `scope()`
+     * prefixes, and it cannot derive the list at runtime — it scans raw items,
+     * not builders. A prefix present here and missing there is a row the
+     * migration leaves at its unprefixed key while reporting `moved N of M`,
+     * and the script's own re-run safety makes that permanent: the second pass
+     * finds nothing new. `SETTINGS#workspace` was exactly that.
+     *
+     * The literal after `scope(tenant)}` is captured whole, so a key that
+     * shares a stem with an unscoped one (`SETTINGS#workspace` against
+     * `SETTINGS#app`) is distinguished rather than swept up.
+     */
+    const scoped = [...source.matchAll(/\$\{scope\(tenant\)\}([A-Z][A-Za-z0-9#]*)/g)].map(
+      (match) => match[1]!,
+    );
+    expect(scoped.length).toBeGreaterThan(10);
+    const script = readFileSync(join(ROOT, "scripts/retenant-table.ts"), "utf8");
+    const listed = new Set(
+      [...script.matchAll(/^ {2}"([A-Z][A-Za-z0-9#]*)",$/gm)].map((match) => match[1]!),
+    );
+    expect([...new Set(scoped)].filter((prefix) => !listed.has(prefix)).sort()).toEqual([]);
+  });
 });
 
 /**

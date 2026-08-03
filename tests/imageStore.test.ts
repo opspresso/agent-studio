@@ -75,7 +75,7 @@ describe("image URL resolution", () => {
   };
 
   it("resolves a stored key to a signed URL", async () => {
-    const [message] = await withSignedImages(
+    const { messages: [message] } = await withSignedImages(
       store,
       [userMessage([{ key: "images/a.png", prompt: "a cat" }])],
       IMAGE_VIEW_TTL_SECONDS,
@@ -88,7 +88,7 @@ describe("image URL resolution", () => {
   it("passes a legacy public URL through untouched", async () => {
     // Rows written while the bucket was public-read recorded no key, so there
     // is nothing to sign — and the address still works.
-    const [message] = await withSignedImages(
+    const { messages: [message] } = await withSignedImages(
       store,
       [userMessage([{ url: "https://bucket.s3.example.com/images/old.png" }])],
       IMAGE_VIEW_TTL_SECONDS,
@@ -105,18 +105,42 @@ describe("image URL resolution", () => {
         throw new Error("AccessDenied");
       },
     };
-    const [message] = await withSignedImages(
+    const { messages, warnings } = await withSignedImages(
       failing,
       [userMessage([{ key: "images/a.png" }, { url: "https://kept.example/b.png" }])],
       IMAGE_VIEW_TTL_SECONDS,
     );
+    const message = messages[0];
     expect(message?.role === "user" && message.images).toEqual([
       { url: "https://kept.example/b.png" },
     ]);
+    // Dropping it is right; dropping it silently is not. A transcript one
+    // picture short reads as one that never had it.
+    expect(warnings).toEqual(["1 image in this conversation could not be loaded and is not shown."]);
+  });
+
+  it("counts every drop across the transcript in one warning", async () => {
+    const { warnings } = await withSignedImages(
+      undefined,
+      [userMessage([{ key: "images/a.png" }]), userMessage([{ key: "images/b.png" }])],
+      IMAGE_VIEW_TTL_SECONDS,
+    );
+    expect(warnings).toEqual([
+      "2 images in this conversation could not be loaded and are not shown.",
+    ]);
+  });
+
+  it("says nothing when nothing was lost", async () => {
+    const { warnings } = await withSignedImages(
+      store,
+      [userMessage([{ key: "images/a.png" }])],
+      IMAGE_VIEW_TTL_SECONDS,
+    );
+    expect(warnings).toEqual([]);
   });
 
   it("drops a key when the deployment has no store to sign it with", async () => {
-    const [message] = await withSignedImages(
+    const { messages: [message] } = await withSignedImages(
       undefined,
       [userMessage([{ key: "images/a.png" }])],
       IMAGE_VIEW_TTL_SECONDS,

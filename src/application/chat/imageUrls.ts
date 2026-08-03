@@ -72,28 +72,59 @@ async function resolveMessage(
   store: ImageStore | undefined,
   message: ChatMessage,
   expiresInSeconds: number,
-): Promise<ViewableChatMessage> {
+): Promise<{ message: ViewableChatMessage; dropped: number }> {
   if (message.role === "tool" || !message.images || message.images.length === 0) {
     // Nothing to resolve, and nothing it could resolve *to*: a message carrying
     // no images already satisfies the viewable shape. TS will not narrow an
     // absent array to the resolved element type, which is all the assertion is.
-    return message as ViewableChatMessage;
+    return { message: message as ViewableChatMessage, dropped: 0 };
   }
   const resolved = await Promise.all(
     message.images.map((image) => resolve(store, image, expiresInSeconds)),
   );
-  return { ...message, images: resolved.filter((image) => image !== null) };
+  const images = resolved.filter((image) => image !== null);
+  return {
+    message: { ...message, images },
+    dropped: resolved.length - images.length,
+  };
+}
+
+export interface SignedTranscript {
+  messages: ViewableChatMessage[];
+  /**
+   * What the reader is not getting. Empty in every ordinary case — an image
+   * only drops when the deployment lost its bucket or an object is gone.
+   */
+  warnings: string[];
 }
 
 /**
  * Resolve every stored image in a transcript. Returns messages whose images are
  * all fetchable URLs, which is what both the API response and the replay
  * mapping consume — neither has to know a key ever existed.
+ *
+ * An image that cannot be signed is dropped rather than rendered broken, and
+ * **the drop is reported**: a transcript that quietly comes back one picture
+ * short reads as a transcript that never had it. Both callers already carry a
+ * warning channel for exactly this — a failed upload, a trimmed history run, a
+ * truncated tool result — and this is the same kind of loss.
  */
-export function withSignedImages(
+export async function withSignedImages(
   store: ImageStore | undefined,
   messages: ChatMessage[],
   expiresInSeconds: number,
-): Promise<ViewableChatMessage[]> {
-  return Promise.all(messages.map((message) => resolveMessage(store, message, expiresInSeconds)));
+): Promise<SignedTranscript> {
+  const resolved = await Promise.all(
+    messages.map((message) => resolveMessage(store, message, expiresInSeconds)),
+  );
+  const dropped = resolved.reduce((total, entry) => total + entry.dropped, 0);
+  return {
+    messages: resolved.map((entry) => entry.message),
+    warnings:
+      dropped === 0
+        ? []
+        : [
+            `${dropped} image${dropped === 1 ? "" : "s"} in this conversation could not be loaded and ${dropped === 1 ? "is" : "are"} not shown.`,
+          ],
+  };
 }

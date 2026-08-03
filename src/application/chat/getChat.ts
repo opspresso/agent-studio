@@ -6,6 +6,8 @@ import { IMAGE_VIEW_TTL_SECONDS, withSignedImages } from "./imageUrls";
 export interface ChatWithMessages {
   chat: Chat;
   messages: ChatMessage[];
+  /** What the transcript is missing — today, images that could not be signed. */
+  warnings: string[];
 }
 
 /**
@@ -45,5 +47,9 @@ export async function getChat(
   // Signed here rather than at write time: the stored row names an object, and
   // what the browser is handed is a URL that stops working on its own.
   const viewable = await withSignedImages(deps.images, messages, IMAGE_VIEW_TTL_SECONDS);
-  return { chat, messages: viewable.map(forReading) };
+  return {
+    chat,
+    messages: viewable.messages.map(forReading),
+    warnings: viewable.warnings,
+  };
 }

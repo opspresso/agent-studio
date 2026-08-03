@@ -1,11 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_CONCURRENT_FIRINGS } from "@/application/trigger/scanSchedules";
 
-vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
+const { registry, background } = vi.hoisted(() => ({
+  // No organizations by default: a single-tenant deployment, which is the shape
+  // every existing one has. The multi-tenant cases drive this.
+  registry: { organizations: [] as { id: string }[], fails: false },
+  // The route hands its firings to `after()`, which the real runtime drains
+  // after the response. Held here so a case can wait for it.
+  background: { task: null as Promise<unknown> | null },
+}));
+
+vi.mock("next/server", () => ({
+  after: (fn: () => unknown) => {
+    background.task = Promise.resolve(fn());
+  },
+}));
 vi.mock("@/lib/container", () => ({
   triggerRunnerDeps: {},
-  // No organizations: a single-tenant deployment, which is the shape every
-  // existing one has. The multi-tenant fan-out has its own case below.
-  organizationRepository: { list: async () => [] },
+  organizationRepository: {
+    list: async () => {
+      if (registry.fails) {
+        throw new Error("throttled");
+      }
+      return registry.organizations;
+    },
+  },
 }));
 
 const scanSchedules = vi.fn((_deps: unknown, _at: Date): Promise<unknown> => Promise.resolve(null));
@@ -47,6 +66,8 @@ function request(token?: string): Request {
 
 beforeEach(() => {
   process.env.SCHEDULE_SCAN_TOKEN = "tick-token";
+  registry.organizations = [];
+  registry.fails = false;
   scanSchedules.mockResolvedValue({ summary: SUMMARY, firings: [FIRING] });
 });
 
@@ -90,5 +111,48 @@ describe("POST /api/triggers/scan", () => {
     const [, firing, input] = executeFiring.mock.calls[0] ?? [];
     expect(firing).toBe(FIRING);
     expect(input).toEqual({ message: "go" });
+  });
+});
+
+describe("every workspace", () => {
+  it("scans the default one when the registry cannot be read", async () => {
+    // Before this was fenced, one failed `TYPE#ORG` query returned 500 and
+    // nothing fired that minute — for every workspace, including the
+    // single-tenant deployment whose only possible answer was the empty list.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    registry.fails = true;
+    const response = await POST(request("tick-token"));
+    expect(response.status).toBe(200);
+    expect(scanSchedules).toHaveBeenCalledTimes(1);
+    expect(executeFiring).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("keeps one concurrency bound across them, not one each", async () => {
+    // A per-workspace pool hands every workspace the whole budget, so twenty
+    // workspaces sharing a 09:00 drive twenty times the limit on the pod that
+    // served the tick — the exact fan-out the bound exists to prevent.
+    registry.organizations = [{ id: "acme" }, { id: "globex" }];
+    const many = Array.from({ length: MAX_CONCURRENT_FIRINGS * 2 }, (_, index) => ({
+      ...FIRING,
+      runId: `run-${index}`,
+    }));
+    scanSchedules.mockResolvedValue({ summary: SUMMARY, firings: many });
+
+    let inFlight = 0;
+    let peak = 0;
+    executeFiring.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+    });
+
+    await POST(request("tick-token"));
+    await background.task;
+    // Every workspace's firings ran — the bound is a bound, not a cap on work.
+    expect(executeFiring).toHaveBeenCalledTimes(many.length * 3);
+    expect(peak).toBeLessThanOrEqual(MAX_CONCURRENT_FIRINGS);
   });
 });

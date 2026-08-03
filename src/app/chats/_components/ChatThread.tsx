@@ -47,6 +47,7 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
     initial ? "ready" : "loading",
   );
   const [error, setError] = useState<string | null>(null);
+  const [transcriptWarnings, setTranscriptWarnings] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -63,9 +64,17 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
     if (!res.ok) {
       return null;
     }
-    const data = (await res.json()) as { chat?: Chat; messages?: ChatMessage[] };
+    const data = (await res.json()) as {
+      chat?: Chat;
+      messages?: ChatMessage[];
+      warnings?: string[];
+    };
     setChat(data.chat ?? null);
     setMessages(data.messages ?? []);
+    // What the transcript is missing — an image whose object could not be
+    // signed. Shown rather than dropped: a thread that quietly comes back one
+    // picture short reads as one that never had it.
+    setTranscriptWarnings(data.warnings ?? []);
     setLive(null);
     setPendingUser(null);
     setStatus("ready");
@@ -230,6 +239,11 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
           <div ref={bottomRef} />
         </Stack>
       </ScrollArea>
+      {transcriptWarnings.map((warning) => (
+        <Alert key={warning} color="yellow" variant="light" mb="xs" py={6} px="sm" fz="xs">
+          {warning}
+        </Alert>
+      ))}
       {error && (
         <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
           {error}

@@ -36,6 +36,16 @@ import { DEFAULT_TENANT } from "@/shared/tenantContext";
  * Key prefixes that belong to a tenant. Anything else — Better Auth rows, the
  * app settings row, the organization registry — is deliberately global and is
  * left where it is (see `UNSCOPED_KEYS` in `tests/architecture.test.ts`).
+ *
+ * This list is a second spelling of what `scope(tenant)` prefixes in
+ * `keys.ts`, and a prefix that exists there and not here is a row this
+ * migration silently leaves behind while reporting `moved N of M`. Since the
+ * doc note above is true — a re-run skips what already moved — the omission is
+ * permanent. `tests/architecture.test.ts` cross-checks the two, which is how
+ * `SETTINGS#workspace` was found missing.
+ *
+ * `SETTINGS#workspace` and not `SETTINGS#`: the app row is `SETTINGS#app` and
+ * belongs to no tenant, so the shorter prefix would take it too.
  */
 const SCOPED_PREFIXES = [
   "PROJECT#",
@@ -55,6 +65,7 @@ const SCOPED_PREFIXES = [
   "TRACE#",
   "TRACEPROJECT#",
   "TYPE#",
+  "SETTINGS#workspace",
 ];
 
 function belongsToTenant(pk: string): boolean {

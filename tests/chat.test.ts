@@ -49,7 +49,8 @@ function message(partial: {
  * What `sendMessage` hands the replay mapping: stored rows with their image
  * references resolved. No store here — these rows carry no keys to sign.
  */
-const replayable = (messages: ChatMessage[]) => withSignedImages(undefined, messages, 600);
+const replayable = async (messages: ChatMessage[]) =>
+  (await withSignedImages(undefined, messages, 600)).messages;
 
 function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
   const state: { deleted: boolean; activeRunId?: string } = { deleted: false };
