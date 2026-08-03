@@ -23,7 +23,12 @@ export type OrganizationRole = "viewer" | "editor" | "admin";
 const RANK: Record<OrganizationRole, number> = { viewer: 0, editor: 1, admin: 2 };
 
 export function isRole(value: string): value is OrganizationRole {
-  return value in RANK;
+  // `hasOwn`, not `in`: `in` walks the prototype chain, so `"constructor"`,
+  // `"toString"` and `"valueOf"` all validated as roles — past the guard in
+  // `setMember`, and past the "an unreadable role is the least capable one"
+  // fallback below, leaving a member holding a rank of `undefined` that
+  // satisfies no check and cannot be reasoned about.
+  return Object.hasOwn(RANK, value);
 }
 
 /** True when `role` carries at least `required`'s capabilities. */

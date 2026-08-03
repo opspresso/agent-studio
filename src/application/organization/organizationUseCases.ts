@@ -31,6 +31,7 @@ import { recordAudit } from "@/application/audit/auditLog";
 import { ConflictError, NotFoundError, ValidationError, isConditionalWriteFailure } from "@/application/errors";
 import { DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
 import { isSlug, SLUG_RULE } from "@/shared/slug";
+import { log } from "@/shared/logger";
 
 export interface OrganizationUseCases {
   list(): Promise<Organization[]>;
@@ -72,6 +73,43 @@ function normalizeEmail(value: string): string {
     throw new ValidationError("A member needs an email address");
   }
   return email;
+}
+
+const NEEDS_AN_ADMIN = "A workspace needs at least one admin; promote someone else first";
+
+/** How many admins a workspace has right now. */
+async function countAdmins(
+  memberships: MembershipRepository,
+  organizationId: string,
+): Promise<number> {
+  const members = await memberships.listByOrganization(organizationId);
+  return members.filter((member) => member.role === "admin").length;
+}
+
+/**
+ * Confirm the write that just happened left an admin behind, and undo it if it
+ * did not.
+ *
+ * The rule cannot be a conditional write: "someone *else* is still an admin" is
+ * a statement about other items, and DynamoDB conditions a write on the item it
+ * is writing. So it is checked before — which is what produces the useful error
+ * — and confirmed after, which is what closes the window where two demotions
+ * both saw two admins and each left one.
+ *
+ * Two racing writers can both undo themselves. That is the safe direction: the
+ * failure this exists to prevent is a workspace with no admin, and the worst
+ * case here is a workspace that still has both.
+ */
+async function confirmAnAdminRemains(
+  memberships: MembershipRepository,
+  organizationId: string,
+  undo: () => Promise<void>,
+): Promise<void> {
+  if ((await countAdmins(memberships, organizationId)) > 0) {
+    return;
+  }
+  await undo();
+  throw new ValidationError(NEEDS_AN_ADMIN);
 }
 
 async function requireOrganization(
@@ -137,7 +175,25 @@ export function createOrganizationUseCases(
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      await memberships.put(membership);
+      try {
+        await memberships.put(membership);
+      } catch (error) {
+        // Rolled back rather than left: the organization row alone is a
+        // workspace nobody can administer *and* one nobody can re-create,
+        // because the id is claimed and the create is conditional — a 409
+        // forever on the only thing that would have fixed it.
+        try {
+          await organizations.delete(id);
+        } catch (rollbackError) {
+          log.error(
+            "authz",
+            `could not roll back workspace '${id}' after its first membership failed; ` +
+              `it exists with no members and must be removed by hand`,
+            rollbackError,
+          );
+        }
+        throw error;
+      }
 
       await recordFor(id, {
         action: "organization.create",
@@ -164,8 +220,24 @@ export function createOrganizationUseCases(
     async remove(id, userEmail) {
       await requireOrganization(organizations, id);
       const members = await memberships.listByOrganization(id);
+      // Fenced per member, and the loop finishes: the operator's intent is that
+      // the workspace goes, so getting as far as possible leaves a retry less to
+      // do. What must not happen is the record going while memberships remain —
+      // that is a workspace nobody can see and members still pointing at it.
+      const failed: string[] = [];
       for (const member of members) {
-        await memberships.delete(id, member.userEmail);
+        try {
+          await memberships.delete(id, member.userEmail);
+        } catch (error) {
+          log.error("authz", `could not remove ${member.userEmail} from '${id}'`, error);
+          failed.push(member.userEmail);
+        }
+      }
+      if (failed.length > 0) {
+        throw new ConflictError(
+          `Removed ${members.length - failed.length} of ${members.length} memberships of '${id}'; ` +
+            `${failed.join(", ")} could not be removed, so the workspace record was kept. Retry.`,
+        );
       }
       await organizations.delete(id);
       // The rows are the part this cannot do: they are spread across every
@@ -191,17 +263,11 @@ export function createOrganizationUseCases(
       }
       const email = normalizeEmail(userEmail);
       const existing = await memberships.get(organizationId, email);
-      if (existing && existing.role === "admin" && role !== "admin") {
-        // Demoting the last admin leaves a workspace nobody can administer,
-        // which is the same dead end an empty membership list is.
-        const admins = (await memberships.listByOrganization(organizationId)).filter(
-          (member) => member.role === "admin",
-        );
-        if (admins.length <= 1) {
-          throw new ValidationError(
-            "A workspace needs at least one admin; promote someone else first",
-          );
-        }
+      // Demoting the last admin leaves a workspace nobody can administer, which
+      // is the same dead end an empty membership list is.
+      const demotesAnAdmin = existing?.role === "admin" && role !== "admin";
+      if (demotesAnAdmin && (await countAdmins(memberships, organizationId)) <= 1) {
+        throw new ValidationError(NEEDS_AN_ADMIN);
       }
       const timestamp = now().toISOString();
       const membership: Membership = {
@@ -212,6 +278,11 @@ export function createOrganizationUseCases(
         updatedAt: timestamp,
       };
       await memberships.put(membership);
+      if (demotesAnAdmin) {
+        await confirmAnAdminRemains(memberships, organizationId, () =>
+          memberships.put(existing!),
+        );
+      }
       await recordFor(organizationId, {
         action: "membership.grant",
         actorEmail,
@@ -228,17 +299,14 @@ export function createOrganizationUseCases(
       if (!existing) {
         throw new NotFoundError(`${email} is not a member of '${organizationId}'`);
       }
-      if (existing.role === "admin") {
-        const admins = (await memberships.listByOrganization(organizationId)).filter(
-          (member) => member.role === "admin",
-        );
-        if (admins.length <= 1) {
-          throw new ValidationError(
-            "A workspace needs at least one admin; promote someone else first",
-          );
-        }
+      const removesAnAdmin = existing.role === "admin";
+      if (removesAnAdmin && (await countAdmins(memberships, organizationId)) <= 1) {
+        throw new ValidationError(NEEDS_AN_ADMIN);
       }
       await memberships.delete(organizationId, email);
+      if (removesAnAdmin) {
+        await confirmAnAdminRemains(memberships, organizationId, () => memberships.put(existing));
+      }
       await recordFor(organizationId, {
         action: "membership.revoke",
         actorEmail,

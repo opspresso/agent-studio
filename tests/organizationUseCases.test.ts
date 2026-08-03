@@ -8,9 +8,9 @@
  * DynamoDB rows by hand, which is what this use case exists to replace.
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuditEventInput } from "@/domain/audit/types";
-import type { Membership } from "@/domain/organization/membership";
+import type { Membership, OrganizationRole } from "@/domain/organization/membership";
 import type { Organization } from "@/domain/organization/types";
 import { createOrganizationUseCases } from "@/application/organization/organizationUseCases";
 import { setAuditSink } from "@/application/audit/auditLog";
@@ -26,6 +26,18 @@ const audit: (AuditEventInput & { tenant: string })[] = [];
 
 const key = (organizationId: string, email: string) => `${organizationId}|${email}`;
 
+const member = (
+  userEmail: string,
+  organizationId: string,
+  role: OrganizationRole,
+): Membership => ({
+  organizationId,
+  userEmail,
+  role,
+  createdAt: NOW.toISOString(),
+  updatedAt: NOW.toISOString(),
+});
+
 class ConditionalCheckFailedException extends Error {
   constructor() {
     super("The conditional request failed");
@@ -33,11 +45,12 @@ class ConditionalCheckFailedException extends Error {
   }
 }
 
-const useCases = createOrganizationUseCases(
-  {
-    get: async (id) => organizations.get(id) ?? null,
+/** Named so a case can make one call fail and watch what the use case does about it. */
+const repos = {
+  organizations: {
+    get: async (id: string) => organizations.get(id) ?? null,
     list: async () => [...organizations.values()],
-    create: async (organization) => {
+    create: async (organization: Organization) => {
       if (organizations.has(organization.id)) {
         // The real repository writes with `attribute_not_exists(PK)`; the id is
         // a key prefix, so a lost race merges two tenants into one namespace.
@@ -45,28 +58,30 @@ const useCases = createOrganizationUseCases(
       }
       organizations.set(organization.id, organization);
     },
-    update: async (organization) => {
+    update: async (organization: Organization) => {
       organizations.set(organization.id, organization);
     },
-    delete: async (id) => {
+    delete: async (id: string) => {
       organizations.delete(id);
     },
   },
-  {
-    get: async (organizationId, email) => memberships.get(key(organizationId, email)) ?? null,
-    listByOrganization: async (organizationId) =>
+  memberships: {
+    get: async (organizationId: string, email: string) =>
+      memberships.get(key(organizationId, email)) ?? null,
+    listByOrganization: async (organizationId: string) =>
       [...memberships.values()].filter((row) => row.organizationId === organizationId),
-    listByUser: async (email) =>
+    listByUser: async (email: string) =>
       [...memberships.values()].filter((row) => row.userEmail === email),
-    put: async (membership) => {
+    put: async (membership: Membership) => {
       memberships.set(key(membership.organizationId, membership.userEmail), membership);
     },
-    delete: async (organizationId, email) => {
+    delete: async (organizationId: string, email: string) => {
       memberships.delete(key(organizationId, email));
     },
   },
-  () => NOW,
-);
+};
+
+const useCases = createOrganizationUseCases(repos.organizations, repos.memberships, () => NOW);
 
 beforeEach(() => {
   organizations.clear();
@@ -117,6 +132,24 @@ describe("registering a workspace", () => {
     expect(created.displayName).toBe("acme");
   });
 
+  it("rolls the workspace back when its first membership cannot be written", async () => {
+    // Left in place it is a workspace nobody can administer *and* nobody can
+    // re-create: the id is claimed and the create is conditional, so the only
+    // thing that would have fixed it answers 409 forever.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const put = vi.spyOn(repos.memberships, "put").mockRejectedValueOnce(new Error("throttled"));
+    await expect(useCases.create({ id: "acme", displayName: "Acme" }, "a@x.com")).rejects.toThrow(
+      "throttled",
+    );
+    expect(organizations.size).toBe(0);
+    // And the id is free again.
+    put.mockRestore();
+    await expect(
+      useCases.create({ id: "acme", displayName: "Acme" }, "a@x.com"),
+    ).resolves.toMatchObject({ id: "acme" });
+    error.mockRestore();
+  });
+
   it("records who registered it and who can administer it", async () => {
     await useCases.create({ id: "acme", displayName: "Acme" }, "boss@x.com");
     expect(audit).toEqual([
@@ -164,6 +197,32 @@ describe("members", () => {
     expect(await useCases.listMembers("acme")).toEqual([
       expect.objectContaining({ userEmail: "her@x.com", role: "admin" }),
     ]);
+  });
+
+  it("puts back a demotion that turns out to have taken the last admin", async () => {
+    // Two demotions racing both pass the pre-check, because each sees the other
+    // still there. The rule cannot be a conditional write — "someone *else* is
+    // an admin" is a statement about other items — so it is confirmed after,
+    // and a write that emptied the set is undone.
+    await useCases.setMember("acme", "her@x.com", "admin", "boss@x.com");
+    const listByOrganization = vi
+      .spyOn(repos.memberships, "listByOrganization")
+      // The pre-check sees two admins (the race's other writer has not landed);
+      // by the post-check it has, and this one took the last.
+      .mockImplementationOnce(async () => [
+        { ...member("boss@x.com", "acme", "admin") },
+        { ...member("her@x.com", "acme", "admin") },
+      ])
+      .mockImplementationOnce(async () => []);
+
+    await expect(useCases.setMember("acme", "boss@x.com", "editor", "boss@x.com")).rejects.toThrow(
+      ValidationError,
+    );
+    listByOrganization.mockRestore();
+    // Undone: the demotion is not left standing on a workspace with no admin.
+    expect((await useCases.listMembers("acme")).find((m) => m.userEmail === "boss@x.com")?.role).toBe(
+      "admin",
+    );
   });
 
   it("refuses to touch a workspace that does not exist", async () => {
@@ -232,6 +291,39 @@ describe("removing a workspace", () => {
         tenant: DEFAULT_TENANT,
       }),
     ]);
+  });
+
+  it("keeps the record when a membership cannot be removed, and says what is left", async () => {
+    // The record going while memberships remain is the state nobody can fix
+    // from the console: a workspace that is invisible, with members still
+    // pointing at it. A retry finishes the job — removing an absent membership
+    // is a no-op.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const remove = vi
+      .spyOn(repos.memberships, "delete")
+      .mockRejectedValueOnce(new Error("throttled"));
+    await expect(useCases.remove("acme", "boss@x.com")).rejects.toThrow(ConflictError);
+    expect(organizations.has("acme")).toBe(true);
+    remove.mockRestore();
+    error.mockRestore();
+
+    await withTenant(DEFAULT_TENANT, () => useCases.remove("acme", "boss@x.com"));
+    expect(organizations.size).toBe(0);
+    expect(memberships.size).toBe(0);
+  });
+});
+
+describe("roles", () => {
+  it("does not mistake an inherited property for a role", async () => {
+    // `"constructor" in RANK` is true, so an `in` test let one past every guard
+    // and left a member whose rank is `undefined` — satisfying no check and
+    // impossible to reason about.
+    await useCases.create({ id: "acme", displayName: "Acme" }, "boss@x.com");
+    for (const notARole of ["constructor", "toString", "valueOf", "owner"]) {
+      await expect(
+        useCases.setMember("acme", "her@x.com", notARole as OrganizationRole, "boss@x.com"),
+      ).rejects.toThrow(ValidationError);
+    }
   });
 });
 

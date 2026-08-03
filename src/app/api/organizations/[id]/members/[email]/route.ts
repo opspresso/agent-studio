@@ -21,7 +21,10 @@ export const DELETE = withAuth(async (user, _request: Request, ctx: RouteContext
     if (!(await mayAdministerWorkspace(user, id))) {
       return FORBIDDEN_WORKSPACE();
     }
-    await organizationUseCases.removeMember(id, decodeURIComponent(email), user.email);
+    // `email` arrives already decoded — Next percent-decodes a dynamic segment.
+    // Decoding again turned `a%b@x.com` into a `URIError` (a 500), and a
+    // double-encoded address into a different string than the one stored.
+    await organizationUseCases.removeMember(id, email, user.email);
     invalidateWorkspaceCache();
     return Response.json({ ok: true });
   } catch (error) {
