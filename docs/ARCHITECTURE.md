@@ -9,8 +9,9 @@ It deliberately does *not* cover: the HTTP contract ([API.md](API.md)), environm
 
 **Where to start**: read this file top-to-bottom, then trace one request through the code.
 Execution starts at `src/application/execution/runProject.ts` — the facade every entry point
-calls — and descends into `src/application/llm/engine.ts`, the tool loop. The
-[Request flow](#request-flow) section is the map.
+calls, an [image](#images) project excepted — and descends into
+`src/application/llm/engine.ts`, the tool loop. The [Request flow](#request-flow) section is
+the map.
 
 Agent Studio is a single Next.js 16 full-stack application covering the domains **project,
 llm, agents (subagents + external agent registry), skills, mcp, chat, cost/usage**.
@@ -188,8 +189,9 @@ Better Auth unique-field lookups.
 - **List queries paginate.** Most go through `queryAll()` (`src/infrastructure/db/query.ts`):
   a single Query page caps at 1MB, so an unpaginated list silently truncates. `chatRepository`
   runs its own `LastEvaluatedKey` loops; `traceRepository` is intentionally bounded top-N via
-  `Limit` and keeps pulling bounded pages until that limit is filled with **live** rows,
-  because DynamoDB applies `Limit` before the app-side expired-row filter.
+  `Limit` and pulls up to five pages to fill that limit with **live** rows, because DynamoDB
+  applies `Limit` before the app-side expired-row filter — bounded, so a partition of expired
+  rows cannot turn one list into a scan.
 
 ## Request flow
 
