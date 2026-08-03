@@ -800,9 +800,11 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
 - **Every refusal is a history row with a status**, including a skip: an operator must be able
   to tell "it never fired" from "it fired and failed" without reading logs.
 - The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
-  last ten minutes and no webhook sender waits that long. Same durability gap as Slack, too —
-  an instance lost mid-delivery leaves a row stuck in `running` (the schedule scan repairs its
-  own kind's rows; extending that to these two is the `trigger-durability` milestone).
+  last ten minutes and no webhook sender waits that long. An instance lost mid-delivery
+  therefore leaves a row stuck in `running`, and the scan tick's repair sweep is what closes
+  it — the same lease basis, and the same crash policy, a schedule firing gets
+  ([Schedules](#schedules)). The delivery is not re-run: a run is not idempotent, and the
+  sender holds the `Idempotency-Key` that decides whether it is fired again.
 
 #### Schedules
 
@@ -815,9 +817,11 @@ per-trigger CRUD in the AWS control plane — a second copy of the trigger table
 from the real one — and a dedicated worker Deployment duplicates the whole runtime for a poll
 loop the app can already serve. Three consumers were weighed, not one: Slack events and
 webhook deliveries share the same ack-then-`after()` durability gap, and a stateless tick
-against claimed work generalises to both — but migrating them is deliberately **not** part of
-this decision (see the `trigger-durability` milestone); at three consumers it stops being a
-deployment choice and becomes a rewrite of three execution paths.
+against claimed work generalises to both. What the tick took on for them is **repair, not
+re-execution** — the sweep below finishes a webhook delivery's stranded row exactly as it
+finishes a schedule's, while Slack keeps its own recovery ([Slack](#slack)). Moving either
+execution path onto claimed work is still deliberately out of scope: at three consumers a
+deployment choice becomes a rewrite of three execution paths.
 
 - **"Exactly once" is the claim's property, not the ticker's.** Each occurrence (a UTC minute
   instant) is claimed with the same conditional write that dedups webhook deliveries, key
@@ -828,6 +832,13 @@ deployment choice and becomes a rewrite of three execution paths.
   finishes it as `failed` — the ledger says what happened, nothing runs twice. The repair
   waits a full catch-up window beyond `RUN_LEASE_SECONDS` (`startedAt` is stamped at admit
   time, not when the backgrounded run starts) and reads history only every fifth minute.
+- **The repair sweep walks projects; only the firing half reads the index.** It covers every
+  trigger of every project — webhook deliveries included, enabled or not, since disabling a
+  trigger must not strand the row its last firing left behind. Webhook rows carry no
+  cross-project index, and giving them one would have covered only triggers written after the
+  change: every trigger nobody has since edited would stay permanently unrepairable while the
+  summary read as complete. The walk costs one query per project plus one per trigger, which
+  is what the fifth-minute gate pays for.
 - **One trigger's failure is its own.** Every repository call in the tick is fenced per
   trigger and per occurrence; a throw after a claim was won writes a skip row — the claim is
   never offered again — and lands in the summary's `errors` count instead of aborting the
@@ -845,7 +856,7 @@ deployment choice and becomes a rewrite of three execution paths.
   superseded rather than executing them late. One tick's admitted firings are driven through
   a bounded pool (8), not one background task each.
 - Schedule rows alone carry `GSI1` (`TYPE#SCHEDULE`), so one index query enumerates them
-  across projects and webhook rows stay invisible to the scan.
+  across projects and webhook rows stay invisible to the part of the tick that fires.
 - A schedule has **no secret and no payload**: nothing external presents credentials, and
   every firing runs the trigger's fixed `variables`/`message` against the published version,
   attributed to the `schedule` actor kind.
@@ -933,6 +944,20 @@ thing still reported as ignored.
 Events are deduplicated exactly-once via `slackEventRepository.claim` (a conditional put) whose
 claim is a **lease** settled by `settle` — an instance that dies mid-processing leaves a
 reclaimable claim rather than an event recorded as handled by nobody.
+
+**A lost event is not re-run by this app**, and that is the decision rather than an omission.
+Re-running one means running it *again*, and a run is not idempotent — the same judgement the
+schedule crash policy makes. A schedule has a next occurrence to serve as its retry; a Slack
+event has something better, a person who is still in the conversation. What the lease buys is
+that the door stays open for them: a failed attempt expires its lease immediately, so a
+redelivery is not refused as a duplicate of an attempt that produced nothing, and neither is
+an attempt whose instance vanished. What this app must not do is answer on its own clock —
+a reply arriving minutes after the thread moved on is worse than none, and nobody asked twice.
+
+The residual gap is named rather than closed: the ack goes out before the run, so Slack
+considers the event delivered and does not redeliver it. An instance lost after that ack drops
+that mention **silently** — no reply, and no row anyone reads. Closing it needs the reply
+surface to carry the failure, which is a different piece of work from finishing a ledger row.
 
 ### A2A
 

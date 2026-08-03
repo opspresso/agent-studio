@@ -29,30 +29,6 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 
 ---
 
-## trigger-durability — Slack·webhook 발화의 급사 복구
-
-**이유**: `schedule-trigger`가 남긴 스케줄러 결정문(ARCHITECTURE.md의 *Schedules*)은 세
-소비자 — schedule, Slack 이벤트, webhook 딜리버리 — 를 놓고 평가했지만, 앞의 둘을 옮기는
-일은 의도적으로 범위에서 뺐다: 배포 환경 결정 하나가 실행 경로 세 개의 재작성이 되기
-때문이다. 그 결과 지금은 schedule 발화만 급사에서 복구된다 — scan이 lease 지난 `running`
-row를 `failed`로 마감한다. Slack은 claim lease가 회수될 뿐 재처리가 없고, webhook은 이력
-row가 `running`인 채 남는다(OPERATIONS.md의 multi-instance 표).
-
-**선행**: 없음. 복구 패턴(claim + lease + 스캔 마감)은 schedule 쪽이 확정했고
-`scanSchedules.ts`에 있다.
-
-**범위**
-
-- webhook 딜리버리의 잔류 `running` row를 schedule과 같은 lease 기준으로 `failed` 마감한다.
-  schedule과 달리 webhook 트리거에는 cross-project 열거 인덱스가 없다 — 열거 경로(GSI 부여
-  vs 프로젝트 순회)를 정하는 것이 이 작업의 설계 절반이다.
-- Slack 이벤트의 재처리 여부를 결정하고 기록한다. 재처리 없음(현행)을 유지한다면 그 근거를
-  결정으로 남긴다 — 재처리는 run의 비멱등성(도구 부수효과)과 충돌하는, schedule이 이미 한 번
-  내린 판단이다.
-
-**완료 조건**: 급사한 webhook 딜리버리 row가 lease 만료 뒤 `failed`로 마감되는 것을
-테스트로 검증한다. Slack 재처리 결정이 문서에 있고 구현이 그 결정과 일치한다.
-
 ## image-store-hardening — 생성 이미지 저장소의 public-read 제거
 
 **이유**: `S3_BUCKET_NAME`은 public-read 버킷에 업로드하고, 어떤 코드 경로도 오브젝트를

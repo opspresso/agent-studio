@@ -243,6 +243,12 @@ live in the GitOps repository). The contract the ticker has to meet, and nothing
   `errors` > 0 means repository calls failed and were fenced off. A refused token logs a
   warning server-side — a 401 ticker is otherwise invisible from inside the cluster.
 
+**The ticker is also what repairs webhook deliveries**, so a deployment that uses webhook
+triggers wants one even with no schedule configured. Every fifth tick sweeps every project's
+triggers and finishes rows a lost instance left in `running` — without it those rows stay
+`running` forever and `repaired` never moves. The sweep is the only part of the tick that
+reads history, which is why it is gated: it costs one query per project plus one per trigger.
+
 ## Multi-instance caveats
 
 | Behaviour | Bound by | Consequence |
@@ -251,7 +257,7 @@ live in the GitOps repository). The contract the ticker has to meet, and nothing
 | MCP registry edits | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | An edit made on one instance goes unseen on the others for up to that window. |
 | Managed MCP | — | **One app instance per host.** A managed container joins exactly one network namespace. |
 | Metrics counters | — | Per-process. Aggregate across instances at the scrape layer. |
-| Background work (`after()`) | — | A Slack event or webhook delivery interrupted by an abrupt instance loss is not resumed; the delivery row stays `running`. Schedule firings share the gap but their rows are repaired to `failed` by the next scan; extending that to Slack/webhook is the `trigger-durability` milestone. |
+| Background work (`after()`) | — | Work interrupted by an abrupt instance loss is never resumed — a run is not idempotent. Trigger firings of both kinds leave a row stuck in `running`, which the scan tick's repair sweep finishes as `failed` (see below). A Slack event has no ledger row: it is dropped silently unless Slack redelivers, which it does not once the ack has gone out ([ARCHITECTURE.md](ARCHITECTURE.md#slack)). |
 
 ### Managed MCP after a redeploy
 

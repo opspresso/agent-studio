@@ -769,6 +769,12 @@ history rows (`scheduledFor` carries the occurrence). `alreadyClaimed` counts oc
 another tick had already won — expected noise from overlapping windows, not an anomaly. The
 same summary is logged server-side on every tick, which is what an operator alerts on.
 
+`repaired` counts rows a lost instance left in `running` and this tick finished as `failed`.
+It covers **webhook deliveries as well as schedule firings** — both are admitted, acked and
+driven in the background, so both strand the same row — which is why a deployment with
+webhook triggers and no schedules still wants a ticker. Only every fifth tick sweeps for
+them; the rest answer `repaired: 0` without reading history.
+
 ## Traces
 
 ```
