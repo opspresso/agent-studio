@@ -151,6 +151,7 @@ same rule applies to:
 | Who administers the deployment, as against a workspace | `isDeploymentAdmin` in `src/lib/session.ts` |
 | Entering the workspace a machine caller named | `withMachineTenant` in `src/app/api/_lib/http.ts` |
 | A process-local cache with both a TTL and an entry cap | `src/shared/ttlCache.ts` |
+| Running work over a list with a bound on what is in flight | `runBounded` in `src/shared/pool.ts` |
 | Which key prefixes the re-keying migration must move | `keys.ts`, cross-checked against `scripts/retenant-table.ts` by `tests/architecture.test.ts` |
 | Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
 | Which pages are public | `src/proxy.ts` |

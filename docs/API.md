@@ -864,7 +864,8 @@ them; the rest answer `repaired: 0` without reading history.
 
 ```
 GET /api/audit?from=2026-08-01&to=2026-08-07
-→ 200 { "events": [ { id, action, actorEmail, target, detail?, createdAt, expiresAt? }, … ] }
+→ 200 { "events": [ { id, action, actorEmail, target, detail?, createdAt, expiresAt? }, … ],
+        "truncated": false }
 → 400 { "error": "…" }   (missing, backwards, or wider than 31 days)
 ```
 
@@ -872,8 +873,15 @@ Admin-only, and both dates are required. The rows are partitioned by UTC day and
 Query per day, so the range is capped at **31 days** and a caller who did not say how far
 back they meant is told rather than served a guess. Events come back newest first.
 
+The row count is capped too, at 2,000, with `truncated` saying so. The day cap bounds how many
+partitions are read and nothing bounds a partition's size — rows are written on every reveal,
+settings write, deletion and ownership override, and kept for a year. What is dropped is the
+oldest end of the range, and a page that stopped at the cap without saying so would read as a
+range that ended there.
+
 `action` is one of `secret.reveal`, `secret.issue`, `secret.revoke`, `settings.update`,
-`project.delete`, `registry.delete`, `authz.admin-override`. `target` is `kind:name`
+`project.delete`, `registry.delete`, `authz.admin-override`, `organization.create`,
+`organization.delete`, `membership.grant`, `membership.revoke`. `target` is `kind:name`
 (`project:my-bot/api-token`, `settings:a2a-key`, `mcp:shared-mcp`). **A row never carries the
 secret it is about** — it records that a credential was seen or replaced, which is the thing
 a second copy of the credential would undermine.

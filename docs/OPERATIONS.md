@@ -263,10 +263,13 @@ sweep as deep as the project count, and a tick that outlasts the CronJob's timeo
 nothing that minute.
 
 The tick scans **every workspace**, reading the registry each time so the ticker stays
-stateless. That read is fenced: if it fails, the default workspace is still scanned and the
-named ones wait for the next tick. The concurrency bound on firings is shared across all of
-them, not handed to each — otherwise a deployment with twenty workspaces would drive twenty
-times the limit on whichever pod served the tick.
+stateless. Both that read and each workspace's own scan are fenced, and the fan-out over
+workspaces is bounded. One workspace failing costs that workspace this minute and nothing else:
+an aborted tick would discard the firings of every workspace that had already finished, and
+those are not retried — each was won with an idempotency claim, and a claim once won is never
+offered again. The concurrency bound on firings is likewise shared across all workspaces rather
+than handed to each, or a deployment with twenty would drive twenty times the limit on
+whichever pod served the tick.
 
 ## Multi-instance caveats
 

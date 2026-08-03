@@ -118,10 +118,16 @@ a key every other tenant depends on, or provisioning containers on shared infras
 | `withDeploymentAdminAuth` | `ADMIN_EMAILS` | `PUT /api/settings`, the A2A key and its reveal, `/api/mcps/managed/*`, registering and deleting a workspace |
 
 `ADMIN_EMAILS` answers the deployment question **whatever workspace the caller is in** — the
-list *is* the operators, and joining a workspace is not a reason to stop being one. The
-pre-tenant "an empty list means no restriction" rule still applies, but only on a deployment
-with no workspaces at all; otherwise an unset list would make every member of every workspace
-a deployment administrator.
+list *is* the operators, and joining a workspace is not a reason to stop being one.
+
+The pre-tenant "an empty list means no restriction" rule survives only where both halves hold:
+the caller is in no workspace **and** the deployment has none. Each covers what the other
+cannot. A member is governed by their role, not by a list that names nobody. And someone with
+no membership resolves to the default workspace however many workspaces exist, so reading only
+that would make every such person an operator on a deployment whose admin list happens to be
+empty. The registry read behind the second half fails **closed** — an unreadable registry
+counts as "there are workspaces", because widening the fail-open is the only thing this answer
+can do.
 
 Managing members is answered by `isAdminOfOrganization` against the workspace **named in the
 URL**, not the ambient one: a person in several workspaces is resolved into exactly one for
@@ -515,6 +521,11 @@ Properties that matter:
 - **Rows are append-only and admin-read.** Nothing updates or deletes one, and the read
   endpoint is admin-only because the rows name individuals
   ([API.md](API.md#audit-trail)).
+- **A row lands in the workspace it is about, not the actor's.** Rows are tenant-scoped like
+  everything else and `withAuth` enters the *caller's* workspace, so a deployment operator
+  managing someone else's workspace would otherwise leave that workspace's trail incomplete
+  for exactly the acts an outsider performed on it. `organization.delete` is the one exception
+  and stays with the actor: the workspace's own partition is about to have no readers.
 - **A failed audit write never fails the act.** The caller already revealed the token;
   answering 500 afterwards would tell them it did not happen. The failure is logged loudly
   instead, and an unwired sink says so on the first event rather than discarding in silence.
@@ -541,7 +552,11 @@ Properties that matter:
   - Rows written before this carry an absolute URL instead of a key. Those objects were
     public-read and **stay reachable by anyone who kept the address**: the change removes the
     exposure for new images, not for old ones. A bucket that served them should have its
-    public-read policy removed and those rows treated as already disclosed.
+    public-read policy removed and those rows treated as already disclosed. Removing the policy
+    does **not** break them in the console: the address still names the object, so the resolver
+    recovers the key and signs it like any other. An address under a different bucket is left
+    alone — signing a key this deployment does not hold would answer 404 where "this could not
+    be loaded" is the truth.
   - **Nothing in the app deletes an object.** It cannot: the row naming one expires by
     DynamoDB TTL with no code path running. A **bucket lifecycle rule is the only mechanism**
     that can expire images, which is why it is a deployment requirement rather than an option
