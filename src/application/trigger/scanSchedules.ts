@@ -33,6 +33,7 @@ import type { ScheduleTrigger, Trigger, TriggerRun } from "@/domain/trigger/type
 import { dueSlots, isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
+import { runBounded } from "@/shared/pool";
 import { admitRun, recordSkip, type AdmittedFiring, type FiringDeps } from "./runTrigger";
 
 /**
@@ -84,6 +85,15 @@ const REPAIR_SCAN_LIMIT = 50;
  * the thing that throttles the table.
  */
 const REPAIR_CONCURRENCY = 8;
+
+/**
+ * How many workspaces one tick scans at a time. Bounded for the same reason the
+ * firings are: the tick fans out over every workspace, and an unbounded fan-out
+ * turns each workspace's own limits into a multiplier — on a repair minute,
+ * `REPAIR_CONCURRENCY` reads times however many workspaces exist, against the
+ * table the scheduler then has to claim occurrences in.
+ */
+export const MAX_CONCURRENT_TENANT_SCANS = 4;
 
 export interface ScheduleScanSummary {
   /** Schedule triggers walked, enabled or not. */
@@ -141,24 +151,7 @@ export async function driveFirings<T>(
   limit: number,
   drive: (firing: T) => Promise<void>,
 ): Promise<void> {
-  await pool(firings, limit, drive);
-}
-
-/** At most `limit` of `work` in flight at once. `work` must not throw. */
-async function pool<T, R>(
-  items: T[],
-  limit: number,
-  work: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const queue = items.map((item, index) => ({ item, index }));
-  const results: R[] = new Array<R>(items.length);
-  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
-    for (let next = queue.shift(); next; next = queue.shift()) {
-      results[next.index] = await work(next.item);
-    }
-  });
-  await Promise.all(workers);
-  return results;
+  await runBounded(firings, limit, drive);
 }
 
 /**
@@ -180,7 +173,20 @@ export async function scanSchedules(deps: FiringDeps, at: Date): Promise<Schedul
   if (at.getUTCMinutes() % REPAIR_EVERY_MINUTES === 0) {
     summary.repaired += await repairLostFirings(deps, at);
   }
-  for (const trigger of await deps.triggers.listSchedules()) {
+  // Fenced like every other read here. Unfenced it was the one call that could
+  // throw out of this function, and the tick drives *every* workspace: one
+  // throttled index query aborted the whole tick, discarding firings other
+  // workspaces had already won a claim for — and a claim once won is never
+  // offered again, so those occurrences were lost for good.
+  let schedules: ScheduleTrigger[];
+  try {
+    schedules = await deps.triggers.listSchedules();
+  } catch (error) {
+    log.error("trigger", "could not list schedules", error);
+    summary.errors += 1;
+    return { summary, firings };
+  }
+  for (const trigger of schedules) {
     summary.checked += 1;
     if (!trigger.enabled) {
       continue;
@@ -300,25 +306,28 @@ async function repairLostFirings(deps: FiringDeps, at: Date): Promise<number> {
     log.warn("trigger", "could not list projects for firing repair", error);
     return 0;
   }
-  // Bounded-concurrent rather than serial. The reads are independent — one
+  // Bounded-concurrent rather than serial: the reads are independent — one
   // trigger list per project, one run list per trigger — and awaiting them one
   // at a time makes the sweep 1 + P + T round trips deep, which on a few
   // hundred projects can outlast the tick a CronJob is waiting on. A tick that
   // times out fires nothing that minute.
-  const perProject = await pool(projects, REPAIR_CONCURRENCY, async (project) => {
-    let triggers: Trigger[];
+  //
+  // Two flat stages rather than a pool inside a pool. Nesting them multiplies:
+  // 8 projects each running 8 triggers is 64 in flight against a table the
+  // scheduler has to use for its claims in the same tick, and the number in
+  // `REPAIR_CONCURRENCY` would say 8.
+  const triggerLists = await runBounded(projects, REPAIR_CONCURRENCY, async (project) => {
     try {
-      triggers = await deps.triggers.listByProject(project.name);
+      return await deps.triggers.listByProject(project.name);
     } catch (error) {
       log.warn("trigger", `could not list triggers of '${project.name}' for repair`, error);
-      return 0;
+      return [] as Trigger[];
     }
-    const counts = await pool(triggers, REPAIR_CONCURRENCY, (trigger) =>
-      repairLostRuns(deps, trigger, at),
-    );
-    return counts.reduce((total, count) => total + count, 0);
   });
-  return perProject.reduce((total, count) => total + count, 0);
+  const counts = await runBounded(triggerLists.flat(), REPAIR_CONCURRENCY, (trigger) =>
+    repairLostRuns(deps, trigger, at),
+  );
+  return counts.reduce((total, count) => total + count, 0);
 }
 
 /** One trigger's stranded rows. */

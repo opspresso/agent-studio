@@ -2,10 +2,12 @@ import { after } from "next/server";
 import { executeFiring } from "@/application/trigger/runTrigger";
 import {
   MAX_CONCURRENT_FIRINGS,
+  MAX_CONCURRENT_TENANT_SCANS,
   driveFirings,
   scanSchedules,
   scheduleInput,
 } from "@/application/trigger/scanSchedules";
+import { runBounded } from "@/shared/pool";
 import { organizationRepository, triggerRunnerDeps } from "@/lib/container";
 import { DEFAULT_TENANT, withTenant } from "@/shared/tenantContext";
 import { config } from "@/lib/config";
@@ -57,12 +59,20 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error) {
     log.error("trigger", "could not list workspaces; scanning the default one only", error);
   }
-  const scans = await Promise.all(
-    tenants.map(async (tenant) => ({
-      tenant,
-      result: await withTenant(tenant, () => scanSchedules(triggerRunnerDeps, at)),
-    })),
-  );
+  // Fenced per workspace and bounded across them. `scanSchedules` is written not
+  // to throw, but the tick must not *depend* on that: one workspace's failure
+  // aborting the fan-out would discard firings the workspaces that already
+  // finished had won a claim for, and a claim once won is never offered again.
+  const scans = (
+    await runBounded(tenants, MAX_CONCURRENT_TENANT_SCANS, async (tenant) => {
+      try {
+        return { tenant, result: await withTenant(tenant, () => scanSchedules(triggerRunnerDeps, at)) };
+      } catch (error) {
+        log.error("trigger", `scan of workspace '${tenant}' failed`, error);
+        return null;
+      }
+    })
+  ).filter((scan) => scan !== null);
   const summary = scans.reduce(
     (total, scan) => ({
       checked: total.checked + scan.result.summary.checked,

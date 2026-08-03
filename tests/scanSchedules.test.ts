@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   FIRING_REPAIR_AFTER_SECONDS,
   SCHEDULE_CATCHUP_WINDOW_MS,
@@ -109,6 +109,7 @@ function fixture(
     chunks?: EngineChunk[];
     runThrows?: Error;
     slotsBusy?: boolean;
+    listSchedulesThrows?: Error;
   } = {},
 ): Fixture {
   const rows: TriggerRun[] = [...(opts.seededRows ?? [])];
@@ -119,7 +120,12 @@ function fixture(
     get: async () => null,
     // What the repair sweep walks: every trigger of the project, both kinds.
     listByProject: async () => [...schedules, ...(opts.webhooks ?? [])],
-    listSchedules: async () => schedules,
+    listSchedules: async () => {
+      if (opts.listSchedulesThrows) {
+        throw opts.listSchedulesThrows;
+      }
+      return schedules;
+    },
     create: async () => {},
     put: async () => {},
     delete: async () => {},
@@ -192,6 +198,20 @@ async function scanAndExecute(f: Fixture, at = AT) {
 }
 
 describe("scanSchedules", () => {
+  it("reports an unreadable schedule index instead of throwing out of the scan", async () => {
+    // The tick drives every workspace. A throw here aborted the whole fan-out,
+    // discarding firings the workspaces that already finished had won a claim
+    // for — and a claim once won is never offered again, so those occurrences
+    // were lost for good rather than retried next minute.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const f = fixture({ listSchedulesThrows: new Error("throttled") });
+    const result = await scanSchedules(f.deps, AT);
+    expect(result.summary).toMatchObject({ checked: 0, fired: 0, errors: 1 });
+    expect(result.firings).toEqual([]);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
   it("claims a due occurrence, runs it as the schedule actor, and finishes the row", async () => {
     const f = fixture();
     const { summary } = await scanAndExecute(f);

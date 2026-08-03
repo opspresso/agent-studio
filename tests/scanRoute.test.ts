@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_CONCURRENT_FIRINGS } from "@/application/trigger/scanSchedules";
+import { currentTenant } from "@/shared/tenantContext";
 
 const { registry, background } = vi.hoisted(() => ({
   // No organizations by default: a single-tenant deployment, which is the shape
@@ -125,6 +126,29 @@ describe("every workspace", () => {
     expect(response.status).toBe(200);
     expect(scanSchedules).toHaveBeenCalledTimes(1);
     expect(executeFiring).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("drives the workspaces that succeeded when one of them fails", async () => {
+    // The firings already in hand were won with a claim, and a claim once won is
+    // never offered again — so losing them to another workspace's failure loses
+    // those occurrences for good, not until the next tick.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    registry.organizations = [{ id: "acme" }, { id: "globex" }];
+    scanSchedules.mockImplementation(async () => {
+      if (currentTenant() === "globex") {
+        throw new Error("throttled");
+      }
+      return { summary: SUMMARY, firings: [FIRING] };
+    });
+
+    const response = await POST(request("tick-token"));
+    expect(response.status).toBe(200);
+    await background.task;
+    // `default` and `acme` — globex contributed nothing, and cost nothing.
+    expect(executeFiring).toHaveBeenCalledTimes(2);
+    expect(await response.json()).toMatchObject({ fired: 2 });
     expect(error).toHaveBeenCalled();
     error.mockRestore();
   });
