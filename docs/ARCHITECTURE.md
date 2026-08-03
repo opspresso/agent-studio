@@ -31,7 +31,13 @@ src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
     execution/  security/  slack/  trigger/  sync/
-  application/      # Use cases. Depends on domain ports only.
+  application/      # Use cases. Depends on domain ports only, and never on the
+                    # composition root — deps are injected, never pulled.
+    llm/            # The engine: tool loop, PII masking, context budget, document parts
+    execution/      # The facades, the run bracket, binding + MCP tool resolution
+    chat/  slack/  a2a/  trigger/  image/
+                    # The surfaces that drive a run, and the image path
+    project/  registry/  skill/  mcp/  agent/  usage/  trace/  settings/  health/
   infrastructure/   # Adapters (app-facing code reaches them via the composition root).
     db/             # Single-table client, key builders, repositories
     llm/            # OpenAI-compatible provider channels, streaming
@@ -50,10 +56,21 @@ src/
   components/       # App chrome: the header the root layout mounts (theme toggle, user
                     # menu), and the landing page's sign-in button
   lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
-                    # config + runtime-settings, run metrics
+                    # config + runtime-settings, public URLs, run metrics
   shared/           # Dependency-free helpers (dates, slugs, timeouts, PKCE, constant-time
                     # compare, logger). The bottom of the graph: imports nothing from `@/`
+  proxy.ts          # The page sign-in gate, and the single owner of which pages are
+                    # public — the model is in SECURITY.md
+  instrumentation.ts
+                    # Boot, before the server accepts connections: fail-fast config
+                    # validation, shutdown signal handlers, and the managed-MCP repair
+                    # sweep (which a new process is precisely the event for)
 ```
+
+The last two are modules, not layers: they are what runs *around* a request rather than in
+one, and each is owned elsewhere — [SECURITY.md](SECURITY.md#two-gates-on-purpose) for the page
+gate, [CONFIGURATION.md](CONFIGURATION.md#boot-time-validation) and
+[OPERATIONS.md](OPERATIONS.md#draining) for what boot checks and how the process winds down.
 
 **Dependency rule: `app → application → domain ← infrastructure`.**
 
