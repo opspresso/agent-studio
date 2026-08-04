@@ -35,17 +35,6 @@ function toItem(skill: Skill): Record<string, unknown> {
   };
 }
 
-/**
- * `name` is a reserved word in DynamoDB's expression grammar and can only be
- * projected through an alias; `description` is not, and is named directly. The
- * service is the only thing that can tell you which — the integration check
- * covers this projection for that reason.
- */
-const DESCRIPTION_PROJECTION = {
-  ProjectionExpression: "#name, description",
-  ExpressionAttributeNames: { "#name": "name" },
-} as const;
-
 export const skillRepository: SkillRepository = {
   ...createKeyedRepository<Skill>({
     entityType: ENTITY_TYPE,
@@ -55,10 +44,18 @@ export const skillRepository: SkillRepository = {
   }),
 
   /**
-   * One read per name, projected down to the two attributes a prompt's skill
-   * table shows. Still one round trip — the reads are concurrent — but a skill
+   * One read per name, projected down to the one attribute a prompt's skill
+   * table needs. Still one round trip — the reads are concurrent — but a skill
    * with attachments no longer crosses the wire in full so that a run can print
    * its one-line description.
+   *
+   * The name comes back from the key that was asked for, not from the item's own
+   * `name` attribute. The caller looks the answer up by the name its version
+   * bound, so echoing a stored one makes a row whose attribute has drifted from
+   * its key — a hand repair, a partial write — report as *deleted* to the prompt
+   * while `get` on the same name still returns the skill. It also keeps `name`
+   * out of the projection, and with it the `ExpressionAttributeNames` alias that
+   * DynamoDB's reserved-word list would otherwise force.
    *
    * Deliberately not `BatchGetItem`: it caps at 100 keys and can return
    * `UnprocessedKeys`, so the batched form would need chunking and a retry loop
@@ -76,12 +73,10 @@ export const skillRepository: SkillRepository = {
           new GetCommand({
             TableName: getTableName(),
             Key: keys.skill(name),
-            ...DESCRIPTION_PROJECTION,
+            ProjectionExpression: "description",
           }),
         );
-        return res.Item
-          ? { name: res.Item.name as string, description: (res.Item.description as string) ?? "" }
-          : null;
+        return res.Item ? { name, description: (res.Item.description as string) ?? "" } : null;
       }),
     );
     return found.filter((entry): entry is SkillDescription => entry !== null);

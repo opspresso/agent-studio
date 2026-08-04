@@ -17,8 +17,10 @@ export interface SkillRepository {
    * that one line. A run whose model never calls the tool paid for all of it
    * before its first token.
    *
-   * Names the caller asked for that are absent from the answer are absent from
-   * the registry; the run reports each one and does not offer it.
+   * Each entry's `name` is the one that was **asked for**, so a caller can look
+   * its answer up by the name its version bound. Names absent from the answer
+   * are absent from the registry; the run reports each one and does not offer
+   * it.
    */
   describe(names: readonly string[]): Promise<SkillDescription[]>;
   list(): Promise<Skill[]>;
