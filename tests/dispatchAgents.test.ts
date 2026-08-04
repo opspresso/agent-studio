@@ -370,9 +370,15 @@ describe("dispatch_agents", () => {
 
 describe("dispatch_agents is offered only to a top-level run", () => {
   const names = (canDispatch: boolean) =>
-    buildAgentTools(undefined, [], SUBAGENTS ?? [], false, false, false, canDispatch).tools.map(
-      (tool) => tool.function.name,
-    );
+    buildAgentTools({
+      skills: [],
+      subagents: SUBAGENTS ?? [],
+      canLoadSkills: false,
+      withImageTool: false,
+      withEditTool: false,
+      withImageTransfer: false,
+      canDispatch,
+    }).tools.map((tool) => tool.function.name);
 
   it("offers it alongside the transfer tool at the top level", () => {
     expect(names(true)).toEqual(["transfer_to_agent", DISPATCH_TOOL_NAME]);

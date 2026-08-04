@@ -1436,19 +1436,24 @@ function callerBlock(caller: RunCaller): string {
   return lines.join(" ");
 }
 
-export function buildAgentSystemPrompt(
-  base: string | undefined,
-  skills: SkillInfo[],
-  subagents: SubagentInfo[],
-  mcpServers: McpServerInfo[],
-  images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean },
+export interface AgentSystemPromptInput {
+  /** The version's own system prompt; the engine's blocks are appended to it. */
+  base?: string;
+  skills: SkillInfo[];
+  subagents: SubagentInfo[];
+  mcpServers: McpServerInfo[];
+  images: { handles: readonly ImageHandle[]; canEdit: boolean; canTransfer: boolean };
   /** See {@link RunPromptInput.now}. Omitted keeps the prompt clock-free. */
-  now?: Date,
+  now?: Date;
   /** Whether this run is offered `dispatch_agents` (see {@link buildAgentTools}). */
-  canDispatch = false,
+  canDispatch?: boolean;
   /** See {@link RunPromptInput.caller}. Omitted keeps the prompt anonymous. */
-  caller?: RunCaller,
-): string {
+  caller?: RunCaller;
+}
+
+export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
+  const { base, skills, subagents, mcpServers, images, now, caller } = input;
+  const canDispatch = input.canDispatch ?? false;
   const withMcp = mcpServers.length > 0;
   const sections: string[] = [];
   if (skills.length > 0) {
@@ -1548,26 +1553,42 @@ const EDIT_IMAGE_TOOL_DEF: ChannelToolDef = {
  * actually be offered — deriving them a second time would drift from the
  * offered/intercepted contract this function owns.
  */
-export function buildAgentTools(
-  mcpTools: ChannelToolDef[] | undefined,
-  skills: SkillInfo[],
-  subagents: SubagentInfo[],
-  withImageTool: boolean,
-  withEditTool: boolean,
-  withImageTransfer: boolean,
+export interface AgentToolsInput {
+  /** MCP tool definitions, already aliased for name collisions. */
+  mcpTools?: ChannelToolDef[];
+  skills: SkillInfo[];
+  subagents: SubagentInfo[];
+  /**
+   * Whether a skill's content can actually be loaded. Offered on this and not on
+   * `skills.length` alone: every other builtin is gated on the dependency that
+   * executes it, and the Skill tool was the one that was not — a run that
+   * advertised it without a loader answered every call with "cannot be executed
+   * in this context", which reads like an MCP fault.
+   */
+  canLoadSkills: boolean;
+  withImageTool: boolean;
+  withEditTool: boolean;
+  withImageTransfer: boolean;
   /**
    * Whether fan-out is offered. False for a subagent run: a child that could
    * dispatch would multiply the run count by depth, and these children run
    * outside the concurrency and cost guards (see {@link MAX_DISPATCH_TASKS}).
    */
-  canDispatch = false,
+  canDispatch?: boolean;
+}
+
+export function buildAgentTools(
+  input: AgentToolsInput,
 ): { tools: ChannelToolDef[]; builtinNames: Set<string> } {
+  const { mcpTools, skills, subagents, canLoadSkills, withImageTool, withEditTool } = input;
+  const withImageTransfer = input.withImageTransfer;
+  const canDispatch = input.canDispatch ?? false;
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
   // The names of the builtins actually offered. The tool loop intercepts a call
   // only when its name is in here, so "offered" and "intercepted" cannot drift
   // apart — an MCP tool named like an inactive builtin stays reachable.
   const builtinNames = new Set<string>();
-  if (skills.length > 0) {
+  if (canLoadSkills && skills.length > 0) {
     tools.push(skillToolDef(skills));
     builtinNames.add(SKILL_TOOL_NAME);
   }
@@ -1606,6 +1627,93 @@ export function imagePromptUses(
   };
 }
 
+/** What a run's capabilities decide, assembled once. */
+export interface AgentRunAssembly {
+  systemPrompt: string;
+  tools: ChannelToolDef[];
+  /** Builtin names actually offered; the tool loop intercepts exactly these. */
+  builtinNames: Set<string>;
+  canEdit: boolean;
+  canTransfer: boolean;
+  /** Images this run can address, seeded from the input messages. */
+  images: ImageRegistry;
+}
+
+export interface AssembleAgentRunInput {
+  /** The version's own system prompt. */
+  systemPrompt?: string;
+  /** The turn history. Inline images in it are registered when something can act on them. */
+  messages?: ChatMessageInput[];
+  skills?: SkillInfo[];
+  subagents?: SubagentInfo[];
+  mcpServers?: McpServerInfo[];
+  mcpTools?: ChannelToolDef[];
+  now?: Date;
+  caller?: RunCaller;
+  /** Whether the facade admitted this as a top-level run (see {@link AgentToolsInput}). */
+  canDispatch?: boolean;
+}
+
+/**
+ * Everything a run is assembled with, decided in one place.
+ *
+ * The two builders below have always had one owner each; what did not was the
+ * *argument assembly*. `runAgent` and the Playground preview each spelled out
+ * eight and seven positional arguments, and they had already drifted: the
+ * preview omitted the eighth, so a version that opted into `callerContext`
+ * previewed a prompt without the caller block every real run carries. A field
+ * added to either builder is now a type error at both sites rather than a
+ * silently-missing positional.
+ *
+ * Which builtins are offered is derived from the **deps**, never from the
+ * version: a capability the run cannot actually perform must not be advertised,
+ * and the preview and the run have to agree about that without asking twice.
+ */
+export function assembleAgentRun(
+  deps: Pick<AgentDeps, "loadSkillContent" | "runSubagent" | "generateImage" | "editImage">,
+  input: AssembleAgentRunInput,
+): AgentRunAssembly {
+  const skills = input.skills ?? [];
+  // Delegation is described and offered only where it can actually reach a
+  // child. Without a runner the transfer tool was still advertised and the
+  // prompt still explained it, and a call came back "requires agent_name and
+  // message" — a message about the arguments when the reason was that nothing
+  // could carry them. Emptying the list here gates the prompt section and both
+  // tools at once, which is what keeps them from disagreeing.
+  const subagents = deps.runSubagent ? (input.subagents ?? []) : [];
+  const { canEdit, canTransfer } = imagePromptUses(deps, subagents);
+  // Fan-out additionally needs the facade to have admitted this as a top-level
+  // run: a child that could dispatch would multiply the run count by depth.
+  const canDispatch = Boolean(input.canDispatch && deps.runSubagent);
+  // Handles are worth keeping when something can act on them: this run can edit
+  // an image, or it can hand one to another agent that will.
+  const images = new ImageRegistry();
+  if ((canEdit || canTransfer) && input.messages) {
+    registerInputImages(images, input.messages);
+  }
+  const systemPrompt = buildAgentSystemPrompt({
+    ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
+    skills,
+    subagents,
+    mcpServers: input.mcpServers ?? [],
+    images: { handles: images.list(), canEdit, canTransfer },
+    ...(input.now ? { now: input.now } : {}),
+    canDispatch,
+    ...(input.caller ? { caller: input.caller } : {}),
+  });
+  const { tools, builtinNames } = buildAgentTools({
+    ...(input.mcpTools ? { mcpTools: input.mcpTools } : {}),
+    skills,
+    subagents,
+    canLoadSkills: Boolean(deps.loadSkillContent),
+    withImageTool: Boolean(deps.generateImage),
+    withEditTool: canEdit,
+    withImageTransfer: canTransfer,
+    canDispatch,
+  });
+  return { systemPrompt, tools, builtinNames, canEdit, canTransfer, images };
+}
+
 async function loadSkillSafe(
   loader: (skillName: string, filePath?: string) => Promise<string>,
   skills: SkillInfo[],
@@ -1639,34 +1747,21 @@ export async function* runAgent(
   // authored ones — the runSubagent wrapper stamps the subagent's name.
   const author = undefined;
 
-  // Handles are worth keeping when something can act on them: this run can edit
-  // an image, or it can hand one to another agent that will.
-  const { canEdit, canTransfer } = imagePromptUses(deps, subagents);
-  const images = new ImageRegistry();
-  if (canEdit || canTransfer) {
-    registerInputImages(images, input.messages);
-  }
-  // Fan-out is offered only where it can actually reach a child: the facade said
-  // this is a top-level run, and there is a runner to dispatch to.
-  const canDispatch = Boolean(input.canDispatch && deps.runSubagent);
-  const systemPrompt = buildAgentSystemPrompt(
-    input.systemPrompt,
-    skills,
-    subagents,
-    input.mcpServers ?? [],
-    { handles: images.list(), canEdit, canTransfer },
-    input.now,
-    canDispatch,
-    input.caller,
-  );
-  const { tools, builtinNames } = buildAgentTools(
-    input.mcpTools,
-    skills,
-    subagents,
-    Boolean(deps.generateImage),
-    canEdit,
-    canTransfer,
-    canDispatch,
+  // One assembly, shared with the Playground preview: what the model is told it
+  // can do is decided here and nowhere else.
+  const { systemPrompt, tools, builtinNames, canEdit, canTransfer, images } = assembleAgentRun(
+    deps,
+    {
+      ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+      messages: input.messages,
+      skills,
+      subagents,
+      ...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
+      ...(input.mcpTools ? { mcpTools: input.mcpTools } : {}),
+      ...(input.now ? { now: input.now } : {}),
+      ...(input.caller ? { caller: input.caller } : {}),
+      ...(input.canDispatch ? { canDispatch: input.canDispatch } : {}),
+    },
   );
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
 

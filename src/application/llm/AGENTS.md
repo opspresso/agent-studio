@@ -149,6 +149,21 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   child's ceiling is clamped to the parent's in `runProject.ts`, so a child version with a
   larger `maxTurn` cannot raise the limit the run started under.
 
+## Run assembly (`assembleAgentRun`)
+
+**One place decides what a run is told it can do**, and both `runAgent` and the Playground
+preview go through it. The builders below each had a single owner already; the *arguments* did
+not — two call sites spelled out eight and seven positional arguments apiece, and had drifted:
+the preview omitted the last one, so a version that opted into `callerContext` previewed a
+prompt without the caller block every real run carries. `tests/architecture.test.ts` now fails
+on a second caller of either builder.
+
+**A capability is derived from the deps, never from the version.** A builtin the run cannot
+actually perform is not offered and not described: no `loadSkillContent` means no `Skill` tool
+even with skills bound, and no `runSubagent` means no transfer tool, no `dispatch_agents`, and
+no delegation section in the prompt. Both of those used to be gated on the *list* being
+non-empty, so a run advertised them and then answered a call with an error about arguments.
+
 ## System prompt assembly (`buildAgentSystemPrompt`)
 
 The version's own text comes first, then — when the run has anything to append — a `---`
