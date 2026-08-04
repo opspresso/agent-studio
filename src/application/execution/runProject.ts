@@ -173,10 +173,12 @@ function agentRunRefusal(project: Project): ValidationError {
  * consumes a run generically rather than answering with a completion.
  *
  * The pair with {@link executeProjectStream} is two contracts, not a flag: which
- * function a surface calls is that surface saying whether it can render a
- * picture. `/chat/completions` calls the refusing one because an image has no
- * chat completion; the webhook runner calls this one because a `image` chunk is
- * something it can deliver. A boolean deciding whether a project type is refused
+ * function a surface calls is that surface saying whether an image project is
+ * something it can run at all. `/chat/completions` calls the refusing one
+ * because an image has no chat completion — there is no answer to send. The
+ * webhook runner calls this one because there is: the picture is billed,
+ * traced, and recorded on the firing's row, even though a row carries text and
+ * the bytes stop here. A boolean deciding whether a project type is refused
  * would be the shape of the bug the refusal prevents — a name is not.
  *
  * It exists because the composition root was answering this. `triggerRunnerDeps`
@@ -194,13 +196,14 @@ export async function* streamProjectRun(
   input: ExecuteProjectInput,
 ): AsyncGenerator<EngineChunk> {
   if (runStrategyFor(input.project) === "image") {
+    // An image run's prompt is one string. A chunk consumer's history is the
+    // conversation, and only its last user turn can be the thing to draw.
+    const prompt = imagePromptFrom(input.messages);
     yield* generateImageStream(deps, {
       project: input.project,
       version: input.version,
       ...(input.variables ? { variables: input.variables } : {}),
-      // An image run's prompt is one string. A chunk consumer's history is the
-      // conversation, and only its last user turn can be the thing to draw.
-      ...(imagePromptFrom(input.messages) ? { prompt: imagePromptFrom(input.messages) } : {}),
+      ...(prompt ? { prompt } : {}),
       ...(input.actor ? { actor: input.actor } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
     });

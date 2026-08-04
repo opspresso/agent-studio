@@ -345,6 +345,32 @@ describe("executeDelivery", () => {
     expect(f.rows.find((r) => r.runId === admitted.runId)?.status).toBe("succeeded");
   });
 
+  it("says a run drew, when drawing was the whole answer", async () => {
+    // An image project on a trigger produces a picture, a usage row and a
+    // trace — and the history row carries text, so it used to close as
+    // `succeeded` with an empty result, which is what a run that produced
+    // nothing looks like. The bytes still stop here; the record of them does not.
+    const f = fixture({
+      chunks: [{ image: { b64: "aW1n", mimeType: "image/png" } }, { done: true }],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]).toMatchObject({ status: "succeeded" });
+    expect(f.rows[0]?.result).toContain("Generated 1 image");
+  });
+
+  it("lets an answer speak for itself when a picture came alongside it", async () => {
+    // Only a run with nothing else to say needs the substitute; appending it to
+    // a real answer would put bookkeeping in the delivered result.
+    const f = fixture({
+      chunks: [
+        { image: { b64: "aW1n", mimeType: "image/png" } },
+        { delta: { content: "here is the chart" } },
+      ],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]?.result).toBe("here is the chart");
+  });
+
   it("ignores a subagent's text when accumulating the answer", async () => {
     const f = fixture({
       chunks: [

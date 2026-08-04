@@ -250,7 +250,7 @@ dispatch. To trace a request, start at the dispatch tier.
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent`) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
-| Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it |
+| Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it; a firing's row records that it drew, since the row carries text |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `executeProjectStream` (same `triggerRunnerDeps.run`) |
 
 ```mermaid
@@ -316,11 +316,13 @@ runs a single-shot completion, and an `image` project is refused — its run is 
 
 `streamProjectRun` is the same dispatch for a surface that consumes a run as chunks: it
 streams an image project instead of refusing it. The pair is **two contracts, not a flag** —
-which one a surface calls is that surface declaring whether it can render a picture.
-`/chat/completions` calls the refusing one because an image has no chat completion; the
-trigger runner calls the streaming one because an `image` chunk is something it can deliver.
-A boolean deciding whether a project type is refused would be the defect the refusal exists
-to prevent; a second name is not.
+which one a surface calls is that surface declaring whether an image project is something it
+can run at all. `/chat/completions` calls the refusing one because an image has no chat
+completion — there is nothing to send back. The trigger runner calls the streaming one
+because there is something: the picture is billed, traced, and recorded on the firing's row,
+which carries text and says so rather than closing as an empty success. A boolean deciding
+whether a project type is refused would be the defect the refusal exists to prevent; a second
+name is not.
 
 **New entry points should call one of these instead of re-encoding the decision** — three
 call sites used to ask it for themselves, the two non-streaming routes had diverged on the
