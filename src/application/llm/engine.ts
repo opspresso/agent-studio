@@ -330,12 +330,33 @@ const MIN_KEPT_RESULT_CHARS = 500;
  * must still fit what the whole run may accumulate, so a small-window model
  * truncates below the per-turn cap instead of overflowing into a provider 400.
  */
-function createToolResultBudget(
-  total: number,
-  runBudget?: RunContextBudget,
-): (content: string) => string {
+interface ToolResultBudget {
+  /**
+   * Fit a result whose length the engine does not control — tool output, a
+   * child's answer, a provider's error body — cutting and marking it as needed.
+   */
+  fit(content: string): string;
+  /**
+   * Charge a refusal the engine wrote itself and hand it back unchanged.
+   *
+   * These are bounded by construction, and their exact wording is the whole
+   * point: replacing "max_turn reached before transfer" with "this turn's tool
+   * output budget is exhausted" trades the reason for the accounting, on a
+   * string too short for the accounting to care about. They still enter the
+   * context, so they still pay — which is what makes "everything inserted is
+   * charged" true rather than nearly true.
+   */
+  charge(content: string): string;
+}
+
+function createToolResultBudget(total: number, runBudget?: RunContextBudget): ToolResultBudget {
   let remaining = total;
-  return (content) => {
+  const charge = (content: string): string => {
+    runBudget?.chargeText(content);
+    remaining -= content.length;
+    return content;
+  };
+  const fit = (content: string): string => {
     if (remaining <= 0) {
       // The tool protocol forces a result message per call, so this string
       // enters the context regardless — charged, so the budget stays honest
@@ -383,6 +404,62 @@ function createToolResultBudget(
     }
     remaining -= text.length;
     return text;
+  };
+  return { fit, charge };
+}
+
+/**
+ * One tool result, delivered.
+ *
+ * A result has four things to do and they have to happen in this order: mask it,
+ * charge it, hand the *restored* text to the reader, keep the *masked* one in
+ * the context. Eleven branches of the dispatch loop spelled that sequence out
+ * for themselves, and they had already diverged — five skipped the charge
+ * outright, so `AGENTS.md`'s "everything inserted is charged" was true of the
+ * long results and not of the short ones.
+ *
+ * The order is the part worth protecting. A branch that pushed the restored text
+ * instead of the masked one would put back exactly what `piiFiltering` took out,
+ * silently and only for that one tool; nothing about the run would look wrong.
+ * Making it a parameter list means a new builtin cannot get three of the four
+ * right.
+ *
+ * `stored` is for the one result whose context copy is not its display copy: a
+ * transfer's marker tells the reader which agent answered, while the context
+ * gets the protocol's empty placeholder, because the child's answer arrives as
+ * its own message and replaying the marker there would claim it came back empty.
+ */
+function createToolResultEmitter(
+  author: string | undefined,
+  toolMessages: ChannelMessage[],
+  budget: ToolResultBudget,
+  filter?: PiiFilter,
+): (
+  call: { id: string; name: string },
+  text: string,
+  options?: { name?: string; displayOnly?: boolean; stored?: string; fit?: boolean },
+) => EngineChunk {
+  return (call, text, options = {}) => {
+    const masked = filter?.mask(text) ?? text;
+    // What the context receives is what is charged. For every result but one
+    // that is the same string the reader sees; a transfer's marker is the
+    // exception, and charging the marker as well would bill the run for a
+    // string no message ever carried.
+    const stored =
+      options.stored === undefined
+        ? (options.fit === false ? budget.charge : budget.fit)(masked)
+        : budget.charge(options.stored);
+    const shown = options.stored === undefined ? stored : masked;
+    toolMessages.push({ role: "tool", tool_call_id: call.id, content: stored });
+    return {
+      author,
+      toolResult: {
+        toolCallId: call.id,
+        name: options.name ?? call.name,
+        content: filter?.restore(shown) ?? shown,
+        ...(options.displayOnly ? { displayOnly: true } : {}),
+      },
+    };
   };
 }
 
@@ -2066,33 +2143,32 @@ export async function* runAgent(
       });
     }
 
-    const spendResultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, contextBudget);
+    const resultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, contextBudget);
+    // Every result this turn leaves through here — see the emitter for why the
+    // four steps are not a sequence any branch gets to spell out for itself.
+    const toolResult = createToolResultEmitter(author, toolMessages, resultBudget, filter);
 
     for (const { call, args, displayArgs, builtin, malformed } of prepared) {
       if (malformed) {
         const errorText = outputCut
           ? `Error: the arguments of this call were cut at the model's output limit and did not parse; the call was not executed. Retry it with complete arguments.`
           : `Error: the arguments of this call did not parse as a JSON object; the call was not executed.`;
-        const spentError = spendResultBudget(errorText);
-        yield { author, toolResult: { toolCallId: call.id, name: call.name, content: spentError } };
-        toolMessages.push({ role: "tool", tool_call_id: call.id, content: spentError });
+        yield toolResult(call, errorText, { fit: false });
         continue;
       }
       if (builtin && call.name === TRANSFER_TOOL_NAME) {
         // Child runs at turn+1 and the parent resumes at turn+2, so two turns
         // must remain or the resume would trip the initial guard.
         if (turn + 2 >= maxTurn) {
-          const errorText = "Error: Agent max_turn reached before transfer.";
-          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
-          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          yield toolResult(call, "Error: Agent max_turn reached before transfer.", { fit: false });
           continue;
         }
         const agentName = typeof args.agent_name === "string" ? args.agent_name : "";
         const message = typeof args.message === "string" ? args.message : "";
         if (!agentName || !message.trim() || !deps.runSubagent) {
-          const errorText = "Error: transfer_to_agent requires agent_name and message.";
-          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
-          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          yield toolResult(call, "Error: transfer_to_agent requires agent_name and message.", {
+            fit: false,
+          });
           continue;
         }
         // Named images travel as bytes, so the child edits the real picture
@@ -2103,9 +2179,11 @@ export async function* runAgent(
         const handedOver = requestedIds.map((id) => images.get(id)).filter(Boolean) as ImageHandle[];
         if (handedOver.length < requestedIds.length) {
           const known = images.list().map((handle) => handle.id);
-          const errorText = `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`;
-          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
-          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          yield toolResult(
+            call,
+            `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`,
+            { fit: false },
+          );
           continue;
         }
         const childImages = handedOver.map(({ b64, mimeType }) => ({ b64, mimeType }));
@@ -2146,19 +2224,11 @@ export async function* runAgent(
         // tell which agent had answered. Marked display-only — the child's
         // answer returns as its own message, and replaying this marker in its
         // place would say the delegation came back empty.
-        yield {
-          author,
-          toolResult: {
-            toolCallId: call.id,
-            name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
-            content: `Transferred to '${agentName}'; its answer follows.`,
-            displayOnly: true,
-          },
-        };
-        toolMessages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: JSON.stringify({ result: null }),
+        yield toolResult(call, `Transferred to '${agentName}'; its answer follows.`, {
+          name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
+          displayOnly: true,
+          stored: JSON.stringify({ result: null }),
+          fit: false,
         });
         // A transfer's answer used to enter the context with no bound at all —
         // the one unbudgeted spot. The user already saw the child's full
@@ -2198,9 +2268,9 @@ export async function* runAgent(
         // A group costs the parent exactly what one transfer costs: the children
         // run at turn+1 and the parent resumes at turn+2 however many there were.
         if (turn + 2 >= maxTurn) {
-          const errorText = `Error: Agent max_turn reached before ${DISPATCH_TOOL_NAME}.`;
-          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
-          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          yield toolResult(call, `Error: Agent max_turn reached before ${DISPATCH_TOOL_NAME}.`, {
+            fit: false,
+          });
           continue;
         }
         // From `args`, not `displayArgs`, for the same reason a transfer reads
@@ -2212,9 +2282,11 @@ export async function* runAgent(
         // either way and one source per task keeps this honest.
         const rawTasks = Array.isArray(args.tasks) ? args.tasks : [];
         if (rawTasks.length === 0) {
-          const errorText = `Error: ${DISPATCH_TOOL_NAME} requires a non-empty tasks array; each task needs agent_name and message.`;
-          yield { author, toolResult: { toolCallId: call.id, name: call.name, content: errorText } };
-          toolMessages.push({ role: "tool", tool_call_id: call.id, content: errorText });
+          yield toolResult(
+            call,
+            `Error: ${DISPATCH_TOOL_NAME} requires a non-empty tasks array; each task needs agent_name and message.`,
+            { fit: false },
+          );
           continue;
         }
         // Validated per task, and one task that cannot run does not cancel the
@@ -2321,7 +2393,7 @@ export async function* runAgent(
           // and one recovered failure per task would report the whole call failed.
           if (answer) {
             answerByIndex.set(index, {
-              text: createToolResultBudget(perTask)(answer),
+              text: createToolResultBudget(perTask).fit(answer),
               failed: false,
             });
             return;
@@ -2353,18 +2425,7 @@ export async function* runAgent(
           : body;
         // Through the turn budget like any other tool result, which is the reason
         // the answers come back here instead of as an unbudgeted context message.
-        // Masked before it is spent: the budget prices the string the messages
-        // array receives, not the shorter unmasked one.
-        const maskedDispatch = spendResultBudget(filter?.mask(dispatchText) ?? dispatchText);
-        yield {
-          author,
-          toolResult: {
-            toolCallId: call.id,
-            name: call.name,
-            content: filter?.restore(maskedDispatch) ?? maskedDispatch,
-          },
-        };
-        toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedDispatch });
+        yield toolResult(call, dispatchText);
         nextTurn = Math.max(nextTurn, turn + 2);
         continue;
       }
@@ -2392,19 +2453,9 @@ export async function* runAgent(
             resultText = `Error: image generation failed. ${errorMessage(error)}`;
           }
         }
-        // Through both budgets like every other result, masked first: the
-        // failure path carries a provider error body of unbounded length, and
-        // the budget prices the string the messages array receives.
-        const maskedResultText = spendResultBudget(filter?.mask(resultText) ?? resultText);
-        yield {
-          author,
-          toolResult: {
-            toolCallId: call.id,
-            name: call.name,
-            content: filter?.restore(maskedResultText) ?? maskedResultText,
-          },
-        };
-        toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedResultText });
+        // Fitted like every other result: the failure path carries a provider
+        // error body of unbounded length.
+        yield toolResult(call, resultText);
         continue;
       }
 
@@ -2440,17 +2491,8 @@ export async function* runAgent(
           }
         }
         // Same as GenerateImage above: the error path's provider body is
-        // unbounded, so the result goes through both budgets, masked first.
-        const maskedEditText = spendResultBudget(filter?.mask(resultText) ?? resultText);
-        yield {
-          author,
-          toolResult: {
-            toolCallId: call.id,
-            name: call.name,
-            content: filter?.restore(maskedEditText) ?? maskedEditText,
-          },
-        };
-        toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedEditText });
+        // unbounded, so this one is fitted too.
+        yield toolResult(call, resultText);
         continue;
       }
 
@@ -2514,20 +2556,7 @@ export async function* runAgent(
           }
         }
       }
-      // Masked before it is spent: the budget must price the exact string the
-      // messages array receives — mask tokens run longer than what they
-      // replace, and a cut through a raw address would leave a fragment the
-      // mask no longer recognises.
-      const maskedContent = spendResultBudget(filter?.mask(content) ?? content);
-      yield {
-        author,
-        toolResult: {
-          toolCallId: call.id,
-          name: resultName,
-          content: filter?.restore(maskedContent) ?? maskedContent,
-        },
-      };
-      toolMessages.push({ role: "tool", tool_call_id: call.id, content: maskedContent });
+      yield toolResult(call, content, { name: resultName });
     }
 
     // Reported once per run, on the turn the first cut happened: the model
