@@ -17,6 +17,7 @@ import { runClock, runStrategyFor, toEngineParameters } from "./deps";
 import { buildImageEditor, buildImageGenerator, runImageSubagent } from "./imageTool";
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "./modelPolicy";
+import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import {
   buildSkillLoader,
   createSkillReader,
@@ -25,7 +26,18 @@ import {
 } from "./bindings";
 import { createTraceRecorder, finishTrace } from "./traceLifecycle";
 
-/** Assemble the injected engine dependencies for an agent run. */
+/**
+ * Assemble the injected engine dependencies for an agent run.
+ *
+ * `callMcpTool` is a parameter rather than something the caller patches on
+ * afterwards. It used to be: two call sites assigned it onto the returned object,
+ * which made this function return a complete-looking bag that was not one. The
+ * declarations and the dispatcher then reached the engine by different routes —
+ * `mcpTools` as run input, the dispatcher as a mutation — so a third entry point
+ * that forgot the second would offer the model every tool and answer every call
+ * with "cannot be executed in this context". Taking it here makes that a type
+ * error instead.
+ */
 export async function buildAgentDeps(
   deps: ExecutionDeps,
   version: Version,
@@ -35,11 +47,14 @@ export async function buildAgentDeps(
   origin: RunOrigin,
   readSkill: SkillReader,
   signal?: AbortSignal,
+  /** The run's resolved MCP dispatcher; absent when the version binds no server. */
+  callMcpTool?: engine.AgentDeps["callMcpTool"],
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel;
   return {
     channel,
     recordUsage: recordUsageFn,
+    ...(callMcpTool ? { callMcpTool } : {}),
     loadSkillContent: buildSkillLoader(readSkill),
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, origin, signal),
     generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
@@ -319,6 +334,24 @@ export async function* runLocalSubagent(
       return "";
     }
   }
+  // The child project's own daily budget, checked where its run begins.
+  //
+  // The bracket reads a project's spend once, when it admits a run — a backstop
+  // rather than a ceiling, and re-reading between turns would buy a query per
+  // turn for a bound that is approximate by design. A transfer is the exception
+  // worth paying for: it is not another turn, it is a *whole run* on another
+  // project, with its own tool loop and its own usage rows, and nothing else
+  // ever asks whether that project may spend. A child at its threshold ran
+  // anyway, because the only admission that happened was its parent's.
+  try {
+    await assertWithinCostLimit(deps, project);
+  } catch (error) {
+    yield {
+      author: agentName,
+      error: error instanceof Error ? error.message : String(error),
+    };
+    return "";
+  }
 
   // Dispatch on the child's projectType, like the entry points do: an image
   // project generates an image — its model must never hit chat/completions.
@@ -384,8 +417,8 @@ export async function* runLocalSubagent(
       origin,
       readSkill,
       signal,
+      mcp.callMcpTool,
     );
-    childDeps.callMcpTool = mcp.callMcpTool;
     for (const warning of warnings) {
       const chunk: EngineChunk = { warning, ...(recorder ? { traceId: recorder.traceId } : {}) };
       recorder?.observe(chunk);
