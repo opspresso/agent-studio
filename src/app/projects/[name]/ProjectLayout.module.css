@@ -1,0 +1,53 @@
+.workspaceHeader {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--mantine-radius-xl);
+  background:
+    radial-gradient(
+      circle at 92% 20%,
+      color-mix(in oklab, var(--mantine-color-violet-5) 13%, transparent),
+      transparent 20rem
+    ),
+    var(--studio-surface);
+  box-shadow: var(--surface-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.tabs {
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 5px;
+  border: 1px solid var(--studio-border);
+  border-radius: var(--mantine-radius-lg);
+  background-color: color-mix(in oklab, var(--studio-surface) 82%, transparent);
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex-shrink: 0;
+  gap: 7px;
+  border-radius: var(--mantine-radius-md);
+  color: var(--mantine-color-dimmed);
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.tab:hover {
+  color: var(--mantine-color-text);
+  background-color: var(--studio-surface-raised);
+}
+
+.tab[data-active] {
+  color: var(--mantine-color-text);
+  background-color: var(--studio-surface-raised);
+  box-shadow: 0 3px 12px rgba(20, 30, 60, 0.08);
+}

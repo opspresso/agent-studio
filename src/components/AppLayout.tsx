@@ -4,31 +4,61 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ActionIcon,
   AppShell,
   Burger,
-  Container,
   Group,
-  NavLink,
+  ScrollArea,
+  Stack,
   Text,
+  ThemeIcon,
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
+import {
+  IconActivity,
+  IconBook2,
+  IconChartBar,
+  IconChevronRight,
+  IconFolder,
+  IconMessageCircle,
+  IconPlus,
+  IconRobot,
+  IconSettings,
+  IconTool,
+} from "@tabler/icons-react";
 import { useSession } from "@/lib/auth-client";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 import classes from "./AppLayout.module.css";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/projects", label: "Projects" },
-  { href: "/chats", label: "Chats" },
-  { href: "/skills", label: "Skills" },
-  { href: "/tools", label: "Tools" },
-  { href: "/agents", label: "Agents" },
-  { href: "/settings", label: "Settings" },
+const NAV_GROUPS = [
+  {
+    label: "Workspace",
+    items: [
+      { href: "/", label: "Overview", Icon: IconChartBar },
+      { href: "/projects", label: "Projects", Icon: IconFolder },
+      { href: "/chats", label: "Chats", Icon: IconMessageCircle },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [
+      { href: "/skills", label: "Skills", Icon: IconBook2 },
+      { href: "/tools", label: "Tools", Icon: IconTool },
+      { href: "/agents", label: "Agents", Icon: IconRobot },
+    ],
+  },
+  {
+    label: "System",
+    items: [{ href: "/settings", label: "Settings", Icon: IconSettings }],
+  },
 ] as const;
 
 function isActive(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/" || pathname === "/dashboard";
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -54,72 +84,115 @@ export function AppLayout({
 
   return (
     <AppShell
-      header={{ height: 56 }}
+      header={{ height: 64 }}
       navbar={{
-        width: 220,
-        breakpoint: "sm",
-        // Desktop keeps the links in the header, so the navbar exists only as
-        // the small-screen drawer.
-        collapsed: { mobile: !opened || !showNav, desktop: true },
+        width: 248,
+        breakpoint: "md",
+        collapsed: { mobile: !opened || !showNav, desktop: !showNav },
       }}
       padding={0}
     >
       <AppShell.Header className={classes.header}>
-        <Container size="xl" h="100%" px="md">
-          <Group h="100%" gap="md" wrap="nowrap">
+        <Group h="100%" gap="md" wrap="nowrap" px={{ base: "md", md: "lg" }}>
             {showNav && (
-              <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+              <Burger opened={opened} onClick={toggle} hiddenFrom="md" size="sm" />
             )}
             <UnstyledButton component={Link} href="/" className={classes.brand}>
-              <Image src="/logo.png" alt="" width={28} height={28} priority />
-              <Text fw={600} fz="lg" visibleFrom="xs">
-                Agent Studio
-              </Text>
+              <span className={classes.logoWrap}>
+                <Image src="/logo.png" alt="" width={28} height={28} priority />
+              </span>
+              <div>
+                <Text fw={650} fz="md" lh={1.1}>
+                  Agent Studio
+                </Text>
+                <Text fz={10} c="dimmed" tt="uppercase" lts="0.12em" visibleFrom="xs">
+                  AI workspace
+                </Text>
+              </div>
             </UnstyledButton>
-            <Group gap={4} h="100%" visibleFrom="sm" wrap="nowrap" component="nav">
-              {showNav &&
-                NAV_ITEMS.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={classes.navLink}
-                    data-active={isActive(pathname, item.href) || undefined}
-                    aria-current={isActive(pathname, item.href) ? "page" : undefined}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-            </Group>
+            {showNav && (
+              <Group gap={6} visibleFrom="md" className={classes.context}>
+                <IconActivity size={14} />
+                <Text fz="xs" c="dimmed">
+                  AI operations workspace
+                </Text>
+              </Group>
+            )}
             <Group gap="xs" ml="auto" wrap="nowrap">
               <ThemeToggle />
               <UserMenu />
             </Group>
           </Group>
-        </Container>
       </AppShell.Header>
 
-      <AppShell.Navbar p="sm">
-        {NAV_ITEMS.map((item) => (
-          <NavLink
-            key={item.href}
+      <AppShell.Navbar className={classes.navbar} p="md">
+        <Group justify="space-between" mb="lg">
+          <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.14em">
+            Studio navigation
+          </Text>
+          <ActionIcon
             component={Link}
-            href={item.href}
-            label={item.label}
-            active={isActive(pathname, item.href)}
+            href="/projects"
+            variant="light"
+            color="brand"
+            size="sm"
+            aria-label="Open projects"
             onClick={close}
-          />
-        ))}
+          >
+            <IconPlus size={14} />
+          </ActionIcon>
+        </Group>
+        <ScrollArea style={{ flex: 1 }} scrollbarSize={4}>
+          <Stack gap="xl">
+            {NAV_GROUPS.map((group) => (
+              <Stack key={group.label} gap={6}>
+                <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.12em" px="sm">
+                  {group.label}
+                </Text>
+                {group.items.map(({ href, label, Icon }) => {
+                  const active = isActive(pathname, href);
+                  return (
+                    <UnstyledButton
+                      key={href}
+                      component={Link}
+                      href={href}
+                      className={classes.navLink}
+                      data-active={active || undefined}
+                      aria-current={active ? "page" : undefined}
+                      onClick={close}
+                    >
+                      <ThemeIcon
+                        variant={active ? "gradient" : "transparent"}
+                        gradient={{ from: "brand.6", to: "violet.5", deg: 135 }}
+                        color={active ? undefined : "gray"}
+                        size={30}
+                        radius="md"
+                      >
+                        <Icon size={17} stroke={1.8} />
+                      </ThemeIcon>
+                      <Text fz="sm" fw={active ? 600 : 450}>
+                        {label}
+                      </Text>
+                      <IconChevronRight className={classes.navArrow} size={14} />
+                    </UnstyledButton>
+                  );
+                })}
+              </Stack>
+            ))}
+          </Stack>
+        </ScrollArea>
+        <div className={classes.navFooter}>
+          <span className={classes.statusDot} />
+          <Text fz="xs" c="dimmed">
+            Studio online · v{version}
+          </Text>
+        </div>
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Container size="xl" px="md" py="lg" mih="calc(100vh - 9rem)" id="main-content">
+        <main className={classes.main} id="main-content">
           {children}
-        </Container>
-        <Container size="xl" px="md" pb="lg">
-          <Text ta="center" fz="xs" c="dimmed">
-            Agent Studio v{version}
-          </Text>
-        </Container>
+        </main>
       </AppShell.Main>
     </AppShell>
   );

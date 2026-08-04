@@ -27,9 +27,11 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { IconRobot } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
+import { CatalogHeader } from "@/app/_components/CatalogHeader";
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
@@ -58,17 +60,13 @@ export default function AgentsPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} fz="h2">
-            Agents
-          </Title>
-          <Text fz="sm" c="dimmed" mt={4}>
-            External OpenAI-compatible agent endpoints, usable as remote subagents.
-          </Text>
-        </div>
+      <CatalogHeader
+        title="Agents"
+        description="External OpenAI-compatible and A2A endpoints, ready to join agent workflows."
+        Icon={IconRobot}
+      >
         <Button onClick={open}>Register agent</Button>
-      </Group>
+      </CatalogHeader>
 
       {error && (
         <Alert color="red" variant="light">

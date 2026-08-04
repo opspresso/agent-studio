@@ -14,8 +14,8 @@ import {
   Textarea,
   TextInput,
   Select,
-  Title,
 } from "@mantine/core";
+import { IconFolder } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useSession } from "@/lib/auth-client";
 import { toSlug } from "@/shared/slug";
@@ -23,6 +23,7 @@ import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
+import { CatalogHeader } from "@/app/_components/CatalogHeader";
 
 const TYPE_OPTIONS = [
   { value: "llm", label: "llm — single-shot prompt" },
@@ -55,17 +56,13 @@ export default function ProjectsPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} fz="h2">
-            Projects
-          </Title>
-          <Text fz="sm" c="dimmed" mt={4}>
-            Prompt and agent projects with versioned configuration.
-          </Text>
-        </div>
+      <CatalogHeader
+        title="Projects"
+        description="Prompt, agent, and image workloads with versioned configuration."
+        Icon={IconFolder}
+      >
         <Button onClick={open}>New project</Button>
-      </Group>
+      </CatalogHeader>
 
       {error && (
         <Alert color="red" variant="light">

@@ -5,14 +5,24 @@ import {
   Alert,
   Card,
   Group,
+  Paper,
   Progress,
+  ScrollArea,
   SegmentedControl,
   SimpleGrid,
   Stack,
   Table,
   Text,
+  ThemeIcon,
   Title,
 } from "@mantine/core";
+import {
+  IconActivity,
+  IconChartAreaLine,
+  IconCoins,
+  IconLayersIntersect,
+  IconSparkles,
+} from "@tabler/icons-react";
 import {
   buildDailySeries,
   groupUsage,
@@ -24,6 +34,7 @@ import {
 import { presetRange } from "../_lib/dateRange";
 import { DateRangePicker } from "./DateRangePicker";
 import { DailyCostChart } from "./DailyCostChart";
+import classes from "./Dashboard.module.css";
 
 const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider"];
 
@@ -34,15 +45,35 @@ function formatUsd(value: number, fractionDigits = 2): string {
   })}`;
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({
+  label,
+  value,
+  detail,
+  Icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  Icon: typeof IconCoins;
+}) {
   return (
-    <Card>
-      <Text fz="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
-        {label}
-      </Text>
-      <Text fz={28} fw={600} mt={4}>
-        {value}
-      </Text>
+    <Card className={classes.statCard}>
+      <Group justify="space-between" align="flex-start" wrap="nowrap">
+        <div>
+          <Text fz={10} fw={600} tt="uppercase" c="dimmed" lts="0.1em">
+            {label}
+          </Text>
+          <Text fz={30} fw={650} mt={6} lts="-0.035em">
+            {value}
+          </Text>
+          <Text fz="xs" c="dimmed" mt={2}>
+            {detail}
+          </Text>
+        </div>
+        <ThemeIcon variant="light" color="brand" size={38} radius="lg">
+          <Icon size={19} stroke={1.7} />
+        </ThemeIcon>
+      </Group>
     </Card>
   );
 }
@@ -96,14 +127,29 @@ export function Dashboard() {
   const cost = useMemo(() => totalCost(items), [items]);
   const calls = useMemo(() => totalCalls(items), [items]);
   const maxCost = groups[0]?.cost ?? 0;
+  const averageCost = calls > 0 ? cost / calls : 0;
 
   return (
-    <Stack gap="lg">
-      <Group align="flex-end" gap="md" wrap="wrap">
-        <Title order={1} fz="h2">
-          Cost dashboard
-        </Title>
-        <Group ml="auto">
+    <Stack gap="xl">
+      <div className={classes.hero}>
+        <Group justify="space-between" align="flex-end" gap="xl" wrap="wrap">
+          <div>
+            <Group gap="xs" mb="sm">
+              <ThemeIcon variant="gradient" gradient={{ from: "brand.6", to: "violet.5" }}>
+                <IconSparkles size={16} />
+              </ThemeIcon>
+              <Text fz="xs" fw={600} tt="uppercase" c="brand" lts="0.12em">
+                Live intelligence
+              </Text>
+            </Group>
+            <Title order={1} fz={{ base: 32, md: 42 }} lts="-0.04em">
+              AI operations overview
+            </Title>
+            <Text c="dimmed" mt="xs" maw={620}>
+              Track the cost, volume, and shape of every workload running through your studio.
+            </Text>
+          </div>
+          <Paper withBorder p="sm" className={classes.rangePanel}>
           <DateRangePicker
             value={{ from, to }}
             onChange={(range) => {
@@ -111,8 +157,9 @@ export function Dashboard() {
               setTo(range.to);
             }}
           />
+          </Paper>
         </Group>
-      </Group>
+      </div>
 
       {error && (
         <Alert color="red" variant="light">
@@ -120,15 +167,35 @@ export function Dashboard() {
         </Alert>
       )}
 
-      <SimpleGrid cols={2} spacing="md" maw={420}>
-        <StatCard label="Total cost" value={formatUsd(cost)} />
-        <StatCard label="Total calls" value={calls.toLocaleString()} />
+      <SimpleGrid cols={{ base: 1, xs: 2, xl: 4 }} spacing="md">
+        <StatCard label="Total cost" value={formatUsd(cost)} detail="Selected period" Icon={IconCoins} />
+        <StatCard
+          label="Total calls"
+          value={calls.toLocaleString()}
+          detail="Model invocations"
+          Icon={IconActivity}
+        />
+        <StatCard
+          label="Average cost"
+          value={formatUsd(averageCost, 4)}
+          detail="Per invocation"
+          Icon={IconChartAreaLine}
+        />
+        <StatCard
+          label="Active groups"
+          value={groups.length.toLocaleString()}
+          detail={`Grouped by ${groupBy}`}
+          Icon={IconLayersIntersect}
+        />
       </SimpleGrid>
 
-      <Group gap="sm">
-        <Text fz="sm" c="dimmed">
-          Group by
-        </Text>
+      <Group justify="space-between" gap="md" wrap="wrap" className={classes.sectionHeading}>
+        <div>
+          <Text fw={600}>Usage intelligence</Text>
+          <Text fz="xs" c="dimmed">
+            Compare spend across the dimensions that matter.
+          </Text>
+        </div>
         <SegmentedControl
           size="xs"
           value={groupBy}
@@ -137,10 +204,16 @@ export function Dashboard() {
         />
       </Group>
 
-      <Card>
-        <Text fz="xs" tt="uppercase" c="dimmed" mb="xs" style={{ letterSpacing: "0.05em" }}>
-          Daily cost
-        </Text>
+      <Card className={classes.chartCard}>
+        <Group justify="space-between" mb="md">
+          <div>
+            <Text fw={600}>Daily cost</Text>
+            <Text fz="xs" c="dimmed">
+              Stacked by {groupBy}
+            </Text>
+          </div>
+          <span className={classes.liveIndicator}>Live</span>
+        </Group>
         {items.length === 0 ? (
           <Text fz="sm" c="dimmed" py="lg">
             {loading ? "Loading…" : "No usage in this range."}
@@ -150,8 +223,9 @@ export function Dashboard() {
         )}
       </Card>
 
-      <Card padding={0}>
-        <Table verticalSpacing="xs" horizontalSpacing="md" layout="fixed">
+      <Card padding={0} className={classes.tableCard}>
+        <ScrollArea>
+        <Table verticalSpacing="sm" horizontalSpacing="lg" miw={520}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th tt="capitalize">{groupBy}</Table.Th>
@@ -200,6 +274,7 @@ export function Dashboard() {
             ))}
           </Table.Tbody>
         </Table>
+        </ScrollArea>
       </Card>
     </Stack>
   );
