@@ -59,17 +59,23 @@ into `ChatDeps.runAgent`.
   reaches the reader on the same channel an unusable binding does — never silently.
 - **Images** (generated `EngineChunk.image`, and the user's attachments) are uploaded
   through the optional `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set)
-  by `storeMessageImages` and persisted as `images: [{ url, prompt? }]` on the message —
-  the b64 payload itself is far beyond the DynamoDB item size limit. A failed upload drops
-  that image, never the message — and says so through the warning channel, because an image
-  that was never stored is indistinguishable from one that was never made. Without
+  by `storeMessageImages` and persisted as `images: [{ key, prompt? }]` on the message —
+  the b64 payload itself is far beyond the DynamoDB item size limit. The stored row holds an
+  object *key*; `resolveImages.ts` signs it per read, with a lifetime the reader chooses
+  (`imageUrls.ts`), and rows written before keys existed carry a public `url` used as-is.
+  A failed upload drops that image, never the message — and says so through the warning
+  channel, because an image that was never stored is indistinguishable from one that was
+  never made. An image that cannot be *addressed* on the way back out is dropped too, and
+  `resolveMessageImages` returns how many, so the replay path can say so as well. Without
   `storeImage`, images render only during the live stream, which is also reported.
 - **Attachments are sent twice over, deliberately.** The turn being run carries the
   attachment *bytes* as inline `data:` content parts (`userTurnContent`) — that is what
-  gives the engine a handle it can edit. Replayed history carries the *stored URL*
-  (`toEngineMessages`), which the provider fetches: visible to the model, not editable.
-  A turn with attachments and no text is a content-parts message with no text part, never
-  an empty user turn.
+  gives the engine a handle it can edit. Replayed history carries a *signed URL* resolved
+  from the stored key (`toEngineMessages`), which the provider fetches: visible to the model,
+  not editable. A turn with attachments and no text is a content-parts message with no text
+  part, never an empty user turn — and when none of its images can be addressed any more,
+  `userMessage` substitutes a marker saying so, because an empty user turn is a shape some
+  providers refuse outright.
 - **Documents are stored as their text, not as the file.** `readMessageDocuments` reads the
   bytes exactly once; what comes back is both what this turn sends and what is persisted as
   `documents: [{ name, text, note? }]`. Storing the text is what lets the *next* question

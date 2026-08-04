@@ -77,7 +77,7 @@ describe("the two lifetimes", () => {
 describe("resolveMessageImages", () => {
   it("hands both readers a url, whichever form the row is in", async () => {
     const legacy = "https://bucket.s3.ap-northeast-2.amazonaws.com/images/old.png";
-    const [message] = await resolveMessageImages(
+    const { messages: [message] } = await resolveMessageImages(
       [assistant([{ key: "images/new.png", prompt: "a cat" }, { url: legacy }])],
       signed,
       VIEW_URL_TTL_SECONDS,
@@ -89,7 +89,7 @@ describe("resolveMessageImages", () => {
   });
 
   it("signs a replay with the replay's own lifetime", async () => {
-    const [message] = await resolveMessageImages(
+    const { messages: [message] } = await resolveMessageImages(
       [assistant([{ key: "images/new.png" }])],
       signed,
       REPLAY_URL_TTL_SECONDS,
@@ -105,12 +105,25 @@ describe("resolveMessageImages", () => {
     const failing = async () => {
       throw new Error("no credentials");
     };
-    const [message] = await resolveMessageImages(
+    const { messages: [message], dropped } = await resolveMessageImages(
       [assistant([{ key: "images/new.png" }])],
       failing,
       60,
     );
     expect(message?.role === "assistant" && message.images).toEqual([]);
+    // Counted, not just dropped: a picture missing from the transcript with
+    // nothing said reads as the chat having lost it, and the reader is the only
+    // one who can tell whether that matters.
+    expect(dropped).toBe(1);
+  });
+
+  it("reports nothing dropped when every image resolved", async () => {
+    const { dropped } = await resolveMessageImages(
+      [assistant([{ key: "images/new.png" }, { url: "https://bucket/old.png" }])],
+      signed,
+      60,
+    );
+    expect(dropped).toBe(0);
   });
 
   it("leaves a message with no images untouched", async () => {
@@ -121,7 +134,7 @@ describe("resolveMessageImages", () => {
       content: "hi",
       createdAt: "2026-08-03T10:00:00Z",
     };
-    const [message] = await resolveMessageImages([plain], signed, 60);
+    const { messages: [message] } = await resolveMessageImages([plain], signed, 60);
     expect(message).toBe(plain);
   });
 
@@ -134,7 +147,7 @@ describe("resolveMessageImages", () => {
       toolCallId: "call_1",
       createdAt: "2026-08-03T10:00:00Z",
     };
-    const [message] = await resolveMessageImages([tool], signed, 60);
+    const { messages: [message] } = await resolveMessageImages([tool], signed, 60);
     expect(message).toBe(tool);
   });
 });

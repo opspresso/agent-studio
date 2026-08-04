@@ -73,9 +73,22 @@ export async function sendMessage(
 
     // Resolved before mapping, with the replay's own lifetime: these URLs are
     // fetched by the *provider*, at whatever point in a run it reaches the turn.
-    const history = toEngineMessages(
-      await resolveMessageImages(existing, deps.signImageUrl, REPLAY_URL_TTL_SECONDS),
+    const resolved = await resolveMessageImages(
+      existing,
+      deps.signImageUrl,
+      REPLAY_URL_TTL_SECONDS,
     );
+    const history = toEngineMessages(resolved.messages);
+    // An image the replay could not address is a turn the model sees differently
+    // from the one the reader is looking at — and if that turn carried nothing
+    // else, it replays empty. Said out loud for the same reason a dropped
+    // history run is: the answer will be shaped by the gap either way.
+    const imageWarnings =
+      resolved.dropped > 0
+        ? [
+            `${resolved.dropped} earlier image(s) could not be read back and are missing from this run's context.`,
+          ]
+        : [];
     const source = deps.runAgent({
       project,
       version,
@@ -94,7 +107,10 @@ export async function sendMessage(
     return runAndPersist(
       deps,
       chat,
-      withLeadingWarnings([...uploaded.warnings, ...read.warnings, ...history.warnings], source),
+      withLeadingWarnings(
+        [...uploaded.warnings, ...read.warnings, ...imageWarnings, ...history.warnings],
+        source,
+      ),
       runId,
     );
   } catch (error) {

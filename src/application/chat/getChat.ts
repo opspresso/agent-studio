@@ -3,6 +3,7 @@ import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
 import { resolveMessageImages } from "./resolveImages";
 import { VIEW_URL_TTL_SECONDS } from "./imageUrls";
+import { log } from "@/shared/logger";
 
 export interface ChatWithMessages {
   chat: Chat;
@@ -45,10 +46,17 @@ export async function getChat(
   const messages = await deps.chats.listMessages(chatId);
   // Signed for the reader who is about to look at them. A stored row holds an
   // object key, never an address that keeps working after this response.
-  const withImages = await resolveMessageImages(
+  const resolved = await resolveMessageImages(
     messages.map(forReading),
     deps.signImageUrl,
     VIEW_URL_TTL_SECONDS,
   );
-  return { chat, messages: withImages };
+  if (resolved.dropped > 0) {
+    // The view has nowhere to say this: `warnings` belongs to an assistant turn,
+    // and the images a reader misses most are the ones they attached themselves.
+    // A line naming the chat is what lets an operator answer "where did my
+    // picture go" with something other than a guess.
+    log.warn("chat", `${resolved.dropped} image(s) of chat ${chatId} could not be addressed`);
+  }
+  return { chat, messages: resolved.messages };
 }

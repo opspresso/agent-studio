@@ -43,23 +43,27 @@ const MAX_HISTORY_MESSAGES = 200;
  * that uploaded it had the bytes in hand.
  */
 function userMessage(message: UserChatMessage): ChatMessageInput {
+  const documents = message.documents ?? [];
+  // Resolved upstream (`resolveImages.ts`); one that could not be signed carries
+  // no url and is left out rather than sent as an address the provider would
+  // fail the turn on.
+  const images = (message.images ?? []).flatMap((image) =>
+    image.url ? [{ type: "image_url" as const, image_url: { url: image.url } }] : [],
+  );
+  // A turn whose whole content was an image replays as an empty user message
+  // once that image can no longer be addressed — a shape some providers refuse
+  // outright and none can make anything of. The marker keeps the conversation
+  // well-formed and puts the loss where the model will read it, which is the
+  // same thing a truncated tool result does.
+  const content =
+    message.content || documents.length > 0 || images.length > 0
+      ? message.content
+      : "[The image(s) attached to this turn are no longer available.]";
   return {
     role: "user",
     // Assembled by the same function the turn was sent with: a replay shaped
     // differently would be a different turn than the one this chat recorded.
-    content: turnContent(
-      message.documents ?? [],
-      message.content,
-      // Resolved upstream (`resolveImages.ts`); one that could not be signed
-      // carries no url and is left out rather than sent as an address the
-      // provider would fail the turn on.
-      (message.images ?? [])
-        .flatMap((image) =>
-          image.url
-            ? [{ type: "image_url" as const, image_url: { url: image.url } }]
-            : [],
-        ),
-    ),
+    content: turnContent(documents, content, images),
   };
 }
 
