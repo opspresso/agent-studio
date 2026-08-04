@@ -42,10 +42,13 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   restored text would put back exactly what `piiFiltering` removed, silently and for one tool
   only. Two knobs, both narrow: `stored` for the single result whose context copy differs
   from its display copy (a transfer's marker, against the protocol's null placeholder), and
-  `fit: false` for a refusal the engine wrote itself. Those are bounded by construction and
-  their wording is the point — replacing "max_turn reached before transfer" with "this turn's
-  budget is exhausted" trades the reason for the accounting — so they are **charged and
-  returned whole** (`ToolResultBudget.charge`) rather than fitted.
+  `bounded` for text whose length is the engine's own — a refusal it wrote, not a payload it
+  received. Those are **charged and returned whole** (`ToolResultBudget.charge`) rather than
+  fitted, because their wording is the point: replacing "max_turn reached before transfer"
+  with "this turn's budget is exhausted" trades the reason for the accounting. A branch that
+  produces both — the image builtins' argument refusals *and* their provider error bodies
+  share one variable — decides per outcome, not per branch. Absent is the safe default:
+  anything a provider, a tool or a child sized goes through the fit.
 - The **run context budget** (`contextBudget.ts`, single owner of the derivation and the
   chars→tokens estimate) sits under every per-turn cap. Its window is the minimum with the
   **effective** fallback — the one left after `imageEligibleFallback`, because capping to a
