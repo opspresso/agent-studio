@@ -221,10 +221,11 @@ describe("generateImage", () => {
 });
 
 describe("generateImageStream", () => {
-  it("delivers the picture and announces the ending", async () => {
-    // Both chunks matter. The webhook runner used to assemble them by hand in
-    // the composition root and emitted only the first, so a consumer reading a
-    // run's termination could never see this one end.
+  it("delivers the picture, what it cost, and the ending", async () => {
+    // Every chunk matters. The webhook runner used to assemble these by hand in
+    // the composition root and emitted only the picture, so a consumer reading a
+    // run's termination could never see this one end, and one totalling a run
+    // off the stream — as collectRun does — would read it as free.
     const { deps, prompts } = fakeDeps();
     const chunks: EngineChunk[] = [];
     for await (const chunk of generateImageStream(deps, {
@@ -236,8 +237,11 @@ describe("generateImageStream", () => {
     }
 
     expect(prompts).toEqual(["a fox"]);
+    // 100 text tokens * $5/1M + 4160 image output tokens * $30/1M
+    const expectedCost = (100 * 5 + 4160 * 30) / 1_000_000;
     expect(chunks).toEqual([
       { image: { b64: "aGVsbG8=", mimeType: "image/png" } },
+      { usage: { inputTokens: 100, outputTokens: 4160, costUsd: expectedCost } },
       { done: true },
     ]);
   });
