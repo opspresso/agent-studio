@@ -1227,7 +1227,7 @@ AuditEvent { eventId, actorEmail,
 ```
 
 **One writer**, `recordAudit` (`src/application/audit/recordAudit.ts`), pinned by
-`tests/architecture.test.ts`. Eight acts record one; a second writer would spell `target` its
+`tests/architecture.test.ts`. Every recorded act goes through it; a second writer would spell `target` its
 own way, and a filter that worked for reveals would quietly return nothing for deletions —
 which is the characteristic failure of a drifted audit trail, since it looks like an absence
 of events rather than a bug. The store is **pushed in** by the composition root for the same

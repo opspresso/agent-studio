@@ -23,7 +23,7 @@ export const GET = withAuth(async () => {
   });
 });
 
-export const POST = withAdminAuth(async (_user, request: Request) => {
+export const POST = withAdminAuth(async (user, request: Request) => {
   const repoConfig = await getSkillsRepoConfig();
   if (!repoConfig.repo || !repoConfig.token) {
     return Response.json(
@@ -36,7 +36,7 @@ export const POST = withAdminAuth(async (_user, request: Request) => {
     return Response.json({ error: "Invalid selection" }, { status: 400 });
   }
   try {
-    return Response.json(await syncSkillsFromRepo(repoConfig, parsed.data));
+    return Response.json(await syncSkillsFromRepo(repoConfig, user.email, parsed.data));
   } catch (error) {
     // Through `apiError` like every other route. Deciding a status from a
     // substring of the message answered 500 for "SKILLS_REPO is not configured"

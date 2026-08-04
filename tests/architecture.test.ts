@@ -306,7 +306,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/mcp/types.ts",
   },
   {
-    // Eight acts record one, and each is the kind of code written once and read
+    // Every recorded act goes through it, and each is the kind of code written once and read
     // years later. A second writer would spell `target` its own way, and a
     // filter that worked for reveals would silently return nothing for
     // deletions — the failure being invisible is the whole problem with an

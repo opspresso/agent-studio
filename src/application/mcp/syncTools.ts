@@ -73,9 +73,16 @@ export type ToolField = "url" | "description" | "content";
 export async function syncToolsFromSnapshot(
   mcps: Pick<McpUseCases, "list" | "create" | "update" | "remove">,
   snapshot: ToolsRepoSnapshot,
+  /**
+   * Who asked for the sync; a deletion it performs is recorded against them.
+   *
+   * Required, and ahead of the optional selection for that reason. A default
+   * would have to invent a value for a field the audit row documents as the
+   * address a session authenticated as — and a caller that forgot to pass one
+   * would write that invention into the trail rather than fail to compile.
+   */
+  actorEmail: string,
   selection: SyncSelection = {},
-  /** Who asked for the sync; a deletion it performs is recorded against them. */
-  actorEmail = "sync",
 ): Promise<RepoSyncResult> {
   const source = `github:${snapshot.repo}`;
   const overwrite = new Set(selection.overwrite ?? []);

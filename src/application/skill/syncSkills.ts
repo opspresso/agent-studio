@@ -1,5 +1,6 @@
 import type { SkillFile, SkillsRepoSnapshot } from "@/domain/skill/types";
 import type { SkillRepository } from "@/domain/skill/repository";
+import type { SkillUseCases } from "./skillUseCases";
 import { firstHeadingOrLine, parseFrontmatter } from "@/shared/frontmatter";
 import type {
   RepoSyncResult,
@@ -52,7 +53,19 @@ function sameFiles(a: SkillFile[] | undefined, b: SkillFile[] | undefined): bool
  */
 export async function syncSkillsFromSnapshot(
   repo: SkillRepository,
+  /**
+   * Deletion goes through the use case even though every write here goes
+   * straight to the repository. The asymmetry is the point: a skill document has
+   * nothing to check on the way in — no URL to guard, no header to encrypt,
+   * which is why the tools sync needs its use cases and this one did not — but
+   * `remove` is the single owner of the `registry.delete` row. Deleting through
+   * the repository left a skill removed by a sync with no trace at all, while
+   * the same removal from the console left one.
+   */
+  skills: Pick<SkillUseCases, "remove">,
   snapshot: SkillsRepoSnapshot,
+  /** Who asked for the sync; a deletion it performs is recorded against them. */
+  actorEmail: string,
   selection: SyncSelection = {},
 ): Promise<RepoSyncResult> {
   const source = `github:${snapshot.repo}`;
@@ -114,7 +127,7 @@ export async function syncSkillsFromSnapshot(
       orphaned.push(skill.name);
       continue;
     }
-    await repo.delete(skill.name);
+    await skills.remove(skill.name, actorEmail);
     removed.push(skill.name);
   }
 

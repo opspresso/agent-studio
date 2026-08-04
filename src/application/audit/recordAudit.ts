@@ -6,8 +6,8 @@
  * spells `target` its own way, and a filter that worked for reveals silently
  * returns nothing for deletions. `tests/architecture.test.ts` pins it.
  *
- * The sink is **pushed in** rather than threaded through the eight call sites,
- * for the same reason `setAdminCheck` is: a caller that forgot to pass it would
+ * The sink is **pushed in** rather than threaded through every site that
+ * records one, for the same reason `setAdminCheck` is: a caller that forgot it would
  * leave exactly one act unrecorded, and an unrecorded act looks identical to one
  * that never happened.
  *

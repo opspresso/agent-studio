@@ -36,7 +36,7 @@ export const POST = withAdminAuth(async (user, request: Request) => {
     return Response.json({ error: "Invalid selection" }, { status: 400 });
   }
   try {
-    return Response.json(await syncToolsFromRepo(repoConfig, parsed.data, user.email));
+    return Response.json(await syncToolsFromRepo(repoConfig, user.email, parsed.data));
   } catch (error) {
     // Through `apiError` like every other route. Deciding a status from a
     // substring of the message answered 500 for "TOOLS_REPO is not configured"

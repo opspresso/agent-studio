@@ -410,7 +410,9 @@ POST /api/mcps/sync     { "overwrite"?: ["name"], "remove"?: ["name"] }
   document that moved on.
 - **orphaned** — created by a previous sync of this repository and no longer in it. **Nothing
   is deleted** unless the name is in `remove`. Entries someone registered by hand never
-  appear: they were never the repository's to miss.
+  appear: they were never the repository's to miss. A deletion that does happen leaves a
+  `registry.delete` audit row naming the admin who asked for the sync, exactly as a deletion
+  from the console does.
 - **skipped** — `[{ name, reason, detail? }]` with `reason` one of `bad-name`, `missing-url`,
   `invalid-url` (the outbound guard's message in `detail`), `managed-url` (a managed MCP
   entry's address comes from the provisioner, so the document's was ignored while its other
