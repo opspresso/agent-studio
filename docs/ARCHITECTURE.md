@@ -344,6 +344,15 @@ the platform is busy; a misconfigured version should not first queue for a slot.
 injected into the bracket rather than read there, because `application` may not reach
 `src/lib/runtime-settings.ts`.
 
+**A subagent transfer is not a bracket, but it is not free either.** A child never opens one —
+it is not a top-level run, and the concurrency guard deliberately does not apply, since fan-out
+is bounded instead by `MAX_DISPATCH_TASKS`, the transfer depth limit, and the rule that a child
+is never offered `dispatch_agents`. The two policies that bound *spend* do apply, checked where
+the child's version resolves (`subagentRunner.ts`): the model policy, because an unpriced child
+leaks exactly as much as an unpriced parent, and the **child project's** daily cost guard,
+because a transfer is a whole run on another project with its own tool loop and its own usage
+rows — and its parent's admission said nothing about that project's budget.
+
 The two guards fail in opposite directions, on purpose:
 
 - The **cost guard** protects money, so a storage blip must not stop the platform: it fails

@@ -7,6 +7,7 @@ import {
   type CostGuardDeps,
 } from "@/application/usage/costGuard";
 import { openRun } from "@/application/execution/runBracket";
+import { runLocalSubagent } from "@/application/execution/subagentRunner";
 import {
   executeAgent,
   executeVersion,
@@ -315,6 +316,70 @@ describe("every top-level entry point is guarded", () => {
     );
     expect(traces).toHaveLength(0);
     expect(runMetricsSnapshot()).toMatchObject({ activeRuns: 0, runsStarted: 0 });
+  });
+});
+
+describe("a subagent transfer is guarded too", () => {
+  /**
+   * A transfer never opens a bracket — it is not a top-level run — but it *is* a
+   * whole run on another project, with its own tool loop and its own usage rows.
+   * Nothing else ever asks whether that project may spend, so a child at its
+   * threshold ran anyway on the strength of its parent's admission.
+   */
+  const child = project({ blockThresholdUsd: 10 });
+  const childVersion: Version = {
+    projectName: "proj",
+    versionName: "v1",
+    systemPrompt: "",
+    userPromptTemplate: "",
+    model: "openai/gpt-5-mini",
+    parameters: { piiFiltering: false },
+    mcpList: [],
+    skillList: [],
+    subagentList: [],
+    createdAt: "2026-01-01T00:00:00Z",
+    publishedVersion: undefined,
+  } as Version;
+
+  function deps(spentUsd: number) {
+    const f = fixture({ day: row({ m: spentUsd }) });
+    return {
+      ...f.deps,
+      projects: { get: async () => ({ ...child, publishedVersion: "v1" }) },
+      versions: { get: async () => childVersion },
+      channel: {
+        stream: () => {
+          throw new Error("the guard should have refused before the channel");
+        },
+      },
+    } as unknown as ExecutionDeps;
+  }
+
+  async function firstChunk(spentUsd: number) {
+    const stream = runLocalSubagent(
+      deps(spentUsd),
+      "proj",
+      "hi",
+      1,
+      4,
+      async () => {},
+      { ancestry: ["parent"], actor: { kind: "user", id: "u@example.com" } },
+    );
+    return (await stream.next()).value as { author?: string; error?: string };
+  }
+
+  it("refuses a child whose project is over its daily block threshold", async () => {
+    const chunk = await firstChunk(100);
+    expect(chunk.author).toBe("proj");
+    expect(chunk.error).toMatch(/daily|limit|spend/i);
+  });
+
+  it("lets a child under the threshold through to its own run", async () => {
+    // Reaching the channel is the assertion, and it is named rather than
+    // implied: without it this test would pass on any refusal at all, including
+    // the one it exists to rule out.
+    const chunk = await firstChunk(1);
+    expect(chunk.error).toContain("chatCompletionStream");
   });
 });
 
