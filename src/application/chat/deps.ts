@@ -1,4 +1,4 @@
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
@@ -13,6 +13,11 @@ export interface AgentRunParams {
   messages: ChatMessageInput[];
   /** Who caused the run — always the chat's owner, since chats are private. */
   actor: RunActor;
+  /**
+   * That owner in words. Reaches the prompt only when the version opted into
+   * `callerContext`; the facade applies that gate, not this boundary.
+   */
+  caller?: RunCaller;
   signal?: AbortSignal;
 }
 

@@ -1,3 +1,4 @@
+import type { RunCaller } from "@/domain/execution/actor";
 import type { ChatMessage } from "@/domain/chat/types";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
@@ -21,6 +22,8 @@ export interface SendMessageInput {
   images?: AttachedImage[];
   documents?: AttachedDocumentInput[];
   userEmail: string;
+  /** The owner in words, for a version that opted into `callerContext`. */
+  caller?: RunCaller;
   signal?: AbortSignal;
 }
 
@@ -99,6 +102,7 @@ export async function sendMessage(
         { role: "user", content: userTurnContent(input.content, attachments, read.stored) },
       ],
       actor: { kind: "user", id: input.userEmail },
+      ...(input.caller ? { caller: input.caller } : {}),
       signal: input.signal,
     });
 

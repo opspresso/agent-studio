@@ -1,4 +1,5 @@
-import type { RunActor } from "@/domain/execution/actor";
+import type { RunActor, RunCaller } from "@/domain/execution/actor";
+import { sessionCaller } from "@/app/api/_lib/caller";
 import { unauthorized } from "@/shared/unauthorized";
 import { getSessionUser } from "@/lib/session";
 import { projectRepository, secretCipher } from "@/lib/container";
@@ -7,6 +8,12 @@ import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
 export interface ExecutionPrincipal {
   email: string;
   viaToken: boolean;
+  /**
+   * Who is asking, in words, when a person is. Absent for a token: it acts on
+   * the owner's behalf but nobody is at the other end, so naming them in the
+   * prompt would tell the model someone is present who is not.
+   */
+  caller?: RunCaller;
 }
 
 /**
@@ -39,5 +46,9 @@ export async function authenticateExecution(
     return email ? { email, viaToken: true } : unauthorized();
   }
   const user = await getSessionUser();
-  return user ? { email: user.email, viaToken: false } : unauthorized();
+  if (!user) {
+    return unauthorized();
+  }
+  const caller = sessionCaller(user);
+  return { email: user.email, viaToken: false, ...(caller ? { caller } : {}) };
 }

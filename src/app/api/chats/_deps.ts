@@ -19,6 +19,8 @@ export const chatDeps: ChatDeps = {
   chats: chatRepository,
   projects: projectRepository,
   versions: versionRepository,
+  // Spread whole: `caller` rides through on the same shape the facade takes, and
+  // the facade — not this boundary — decides whether the version asked for it.
   runAgent: (params) => executeAgent(executionDeps, params),
   documents: documentExtractor,
   // Both or neither: a stored key with no signer is an image nothing can

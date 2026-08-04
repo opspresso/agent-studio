@@ -1,4 +1,5 @@
 import { withAuth } from "@/lib/session";
+import { sessionCaller } from "@/app/api/_lib/caller";
 import { bodyTooLarge, BodyTooLargeError, readTurnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sseResponse } from "@/app/api/_lib/sse";
@@ -26,6 +27,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     return invalidRequest(parsed.error);
   }
 
+  const caller = sessionCaller(user);
   try {
     const abortController = new AbortController();
     const stream = await sendMessage(chatDeps, {
@@ -34,6 +36,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
       ...(parsed.data.images ? { images: parsed.data.images } : {}),
       ...(parsed.data.documents ? { documents: parsed.data.documents } : {}),
       userEmail: user.email,
+      ...(caller ? { caller } : {}),
       signal: abortController.signal,
     });
     return await sseResponse(stream, abortController);

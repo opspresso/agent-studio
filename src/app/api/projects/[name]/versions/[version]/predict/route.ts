@@ -45,6 +45,9 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       variables: parsed.data.variables,
       messages: parsed.data.messages ?? [],
       actor: principalActor(principal),
+      // Not on the image branch above: an image run's prompt is the rendered
+      // template, with no system prompt for a caller block to live in.
+      ...(principal.caller ? { caller: principal.caller } : {}),
     };
     // The strategy→executor mapping lives in runProject; this route only
     // decides how to serialise the answer.
