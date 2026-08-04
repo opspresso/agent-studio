@@ -27,6 +27,7 @@ import {
   IconSettings,
   IconShieldCheck,
   IconTool,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useSession } from "@/lib/auth-client";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -54,6 +55,7 @@ const NAV_GROUPS = [
   {
     label: "System",
     items: [
+      { href: "/members", label: "Members", Icon: IconUsers },
       { href: "/audit", label: "Audit trail", Icon: IconShieldCheck },
       { href: "/settings", label: "Settings", Icon: IconSettings },
     ],
