@@ -127,6 +127,12 @@ interface Rule {
  */
 const APP_WIRING_SITES = ["src/app/api/chats/_deps.ts", "src/app/api/slack/events/_lib/"];
 
+/**
+ * Packages `application` may name, because the protocol *is* the contract. See
+ * the rule below for why this is a list of one rather than a port.
+ */
+const PROTOCOL_SDKS = ["@a2a-js/"];
+
 const RULES: Rule[] = [
   {
     name: "domain imports no other layer",
@@ -149,6 +155,32 @@ const RULES: Rule[] = [
     banned: (spec) => ["infrastructure", "app"].includes(targetLayer(spec) ?? ""),
     // Application code holds ports only; every adapter it uses is injected by
     // the composition root rather than imported.
+    allow: [],
+  },
+  {
+    // `domain` is banned from the framework, the AWS SDK and the auth library by
+    // name. `application` gets the rule from the other side — **the domain and
+    // the standard library, and nothing else** — because a blocklist only ever
+    // names the dependencies somebody already regretted. A use case reaching for
+    // a client, a parser or a framework is an adapter that has not admitted it
+    // yet, and it arrives as a `import type` nobody reads twice.
+    //
+    // Protocol SDKs are the one exception, named rather than allowlisted.
+    // `@a2a-js/sdk` is it: `a2a/executor.ts` implements the SDK's
+    // `AgentExecutor` and `a2a/exposure.ts` returns its `AgentCard`, so A2A's
+    // shape does reach the use case. A port there would restate the protocol's
+    // task lifecycle in our own types to gain nothing — there is one
+    // implementation of A2A and there will be one. That is a judgement rather
+    // than an oversight, which is what naming it here records; a second SDK has
+    // to be argued for in the same place.
+    name: "application imports only the domain and the standard library",
+    from: "application",
+    banned: (spec) => {
+      if (spec.startsWith("@/") || spec.startsWith(".") || spec.startsWith("node:")) {
+        return false;
+      }
+      return !PROTOCOL_SDKS.some((sdk) => spec.startsWith(sdk));
+    },
     allow: [],
   },
   {
@@ -903,6 +935,25 @@ describe("scanner", () => {
     const rule = RULES.find((r) => r.from === "domain")!;
     expect(rule.banned("@/infrastructure/db/client")).toBe(true);
     expect(rule.banned("@/domain/llm/types")).toBe(false);
+  });
+
+  it("lets application reach the domain and the standard library, and nothing else", () => {
+    // The rule passes today because `application` imports `node:crypto` and the
+    // A2A SDK. Asserted directly so "it passes" cannot come to mean "it stopped
+    // matching" — a package name is the thing it has to keep recognising.
+    const rule = RULES.find(
+      (r) => r.name === "application imports only the domain and the standard library",
+    )!;
+    expect(rule.banned("@/domain/llm/types")).toBe(false);
+    expect(rule.banned("node:crypto")).toBe(false);
+    expect(rule.banned("@a2a-js/sdk/server")).toBe(false);
+    // The shapes it exists to stop: an SDK, a client, a parser, the framework.
+    expect(rule.banned("@aws-sdk/client-dynamodb")).toBe(true);
+    expect(rule.banned("openai")).toBe(true);
+    expect(rule.banned("undici")).toBe(true);
+    expect(rule.banned("unpdf")).toBe(true);
+    expect(rule.banned("next/server")).toBe(true);
+    expect(rule.banned("zod")).toBe(true);
   });
 
   it("resolves a relative specifier to the alias form the rules match on", () => {

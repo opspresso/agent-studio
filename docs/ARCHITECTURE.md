@@ -77,8 +77,16 @@ gate, [CONFIGURATION.md](CONFIGURATION.md#boot-time-validation) and
 - `domain` imports nothing from `@/` beyond `domain` — no framework, no AWS SDK, no auth
   library, not even `shared`.
 - `application` receives its dependencies. It must never import the composition root: deps
-  are *injected*, never pulled.
-- `infrastructure` imports no `application` and no `app`.
+  are *injected*, never pulled. Third-party packages are banned from it the same way, and by
+  the same shape of rule as `domain`'s — stated positively, as **the domain and the standard
+  library and nothing else**, because a blocklist only names the dependencies somebody
+  already regretted. `@a2a-js/sdk` is the one named exception: the A2A protocol *is* the
+  contract its executor implements, and a port would restate the task lifecycle in our own
+  types to gain nothing.
+- `infrastructure` imports no `application` and no `app`, and reads no `process.env` — a
+  setting an adapter needs is declared in `lib/config.ts`, which owns the parse and the
+  warning. Read at module scope it would be a process-wide constant nothing declared, nobody
+  injected, and the boot validation never checked.
 - `src/lib` is a cross-cutting leaf both application and infrastructure may import (config,
   runtime-settings, session); `domain` never does.
 - Route handlers and pages must not import `infrastructure/` directly — only through a

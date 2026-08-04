@@ -75,7 +75,11 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
 - `src/domain/` — entities + repository ports. Pure TS, **no framework/AWS/React imports**,
   not even `shared`.
 - `src/application/` — use cases. Depend on domain ports only. Orchestration lives here, and
-  it **must not import `container.ts`** — deps are injected, never pulled.
+  it **must not import `container.ts`** — deps are injected, never pulled. Third-party
+  packages are banned outright, not by blocklist: **the domain and the standard library, and
+  nothing else**, with `@a2a-js/sdk` the one named exception (the A2A protocol *is* the
+  contract, and a port would restate its task lifecycle to gain nothing). A second SDK is
+  argued for in `tests/architecture.test.ts`, next to that one.
 - `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack,
   A2A, GitHub, net/crypto helpers.
 - `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
