@@ -11,6 +11,8 @@ const NOW = new Date("2026-07-30T06:12:00Z");
 const CLOCK_LINE =
   'Current date and time: 2026-07-30 (Thursday) 06:12 UTC. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.';
 const NO_IMAGES = { handles: [], canEdit: false, canTransfer: false };
+/** A run with nothing bound, so only the blocks under test appear. */
+const NO_BINDINGS = { skills: [], subagents: [], mcpServers: [], images: NO_IMAGES };
 
 const CALLER: RunCaller = {
   displayName: "Bruce",
@@ -20,20 +22,15 @@ const CALLER: RunCaller = {
 
 describe("the caller block in an agent prompt", () => {
   it("leaves the author's text byte-for-byte when nobody is named", () => {
-    expect(buildAgentSystemPrompt("You are terse.", [], [], [], NO_IMAGES)).toBe("You are terse.");
+    expect(buildAgentSystemPrompt({ base: "You are terse.", ...NO_BINDINGS })).toBe("You are terse.");
   });
 
   it("names the caller behind the engine-block boundary", () => {
-    const prompt = buildAgentSystemPrompt(
-      "You are terse.",
-      [],
-      [],
-      [],
-      NO_IMAGES,
-      undefined,
-      false,
-      CALLER,
-    );
+    const prompt = buildAgentSystemPrompt({
+      base: "You are terse.",
+      ...NO_BINDINGS,
+      caller: CALLER,
+    });
 
     expect(prompt).toBe(
       "You are terse.\n\n---\n\nYou are answering Bruce." +
@@ -43,31 +40,22 @@ describe("the caller block in an agent prompt", () => {
   });
 
   it("carries only what the profile actually had", () => {
-    const prompt = buildAgentSystemPrompt(
-      undefined,
-      [],
-      [],
-      [],
-      NO_IMAGES,
-      undefined,
-      false,
-      { displayName: "Bruce" },
-    );
+    const prompt = buildAgentSystemPrompt({
+      ...NO_BINDINGS,
+      caller: { displayName: "Bruce" },
+    });
 
     expect(prompt).toBe("You are answering Bruce.");
   });
 
   it("sits with the clock ahead of the capability block, behind one boundary", () => {
-    const prompt = buildAgentSystemPrompt(
-      "You are terse.",
-      [{ name: "greeting", description: "How to greet" }],
-      [],
-      [],
-      NO_IMAGES,
-      NOW,
-      false,
-      CALLER,
-    );
+    const prompt = buildAgentSystemPrompt({
+      ...NO_BINDINGS,
+      base: "You are terse.",
+      skills: [{ name: "greeting", description: "How to greet" }],
+      now: NOW,
+      caller: CALLER,
+    });
 
     // Both are facts about the run, not capabilities the framing speaks for.
     expect(prompt.indexOf(CLOCK_LINE)).toBeLessThan(prompt.indexOf("You are answering Bruce."));

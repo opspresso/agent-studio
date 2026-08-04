@@ -12,31 +12,31 @@ const CLOCK_LINE =
   'Current date and time: 2026-07-30 (Thursday) 06:12 UTC. Resolve anything relative — "today", "yesterday", "last week", "this quarter" — from this line rather than from what you remember.';
 /** A run that can neither edit nor hand over an image, so no image section. */
 const NO_IMAGES = { handles: [], canEdit: false, canTransfer: false };
+/** A run with nothing bound, so only the blocks under test appear. */
+const NO_BINDINGS = { skills: [], subagents: [], mcpServers: [], images: NO_IMAGES };
 
 describe("agent prompt clock", () => {
   it("leaves the author's text byte-for-byte when no clock is injected", () => {
-    expect(buildAgentSystemPrompt("You are terse.", [], [], [], NO_IMAGES)).toBe("You are terse.");
+    expect(buildAgentSystemPrompt({ base: "You are terse.", ...NO_BINDINGS })).toBe("You are terse.");
   });
 
   it("appends the clock behind the engine-block boundary", () => {
-    expect(buildAgentSystemPrompt("You are terse.", [], [], [], NO_IMAGES, NOW)).toBe(
+    expect(buildAgentSystemPrompt({ base: "You are terse.", ...NO_BINDINGS, now: NOW })).toBe(
       `You are terse.\n\n---\n\n${CLOCK_LINE}`,
     );
   });
 
   it("carries the clock when the version has no prompt of its own", () => {
-    expect(buildAgentSystemPrompt(undefined, [], [], [], NO_IMAGES, NOW)).toBe(CLOCK_LINE);
+    expect(buildAgentSystemPrompt({ ...NO_BINDINGS, now: NOW })).toBe(CLOCK_LINE);
   });
 
   it("puts the clock ahead of the capability block, behind a single boundary", () => {
-    const prompt = buildAgentSystemPrompt(
-      "You are terse.",
-      [{ name: "greeting", description: "How to greet" }],
-      [],
-      [],
-      NO_IMAGES,
-      NOW,
-    );
+    const prompt = buildAgentSystemPrompt({
+      ...NO_BINDINGS,
+      base: "You are terse.",
+      skills: [{ name: "greeting", description: "How to greet" }],
+      now: NOW,
+    });
     // The framing speaks for the sections that follow it, and the clock is not
     // one of them — it is a fact about when the run happens.
     expect(prompt).toContain(CLOCK_LINE);

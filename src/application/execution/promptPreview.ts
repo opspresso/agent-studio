@@ -1,6 +1,7 @@
 /** Rendering what a run would send, without dispatching it. */
 
 import type { Project, Version } from "@/domain/project/types";
+import type { RunCaller } from "@/domain/execution/actor";
 import { renderTemplate } from "@/application/llm/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
@@ -27,7 +28,17 @@ import { buildAgentDeps } from "./subagentRunner";
  */
 export async function previewPrompt(
   deps: ExecutionDeps,
-  input: { project: Project; version: Version; variables?: Record<string, string> },
+  input: {
+    project: Project;
+    version: Version;
+    variables?: Record<string, string>;
+    /**
+     * Who is previewing. Reaches the prompt on the same condition a run's does
+     * — the version's `callerContext` opt-in — because a preview that showed
+     * the block unconditionally would be as wrong as one that never showed it.
+     */
+    caller?: RunCaller;
+  },
 ): Promise<PromptPreview> {
   const { project, version } = input;
   const warnings: string[] = [];
@@ -90,31 +101,25 @@ export async function previewPrompt(
       { ancestry: [project.name] },
       readSkill,
     );
-    const uses = engine.imagePromptUses(agentDeps, resolved.subagents);
-    const systemPrompt = engine.buildAgentSystemPrompt(
-      version.systemPrompt,
-      resolved.skills,
-      resolved.subagents,
-      resolved.mcp.mcpServers,
-      // No handles: a preview stands before the first message, like a fresh run
+    // The same assembly a run uses, not a second spelling of it. This is where
+    // the two drifted: the preview omitted the caller and showed a prompt one
+    // block short of what the version actually sends.
+    const { systemPrompt, tools } = engine.assembleAgentRun(agentDeps, {
+      ...(version.systemPrompt !== undefined ? { systemPrompt: version.systemPrompt } : {}),
+      // No messages: a preview stands before the first turn, like a fresh run
       // with nothing attached.
-      { handles: [], ...uses },
+      skills: resolved.skills,
+      subagents: resolved.subagents,
+      mcpServers: resolved.mcp.mcpServers,
+      mcpTools: resolved.mcp.mcpTools,
       // The clock a run started now would carry, so the preview does not hide a
       // line the model will read.
-      runClock(deps),
+      now: runClock(deps),
+      ...(input.caller && version.parameters.callerContext ? { caller: input.caller } : {}),
       // A preview stands for a top-level run, and that is the only kind offered
       // fan-out — hiding it here would show a prompt nobody sends.
-      true,
-    );
-    const { tools } = engine.buildAgentTools(
-      resolved.mcp.mcpTools,
-      resolved.skills,
-      resolved.subagents,
-      Boolean(agentDeps.generateImage),
-      uses.canEdit,
-      uses.canTransfer,
-      true,
-    );
+      canDispatch: true,
+    });
     return {
       messages: systemPrompt ? [{ role: "system", content: systemPrompt }] : [],
       toolNames: tools.map((tool) => tool.function.name),
