@@ -221,7 +221,12 @@ One line each — the linked section is the authority.
 - **A new execution entry point calls `executeProjectStream`** (or `executeProject` for a
   collected, non-streaming answer) rather than re-encoding the `projectType` dispatch, and
   opens the run bracket. Three call sites used to answer that question for themselves, and
-  the two non-streaming routes had already diverged on the image case.
+  the two non-streaming routes had already diverged on the image case. A surface that calls
+  `executeAgent` directly — chats, Slack, `/agent` — gets the same answer from the facade,
+  which **refuses a non-agent project**: the loop has nowhere to put an `llm` project's
+  `userPromptTemplate` and would answer from a bare system prompt *successfully*, and an
+  image project's model does not serve completions. `/agent` was the one caller with no
+  check of its own.
 - **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three
