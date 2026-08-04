@@ -6,10 +6,18 @@
  * spells `target` its own way, and a filter that worked for reveals silently
  * returns nothing for deletions. `tests/architecture.test.ts` pins it.
  *
- * The sink is **pushed in** by the composition root rather than threaded through
- * the eight call sites, for the same reason `setAdminCheck` is: a caller that
- * forgot to pass it would leave exactly one act unrecorded, and an unrecorded
- * act looks identical to one that never happened.
+ * The sink is **pushed in** rather than threaded through the eight call sites,
+ * for the same reason `setAdminCheck` is: a caller that forgot to pass it would
+ * leave exactly one act unrecorded, and an unrecorded act looks identical to one
+ * that never happened.
+ *
+ * Two places push it, and both are needed. `src/instrumentation.ts` wires it on
+ * the awaited boot path, because a recording route need not import the
+ * composition root at all — the A2A-key reveal needs nothing from it — and a
+ * request served before that import resolved would reveal a credential and
+ * record nothing. `src/lib/container.ts` wires it as well, for the processes
+ * that have no instrumentation hook: the scripts and the integration check
+ * compose the container directly.
  *
  * **A failed write is logged, not thrown.** Audit is a record of the act, not a
  * precondition for it — a settings save must not fail because a log row could

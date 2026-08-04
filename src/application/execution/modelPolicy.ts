@@ -13,6 +13,13 @@
  * admitting functions pass through. Putting it in the execution facade would
  * miss image runs entirely, since `generateImage` never enters one.
  *
+ * The bracket is not, however, the whole set of paths that spend money. A
+ * subagent transfer never opens one — by design, since it is not a top-level run
+ * — yet it dispatches to the provider and books a usage row exactly as its
+ * parent does, and the parent's model being registered says nothing about the
+ * child's. `subagentRunner` applies this where the child's version resolves, for
+ * that reason and no other.
+ *
  * It is *not* attached to saving a version. Storing an id the registry has not
  * caught up with is how a new model gets adopted; the warning there already says
  * so. What this bounds is spending money under an id nothing can price.

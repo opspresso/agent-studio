@@ -116,7 +116,14 @@ what the configured channels actually serve — see [DEVELOPMENT.md](DEVELOPMENT
 and it covers the version's `fallbackModel` as well as its `model` — a fallback carries the
 whole run whenever the primary is rate-limited, so an unpriced one leaks exactly as much, only
 intermittently. It throws before dispatch, so the caller gets a `400` rather than a stream
-that opens and then fails. **Saving a version is untouched**: storing an id the registry has
+that opens and then fails.
+
+A **subagent transfer** is checked too, where the child's version resolves. It never opens a
+bracket — it is not a top-level run — but it dispatches and books usage just the same, and the
+parent's model says nothing about the child's. There a refusal fails the transfer rather than
+the run: the parent is told why and can answer without that child.
+
+**Saving a version is untouched**: storing an id the registry has
 not caught up with is how a new model is adopted, and that path keeps its warning. What the
 setting bounds is spending money under an id nothing can price.
 

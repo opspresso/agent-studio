@@ -30,13 +30,14 @@ llm, agents (subagents + external agent registry), skills, mcp, chat, cost/usage
 src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
-    execution/  security/  slack/  trigger/  sync/
+    execution/  security/  slack/  trigger/  sync/  audit/
   application/      # Use cases. Depends on domain ports only, and never on the
                     # composition root — deps are injected, never pulled.
     llm/            # The engine: tool loop, PII masking, context budget, document parts
     execution/      # The facades, the run bracket, binding + MCP tool resolution
     chat/  slack/  a2a/  trigger/  image/
                     # The surfaces that drive a run, and the image path
+    audit/          # The one writer of an audit row, and reading the trail back
     project/  registry/  skill/  mcp/  agent/  usage/  trace/  settings/  health/
   infrastructure/   # Adapters (app-facing code reaches them via the composition root).
     db/             # Single-table client, key builders, repositories
@@ -62,7 +63,8 @@ src/
   proxy.ts          # The page sign-in gate, and the single owner of which pages are public
   instrumentation.ts
                     # Boot, before the server accepts connections: fail-fast config
-                    # validation, shutdown signal handlers, and the managed-MCP repair sweep
+                    # validation, shutdown signal handlers, the audit sink, and the
+                    # managed-MCP repair sweep
 ```
 
 The last two are modules, not layers: they are what runs *around* a request rather than in
@@ -1011,7 +1013,8 @@ deployment that serves webhooks and configures no ticker at all — a supported 
 ([OPERATIONS.md](OPERATIONS.md)), and one where the tick-only sweep would leave every stranded
 row `running` forever. The delivery's sweep runs after its own row is closed and reads a window
 a whole lease in the past, so it can neither delay the sender nor mistake its own firing for
-wreckage.
+wreckage. It costs one bounded query per delivery — paid on every firing rather than on a tick,
+which is the price of not depending on a component the deployment may not have.
 
 **The window is bounded by start time, not by recency.** `listRuns` takes a `startedBefore`
 bound that maps onto the sort key, because the row a sweep is looking for is by definition old:

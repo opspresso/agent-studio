@@ -82,6 +82,12 @@ setAdminCheck(isConfiguredAdmin);
 // Same shape, same reason: the audit store is pushed into the writer rather
 // than threaded through the eight acts that record one, because a call site
 // that forgot the argument would leave exactly one act untracked.
+//
+// `instrumentation.ts` wires the same sink on the server's awaited boot path,
+// since a recording route need not import this module at all. This call is what
+// covers the processes with no instrumentation hook — the scripts and the
+// integration check compose the container and nothing else. Idempotent: both
+// push the same repository.
 setAuditSink(auditRepository);
 
 export const auditUseCases = createAuditUseCases(auditRepository);

@@ -152,6 +152,8 @@ same rule applies to:
 | Which version a run executes | `resolveRunnableVersion` in `src/application/project/` |
 | User-image caps | `src/domain/llm/imageLimits.ts` |
 | `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
+| Turning a stored image reference into an address | `resolveImageUrl` in `src/domain/chat/imageRefs.ts` |
+| How long a signed image URL lives, per reader | `src/application/chat/imageUrls.ts` |
 | Row TTLs | `src/infrastructure/db/ttl.ts` |
 | The UTC day a usage row is keyed by | `utcDay` in `src/shared/date.ts` |
 | What a repo sync did, and what it left to a person | `src/domain/sync/types.ts` |

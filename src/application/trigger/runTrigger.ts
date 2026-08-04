@@ -301,7 +301,7 @@ export async function executeDelivery(
   // webhooks with no ticker at all. It runs after the response has long gone and
   // after this delivery's own row is closed, so it costs the sender nothing and
   // never looks at the firing that started it: the cutoff is a whole lease in
-  // the past.
+  // the past. One bounded query per delivery is what that independence costs.
   await repairTriggerRuns(deps, admitted.trigger, new Date());
 }
 
