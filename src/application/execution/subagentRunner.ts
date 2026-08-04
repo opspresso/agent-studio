@@ -16,6 +16,7 @@ import type { ExecutionDeps } from "./deps";
 import { runClock, runStrategyFor, toEngineParameters } from "./deps";
 import { buildImageEditor, buildImageGenerator, runImageSubagent } from "./imageTool";
 import { closeMcp } from "./mcpTools";
+import { assertModelsPriceable } from "./modelPolicy";
 import {
   buildSkillLoader,
   createSkillReader,
@@ -295,6 +296,28 @@ export async function* runLocalSubagent(
   if (!version) {
     yield { author: agentName, error: `Agent '${agentName}' has no published version.` };
     return "";
+  }
+  // The run bracket owns this policy for a top-level run, and a transfer
+  // deliberately never opens one — but it dispatches to the provider and books a
+  // usage row exactly as its parent does, so an unpriced child leaks the same
+  // money the setting exists to stop. The parent's model being registered says
+  // nothing about this one's. Checked here rather than in each of the three
+  // strategies below, so a fourth cannot forget it.
+  if (deps.unknownModelPolicy) {
+    try {
+      assertModelsPriceable(await deps.unknownModelPolicy(), {
+        model: version.model,
+        ...(version.fallbackModel ? { fallbackModel: version.fallbackModel } : {}),
+      });
+    } catch (error) {
+      // The transfer fails, not the run: the parent is told why and can answer
+      // without this child, which is how every other refusal here behaves.
+      yield {
+        author: agentName,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      return "";
+    }
   }
 
   // Dispatch on the child's projectType, like the entry points do: an image

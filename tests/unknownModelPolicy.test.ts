@@ -3,9 +3,14 @@ import { openRun } from "@/application/execution/runBracket";
 import {
   assertModelsPriceable,
   toUnknownModelPolicy,
+  type UnknownModelPolicy,
 } from "@/application/execution/modelPolicy";
+import { runLocalSubagent } from "@/application/execution/subagentRunner";
+import type { ExecutionDeps } from "@/application/execution/deps";
 import { ValidationError } from "@/application/errors";
 import { MODEL_CONFIGS } from "@/domain/llm/models";
+import type { RunOrigin } from "@/domain/execution/actor";
+import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 
@@ -140,5 +145,63 @@ describe("the run bracket enforces it", () => {
     // A deps bag assembled before this existed must behave exactly as it did.
     const bracket = await openRun({ usage }, project, version({ model: UNKNOWN }));
     await bracket.close();
+  });
+});
+
+describe("a subagent transfer enforces it too", () => {
+  /**
+   * The bracket is not the whole set of paths that spend money. A transfer never
+   * opens one — by design — yet it dispatches to the provider and books a usage
+   * row exactly as its parent does, and the parent's model being registered says
+   * nothing about the child's.
+   */
+  const child: Project = { ...project, name: "child", publishedVersion: "v1" };
+
+  function deps(policy: UnknownModelPolicy | undefined, model: string): ExecutionDeps {
+    return {
+      projects: { get: async () => child },
+      versions: { get: async () => version({ projectName: "child", model }) },
+      ...(policy ? { unknownModelPolicy: async () => policy } : {}),
+    } as unknown as ExecutionDeps;
+  }
+
+  async function collect(source: AsyncGenerator<EngineChunk, string>) {
+    const chunks: EngineChunk[] = [];
+    let step = await source.next();
+    while (!step.done) {
+      chunks.push(step.value);
+      step = await source.next();
+    }
+    return { chunks, text: step.value };
+  }
+
+  const noUsage = async () => {};
+  const origin = { actor: { kind: "user", id: "u@example.com" } } as unknown as RunOrigin;
+
+  it("refuses an unpriced child before it reaches the channel", async () => {
+    const { chunks, text } = await collect(
+      runLocalSubagent(deps("refuse", UNKNOWN), "child", "hi", 1, 4, noUsage, origin),
+    );
+    expect(text).toBe("");
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.author).toBe("child");
+    expect(chunks[0]?.error).toContain("not in the registry");
+  });
+
+  it("runs a child whose model the registry can price", async () => {
+    // Reaching the dispatch is the assertion: these deps carry no channel, so
+    // what comes back is the channel failing rather than the policy refusing.
+    const { chunks } = await collect(
+      runLocalSubagent(deps("refuse", REGISTERED), "child", "hi", 1, 4, noUsage, origin),
+    );
+    expect(chunks[0]?.error).not.toContain("not in the registry");
+  });
+
+  it("leaves a transfer alone when no policy is injected", async () => {
+    // A deps bag assembled before this existed behaves exactly as it did.
+    const { chunks } = await collect(
+      runLocalSubagent(deps(undefined, UNKNOWN), "child", "hi", 1, 4, noUsage, origin),
+    );
+    expect(chunks[0]?.error).not.toContain("not in the registry");
   });
 });
