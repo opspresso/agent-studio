@@ -19,7 +19,7 @@ import {
   type RunCaller,
   type RunOrigin,
 } from "@/domain/execution/actor";
-import type { Version } from "@/domain/project/types";
+import type { Project, Version } from "@/domain/project/types";
 import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
@@ -149,6 +149,30 @@ export async function* executeVersionStream(
 function imageRunRefusal(projectName: string): ValidationError {
   return new ValidationError(
     `Project "${projectName}" is an image project; it generates through its image surface, not a completion`,
+  );
+}
+
+/**
+ * The tool loop runs agent projects, and every other type reaching it is a
+ * misdispatch rather than a degraded run.
+ *
+ * A prompt project's behaviour is its `userPromptTemplate`, and the loop has
+ * nowhere to put one: it answers from a bare system prompt and **succeeds**,
+ * which is worse than failing, because nothing about the answer says the
+ * project's own configuration was skipped. An image project is the refusal
+ * {@link imageRunRefusal} already makes — its model must never reach
+ * chat/completions.
+ *
+ * The check lives here rather than at each entry point because three of the four
+ * callers already had one and the fourth did not: chats
+ * (`createChat`) and all three Slack paths refuse a non-agent project, while
+ * `/api/projects/{name}/versions/{version}/agent` ran the loop on whatever it
+ * was given. `executeProjectStream` reaches this only for agent projects, so a
+ * correct dispatch never pays for it.
+ */
+function agentRunRefusal(project: Project): ValidationError {
+  return new ValidationError(
+    `Project "${project.name}" is a ${project.projectType} project; the agent tool loop runs agent projects only`,
   );
 }
 
@@ -283,6 +307,11 @@ export async function* executeAgent(
   deps: ExecutionDeps,
   input: ExecuteAgentInput,
 ): AsyncGenerator<EngineChunk> {
+  // Before the bracket, like every other refusal that says the request was
+  // wrong rather than that the platform is busy: nothing is counted or recorded.
+  if (runStrategyFor(input.project) !== "agent") {
+    throw agentRunRefusal(input.project);
+  }
   // A multi-turn agent run makes many LLM calls; accumulate their usage and
   // flush once (per project/date/model) when the run ends, even on error.
   // The actor is the run's, not the turn's: every model call this loop makes —
