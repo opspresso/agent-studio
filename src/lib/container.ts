@@ -80,8 +80,8 @@ import {
 setAdminCheck(isConfiguredAdmin);
 
 // Same shape, same reason: the audit store is pushed into the writer rather
-// than threaded through the eight acts that record one, because a call site
-// that forgot the argument would leave exactly one act untracked.
+// than threaded through every act that records one, because a call site that
+// forgot the argument would leave exactly one act untracked.
 //
 // `instrumentation.ts` wires the same sink on the server's awaited boot path,
 // since a recording route need not import this module at all. This call is what
@@ -224,10 +224,17 @@ export const settingsUseCases = createSettingsUseCases(settingsRepository, secre
  */
 export const syncSkillsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getSkillsRepoConfig>>,
+  actorEmail: string,
   selection?: SyncSelection,
 ) => {
   const { fetchSkillsRepoSnapshot } = await import("@/infrastructure/github/skillsRepoClient");
-  return syncSkillsFromSnapshot(skillRepository, await fetchSkillsRepoSnapshot(repoConfig), selection);
+  return syncSkillsFromSnapshot(
+    skillRepository,
+    skillUseCases,
+    await fetchSkillsRepoSnapshot(repoConfig),
+    actorEmail,
+    selection,
+  );
 };
 
 /**
@@ -238,15 +245,15 @@ export const syncSkillsFromRepo = async (
  */
 export const syncToolsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getToolsRepoConfig>>,
+  actorEmail: string,
   selection?: SyncSelection,
-  actorEmail?: string,
 ) => {
   const { fetchToolsRepoSnapshot } = await import("@/infrastructure/github/toolsRepoClient");
   return syncToolsFromSnapshot(
     mcpUseCases,
     await fetchToolsRepoSnapshot(repoConfig),
-    selection,
     actorEmail,
+    selection,
   );
 };
 

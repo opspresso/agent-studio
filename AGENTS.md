@@ -267,7 +267,10 @@ One line each — the linked section is the authority.
   rest — what a document would change, and what the repository no longer carries. Either is
   acted on only when a caller names it, because the stored version may be a deliberate edit
   and an entry may hold credentials. Only entries a sync created are listed as orphaned; one
-  someone registered by hand was never the repository's to miss.
+  someone registered by hand was never the repository's to miss. **A deletion a sync performs
+  goes through the use case and names the person who asked for the sync** — both syncs take a
+  required `actorEmail` for that reason, since `remove` is the single owner of the
+  `registry.delete` row and a deletion around it leaves no trace at all.
 - **Docs record the current state, not history.** Completed milestones are deleted from
   `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
   accumulate changelogs in comments or docs.

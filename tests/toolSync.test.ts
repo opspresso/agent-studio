@@ -10,6 +10,8 @@ import type { McpServer } from "@/domain/mcp/types";
 import { ConflictError, ValidationError } from "@/application/errors";
 
 const NOW = "2026-01-01T00:00:00.000Z";
+/** Every sync is asked for by somebody; the actor is what its deletions record. */
+const ACTOR = "admin@example.com";
 
 /**
  * A registry that records what it was asked to create and to patch. Either may
@@ -25,6 +27,7 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
   const created: CreateMcpInput[] = [];
   const patched: Array<{ name: string; patch: UpdateMcpInput }> = [];
   const removed: string[] = [];
+  const removedBy: string[] = [];
   const mcps: Pick<McpUseCases, "list" | "create" | "update" | "remove"> = {
     async list() {
       return [...store.values()];
@@ -48,8 +51,9 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
       store.set(server.name, server);
       return server;
     },
-    async remove(name) {
+    async remove(name, actorEmail) {
       removed.push(name);
+      removedBy.push(actorEmail);
       store.delete(name);
     },
     async update(name, patch) {
@@ -73,7 +77,7 @@ function fakeMcps(existing: McpServer[] = [], refuse: Record<string, Error> = {}
       return next;
     },
   };
-  return { mcps, created, patched, removed, store };
+  return { mcps, created, patched, removed, removedBy, store };
 }
 
 function snapshot(files: Array<{ name: string; content: string }>, skippedPaths: string[] = []): ToolsRepoSnapshot {
@@ -140,7 +144,7 @@ describe("syncToolsFromSnapshot", () => {
 
   it("imports a tool the registry does not have", async () => {
     const { mcps, created } = fakeMcps();
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]), ACTOR);
 
     expect(result.created).toEqual(["mcp-url-fetch"]);
     expect(created[0]).toMatchObject({
@@ -156,7 +160,7 @@ describe("syncToolsFromSnapshot", () => {
   it("reports what an existing entry differs by, and writes nothing", async () => {
     const { mcps, patched, store } = fakeMcps([structuredClone(REGISTERED)]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]), ACTOR);
 
     expect(result.existing).toEqual([
       { name: "mcp-url-fetch", differs: ["url", "description", "content"] },
@@ -173,6 +177,7 @@ describe("syncToolsFromSnapshot", () => {
     const result = await syncToolsFromSnapshot(
       mcps,
       snapshot([{ name: "mcp-url-fetch", content: FETCHER }]),
+      ACTOR,
       { overwrite: ["mcp-url-fetch"] },
     );
 
@@ -200,6 +205,7 @@ describe("syncToolsFromSnapshot", () => {
     const result = await syncToolsFromSnapshot(
       mcps,
       snapshot([{ name: "mcp-url-fetch", content: FETCHER }]),
+      ACTOR,
       { overwrite: ["mcp-url-fetch"] },
     );
 
@@ -222,9 +228,14 @@ describe("syncToolsFromSnapshot", () => {
       },
     ]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: doc }]), {
+    const result = await syncToolsFromSnapshot(
+      mcps,
+      snapshot([{ name: "mcp-url-fetch", content: doc }]),
+      ACTOR,
+      {
       overwrite: ["mcp-url-fetch"],
-    });
+    },
+    );
 
     // An empty body says nothing about the notes; it does not ask for them to
     // be erased.
@@ -247,9 +258,14 @@ describe("syncToolsFromSnapshot", () => {
       },
     ]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]), {
+    const result = await syncToolsFromSnapshot(
+      mcps,
+      snapshot([{ name: "mcp-url-fetch", content: FETCHER }]),
+      ACTOR,
+      {
       overwrite: ["mcp-url-fetch"],
-    });
+    },
+    );
 
     expect(result.skipped).toEqual([
       { name: "mcp-url-fetch", reason: "managed-url", detail: "http://127.0.0.1:41234/mcp" },
@@ -262,7 +278,7 @@ describe("syncToolsFromSnapshot", () => {
   it("reports an entry this sync created that the repo no longer carries", async () => {
     const { mcps, removed } = fakeMcps([structuredClone(REGISTERED)]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([]), ACTOR);
 
     expect(result.orphaned).toEqual(["mcp-url-fetch"]);
     // An MCP entry holds credentials; a file disappearing from a branch is not
@@ -273,11 +289,22 @@ describe("syncToolsFromSnapshot", () => {
   it("deletes an orphan only when the caller names it", async () => {
     const { mcps, removed, store } = fakeMcps([structuredClone(REGISTERED)]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([]), { remove: ["mcp-url-fetch"] });
+    const result = await syncToolsFromSnapshot(mcps, snapshot([]), ACTOR, { remove: ["mcp-url-fetch"] });
 
     expect(result.removed).toEqual(["mcp-url-fetch"]);
     expect(removed).toEqual(["mcp-url-fetch"]);
     expect(store.has("mcp-url-fetch")).toBe(false);
+  });
+
+  it("removes through the use case, against the person who asked for the sync", async () => {
+    // The deletion has to reach the single owner of the `registry.delete` row,
+    // and it has to name somebody: an audit row whose actor was invented by a
+    // default parameter answers "who deleted this" with a fiction.
+    const { mcps, removedBy } = fakeMcps([structuredClone(REGISTERED)]);
+
+    await syncToolsFromSnapshot(mcps, snapshot([]), ACTOR, { remove: ["mcp-url-fetch"] });
+
+    expect(removedBy).toEqual([ACTOR]);
   });
 
   it("never lists an entry someone registered by hand", async () => {
@@ -294,7 +321,7 @@ describe("syncToolsFromSnapshot", () => {
       },
     ]);
 
-    const result = await syncToolsFromSnapshot(mcps, snapshot([]), { remove: ["typed-by-hand"] });
+    const result = await syncToolsFromSnapshot(mcps, snapshot([]), ACTOR, { remove: ["typed-by-hand"] });
 
     expect(result.orphaned).toEqual([]);
     expect(result.removed).toEqual([]);
@@ -308,6 +335,7 @@ describe("syncToolsFromSnapshot", () => {
         { name: "broken", content: "---\ndescription: no address\n---\nbody" },
         { name: "mcp-url-fetch", content: FETCHER },
       ]),
+      ACTOR,
     );
 
     expect(result.created).toEqual(["mcp-url-fetch"]);
@@ -330,6 +358,7 @@ describe("syncToolsFromSnapshot", () => {
     const result = await syncToolsFromSnapshot(
       mcps,
       snapshot([{ name: "mcp-url-fetch", content: "---\ndescription: new\n---\nnotes" }]),
+      ACTOR,
       { overwrite: ["mcp-url-fetch"] },
     );
 
@@ -348,6 +377,7 @@ describe("syncToolsFromSnapshot", () => {
         { name: "blocked", content: "---\nurl: http://169.254.169.254/mcp\n---\nbody" },
         { name: "mcp-url-fetch", content: FETCHER },
       ]),
+      ACTOR,
     );
 
     expect(result.created).toEqual(["mcp-url-fetch"]);
@@ -362,7 +392,7 @@ describe("syncToolsFromSnapshot", () => {
 
   it("reports a name registered mid-sync as the race it is, not a bad url", async () => {
     const { mcps } = fakeMcps([], { "mcp-url-fetch": new ConflictError("MCP server already exists") });
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]), ACTOR);
 
     expect(result.created).toEqual([]);
     expect(result.skipped).toEqual([{ name: "mcp-url-fetch", reason: "conflict" }]);
@@ -370,7 +400,7 @@ describe("syncToolsFromSnapshot", () => {
 
   it("reports a directory the client could not turn into an entry name", async () => {
     const { mcps } = fakeMcps();
-    const result = await syncToolsFromSnapshot(mcps, snapshot([], ["tools/Not A Slug/TOOL.md"]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([], ["tools/Not A Slug/TOOL.md"]), ACTOR);
 
     expect(result.skipped).toEqual([{ name: "tools/Not A Slug/TOOL.md", reason: "bad-name" }]);
   });
@@ -378,13 +408,13 @@ describe("syncToolsFromSnapshot", () => {
   it("lets an unexpected failure surface instead of reporting it as a skip", async () => {
     const { mcps } = fakeMcps([], { "mcp-url-fetch": new Error("DynamoDB unavailable") });
     await expect(
-      syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }])),
+      syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]), ACTOR),
     ).rejects.toThrow("DynamoDB unavailable");
   });
 
   it("carries the commit it synced, so a result names what it came from", async () => {
     const { mcps } = fakeMcps();
-    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]));
+    const result = await syncToolsFromSnapshot(mcps, snapshot([{ name: "mcp-url-fetch", content: FETCHER }]), ACTOR);
 
     expect(result.repo).toBe("opspresso/agent-tools");
     expect(result.commitSha).toBe("abc123");
@@ -394,8 +424,8 @@ describe("syncToolsFromSnapshot", () => {
     const { mcps, created, patched } = fakeMcps();
     const files = [{ name: "mcp-url-fetch", content: FETCHER }];
 
-    await syncToolsFromSnapshot(mcps, snapshot(files));
-    const second = await syncToolsFromSnapshot(mcps, snapshot(files), {
+    await syncToolsFromSnapshot(mcps, snapshot(files), ACTOR);
+    const second = await syncToolsFromSnapshot(mcps, snapshot(files), ACTOR, {
       overwrite: ["mcp-url-fetch"],
     });
 
