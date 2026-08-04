@@ -189,6 +189,19 @@ const RULES: Rule[] = [
     allow: [],
   },
   {
+    // The direction nothing governed. `application → lib` is locked to one pure
+    // leaf, but `lib → application` was wide open, and `runtime-settings` used
+    // it: a settings reader reached into a use-case module for a parser. Nothing
+    // stopped the next one from closing a cycle through `@/lib/runMetrics`. The
+    // composition root is the exception by definition — assembling use cases is
+    // what it is for.
+    name: "lib imports no application outside the composition root",
+    from: "lib",
+    banned: (spec) => targetLayer(spec) === "application",
+    exempt: (relPath) => relPath === "src/lib/container.ts",
+    allow: [],
+  },
+  {
     // The other half of the side door: a lib module that composes
     // infrastructure is a wiring module and is named here, so every module
     // this rule does not name stays a leaf and the rule above keeps meaning
@@ -246,6 +259,44 @@ function violationsOf(rule: Rule): string[] {
 describe("layer boundaries", () => {
   it.each(RULES.map((rule) => [rule.name, rule] as const))("%s", (_name, rule) => {
     expect(violationsOf(rule)).toEqual([...rule.allow].sort());
+  });
+});
+
+/**
+ * The environment, which the import rules cannot see.
+ *
+ * Every rule above matches specifiers, and `process.env.X` is not one — so the
+ * bottom of the graph could read configuration and no boundary would notice.
+ * That matters most exactly there: `domain` is pure by construction, and
+ * `shared` is imported by everything, so a value read at module scope becomes a
+ * process-wide constant nothing declared and nobody injected.
+ *
+ * `runDeadline.ts` is the one occupant, and it is *named* rather than
+ * allowlisted. The run deadline is a process-level backstop that `application`
+ * needs and cannot be handed one — it may not import `lib` — so it is read there
+ * on purpose. Naming it is what keeps the second one from arriving quietly.
+ */
+const ENV_READ = /process\.env\b/;
+const ENV_READERS_AT_THE_BOTTOM = ["src/shared/runDeadline.ts"];
+
+describe("configuration reads", () => {
+  it("do not reach domain or shared", () => {
+    const found = SOURCE_FILES.filter(
+      (file) =>
+        ["domain", "shared"].includes(layerOf(file.path) ?? "") &&
+        !ENV_READERS_AT_THE_BOTTOM.includes(file.path) &&
+        ENV_READ.test(file.text),
+    ).map((file) => file.path);
+    expect(found.sort()).toEqual([]);
+  });
+
+  it("still happen where the exception says they do", () => {
+    // An exception that stopped being true would leave the rule reading
+    // stricter than it is, which is the same lie as an unenforced rule.
+    const stale = ENV_READERS_AT_THE_BOTTOM.filter(
+      (path) => !ENV_READ.test(SOURCE_FILES.find((file) => file.path === path)?.text ?? ""),
+    );
+    expect(stale).toEqual([]);
   });
 });
 
@@ -400,6 +451,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
       "src/shared/mergeGenerators.ts",
       "src/infrastructure/slack/profileCache.ts",
     ],
+  },
+  {
+    // The builders each had one owner; the *arguments* did not. `runAgent` and
+    // the Playground preview spelled out eight and seven positional arguments
+    // apiece, and had already drifted — the preview omitted the eighth, so a
+    // version that opted into `callerContext` previewed a prompt one block
+    // short of what every real run sends. `assembleAgentRun` is the one caller
+    // now, and a second one fails here.
+    what: "how an agent run's prompt and tool set are assembled",
+    pattern: /build(?:AgentSystemPrompt|AgentTools)\(\{/,
+    owner: "src/application/llm/engine.ts",
   },
   {
     what: "the 401 response body",
