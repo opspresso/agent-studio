@@ -151,7 +151,16 @@ function fixture(
     },
     // Scoped to the trigger, as the real query is: the repair sweep visits every
     // trigger of the project and must not see another one's rows as its own.
-    listRuns: async (_project, triggerId) => rows.filter((r) => r.triggerId === triggerId),
+    // Newest first, bounded by `limit` and by `startedBefore`, because the real
+    // query answers all three from the sort key — a fake that ignored them could
+    // not tell a window of old rows from a page of recent ones, which is exactly
+    // the difference a busy trigger turns into a row that never gets repaired.
+    listRuns: async (_project, triggerId, limit, listOpts = {}) =>
+      rows
+        .filter((r) => r.triggerId === triggerId)
+        .filter((r) => !listOpts.startedBefore || r.startedAt < listOpts.startedBefore)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .slice(0, limit),
   };
   const slots = memorySlots();
   if (opts.slotsBusy) {
@@ -407,6 +416,36 @@ describe("scanSchedules", () => {
       error: expect.stringContaining("lost"),
     });
     expect(f.rows.find((r) => r.runId === "live-delivery")?.status).toBe("running");
+  });
+
+  it("finds a stranded row buried under a busy trigger's newer ones", async () => {
+    // A webhook taking ten deliveries a minute writes hundreds of rows inside
+    // one lease window. Read as "the newest REPAIR_SCAN_LIMIT rows", the row
+    // that needs finishing is never on the page — and it only sinks further the
+    // longer it stays stranded, so no number of sweeps would ever reach it.
+    const lost: TriggerRun = {
+      projectName: "p",
+      triggerId: "inbound",
+      runId: "lost-delivery",
+      status: "running",
+      startedAt: new Date(AT.getTime() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
+    };
+    const busy: TriggerRun[] = Array.from({ length: 200 }, (_unused, index) => ({
+      projectName: "p",
+      triggerId: "inbound",
+      runId: `recent-${index}`,
+      status: "succeeded" as const,
+      startedAt: new Date(AT.getTime() - index * 1000).toISOString(),
+      endedAt: new Date(AT.getTime() - index * 1000 + 500).toISOString(),
+    }));
+    const f = fixture({
+      schedules: [schedule({ enabled: false })],
+      webhooks: [webhook()],
+      seededRows: [lost, ...busy],
+    });
+    const { summary } = await scanAndExecute(f);
+    expect(summary.repaired).toBe(1);
+    expect(f.rows.find((r) => r.runId === "lost-delivery")?.status).toBe("failed");
   });
 
   it("repairs a disabled webhook's rows too — disabling must not strand one", async () => {

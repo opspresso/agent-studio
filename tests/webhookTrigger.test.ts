@@ -6,6 +6,7 @@ import {
   triggerActor,
   type TriggerRunnerDeps,
 } from "@/application/trigger/runTrigger";
+import { REPAIR_AFTER_SECONDS } from "@/application/trigger/repairLostRuns";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
@@ -119,7 +120,14 @@ function fixture(
         rows.push(run);
       }
     },
-    listRuns: async () => rows,
+    // Bounded the way the real query is, so the repair sweep a delivery runs on
+    // its way out is exercised against the window it actually asks for.
+    listRuns: async (_project, triggerId, limit, listOpts = {}) =>
+      rows
+        .filter((r) => r.triggerId === triggerId)
+        .filter((r) => !listOpts.startedBefore || r.startedAt < listOpts.startedBefore)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .slice(0, limit),
   };
   return {
     rows,
@@ -307,6 +315,34 @@ describe("executeDelivery", () => {
     await executeDelivery(f.deps, await accept(f), {});
     expect(f.runs[0]?.actorKind).toBe("webhook");
     expect(triggerActor(trigger())).toEqual({ kind: "webhook", id: "p:nightly" });
+  });
+
+  it("finishes a row an earlier lost instance stranded, with no ticker involved", async () => {
+    // The schedule scan is the only *periodic* sweep there is, and a deployment
+    // may serve webhooks with no CronJob pointed at it at all. Without this the
+    // durability fix would simply not exist for that shape.
+    const f = fixture();
+    f.rows.push({
+      projectName: "p",
+      triggerId: "nightly",
+      runId: "lost-delivery",
+      status: "running",
+      startedAt: new Date(Date.now() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows.find((r) => r.runId === "lost-delivery")).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("lost"),
+    });
+  });
+
+  it("never repairs the delivery that is running the sweep", async () => {
+    // The cutoff is a whole lease in the past and this row was written seconds
+    // ago, so a sweep on the way out cannot mistake its own firing for wreckage.
+    const f = fixture();
+    const admitted = await accept(f);
+    await executeDelivery(f.deps, admitted, {});
+    expect(f.rows.find((r) => r.runId === admitted.runId)?.status).toBe("succeeded");
   });
 
   it("ignores a subagent's text when accumulating the answer", async () => {
