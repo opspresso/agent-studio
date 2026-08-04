@@ -36,6 +36,7 @@ import {
 import { monoInput } from "@/app/_components/monoInput";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { CredentialBadges } from "../_components/CredentialBadges";
+import { useViewer } from "@/app/_lib/useViewer";
 
 /**
  * How long the console watches a restart, and how often it asks.
@@ -52,6 +53,7 @@ export default function McpDetailPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
+  const viewer = useViewer();
 
   const [server, setServer] = useState<McpServer | null>(null);
   const [loading, setLoading] = useState(true);
@@ -270,7 +272,7 @@ export default function McpDetailPage() {
                   {server.image}
                 </Text>
               )}
-              {managedStatus && !managedStatus.reachable && (
+              {managedStatus && !managedStatus.reachable && viewer?.isAdmin && (
                 <Anchor
                   component="button"
                   type="button"
@@ -284,7 +286,7 @@ export default function McpDetailPage() {
             </Group>
           )}
         </div>
-        {!editing && (
+        {!editing && viewer?.isAdmin && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
               Edit
@@ -326,7 +328,7 @@ export default function McpDetailPage() {
             </section>
           )}
 
-          <OAuthSection server={server} onChanged={() => void refresh()} />
+          <OAuthSection server={server} onChanged={() => void refresh()} editable={Boolean(viewer?.isAdmin)} />
 
           <section>
             <Text fz="sm" fw={500} c="dimmed" mb="xs">
@@ -415,7 +417,15 @@ export default function McpDetailPage() {
  * on the project page, which is what lets one entry serve a different app per
  * project.
  */
-function OAuthSection({ server, onChanged }: { server: McpServer; onChanged: () => void }) {
+function OAuthSection({
+  server,
+  onChanged,
+  editable,
+}: {
+  server: McpServer;
+  onChanged: () => void;
+  editable: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choices, setChoices] = useState<string[] | null>(null);
@@ -459,15 +469,15 @@ function OAuthSection({ server, onChanged }: { server: McpServer; onChanged: () 
         <Text fz="sm" fw={500} c="dimmed">
           OAuth
         </Text>
-        <Button
+        {editable && <Button
           variant="default"
           size="compact-sm"
           onClick={() => void discover()}
           loading={busy}
         >
           {server.auth ? "Rediscover" : "Discover"}
-        </Button>
-        {server.auth && (
+        </Button>}
+        {editable && server.auth && (
           <Button
             variant="default"
             color="red"

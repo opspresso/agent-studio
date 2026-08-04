@@ -17,6 +17,7 @@ import {
 import { useSession } from "@/lib/auth-client";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getProject } from "../lib/api";
+import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import classes from "./ProjectLayout.module.css";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const base = `/projects/${name}`;
 
   const { data: session } = useSession();
+  const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -38,13 +40,14 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     };
   }, [name]);
 
+  const canManage = canEditProject(viewer, ownerEmail);
   const tabs = [
     { href: base, label: "Playground", Icon: IconPlayerPlay },
     { href: `${base}/versions`, label: "Versions", Icon: IconHistory },
     { href: `${base}/usage`, label: "Usage", Icon: IconChartBar },
-    { href: `${base}/traces`, label: "Traces", Icon: IconRoute },
+    ...(canManage ? [{ href: `${base}/traces`, label: "Traces", Icon: IconRoute }] : []),
     { href: `${base}/api-reference`, label: "API Reference", Icon: IconApi },
-    { href: `${base}/settings`, label: "Settings", Icon: IconAdjustments },
+    ...(canManage ? [{ href: `${base}/settings`, label: "Settings", Icon: IconAdjustments }] : []),
   ];
 
   return (

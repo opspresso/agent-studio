@@ -25,9 +25,11 @@ import {
   IconPlus,
   IconRobot,
   IconSettings,
+  IconShieldCheck,
   IconTool,
 } from "@tabler/icons-react";
 import { useSession } from "@/lib/auth-client";
+import { useViewer } from "@/app/_lib/useViewer";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 import classes from "./AppLayout.module.css";
@@ -51,7 +53,10 @@ const NAV_GROUPS = [
   },
   {
     label: "System",
-    items: [{ href: "/settings", label: "Settings", Icon: IconSettings }],
+    items: [
+      { href: "/audit", label: "Audit trail", Icon: IconShieldCheck },
+      { href: "/settings", label: "Settings", Icon: IconSettings },
+    ],
   },
 ] as const;
 
@@ -80,6 +85,7 @@ export function AppLayout({
    * back on every page load.
    */
   const { data: session, isPending } = useSession();
+  const viewer = useViewer();
   const showNav = isPending || session !== null;
 
   return (
@@ -144,7 +150,7 @@ export function AppLayout({
         </Group>
         <ScrollArea style={{ flex: 1 }} scrollbarSize={4}>
           <Stack gap="xl">
-            {NAV_GROUPS.map((group) => (
+            {NAV_GROUPS.filter((group) => group.label !== "System" || viewer?.isAdmin).map((group) => (
               <Stack key={group.label} gap={6}>
                 <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.12em" px="sm">
                   {group.label}

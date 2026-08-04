@@ -32,8 +32,10 @@ import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { useViewer } from "@/app/_lib/useViewer";
 
 export default function AgentsPage() {
+  const viewer = useViewer();
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
   const [a2aProjects, setA2aProjects] = useState<A2aProjectListView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,7 +67,7 @@ export default function AgentsPage() {
         description="External OpenAI-compatible and A2A endpoints, ready to join agent workflows."
         Icon={IconRobot}
       >
-        <Button onClick={open}>Register agent</Button>
+        {viewer?.isAdmin && <Button onClick={open}>Register agent</Button>}
       </CatalogHeader>
 
       {error && (

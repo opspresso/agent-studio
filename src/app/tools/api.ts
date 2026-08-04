@@ -6,6 +6,12 @@ import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 // each end, 21+ reveal 4) header values — never the full plaintext or ciphertext.
 export type { McpServer, McpTool, RepoSyncResult, SyncSelection };
 
+export interface RepoSyncConfig {
+  configured: boolean;
+  repo: string | null;
+  branch: string;
+}
+
 export interface CreateMcpInput {
   name: string;
   url: string;
@@ -55,6 +61,10 @@ export function syncTools(selection: SyncSelection = {}): Promise<RepoSyncResult
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(selection),
   }).then((r) => readJson<RepoSyncResult>(r));
+}
+
+export function getToolsSyncConfig(): Promise<RepoSyncConfig> {
+  return fetch("/api/mcps/sync").then((r) => readJson<RepoSyncConfig>(r));
 }
 
 export function testMcpConnection(name: string): Promise<McpTool[]> {

@@ -20,6 +20,7 @@ export default function SettingsPage() {
   const viewer = useViewer();
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
+  const [departmentCode, setDepartmentCode] = useState("");
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export default function SettingsPage() {
         if (!cancelled) {
           setDisplayName(project.displayName);
           setDescription(project.description);
+          setDepartmentCode(project.departmentCode ?? "");
           setOwnerEmail(project.ownerEmail);
         }
       } catch (e) {
@@ -59,7 +61,11 @@ export default function SettingsPage() {
     setError(null);
     setSaved(false);
     try {
-      await updateProject(name, { displayName, description });
+      await updateProject(name, {
+        displayName,
+        description,
+        departmentCode,
+      });
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -120,6 +126,12 @@ export default function SettingsPage() {
             autosize
             minRows={4}
             maxRows={20}
+          />
+          <TextInput
+            label="Department code"
+            value={departmentCode}
+            onChange={(e) => setDepartmentCode(e.currentTarget.value)}
+            description="Optional code used to group project ownership and costs."
           />
           <Group gap="sm">
             <Button type="submit" loading={saving}>

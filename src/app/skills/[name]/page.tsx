@@ -17,11 +17,13 @@ import {
   Title,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
+import { useViewer } from "@/app/_lib/useViewer";
 
 export default function SkillDetailPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
+  const viewer = useViewer();
 
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,7 +100,7 @@ export default function SkillDetailPage() {
             </Text>
           )}
         </div>
-        {!editing && (
+        {!editing && viewer?.isAdmin && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
               Edit
@@ -126,20 +128,33 @@ export default function SkillDetailPage() {
           }}
         />
       ) : (
-        <section>
-          <Text fz="sm" fw={500} c="dimmed" mb="xs">
-            Content
-          </Text>
-          <Card>
-            <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
-              {skill.content || (
-                <Text component="span" c="dimmed">
-                  No content.
-                </Text>
-              )}
+        <>
+          <section>
+            <Text fz="sm" fw={500} c="dimmed" mb="xs">Content</Text>
+            <Card>
+              <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
+                {skill.content || <Text component="span" c="dimmed">No content.</Text>}
+              </Text>
+            </Card>
+          </section>
+          <section>
+            <Text fz="sm" fw={500} c="dimmed" mb="xs">
+              Attachment files ({skill.files?.length ?? 0})
             </Text>
-          </Card>
-        </section>
+            {!skill.files?.length ? (
+              <Text fz="sm" c="dimmed">None.</Text>
+            ) : (
+              <Stack gap="xs">
+                {skill.files.map((file) => (
+                  <Card key={file.path}>
+                    <Text ff="monospace" fz="sm" fw={500} mb="xs">{file.path}</Text>
+                    <Text ff="monospace" fz="xs" style={{ whiteSpace: "pre-wrap" }}>{file.content}</Text>
+                  </Card>
+                ))}
+              </Stack>
+            )}
+          </section>
+        </>
       )}
     </Stack>
   );
