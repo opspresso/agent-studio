@@ -77,7 +77,7 @@ export async function previewPrompt(
           // On the same opt-in a run applies. This branch used to skip the
           // question entirely, so a prompt project previewed anonymously even
           // where its version had asked to be told who is asking.
-          ...callerFor({ version, ...(input.caller ? { caller: input.caller } : {}) }),
+          ...callerFor({ version, caller: input.caller }),
         }),
       ),
       toolNames: [],
@@ -117,7 +117,7 @@ export async function previewPrompt(
       // The clock a run started now would carry, so the preview does not hide a
       // line the model will read.
       now: runClock(deps),
-      ...callerFor({ version, ...(input.caller ? { caller: input.caller } : {}) }),
+      ...callerFor({ version, caller: input.caller }),
       // A preview stands for a top-level run, and that is the only kind offered
       // fan-out — hiding it here would show a prompt nobody sends.
       canDispatch: true,
