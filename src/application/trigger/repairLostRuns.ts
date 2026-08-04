@@ -8,6 +8,13 @@
  * corrects is the ledger, not the work. An operator has to be able to tell
  * "still running" from "nobody is coming back", and only this can say so.
  *
+ * **Two callers, because one tick is not a guarantee.** The scheduler's scan
+ * sweeps every project on a gated tick, and a webhook delivery sweeps its own
+ * trigger as it finishes. The second exists because the ticker is optional —
+ * a deployment can serve webhooks and configure no CronJob at all — and a
+ * durability fix that only runs where a scheduler happens to be pointed is not
+ * one.
+ *
  * **Enumeration walks projects rather than a cross-project index.** Schedule
  * rows carry one (`TYPE#SCHEDULE`) because the tick fires them every minute, so
  * listing them is that scan's hot path. Repair is not: it runs on a gated tick
@@ -37,8 +44,13 @@ export const REPAIR_MARGIN_SECONDS = 10 * 60;
 export const REPAIR_AFTER_SECONDS = RUN_LEASE_SECONDS + REPAIR_MARGIN_SECONDS;
 
 /**
- * How many recent history rows one trigger's pass reads. Newest first, so this
- * only has to cover what one lease-length of firings can write.
+ * How many history rows one trigger's pass reads.
+ *
+ * The window is bounded by `startedBefore`, not by recency, so this is "how many
+ * rows can be stranded at once", not "how many firings happened lately". A
+ * webhook trigger taking ten deliveries a minute writes hundreds of rows inside
+ * one lease; reading the newest fifty of *those* would never reach the row that
+ * actually needs finishing, however often the sweep ran.
  */
 export const REPAIR_SCAN_LIMIT = 50;
 
@@ -85,14 +97,22 @@ export async function repairLostRuns(deps: FiringDeps, at: Date): Promise<Repair
     for (const trigger of triggers) {
       // Regardless of `enabled`: disabling a trigger must not strand the row its
       // last firing left behind.
-      merge(summary, await repairTrigger(deps, trigger, at));
+      merge(summary, await repairTriggerRuns(deps, trigger, at));
     }
   }
   return summary;
 }
 
-/** One trigger's stranded rows, fenced so a throw costs only that trigger. */
-async function repairTrigger(
+/**
+ * One trigger's stranded rows, fenced so a throw costs only that trigger.
+ *
+ * Exported because a webhook delivery sweeps its own trigger on the way out. The
+ * scheduler's tick is the only *periodic* caller there is, and a deployment that
+ * serves webhooks with no ticker configured — which the operations guide says is
+ * a supported shape — would otherwise get none of this: its stranded rows would
+ * read `running` forever, which is the one state this module exists to remove.
+ */
+export async function repairTriggerRuns(
   deps: FiringDeps,
   trigger: Trigger,
   at: Date,
@@ -101,14 +121,19 @@ async function repairTrigger(
   const cutoff = at.getTime() - REPAIR_AFTER_SECONDS * 1000;
   let rows: TriggerRun[];
   try {
-    rows = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT);
+    rows = await deps.triggers.listRuns(trigger.projectName, trigger.triggerId, REPAIR_SCAN_LIMIT, {
+      // Ask for the rows that could be dead rather than the rows that are
+      // recent. On a busy trigger those sets do not overlap at all.
+      startedBefore: new Date(cutoff).toISOString(),
+    });
   } catch (error) {
     log.warn("trigger", `could not read runs of '${trigger.triggerId}' for repair`, error);
     return { repaired: 0, errors: 1 };
   }
   for (const row of rows) {
-    // An unparseable startedAt cannot prove the run is fresh, so it repairs too;
-    // if the run is somehow still alive, its own finish overwrites this.
+    // The bound is on the stored `startedAt` string, and a row whose value does
+    // not parse cannot prove the run is fresh — so it repairs too. If the run is
+    // somehow still alive, its own finish overwrites this.
     if (row.status !== "running" || Date.parse(row.startedAt) > cutoff) {
       continue;
     }

@@ -24,6 +24,19 @@ export interface TriggerRepository {
   appendRun(run: TriggerRun): Promise<void>;
   /** Finish a run in place — the row was written when it started. */
   finishRun(run: TriggerRun): Promise<void>;
-  /** Most recent runs first. */
-  listRuns(projectName: string, triggerId: string, limit: number): Promise<TriggerRun[]>;
+  /**
+   * Most recent runs first.
+   *
+   * `startedBefore` narrows the window to rows that started before that instant.
+   * The console wants the newest N; a repair sweep wants the newest N *that are
+   * old enough to be dead*, and on a trigger taking ten deliveries a minute
+   * those are not the same rows — a firing stranded twenty minutes ago sits
+   * under two hundred newer ones and would never appear in an unbounded page.
+   */
+  listRuns(
+    projectName: string,
+    triggerId: string,
+    limit: number,
+    opts?: { startedBefore?: string },
+  ): Promise<TriggerRun[]>;
 }

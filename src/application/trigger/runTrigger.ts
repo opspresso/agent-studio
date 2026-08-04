@@ -26,6 +26,7 @@ import type { Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
+import { repairTriggerRuns } from "./repairLostRuns";
 
 /** Bounded preview of a run's answer, kept on the firing row. */
 const MAX_RESULT_CHARS = 2_000;
@@ -295,6 +296,13 @@ export async function executeDelivery(
     return;
   }
   await executeFiring(deps, admitted, input);
+  // A delivery sweeps its own trigger on the way out, because the scheduler's
+  // tick is the only other thing that ever does and a deployment may serve
+  // webhooks with no ticker at all. It runs after the response has long gone and
+  // after this delivery's own row is closed, so it costs the sender nothing and
+  // never looks at the firing that started it: the cutoff is a whole lease in
+  // the past.
+  await repairTriggerRuns(deps, admitted.trigger, new Date());
 }
 
 /**

@@ -16,10 +16,10 @@ const MAX_BODY_BYTES = 1_000_000;
  *
  * It answers 202 and runs in the background. A run here can last ten minutes
  * and no webhook sender waits that long; the delivery's outcome goes on its
- * history row, which the console reads. That does mean an instance lost
- * mid-delivery leaves a row stuck in `running` — the same gap the Slack path
- * has; extending the schedule scan's repair to both is the trigger-durability
- * milestone.
+ * history row, which the console reads. An instance lost mid-delivery therefore
+ * leaves a row stuck in `running`; `repairLostRuns` finishes it, driven both by
+ * the schedule tick and by the next delivery this trigger takes, so a deployment
+ * with no ticker configured is covered too.
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
   const { project, trigger } = await ctx.params;

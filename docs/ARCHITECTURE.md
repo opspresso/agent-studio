@@ -940,8 +940,9 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
   to tell "it never fired" from "it fired and failed" without reading logs.
 - The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
   last ten minutes and no webhook sender waits that long. An instance lost mid-delivery leaves
-  a row stuck in `running`, which the scan tick's [repair sweep](#repairing-a-lost-firing)
-  finishes as `failed`. Slack keeps the gap on purpose: a lost event leaves no ledger row to
+  a row stuck in `running`, which the [repair sweep](#repairing-a-lost-firing) finishes as
+  `failed` — driven by the scan tick and by the trigger's own next delivery, so a deployment
+  with no ticker is covered too. Slack keeps the gap on purpose: a lost event leaves no row to
   finish, only a user without an answer, and re-running it collides with the non-idempotence
   the schedule decision already ruled on.
 
@@ -1003,6 +1004,20 @@ brands a healthy instance as lost.
 
 It corrects the **ledger, not the work**. Re-running is what the schedule crash policy already
 ruled out, and a webhook has no next occurrence to retry into anyway.
+
+**Two callers, because one tick is not a guarantee.** The scan sweeps every project on a gated
+tick; a webhook delivery sweeps its own trigger as it finishes. The second is what covers a
+deployment that serves webhooks and configures no ticker at all — a supported shape
+([OPERATIONS.md](OPERATIONS.md)), and one where the tick-only sweep would leave every stranded
+row `running` forever. The delivery's sweep runs after its own row is closed and reads a window
+a whole lease in the past, so it can neither delay the sender nor mistake its own firing for
+wreckage.
+
+**The window is bounded by start time, not by recency.** `listRuns` takes a `startedBefore`
+bound that maps onto the sort key, because the row a sweep is looking for is by definition old:
+a trigger taking ten deliveries a minute writes hundreds of rows inside one lease, and the
+newest fifty of those never include the one that needs finishing — it only sinks further the
+longer it stays stranded. Bounding the query costs the same read and asks the right question.
 
 **The sweep walks projects rather than an index**, which is the design decision here. Schedule
 rows carry `TYPE#SCHEDULE` because the tick fires them every minute — enumeration is that

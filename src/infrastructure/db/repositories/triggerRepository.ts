@@ -180,7 +180,7 @@ export const triggerRepository: TriggerRepository = {
     );
   },
 
-  async listRuns(projectName, triggerId, limit) {
+  async listRuns(projectName, triggerId, limit, opts = {}) {
     // Bounded rather than paginated with `queryAll`: this is the newest N of a
     // log that grows with every delivery, and reading all of it to show ten
     // rows would get worse the more the trigger is used.
@@ -189,13 +189,23 @@ export const triggerRepository: TriggerRepository = {
     // back short — but the sort key leads with the start time and this reads
     // backwards, so expired rows sort last and essentially never appear in a
     // page of the newest ones. No refill loop for a gap that cannot open.
+    //
+    // `startedBefore` bounds the sort key rather than filtering what came back.
+    // The start time leads the key, so the range *is* the window: the read costs
+    // `limit` rows however many newer ones exist above it. A filter would read
+    // the newest `limit` rows and discard them, which is exactly the way a busy
+    // trigger's stranded row stays invisible.
+    const prefix = keys.triggerRunPrefix(triggerId);
     const result = await getDocumentClient().send(
       new QueryCommand({
         TableName: getTableName(),
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        KeyConditionExpression: opts.startedBefore
+          ? "PK = :pk AND SK BETWEEN :prefix AND :before"
+          : "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
           ":pk": keys.projectPartition(projectName),
-          ":prefix": keys.triggerRunPrefix(triggerId),
+          ":prefix": prefix,
+          ...(opts.startedBefore ? { ":before": `${prefix}${opts.startedBefore}` } : {}),
         },
         ScanIndexForward: false,
         Limit: limit,
