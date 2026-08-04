@@ -6,6 +6,8 @@ import {
   groupUsage,
   OTHERS_KEY,
   providerOf,
+  toChartColumns,
+  toChartData,
   totalCalls,
   totalCost,
 } from "@/app/_lib/usage";
@@ -117,6 +119,25 @@ describe("buildDailySeries", () => {
   it("returns empty data for a malformed range", () => {
     const series = buildDailySeries(rows, "project", "not-a-date", "2026-01-02");
     expect(series.data).toEqual([]);
+  });
+});
+
+describe("toChartColumns / toChartData", () => {
+  it("addresses a dotted model id by a dot-free key and keeps the id as the label", () => {
+    const series = buildDailySeries(rows, "model", "2026-01-01", "2026-01-01");
+    const columns = toChartColumns(series.keys);
+    expect(columns.map((column) => column.label)).toEqual(series.keys);
+    expect(columns.every((column) => !column.dataKey.includes("."))).toBe(true);
+    const dotted = columns.find((column) => column.label === "google/gemini-3.1-flash-lite");
+    expect(dotted).toBeDefined();
+    expect(toChartData(series.data, columns)[0]?.[dotted!.dataKey]).toBeCloseTo(0.2, 6);
+  });
+
+  it("zero-fills a key the point does not carry", () => {
+    const columns = toChartColumns(["a", "b"]);
+    expect(toChartData([{ date: "2026-01-01", a: 3 }], columns)).toEqual([
+      { date: "2026-01-01", s0: 3, s1: 0 },
+    ]);
   });
 });
 

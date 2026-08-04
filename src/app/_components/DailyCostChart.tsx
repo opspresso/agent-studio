@@ -2,7 +2,7 @@
 
 import { BarChart, type ChartSeries } from "@mantine/charts";
 import { Divider, Group, Paper, Text } from "@mantine/core";
-import { OTHERS_KEY, type DailySeriesPoint } from "../_lib/usage";
+import { OTHERS_KEY, toChartColumns, toChartData, type DailySeriesPoint } from "../_lib/usage";
 
 const SERIES_COLORS = [
   "var(--chart-1)",
@@ -100,15 +100,20 @@ function ChartTooltip({
 }
 
 export function DailyCostChart({ data, keys }: { data: DailySeriesPoint[]; keys: string[] }) {
-  const series: ChartSeries[] = keys.map((key, index) => ({
-    name: key,
-    color: key === OTHERS_KEY ? "var(--chart-others)" : SERIES_COLORS[index % SERIES_COLORS.length],
+  const columns = toChartColumns(keys);
+  const series: ChartSeries[] = columns.map((column, index) => ({
+    name: column.dataKey,
+    label: column.label,
+    color:
+      column.label === OTHERS_KEY
+        ? "var(--chart-others)"
+        : SERIES_COLORS[index % SERIES_COLORS.length],
   }));
 
   return (
     <BarChart
       h={288}
-      data={data}
+      data={toChartData(data, columns)}
       dataKey="date"
       type="stacked"
       series={series}
@@ -122,7 +127,7 @@ export function DailyCostChart({ data, keys }: { data: DailySeriesPoint[]; keys:
       valueFormatter={formatUsd}
       tooltipProps={{ content: ChartTooltip }}
       tooltipAnimationDuration={0}
-      barProps={{ isAnimationActive: false }}
+      barProps={(item) => ({ isAnimationActive: false, name: item.label ?? item.name })}
     />
   );
 }

@@ -74,6 +74,38 @@ export interface DailySeries {
   keys: string[];
 }
 
+export interface ChartColumn {
+  /** What the chart addresses the series by. Never contains a dot. */
+  dataKey: string;
+  /** What the reader sees: a project name, a model id, or `OTHERS_KEY`. */
+  label: string;
+}
+
+/**
+ * A model id can carry a dot (`openai/gpt-5.4`), and both recharts (which reads
+ * a `dataKey` as a nested path) and Mantine's legend (which renders only what
+ * follows the last dot) mangle one — `openai/gpt-5.4` showed up as `4`. Address
+ * every series by its index instead and carry the name as a label neither of
+ * them parses.
+ */
+export function toChartColumns(keys: string[]): ChartColumn[] {
+  return keys.map((label, index) => ({ dataKey: `s${index}`, label }));
+}
+
+/** Re-keys `buildDailySeries` points onto the dot-free keys of `columns`. */
+export function toChartData(
+  data: DailySeriesPoint[],
+  columns: ChartColumn[],
+): DailySeriesPoint[] {
+  return data.map((point) => {
+    const row: DailySeriesPoint = { date: point.date };
+    for (const column of columns) {
+      row[column.dataKey] = point[column.label] ?? 0;
+    }
+    return row;
+  });
+}
+
 export function buildDailySeries(
   items: UsageRow[],
   by: GroupBy,
