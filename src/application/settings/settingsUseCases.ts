@@ -108,12 +108,30 @@ export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
 };
 
 /**
- * Which keys a patch actually carried — the audit row's detail. Names only:
+ * Which settings a write actually moved — the audit row's detail. Names only:
  * two of these fields *are* credentials, and a third is the admin list, so
  * recording what changed must never record what it changed to.
+ *
+ * Diffed against what was stored rather than read off the patch's key set,
+ * because the settings page submits every field on every save. Keys-carried
+ * would make the detail a constant listing all ten, which says only "the form
+ * was saved" — the one thing the row already says by existing. "Who changed the
+ * admin list last quarter" is the question this trail exists for, and a constant
+ * cannot answer it.
+ *
+ * The comparison is on the *stored* form, so a masked secret resubmitted
+ * unchanged compares equal and a cleared override compares against `undefined`.
  */
-function touchedKeys(patch: SettingsUpdate): string[] {
-  return Object.keys(patch).filter((key) => patch[key as keyof SettingsUpdate] !== undefined);
+function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSettings): string[] {
+  const changed: string[] = specs
+    .filter((spec) => stored?.[spec.key] !== next[spec.key])
+    .map((spec) => spec.key);
+  // Structural rather than by reference: the list is rebuilt on every write that
+  // carries one, so identity would report a change for a resubmitted list.
+  if (JSON.stringify(stored?.llmProviders) !== JSON.stringify(next.llmProviders)) {
+    changed.push("llmProviders");
+  }
+  return changed;
 }
 
 function toProviderViews(
@@ -324,6 +342,9 @@ export function createSettingsUseCases(
         );
       }
 
+      // Before `updatedAt` moves, which every write bumps and no reader of this
+      // row cares about.
+      const changed = changedKeys(specs, stored, next);
       next.updatedAt = new Date().toISOString();
       await repo.put(next);
       // The row keeps only *which* keys were written, never their values: the
@@ -333,7 +354,7 @@ export function createSettingsUseCases(
         actorEmail: userEmail,
         action: "settings.update",
         target: auditTarget("settings", "app"),
-        detail: touchedKeys(patch).join(", ") || "no fields",
+        detail: changed.join(", ") || "no fields changed",
       });
       return toView(cipher, env, parseProviderConfigs, specs, next);
     },

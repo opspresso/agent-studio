@@ -27,6 +27,7 @@ import {
   ValidationError,
   isConditionalWriteFailure,
 } from "@/application/errors";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { log } from "@/shared/logger";
 
 export interface CreateManagedInput {
@@ -113,7 +114,13 @@ const DEFAULT_ENDPOINT_PATH = "/mcp";
 export interface ManagedMcpUseCases {
   create(input: CreateManagedInput): Promise<McpServer>;
   update(name: string, input: UpdateManagedInput): Promise<McpServer>;
-  remove(name: string): Promise<void>;
+  /**
+   * `actorEmail` for the same reason `RegistryUseCases.remove` takes one: this
+   * deletes a row from the shared MCP registry, and it is the row that would
+   * have said anything about the entry. That it also destroys a container makes
+   * the record more useful here, not less.
+   */
+  remove(name: string, actorEmail: string): Promise<void>;
   status(name: string): Promise<ManagedMcpStatus>;
   /**
    * Re-create one entry's container against the namespace this app has now.
@@ -403,7 +410,7 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       return view(updated);
     },
 
-    async remove(name) {
+    async remove(name, actorEmail) {
       const existing = await requireManaged(name);
       // Container first. The entry is what makes it reachable, so a failure
       // after this point leaves something unreachable rather than something
@@ -411,6 +418,16 @@ export function createManagedMcpUseCases(deps: ManagedMcpDeps): ManagedMcpUseCas
       await deps.provisioner.stop(name);
       await deps.repo.delete(name);
       deps.probe.invalidateDiscovery(existing.url);
+      // Same action and the same `mcp:` target as an unmanaged deletion: the
+      // reader is asking who removed an MCP server, and which of the two routes
+      // it went through is not the question. Written here rather than in the
+      // route because this is the one place the deletion happens.
+      await recordAudit({
+        actorEmail,
+        action: "registry.delete",
+        target: auditTarget("mcp", name),
+        detail: "managed; its container was stopped",
+      });
     },
 
     async status(name) {

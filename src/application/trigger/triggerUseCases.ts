@@ -292,11 +292,21 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const removed = await load(projectName, triggerId);
       await deps.triggers.delete(projectName, triggerId);
+      // Only a webhook deletion is a revocation: its row *is* the credential, so
+      // deleting it stops a secret from working. A schedule has none — twelve
+      // lines up, revealing one is refused for exactly that reason — and
+      // recording its deletion under `secret.revoke` would put rows that are not
+      // credential removals into the filter an auditor uses to enumerate them.
+      // The closed action set is what makes that filter trustworthy; widening
+      // what one action means is the same drift as spelling `target` twice.
+      if (removed.kind !== "webhook") {
+        return;
+      }
       await recordAudit({
         actorEmail: userEmail,
         action: "secret.revoke",
         target: auditTarget("project", projectName),
-        detail: `${removed.kind} trigger '${triggerId}' deleted`,
+        detail: `webhook trigger '${triggerId}' deleted; its secret stopped working`,
       });
     },
 

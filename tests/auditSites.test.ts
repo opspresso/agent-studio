@@ -184,6 +184,35 @@ describe("app settings", () => {
     await expect(useCases().update({ adminEmails: " , " }, ADMIN)).rejects.toThrow();
     expect(rows).toHaveLength(0);
   });
+
+  it("names what changed, not what the form submitted", async () => {
+    // The settings page posts all ten fields on every save. Keys-carried made
+    // the detail a constant listing them all, which says only "the form was
+    // saved" — and "who changed the admin list last quarter" then has no answer.
+    const cases = useCases();
+    await cases.update({ toolsRepo: "org/tools", skillsRepo: "org/skills" }, ADMIN);
+    rows = [];
+    await cases.update({ toolsRepo: "org/tools", skillsRepo: "org/other" }, ADMIN);
+    expect(rows[0]?.detail).toBe("skillsRepo");
+  });
+
+  it("says so when a save moved nothing", async () => {
+    const cases = useCases();
+    await cases.update({ toolsRepo: "org/tools" }, ADMIN);
+    rows = [];
+    await cases.update({ toolsRepo: "org/tools" }, ADMIN);
+    expect(rows[0]?.detail).toBe("no fields changed");
+  });
+
+  it("does not report a resubmitted masked secret as a change", async () => {
+    // A mask can only confirm a secret. The write keeps the stored value, so the
+    // row must not claim the credential moved.
+    const cases = useCases();
+    await cases.update({ llmApiKey: "sk-live" }, ADMIN);
+    rows = [];
+    await cases.update({ llmApiKey: "****", toolsRepo: "org/tools" }, ADMIN);
+    expect(rows[0]?.detail).toBe("toolsRepo");
+  });
 });
 
 describe("webhook trigger secrets", () => {
@@ -235,6 +264,27 @@ describe("webhook trigger secrets", () => {
   it("records a deletion", async () => {
     await useCases().remove("p", "inbound", OWNER);
     expect(actions()).toEqual(["secret.revoke"]);
+  });
+
+  it("records a schedule deletion as no revocation, because there was no secret", async () => {
+    // `secret.revoke` means "a credential was removed". A schedule has none —
+    // revealing one is refused for that exact reason — and filing its deletion
+    // under the action an auditor filters on to enumerate credential removals
+    // makes that filter untrustworthy.
+    const schedule: Trigger = {
+      projectName: "p",
+      triggerId: "nightly",
+      kind: "schedule",
+      description: "",
+      enabled: true,
+      cron: "0 9 * * *",
+      timezone: "Asia/Seoul",
+      allowConcurrent: false,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    await useCases(schedule).remove("p", "nightly", OWNER);
+    expect(rows).toHaveLength(0);
   });
 });
 
