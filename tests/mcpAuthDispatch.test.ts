@@ -21,6 +21,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
+import { fakeSkillRepository } from "./fakeSkills";
 
 const MCP_URL = "https://oauth-mcp.test/mcp";
 
@@ -329,7 +330,7 @@ function runDeps(
   return {
     projects: { get: reject },
     versions: { get: reject },
-    skills: { get: reject },
+    skills: fakeSkillRepository(reject),
     mcps: { get: async () => OAUTH_SERVER },
     externalAgents: { get: reject },
     usage: { record: async () => {} },

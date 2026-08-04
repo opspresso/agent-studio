@@ -9,10 +9,16 @@ import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./m
 import { log } from "@/shared/logger";
 
 /**
- * One read per skill per run, shared by the prompt's skill table and the `Skill`
- * tool. Without it a run fetched every connected skill's whole item (body plus
- * attachments) just to render a description, then fetched it again on each load.
- * A skill edited mid-run is not picked up, which is what consistency wants.
+ * One read per skill per run, behind the `Skill` tool.
+ *
+ * The tool can be called repeatedly for the same skill — once for the body, then
+ * once per attachment — and every call used to be its own item read. A skill
+ * edited mid-run is not picked up, which is what consistency wants.
+ *
+ * Built once per *run*, not once per agent: it travels down the transfer chain
+ * with the pinned clock, so a chain whose hops share a skill reads it once. The
+ * registry is global and this cache is keyed by name, so there is nothing
+ * project-specific to keep apart.
  */
 export type SkillReader = (name: string) => Promise<Skill | null>;
 
@@ -33,35 +39,36 @@ export function createSkillReader(deps: Pick<ExecutionDeps, "skills">): SkillRea
  * Skills the run can actually load. A binding whose skill was deleted from the
  * registry is dropped instead of advertised with an empty description: telling
  * the model about a skill that always fails to load only buys a wasted turn.
+ *
+ * Reads descriptions, not skills. The prompt's table shows a name and one line,
+ * and asking for the whole item to render it meant a run paid for every bound
+ * skill's body and attachments before its first token — including the runs whose
+ * model never called the tool, which is the case progressive disclosure exists
+ * for. The body is read by {@link buildSkillLoader}, when a call asks for it.
  */
 export async function resolveSkills(
-  readSkill: SkillReader,
+  deps: Pick<ExecutionDeps, "skills">,
   skillList: string[] | undefined,
 ): Promise<{ skills: engine.SkillInfo[]; warnings: string[] }> {
-  // Warnings are read off the settled results, not pushed from inside the
-  // callbacks, so their order follows the version's list rather than whichever
-  // repository read happened to finish first.
-  const resolved = await Promise.all(
-    (skillList ?? []).map(
-      async (name): Promise<{ skill?: engine.SkillInfo; warning?: string }> => {
-        const skill = await readSkill(name);
-        if (!skill) {
-          log.warn("run", `skill '${name}' is not in the registry; not offering it this run`);
-          return { warning: `Skill '${name}' is no longer in the registry; it was not offered.` };
-        }
-        return { skill: { name, description: skill.description ?? "" } };
-      },
-    ),
+  const names = skillList ?? [];
+  if (names.length === 0) {
+    return { skills: [], warnings: [] };
+  }
+  const described = new Map(
+    (await deps.skills.describe(names)).map((entry) => [entry.name, entry.description]),
   );
+  // Walked in the version's own order, so what a run reports about its bindings
+  // reads in the order the version lists them.
   const skills: engine.SkillInfo[] = [];
   const warnings: string[] = [];
-  for (const entry of resolved) {
-    if (entry.skill) {
-      skills.push(entry.skill);
+  for (const name of names) {
+    const description = described.get(name);
+    if (description === undefined) {
+      log.warn("run", `skill '${name}' is not in the registry; not offering it this run`);
+      warnings.push(`Skill '${name}' is no longer in the registry; it was not offered.`);
+      continue;
     }
-    if (entry.warning) {
-      warnings.push(entry.warning);
-    }
+    skills.push({ name, description });
   }
   return { skills, warnings };
 }
@@ -122,9 +129,8 @@ export function buildSkillLoader(
  * server-side until that server times it out.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects"> & McpToolDeps,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills"> & McpToolDeps,
   version: Version,
-  readSkill: SkillReader,
   signal?: AbortSignal,
 ): Promise<{
   skills: engine.SkillInfo[];
@@ -142,7 +148,7 @@ export async function resolveRunTools(
   );
   try {
     const [skills, subagents, settled] = await Promise.all([
-      resolveSkills(readSkill, version.skillList),
+      resolveSkills(deps, version.skillList),
       resolveSubagents(deps, version.subagentList),
       mcpSettled,
     ]);

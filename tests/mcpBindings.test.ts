@@ -24,6 +24,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { McpBinding, Project, Version } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
+import { fakeSkillRepository } from "./fakeSkills";
 
 const MCP_URL = "https://shared-mcp.test/mcp";
 
@@ -78,7 +79,7 @@ function depsFixture(
     ...(overrides.mcpAuth ? { mcpAuth: overrides.mcpAuth } : {}),
     projects: { get: reject, list: reject, put: reject, delete: reject },
     versions: { get: reject, list: reject, put: reject, delete: reject },
-    skills: { get: reject, list: reject, put: reject, delete: reject },
+    skills: fakeSkillRepository(reject),
     mcps: { get: async () => server, list: reject, put: reject, delete: reject },
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {

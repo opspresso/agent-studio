@@ -23,6 +23,7 @@ import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import { fakeSkillRepository } from "./fakeSkills";
 
 /** An MCP server whose tool is named exactly like a builtin. */
 const registryServer = {
@@ -77,7 +78,7 @@ function depsFixture(channel: FakeChannel) {
   return {
     projects: { get: reject, list: reject, put: reject, delete: reject },
     versions: { get: reject, list: reject, put: reject, delete: reject },
-    skills: { get: reject, list: reject, put: reject, delete: reject },
+    skills: fakeSkillRepository(reject),
     mcps: { get: async () => registryServer, list: reject, put: reject, delete: reject },
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
