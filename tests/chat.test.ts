@@ -39,6 +39,7 @@ function message(partial: {
   toolCallId?: string;
   toolName?: string;
   toolCalls?: import("@/domain/llm/types").ChannelToolCall[];
+  images?: import("@/domain/chat/types").ChatMessageImage[];
 }): ChatMessage {
   return {
     chatId: "c1",
@@ -203,6 +204,26 @@ describe("toEngineMessages", () => {
       { role: "assistant", content: "", tool_calls: [{ id: "call_1" }] },
       { role: "tool", content: "42", tool_call_id: "call_1" },
     ]);
+  });
+
+  it("marks an image-only turn whose images can no longer be addressed", () => {
+    // Left as-is it replays as an empty user message — a shape some providers
+    // refuse outright and none can make anything of. The marker also puts the
+    // loss where the model reads it, so a follow-up about the picture gets an
+    // answer that knows the picture is gone.
+    expect(
+      toEngineMessages([
+        message({ seq: 0, role: "user", content: "", images: [{ key: "images/gone.png" }] }),
+      ]).messages,
+    ).toEqual([{ role: "user", content: "[The image(s) attached to this turn are no longer available.]" }]);
+  });
+
+  it("leaves a turn that never carried an image alone", () => {
+    // The marker reports a loss; inventing one for a turn stored empty would
+    // put a sentence about a missing picture into a conversation that had none.
+    expect(
+      toEngineMessages([message({ seq: 0, role: "user", content: "" })]).messages,
+    ).toEqual([{ role: "user", content: "" }]);
   });
 
   it("drops a declared call whose result was never stored, rather than orphaning it", () => {

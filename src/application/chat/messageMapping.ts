@@ -55,10 +55,16 @@ function userMessage(message: UserChatMessage): ChatMessageInput {
   // outright and none can make anything of. The marker keeps the conversation
   // well-formed and puts the loss where the model will read it, which is the
   // same thing a truncated tool result does.
+  //
+  // Conditioned on the turn having *had* images, not on it being empty: a turn
+  // stored with no content and no attachments replays empty because that is
+  // what it was, and telling the model an image went missing from it would be
+  // inventing the loss rather than reporting one.
+  const lostEveryImage = images.length === 0 && (message.images?.length ?? 0) > 0;
   const content =
-    message.content || documents.length > 0 || images.length > 0
-      ? message.content
-      : "[The image(s) attached to this turn are no longer available.]";
+    !message.content && documents.length === 0 && lostEveryImage
+      ? "[The image(s) attached to this turn are no longer available.]"
+      : message.content;
   return {
     role: "user",
     // Assembled by the same function the turn was sent with: a replay shaped
