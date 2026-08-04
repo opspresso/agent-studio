@@ -57,6 +57,8 @@ async function main() {
   );
   const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
+  const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
+  const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
   const { executionDeps } = await import("@/lib/container");
   const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
@@ -139,6 +141,12 @@ async function main() {
 
   const suffix = Date.now().toString(36);
   const projectName = `it-proj-${suffix}`;
+  // Audit rows are the one fixture no repository can remove: the entity is
+  // append-only on purpose — a record its subject could erase would not be one —
+  // and it lives outside the project partition the cascade clears. Their keys
+  // are collected here so the `finally` can delete them through the client,
+  // since this table is shared with every other project on the machine.
+  const auditFixtures: Array<{ day: string; createdAt: string; eventId: string }> = [];
 
   try {
     // ---------- project + version ----------
@@ -408,6 +416,78 @@ async function main() {
     );
     pass("usage attribution: per-caller rows, project totals unaffected");
 
+    // ---------- trigger history (the repair sweep's bounded window) ----------
+    // The bound is a sort-key range, not a filter, and a mocked doc client
+    // cannot tell a working KeyConditionExpression from a broken one — which is
+    // the whole reason repository queries are checked here.
+    const triggerId = `it-hook-${suffix}`;
+    const runAt = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+    const oldRun = { projectName, triggerId, runId: "old", status: "running" as const, startedAt: runAt(3_600_000) };
+    const recentRun = { projectName, triggerId, runId: "recent", status: "running" as const, startedAt: runAt(1_000) };
+    await triggerRepository.appendRun(oldRun);
+    await triggerRepository.appendRun(recentRun);
+    const newestFirst = await triggerRepository.listRuns(projectName, triggerId, 10);
+    assert.deepEqual(
+      newestFirst.map((r) => r.runId),
+      ["recent", "old"],
+      "trigger runs come back newest first",
+    );
+    const beforeCutoff = await triggerRepository.listRuns(projectName, triggerId, 10, {
+      startedBefore: runAt(60_000),
+    });
+    assert.deepEqual(
+      beforeCutoff.map((r) => r.runId),
+      ["old"],
+      "startedBefore bounds the window to rows old enough to be dead",
+    );
+    await triggerRepository.finishRun({
+      ...oldRun,
+      status: "failed",
+      endedAt: now,
+      error: "lost",
+    });
+    assert.equal(
+      (await triggerRepository.listRuns(projectName, triggerId, 10)).find((r) => r.runId === "old")
+        ?.status,
+      "failed",
+      "a repaired row is finished in place",
+    );
+    pass("trigger run history: newest-first, startedBefore window, finish in place");
+
+    // ---------- audit records (day partition, newest first) ----------
+    const auditDay = today;
+    const auditRows = [
+      {
+        eventId: `it-audit-a-${suffix}`,
+        actorEmail: "it@example.com",
+        action: "settings.update" as const,
+        target: `settings:app-${suffix}`,
+        detail: "adminEmails",
+        createdAt: now,
+      },
+      {
+        eventId: `it-audit-b-${suffix}`,
+        actorEmail: "it@example.com",
+        action: "secret.reveal" as const,
+        target: `project:${projectName}`,
+        createdAt: new Date(Date.parse(now) + 1000).toISOString(),
+      },
+    ];
+    for (const row of auditRows) {
+      await auditRepository.append(row);
+      auditFixtures.push({ day: auditDay, createdAt: row.createdAt, eventId: row.eventId });
+    }
+    const dayRows = await auditRepository.listByDay(auditDay);
+    const mine = dayRows.filter((row) => row.eventId.endsWith(suffix));
+    assert.deepEqual(
+      mine.map((row) => row.eventId),
+      [`it-audit-b-${suffix}`, `it-audit-a-${suffix}`],
+      "audit rows come back newest first within the day",
+    );
+    assert.equal(mine[1]?.detail, "adminEmails", "detail round-trips");
+    assert.equal(mine[0]?.detail, undefined, "an absent detail stays absent");
+    pass("audit append + day-partition listing");
+
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------
     const slotActor = `user:slots-${suffix}@example.com`;
     const nowSeconds = Math.floor(Date.now() / 1000);
@@ -482,6 +562,21 @@ async function main() {
     await mcpRepository.delete(`it-mcp-${suffix}`).catch(() => {});
     await externalAgentRepository.delete(`it-agent-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
+    if (auditFixtures.length > 0) {
+      const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
+      const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
+      const { keys } = await import("@/infrastructure/db/keys");
+      for (const fixture of auditFixtures) {
+        await getDocumentClient()
+          .send(
+            new DeleteCommand({
+              TableName: getTableName(),
+              Key: keys.auditEvent(fixture.day, fixture.createdAt, fixture.eventId),
+            }),
+          )
+          .catch(() => {});
+      }
+    }
     mock.close();
   }
 
