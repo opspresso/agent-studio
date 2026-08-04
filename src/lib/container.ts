@@ -365,19 +365,17 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
       "@/application/execution/runProject"
     );
     if (runStrategyFor(input.project) === "image") {
-      const { generateImage } = await import("@/application/image/generateImage");
-      const image = await generateImage(imageDeps, {
+      // Which deps bag an image run takes is this file's decision; what its
+      // chunks look like is not. Assembling them here left the ending
+      // announcement to a wiring site, which is how it went missing once.
+      const { generateImageStream } = await import("@/application/image/generateImage");
+      yield* generateImageStream(imageDeps, {
         project: input.project,
         version: input.version,
         ...(input.variables ? { variables: input.variables } : {}),
         ...(input.message ? { prompt: input.message } : {}),
         actor: input.actor,
       });
-      yield { image: { b64: image.imageBase64, mimeType: image.mimeType } };
-      // Every stream producer announces its ending ("Why a run ended is
-      // announced, never inferred" — ARCHITECTURE.md); this was the one that
-      // did not, latent only until a termination-reading consumer met it.
-      yield { done: true };
       return;
     }
     yield* executeProjectStream(executionDeps, {

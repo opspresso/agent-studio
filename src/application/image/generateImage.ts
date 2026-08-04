@@ -1,6 +1,7 @@
 import { getModelConfig, toImageUsageRecord } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
 import { renderTemplate } from "@/application/llm/template";
+import type { EngineChunk } from "@/domain/llm/types";
 import type { ImageBytes, ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
@@ -54,6 +55,30 @@ export interface GenerateImageOutput {
   mimeType: string;
   model: string;
   usage: { inputTokens: number; outputTokens: number; costUsd: number };
+}
+
+/**
+ * An image run for a surface that consumes runs as chunks.
+ *
+ * The picture is the whole answer, so this is one `image` chunk followed by the
+ * `done` every stream producer owes its consumer. `executeProjectStream` cannot
+ * absorb this: `/chat/completions` depends on it refusing an image project
+ * outright — an image has no chat completion — and a facade that streamed one
+ * for the benefit of a single caller would need a flag deciding whether a
+ * project type is refused, which is the shape of the bug the refusal prevents.
+ *
+ * It lives here rather than at that caller because that is where it was: the
+ * webhook runner assembled these two chunks by hand in the composition root,
+ * and it was the one producer that never announced its ending — latent until a
+ * termination-reading consumer met it.
+ */
+export async function* generateImageStream(
+  deps: ImageGenerationDeps,
+  input: GenerateImageInput,
+): AsyncGenerator<EngineChunk> {
+  const image = await generateImage(deps, input);
+  yield { image: { b64: image.imageBase64, mimeType: image.mimeType } };
+  yield { done: true };
 }
 
 async function finishTrace(recorder: TraceRecorder | undefined, error?: unknown): Promise<void> {

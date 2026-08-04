@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { generateImage } from "@/application/image/generateImage";
+import { generateImage, generateImageStream } from "@/application/image/generateImage";
 import { calculateImageCost } from "@/domain/llm/models";
+import type { EngineChunk } from "@/domain/llm/types";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
@@ -216,6 +217,35 @@ describe("generateImage", () => {
 
     expect(result.imageBase64).toBe("aGVsbG8=");
     expect(result.usage.outputTokens).toBe(4160);
+  });
+});
+
+describe("generateImageStream", () => {
+  it("delivers the picture and announces the ending", async () => {
+    // Both chunks matter. The webhook runner used to assemble them by hand in
+    // the composition root and emitted only the first, so a consumer reading a
+    // run's termination could never see this one end.
+    const { deps, prompts } = fakeDeps();
+    const chunks: EngineChunk[] = [];
+    for await (const chunk of generateImageStream(deps, {
+      project,
+      version: version("openai/gpt-image-2"),
+      prompt: "a fox",
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(prompts).toEqual(["a fox"]);
+    expect(chunks).toEqual([
+      { image: { b64: "aGVsbG8=", mimeType: "image/png" } },
+      { done: true },
+    ]);
+  });
+
+  it("does not swallow a refusal into an empty stream", async () => {
+    const { deps } = fakeDeps();
+    const stream = generateImageStream(deps, { project, version: version("openai/gpt-5-mini") });
+    await expect(stream.next()).rejects.toThrow(/does not support image generation/);
   });
 });
 
