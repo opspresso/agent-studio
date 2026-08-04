@@ -14,14 +14,17 @@ import { log } from "@/shared/logger";
 export const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
 
 /**
- * The image model a version's builtins draw with — resolved once per run.
+ * The image model a version's builtins draw with — one answer for both.
  *
- * Both builtins are strictly opt-in per version and both ride on the same
- * choice, and they used to answer it separately. The copies had already drifted:
- * only the generator warned about a stored `imageModel` that has since left the
- * registry, so the same misconfiguration spoke up when the run drew and stayed
- * silent when it redrew. Resolving here also means one warning per run rather
- * than one per builtin.
+ * They are gated on the same per-version opt-in and reach the same model, and
+ * they used to compute it separately — each in its own builder's body, both run
+ * when the deps are assembled. Only the generator warned about a stored
+ * `imageModel` that has since left the registry; the editor took the same
+ * fallback silently.
+ *
+ * Nothing observable differed. The two builders run together and that one
+ * warning went out, so this removed a copy rather than repaired a behaviour —
+ * what it buys is that the next change to the rule cannot land in one of them.
  *
  * `undefined` means the version did not opt in, or that no registry entry can
  * draw at all. A model that left the registry falls back to the default instead

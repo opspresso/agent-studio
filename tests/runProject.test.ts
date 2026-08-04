@@ -293,15 +293,24 @@ describe("executeAgent GenerateImage opt-in", () => {
     expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
   });
 
-  it("reports a stale imageModel once for the run, not once per builtin", async () => {
-    // Both builtins draw with the same model. Resolving it in each of them is
-    // what let them disagree: only the generator said the stored model was gone.
+  it("hands both builtins the same model when the stored one is stale", async () => {
+    // What `resolveImageModel` is for. The two builders used to compute this
+    // separately from the same inputs — the copy was the risk, not a behaviour
+    // difference — so the invariant worth pinning is that a run's draw and its
+    // redraw reach the same model, and that the fallback is reported.
     const lines: string[] = [];
     const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => {
       lines.push(line);
     });
-    const channel = new FakeChannel(imageCallScript);
-    const { deps } = executionDepsFixture(channel);
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_gen", "GenerateImage", '{"prompt":"a fox"}'), usageChunk(1, 1)],
+      [
+        toolCallChunk(0, "call_edit", "EditImage", '{"image_id":"img_1","prompt":"at night"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Done."), usageChunk(1, 1)],
+    ]);
+    const { deps, imageModels, edits } = executionDepsFixture(channel);
     await collect(
       executeAgent(deps, {
         project: projectFixture(),
@@ -310,12 +319,16 @@ describe("executeAgent GenerateImage opt-in", () => {
           imageGeneration: true,
           imageModel: "removed/model",
         }),
-        messages: [{ role: "user", content: "draw a fox" }],
+        messages: [{ role: "user", content: "draw a fox, then make it night" }],
       }),
     );
     warn.mockRestore();
 
-    expect(lines.filter((line) => line.includes("removed/model"))).toHaveLength(1);
+    expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
+    expect(edits).toEqual([
+      { model: DEFAULT_IMAGE_MODEL, prompt: "at night", sources: ["aW1n"] },
+    ]);
+    expect(lines.some((line) => line.includes("removed/model"))).toBe(true);
   });
 });
 
