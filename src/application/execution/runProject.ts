@@ -313,6 +313,16 @@ export async function* executeAgent(
     // clock exists to remove. The pinned deps travel down the transfer chain.
     const startedAt = runClock(deps);
     const runDeps: ExecutionDeps = { ...deps, now: () => startedAt };
+    // Tools first, deps second: the dispatcher the deps carry is the one this
+    // resolve produced, so the bag is complete when it is built rather than
+    // patched afterwards.
+    const { skills, subagents, mcp, warnings } = await resolveRunTools(
+      deps,
+      input.version,
+      readSkill,
+      runSignal,
+    );
+    closeMcpSessions = mcp.close;
     const agentDeps = await buildAgentDeps(
       runDeps,
       input.version,
@@ -321,15 +331,8 @@ export async function* executeAgent(
       origin,
       readSkill,
       runSignal,
+      mcp.callMcpTool,
     );
-    const { skills, subagents, mcp, warnings } = await resolveRunTools(
-      deps,
-      input.version,
-      readSkill,
-      runSignal,
-    );
-    agentDeps.callMcpTool = mcp.callMcpTool;
-    closeMcpSessions = mcp.close;
     // Before the first token: what this run lost is part of reading its answer.
     for (const warning of warnings) {
       const chunk: EngineChunk = { warning };
