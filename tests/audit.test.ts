@@ -146,4 +146,36 @@ describe("reading a range", () => {
     expect(daysInRange(from, to).length).toBeGreaterThan(MAX_AUDIT_RANGE_DAYS);
     await expect(useCases.list({ from, to })).rejects.toBeInstanceOf(ValidationError);
   });
+
+  it("refuses a month that does not exist rather than answering that nothing happened", async () => {
+    // `2026-13-01` has the right shape and parses to NaN, which used to make the
+    // range empty — so the endpoint answered 200 with no events. For an
+    // append-only trail "that is everything" is a worse answer than an error.
+    setAuditSink(sink);
+    await recordAudit(
+      { actorEmail: "a@example.com", action: "settings.update", target: "settings:app" },
+      new Date("2026-08-03T10:00:00Z"),
+    );
+    await expect(useCases.list({ from: "2026-13-01" })).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("refuses a day its month does not have, rather than rolling into the next one", async () => {
+    // `2026-02-31` parses to March 3rd, which would silently return three days
+    // of March under a query that named February.
+    await expect(
+      useCases.list({ from: "2026-02-01", to: "2026-02-31" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("refuses an enormous range without first building it", async () => {
+    // The day count is arithmetic; enumerating this range allocates a Date and a
+    // string 3.6 million times, which blocks the one event loop for seconds
+    // before the refusal it was always going to end in.
+    const started = process.hrtime.bigint();
+    await expect(
+      useCases.list({ from: "0001-01-01", to: "9999-12-31" }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    expect(elapsedMs).toBeLessThan(100);
+  });
 });

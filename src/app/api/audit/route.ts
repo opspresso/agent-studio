@@ -1,6 +1,7 @@
 import { auditUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 import { withAdminAuth } from "@/lib/session";
+import { utcDay } from "@/shared/date";
 
 /**
  * The audit trail, a UTC day range at a time. Admin-only: the rows name people.
@@ -11,7 +12,7 @@ import { withAdminAuth } from "@/lib/session";
  */
 export const GET = withAdminAuth(async (_user, request: Request) => {
   const url = new URL(request.url);
-  const from = url.searchParams.get("from") ?? new Date().toISOString().slice(0, 10);
+  const from = url.searchParams.get("from") ?? utcDay(new Date());
   const to = url.searchParams.get("to");
   try {
     const events = await auditUseCases.list({ from, ...(to ? { to } : {}) });
