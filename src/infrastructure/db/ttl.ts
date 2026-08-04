@@ -12,11 +12,9 @@ import { positiveIntEnv } from "@/lib/config";
 const SECONDS_PER_DAY = 86_400;
 
 /**
- * Through `config`, which owns the parse and the warning. This file kept its
- * own reader, and it was the quiet one of the three: a typo'd retention window
- * fell back to the default without saying so, and the row an operator meant to
- * keep for a year was deleted after the default instead. Zero is not a window,
- * so the floor is one day rather than none.
+ * Through `config`, which owns the parse and the warning — and dedupes it, which
+ * matters here: these are getters read on every row write, once per model call
+ * for usage. Zero is not a window, so the floor is one day rather than none.
  */
 function retentionDays(envVar: string, fallback: number): number {
   return positiveIntEnv(envVar, fallback, 1);

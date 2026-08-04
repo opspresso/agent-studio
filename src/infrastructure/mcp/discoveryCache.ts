@@ -27,28 +27,6 @@ import { config } from "@/lib/config";
 const MAX_ENTRIES = 200;
 
 /**
- * The most a server's own `ttlMs` may buy it.
- *
- * This entry's lifetime answers two questions at once, and they want different
- * numbers. The server's hint answers the first — how long its catalogue stays
- * fresh — and it knows that better than we do. But the same number also bounds
- * the second: `invalidateMcpDiscovery` is process-local, so on a multi-instance
- * deployment it is how long a registry edit made on one instance goes unseen on
- * the others. A server asking for an hour would decide that for the whole fleet.
- *
- * Hence a separate ceiling with its own knob, rather than reusing
- * `MCP_DISCOVERY_CACHE_TTL_MS`: raising the local default to let a server's hint
- * through would also stop *unhinted* servers being re-read, which is the
- * opposite trade. Deployments that run one instance can raise this freely; those
- * that run many should keep it near the staleness they are willing to wear.
- *
- * Both settings are read through `config`, which owns the parse and the warning,
- * and read per call rather than once at import: a value frozen at module scope
- * is a process-wide constant nobody declared, which is the shape this file used
- * to have.
- */
-
-/**
  * How long a discovery may be reused: the server's hint where it gave a usable
  * one, this process's default where it did not (SEP-2549).
  *
@@ -63,6 +41,12 @@ const MAX_ENTRIES = 200;
  * Otherwise, per the spec: `0` is "immediately stale", a negative value is
  * ignored and treated as `0`, and absent is the older-server case — the one
  * reading that falls back to our own heuristic rather than to no caching.
+ *
+ * Both settings are read here, per call, rather than captured at module scope: a
+ * value frozen at import is a process-wide constant nobody declared, which is
+ * the shape this file used to have. `config` owns the parse and the warning, and
+ * the two knobs' full rationale — why the ceiling is separate from the local TTL
+ * at all — is beside their declarations there.
  */
 function discoveryTtlMs(serverTtlMs: number | undefined): number {
   const localTtlMs = config.mcpDiscoveryCacheTtlMs;
