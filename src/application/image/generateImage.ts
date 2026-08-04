@@ -68,9 +68,16 @@ export interface GenerateImageOutput {
  * project type is refused, which is the shape of the bug the refusal prevents.
  *
  * It lives here rather than at that caller because that is where it was: the
- * webhook runner assembled these two chunks by hand in the composition root,
- * and it was the one producer that never announced its ending — latent until a
+ * webhook runner assembled these chunks by hand in the composition root, and it
+ * was the one producer that never announced its ending — latent until a
  * termination-reading consumer met it.
+ *
+ * The `usage` chunk is the engine's contract, not bookkeeping: the run is
+ * already recorded against the project by `generateImage`, and this is the copy
+ * a consumer sums off the stream. Without it an image run reads as free to
+ * anything that totals a run the way `collectRun` does — which nothing does
+ * today, and which is exactly the assumption a general stream API should not
+ * quietly break for its second caller.
  */
 export async function* generateImageStream(
   deps: ImageGenerationDeps,
@@ -78,6 +85,7 @@ export async function* generateImageStream(
 ): AsyncGenerator<EngineChunk> {
   const image = await generateImage(deps, input);
   yield { image: { b64: image.imageBase64, mimeType: image.mimeType } };
+  yield { usage: image.usage };
   yield { done: true };
 }
 
