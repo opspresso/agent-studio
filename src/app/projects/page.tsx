@@ -132,6 +132,7 @@ function CreateProjectModal({
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
+  const [departmentCode, setDepartmentCode] = useState("");
   const [projectType, setProjectType] = useState<ProjectType>("llm");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +146,7 @@ function CreateProjectModal({
     setName("");
     setDisplayName("");
     setDescription("");
+    setDepartmentCode("");
     setProjectType("llm");
   }
 
@@ -153,7 +155,13 @@ function CreateProjectModal({
     setSubmitting(true);
     setError(null);
     try {
-      await createProject({ name, displayName: displayName || name, description, projectType });
+      await createProject({
+        name,
+        displayName: displayName || name,
+        description,
+        projectType,
+        departmentCode: departmentCode || undefined,
+      });
       reset();
       onCreated();
     } catch (err) {
@@ -190,6 +198,13 @@ function CreateProjectModal({
             autosize
             minRows={3}
             maxRows={12}
+          />
+          <TextInput
+            label="Department code"
+            value={departmentCode}
+            onChange={(e) => setDepartmentCode(e.currentTarget.value)}
+            placeholder="ENG"
+            description="Optional code used to group project ownership and costs."
           />
           <Select
             label="Type"

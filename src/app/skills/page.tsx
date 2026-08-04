@@ -22,14 +22,23 @@ import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { useViewer } from "@/app/_lib/useViewer";
+
+interface SyncConfig {
+  configured: boolean;
+  repo: string | null;
+  branch: string;
+}
 
 export default function SkillsPage() {
+  const viewer = useViewer();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
+  const [syncConfig, setSyncConfig] = useState<SyncConfig | null>(null);
 
   async function runSync(selection: SyncSelection = {}) {
     const res = await fetch("/api/skills/sync", {
@@ -49,7 +58,12 @@ export default function SkillsPage() {
     setLoading(true);
     setError(null);
     try {
-      setSkills(await listSkills());
+      const [nextSkills, config] = await Promise.all([
+        listSkills(),
+        fetch("/api/skills/sync").then((res) => res.json() as Promise<SyncConfig>),
+      ]);
+      setSkills(nextSkills);
+      setSyncConfig(config);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load skills");
     } finally {
@@ -68,10 +82,11 @@ export default function SkillsPage() {
         description="Markdown behavior instructions loaded on demand by the agent engine."
         Icon={IconBook2}
       >
-        <Group gap="sm">
+        {viewer?.isAdmin && <Group gap="sm">
           <Button
             variant="default"
             loading={syncing}
+            disabled={!syncConfig?.configured}
             onClick={async () => {
               setSyncing(true);
               setSyncResult(null);
@@ -88,8 +103,16 @@ export default function SkillsPage() {
             Sync from GitHub
           </Button>
           <Button onClick={open}>New skill</Button>
-        </Group>
+        </Group>}
       </CatalogHeader>
+
+      {syncConfig && (
+        <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
+          {syncConfig.configured
+            ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
+            : "GitHub sync is not configured. Add the repository and token in Settings."}
+        </Text>
+      )}
 
       {syncResult && (
         <SyncSummary result={syncResult} label="skill" onApply={runSync} />

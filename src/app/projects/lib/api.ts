@@ -83,6 +83,10 @@ export function listTraces(
   );
 }
 
+export function getTrace(name: string, traceId: string): Promise<Trace> {
+  return fetch(`/api/projects/${name}/traces/${traceId}`).then((r) => readJson<Trace>(r));
+}
+
 // --- Versions -------------------------------------------------------------
 
 export interface VersionInput {

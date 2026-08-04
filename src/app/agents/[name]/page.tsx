@@ -27,11 +27,13 @@ import {
   Title,
 } from "@mantine/core";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
+import { useViewer } from "@/app/_lib/useViewer";
 
 export default function AgentDetailPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
+  const viewer = useViewer();
 
   const [agent, setAgent] = useState<ExternalAgent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +115,7 @@ export default function AgentDetailPage() {
             {agent.url}
           </Text>
         </div>
-        {!editing && (
+        {!editing && viewer?.isAdmin && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
               Edit

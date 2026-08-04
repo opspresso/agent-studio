@@ -6,10 +6,12 @@ import { toSlug } from "@/shared/slug";
 import { SyncSummary } from "@/app/_components/SyncSummary";
 import {
   createMcp,
+  getToolsSyncConfig,
   listMcps,
   syncTools,
   type McpServer,
   type RepoSyncResult,
+  type RepoSyncConfig,
 } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {
@@ -32,8 +34,10 @@ import { ManagedMcpModal } from "./_components/ManagedMcpModal";
 import { CredentialBadges } from "./_components/CredentialBadges";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { useViewer } from "@/app/_lib/useViewer";
 
 export default function ToolsPage() {
+  const viewer = useViewer();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,12 +45,15 @@ export default function ToolsPage() {
   const [managedOpened, managed] = useDisclosure(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
+  const [syncConfig, setSyncConfig] = useState<RepoSyncConfig | null>(null);
 
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      setServers(await listMcps());
+      const [nextServers, config] = await Promise.all([listMcps(), getToolsSyncConfig()]);
+      setServers(nextServers);
+      setSyncConfig(config);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load MCP servers");
     } finally {
@@ -65,10 +72,11 @@ export default function ToolsPage() {
         description="MCP servers that expose tools to agents over streamable HTTP."
         Icon={IconTool}
       >
-        <Group gap="xs">
+        {viewer?.isAdmin && <Group gap="xs">
           <Button
             variant="default"
             loading={syncing}
+            disabled={!syncConfig?.configured}
             onClick={async () => {
               setSyncing(true);
               setSyncResult(null);
@@ -89,8 +97,16 @@ export default function ToolsPage() {
             Run managed
           </Button>
           <Button onClick={register.open}>Register MCP</Button>
-        </Group>
+        </Group>}
       </CatalogHeader>
+
+      {syncConfig && (
+        <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
+          {syncConfig.configured
+            ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
+            : "GitHub sync is not configured. Add the repository and token in Settings."}
+        </Text>
+      )}
 
       {syncResult && (
         <SyncSummary
