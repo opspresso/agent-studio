@@ -290,7 +290,7 @@ export function VersionEditor({
 
       <Checkbox
         label="Tell the run who is asking (name, timezone)"
-        description="Slack mentions and DMs only. PII filtering does not mask a name."
+        description="Anywhere a person runs it — chat, Playground, a signed-in API call, Slack. An API token, a trigger and inbound A2A carry no caller. PII filtering does not mask a name."
         checked={value.parameters.callerContext ?? false}
         onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
       />

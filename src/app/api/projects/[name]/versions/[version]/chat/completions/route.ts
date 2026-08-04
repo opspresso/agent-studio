@@ -32,6 +32,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       variables: parsed.data.variables,
       messages: parsed.data.messages,
       actor: principalActor(principal),
+      ...(principal.caller ? { caller: principal.caller } : {}),
     };
 
     if (parsed.data.stream) {

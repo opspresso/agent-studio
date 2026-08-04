@@ -204,6 +204,15 @@ reference is rejected with 400 — and only an `agent` project may carry them at
 only *newly added* entries are checked, so a version stays editable after a registry entry it
 already referenced is deleted.
 
+`callerContext` names the person asking in the system prompt, **on the surfaces that have
+one**: the console chat and Playground, a session-authenticated run of `predict`, `agent` or
+`chat/completions`, and Slack (which additionally supplies the caller's timezone from their
+profile). A project **API token** carries no caller — it acts on the owner's behalf but nobody
+is at the other end — and neither do trigger firings or inbound A2A. An image project is
+unaffected: its prompt is the rendered template, with no system prompt for the block to live
+in. `POST /api/projects/{name}/preview` shows the block exactly when a run from that page
+would carry it.
+
 #### MCP bindings and per-version header overrides
 
 Each `mcpList` entry binds the version to a registry MCP server. The URL is always the

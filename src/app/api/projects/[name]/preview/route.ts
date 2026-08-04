@@ -5,6 +5,7 @@ import { resolveDraftMcpBindings } from "@/application/project/versionUseCases";
 import { previewPrompt } from "@/application/execution/runProject";
 import { previewPromptSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { sessionCaller } from "@/app/api/_lib/caller";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -22,6 +23,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }
+  const caller = sessionCaller(user);
   try {
     const project = await assertProjectWritable(projectRepository, name, user.email);
     const { variables, versionName, ...draft } = parsed.data;
@@ -45,6 +47,10 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
         createdAt: new Date().toISOString(),
       },
       variables,
+      // The person looking at the preview is the one a run started from this
+      // page would name. Without it the Playground showed a prompt one block
+      // short of what the version actually sends.
+      ...(caller ? { caller } : {}),
     });
     return Response.json(preview);
   } catch (error) {
