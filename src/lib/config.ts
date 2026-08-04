@@ -52,6 +52,32 @@ export function assertAccessControlConfig(): void {
 }
 
 /**
+ * Say once per setting, per value, that a configured value could not be used.
+ *
+ * These readers are getters, and their callers are hot: a retention window is
+ * read on every row write — once per model call for usage — and an MCP cache TTL
+ * on every discovery write. One misconfigured variable would put a line in the
+ * log for each of them, which buries the message it is trying to deliver in
+ * exactly the deployments that most need to read it. Keyed by value as well as
+ * name so a setting corrected at runtime still reports its next mistake.
+ */
+const warnedSettings = new Set<string>();
+
+function warnOnce(name: string, raw: string, message: string): void {
+  const key = `${name}=${raw}|${message}`;
+  if (warnedSettings.has(key)) {
+    return;
+  }
+  warnedSettings.add(key);
+  log.warn("config", message);
+}
+
+/** Test seam: forget what has already been reported. */
+export function resetConfigWarnings(): void {
+  warnedSettings.clear();
+}
+
+/**
  * A non-negative integer setting, falling back to `fallback` on anything else.
  * A misconfigured value degrades to the default with a warning rather than
  * silently disabling a limit — `Number("abc") || 0` would read as "off".
@@ -67,7 +93,7 @@ export function positiveIntEnv(name: string, fallback: number, min = 0): number 
   }
   const value = Number(raw);
   if (!Number.isInteger(value) || value < min) {
-    log.warn("config", `ignoring invalid ${name}="${raw}"; using ${fallback}`);
+    warnOnce(name, raw, `ignoring invalid ${name}="${raw}"; using ${fallback}`);
     return fallback;
   }
   return value;
@@ -87,12 +113,12 @@ export function fractionEnv(name: string, fallback: number): number {
   }
   const value = Number(raw);
   if (!Number.isFinite(value)) {
-    log.warn("config", `ignoring invalid ${name}="${raw}"; using ${fallback}`);
+    warnOnce(name, raw, `ignoring invalid ${name}="${raw}"; using ${fallback}`);
     return fallback;
   }
   const clamped = Math.min(Math.max(value, 0), 1);
   if (clamped !== value) {
-    log.warn("config", `${name}="${raw}" is outside 0–1; using ${clamped}`);
+    warnOnce(name, raw, `${name}="${raw}" is outside 0–1; using ${clamped}`);
   }
   return clamped;
 }
@@ -218,9 +244,22 @@ export const config = {
   },
   /**
    * How long a discovered MCP tool list may be reused, and the most a server's
-   * own freshness hint may ask for. Both `0` are meaningful settings — "do not
-   * cache" and "ignore what servers ask for" — so the floor is `0`, not `1`.
-   * `src/infrastructure/mcp/discoveryCache.ts` owns how the two combine.
+   * own freshness hint (SEP-2549) may ask for. Both `0` are meaningful settings
+   * — "do not cache" and "ignore what servers ask for" — so the floor is `0`,
+   * not `1`. `src/infrastructure/mcp/discoveryCache.ts` owns how the two
+   * combine.
+   *
+   * The ceiling is a separate knob rather than a larger local TTL because the
+   * entry's lifetime answers two questions that want different numbers. The
+   * server's hint answers the first — how long its catalogue stays fresh — and
+   * it knows that better than we do. The same number bounds the second:
+   * `invalidateMcpDiscovery` is process-local, so on a multi-instance deployment
+   * it is how long a registry edit made on one instance goes unseen on the
+   * others, and a server asking for an hour would decide that for the whole
+   * fleet. Raising the local TTL instead would also stop *unhinted* servers
+   * being re-read, which is the opposite trade. Single-instance deployments can
+   * raise the ceiling freely; multi-instance ones should keep it near the
+   * staleness they are willing to wear.
    */
   get mcpDiscoveryCacheTtlMs(): number {
     return positiveIntEnv("MCP_DISCOVERY_CACHE_TTL_MS", 60_000);

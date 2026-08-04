@@ -8,9 +8,10 @@
  * out loud either way.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { config, fractionEnv, positiveIntEnv } from "@/lib/config";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { config, fractionEnv, positiveIntEnv, resetConfigWarnings } from "@/lib/config";
 import { RETENTION } from "@/infrastructure/db/ttl";
+import { getCachedTools, setCachedTools } from "@/infrastructure/mcp/discoveryCache";
 
 const TOUCHED = [
   "PROBE_NUMBER",
@@ -28,6 +29,12 @@ function set(name: string, value: string | undefined): void {
     process.env[name] = value;
   }
 }
+
+beforeEach(() => {
+  // The warning is deduped per setting+value, so a test asserting on it has to
+  // start from a process that has not already said this one.
+  resetConfigWarnings();
+});
 
 afterEach(() => {
   for (const key of TOUCHED) {
@@ -95,24 +102,54 @@ describe("the settings that used to parse their own", () => {
     expect(config.traceSampleRate).toBe(0.1);
   });
 
-  it("warns on a retention window it had to ignore", () => {
-    // It used to fall back in silence, so a typo deleted rows a year early with
-    // nothing in the log to say the configured value had not been used.
+  it("warns once on a retention window it had to ignore, not once per row", () => {
+    // Two things at once. It used to fall back in silence, so a typo deleted
+    // rows a year early with nothing in the log to say the configured value had
+    // not been used. And this is a getter read on *every* row write — once per
+    // model call for usage — so warning from inside it without a memo turns one
+    // bad variable into a line per write, burying the message in the
+    // deployments that most need to read it.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     set("USAGE_RETENTION_DAYS", "not-a-number");
+    expect(RETENTION.usageDays).toBe(400);
+    expect(RETENTION.usageDays).toBe(400);
     expect(RETENTION.usageDays).toBe(400);
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  it("reads the MCP TTLs per call, not once at import", () => {
-    // Frozen at module scope they were a process-wide constant nothing declared
-    // — and one no test could change after the first import of that module.
-    set("MCP_DISCOVERY_CACHE_TTL_MS", "1000");
-    expect(config.mcpDiscoveryCacheTtlMs).toBe(1000);
+  it("re-reports a setting whose value changed", () => {
+    // Keyed by value, not just name: a variable corrected — or broken a second
+    // way — at runtime still says what it did the next time.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    set("USAGE_RETENTION_DAYS", "400d");
+    expect(RETENTION.usageDays).toBe(400);
+    set("USAGE_RETENTION_DAYS", "400 days");
+    expect(RETENTION.usageDays).toBe(400);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets the discovery cache see a TTL that changed after it was imported", () => {
+    // Asserted through the consumer, not the getter. `config.mcp*` is a getter
+    // by construction, so reading it proves nothing — the property under test is
+    // that `discoveryCache` calls it per use rather than hoisting it to module
+    // scope, which is the shape this replaced and which the `configuration
+    // reads` rule cannot see (it matches `process.env`, not a frozen `config.x`).
+    const headers = {};
+    const tool = [{ name: "query" }];
+
+    set("MCP_DISCOVERY_CACHE_TTL_MS", "0");
+    setCachedTools("https://ttl.test/a", headers, tool);
+    expect(getCachedTools("https://ttl.test/a", headers)).toBeUndefined();
+
+    set("MCP_DISCOVERY_CACHE_TTL_MS", "60000");
+    setCachedTools("https://ttl.test/b", headers, tool);
+    expect(getCachedTools("https://ttl.test/b", headers)).toEqual(tool);
+  });
+
+  it("treats 0 as a setting on both MCP knobs, not a typo", () => {
+    // "do not cache", and "ignore what servers ask for".
     set("MCP_DISCOVERY_CACHE_TTL_MS", "0");
     expect(config.mcpDiscoveryCacheTtlMs).toBe(0);
-    // `0` is a setting here, not a typo: "do not cache", and "ignore what
-    // servers ask for".
     set("MCP_MAX_SERVER_TTL_MS", "0");
     expect(config.mcpMaxServerTtlMs).toBe(0);
   });

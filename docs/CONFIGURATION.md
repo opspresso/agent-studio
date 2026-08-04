@@ -140,13 +140,11 @@ Invalid values (non-integer, negative) degrade to the default with a warning rat
 `0` — `Number("abc") || 0` would read as "limit off", which is the opposite of what a typo
 should mean.
 
-**Every numeric setting in this document behaves that way**, because they all go through
-`positiveIntEnv` in `src/lib/config.ts`. That was not always true: the MCP discovery TTLs and
-the retention windows each parsed their own, in the module that used them, and the retention
-one was silent — a typo'd `USAGE_RETENTION_DAYS` deleted rows a year early with nothing in the
-log to say the value had been ignored. A setting that reaches this document declares itself in
-`config.ts`; the adapters read it from there, and `tests/architecture.test.ts` fails on a
-`process.env` read anywhere in `domain`, `shared` or `infrastructure`.
+**Every numeric setting in this document behaves that way**: they all go through
+`positiveIntEnv` in `src/lib/config.ts`, which is where a setting that reaches this document
+declares itself. Adapters read it from there — `tests/architecture.test.ts` fails on a
+`process.env` read anywhere in `domain`, `shared` or `infrastructure`. The warning is emitted
+once per setting per value, because several of these are read on every row write.
 
 ## MCP
 
@@ -229,9 +227,8 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 | `AUDIT_RETENTION_DAYS` | `400` | — | Audit records. The longest window here with usage: the question an audit row answers is asked long after the act, and the row is one per sensitive act rather than one per run. |
 
 Retention values are whole days, at least `1`; anything else falls back to the default **with
-a warning**, like every other numeric setting here. It used to fall back in silence, which is
-the worst place for that: the value an operator got wrong is the one deciding how long a row
-survives, and nothing said the row's window was not the one they configured. TTL has
+a warning**, like every other numeric setting here — the value an operator got wrong is the
+one deciding how long a row survives, so a silent fallback is the worst kind. TTL has
 to be **enabled on the `expiresAt` attribute of the production table** — see
 [OPERATIONS.md](OPERATIONS.md#row-retention).
 
