@@ -2,6 +2,14 @@
  * Subagent transfer and the engine deps a run is assembled from. These live
  * together because they are mutually recursive: a parent builds deps to run,
  * and a local transfer builds the child's deps the same way.
+ *
+ * That recursion is why three of the functions here take the whole
+ * `ExecutionDeps`: `buildAgentDeps`, `buildSubagentRunner` and
+ * `runLocalSubagent` each hand the bag to one of the others, so narrowing any
+ * of them narrows nothing. The two that end a chain rather than continue it say
+ * what they touch, like `runImageSubagent` and `buildMcpTools` already do —
+ * a remote transfer reaching no repository, no channel and no trace is worth
+ * being able to read off the signature.
  */
 
 import { imageDataUrl } from "@/domain/llm/types";
@@ -246,7 +254,7 @@ export async function* authored(
  * missing variables does.
  */
 export async function* runPromptSubagent(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "channel" | "traces" | "now">,
   project: Project,
   version: Version,
   message: string,
@@ -487,7 +495,7 @@ export async function* runLocalSubagent(
 }
 
 export async function* runRemoteSubagent(
-  deps: ExecutionDeps,
+  deps: Pick<ExecutionDeps, "externalAgents" | "urlPolicy" | "cipher" | "remoteAgents">,
   agentName: string,
   message: string,
   signal?: AbortSignal,
