@@ -337,7 +337,9 @@ draft is rejected with `400`.
 
 `images` are the user's attachments as inline bytes — `[ { b64, mimeType } ]`, at most 4 per
 turn, 5MB each, `image/png|jpeg|gif|webp`. They reach the model as content parts and are
-stored (when object storage is configured) as URLs on the user message.
+stored (when object storage is configured) as the **object key** on the user message; a read
+answers with a URL signed for that response, never one that keeps working afterwards. An image
+whose address cannot be minted is left out of the message rather than returned broken.
 
 `documents` are files to read rather than look at — `[ { b64, mimeType, name } ]`, at most 4
 per turn, 10MB each: PDF, plus text, Markdown, CSV/TSV, JSON, YAML, XML and HTML. `name` is

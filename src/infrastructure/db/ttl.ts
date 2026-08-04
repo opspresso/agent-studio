@@ -37,10 +37,10 @@ export const RETENTION = {
     return retentionDays("A2A_TASK_RETENTION_DAYS", 1);
   },
   /**
-   * Audit records. The longest window here by default: the question these
-   * answer — who changed the admin list, who revealed that credential — is
-   * asked long after the fact, and unlike a trace the row is small and one per
-   * sensitive act rather than one per run.
+   * Audit records. As long as usage by default, and the longest here with it:
+   * the question these answer — who changed the admin list, who revealed that
+   * credential — is asked long after the fact, and unlike a trace the row is
+   * small and one per sensitive act rather than one per run.
    */
   get auditDays(): number {
     return retentionDays("AUDIT_RETENTION_DAYS", 400);
