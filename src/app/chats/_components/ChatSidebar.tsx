@@ -9,9 +9,19 @@ import type { Chat } from "../_lib/types";
 import classes from "./ChatSidebar.module.css";
 
 const REFRESH_EVENT = "chats:refresh";
+const NEW_CHAT_EVENT = "chats:new";
 
 export function refreshChats() {
   window.dispatchEvent(new CustomEvent(REFRESH_EVENT));
+}
+
+/** Subscribe to the "New chat" press. The button routes to /chats, but a panel
+ * that swapped the URL to /chats/<id> without a route change is already that
+ * segment — the router keeps it mounted, so the navigation alone resets
+ * nothing and the finished thread stays on screen. */
+export function onNewChat(handler: () => void): () => void {
+  window.addEventListener(NEW_CHAT_EVENT, handler);
+  return () => window.removeEventListener(NEW_CHAT_EVENT, handler);
 }
 
 export function ChatSidebar() {
@@ -53,7 +63,13 @@ export function ChatSidebar() {
 
   return (
     <Stack component="aside" gap="sm" className={classes.sidebar}>
-      <Button component={Link} href="/chats" radius="xl" leftSection={<IconPlus size={16} />}>
+      <Button
+        component={Link}
+        href="/chats"
+        onClick={() => window.dispatchEvent(new CustomEvent(NEW_CHAT_EVENT))}
+        radius="xl"
+        leftSection={<IconPlus size={16} />}
+      >
         New chat
       </Button>
       <ScrollArea style={{ flex: 1, minHeight: 0 }} scrollbarSize={6} pr={4}>

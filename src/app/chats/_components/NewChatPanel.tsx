@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { readSse } from "../_lib/sseClient";
 import { reduceChunk } from "../_lib/stream";
 import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
@@ -10,7 +10,7 @@ import { isTopLevelChunk } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { ChatThread } from "./ChatThread";
 import { LiveAssistant, MessageView } from "./parts";
-import { refreshChats } from "./ChatSidebar";
+import { onNewChat, refreshChats } from "./ChatSidebar";
 import {
   ActionIcon,
   Alert,
@@ -37,7 +37,7 @@ export function NewChatPanel() {
   } | null>(null);
   // Staged attachments survive an error for a retry, the same way the typed
   // message does; a successful start navigates away and unmounts them.
-  const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt } =
+  const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt, clear } =
     useAttachments({ documents: true });
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [starting, setStarting] = useState(false);
@@ -48,6 +48,11 @@ export function NewChatPanel() {
   // flash a loading screen, which reads as a page reload.
   const [handoffChat, setHandoffChat] = useState<Chat | null>(null);
   const [done, setDone] = useState(false);
+  // Which turn the panel is showing. A reset retires the current one, so a
+  // stream still in flight is aborted and whatever chunk it already read is
+  // dropped instead of painting over the emptied panel.
+  const runRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     async function loadProjects() {
@@ -68,6 +73,27 @@ export function NewChatPanel() {
     void loadProjects();
   }, []);
 
+  // The first turn swaps the URL to /chats/<id> without a route change, so this
+  // panel stays the mounted /chats segment: "New chat" navigates nowhere and
+  // this is the only thing that clears the finished thread.
+  useEffect(
+    () =>
+      onNewChat(() => {
+        runRef.current += 1;
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setSentMessage(null);
+        setLive(null);
+        setHandoffChat(null);
+        setDone(false);
+        setError(null);
+        setStarting(false);
+        setMessage("");
+        clear();
+      }),
+    [clear],
+  );
+
   async function start() {
     const trimmed = message.trim();
     if (
@@ -77,6 +103,9 @@ export function NewChatPanel() {
     ) {
       return;
     }
+    const run = ++runRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setStarting(true);
     setError(null);
     setSentMessage({ content: trimmed, attachments, documents });
@@ -91,7 +120,11 @@ export function NewChatPanel() {
           images: toRequestImages(attachments),
           documents,
         }),
+        signal: controller.signal,
       });
+      if (runRef.current !== run) {
+        return;
+      }
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(data.error ?? `request failed (${res.status})`);
@@ -100,6 +133,9 @@ export function NewChatPanel() {
         return;
       }
       for await (const chunk of readSse(res)) {
+        if (runRef.current !== run) {
+          return;
+        }
         if (chunk.chat) {
           setHandoffChat(chunk.chat);
           // Shallow URL swap only — the panel keeps rendering the stream. A
@@ -118,11 +154,18 @@ export function NewChatPanel() {
         setLive((prev) => reduceChunk(prev ?? EMPTY_TURN, chunk));
       }
     } catch (streamError) {
-      setError(streamError instanceof Error ? streamError.message : "stream error");
+      if (runRef.current === run) {
+        setError(streamError instanceof Error ? streamError.message : "stream error");
+      }
     } finally {
-      setStarting(false);
+      // The chat is created before the first chunk, so the sidebar is refreshed
+      // even for a turn the panel has moved on from.
       refreshChats();
-      setDone(true);
+      if (runRef.current === run) {
+        abortRef.current = null;
+        setStarting(false);
+        setDone(true);
+      }
     }
   }
 
