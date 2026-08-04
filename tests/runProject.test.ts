@@ -1189,6 +1189,38 @@ describe("executeAgent hands the conversation to a transferred agent", () => {
     expect(childTurn.match(/make it bigger/g)).toHaveLength(1);
   });
 
+  it("records the child's failure when its tool resolution throws", async () => {
+    // A recorder writes its row in `finish()` and nowhere else, so a resolve
+    // that threw outside the try left the child with no trace at all — while
+    // the identical failure one level up recorded a `failed` one.
+    const channel = new FakeChannel(transferThenAnswer("summarize this"));
+    const { deps } = chainDeps(channel);
+    // The child binds a skill and the fixture's skill repository rejects every
+    // read. The parent binds none, so only the child's resolve reaches it.
+    deps.versions.get = (async (projectName: string) =>
+      projectName === "child"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "child",
+            skillList: ["unreadable"],
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+    const traces = captureTraces(deps);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: parentVersion(),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    // The transfer fails as a tool error and the parent still answers past it…
+    expect(chunks.some((chunk) => chunk.author === "child" && chunk.error)).toBe(true);
+    // …and what failed is on record at the level it failed at.
+    expect(traces.find((trace) => trace.projectName === "child")?.status).toBe("failed");
+  });
+
   it("sends a first-turn transfer exactly as before, with no context block", async () => {
     // A conversation of one turn has no "so far" — framing one would be noise.
     const channel = new FakeChannel(transferThenAnswer("draw a cat"));

@@ -395,20 +395,28 @@ export async function* runLocalSubagent(
     ? createTraceRecorder(deps.traces, project, version, 1, origin)
     : undefined;
   const readSkill = createSkillReader(deps);
-  const { skills, subagents, mcp, warnings } = await resolveRunTools(
-    deps,
-    version,
-    readSkill,
-    signal,
-  );
 
   let text = "";
   let thrown: unknown;
   let completed = false;
+  let closeMcpSessions: (() => Promise<void>) | undefined;
   try {
-    // Everything past the resolve is inside the try: a consumer that stops
-    // reading here — or a dependency assembly that throws before the first
-    // chunk — must still release the sessions the resolve above opened.
+    // The resolve is inside the try, as it is at the top level. A recorder
+    // writes its row in `finish()` and nowhere else, so a resolve that threw
+    // outside this block left the child with no trace at all — while the same
+    // failure one level up recorded a `failed` one. Which end of a transfer a
+    // failure happened at is not something the trace should decide by.
+    //
+    // Everything past it is inside for the older reason: a consumer that stops
+    // reading — or a dependency assembly that throws before the first chunk —
+    // must still release the sessions the resolve opened.
+    const { skills, subagents, mcp, warnings } = await resolveRunTools(
+      deps,
+      version,
+      readSkill,
+      signal,
+    );
+    closeMcpSessions = mcp.close;
     const childDeps = await buildAgentDeps(
       deps,
       version,
@@ -464,7 +472,7 @@ export async function* runLocalSubagent(
     thrown = error;
     throw error;
   } finally {
-    await closeMcp(mcp.close);
+    await closeMcp(closeMcpSessions);
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
   return text;
