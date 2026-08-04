@@ -9,16 +9,17 @@ import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./m
 import { log } from "@/shared/logger";
 
 /**
- * One read per skill per run, behind the `Skill` tool.
+ * One read per skill, behind the `Skill` tool.
  *
- * The tool can be called repeatedly for the same skill — once for the body, then
- * once per attachment — and every call used to be its own item read. A skill
- * edited mid-run is not picked up, which is what consistency wants.
+ * The tool is called repeatedly for the same skill — once for the body, then
+ * once per attachment it asks for — and each call used to be its own item read.
+ * A skill edited mid-run is not picked up, which is what consistency wants.
  *
- * Built once per *run*, not once per agent: it travels down the transfer chain
- * with the pinned clock, so a chain whose hops share a skill reads it once. The
- * registry is global and this cache is keyed by name, so there is nothing
- * project-specific to keep apart.
+ * Scoped to one agent's deps (`buildAgentDeps` builds it), so each hop of a
+ * transfer chain has its own. Sharing one across the chain would save a read
+ * only where a parent and a child bind the same skill *and* both load it, and
+ * the way to get it there is a parameter on a signature that already carries
+ * eight — not a trade worth making without a measurement asking for it.
  */
 export type SkillReader = (name: string) => Promise<Skill | null>;
 

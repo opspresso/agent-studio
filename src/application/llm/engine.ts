@@ -2227,8 +2227,9 @@ export async function* runAgent(
         yield toolResult(call, `Transferred to '${agentName}'; its answer follows.`, {
           name: `${TRANSFER_TOOL_NAME}: ${agentName}`,
           displayOnly: true,
+          // No `fit`: an explicit `stored` is always charged whole, since the
+          // engine wrote it and it is the same string every time.
           stored: JSON.stringify({ result: null }),
-          fit: false,
         });
         // A transfer's answer used to enter the context with no bound at all —
         // the one unbudgeted spot. The user already saw the child's full
