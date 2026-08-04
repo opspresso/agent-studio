@@ -1,3 +1,8 @@
+.header {
+  background-color: color-mix(in oklab, var(--mantine-color-body) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+}
+
 .brand {
   display: flex;
   flex-shrink: 0;
@@ -5,6 +10,11 @@
   gap: var(--mantine-spacing-xs);
   border-radius: var(--mantine-radius-md);
   color: inherit;
+  transition: opacity 140ms ease;
+}
+
+.brand:hover {
+  opacity: 0.78;
 }
 
 /*
@@ -20,6 +30,7 @@
   font-size: var(--mantine-font-size-sm);
   color: var(--mantine-color-dimmed);
   text-decoration: none;
+  transition: color 140ms ease;
 }
 
 .navLink:hover {

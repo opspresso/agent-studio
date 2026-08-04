@@ -10,6 +10,12 @@
 
 :root {
   --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 8%, transparent);
+  --surface-highlight: color-mix(
+    in oklab,
+    var(--mantine-color-brand-6) 7%,
+    var(--mantine-color-body)
+  );
+  --surface-shadow: 0 1px 2px rgba(20, 42, 74, 0.04), 0 10px 28px rgba(20, 42, 74, 0.05);
 
   /* Categorical chart palette — validated for CVD/contrast on the light surface. */
   --chart-1: #2a78d6;
@@ -29,6 +35,12 @@
 
 [data-mantine-color-scheme="dark"] {
   --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 11%, transparent);
+  --surface-highlight: color-mix(
+    in oklab,
+    var(--mantine-color-brand-6) 9%,
+    var(--mantine-color-body)
+  );
+  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 12px 32px rgba(0, 0, 0, 0.18);
 
   /* Same hues re-stepped for the dark surface. */
   --chart-1: #3987e5;
@@ -47,10 +59,53 @@
 }
 
 body {
-  background-image: radial-gradient(circle at 50% -15rem, var(--page-glow), transparent 38rem);
+  background-image:
+    radial-gradient(circle at 20% -12rem, var(--page-glow), transparent 32rem),
+    radial-gradient(circle at 90% 8rem, var(--page-glow), transparent 28rem);
   background-repeat: no-repeat;
   background-attachment: fixed;
   min-width: 320px;
+}
+
+::selection {
+  color: var(--mantine-color-white);
+  background-color: var(--mantine-primary-color-filled);
+}
+
+.mantine-Button-root,
+.mantine-ActionIcon-root {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.mantine-Button-root:active:not(:disabled),
+.mantine-ActionIcon-root:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.mantine-Card-root[href] {
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.mantine-Card-root[href]:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 42%, transparent);
+  background-color: var(--surface-highlight);
+  box-shadow: var(--surface-shadow);
+}
+
+.mantine-Card-root[href]:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 3px;
 }
 
 @keyframes trace-blink {
@@ -69,6 +124,16 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mantine-Button-root,
+  .mantine-ActionIcon-root,
+  .mantine-Card-root[href] {
+    transition: none;
+  }
+
+  .mantine-Card-root[href]:hover {
+    transform: none;
+  }
+
   .trace-cursor {
     animation: none;
   }

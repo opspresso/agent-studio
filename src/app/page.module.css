@@ -1,12 +1,48 @@
 /* The signed-out hero's example stream. Colours mark what each line is. */
 
 .trace {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   padding: var(--mantine-spacing-md);
   margin: 0;
   font-family: var(--mantine-font-family-monospace);
   font-size: 11px;
   line-height: 1.6;
+}
+
+.domainCard {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.domainCard::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, var(--mantine-primary-color-filled), transparent 72%);
+  opacity: 0.55;
+}
+
+.domainCard:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 28%, transparent);
+  box-shadow: var(--surface-shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .domainCard {
+    transition: none;
+  }
+
+  .domainCard:hover {
+    transform: none;
+  }
 }
 
 .meta {

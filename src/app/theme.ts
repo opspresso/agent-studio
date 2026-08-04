@@ -44,6 +44,12 @@ export const theme = createTheme({
   fontFamilyMonospace:
     'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace',
   defaultRadius: "md",
+  focusRing: "auto",
+  headings: {
+    fontFamily:
+      'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    fontWeight: "650",
+  },
   components: {
     // The old `buttonClass()` default was `md` = px-3 py-2 text-sm, which is
     // Mantine's `sm`. Setting it here rather than on 43 call sites is the whole

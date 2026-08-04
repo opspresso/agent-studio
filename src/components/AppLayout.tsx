@@ -19,6 +19,7 @@ import { UserMenu } from "./UserMenu";
 import classes from "./AppLayout.module.css";
 
 const NAV_ITEMS = [
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
   { href: "/chats", label: "Chats" },
   { href: "/skills", label: "Skills" },
@@ -63,7 +64,7 @@ export function AppLayout({
       }}
       padding={0}
     >
-      <AppShell.Header>
+      <AppShell.Header className={classes.header}>
         <Container size="xl" h="100%" px="md">
           <Group h="100%" gap="md" wrap="nowrap">
             {showNav && (
