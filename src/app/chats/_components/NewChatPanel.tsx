@@ -23,12 +23,22 @@ import {
   Text,
   Textarea,
 } from "@mantine/core";
+import { useLocalStorage } from "@mantine/hooks";
 import { IconSend } from "@tabler/icons-react";
+
+const PROJECT_KEY = "agent-studio-chat-project";
 
 export function NewChatPanel() {
   const [projects, setProjects] = useState<AgentProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [projectName, setProjectName] = useState("");
+  // The project a new chat runs against, remembered per browser so the next one
+  // opens on the last pick. Not synced across tabs: a pick made in another tab
+  // must not swap the project under a message being typed here.
+  const [projectName, setProjectName] = useLocalStorage({
+    key: PROJECT_KEY,
+    defaultValue: "",
+    sync: false,
+  });
   const [message, setMessage] = useState("");
   const [sentMessage, setSentMessage] = useState<{
     content: string;
@@ -65,7 +75,11 @@ export function NewChatPanel() {
         const agents = list.filter((project) => project.projectType === "agent");
         setProjects(agents);
         if (agents.length > 0) {
-          setProjectName(agents[0]!.name);
+          // The remembered project may have been deleted, renamed, or turned
+          // into another project type since it was stored — the list decides.
+          setProjectName((current) =>
+            agents.some((project) => project.name === current) ? current : agents[0]!.name,
+          );
         }
       }
       setProjectsLoaded(true);
