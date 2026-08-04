@@ -287,11 +287,6 @@ export const versionRefRepos = {
 export const readinessReport = () =>
   checkReadiness({ checkDb: dbReachable, checkLlm: () => llmReachable(getLlmChannelConfig) });
 
-const configuredTraceSampleRate = Number(process.env.TRACE_SAMPLE_RATE ?? "0.1");
-const traceSampleRate = Number.isFinite(configuredTraceSampleRate)
-  ? Math.min(Math.max(configuredTraceSampleRate, 0), 1)
-  : 0.1;
-
 /**
  * Slack access for the cost guard's threshold notification. Deferred like the
  * other Slack use so a route that only wanted a repository does not load the
@@ -329,7 +324,7 @@ export const executionDeps: ExecutionDeps = {
   mcpAuth: mcpAuthProvider,
   internalHostSuffixes: config.mcpInternalHostSuffixes,
   traces: traceRepository,
-  traceSampleRate,
+  traceSampleRate: config.traceSampleRate,
   slack: costAlertSlack,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
@@ -341,7 +336,7 @@ export const imageDeps: ImageGenerationDeps = {
   imageChannel,
   usage: usageRepository,
   traces: traceRepository,
-  traceSampleRate,
+  traceSampleRate: config.traceSampleRate,
   cipher: secretCipher,
   slack: costAlertSlack,
   runSlots: runSlotRepository,

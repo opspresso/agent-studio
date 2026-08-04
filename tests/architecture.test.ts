@@ -265,11 +265,19 @@ describe("layer boundaries", () => {
 /**
  * The environment, which the import rules cannot see.
  *
- * Every rule above matches specifiers, and `process.env.X` is not one — so the
- * bottom of the graph could read configuration and no boundary would notice.
- * That matters most exactly there: `domain` is pure by construction, and
- * `shared` is imported by everything, so a value read at module scope becomes a
- * process-wide constant nothing declared and nobody injected.
+ * Every rule above matches specifiers, and `process.env.X` is not one — so a
+ * layer could read configuration and no boundary would notice. The failure that
+ * follows is always the same: a value read at module scope becomes a
+ * process-wide constant nothing declared, nobody injected, and the boot
+ * validation never checked. `domain` and `shared` are the worst place for it
+ * (one is pure by construction, the other is imported by everything), but
+ * `infrastructure` had three of them — two MCP cache TTLs frozen at import, and
+ * a retention window whose own parser fell back silently, so a typo deleted rows
+ * a year early without a line in the log.
+ *
+ * Adapters declare their settings through `lib/config`, which owns the parse and
+ * the warning; `lib` itself is where reading the environment is the job, so it
+ * is outside this rule.
  *
  * `runDeadline.ts` is the one occupant, and it is *named* rather than
  * allowlisted. The run deadline is a process-level backstop that `application`
@@ -280,10 +288,10 @@ const ENV_READ = /process\.env\b/;
 const ENV_READERS_AT_THE_BOTTOM = ["src/shared/runDeadline.ts"];
 
 describe("configuration reads", () => {
-  it("do not reach domain or shared", () => {
+  it("do not reach domain, shared or the adapters", () => {
     const found = SOURCE_FILES.filter(
       (file) =>
-        ["domain", "shared"].includes(layerOf(file.path) ?? "") &&
+        ["domain", "shared", "infrastructure"].includes(layerOf(file.path) ?? "") &&
         !ENV_READERS_AT_THE_BOTTOM.includes(file.path) &&
         ENV_READ.test(file.text),
     ).map((file) => file.path);

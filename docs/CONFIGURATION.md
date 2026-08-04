@@ -140,12 +140,20 @@ Invalid values (non-integer, negative) degrade to the default with a warning rat
 `0` — `Number("abc") || 0` would read as "limit off", which is the opposite of what a typo
 should mean.
 
+**Every numeric setting in this document behaves that way**, because they all go through
+`positiveIntEnv` in `src/lib/config.ts`. That was not always true: the MCP discovery TTLs and
+the retention windows each parsed their own, in the module that used them, and the retention
+one was silent — a typo'd `USAGE_RETENTION_DAYS` deleted rows a year early with nothing in the
+log to say the value had been ignored. A setting that reaches this document declares itself in
+`config.ts`; the adapters read it from there, and `tests/architecture.test.ts` fails on a
+`process.env` read anywhere in `domain`, `shared` or `infrastructure`.
+
 ## MCP
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | How long a bound server's tool list is reused, keyed by `url + headers`. A warm entry also lets the session handshake lazily, so a turn that calls no tool makes no MCP request at all. `0` disables caching outright, and no server hint can switch it back on. |
-| `MCP_MAX_SERVER_TTL_MS` | `300000` (5 min) | — | Ceiling on the `ttlMs` a server may request on `tools/list` (SEP-2549). `0` ignores server hints entirely and returns every entry to the local TTL. |
+| `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | How long a bound server's tool list is reused, keyed by `url + headers`. A warm entry also lets the session handshake lazily, so a turn that calls no tool makes no MCP request at all. `0` disables caching outright, and no server hint can switch it back on. Whole milliseconds. |
+| `MCP_MAX_SERVER_TTL_MS` | `300000` (5 min) | — | Ceiling on the `ttlMs` a server may request on `tools/list` (SEP-2549). `0` ignores server hints entirely and returns every entry to the local TTL. Whole milliseconds. |
 | `MCP_INTERNAL_HOST_SUFFIXES` | empty | — | Comma-separated DNS suffixes whose hosts an MCP entry may use despite resolving to a private address — typically `<namespace>.svc.cluster.local`. Empty leaves the SSRF guard exactly as it was. See [SECURITY.md](SECURITY.md#declared-internal-hosts). |
 | `MANAGED_MCP_INSTANCE_ID` | unset | — | The host managed MCP containers are started on, through SSM Run Command. |
 | `MANAGED_MCP_REGISTRY` | unset | — | The registry `docker login` authenticates against, so this account's own images pull without a credential being typed. Images from any other registry the host can pull from are allowed; the login is simply skipped for them. |
@@ -211,7 +219,7 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, applied to top-level predict and image runs. Agent runs are always traced. Unlike the limits above, an out-of-range value clamps into the range silently; only a non-numeric one falls back to the default. |
+| `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, applied to top-level predict and image runs. Agent runs are always traced. Unlike the limits above, an out-of-range value **clamps** into the range rather than falling back — a rate of `2` means "as much as possible" — while a non-numeric one takes the default. Both say so in the log: a sampling rate that quietly became something else is how a deployment reasons from traces it never recorded. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | In-memory TTL for the settings row. Bounds cross-instance staleness of every runtime override — see [Resolution order](#resolution-order). Floors at `1`, so `0` degrades to the default rather than disabling the cache. |
 | `TRACE_RETENTION_DAYS` | `30` | — | DynamoDB TTL on the row's `expiresAt`. |
 | `USAGE_RETENTION_DAYS` | `400` | — | Kept well beyond the dashboard's 184-day query window. |
@@ -220,7 +228,10 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 | `A2A_TASK_RETENTION_DAYS` | `1` | — | Ephemeral job state, kept just long enough for `tasks/get`/`tasks/cancel` after `message/send`. |
 | `AUDIT_RETENTION_DAYS` | `400` | — | Audit records. The longest window here with usage: the question an audit row answers is asked long after the act, and the row is one per sensitive act rather than one per run. |
 
-Retention values must be positive numbers; anything else falls back to the default. TTL has
+Retention values are whole days, at least `1`; anything else falls back to the default **with
+a warning**, like every other numeric setting here. It used to fall back in silence, which is
+the worst place for that: the value an operator got wrong is the one deciding how long a row
+survives, and nothing said the row's window was not the one they configured. TTL has
 to be **enabled on the `expiresAt` attribute of the production table** — see
 [OPERATIONS.md](OPERATIONS.md#row-retention).
 

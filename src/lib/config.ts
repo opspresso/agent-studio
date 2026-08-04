@@ -73,6 +73,30 @@ export function positiveIntEnv(name: string, fallback: number, min = 0): number 
   return value;
 }
 
+/**
+ * A `0`–`1` setting. Out of range **clamps** rather than falling back — a rate
+ * of `2` means "as much as possible", and refusing it would be pedantry — while
+ * a value that is not a number at all has no intent to honour and takes the
+ * default. Both say so; a sampling rate that quietly became something else is
+ * how a deployment ends up reasoning from traces it never recorded.
+ */
+export function fractionEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    log.warn("config", `ignoring invalid ${name}="${raw}"; using ${fallback}`);
+    return fallback;
+  }
+  const clamped = Math.min(Math.max(value, 0), 1);
+  if (clamped !== value) {
+    log.warn("config", `${name}="${raw}" is outside 0–1; using ${clamped}`);
+  }
+  return clamped;
+}
+
 export const config = {
   get stage(): Stage {
     const stage = process.env.STAGE ?? "local";
@@ -184,6 +208,25 @@ export const config = {
   },
   get maxConcurrentRunsA2a(): number {
     return positiveIntEnv("MAX_CONCURRENT_RUNS_A2A", 50);
+  },
+  /**
+   * The share of predict and image runs that record a trace. Agent runs are
+   * always traced — that is a decision in `traceLifecycle`, not a rate.
+   */
+  get traceSampleRate(): number {
+    return fractionEnv("TRACE_SAMPLE_RATE", 0.1);
+  },
+  /**
+   * How long a discovered MCP tool list may be reused, and the most a server's
+   * own freshness hint may ask for. Both `0` are meaningful settings — "do not
+   * cache" and "ignore what servers ask for" — so the floor is `0`, not `1`.
+   * `src/infrastructure/mcp/discoveryCache.ts` owns how the two combine.
+   */
+  get mcpDiscoveryCacheTtlMs(): number {
+    return positiveIntEnv("MCP_DISCOVERY_CACHE_TTL_MS", 60_000);
+  },
+  get mcpMaxServerTtlMs(): number {
+    return positiveIntEnv("MCP_MAX_SERVER_TTL_MS", 5 * 60_000);
   },
   /**
    * DNS suffixes whose hosts an MCP entry may use despite resolving privately —

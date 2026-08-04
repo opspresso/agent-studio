@@ -21,34 +21,10 @@
 
 import { createHash } from "node:crypto";
 import type { McpTool } from "./session";
-import { log } from "@/shared/logger";
+import { config } from "@/lib/config";
 
-const DEFAULT_TTL_MS = 60_000;
 /** Bounds memory when many servers × credential sets pass through one instance. */
 const MAX_ENTRIES = 200;
-
-/**
- * `MCP_DISCOVERY_CACHE_TTL_MS` override. A non-positive or unparseable value
- * would either disable caching or (negative) freeze a tool list forever, so
- * anything outside the domain falls back to the default. `0` is accepted as an
- * explicit "do not cache".
- */
-function parseTtlMs(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === "") {
-    return DEFAULT_TTL_MS;
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    log.warn(
-      "mcp",
-      `ignoring invalid MCP_DISCOVERY_CACHE_TTL_MS="${raw}"; using ${DEFAULT_TTL_MS}ms`,
-    );
-    return DEFAULT_TTL_MS;
-  }
-  return value;
-}
-
-const TTL_MS = parseTtlMs(process.env.MCP_DISCOVERY_CACHE_TTL_MS);
 
 /**
  * The most a server's own `ttlMs` may buy it.
@@ -65,31 +41,12 @@ const TTL_MS = parseTtlMs(process.env.MCP_DISCOVERY_CACHE_TTL_MS);
  * through would also stop *unhinted* servers being re-read, which is the
  * opposite trade. Deployments that run one instance can raise this freely; those
  * that run many should keep it near the staleness they are willing to wear.
+ *
+ * Both settings are read through `config`, which owns the parse and the warning,
+ * and read per call rather than once at import: a value frozen at module scope
+ * is a process-wide constant nobody declared, which is the shape this file used
+ * to have.
  */
-const DEFAULT_MAX_SERVER_TTL_MS = 5 * 60_000;
-
-/**
- * `MCP_MAX_SERVER_TTL_MS` override. Read through the same guard as the TTL
- * itself: a negative or unparseable ceiling would either freeze a hinted tool
- * list or silently drop every hint. `0` is a meaningful setting — it ignores
- * server hints entirely and keeps the local TTL for everything.
- */
-function parseMaxServerTtlMs(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === "") {
-    return DEFAULT_MAX_SERVER_TTL_MS;
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    log.warn(
-      "mcp",
-      `ignoring invalid MCP_MAX_SERVER_TTL_MS="${raw}"; using ${DEFAULT_MAX_SERVER_TTL_MS}ms`,
-    );
-    return DEFAULT_MAX_SERVER_TTL_MS;
-  }
-  return value;
-}
-
-const MAX_SERVER_TTL_MS = parseMaxServerTtlMs(process.env.MCP_MAX_SERVER_TTL_MS);
 
 /**
  * How long a discovery may be reused: the server's hint where it gave a usable
@@ -108,16 +65,18 @@ const MAX_SERVER_TTL_MS = parseMaxServerTtlMs(process.env.MCP_MAX_SERVER_TTL_MS)
  * reading that falls back to our own heuristic rather than to no caching.
  */
 function discoveryTtlMs(serverTtlMs: number | undefined): number {
-  if (TTL_MS <= 0) {
+  const localTtlMs = config.mcpDiscoveryCacheTtlMs;
+  const maxServerTtlMs = config.mcpMaxServerTtlMs;
+  if (localTtlMs <= 0) {
     return 0;
   }
-  if (serverTtlMs === undefined || MAX_SERVER_TTL_MS === 0) {
-    return TTL_MS;
+  if (serverTtlMs === undefined || maxServerTtlMs === 0) {
+    return localTtlMs;
   }
   if (serverTtlMs <= 0) {
     return 0;
   }
-  return Math.min(serverTtlMs, MAX_SERVER_TTL_MS);
+  return Math.min(serverTtlMs, maxServerTtlMs);
 }
 
 /**
@@ -133,7 +92,9 @@ function discoveryTtlMs(serverTtlMs: number | undefined): number {
  * is a few seconds out of date. Capped by the success TTL so disabling the
  * cache disables this too.
  */
-const FAILURE_TTL_MS = Math.min(TTL_MS, 30_000);
+function failureTtlMs(): number {
+  return Math.min(config.mcpDiscoveryCacheTtlMs, 30_000);
+}
 
 /** A remembered discovery: what the server offered, or why it offered nothing. */
 export type CachedDiscovery =
@@ -234,7 +195,7 @@ export function setCachedFailure(
   unauthorized: boolean,
   now: number = Date.now(),
 ): void {
-  remember(url, headers, { kind: "failure", reason, unauthorized }, FAILURE_TTL_MS, now);
+  remember(url, headers, { kind: "failure", reason, unauthorized }, failureTtlMs(), now);
 }
 
 /**
