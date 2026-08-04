@@ -10,7 +10,7 @@ const updateSchema = z.object({
   content: z.string().optional(),
 });
 
-export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
     return Response.json(await skillUseCases.get(parseName(name)));
@@ -19,7 +19,7 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
   }
 });
 
-export const PUT = withAdminAuth(async (user, request: Request, ctx: RouteContext) => {
+export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return invalidRequest(parsed.error);
