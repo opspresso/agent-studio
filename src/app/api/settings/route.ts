@@ -31,7 +31,13 @@ const updateSchema = z.object({
   // An enum rather than a bounded string: the two values are the whole domain,
   // and a typo silently stored as an override would read back as `allow` on a
   // deployment that asked to refuse.
-  unknownModelPolicy: z.enum(["allow", "refuse"]).optional(),
+  //
+  // The empty string is in the set because it is not a third value — it is how
+  // *every* field on this page removes its override and falls back to the
+  // environment, and the page says so in as many words. Without it the one
+  // field that cannot be cleared would fail the whole save, losing every other
+  // edit in the form along with it.
+  unknownModelPolicy: z.enum(["allow", "refuse", ""]).optional(),
 });
 
 export const GET = withAdminAuth(async () => {

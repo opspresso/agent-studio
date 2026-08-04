@@ -71,4 +71,14 @@ describe("PUT /api/settings", () => {
     expect(res.status).toBe(400);
     expect(useCases.update).not.toHaveBeenCalled();
   });
+
+  it("accepts an empty unknownModelPolicy, which is how the page clears an override", async () => {
+    // The page submits every field on every save and tells the operator to clear
+    // one to fall back to env. Refusing "" here made the only un-clearable field
+    // 400 the whole form, taking every other edit with it.
+    const body = { skillsRepo: "org/skills", unknownModelPolicy: "" };
+    const res = await put(body);
+    expect(res.status).toBe(200);
+    expect(useCases.update).toHaveBeenCalledWith(body, "admin@example.com");
+  });
 });
