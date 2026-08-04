@@ -1214,7 +1214,11 @@ own way, and a filter that worked for reveals would quietly return nothing for d
 which is the characteristic failure of a drifted audit trail, since it looks like an absence
 of events rather than a bug. The store is **pushed in** by the composition root for the same
 reason `setAdminCheck` is: a call site that had to pass it could forget, and one unrecorded act
-is indistinguishable from one that never happened.
+is indistinguishable from one that never happened. `src/instrumentation.ts` wires it on the
+**awaited** boot path rather than leaving it to the composition root's own import: not every
+recording route needs something from the container — the A2A-key reveal needs nothing — and a
+request served before that floating import resolved would reveal a credential and record
+nothing.
 
 **A failed write is logged, not thrown.** The act already happened; refusing it afterwards
 would turn a storage blip into an outage of every sensitive operation at once. The pre-existing

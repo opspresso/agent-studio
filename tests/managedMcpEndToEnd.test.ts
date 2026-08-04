@@ -122,7 +122,7 @@ describe("managed MCP, end to end on loopback", () => {
     expect(resolved.mcpServers[0]?.name).toBe("image-fetch");
 
     await resolved.close?.();
-    await managed.remove("image-fetch");
+    await managed.remove("image-fetch", "admin@example.com");
     expect(rows.size).toBe(0);
     await new Promise((done) => server.close(done));
   });

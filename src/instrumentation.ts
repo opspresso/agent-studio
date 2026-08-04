@@ -60,6 +60,19 @@ export async function register(): Promise<void> {
     assertAccessControlConfig();
     const { registerShutdownSignals } = await import("@/shared/lifecycle");
     registerShutdownSignals();
+    // Awaited, unlike the composition root below. The sink is what makes
+    // `recordAudit` write anything, and the root wires it only as a side effect
+    // of being imported — which the A2A-key reveal route never does, since it
+    // needs nothing from it. A request served before that floating import
+    // resolves would reveal a credential and record no row, and an unrecorded
+    // act is indistinguishable from one that never happened. Two AWS SDK
+    // modules, no client construction (the document client is lazy), so this
+    // costs the boot path nothing measurable.
+    const [{ setAuditSink }, { auditRepository }] = await Promise.all([
+      import("@/application/audit/recordAudit"),
+      import("@/infrastructure/db/repositories/auditRepository"),
+    ]);
+    setAuditSink(auditRepository);
     // The import is inside the guard so the edge build folds it away, and off
     // the awaited path because evaluating the composition root constructs every
     // AWS client — `register` is awaited before the server accepts connections,

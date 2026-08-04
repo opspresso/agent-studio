@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
+import { setAuditSink } from "@/application/audit/recordAudit";
+import type { AuditEvent } from "@/domain/audit/types";
 import type { McpServer } from "@/domain/mcp/types";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 import type { ManagedWorkload, ManagedWorkloadSpec, McpProvisioner } from "@/domain/mcp/provisioner";
@@ -222,11 +224,40 @@ describe("managed MCP lifecycle", () => {
   it("removes the container before the entry that points at it", async () => {
     const { useCases, rows, stopped, invalidated } = fixture();
     await useCases.create(input);
-    await useCases.remove("image-fetch");
+    await useCases.remove("image-fetch", "admin@example.com");
 
     expect(stopped).toEqual(["image-fetch"]);
     expect(rows.has("image-fetch")).toBe(false);
     expect(invalidated).toEqual(["http://127.0.0.1:3001/mcp"]);
+  });
+
+  it("leaves the same audit row an unmanaged deletion does", async () => {
+    // A managed entry lives in the shared MCP registry like any other, and this
+    // route deletes it without going through `mcpUseCases`. Without a row here
+    // the `registry.delete` trail has a hole exactly where a container is
+    // destroyed too — the deletion nobody can reconstruct afterwards.
+    const audited: AuditEvent[] = [];
+    setAuditSink({
+      async append(event) {
+        audited.push(event);
+      },
+      async listByDay() {
+        return audited;
+      },
+    });
+    try {
+      const { useCases } = fixture();
+      await useCases.create(input);
+      await useCases.remove("image-fetch", "admin@example.com");
+      expect(audited).toHaveLength(1);
+      expect(audited[0]).toMatchObject({
+        actorEmail: "admin@example.com",
+        action: "registry.delete",
+        target: "mcp:image-fetch",
+      });
+    } finally {
+      setAuditSink(undefined);
+    }
   });
 
   it("will not touch a remote server through the managed path", async () => {
@@ -239,7 +270,7 @@ describe("managed MCP lifecycle", () => {
     };
     const { useCases, rows } = fixture({ existing: remote });
 
-    await expect(useCases.remove("github")).rejects.toThrow(/not managed/);
+    await expect(useCases.remove("github", "admin@example.com")).rejects.toThrow(/not managed/);
     expect(rows.has("github")).toBe(true);
   });
 

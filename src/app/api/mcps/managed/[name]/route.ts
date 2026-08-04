@@ -55,13 +55,13 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
 });
 
 /** Removes the container and the entry together; neither outlives the other. */
-export const DELETE = withAdminAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const DELETE = withAdminAuth(async (user, _request: Request, ctx: RouteContext) => {
   if (!managedMcpUseCases) {
     return unavailable();
   }
   const { name } = await ctx.params;
   try {
-    await managedMcpUseCases.remove(parseName(name));
+    await managedMcpUseCases.remove(parseName(name), user.email);
     return new Response(null, { status: 204 });
   } catch (error) {
     return apiError(error);
