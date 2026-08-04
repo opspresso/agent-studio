@@ -29,7 +29,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
         version: versionEntity,
         messages: parsed.data.messages,
         actor: principalActor(principal),
-      ...(principal.caller ? { caller: principal.caller } : {}),
+        ...(principal.caller ? { caller: principal.caller } : {}),
         signal: abortController.signal,
       }),
       abortController,

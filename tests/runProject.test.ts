@@ -1611,3 +1611,47 @@ describe("executeProject non-streaming dispatch", () => {
     expect(() => executeProjectStream(deps, input)).toThrow(ValidationError);
   });
 });
+
+/**
+ * The other half of the same dispatch. `executeProjectStream` sends only agent
+ * projects here, but three surfaces call `executeAgent` directly and one of them
+ * — `/api/projects/{name}/versions/{version}/agent` — had no check of its own,
+ * so it ran the tool loop on whatever project type it was handed.
+ */
+describe("executeAgent project type", () => {
+  it("runs an agent project", async () => {
+    const channel = new FakeChannel([[contentChunk("answer"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: versionFixture({ piiFiltering: false }),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(chunks.some((chunk) => chunk.delta?.content === "answer")).toBe(true);
+  });
+
+  it.each(["llm", "image"] as const)("refuses a %s project before dispatching it", async (projectType) => {
+    const channel = new FakeChannel([[contentChunk("should never run"), usageChunk(1, 1)]]);
+    const { deps, recorded } = executionDepsFixture(channel);
+
+    await expect(
+      collect(
+        executeAgent(deps, {
+          project: { ...projectFixture(), projectType },
+          version: versionFixture({ piiFiltering: false }),
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    // The refusal has to come *before* the run, not from something downstream
+    // failing: an llm project would otherwise answer from a bare system prompt
+    // and succeed, and an image model would reach chat/completions.
+    expect(channel.calls).toBe(0);
+    expect(recorded).toEqual([]);
+  });
+});

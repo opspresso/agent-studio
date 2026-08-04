@@ -694,6 +694,10 @@ and a terminal `done: true` or `finishReason` naming why the run ended) then
 `data: [DONE]`. The full field contract is in
 [ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-contract).
 
+**Agent projects only** — 400 for any other type. The tool loop has nowhere to put an
+`llm` project's `userPromptTemplate`, and an `image` project's model does not serve
+completions; use `/predict` for either.
+
 A transfer to a project already on the current transfer chain, or beyond 5 levels of
 nesting, is refused as an authored error chunk rather than recursing.
 
