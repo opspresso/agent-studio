@@ -20,6 +20,7 @@ import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import type { CostLimits, Project, Version } from "@/domain/project/types";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
+import { fakeSkillRepository } from "./fakeSkills";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -259,7 +260,7 @@ describe("every top-level entry point is guarded", () => {
       ...f.deps,
       projects: { get: reject, list: reject, put: reject, delete: reject },
       versions: { get: reject, list: reject, put: reject, delete: reject },
-      skills: { get: reject, list: reject, put: reject, delete: reject },
+      skills: fakeSkillRepository(reject),
       mcps: { get: reject, list: reject, put: reject, delete: reject },
       externalAgents: { get: reject, list: reject, put: reject, delete: reject },
       channel: { stream: reject },

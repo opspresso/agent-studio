@@ -20,6 +20,7 @@ import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
+import { fakeSkillRepository } from "./fakeSkills";
 
 const MCP_URL = "https://crm.test/mcp";
 
@@ -79,7 +80,7 @@ function executionDepsFixture(channel: FakeChannel) {
   return {
     projects: { get: reject },
     versions: { get: reject },
-    skills: { get: reject },
+    skills: fakeSkillRepository(reject),
     mcps: { get: reject },
     externalAgents: { get: reject },
     usage: { record: async () => {} },

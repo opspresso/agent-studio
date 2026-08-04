@@ -19,6 +19,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import type { LlmChannel } from "@/domain/llm/channel";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import { fakeSkillRepository } from "./fakeSkills";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -237,7 +238,7 @@ function executionDepsFixture(channel: FakeChannel): ExecutionDeps {
     now: () => TEST_NOW,
     projects: { get: reject, list: reject, put: reject, delete: reject },
     versions: { get: reject, list: reject, put: reject, delete: reject },
-    skills: { get: reject, list: reject, put: reject, delete: reject },
+    skills: fakeSkillRepository(reject),
     mcps: { get: reject, list: reject, put: reject, delete: reject },
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {

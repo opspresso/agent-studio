@@ -38,6 +38,7 @@ import type { Project, Version, VersionParameters } from "@/domain/project/types
 import type { UsageDelta } from "@/domain/usage/types";
 import type { Trace } from "@/domain/trace/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import { fakeSkillRepository } from "./fakeSkills";
 
 const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
 
@@ -106,7 +107,7 @@ function executionDepsFixture(channel: FakeChannel) {
     now: () => TEST_NOW,
     projects: { get: reject, list: reject, put: reject, delete: reject },
     versions: { get: reject, list: reject, put: reject, delete: reject },
-    skills: { get: reject, list: reject, put: reject, delete: reject },
+    skills: fakeSkillRepository(reject),
     mcps: { get: reject, list: reject, put: reject, delete: reject },
     externalAgents: { get: reject, list: reject, put: reject, delete: reject },
     usage: {
@@ -799,30 +800,49 @@ describe("executeAgent nested transfer identity", () => {
 });
 
 describe("executeAgent registry bindings that no longer resolve", () => {
-  it("does not offer a skill whose registry entry is gone, and reads each one once", async () => {
-    // A deleted skill used to be advertised with an empty description and then
-    // failed on load — a wasted turn. And the description read fetched the whole
-    // item (body plus attachments) once per skill, then again on every load.
-    const channel = new FakeChannel([
-      [toolCallChunk(0, "call_1", "Skill", '{"skill_name":"alive"}'), usageChunk(1, 1)],
-      [contentChunk("loaded"), usageChunk(1, 1)],
-    ]);
-    const { deps } = executionDepsFixture(channel);
-    const reads: string[] = [];
+  /**
+   * Counts the two reads a run makes of the registry separately: the table's
+   * one line per skill, and the body a `Skill` call asks for.
+   */
+  function countSkillReads(deps: ExecutionDeps): { described: string[][]; bodies: string[] } {
+    const described: string[][] = [];
+    const bodies: string[] = [];
+    deps.skills.describe = (async (names: readonly string[]) => {
+      described.push([...names]);
+      return names.includes("alive") ? [{ name: "alive", description: "still here" }] : [];
+    }) as ExecutionDeps["skills"]["describe"];
     deps.skills.get = (async (name: string) => {
-      reads.push(name);
+      bodies.push(name);
       return name === "alive"
         ? { name, description: "still here", content: "# alive", createdAt: "", updatedAt: "" }
         : null;
     }) as ExecutionDeps["skills"]["get"];
+    return { described, bodies };
+  }
+
+  const boundToTwoSkills = () => ({
+    ...versionFixture({ piiFiltering: false }),
+    skillList: ["alive", "deleted"],
+  });
+
+  it("does not offer a skill whose registry entry is gone, and describes without reading a body", async () => {
+    // A deleted skill used to be advertised with an empty description and then
+    // failed on load — a wasted turn. And the table's one line per skill cost
+    // the whole item: every bound skill's body and attachments crossed the wire
+    // before the first token, which is the opposite of what a tool the model
+    // has to *ask* for is worth.
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "Skill", '{"skill_name":"alive"}'), usageChunk(1, 1)],
+      [toolCallChunk(0, "call_2", "Skill", '{"skill_name":"alive"}'), usageChunk(1, 1)],
+      [contentChunk("loaded"), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    const reads = countSkillReads(deps);
 
     const chunks = await collect(
       executeAgent(deps, {
         project: projectFixture(),
-        version: {
-          ...versionFixture({ piiFiltering: false }),
-          skillList: ["alive", "deleted"],
-        },
+        version: boundToTwoSkills(),
         messages: [{ role: "user", content: "use a skill" }],
       }),
     );
@@ -836,9 +856,34 @@ describe("executeAgent registry bindings that no longer resolve", () => {
     const systemPrompt = String(channel.seenParams[0]?.messages[0]?.content);
     expect(systemPrompt).toContain("| alive | still here |");
     expect(systemPrompt).not.toContain("deleted");
-    // The load reused the description's read instead of fetching again.
-    expect(reads).toEqual(["alive", "deleted"]);
-    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toBe("# alive");
+    // Both bindings asked about together, and neither cost a body.
+    expect(reads.described).toEqual([["alive", "deleted"]]);
+    // Two calls for the same skill, one body read: the loader's cache still holds.
+    expect(reads.bodies).toEqual(["alive"]);
+    expect(chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content)).toEqual([
+      "# alive",
+      "# alive",
+    ]);
+  });
+
+  it("reads no skill body at all when the model never calls the tool", async () => {
+    // The case the split is for. The table is assembled, the tool is offered,
+    // and nothing about the run touches a SKILL.md body — which is what the
+    // model asking for one is supposed to mean.
+    const channel = new FakeChannel([[contentChunk("answered without a skill"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    const reads = countSkillReads(deps);
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: boundToTwoSkills(),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(reads.described).toEqual([["alive", "deleted"]]);
+    expect(reads.bodies).toEqual([]);
   });
 
   it("does not offer a transfer to a project that no longer exists", async () => {

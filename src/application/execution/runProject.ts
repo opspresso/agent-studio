@@ -18,7 +18,7 @@ import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor
 import type { Project } from "@/domain/project/types";
 import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
-import { createSkillReader, resolveRunTools } from "./bindings";
+import { resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
@@ -294,7 +294,6 @@ export async function* executeAgent(
     // catch stays keyed on `input.signal` so a deadline reads as error, a
     // caller abort as cancelled.
     const runSignal = withRunDeadline(input.signal);
-    const readSkill = createSkillReader(deps);
     // Pinned for the whole run, subagents included: every prompt this run
     // assembles has to agree on when "now" is, and a parent and a child landing
     // on different dates across a midnight boundary is the exact confusion the
@@ -307,7 +306,6 @@ export async function* executeAgent(
     const { skills, subagents, mcp, warnings } = await resolveRunTools(
       deps,
       input.version,
-      readSkill,
       runSignal,
     );
     closeMcpSessions = mcp.close;
@@ -317,7 +315,6 @@ export async function* executeAgent(
       input.project.name,
       usage.record,
       origin,
-      readSkill,
       runSignal,
       mcp.callMcpTool,
     );

@@ -10,6 +10,12 @@ function fakeRepo(initial: Skill[] = []) {
     async get(name) {
       return store.get(name) ?? null;
     },
+    async describe(names) {
+      return names.flatMap((name) => {
+        const skill = store.get(name);
+        return skill ? [{ name, description: skill.description }] : [];
+      });
+    },
     async list() {
       return [...store.values()];
     },

@@ -31,12 +31,7 @@ import {
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "./modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
-import {
-  buildSkillLoader,
-  createSkillReader,
-  resolveRunTools,
-  type SkillReader,
-} from "./bindings";
+import { buildSkillLoader, createSkillReader, resolveRunTools } from "./bindings";
 import { createTraceRecorder, finishTrace } from "./traceLifecycle";
 
 /**
@@ -58,7 +53,6 @@ export async function buildAgentDeps(
   recordUsageFn: engine.RecordUsageFn,
   /** Who caused the run, and the transfer chain it sits on. */
   origin: RunOrigin,
-  readSkill: SkillReader,
   signal?: AbortSignal,
   /** The run's resolved MCP dispatcher; absent when the version binds no server. */
   callMcpTool?: engine.AgentDeps["callMcpTool"],
@@ -71,7 +65,11 @@ export async function buildAgentDeps(
     channel,
     recordUsage: recordUsageFn,
     ...(callMcpTool ? { callMcpTool } : {}),
-    loadSkillContent: buildSkillLoader(readSkill),
+    // Built here rather than handed in. It used to be a parameter because the
+    // binding resolve needed the same cache — that resolve reads descriptions
+    // now, so the loader is its only reader, and three call sites were passing
+    // a value along for a function that can make its own.
+    loadSkillContent: buildSkillLoader(createSkillReader(deps)),
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, origin, signal),
     generateImage: buildImageGenerator(deps, imageModel, projectName, recordUsageFn, signal),
     editImage: buildImageEditor(deps, imageModel, projectName, recordUsageFn, signal),
@@ -410,7 +408,6 @@ export async function* runLocalSubagent(
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, project, version, 1, origin)
     : undefined;
-  const readSkill = createSkillReader(deps);
 
   let text = "";
   let thrown: unknown;
@@ -426,12 +423,7 @@ export async function* runLocalSubagent(
     // Everything past it is inside for the older reason: a consumer that stops
     // reading — or a dependency assembly that throws before the first chunk —
     // must still release the sessions the resolve opened.
-    const { skills, subagents, mcp, warnings } = await resolveRunTools(
-      deps,
-      version,
-      readSkill,
-      signal,
-    );
+    const { skills, subagents, mcp, warnings } = await resolveRunTools(deps, version, signal);
     closeMcpSessions = mcp.close;
     const childDeps = await buildAgentDeps(
       deps,
@@ -439,7 +431,6 @@ export async function* runLocalSubagent(
       project.name,
       recordUsageFn,
       origin,
-      readSkill,
       signal,
       mcp.callMcpTool,
     );

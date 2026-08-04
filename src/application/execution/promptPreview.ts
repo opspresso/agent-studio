@@ -6,7 +6,7 @@ import { renderTemplate } from "@/application/llm/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
 import { callerFor, runClock, runStrategyFor } from "./deps";
-import { createSkillReader, resolveRunTools } from "./bindings";
+import { resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 
@@ -91,8 +91,7 @@ export async function previewPrompt(
       "An agent run does not send the user prompt template; the conversation supplies the user turn.",
     );
   }
-  const readSkill = createSkillReader(deps);
-  const resolved = await resolveRunTools(deps, version, readSkill);
+  const resolved = await resolveRunTools(deps, version);
   try {
     // The same deps a run is given: whether the image section and the image
     // tools appear is decided from them, not from the version alone.
@@ -103,7 +102,6 @@ export async function previewPrompt(
       async () => {},
       // A preview runs nothing, so it has no actor to attribute.
       { ancestry: [project.name] },
-      readSkill,
     );
     // The same assembly a run uses, not a second spelling of it. This is where
     // the two drifted: the preview omitted the caller and showed a prompt one
