@@ -273,6 +273,35 @@ describe("previewPrompt", () => {
     expect(preview.toolNames).toEqual([]);
   });
 
+  it("names the caller in a prompt project's preview, on the version's opt-in", async () => {
+    // The agent branch went through `assembleAgentRun` and carried the block;
+    // this one built its messages itself and never asked, so a prompt project
+    // that opted into `callerContext` previewed anonymously while a run of the
+    // same version named the person.
+    const deps = executionDepsFixture(new FakeChannel([]));
+    const version: Version = {
+      ...versionFixture(),
+      systemPrompt: "You summarize.",
+      userPromptTemplate: "Summarize.",
+    };
+
+    const withOptIn = await previewPrompt(deps, {
+      project: { ...projectFixture(), projectType: "llm" },
+      version: { ...version, parameters: { piiFiltering: false, callerContext: true } },
+      caller: { displayName: "Bruce" },
+    });
+    const without = await previewPrompt(deps, {
+      project: { ...projectFixture(), projectType: "llm" },
+      version,
+      caller: { displayName: "Bruce" },
+    });
+
+    expect(withOptIn.messages[0]?.content).toContain("You are answering Bruce.");
+    // The gate is the version's, not the surface's: a caller resolved by a page
+    // must not reach a version that never asked for one.
+    expect(without.messages[0]?.content).not.toContain("Bruce");
+  });
+
   it("previews an image project's rendered prompt, which is all it sends", async () => {
     const deps = executionDepsFixture(new FakeChannel([]));
 

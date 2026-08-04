@@ -5,7 +5,7 @@ import type { RunCaller } from "@/domain/execution/actor";
 import { renderTemplate } from "@/application/llm/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
-import { runClock, runStrategyFor } from "./deps";
+import { callerFor, runClock, runStrategyFor } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
@@ -74,6 +74,10 @@ export async function previewPrompt(
           userPromptTemplate: version.userPromptTemplate,
           variables: input.variables,
           now: runClock(deps),
+          // On the same opt-in a run applies. This branch used to skip the
+          // question entirely, so a prompt project previewed anonymously even
+          // where its version had asked to be told who is asking.
+          ...callerFor({ version, ...(input.caller ? { caller: input.caller } : {}) }),
         }),
       ),
       toolNames: [],
@@ -115,7 +119,7 @@ export async function previewPrompt(
       // The clock a run started now would carry, so the preview does not hide a
       // line the model will read.
       now: runClock(deps),
-      ...(input.caller && version.parameters.callerContext ? { caller: input.caller } : {}),
+      ...callerFor({ version, ...(input.caller ? { caller: input.caller } : {}) }),
       // A preview stands for a top-level run, and that is the only kind offered
       // fan-out — hiding it here would show a prompt nobody sends.
       canDispatch: true,

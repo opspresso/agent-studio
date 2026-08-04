@@ -598,6 +598,18 @@ const SINGLE_OWNERS: SingleOwner[] = [
     within: "src/application/execution/",
   },
   {
+    // Whether a run's prompt may name the person asking. Three modules answered
+    // it — the two runners and the Playground preview — and the preview's copy
+    // ran on one of its two branches, so a prompt project previewed anonymously
+    // however its version was configured. The pattern matches the conjunction,
+    // which is what a copy of the gate looks like; Slack's separate
+    // `parameters.callerContext ? …` is a different question (whether to make
+    // the profile lookup at all) and is deliberately not matched.
+    what: "whether a run's prompt may name its caller",
+    pattern: /callerContext && /,
+    owner: "src/application/execution/deps.ts",
+  },
+  {
     // Two sides have to agree on this string and they sit in different layers:
     // `lib/auth.ts` throws it and `/login` reads it back off the query string,
     // with Better Auth's redirect in between. Either one spelling it inline is

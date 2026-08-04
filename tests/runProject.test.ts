@@ -1725,3 +1725,85 @@ describe("executeAgent project type", () => {
     expect(recorded).toEqual([]);
   });
 });
+
+/**
+ * What the facade carries down to whichever executor it picked.
+ *
+ * `caller` was declared on the facade's input, documented, and set by both
+ * routes that go through it — and then dropped, because each branch rebuilt the
+ * executor's input as a fresh literal and none of the four mentioned it. An
+ * optional field makes that a silent drop rather than a type error, so the same
+ * version named its caller on `/agent`, in a chat and in Slack (all of which
+ * call `executeAgent` directly) while running anonymously on `/predict` and
+ * `/chat/completions`.
+ *
+ * Asserted on the prompt the channel actually received, not on the input object:
+ * a projection that carried the field to an executor that then ignored it would
+ * pass an argument-shape test and fail the user exactly the same way.
+ */
+describe("executeProject dispatch carries the caller", () => {
+  const CALLER = { displayName: "Bruce" };
+
+  async function systemPromptOf(
+    channel: FakeChannel,
+    run: () => Promise<unknown>,
+  ): Promise<string> {
+    await run();
+    return String(channel.seenParams[0]?.messages[0]?.content ?? "");
+  }
+
+  it.each(["agent", "llm"] as const)("through the streaming path of a %s project", async (projectType) => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const prompt = await systemPromptOf(channel, () =>
+      collect(
+        executeProjectStream(deps, {
+          project: { ...projectFixture(), projectType },
+          version: versionFixture({ piiFiltering: false, callerContext: true }),
+          messages: [{ role: "user", content: "hi" }],
+          caller: CALLER,
+        }),
+      ),
+    );
+
+    expect(prompt).toContain("You are answering Bruce.");
+  });
+
+  it.each(["agent", "llm"] as const)("through the collected path of a %s project", async (projectType) => {
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const prompt = await systemPromptOf(channel, () =>
+      executeProject(deps, {
+        project: { ...projectFixture(), projectType },
+        version: versionFixture({ piiFiltering: false, callerContext: true }),
+        messages: [{ role: "user", content: "hi" }],
+        caller: CALLER,
+      }),
+    );
+
+    expect(prompt).toContain("You are answering Bruce.");
+  });
+
+  it("still lets the version's opt-in decide, not the surface", async () => {
+    // The gate belongs to `callerFor` at the engine-input boundary. Forwarding
+    // the caller unconditionally is what makes that the *only* gate; a second
+    // one on the way there could only ever disagree with it.
+    const channel = new FakeChannel([[contentChunk("ok"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const prompt = await systemPromptOf(channel, () =>
+      collect(
+        executeProjectStream(deps, {
+          project: projectFixture(),
+          version: versionFixture({ piiFiltering: false }),
+          messages: [{ role: "user", content: "hi" }],
+          caller: CALLER,
+        }),
+      ),
+    );
+
+    expect(prompt).not.toContain("Bruce");
+  });
+});
