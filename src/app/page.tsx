@@ -103,8 +103,8 @@ export default async function Home() {
         static sub-components do not survive the RSC boundary — the dotted form
         arrives as `undefined` and the page 500s at render.
       */}
-      <Grid gap={40} align="center">
-        <GridCol span={{ base: 12, lg: 6 }}>
+      <Grid gap={40} align="center" style={{ marginInline: 0, width: "100%" }}>
+        <GridCol span={{ base: 12, lg: 6 }} style={{ minWidth: 0 }}>
           <Text ff="monospace" fz="xs" tt="uppercase" c="brand" style={{ letterSpacing: "0.2em" }}>
             prompt → publish → call
           </Text>
@@ -124,12 +124,13 @@ export default async function Home() {
           </Group>
         </GridCol>
 
-        <GridCol span={{ base: 12, lg: 6 }}>
+        <GridCol span={{ base: 12, lg: 6 }} style={{ minWidth: 0 }}>
           <Paper
             component="figure"
             withBorder
             radius="md"
             m={0}
+            w="100%"
             style={{ overflow: "hidden" }}
             aria-label="Example agent run stream"
           >
@@ -182,7 +183,12 @@ export default async function Home() {
         </VisuallyHidden>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
           {DOMAINS.map((domain) => (
-            <Card key={domain.label} component="article" padding="lg">
+            <Card
+              key={domain.label}
+              component="article"
+              padding="lg"
+              className={classes.domainCard}
+            >
               <Text
                 ff="monospace"
                 fz={10}

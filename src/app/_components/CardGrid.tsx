@@ -8,7 +8,8 @@
  * pages for the section to look like one thing.
  */
 
-import { Group, Loader, SimpleGrid, Text } from "@mantine/core";
+import { Center, Paper, SimpleGrid, Skeleton, Stack, Text, ThemeIcon } from "@mantine/core";
+import { IconSparkles } from "@tabler/icons-react";
 
 /** The grid alone, for a section that has already decided it has something to show. */
 export function CardList({ children }: { children: React.ReactNode }) {
@@ -32,19 +33,31 @@ export function CardGrid({
 }) {
   if (loading) {
     return (
-      <Group gap="xs">
-        <Loader size="xs" />
-        <Text size="sm" c="dimmed">
-          Loading…
-        </Text>
-      </Group>
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" aria-label="Loading">
+        {Array.from({ length: 3 }, (_, index) => (
+          <Paper key={index} withBorder p="md">
+            <Skeleton height={16} width="48%" />
+            <Skeleton height={10} mt="md" />
+            <Skeleton height={10} mt="xs" width="72%" />
+          </Paper>
+        ))}
+      </SimpleGrid>
     );
   }
   if (empty) {
     return (
-      <Text size="sm" c="dimmed">
-        {emptyText}
-      </Text>
+      <Paper withBorder py={48} px="lg">
+        <Center>
+          <Stack gap="xs" align="center">
+            <ThemeIcon variant="light" size={40} radius="xl">
+              <IconSparkles size={20} stroke={1.7} />
+            </ThemeIcon>
+            <Text size="sm" c="dimmed" ta="center">
+              {emptyText}
+            </Text>
+          </Stack>
+        </Center>
+      </Paper>
     );
   }
   return <CardList>{children}</CardList>;
