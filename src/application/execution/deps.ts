@@ -114,6 +114,49 @@ export interface ExecuteProjectInput {
   signal?: AbortSignal;
 }
 
+/**
+ * The caller the prompt is allowed to name — the version's opt-in decides, not
+ * the surface. A surface that resolved one anyway (a cached profile, a replayed
+ * run) must not be able to leak a name into a version that never asked for it.
+ *
+ * Here rather than beside the runners because the Playground preview asks the
+ * same question, and it used to answer it with its own copy of the condition —
+ * one that only ran on the agent branch, so a prompt project previewed
+ * anonymously no matter what its version said.
+ */
+export function callerFor(input: { version: Version; caller?: RunCaller }): { caller?: RunCaller } {
+  return input.version.parameters.callerContext && input.caller ? { caller: input.caller } : {};
+}
+
+/**
+ * What the facade hands whichever executor it picked, projected in one place.
+ *
+ * Both dispatch points rebuilt this literal per branch — four copies of "which
+ * fields travel down" — and every one of them omitted `caller`. Optional fields
+ * make that a silent drop rather than a type error, so a version that opted into
+ * `callerContext` ran anonymously through `/predict` and `/chat/completions`
+ * while the same version named its caller on `/agent`, in a chat and in Slack,
+ * all of which reach `executeAgent` directly. The gate itself is not applied
+ * here: {@link callerFor} answers that once, at the engine-input boundary, and a
+ * second gate on the way there could only disagree with it.
+ *
+ * `variables` is deliberately not part of this. It belongs to the single-shot
+ * path — an agent run has no template to render with it — so that branch adds
+ * it rather than every branch carrying a field one of them must ignore.
+ */
+export function toRunInput(
+  input: ExecuteProjectInput,
+): Pick<ExecuteAgentInput, "project" | "version" | "messages" | "actor" | "caller" | "signal"> {
+  return {
+    project: input.project,
+    version: input.version,
+    messages: input.messages,
+    ...(input.actor ? { actor: input.actor } : {}),
+    ...(input.caller ? { caller: input.caller } : {}),
+    signal: input.signal,
+  };
+}
+
 // --- Prompt preview ---------------------------------------------------------
 
 export interface PromptPreviewMessage {

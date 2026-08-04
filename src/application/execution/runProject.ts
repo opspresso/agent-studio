@@ -14,19 +14,15 @@ import { ValidationError } from "@/application/errors";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
-import {
-  actorKey as toActorKey,
-  type RunCaller,
-  type RunOrigin,
-} from "@/domain/execution/actor";
-import type { Project, Version } from "@/domain/project/types";
+import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
+import type { Project } from "@/domain/project/types";
 import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { createSkillReader, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
-import { runClock, runStrategyFor, toEngineParameters } from "./deps";
+import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
 
 export type {
   ExecutionDeps,
@@ -40,17 +36,6 @@ export { runStrategyFor, type RunStrategy } from "./deps";
 
 function bindUsage(deps: ExecutionDeps, actor: string | undefined): engine.RecordUsageFn {
   return (record) => recordUsage(deps.usage, { ...record, ...(actor ? { actor } : {}) });
-}
-
-/**
- * The caller the prompt is allowed to name — the version's opt-in decides, not
- * the surface. A surface that resolved one anyway (a cached profile, a replayed
- * run) must not be able to leak a name into a version that never asked for it.
- */
-function callerFor(input: { version: Version; caller?: RunCaller }): { caller?: RunCaller } {
-  return input.version.parameters.callerContext && input.caller
-    ? { caller: input.caller }
-    : {};
 }
 
 // --- Single-shot version execution -----------------------------------------
@@ -192,22 +177,9 @@ export function executeProjectStream(
     throw imageRunRefusal(input.project.name);
   }
   if (runStrategyFor(input.project) === "agent") {
-    return executeAgent(deps, {
-      project: input.project,
-      version: input.version,
-      messages: input.messages,
-      ...(input.actor ? { actor: input.actor } : {}),
-      signal: input.signal,
-    });
+    return executeAgent(deps, toRunInput(input));
   }
-  return executeVersionStream(deps, {
-    project: input.project,
-    version: input.version,
-    variables: input.variables,
-    messages: input.messages,
-    ...(input.actor ? { actor: input.actor } : {}),
-    signal: input.signal,
-  });
+  return executeVersionStream(deps, { ...toRunInput(input), variables: input.variables });
 }
 
 /**
@@ -276,24 +248,11 @@ export async function executeProject(
     throw imageRunRefusal(input.project.name);
   }
   if (runStrategyFor(input.project) === "agent") {
-    return collectRun(
-      executeAgent(deps, {
-        project: input.project,
-        version: input.version,
-        messages: input.messages,
-        ...(input.actor ? { actor: input.actor } : {}),
-        signal: input.signal,
-      }),
-      input.version.model,
-    );
+    return collectRun(executeAgent(deps, toRunInput(input)), input.version.model);
   }
   const result = await executeVersion(deps, {
-    project: input.project,
-    version: input.version,
+    ...toRunInput(input),
     variables: input.variables,
-    messages: input.messages,
-    ...(input.actor ? { actor: input.actor } : {}),
-    signal: input.signal,
   });
   // The termination is the engine's: `runPrompt` reads the provider's
   // finish_reason, so a response cut at the output cap is not stamped
