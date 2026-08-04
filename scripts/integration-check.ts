@@ -210,10 +210,10 @@ async function main() {
     assert.ok(await skillRepository.get("integration-skill"), "skill get");
     pass("skill put/get");
 
-    // The projection this uses has to alias `name`, which is a reserved word in
-    // DynamoDB's expression grammar. Nothing but the service will tell you
-    // that: the doc client accepts the expression and the unit tests never see
-    // one, so an un-aliased projection fails first in production.
+    // A projected read, which nothing but the service validates: the doc client
+    // accepts any `ProjectionExpression` and the unit tests replace this method
+    // entirely, so a name DynamoDB reserves — `name` is one, which is why this
+    // projects `description` alone — fails first in production.
     const described = await skillRepository.describe(["integration-skill", "no-such-skill"]);
     assert.deepStrictEqual(
       described,
