@@ -112,6 +112,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/me` | `GET` | session |
+| `/api/members` | `GET` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
 | `/api/settings/a2a-key/reveal` | `POST` | admin |
@@ -326,6 +327,17 @@ restriction*) and `isConfiguredAdmin` (may write a project owned by someone else
 list means *nobody*). Neither is derivable in the browser, and inferring one from the other is
 what once offered every signed-in user an edit form that 403'd on save. See
 [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
+
+## Members
+
+```
+GET /api/members
+  → 200 { members: [ { id, name, email, image, joinedAt, lastLoginAt } ] }
+```
+
+Admin-only. Members are Better Auth users who have signed in to the workspace, ordered by
+`joinedAt` newest first. `lastLoginAt` is updated when a new session is created. It is `null`
+for users created before login tracking was introduced until their next successful sign-in.
 
 ## Chats
 

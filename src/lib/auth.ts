@@ -34,6 +34,11 @@ async function assertAllowedEmailDomain(email: string): Promise<void> {
 
 export const auth = betterAuth({
   database: dynamodbAdapter,
+  user: {
+    additionalFields: {
+      lastLoginAt: { type: "date", required: false, input: false },
+    },
+  },
   socialProviders: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID ?? "",
@@ -57,6 +62,17 @@ export const auth = betterAuth({
             await assertAllowedEmailDomain(user.email);
           }
           return { data: session };
+        },
+        after: async (session, ctx) => {
+          if (ctx) {
+            try {
+              await ctx.context.internalAdapter.updateUser(session.userId, {
+                lastLoginAt: new Date(),
+              });
+            } catch (error) {
+              log.error("authz", `failed to record login for user ${session.userId}`, error);
+            }
+          }
         },
       },
     },

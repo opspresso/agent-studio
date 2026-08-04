@@ -1365,6 +1365,8 @@ any one error or warning string.
 /chats  /chats/[chatId]
 /skills  /tools (MCP)  /agents  (each + /[name] detail page)
 /dashboard            cost dashboard (range picker, group by project/provider/model)
+/members              admin-only workspace member list with join and last-login times
+/audit                admin-only sensitive-action audit trail
 /settings             admin-only runtime env-var overrides
 ```
 

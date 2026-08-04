@@ -37,6 +37,7 @@ import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
+import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 import { triggerRepository } from "@/infrastructure/db/repositories/triggerRepository";
 import { createA2aTaskStore } from "@/infrastructure/a2a/taskStore";
@@ -64,6 +65,7 @@ import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import { setAdminCheck } from "@/application/project/projectUseCases";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { createAuditUseCases } from "@/application/audit/auditUseCases";
+import { createMemberUseCases } from "@/application/member/memberUseCases";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -91,6 +93,7 @@ setAdminCheck(isConfiguredAdmin);
 setAuditSink(auditRepository);
 
 export const auditUseCases = createAuditUseCases(auditRepository);
+export const memberUseCases = createMemberUseCases(memberRepository);
 
 /**
  * Reading runtime settings is the composition root's job: the LLM adapters take

@@ -18,6 +18,11 @@ Auth unique fields (email, token) are claimed transactionally with a dedicated l
 rather than checked-then-written. `GSI2` remains as a compatibility lookup for rows created
 before the locks existed.
 
+The admin-only member list reads Better Auth user rows. `createdAt` is the join time;
+`lastLoginAt` is updated after successful session creation. Older users have no last-login
+value until they sign in again. A failed timestamp update is logged but does not turn a
+successful identity-provider login into an authentication failure.
+
 ### Two gates, on purpose
 
 | Surface | Gate | What it decides |
@@ -59,6 +64,7 @@ mutations are gated.
 | Project usage totals | any signed-in user | — |
 | Skills / MCP servers / external agents | any signed-in user | admin (`withAdminAuth`) |
 | App settings | admin | admin |
+| Member directory | admin | — |
 | Chats | owner only (non-owner reads 404) | owner only |
 
 Traces and the Slack config are gated on *read* as well because they expose other users'
