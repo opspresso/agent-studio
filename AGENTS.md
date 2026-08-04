@@ -133,6 +133,8 @@ about to make copy number two.
 | Writing to the console | `src/shared/logger.ts` |
 | What wraps a top-level run | `src/application/execution/runBracket.ts` |
 | Which project type runs which way | `src/application/execution/deps.ts` |
+| Whether a run's prompt may name its caller | `callerFor` in `src/application/execution/deps.ts` |
+| What a tool result has to do, and in what order | `createToolResultEmitter` in `src/application/llm/engine.ts` |
 | How the execution facade dispatches an agent project | `src/application/execution/deps.ts` |
 | How a Slack reply is delivered | `src/application/slack/replyStream.ts` |
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |
@@ -218,15 +220,28 @@ One line each — the linked section is the authority.
   `src/infrastructure/db/keys.ts`.
 - **Never leave a list query unpaginated.** A single Query page caps at 1MB and silently
   truncates. Use `queryAll()`.
-- **A new execution entry point calls `executeProjectStream`** (or `executeProject` for a
-  collected, non-streaming answer) rather than re-encoding the `projectType` dispatch, and
-  opens the run bracket. Three call sites used to answer that question for themselves, and
-  the two non-streaming routes had already diverged on the image case. A surface that calls
-  `executeAgent` directly — chats, Slack, `/agent` — gets the same answer from the facade,
-  which **refuses a non-agent project**: the loop has nowhere to put an `llm` project's
-  `userPromptTemplate` and would answer from a bare system prompt *successfully*, and an
-  image project's model does not serve completions. `/agent` was the one caller with no
-  check of its own.
+- **A new execution entry point calls the facade** rather than re-encoding the `projectType`
+  dispatch, and opens the run bracket. Which one says what the surface can render:
+  `streamProjectRun` for a consumer that takes a run as chunks, image included;
+  `executeProjectStream` / `executeProject` for one that answers with a completion, which
+  **refuse an image project** — an image has no chat completion. That pair is two contracts,
+  not a flag; a boolean deciding whether a project type is refused would be the bug the
+  refusal prevents. Three call sites used to answer the dispatch question for themselves, the
+  two non-streaming routes had diverged on the image case, and a fourth copy lived in the
+  composition root. A surface that calls `executeAgent` directly — chats, Slack, `/agent` —
+  gets the same answer from the facade, which **refuses a non-agent project**: the loop has
+  nowhere to put an `llm` project's `userPromptTemplate` and would answer from a bare system
+  prompt *successfully*. `/agent` was the one caller with no check of its own.
+- **The image use case has a bounded caller list, not an owner.** Three surfaces reach
+  `application/image/generateImage` directly because each answers in a shape no other can
+  (chunks, `{ imageBase64, model, usage }`, an A2A `image` artifact);
+  `tests/architecture.test.ts` names them, so a fourth is added on purpose. A surface that
+  only needs chunks belongs behind `streamProjectRun`.
+- **`caller` reaches the prompt through `callerFor`, and nowhere else.** The version's
+  `callerContext` opt-in is the gate, applied once at the engine-input boundary; the facade
+  forwards the caller unconditionally through `toRunInput`. Two dispatch points rebuilding
+  the executor's input per branch is how it got dropped for `/predict` and
+  `/chat/completions` while working on every surface that calls `executeAgent` directly.
 - **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three

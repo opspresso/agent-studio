@@ -13,6 +13,7 @@ import {
   executeProject,
   executeProjectStream,
   executeVersion,
+  streamProjectRun,
 } from "@/application/execution/runProject";
 import { ValidationError } from "@/application/errors";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
@@ -1768,6 +1769,94 @@ describe("executeAgent project type", () => {
     // and succeed, and an image model would reach chat/completions.
     expect(channel.calls).toBe(0);
     expect(recorded).toEqual([]);
+  });
+});
+
+/**
+ * The chunk-stream entry point, for a surface that can render whatever a run
+ * produces. Its image branch lived in the composition root, where nothing could
+ * reach it: the webhook runner is assembled from `container.ts`, so the one
+ * place the trigger path's image dispatch existed was a file the tests do not
+ * construct. That is also where its `done` chunk went missing once.
+ */
+describe("streamProjectRun", () => {
+  function imageProject(): { project: Project; version: Version } {
+    return {
+      project: { ...projectFixture(), projectType: "image" },
+      version: {
+        ...versionFixture({ piiFiltering: false }),
+        model: DEFAULT_IMAGE_MODEL!,
+        userPromptTemplate: "a {{animal}} in watercolour",
+      },
+    };
+  }
+
+  it("streams an image project as the picture, what it cost, and the ending", async () => {
+    const { deps, imageModels, recorded } = executionDepsFixture(new FakeChannel([]));
+
+    const chunks = await collect(
+      streamProjectRun(deps, {
+        ...imageProject(),
+        messages: [{ role: "user", content: "a fox on a bicycle" }],
+      }),
+    );
+
+    expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
+    expect(chunks).toEqual([
+      { image: { b64: "aW1n", mimeType: "image/png" } },
+      { usage: expect.objectContaining({ inputTokens: 10, outputTokens: 100 }) },
+      { done: true },
+    ]);
+    // Booked against the project like any other run, not silently free.
+    expect(recorded).toHaveLength(1);
+  });
+
+  it("draws the newest user turn, and falls back to the version's template", async () => {
+    const { deps } = executionDepsFixture(new FakeChannel([]));
+    const prompts: string[] = [];
+    deps.imageChannel.generateImage = (async (params: { prompt: string }) => {
+      prompts.push(params.prompt);
+      return {
+        b64: "aW1n",
+        mimeType: "image/png",
+        usage: { textInputTokens: 1, imageInputTokens: 0, imageOutputTokens: 1 },
+      };
+    }) as ExecutionDeps["imageChannel"]["generateImage"];
+
+    await collect(
+      streamProjectRun(deps, {
+        ...imageProject(),
+        messages: [
+          { role: "user", content: "ignore this" },
+          { role: "assistant", content: "ok" },
+          { role: "user", content: "a heron" },
+        ],
+      }),
+    );
+    await collect(
+      streamProjectRun(deps, {
+        ...imageProject(),
+        messages: [],
+        variables: { animal: "otter" },
+      }),
+    );
+
+    expect(prompts).toEqual(["a heron", "a otter in watercolour"]);
+  });
+
+  it("sends every other project type down the completion path", async () => {
+    const channel = new FakeChannel([[contentChunk("plain answer"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const chunks = await collect(
+      streamProjectRun(deps, {
+        project: { ...projectFixture(), projectType: "llm" },
+        version: versionFixture({ piiFiltering: false }),
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(chunks.some((chunk) => chunk.delta?.content === "plain answer")).toBe(true);
   });
 });
 

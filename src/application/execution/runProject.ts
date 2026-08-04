@@ -8,8 +8,15 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import { isTopLevelChunk, runTermination } from "@/domain/llm/types";
-import type { EngineChunk, RunResult, RunTerminationReason, UsageInfo } from "@/domain/llm/types";
+import { isTopLevelChunk, messageText, runTermination } from "@/domain/llm/types";
+import type {
+  ChatMessageInput,
+  EngineChunk,
+  RunResult,
+  RunTerminationReason,
+  UsageInfo,
+} from "@/domain/llm/types";
+import { generateImageStream } from "@/application/image/generateImage";
 import { ValidationError } from "@/application/errors";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
@@ -162,12 +169,69 @@ function agentRunRefusal(project: Project): ValidationError {
 }
 
 /**
+ * Every project type as a chunk stream, image included — for a surface that
+ * consumes a run generically rather than answering with a completion.
+ *
+ * The pair with {@link executeProjectStream} is two contracts, not a flag: which
+ * function a surface calls is that surface saying whether it can render a
+ * picture. `/chat/completions` calls the refusing one because an image has no
+ * chat completion; the webhook runner calls this one because a `image` chunk is
+ * something it can deliver. A boolean deciding whether a project type is refused
+ * would be the shape of the bug the refusal prevents — a name is not.
+ *
+ * It exists because the composition root was answering this. `triggerRunnerDeps`
+ * re-encoded the strategy dispatch and mapped the input fields itself, in the
+ * one file whose job is wiring; the convention it broke — "a new execution entry
+ * point calls the facade rather than re-encoding the dispatch" — was already
+ * written down, and the facade simply did not offer the shape a chunk consumer
+ * needed. Assembling image chunks there is also how the ending went missing once.
+ *
+ * `ExecutionDeps` already carries everything `ImageGenerationDeps` asks for, so
+ * one bag serves both branches and a caller does not choose between two.
+ */
+export async function* streamProjectRun(
+  deps: ExecutionDeps,
+  input: ExecuteProjectInput,
+): AsyncGenerator<EngineChunk> {
+  if (runStrategyFor(input.project) === "image") {
+    yield* generateImageStream(deps, {
+      project: input.project,
+      version: input.version,
+      ...(input.variables ? { variables: input.variables } : {}),
+      // An image run's prompt is one string. A chunk consumer's history is the
+      // conversation, and only its last user turn can be the thing to draw.
+      ...(imagePromptFrom(input.messages) ? { prompt: imagePromptFrom(input.messages) } : {}),
+      ...(input.actor ? { actor: input.actor } : {}),
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
+    return;
+  }
+  yield* executeProjectStream(deps, input);
+}
+
+/**
+ * The turn an image run draws from: the newest user message, or nothing, in
+ * which case the version's own template is the prompt. Text only — an image
+ * project's model is given a prompt, not a conversation.
+ */
+function imagePromptFrom(messages: ChatMessageInput[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user") {
+      const text = messageText(message).trim();
+      return text || undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Single streaming dispatch point: how a projectType runs is decided here, not
  * in each entry point. `agent` projects run the multi-turn tool loop; anything
  * else streams a single-shot completion. `image` projects are refused — they
  * generate through the dedicated generateImage use case, not a chunk stream —
- * and every image-capable surface (predict, triggers, A2A) branches to it
- * before asking here.
+ * and every image-capable surface (predict, A2A) branches to it before asking
+ * here. A surface that can render one calls {@link streamProjectRun} instead.
  */
 export function executeProjectStream(
   deps: ExecutionDeps,
