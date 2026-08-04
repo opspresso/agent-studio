@@ -437,7 +437,23 @@ function createToolResultEmitter(
 ): (
   call: { id: string; name: string },
   text: string,
-  options?: { name?: string; displayOnly?: boolean; stored?: string; fit?: boolean },
+  options?: {
+    name?: string;
+    /**
+     * The text's length is this engine's own — a refusal it wrote, not a payload
+     * it received — so it is charged whole instead of fitted. Absent is the
+     * common case and the safe one: anything whose length a provider, a tool or
+     * a child decides has to go through the fit.
+     */
+    bounded?: boolean;
+    displayOnly?: boolean;
+    /**
+     * What the context receives, when that is not what the reader sees. Always
+     * engine-written and therefore always charged whole, so it does not take
+     * {@link bounded} as well.
+     */
+    stored?: string;
+  },
 ) => EngineChunk {
   return (call, text, options = {}) => {
     const masked = filter?.mask(text) ?? text;
@@ -447,7 +463,7 @@ function createToolResultEmitter(
     // string no message ever carried.
     const stored =
       options.stored === undefined
-        ? (options.fit === false ? budget.charge : budget.fit)(masked)
+        ? (options.bounded ? budget.charge : budget.fit)(masked)
         : budget.charge(options.stored);
     const shown = options.stored === undefined ? stored : masked;
     toolMessages.push({ role: "tool", tool_call_id: call.id, content: stored });
@@ -2153,21 +2169,21 @@ export async function* runAgent(
         const errorText = outputCut
           ? `Error: the arguments of this call were cut at the model's output limit and did not parse; the call was not executed. Retry it with complete arguments.`
           : `Error: the arguments of this call did not parse as a JSON object; the call was not executed.`;
-        yield toolResult(call, errorText, { fit: false });
+        yield toolResult(call, errorText, { bounded: true });
         continue;
       }
       if (builtin && call.name === TRANSFER_TOOL_NAME) {
         // Child runs at turn+1 and the parent resumes at turn+2, so two turns
         // must remain or the resume would trip the initial guard.
         if (turn + 2 >= maxTurn) {
-          yield toolResult(call, "Error: Agent max_turn reached before transfer.", { fit: false });
+          yield toolResult(call, "Error: Agent max_turn reached before transfer.", { bounded: true });
           continue;
         }
         const agentName = typeof args.agent_name === "string" ? args.agent_name : "";
         const message = typeof args.message === "string" ? args.message : "";
         if (!agentName || !message.trim() || !deps.runSubagent) {
           yield toolResult(call, "Error: transfer_to_agent requires agent_name and message.", {
-            fit: false,
+            bounded: true,
           });
           continue;
         }
@@ -2182,7 +2198,7 @@ export async function* runAgent(
           yield toolResult(
             call,
             `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`,
-            { fit: false },
+            { bounded: true },
           );
           continue;
         }
@@ -2270,7 +2286,7 @@ export async function* runAgent(
         // run at turn+1 and the parent resumes at turn+2 however many there were.
         if (turn + 2 >= maxTurn) {
           yield toolResult(call, `Error: Agent max_turn reached before ${DISPATCH_TOOL_NAME}.`, {
-            fit: false,
+            bounded: true,
           });
           continue;
         }
@@ -2286,7 +2302,7 @@ export async function* runAgent(
           yield toolResult(
             call,
             `Error: ${DISPATCH_TOOL_NAME} requires a non-empty tasks array; each task needs agent_name and message.`,
-            { fit: false },
+            { bounded: true },
           );
           continue;
         }
@@ -2437,6 +2453,9 @@ export async function* runAgent(
         const size = typeof displayArgs.size === "string" ? displayArgs.size : undefined;
         const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
         let resultText: string;
+        // Every outcome here is a string this engine wrote — only the provider's
+        // error body has a length nothing on this side decides.
+        let fromProvider = false;
         if (!maskedPrompt.trim()) {
           resultText = "Error: GenerateImage requires a prompt.";
         } else {
@@ -2451,12 +2470,14 @@ export async function* runAgent(
               : "Image generated and delivered to the user. Briefly describe what was drawn; do not claim you cannot show images.";
           } catch (error) {
             input.signal?.throwIfAborted();
+            fromProvider = true;
             resultText = `Error: image generation failed. ${errorMessage(error)}`;
           }
         }
-        // Fitted like every other result: the failure path carries a provider
-        // error body of unbounded length.
-        yield toolResult(call, resultText);
+        // Only the provider's body is fitted. A refusal this engine wrote is
+        // charged whole, or a turn whose budget an earlier tool result spent
+        // would answer "request less data" to a call that forgot its prompt.
+        yield toolResult(call, resultText, { bounded: !fromProvider });
         continue;
       }
 
@@ -2468,6 +2489,8 @@ export async function* runAgent(
         const quality = typeof displayArgs.quality === "string" ? displayArgs.quality : undefined;
         const source = images.get(imageId);
         let resultText: string;
+        /** See GenerateImage above. */
+        let fromProvider = false;
         if (!maskedPrompt.trim()) {
           resultText = `Error: ${EDIT_IMAGE_TOOL_NAME} requires a prompt.`;
         } else if (!source) {
@@ -2488,17 +2511,21 @@ export async function* runAgent(
             resultText = `Image edited and delivered to the user (image id: ${handle.id}). Briefly describe the change; do not claim you cannot show images.`;
           } catch (error) {
             input.signal?.throwIfAborted();
+            fromProvider = true;
             resultText = `Error: image edit failed. ${errorMessage(error)}`;
           }
         }
-        // Same as GenerateImage above: the error path's provider body is
-        // unbounded, so this one is fitted too.
-        yield toolResult(call, resultText);
+        // Same split as GenerateImage above.
+        yield toolResult(call, resultText, { bounded: !fromProvider });
         continue;
       }
 
       let content: string;
       let resultName = call.name;
+      // A call nothing can serve is refused in one sentence this engine wrote;
+      // everything else here is a skill body or a tool's payload, whose length
+      // is not ours. Same split as the image builtins above.
+      let bounded = false;
       if (builtin && call.name === SKILL_TOOL_NAME && deps.loadSkillContent) {
         const skillName = typeof displayArgs.skill_name === "string" ? displayArgs.skill_name : "";
         const filePath =
@@ -2511,6 +2538,7 @@ export async function* runAgent(
         const settled = mcpSettled.get(call.id);
         if (!settled) {
           content = `Error: Tool '${call.name}' cannot be executed in this context.`;
+          bounded = true;
         } else if ("err" in settled) {
           // Dispatched above; a thrown dispatcher still tears the run down here,
           // in call order, exactly as a sequential dispatch did.
@@ -2557,7 +2585,7 @@ export async function* runAgent(
           }
         }
       }
-      yield toolResult(call, content, { name: resultName });
+      yield toolResult(call, content, { name: resultName, bounded });
     }
 
     // Reported once per run, on the turn the first cut happened: the model

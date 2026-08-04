@@ -451,6 +451,45 @@ describe("runAgent context budget", () => {
     expect(stored?.content).toBe(results[1]);
   });
 
+  it("keeps a builtin's own refusal too, and still fits what a provider sent back", async () => {
+    // The same split one level down. `GenerateImage` writes both its argument
+    // refusal and its provider-failure text into one variable, so charging the
+    // whole branch whole would leave an unbounded provider body unfitted, and
+    // fitting it would answer "request less data" to a call that forgot its
+    // prompt. Two calls in one exhausted turn, one of each kind.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_1", "search", "{}"),
+        toolCallChunk(1, "call_2", "GenerateImage", "{}"),
+        toolCallChunk(2, "call_3", "GenerateImage", '{"prompt":"a fox"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("answered"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: "x".repeat(250_000) }),
+      generateImage: async () => {
+        throw new Error(`provider said: ${"y".repeat(250_000)}`);
+      },
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: HUGE_WINDOW_MODEL,
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    const byCall = new Map(
+      chunks.filter((c) => c.toolResult).map((c) => [c.toolResult!.toolCallId, c.toolResult!.content]),
+    );
+    expect(byCall.get("call_2")).toBe("Error: GenerateImage requires a prompt.");
+    // The provider's body is what the fit exists for; it does not survive whole.
+    expect(byCall.get("call_3")).toContain("budget is exhausted");
+  });
+
   it("runs an unregistered model unbudgeted, exactly as before the budget", async () => {
     const payload = "x".repeat(100_000);
     const channel = toolLoopChannel();
