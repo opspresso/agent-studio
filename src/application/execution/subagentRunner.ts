@@ -14,7 +14,12 @@ import { resolveRunnableVersion } from "@/application/project/resolveRunnableVer
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { runClock, runStrategyFor, toEngineParameters } from "./deps";
-import { buildImageEditor, buildImageGenerator, runImageSubagent } from "./imageTool";
+import {
+  buildImageEditor,
+  buildImageGenerator,
+  resolveImageModel,
+  runImageSubagent,
+} from "./imageTool";
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "./modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
@@ -51,14 +56,17 @@ export async function buildAgentDeps(
   callMcpTool?: engine.AgentDeps["callMcpTool"],
 ): Promise<engine.AgentDeps> {
   const channel = deps.channel;
+  // Once for the run: both builtins draw with the same model, and resolving it
+  // twice is what let the two disagree about reporting a stale `imageModel`.
+  const imageModel = resolveImageModel(version, projectName);
   return {
     channel,
     recordUsage: recordUsageFn,
     ...(callMcpTool ? { callMcpTool } : {}),
     loadSkillContent: buildSkillLoader(readSkill),
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, origin, signal),
-    generateImage: buildImageGenerator(deps, version, projectName, recordUsageFn, signal),
-    editImage: buildImageEditor(deps, version, projectName, recordUsageFn, signal),
+    generateImage: buildImageGenerator(deps, imageModel, projectName, recordUsageFn, signal),
+    editImage: buildImageEditor(deps, imageModel, projectName, recordUsageFn, signal),
   };
 }
 

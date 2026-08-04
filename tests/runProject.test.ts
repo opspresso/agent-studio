@@ -292,6 +292,31 @@ describe("executeAgent GenerateImage opt-in", () => {
     );
     expect(imageModels).toEqual([DEFAULT_IMAGE_MODEL]);
   });
+
+  it("reports a stale imageModel once for the run, not once per builtin", async () => {
+    // Both builtins draw with the same model. Resolving it in each of them is
+    // what let them disagree: only the generator said the stored model was gone.
+    const lines: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    const channel = new FakeChannel(imageCallScript);
+    const { deps } = executionDepsFixture(channel);
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: versionFixture({
+          piiFiltering: false,
+          imageGeneration: true,
+          imageModel: "removed/model",
+        }),
+        messages: [{ role: "user", content: "draw a fox" }],
+      }),
+    );
+    warn.mockRestore();
+
+    expect(lines.filter((line) => line.includes("removed/model"))).toHaveLength(1);
+  });
 });
 
 describe("executeAgent EditImage", () => {

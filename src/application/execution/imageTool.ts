@@ -14,74 +14,80 @@ import { log } from "@/shared/logger";
 export const DEFAULT_IMAGE_MODEL = MODEL_CONFIGS.find((m) => m.capabilities.imageGeneration)?.id;
 
 /**
- * The GenerateImage builtin is strictly opt-in per version. A stored imageModel
- * that has since left the registry falls back to the default instead of
- * disabling the tool the version opted into.
+ * The image model a version's builtins draw with — resolved once per run.
+ *
+ * Both builtins are strictly opt-in per version and both ride on the same
+ * choice, and they used to answer it separately. The copies had already drifted:
+ * only the generator warned about a stored `imageModel` that has since left the
+ * registry, so the same misconfiguration spoke up when the run drew and stayed
+ * silent when it redrew. Resolving here also means one warning per run rather
+ * than one per builtin.
+ *
+ * `undefined` means the version did not opt in, or that no registry entry can
+ * draw at all. A model that left the registry falls back to the default instead
+ * of disabling the tools the version asked for.
  */
-export function buildImageGenerator(
-  deps: Pick<ExecutionDeps, "imageChannel">,
-  version: Version,
-  projectName: string,
-  recordUsageFn: engine.RecordUsageFn,
-  signal?: AbortSignal,
-): engine.AgentDeps["generateImage"] {
+export function resolveImageModel(version: Version, projectName: string): string | undefined {
   if (version.parameters.imageGeneration !== true) {
     return undefined;
   }
   const requested = version.parameters.imageModel;
-  let model: string | undefined;
   if (requested && getModelConfig(requested)?.capabilities.imageGeneration) {
-    model = requested;
-  } else {
-    if (requested) {
-      log.warn(
-        "image",
-        `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
-      );
-    }
-    model = DEFAULT_IMAGE_MODEL;
+    return requested;
   }
+  if (requested) {
+    log.warn(
+      "image",
+      `version ${projectName}/${version.versionName} requests unavailable image model "${requested}"; falling back to ${DEFAULT_IMAGE_MODEL}`,
+    );
+  }
+  return DEFAULT_IMAGE_MODEL;
+}
+
+/**
+ * The GenerateImage builtin, over the model {@link resolveImageModel} chose.
+ * Absent when there is none — the version did not opt in, or nothing registered
+ * can draw.
+ */
+export function buildImageGenerator(
+  deps: Pick<ExecutionDeps, "imageChannel">,
+  model: string | undefined,
+  projectName: string,
+  recordUsageFn: engine.RecordUsageFn,
+  signal?: AbortSignal,
+): engine.AgentDeps["generateImage"] {
   if (!model) {
     return undefined;
   }
-  const resolvedModel = model;
   const imageChannel = deps.imageChannel;
   return async (prompt, size, quality) => {
     signal?.throwIfAborted();
     const result = await imageChannel.generateImage({
-      model: resolvedModel,
+      model,
       prompt,
       size,
       quality,
       signal,
     });
-    const recorded = toImageUsageRecord(resolvedModel, result.usage);
-    await recordUsageFn({ projectName, model: resolvedModel, ...recorded });
+    const recorded = toImageUsageRecord(model, result.usage);
+    await recordUsageFn({ projectName, model, ...recorded });
     return { b64: result.b64, mimeType: result.mimeType };
   };
 }
 
 /**
- * The EditImage builtin rides on the same per-version opt-in as GenerateImage:
- * a version that may draw may also redraw. Whether the resolved model's provider
- * implements the edit endpoint is only known at dispatch, so a provider refusal
- * comes back as a tool-result error rather than hiding the tool.
+ * The EditImage builtin rides on the same per-version opt-in as GenerateImage —
+ * a version that may draw may also redraw — and on the same model. Whether that
+ * model's provider implements the edit endpoint is only known at dispatch, so a
+ * provider refusal comes back as a tool-result error rather than hiding the tool.
  */
 export function buildImageEditor(
   deps: Pick<ExecutionDeps, "imageChannel">,
-  version: Version,
+  model: string | undefined,
   projectName: string,
   recordUsageFn: engine.RecordUsageFn,
   signal?: AbortSignal,
 ): engine.AgentDeps["editImage"] {
-  if (version.parameters.imageGeneration !== true) {
-    return undefined;
-  }
-  const requested = version.parameters.imageModel;
-  const model =
-    requested && getModelConfig(requested)?.capabilities.imageGeneration
-      ? requested
-      : DEFAULT_IMAGE_MODEL;
   if (!model) {
     return undefined;
   }
