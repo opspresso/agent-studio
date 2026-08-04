@@ -294,8 +294,10 @@ GET /api/audit?from=2026-08-01&to=2026-08-03
 
 - Admin-only: the rows name people. `from` defaults to today, `to` to `from`; both are UTC
   days (`YYYY-MM-DD`). A range spans at most **31 days** — rows are stored one partition per
-  day and read the same way, so the span is the query count. `400` on a malformed day, a
-  reversed range, or one wider than that.
+  day and read the same way, so the span is the query count. `400` on a malformed day, a day
+  the calendar does not have (`2026-02-31`, `2026-13-01`), a reversed range, or one wider than
+  that. The width is refused from the dates rather than from an enumerated range, so an absurd
+  span costs the same as any other rejection.
 - Newest first. `action` is one of `secret.reveal` | `secret.rotate` | `secret.revoke` |
   `project.admin-override` | `settings.update` | `project.delete` | `registry.delete`;
   `target` is `kind:name`.
