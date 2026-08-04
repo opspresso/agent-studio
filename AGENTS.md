@@ -228,7 +228,9 @@ One line each — the linked section is the authority.
   dispatch, and opens the run bracket. Which one says what the surface can render:
   `streamProjectRun` for a consumer that takes a run as chunks, image included;
   `executeProjectStream` / `executeProject` for one that answers with a completion, which
-  **refuse an image project** — an image has no chat completion. That pair is two contracts,
+  **refuse an image project** — an image has no chat completion, so there is no answer to
+  send. A trigger has one: the picture is billed, traced, and recorded on the firing's row,
+  even though the row carries text and the bytes stop there. That pair is two contracts,
   not a flag; a boolean deciding whether a project type is refused would be the bug the
   refusal prevents. Three call sites used to answer the dispatch question for themselves, the
   two non-streaming routes had diverged on the image case, and a fourth copy lived in the

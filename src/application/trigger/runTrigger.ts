@@ -327,6 +327,12 @@ export async function executeFiring(
   // than as an error: the delivery did run, and a partial answer is not a
   // failure — but the row must say why it is partial.
   const warnings: string[] = [];
+  // Pictures a firing produced. A trigger's row carries text, so the bytes have
+  // nowhere to go — but a run that drew something and reported nothing wrote a
+  // green `succeeded` row with an empty result, which reads exactly like a run
+  // that produced nothing at all. An image project on a schedule is the whole
+  // case: the picture is the answer, and the row was the only record of it.
+  let images = 0;
   try {
     for await (const chunk of deps.run({
       project,
@@ -346,6 +352,9 @@ export async function executeFiring(
         if (chunk.warning) {
           warnings.push(chunk.warning);
         }
+        if (chunk.image) {
+          images += 1;
+        }
       }
       traceId ??= chunk.traceId;
     }
@@ -355,11 +364,26 @@ export async function executeFiring(
     await admitted.release();
   }
   await finishFiring(deps, run, {
-    text,
+    // Said only when the run produced nothing else to say. A picture beside an
+    // answer is already accounted for by the answer; a picture *instead* of one
+    // is what would otherwise close as an empty success.
+    text: text || (images > 0 ? imagesOnlyResult(images) : text),
     ...(error ? { error } : {}),
     ...(warnings.length > 0 ? { warning: warnings.join("\n") } : {}),
     ...(traceId ? { traceId } : {}),
   });
+}
+
+/**
+ * What a firing's row says when the run's whole answer was a picture.
+ *
+ * The row carries text and a trigger has nowhere to put bytes, so this is a
+ * record that the run drew rather than the drawing. The usage row and the trace
+ * carry the rest; without this line the history says `succeeded` with an empty
+ * result, which is what a run that produced nothing looks like.
+ */
+function imagesOnlyResult(count: number): string {
+  return `Generated ${count} image${count === 1 ? "" : "s"}. A trigger's history records text, so the image itself is not stored here.`;
 }
 
 /** Close a firing's history row with whatever the attempt produced. */
