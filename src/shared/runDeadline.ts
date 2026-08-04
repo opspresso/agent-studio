@@ -6,6 +6,14 @@
  *
  * Shared by the execution facade (agent / single-shot) and the image use case
  * so every run path — chat, Slack, A2A, predict, image — is bounded the same way.
+ *
+ * **The one env read below `lib`, and deliberate.** `src/lib/config.ts` owns
+ * configuration, but `application` may not import `lib` and this bound is a
+ * process-level backstop rather than a per-run setting — there is nothing to
+ * inject it through that would not mean threading a deadline into every run
+ * path. `tests/architecture.test.ts` names this file as the single exception, so
+ * a second env read in `domain` or `shared` fails rather than passing unnoticed.
+ * `docs/CONFIGURATION.md` documents `MAX_RUN_DURATION_MS` with the rest.
  */
 
 import { log } from "./logger";

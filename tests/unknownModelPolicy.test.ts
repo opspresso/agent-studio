@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { openRun } from "@/application/execution/runBracket";
+import { assertModelsPriceable } from "@/application/execution/modelPolicy";
 import {
-  assertModelsPriceable,
   toUnknownModelPolicy,
   type UnknownModelPolicy,
-} from "@/application/execution/modelPolicy";
+} from "@/domain/settings/modelPolicy";
 import { runLocalSubagent } from "@/application/execution/subagentRunner";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import { ValidationError } from "@/application/errors";
