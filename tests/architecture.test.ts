@@ -598,6 +598,19 @@ const SINGLE_OWNERS: SingleOwner[] = [
     within: "src/application/execution/",
   },
   {
+    // What a tool result has to do, and the order it has to happen in: mask,
+    // charge, show the restored text, store the masked one. Eleven branches of
+    // the dispatch loop spelled it out and five of them skipped the charge. A
+    // branch that stored the *restored* text would put back exactly what
+    // `piiFiltering` removed, for one tool, silently. Scoped to the engine
+    // because chat replay legitimately builds `role: "tool"` messages from
+    // stored rows — that is reconstruction, not dispatch.
+    what: "what a tool result has to do, and in what order",
+    pattern: /tool_call_id: call\.id/,
+    owner: "src/application/llm/engine.ts",
+    within: "src/application/llm/",
+  },
+  {
     // Whether a run's prompt may name the person asking. Three modules answered
     // it — the two runners and the Playground preview — and the preview's copy
     // ran on one of its two branches, so a prompt project previewed anonymously
@@ -639,6 +652,42 @@ describe("single owners", () => {
       owner: true,
       copies: [],
     });
+  });
+});
+
+/**
+ * Who may start an image run.
+ *
+ * The image use case is the one execution path the facade deliberately does not
+ * absorb — `/chat/completions` depends on an image project being *refused*, and
+ * a flag deciding whether a project type is refused is the bug that refusal
+ * prevents. The cost of that decision is that more than one surface reaches the
+ * use case directly, and each brings its own serialisation: JSON with the
+ * model and usage, an A2A file artifact, a chunk stream.
+ *
+ * So the list is bounded rather than owned. Three entries, each because it
+ * answers in a shape no other one can, and a fourth has to be added here on
+ * purpose — which is the check the four-copy version of this dispatch never had.
+ * A surface that only needs chunks belongs behind `streamProjectRun`; that is
+ * what the composition root's own copy became.
+ */
+const IMAGE_RUN_ENTRY_POINTS = [
+  // Answers with chunks, for every consumer that reads a run generically.
+  "src/application/execution/runProject.ts",
+  // Answers with `{ imageBase64, model, usage }`, which no chunk stream carries.
+  "src/app/api/projects/[name]/versions/[version]/predict/route.ts",
+  // Answers with an `image` artifact — an id A2A clients already read.
+  "src/application/a2a/executor.ts",
+];
+
+describe("image runs", () => {
+  it("start at the entry points that declare themselves here", () => {
+    const callers = SOURCE_FILES.filter((file) =>
+      parseImports(file.text).some(
+        (i) => resolveSpec(i.spec, file.path) === "@/application/image/generateImage" && !i.typeOnly,
+      ),
+    ).map((file) => file.path);
+    expect(callers.sort()).toEqual([...IMAGE_RUN_ENTRY_POINTS].sort());
   });
 });
 

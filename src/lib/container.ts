@@ -350,9 +350,11 @@ export const imageDeps: ImageGenerationDeps = {
 };
 
 /**
- * The webhook delivery path. `run` binds the same dispatch every other entry
- * point uses — `runStrategyFor` decides, and an image project generates rather
- * than streaming — so a trigger cannot become a fifth place that re-encodes it.
+ * The webhook delivery path. `run` binds the facade's chunk-stream entry point
+ * and nothing else: which project type runs which way, and what an image run's
+ * chunks look like, are both decided there. This file used to answer the first
+ * question and assemble the second by hand — a wiring site making a dispatch
+ * decision, which is how the image path's ending announcement went missing once.
  */
 export const triggerRunnerDeps: TriggerRunnerDeps = {
   triggers: triggerRepository,
@@ -361,24 +363,8 @@ export const triggerRunnerDeps: TriggerRunnerDeps = {
   cipher: secretCipher,
   runSlots: runSlotRepository,
   run: async function* (input) {
-    const { runStrategyFor, executeProjectStream } = await import(
-      "@/application/execution/runProject"
-    );
-    if (runStrategyFor(input.project) === "image") {
-      // Which deps bag an image run takes is this file's decision; what its
-      // chunks look like is not. Assembling them here left the ending
-      // announcement to a wiring site, which is how it went missing once.
-      const { generateImageStream } = await import("@/application/image/generateImage");
-      yield* generateImageStream(imageDeps, {
-        project: input.project,
-        version: input.version,
-        ...(input.variables ? { variables: input.variables } : {}),
-        ...(input.message ? { prompt: input.message } : {}),
-        actor: input.actor,
-      });
-      return;
-    }
-    yield* executeProjectStream(executionDeps, {
+    const { streamProjectRun } = await import("@/application/execution/runProject");
+    yield* streamProjectRun(executionDeps, {
       project: input.project,
       version: input.version,
       ...(input.variables ? { variables: input.variables } : {}),

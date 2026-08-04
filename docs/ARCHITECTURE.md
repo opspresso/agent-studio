@@ -226,7 +226,7 @@ answers two separate questions in two tiers.
 
 | Tier | Functions | What it decides |
 |---|---|---|
-| **Dispatch** — what an entry point calls | `executeProjectStream` / `executeProject`, plus `executeAgent` for the surfaces that only ever run agent projects | which strategy a `projectType` runs |
+| **Dispatch** — what an entry point calls | `streamProjectRun` for a surface that takes a run as chunks; `executeProjectStream` / `executeProject` for one that answers with a completion; `executeAgent` for the surfaces that only ever run agent projects | which strategy a `projectType` runs |
 | **Admit** — what starts a run | `executeVersion` / `executeVersionStream` for the single-shot path, `executeAgent` for the tool loop | the [run bracket](#the-run-bracket); an agent run additionally resolves the version's skills, MCP tools and subagents from repositories, assembles the injected engine deps, and flushes usage at the end |
 
 `executeAgent` is in both tiers — an agent surface calls it directly, and it opens its own
@@ -242,7 +242,7 @@ dispatch. To trace a request, start at the dispatch tier.
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent`) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
-| Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `executeProjectStream` (bound in `container.ts` as `triggerRunnerDeps.run`) |
+| Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `executeProjectStream` (same `triggerRunnerDeps.run`) |
 
 ```mermaid
@@ -258,8 +258,8 @@ flowchart LR
     schedule["schedule scan"]
   end
 
-  facade["runProject facades<br/>executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → tool loop, llm → single-shot,<br/>image → refused here"]
-  imageuc["generateImage use case<br/>image projects, branched before the facade"]
+  facade["runProject facades<br/>streamProjectRun · executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → tool loop, llm → single-shot,<br/>image → streamed by streamProjectRun, refused by the completion pair"]
+  imageuc["generateImage use case<br/>reached by streamProjectRun, and by the two surfaces<br/>that answer in a shape no chunk stream carries"]
   bracket["run bracket — openRun<br/>1. daily cost guard, fails open<br/>2. per-caller concurrency slots, fail closed<br/>3. in-flight metric + correlation id"]
   resolve["resolve the version's bindings<br/>skills · MCP sessions · subagents<br/>an unusable binding becomes a warning chunk"]
   engine["engine<br/>runAgent · runPrompt(Stream)"]
@@ -279,8 +279,7 @@ flowchart LR
   schedule --> facade
   predict -.-> imageuc
   a2a -.-> imageuc
-  webhook -.-> imageuc
-  schedule -.-> imageuc
+  facade -.-> imageuc
   facade --> bracket
   imageuc --> bracket
   bracket -->|"agent run"| resolve --> engine
@@ -305,10 +304,20 @@ non-stream agent case.
 `executeProjectStream` (and `executeProject`, its non-streaming counterpart) is the
 canonical `projectType` → strategy dispatch: `agent` runs the multi-turn tool loop, `llm`
 runs a single-shot completion, and an `image` project is refused — its run is the dedicated
-`generateImage` use case, and every image-capable surface branches to it before asking here.
-**New entry points should call these instead of re-encoding that decision** — three call
-sites used to ask it for themselves, and the two non-streaming routes had diverged on the
-image case. A subagent transfer dispatches on
+`generateImage` use case.
+
+`streamProjectRun` is the same dispatch for a surface that consumes a run as chunks: it
+streams an image project instead of refusing it. The pair is **two contracts, not a flag** —
+which one a surface calls is that surface declaring whether it can render a picture.
+`/chat/completions` calls the refusing one because an image has no chat completion; the
+trigger runner calls the streaming one because an `image` chunk is something it can deliver.
+A boolean deciding whether a project type is refused would be the defect the refusal exists
+to prevent; a second name is not.
+
+**New entry points should call one of these instead of re-encoding the decision** — three
+call sites used to ask it for themselves, the two non-streaming routes had diverged on the
+image case, and a fourth copy lived in `container.ts`, where it also assembled the image
+chunks by hand and left out the run's ending. A subagent transfer dispatches on
 the same axis inside `runLocalSubagent`: an `image` child generates, a prompt child runs its
 user prompt template with the transfer message as the user turn, and only an `agent` child
 enters the tool loop.
