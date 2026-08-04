@@ -34,6 +34,18 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - One turn's tool-result text is capped (`MAX_TOOL_RESULT_CHARS_PER_TURN`), spent in call
   order. A truncated result says so; one that no longer fits is returned as `Error: …`, which
   also surfaces the exhaustion as a failed span in the trace.
+- **Every result leaves through the turn's `toolResult` emitter**
+  (`createToolResultEmitter`), which owns the four things a result has to do and the order
+  they happen in: mask it, charge it, hand the **restored** text to the reader, keep the
+  **masked** one in the context. Eleven branches spelled that out for themselves and had
+  already diverged. The order is the part worth protecting — a branch that stored the
+  restored text would put back exactly what `piiFiltering` removed, silently and for one tool
+  only. Two knobs, both narrow: `stored` for the single result whose context copy differs
+  from its display copy (a transfer's marker, against the protocol's null placeholder), and
+  `fit: false` for a refusal the engine wrote itself. Those are bounded by construction and
+  their wording is the point — replacing "max_turn reached before transfer" with "this turn's
+  budget is exhausted" trades the reason for the accounting — so they are **charged and
+  returned whole** (`ToolResultBudget.charge`) rather than fitted.
 - The **run context budget** (`contextBudget.ts`, single owner of the derivation and the
   chars→tokens estimate) sits under every per-turn cap. Its window is the minimum with the
   **effective** fallback — the one left after `imageEligibleFallback`, because capping to a
@@ -49,7 +61,8 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   fragment the mask no longer recognises), the run-budget marker is reserved *inside* the
   fit (`fitText`'s `suffix`), and the per-turn marker, wrappers and omission strings are
   charged where they are appended — post-exhaustion ones as debt, since the tool protocol
-  forces a result message per call. When both budgets cut one result, only the binding
+  forces a result message per call. That holds for the engine's own refusals too: they skip
+  the *fit*, never the charge. When both budgets cut one result, only the binding
   constraint's marker is appended — a per-turn "kept N of M chars" claim re-cut by the run
   fit would assert a length the final text no longer has — and the turn is debited what
   actually entered the context, so a later call this turn is not starved against text the

@@ -413,6 +413,44 @@ describe("runAgent context budget", () => {
     expect(toolMessage?.content).toBe(payload);
   });
 
+  it("charges a refusal it wrote itself, but never replaces its reason with the budget's", async () => {
+    // Two calls in one response: a 250k tool result that spends the whole
+    // per-turn budget, then a call whose arguments did not parse. The refusal
+    // used to go through the same fit as the tool output, so once the budget
+    // was gone it came back as "this turn's tool output budget is exhausted" —
+    // telling the model to request less data about a call that failed to parse.
+    // It is bounded by construction, so it is charged and handed back whole.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_1", "search", "{}"),
+        toolCallChunk(1, "call_2", "search", "{not json"),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("answered"), usageChunk(1, 1)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      callMcpTool: async () => ({ text: "x".repeat(250_000) }),
+    };
+    const input: RunAgentInput = {
+      projectName: "p",
+      model: HUGE_WINDOW_MODEL,
+      messages: [{ role: "user", content: "go" }],
+      mcpTools: TOOL,
+    };
+
+    const chunks = await collect(runAgent(deps, input));
+
+    const results = chunks.filter((c) => c.toolResult).map((c) => c.toolResult?.content ?? "");
+    expect(results).toHaveLength(2);
+    expect(results[0]).toContain("this turn's tool output budget is exhausted");
+    expect(results[1]).toContain("did not parse as a JSON object");
+    // And the context got the same string, not a longer one it was never
+    // billed for: what enters is what is charged.
+    const stored = channel.seenParams[1]?.messages.find((m) => m.tool_call_id === "call_2");
+    expect(stored?.content).toBe(results[1]);
+  });
+
   it("runs an unregistered model unbudgeted, exactly as before the budget", async () => {
     const payload = "x".repeat(100_000);
     const channel = toolLoopChannel();
