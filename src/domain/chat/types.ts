@@ -12,12 +12,9 @@ export interface Chat {
 export type ChatRole = "user" | "assistant" | "tool";
 
 /**
- * An image attached to a message, uploaded to object storage — a picture the run
- * generated, or one the user sent. Only the URL is stored; a b64 payload is far
- * beyond the item size limit.
- */
-/**
- * An image kept with a chat message.
+ * An image kept with a chat message — a picture the run generated, or one the
+ * user sent. A reference either way; a b64 payload is far beyond the item size
+ * limit.
  *
  * Exactly one of `key` and `url` is set, and which one says when the row was
  * written. New rows carry the **object key**: the address is signed at read
