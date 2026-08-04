@@ -16,11 +16,12 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { IconBook2 } from "@tabler/icons-react";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogHeader } from "@/app/_components/CatalogHeader";
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -62,15 +63,11 @@ export default function SkillsPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} fz="h2">
-            Skills
-          </Title>
-          <Text fz="sm" c="dimmed" mt={4}>
-            Markdown behavior instructions loaded on demand by the agent engine.
-          </Text>
-        </div>
+      <CatalogHeader
+        title="Skills"
+        description="Markdown behavior instructions loaded on demand by the agent engine."
+        Icon={IconBook2}
+      >
         <Group gap="sm">
           <Button
             variant="default"
@@ -92,7 +89,7 @@ export default function SkillsPage() {
           </Button>
           <Button onClick={open}>New skill</Button>
         </Group>
-      </Group>
+      </CatalogHeader>
 
       {syncResult && (
         <SyncSummary result={syncResult} label="skill" onApply={runSync} />

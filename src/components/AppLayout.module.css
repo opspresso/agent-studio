@@ -1,6 +1,7 @@
 .header {
-  background-color: color-mix(in oklab, var(--mantine-color-body) 86%, transparent);
-  backdrop-filter: blur(14px) saturate(1.25);
+  border-bottom-color: var(--studio-border);
+  background-color: color-mix(in oklab, var(--studio-surface) 82%, transparent);
+  backdrop-filter: blur(18px) saturate(1.35);
 }
 
 .brand {
@@ -13,41 +14,105 @@
   transition: opacity 140ms ease;
 }
 
+.logoWrap {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--mantine-color-brand-5) 35%, transparent);
+  border-radius: var(--mantine-radius-lg);
+  background: linear-gradient(145deg, var(--studio-surface-raised), var(--surface-highlight));
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--mantine-color-brand-7) 14%, transparent);
+}
+
 .brand:hover {
   opacity: 0.78;
 }
 
-/*
- * The header's own link style: an underline that marks the active section.
- * `NavLink` is the drawer's affordance and reads too heavy in a 56px bar.
- */
+.context {
+  padding-left: var(--mantine-spacing-lg);
+  border-left: 1px solid var(--studio-border);
+}
+
+.navbar {
+  display: flex;
+  flex-direction: column;
+  border-right-color: var(--studio-border);
+  background-color: color-mix(in oklab, var(--studio-surface) 92%, transparent);
+  backdrop-filter: blur(18px);
+}
+
 .navLink {
-  position: relative;
-  display: inline-flex;
-  height: 100%;
+  display: flex;
+  width: 100%;
   align-items: center;
-  padding: 0 var(--mantine-spacing-xs);
-  font-size: var(--mantine-font-size-sm);
+  gap: var(--mantine-spacing-sm);
+  padding: 7px var(--mantine-spacing-sm);
+  border: 1px solid transparent;
+  border-radius: var(--mantine-radius-lg);
   color: var(--mantine-color-dimmed);
   text-decoration: none;
-  transition: color 140ms ease;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
 }
 
 .navLink:hover {
   color: var(--mantine-color-text);
+  background-color: var(--studio-surface-raised);
+  transform: translateX(2px);
 }
 
 .navLink[data-active] {
   color: var(--mantine-color-text);
-  font-weight: 500;
+  border-color: color-mix(in oklab, var(--mantine-color-brand-5) 20%, transparent);
+  background: linear-gradient(90deg, var(--surface-highlight), transparent);
 }
 
-.navLink[data-active]::after {
-  content: "";
-  position: absolute;
-  inset-inline: var(--mantine-spacing-xs);
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px;
-  background-color: var(--mantine-primary-color-filled);
+.navArrow {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.navLink:hover .navArrow,
+.navLink[data-active] .navArrow {
+  opacity: 0.65;
+}
+
+.navFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-sm) 0;
+  margin-top: var(--mantine-spacing-md);
+  border-top: 1px solid var(--studio-border);
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background-color: var(--mantine-color-teal-5);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--mantine-color-teal-5) 14%, transparent);
+}
+
+.main {
+  width: min(100%, 1500px);
+  min-height: calc(100vh - 64px);
+  padding: clamp(20px, 3vw, 40px);
+  margin: 0 auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navLink,
+  .navArrow {
+    transition: none;
+  }
+
+  .navLink:hover {
+    transform: none;
+  }
 }

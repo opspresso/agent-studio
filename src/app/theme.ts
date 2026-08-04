@@ -43,7 +43,7 @@ export const theme = createTheme({
     'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   fontFamilyMonospace:
     'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-  defaultRadius: "md",
+  defaultRadius: "lg",
   focusRing: "auto",
   headings: {
     fontFamily:
@@ -57,8 +57,8 @@ export const theme = createTheme({
     Button: { defaultProps: { size: "sm" } },
     ActionIcon: { defaultProps: { variant: "subtle", color: "gray" } },
     // `cardClass`: rounded-lg border bg-white p-4.
-    Card: { defaultProps: { withBorder: true, radius: "md", padding: "md" } },
-    Paper: { defaultProps: { radius: "md" } },
+    Card: { defaultProps: { withBorder: true, radius: "lg", padding: "lg" } },
+    Paper: { defaultProps: { radius: "lg" } },
     // The old `Badge` was neutral; brand-coloured ones passed their own colour.
     Badge: { defaultProps: { variant: "light", color: "gray", radius: "sm" } },
     TextInput: { defaultProps: { size: "sm" } },

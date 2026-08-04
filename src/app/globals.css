@@ -9,7 +9,12 @@
  */
 
 :root {
-  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 8%, transparent);
+  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 13%, transparent);
+  --studio-surface: rgba(255, 255, 255, 0.78);
+  --studio-surface-raised: rgba(255, 255, 255, 0.94);
+  --studio-border: color-mix(in oklab, var(--mantine-color-gray-4) 62%, transparent);
+  --studio-grid: color-mix(in oklab, var(--mantine-color-brand-4) 10%, transparent);
+  --ai-gradient: linear-gradient(135deg, var(--mantine-color-brand-6), var(--mantine-color-violet-5));
   --surface-highlight: color-mix(
     in oklab,
     var(--mantine-color-brand-6) 7%,
@@ -34,7 +39,11 @@
 }
 
 [data-mantine-color-scheme="dark"] {
-  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 11%, transparent);
+  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 17%, transparent);
+  --studio-surface: rgba(21, 23, 29, 0.82);
+  --studio-surface-raised: rgba(29, 32, 40, 0.94);
+  --studio-border: color-mix(in oklab, var(--mantine-color-dark-4) 78%, transparent);
+  --studio-grid: color-mix(in oklab, var(--mantine-color-brand-5) 8%, transparent);
   --surface-highlight: color-mix(
     in oklab,
     var(--mantine-color-brand-6) 9%,
@@ -60,11 +69,22 @@
 
 body {
   background-image:
-    radial-gradient(circle at 20% -12rem, var(--page-glow), transparent 32rem),
-    radial-gradient(circle at 90% 8rem, var(--page-glow), transparent 28rem);
-  background-repeat: no-repeat;
+    linear-gradient(var(--studio-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--studio-grid) 1px, transparent 1px),
+    radial-gradient(circle at 18% -8rem, var(--page-glow), transparent 34rem),
+    radial-gradient(
+      circle at 94% 16rem,
+      color-mix(in oklab, var(--mantine-color-violet-5) 10%, transparent),
+      transparent 30rem
+    );
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
+  background-size: 32px 32px, 32px 32px, auto, auto;
   background-attachment: fixed;
   min-width: 320px;
+}
+
+.mantine-AppShell-main {
+  background: transparent;
 }
 
 ::selection {
@@ -94,6 +114,41 @@ body {
     box-shadow 160ms ease,
     border-color 160ms ease,
     background-color 160ms ease;
+}
+
+.mantine-Card-root,
+.mantine-Paper-root {
+  border-color: var(--studio-border);
+}
+
+.mantine-Card-root {
+  background-color: var(--studio-surface);
+  backdrop-filter: blur(14px);
+}
+
+.mantine-Input-input {
+  border-color: var(--studio-border);
+  background-color: color-mix(in oklab, var(--studio-surface-raised) 88%, transparent);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+.mantine-Input-input:focus,
+.mantine-Input-input:focus-within {
+  border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 62%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--mantine-primary-color-filled) 12%, transparent);
+}
+
+.mantine-Button-root[data-variant="filled"] {
+  border: 0;
+  background-image: var(--ai-gradient);
+  box-shadow: 0 7px 20px color-mix(in oklab, var(--mantine-color-brand-7) 18%, transparent);
+}
+
+.mantine-Button-root[data-variant="filled"]:hover:not(:disabled) {
+  box-shadow: 0 10px 26px color-mix(in oklab, var(--mantine-color-brand-7) 24%, transparent);
 }
 
 .mantine-Card-root[href]:hover {

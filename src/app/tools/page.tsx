@@ -23,14 +23,15 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { IconTool } from "@tabler/icons-react";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { ManagedMcpModal } from "./_components/ManagedMcpModal";
 import { CredentialBadges } from "./_components/CredentialBadges";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
+import { CatalogHeader } from "@/app/_components/CatalogHeader";
 
 export default function ToolsPage() {
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -59,15 +60,11 @@ export default function ToolsPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start">
-        <div>
-          <Title order={1} fz="h2">
-            Tools
-          </Title>
-          <Text fz="sm" c="dimmed" mt={4}>
-            MCP servers that expose tools to agents over streamable HTTP.
-          </Text>
-        </div>
+      <CatalogHeader
+        title="Tools"
+        description="MCP servers that expose tools to agents over streamable HTTP."
+        Icon={IconTool}
+      >
         <Group gap="xs">
           <Button
             variant="default"
@@ -93,7 +90,7 @@ export default function ToolsPage() {
           </Button>
           <Button onClick={register.open}>Register MCP</Button>
         </Group>
-      </Group>
+      </CatalogHeader>
 
       {syncResult && (
         <SyncSummary
