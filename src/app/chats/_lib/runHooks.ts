@@ -28,6 +28,6 @@ export function useRunEntry(key: string | null): RunEntry | undefined {
   return useSyncExternalStore(runStore.subscribe, getSnapshot, noEntry);
 }
 
-export function useRunningChats(): readonly string[] {
-  return useSyncExternalStore(runStore.subscribe, runStore.runningChatIds, noRuns);
+export function useRunningKeys(): readonly string[] {
+  return useSyncExternalStore(runStore.subscribe, runStore.runningKeys, noRuns);
 }

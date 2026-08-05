@@ -9,6 +9,7 @@ import {
   type ReadDocument,
 } from "@/application/llm/documentParts";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
+import { endNoticeFor } from "./cancelRun";
 import { log } from "@/shared/logger";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
 
@@ -139,15 +140,28 @@ function truncateForPersist(content: string): string {
  * same chunk channel so every consumer — live UI, Slack, persistence — handles
  * one kind of warning, and `yield*` still forwards a client disconnect to the
  * run underneath.
+ *
+ * The source is asked for its first chunk *before* any of them goes out, which
+ * is what keeps a refused run refusable. A run is turned away — over its daily
+ * cost limit, out of slots — on the generator's first `next()`, and the SSE
+ * layer can only answer that with a 429 while it is still holding the response
+ * back. A leading warning answered that first pull from this list without ever
+ * starting the run, so the response was already committed to `200
+ * text/event-stream` and the refusal arrived as a mid-stream data frame with no
+ * status and no `Retry-After`.
  */
 export async function* withLeadingWarnings(
   warnings: string[],
   source: AsyncGenerator<EngineChunk>,
 ): AsyncGenerator<EngineChunk> {
+  const first = await source.next();
   for (const warning of warnings) {
     yield { warning };
   }
-  yield* source;
+  if (!first.done) {
+    yield first.value;
+    yield* source;
+  }
 }
 
 /** A run reports one warning per unusable binding; the item stays bounded. */
@@ -186,6 +200,8 @@ export async function* runAndPersist(
   deps: ChatDeps,
   chat: Chat,
   source: AsyncGenerator<EngineChunk>,
+  /** The run's own signal, so an abort this surface asked for is not a failure. */
+  signal?: AbortSignal,
 ): AsyncGenerator<EngineChunk> {
   let content = "";
   const toolMessages: {
@@ -204,6 +220,13 @@ export async function* runAndPersist(
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];
   let persisted = false;
+
+  /** Kept to one per distinct reason, and bounded: the message is one item. */
+  function note(warning: string): void {
+    if (warnings.length < MAX_PERSISTED_WARNINGS && !warnings.includes(warning)) {
+      warnings.push(warning);
+    }
+  }
 
   async function persist(): Promise<void> {
     if (persisted) {
@@ -224,9 +247,7 @@ export async function* runAndPersist(
       for (const warning of uploaded.warnings) {
         // Too late to stream — the run is over — but it survives on the message,
         // which is exactly where a reader wonders where the picture went.
-        if (warnings.length < MAX_PERSISTED_WARNINGS && !warnings.includes(warning)) {
-          warnings.push(warning);
-        }
+        note(warning);
       }
 
       const now = new Date().toISOString();
@@ -280,12 +301,8 @@ export async function* runAndPersist(
           ...(displayOnly ? { displayOnly: true } : {}),
         });
       }
-      if (
-        chunk.warning &&
-        warnings.length < MAX_PERSISTED_WARNINGS &&
-        !warnings.includes(chunk.warning)
-      ) {
-        warnings.push(chunk.warning);
+      if (chunk.warning) {
+        note(chunk.warning);
       }
       if (chunk.image) {
         generatedImages.push(chunk.image);
@@ -293,6 +310,22 @@ export async function* runAndPersist(
       yield chunk;
     }
     await persist();
+  } catch (thrown) {
+    // An abort this surface asked for is not a failure, and the engine cannot
+    // say which it was — it rethrows whichever one it was given, so the intent
+    // survives on the signal instead.
+    //
+    // The note is handled here rather than outside because this is the only
+    // place that can *persist* it. Wrapped around this generator, a stop reached
+    // the reader and no further: the assistant message was already written by
+    // the time the abort surfaced, so reloading the chat showed a reply stopping
+    // mid-sentence with nothing to say why.
+    const notice = endNoticeFor(signal);
+    if (notice === undefined) {
+      throw thrown;
+    }
+    note(notice);
+    yield { warning: notice };
   } finally {
     // Covers an early return and engine errors — persist() is idempotent.
     await persist();

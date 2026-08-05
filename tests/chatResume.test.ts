@@ -179,6 +179,47 @@ describe("openRunLogReplay", () => {
     });
   });
 
+  /**
+   * A flush that fails has already spent its sequence numbers, so the hole it
+   * leaves is in the *middle*. Checked once and remembered, the gap check walked
+   * straight past it and the reader got an answer with a piece missing and
+   * nothing saying so — the loss this repository reports rather than hides.
+   */
+  it("says so when a gap opens part-way through, not only at the start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    try {
+      const { deps, entries } = makeDeps({
+        entries: [frame(0, "first")],
+        active: { runId: "run-1", expiresAtSeconds: LIVE_LEASE },
+      });
+      const seen: unknown[] = [];
+      const reading = (async () => {
+        for await (const value of await openRunLogReplay(deps, {
+          chatId: "c1",
+          runId: "run-1",
+          userEmail: "owner@x.com",
+        })) {
+          seen.push(value);
+        }
+      })();
+      await vi.advanceTimersByTimeAsync(500);
+
+      // Seq 1 was written by a flush that threw; the run carried on at 2.
+      entries.push(frame(2, "third"), { seq: 3, payload: "[]", terminal: true });
+      await vi.advanceTimersByTimeAsync(500);
+      await reading;
+
+      expect(seen).toEqual([
+        { delta: { content: "first" } },
+        { warning: expect.stringContaining("could not be read back") },
+        { delta: { content: "third" } },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("follows the log as it grows, and says why it is empty for long", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);

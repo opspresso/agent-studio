@@ -16,7 +16,8 @@ into `ChatDeps.runAgent`.
   run lease; `runLog.ts` wraps it and does.
 - `runLease.ts` — `claimChatRun`: one in-flight run per chat, taken as a conditional
   write on the chat row (`activeRunId`, `RUN_LEASE_SECONDS`); a losing claim is a
-  `ChatConflictError` (409).
+  `ChatConflictError` (409). `isChatRunActive` answers the same claim as a yes or no,
+  for a reader deciding whether to reconnect.
 - `runLog.ts` — `teeToRunLog`: buffers the run's frames, writes them down once the reader
   leaves, and owns the terminal entry and the lease release.
 - `replayRunLog.ts` — `openRunLogReplay`: replay the log from the start, then follow it.
@@ -32,11 +33,19 @@ into `ChatDeps.runAgent`.
   because the instance serving the press need not be the one running the answer.
 - **A stop is not a failure, and the engine cannot say which it was** — it rethrows the
   abort it was given either way. The intent survives on the signal instead:
-  `watchChatCancel` aborts with `STOP_REASON`, and `teeToRunLog` reads it back through
-  `wasStopped` to end the run the way a finished one ends — what streamed is persisted, the
-  stream closes cleanly, and the reader gets `STOPPED_NOTICE` as a warning. Without that the
-  press answers itself with a red `This operation was aborted` over the partial answer, and
-  the replay log keeps it as the run's error.
+  `watchChatCancel` aborts with a reason, and `runAndPersist` reads it back through
+  `endNoticeFor` to end the run the way a finished one ends — what streamed is persisted, the
+  stream closes cleanly, and the reader gets the note as a warning. Without that the press
+  answers itself with a red `This operation was aborted` over the partial answer, and the
+  replay log keeps it as the run's error. Two details are load-bearing:
+  - **It is handled in `runAndPersist`, not in the tee around it**, because this is the only
+    place that can also put the note *on the message*. Wrapped outside, a stop reached the
+    live reader and no further — the assistant message had already been written by the time
+    the abort surfaced — so coming back to the chat showed a reply stopping mid-sentence with
+    nothing to say why.
+  - **Two reasons, not one.** `STOP_REASON` is something the reader did; `SUPERSEDED_REASON`
+    is a claim that has moved on (the chat was deleted, or another run holds it) and ends this
+    run *for* them. Reporting the second as "Stopped." blames a press that never happened.
 - **persist → terminal entry → release the lease.** `teeToRunLog` wraps `runAndPersist`,
   so a reader that sees the terminal entry can fetch the chat and find the assistant
   message already there, and a reader that sees the claim gone has therefore already seen
@@ -50,6 +59,11 @@ into `ChatDeps.runAgent`.
   flushes the whole run so far the moment the connection drops. What it costs: while a
   window is attached the log is empty, so a *second* window watching the same run has
   nothing to show — `replayRunLog` says so after five seconds rather than looking stalled.
+  Frames are still *serialised* as they arrive, on every run, because that is what keeps a
+  generated image's megabytes out of the buffer rather than held for a reader who is
+  probably still there. A flush that fails is logged and dropped, and its sequence numbers
+  are spent — which is why `replayRunLog` checks for a gap on every read and not just the
+  first: that hole lands in the middle.
   Image bytes never go in the log (a note goes in their place); the picture arrives with
   the persisted message, or — with no object storage configured — not at all, which the
   note says.
@@ -128,6 +142,16 @@ into `ChatDeps.runAgent`.
   persisted assistant content, tool calls and tool rows alike.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return
   a generator; the LLM call only starts when the route's `sseResponse` iterates it.
+- **A refusal has to beat the head frame.** A run is turned away — over its daily cost
+  limit, out of slots — on the engine generator's *first* `next()`, and the SSE layer can
+  only answer that with a 429 while it is still holding the response back. So
+  `withLeadingWarnings` pulls the source before emitting a warning, even though its warnings
+  come out first: answered from the list instead, that first pull never reached the engine,
+  the response was already committed to `200 text/event-stream`, and the refusal arrived as a
+  data frame with no status and no `Retry-After`. The replay stream has the opposite rule —
+  nothing in it can be refused, so `withReplayFrames` answers with the head frame before
+  pulling anything, or a reader watching a run whose log is empty waits five seconds for
+  HTTP headers.
 - **Envelope frames**: both run streams open with a head frame naming the run
   (`{ chat?, runId, userSeq }` — the chat id on a new chat, the run id for reattaching or
   stopping it, and where the user's turn landed so a reader arriving mid-run does not draw

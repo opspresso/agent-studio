@@ -15,7 +15,7 @@
  *
  * - **An entry is replaced, never mutated.** It is a `useSyncExternalStore`
  *   snapshot; a mutation in place is a render React will not schedule.
- * - **`runningChatIds()` returns the same array until membership changes.** A
+ * - **`runningKeys()` returns the same array until membership changes.** A
  *   fresh array every call is an infinite render loop, not a re-render.
  * - **Nothing here aborts a stream on unmount.** The server treats a dropped
  *   connection as "the reader left", and only an explicit stop ends a run — so
@@ -58,8 +58,18 @@ export interface RunStore {
   subscribe(listener: () => void): () => void;
   /** The entry for a chat id, or for the placeholder key a new chat started under. */
   get(key: string): RunEntry | undefined;
-  /** Chat ids with a run in flight. Identity-stable while membership holds. */
-  runningChatIds(): readonly string[];
+  /**
+   * Keys with a run in flight: a chat id, or the placeholder a chat still being
+   * created runs under. Identity-stable while membership holds.
+   *
+   * The placeholders are in here because a caller watching this set is watching
+   * for "a run started or ended", and a create refused before it learned its own
+   * id — over the cost limit, out of slots — never enters the set at all if only
+   * chat ids count. The chat and its user turn are on the server by then, so the
+   * sidebar that never reloaded is a sidebar missing a chat. A caller matching
+   * chat ids against this ignores the placeholders on its own.
+   */
+  runningKeys(): readonly string[];
   /** Send a turn to an existing chat. Returns the key to read it back by. */
   startTurn(chatId: string, pending: PendingUser): string;
   /** Start a chat. Returns a placeholder key, aliased to the chat id once it exists. */
@@ -87,8 +97,15 @@ const ORPHAN_TTL_MS = 60_000;
  */
 const MAX_FINISHED = 2;
 
-/** Reconnect attempts before a lost stream is reported as lost. */
+/** Consecutive failed reconnects before a lost stream is reported as lost. */
 const MAX_RECONNECTS = 2;
+
+/**
+ * A ceiling on reconnects for one turn however well each one goes, so a stream
+ * that opens, delivers a frame and dies — every time — ends rather than retrying
+ * for the length of the run.
+ */
+const MAX_TOTAL_RECONNECTS = 20;
 
 const NO_RUNS: readonly string[] = Object.freeze([]);
 
@@ -109,9 +126,9 @@ export function createRunStore(): RunStore {
 
   function refreshRunning(): void {
     const current: string[] = [];
-    for (const entry of entries.values()) {
-      if (entry.status === "streaming" && entry.chatId) {
-        current.push(entry.chatId);
+    for (const [key, entry] of entries) {
+      if (entry.status === "streaming") {
+        current.push(key);
       }
     }
     // Replaced only when the membership actually changed: the array is a
@@ -156,6 +173,14 @@ export function createRunStore(): RunStore {
     emit();
   }
 
+  /** Stop reading whatever is under this key, and forget it. */
+  function discard(key: string): void {
+    const canon = canonical(key);
+    controllers.get(canon)?.abort();
+    controllers.delete(canon);
+    evict(canon);
+  }
+
   function capFinished(): void {
     const finished = [...entries.entries()]
       .filter(([, entry]) => entry.status !== "streaming")
@@ -185,6 +210,13 @@ export function createRunStore(): RunStore {
     const canon = canonical(key);
     const chatId = head.chat?.chatId;
     if (chatId && canon !== chatId) {
+      // Whatever sits under this id is retired first, timer and stream and all:
+      // an eviction armed for it would otherwise fire sixty seconds later
+      // against the entry moving in, and its controller would be left with
+      // nothing able to abort it. `create` does the same, for the same reason.
+      if (entries.has(chatId)) {
+        discard(chatId);
+      }
       const entry = entries.get(canon);
       entries.delete(canon);
       if (entry) {
@@ -205,13 +237,21 @@ export function createRunStore(): RunStore {
     }));
   }
 
-  async function activeRunOf(chatId: string, signal: AbortSignal): Promise<string | undefined> {
-    const res = await fetch(`/api/chats/${chatId}`, { signal });
+  /**
+   * Whether the run is still going — `undefined` when the probe could not say,
+   * which is its own answer and not a no.
+   */
+  async function stillRunning(
+    chatId: string,
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<boolean | undefined> {
+    const res = await fetch(`/api/chats/${chatId}/runs/${runId}`, { signal });
     if (!res.ok) {
       return undefined;
     }
-    const data = (await res.json()) as { activeRun?: { runId: string } };
-    return data.activeRun?.runId;
+    const data = (await res.json()) as { active?: boolean };
+    return data.active === true;
   }
 
   /**
@@ -231,6 +271,7 @@ export function createRunStore(): RunStore {
     controllers.set(canonical(key), controller);
     let request = () => open(controller.signal);
     let attempt = 0;
+    let reconnects = 0;
     try {
       for (;;) {
         let rebuilding = attempt > 0;
@@ -262,6 +303,14 @@ export function createRunStore(): RunStore {
               adopt(key, chunk);
               continue;
             }
+            // Content arrived, so this connection is carrying the run: the
+            // budget below counts *consecutive* failures. Counted over the whole
+            // turn instead, a ten-minute reply that survives three cuts — a
+            // proxy recycling, a laptop waking, wifi changing hands — is
+            // reported as lost on the third, every reconnect before it having
+            // worked. Deliberately not the head frame, which says the endpoint
+            // answered and nothing about the run behind it.
+            attempt = 0;
             if (chunk.error) {
               // An authored error is a subagent failure the parent usually
               // answers past; only a top-level one is the run's.
@@ -292,28 +341,34 @@ export function createRunStore(): RunStore {
         const entry = entries.get(canonical(key));
         const chatId = entry?.chatId;
         const runId = entry?.runId;
-        if (!chatId || !runId || attempt >= MAX_RECONNECTS) {
+        if (
+          !chatId ||
+          !runId ||
+          attempt >= MAX_RECONNECTS ||
+          reconnects >= MAX_TOTAL_RECONNECTS
+        ) {
           finish(key, "failed", lost ?? "The connection to this reply was lost.");
           return;
         }
-        let active: string | undefined;
+        let active: boolean | undefined;
         try {
-          active = await activeRunOf(chatId, controller.signal);
+          active = await stillRunning(chatId, runId, controller.signal);
         } catch {
           // The probe is on the same broken network as the stream was. Treat it
           // as "cannot say", and let the attempt count end this rather than a
           // one-off failure the next poll might have answered.
-          active = runId;
+          active = undefined;
         }
         if (controller.signal.aborted) {
           return;
         }
-        if (active !== runId) {
+        if (active === false) {
           // It finished in the gap; the answer is in the conversation.
           finish(key, "finished");
           return;
         }
         attempt += 1;
+        reconnects += 1;
         request = () =>
           fetch(`/api/chats/${chatId}/runs/${runId}/stream`, { signal: controller.signal });
       }
@@ -322,7 +377,14 @@ export function createRunStore(): RunStore {
         finish(key, "failed", error instanceof Error ? error.message : "stream error");
       }
     } finally {
-      controllers.delete(canonical(key));
+      // Only while it is still ours. A pump unwinding after `abort()` — the
+      // rejection takes a turn of the loop to reach here — would otherwise
+      // delete the controller of the pump that replaced it in the meantime,
+      // leaving that stream with nothing able to stop it.
+      const canon = canonical(key);
+      if (controllers.get(canon) === controller) {
+        controllers.delete(canon);
+      }
     }
   }
 
@@ -331,7 +393,7 @@ export function createRunStore(): RunStore {
     // for the *previous* turn would otherwise fire sixty seconds later and take
     // this one, still streaming, with it.
     if (entries.has(key)) {
-      evict(key);
+      discard(key);
     }
     entries.set(key, {
       id: nextId++,
@@ -354,7 +416,7 @@ export function createRunStore(): RunStore {
       return entries.get(canonical(key));
     },
 
-    runningChatIds() {
+    runningKeys() {
       return running;
     },
 
@@ -421,10 +483,7 @@ export function createRunStore(): RunStore {
     },
 
     abort(key) {
-      const canon = canonical(key);
-      controllers.get(canon)?.abort();
-      controllers.delete(canon);
-      evict(canon);
+      discard(key);
     },
 
     cancelRun(key) {

@@ -352,6 +352,7 @@ GET    /api/chats/{chatId}                   → { chat, messages, activeRun? }
 DELETE /api/chats/{chatId}                   → 204
 POST   /api/chats/{chatId}/messages          { content, images?, documents? } → SSE
 GET    /api/chats/{chatId}/runs/{runId}/stream → SSE
+GET    /api/chats/{chatId}/runs/{runId}      → { active }
 DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 ```
 
@@ -369,6 +370,12 @@ stop: the run finishes and persists either way. `GET /api/chats/{chatId}` report
 then follows it live — always from the start, so there is no cursor to keep. Note that a run
 writes nothing down while a reader is attached, so a *second* viewer of the same run sees no
 content until the first disconnects; the stream says so rather than appearing stalled.
+
+`GET /api/chats/{chatId}/runs/{runId}` answers `{ active }` — whether that run still holds the
+chat. It is what a reader asks after a stream ended without the `{ "ended": true }` frame:
+reconnect, or take the answer from the conversation. `GET /api/chats/{chatId}` answers the
+same question through `activeRun`, but ships the whole thread and signs every image in it on
+the way, which is a lot to send to compare one id on a connection already known to be bad.
 
 `DELETE /api/chats/{chatId}/runs/{runId}` is the only way to end a run early. It records the
 request and answers `{ cancelled: true }`; `{ cancelled: false }` means the run had already

@@ -7,7 +7,12 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { runAndPersist } from "@/application/chat/run";
 import { teeToRunLog } from "@/application/chat/runLog";
-import { STOP_REASON, STOPPED_NOTICE } from "@/application/chat/cancelRun";
+import {
+  STOP_REASON,
+  STOPPED_NOTICE,
+  SUPERSEDED_NOTICE,
+  SUPERSEDED_REASON,
+} from "@/application/chat/cancelRun";
 
 const CHAT: Chat = {
   chatId: "c1",
@@ -22,6 +27,7 @@ const CHAT: Chat = {
 function recordingDeps(overrides: Partial<ChatDeps> = {}) {
   const appended: RunLogEntry[] = [];
   const calls: string[] = [];
+  const messages: ChatMessage[] = [];
   let seq = 0;
   const runLog: ChatRunLogRepository = {
     async append(_chatId, _runId, entries) {
@@ -66,6 +72,7 @@ function recordingDeps(overrides: Partial<ChatDeps> = {}) {
     },
     async appendMessage(message: ChatMessage) {
       calls.push(`chats.appendMessage:${message.role}`);
+      messages.push(message);
     },
   } satisfies ChatRepository;
 
@@ -78,7 +85,13 @@ function recordingDeps(overrides: Partial<ChatDeps> = {}) {
     documents: { extract: async () => ({ text: "" }) },
     ...overrides,
   };
-  return { deps, appended, calls, frames: () => appended.flatMap((e) => JSON.parse(e.payload)) };
+  return {
+    deps,
+    appended,
+    calls,
+    messages,
+    frames: () => appended.flatMap((e) => JSON.parse(e.payload)),
+  };
 }
 
 /** Drive a run to completion through the tee, optionally leaving part-way. */
@@ -303,7 +316,7 @@ describe("teeToRunLog", () => {
    * failure a resume replays.
    */
   it("ends cleanly with a note when the reader stopped the run", async () => {
-    const { deps, appended, frames } = recordingDeps();
+    const { deps, appended, frames, messages } = recordingDeps();
     const controller = new AbortController();
     async function* stopped(): AsyncGenerator<EngineChunk> {
       yield { delta: { content: "as far as I got" } };
@@ -314,8 +327,7 @@ describe("teeToRunLog", () => {
       deps,
       "c1",
       "run-1",
-      runAndPersist(deps, CHAT, stopped()),
-      controller.signal,
+      runAndPersist(deps, CHAT, stopped(), controller.signal),
     );
     const seen: EngineChunk[] = [];
     // Resolves rather than rejects: the run is over the way a finished one is.
@@ -328,6 +340,37 @@ describe("teeToRunLog", () => {
     expect(appended.at(-1)).toMatchObject({ terminal: true });
     expect(appended.at(-1)?.error).toBeUndefined();
     expect(frames().at(-1)).toEqual({ warning: STOPPED_NOTICE });
+    // And on the message, not only on the wire: a reader coming back to this
+    // chat finds a reply that stops mid-sentence, and nothing else says why.
+    expect(messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "as far as I got",
+      warnings: [STOPPED_NOTICE],
+    });
+  });
+
+  /**
+   * A lease that has moved on ends the run too, but nobody pressed anything —
+   * reporting it as a stop blames the reader for something they did not do.
+   */
+  it("says a run ended for it differently from one the reader stopped", async () => {
+    const { deps, messages } = recordingDeps();
+    const controller = new AbortController();
+    async function* superseded(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "as far as I got" } };
+      controller.abort(SUPERSEDED_REASON);
+      controller.signal.throwIfAborted();
+    }
+    const tee = teeToRunLog(
+      deps,
+      "c1",
+      "run-1",
+      runAndPersist(deps, CHAT, superseded(), controller.signal),
+    );
+    for await (const _chunk of tee.stream) {
+      // read to the end
+    }
+    expect(messages.at(-1)).toMatchObject({ warnings: [SUPERSEDED_NOTICE] });
   });
 
   it("still reports a genuine failure as one", async () => {
@@ -341,8 +384,7 @@ describe("teeToRunLog", () => {
       deps,
       "c1",
       "run-1",
-      runAndPersist(deps, CHAT, failing()),
-      controller.signal,
+      runAndPersist(deps, CHAT, failing(), controller.signal),
     );
     await expect(
       (async () => {

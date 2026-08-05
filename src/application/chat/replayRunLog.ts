@@ -91,7 +91,6 @@ async function* replayRunLog(
   input: ReplayRunLogInput,
 ): AsyncGenerator<unknown> {
   let nextSeq = 0;
-  let checkedForGap = false;
   let quietSince = Date.now();
   let noticed = false;
 
@@ -99,15 +98,20 @@ async function* replayRunLog(
     const entries = await deps.runLog.read(input.chatId, input.runId, nextSeq);
     if (entries.length > 0) {
       const first = entries[0];
-      if (!checkedForGap && first && first.seq > 0) {
-        // Rows the retention window already took. The run's own dropped-frame
-        // notice covers what it chose to forget; this covers what expired.
+      // Rows that are not there, checked on every read rather than only the
+      // first. Two things make a hole: the retention window taking the start of
+      // a long-abandoned run, and a flush that failed after its sequence numbers
+      // were already spent — which lands in the *middle*, where a check that had
+      // run once and set a flag walked straight past it. The run's own
+      // dropped-frame notice covers only what it chose to forget.
+      if (first && first.seq > nextSeq) {
         yield {
           warning:
-            "The beginning of this reply is no longer available; what follows starts part-way through.",
+            nextSeq === 0
+              ? "The beginning of this reply is no longer available; what follows starts part-way through."
+              : "Part of this reply could not be read back; what follows skips it.",
         };
       }
-      checkedForGap = true;
       quietSince = Date.now();
       for (const entry of entries) {
         for (const frame of parseFrames(entry.payload)) {

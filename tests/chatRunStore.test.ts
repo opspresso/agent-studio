@@ -80,9 +80,9 @@ function stubFetch(responses: Array<() => Response>): { urls: string[] } {
   return { urls };
 }
 
-/** Let the store's pump run to a standstill. */
+/** Let the store's pump run to a standstill, reconnects and all. */
 async function settle(): Promise<void> {
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 300; i += 1) {
     await Promise.resolve();
   }
 }
@@ -137,15 +137,15 @@ describe("runStore", () => {
   it("returns the same running-chats array until membership changes", async () => {
     stubFetch([() => sse([{ delta: { content: "a" } }, { ended: true }])]);
     const store = fresh();
-    expect(store.runningChatIds()).toBe(store.runningChatIds());
+    expect(store.runningKeys()).toBe(store.runningKeys());
 
     store.startTurn("c1", PENDING);
-    const whileRunning = store.runningChatIds();
+    const whileRunning = store.runningKeys();
     expect(whileRunning).toEqual(["c1"]);
-    expect(store.runningChatIds()).toBe(whileRunning);
+    expect(store.runningKeys()).toBe(whileRunning);
 
     await settle();
-    expect(store.runningChatIds()).toEqual([]);
+    expect(store.runningKeys()).toEqual([]);
   });
 
   it("re-keys a new chat from its placeholder to the id it learns", async () => {
@@ -163,8 +163,24 @@ describe("runStore", () => {
 
     expect(store.get("c9")).toBe(store.get(key));
     expect(store.get("c9")).toMatchObject({ chatId: "c9", live: { text: "hi" } });
-    // Never the placeholder: the sidebar keys its indicator by chat id.
-    expect(store.runningChatIds()).toEqual([]);
+    expect(store.runningKeys()).toEqual([]);
+  });
+
+  /**
+   * A create refused before it learned its own id — over the daily cost limit,
+   * out of slots — never streams under a chat id at all. Counted by chat id
+   * alone the running set never moves, and the sidebar that reloads on it never
+   * hears about the chat and the user turn the server has already written.
+   */
+  it("counts a chat still being created, so a refused create still moves the set", async () => {
+    stubFetch([() => Response.json({ error: "over the daily cost limit" }, { status: 429 })]);
+    const store = fresh();
+    const key = store.startNewChat("agent", PENDING);
+    expect(store.runningKeys()).toEqual([key]);
+
+    await settle();
+    expect(store.get(key)).toMatchObject({ status: "failed" });
+    expect(store.runningKeys()).toEqual([]);
   });
 
   it("reports a refused request as the failure it is", async () => {
@@ -205,7 +221,7 @@ describe("runStore", () => {
   it("rebuilds the turn from a replay rather than doubling it", async () => {
     const { urls } = stubFetch([
       () => sse([{ runId: "run-1" }, { delta: { content: "half" } }], { close: true }),
-      () => Response.json({ activeRun: { runId: "run-1" } }),
+      () => Response.json({ active: true }),
       () =>
         sse([
           { runId: "run-1" },
@@ -221,7 +237,9 @@ describe("runStore", () => {
     expect(store.get("c1")).toMatchObject({ status: "finished", live: { text: "half and half" } });
     expect(urls).toEqual([
       "/api/chats/c1/messages",
-      "/api/chats/c1",
+      // The probe is the small one: `GET /api/chats/c1` would ship the whole
+      // thread and sign every image in it to answer the same yes or no.
+      "/api/chats/c1/runs/run-1",
       "/api/chats/c1/runs/run-1/stream",
     ]);
   });
@@ -235,7 +253,7 @@ describe("runStore", () => {
   it("reconnects after a connection cut, not just a clean close", async () => {
     const { urls } = stubFetch([
       () => sseCut([{ runId: "run-1" }, { delta: { content: "half" } }]),
-      () => Response.json({ activeRun: { runId: "run-1" } }),
+      () => Response.json({ active: true }),
       () =>
         sse([
           { runId: "run-1" },
@@ -251,17 +269,52 @@ describe("runStore", () => {
     expect(store.get("c1")).toMatchObject({ status: "finished", live: { text: "half and half" } });
     expect(urls).toEqual([
       "/api/chats/c1/messages",
-      "/api/chats/c1",
+      // The probe is the small one: `GET /api/chats/c1` would ship the whole
+      // thread and sign every image in it to answer the same yes or no.
+      "/api/chats/c1/runs/run-1",
       "/api/chats/c1/runs/run-1/stream",
     ]);
+  });
+
+  /**
+   * The budget counts *consecutive* failures. Counted over the turn's lifetime
+   * instead, a ten-minute reply that survived three cuts — a proxy recycling, a
+   * laptop waking, wifi changing hands — was reported as lost on the third with
+   * every reconnect before it having worked and delivered.
+   */
+  it("keeps reconnecting for as long as each reconnect delivers something", async () => {
+    const cut = () => sseCut([{ runId: "run-1" }, { delta: { content: "half" } }]);
+    stubFetch([
+      cut,
+      () => Response.json({ active: true }),
+      cut,
+      () => Response.json({ active: true }),
+      cut,
+      () => Response.json({ active: true }),
+      () =>
+        sse([
+          { runId: "run-1" },
+          { delta: { content: "half" } },
+          { delta: { content: " and half" } },
+          { ended: true },
+        ]),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")).toMatchObject({
+      status: "finished",
+      live: { text: "half and half" },
+    });
   });
 
   it("reports the cut once the attempts run out, with what went wrong", async () => {
     stubFetch([
       () => sseCut([{ runId: "run-1" }]),
-      () => Response.json({ activeRun: { runId: "run-1" } }),
+      () => Response.json({ active: true }),
       () => sseCut([]),
-      () => Response.json({ activeRun: { runId: "run-1" } }),
+      () => Response.json({ active: true }),
       () => sseCut([]),
     ]);
     const store = fresh();
@@ -274,7 +327,7 @@ describe("runStore", () => {
   it("does not reconnect to a run that has already finished", async () => {
     const { urls } = stubFetch([
       () => sse([{ runId: "run-1" }, { delta: { content: "all of it" } }], { close: true }),
-      () => Response.json({}),
+      () => Response.json({ active: false }),
     ]);
     const store = fresh();
     store.startTurn("c1", PENDING);

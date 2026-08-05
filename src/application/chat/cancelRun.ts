@@ -27,21 +27,38 @@ import { ChatForbiddenError, ChatNotFoundError } from "./errors";
 const CANCEL_POLL_MS = 2_000;
 
 /**
- * What a run is aborted *with* when the reader asked it to stop.
+ * What a run is aborted *with* when the abort is one of ours.
  *
- * The engine cannot tell the two kinds of abort apart — it rethrows whichever
- * one it got — so the reason is where the intent survives. Without it a
- * deliberate stop arrives at the reader as `This operation was aborted` in a
- * red banner, and is recorded in the replay log as a failure.
+ * The engine cannot tell the kinds of abort apart — it rethrows whichever one it
+ * got — so the reason is where the intent survives. Without it a deliberate stop
+ * arrives at the reader as `This operation was aborted` in a red banner, and is
+ * recorded in the replay log as a failure.
+ *
+ * They are two reasons rather than one because they are two different things to
+ * be told. A stop is something the reader did; a run whose chat has moved on was
+ * ended *for* them, and reporting that as "Stopped." blames a press that never
+ * happened.
  */
 export const STOP_REASON = "chat-run-stopped";
+export const SUPERSEDED_REASON = "chat-run-superseded";
 
 /** What the reader is told in place of that error. */
 export const STOPPED_NOTICE = "Stopped.";
+export const SUPERSEDED_NOTICE =
+  "This reply was ended early: the chat is no longer this run's to answer.";
 
-/** Whether this run ended because someone stopped it, rather than by failing. */
-export function wasStopped(signal: AbortSignal | undefined): boolean {
-  return signal?.aborted === true && signal.reason === STOP_REASON;
+/**
+ * The note this run ends on, or `undefined` when the abort was not ours and the
+ * run really did fail.
+ */
+export function endNoticeFor(signal: AbortSignal | undefined): string | undefined {
+  if (signal?.aborted !== true) {
+    return undefined;
+  }
+  if (signal.reason === STOP_REASON) {
+    return STOPPED_NOTICE;
+  }
+  return signal.reason === SUPERSEDED_REASON ? SUPERSEDED_NOTICE : undefined;
 }
 
 export interface CancelChatRunInput {
@@ -82,9 +99,13 @@ export function watchChatCancel(
   const timer = setInterval(() => {
     void chats.getActiveRun(chatId).then(
       (active) => {
-        // Also stops on a lease that no longer names this run: something else
-        // has taken the chat over, so this one is finishing into nothing.
-        if (active === null || active.runId !== runId || active.cancelRequestedAt) {
+        // A lease that no longer names this run ends it too — the chat was
+        // deleted, or something else has taken it over, and this run is
+        // finishing into nothing either way. Said under its own reason, because
+        // nobody pressed anything.
+        if (active === null || active.runId !== runId) {
+          controller.abort(SUPERSEDED_REASON);
+        } else if (active.cancelRequestedAt) {
           controller.abort(STOP_REASON);
         }
       },
