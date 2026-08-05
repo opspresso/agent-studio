@@ -129,9 +129,25 @@ export function ChatThread({ chatId }: { chatId: string }) {
     }
   }, [chatId, consumedId]);
 
+  /**
+   * Land at the bottom when a thread opens, follow along after.
+   *
+   * Smoothly scrolling into place on the first paint animates through the whole
+   * history to reach where the reader already wanted to be — the longer the
+   * chat, the longer they watch it happen. Following a reply as it arrives is
+   * the opposite: the movement is what says new text landed. Keyed by chat id
+   * so the jump happens again on a thread this view swapped to rather than
+   * remounted for.
+   */
+  const anchoredTo = useRef<string | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, shown]);
+    if (status !== "ready") {
+      return;
+    }
+    const behavior = anchoredTo.current === chatId ? "smooth" : "instant";
+    anchoredTo.current = chatId;
+    bottomRef.current?.scrollIntoView({ behavior });
+  }, [chatId, status, messages, shown]);
 
   function handleSend(
     content: string,
