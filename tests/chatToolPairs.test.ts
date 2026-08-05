@@ -147,6 +147,37 @@ describe("describeTool", () => {
     expect(describeTool("memory_search")).toEqual({ kind: "tool", name: "memory_search" });
   });
 
+  /**
+   * What a stored row actually holds. The engine decorates a *result*'s name
+   * with what it acted on, and the arguments that would say the same thing live
+   * on another message — so a row read on its own has only this. Matching the
+   * whole string against the bare builtin name labelled every skill and every
+   * hand-off a plain "tool", which is how it looked in a browser.
+   */
+  it("reads the engine's decorated result name", () => {
+    expect(describeTool("Skill: tech-spec")).toEqual({ kind: "skill", name: "tech-spec" });
+    expect(describeTool("transfer_to_agent: simple-llm")).toEqual({
+      kind: "agent",
+      name: "simple-llm",
+    });
+  });
+
+  it("prefers the arguments over the decoration when it has both", () => {
+    expect(describeTool("Skill: stale", JSON.stringify({ skill_name: "fresh" }))).toEqual({
+      kind: "skill",
+      name: "fresh",
+    });
+  });
+
+  /** An MCP tool is free to contain a colon; its first half is not a builtin. */
+  it("leaves a colon in an ordinary tool's name alone", () => {
+    expect(describeTool("aws:search_documentation")).toEqual({
+      kind: "tool",
+      name: "aws:search_documentation",
+    });
+    expect(describeTool("server: lookup")).toEqual({ kind: "tool", name: "server: lookup" });
+  });
+
   /** Args arrive a character at a time, so half of one is the normal case. */
   it("falls back to the tool's name when the arguments cannot be read", () => {
     expect(describeTool("Skill", '{"skill_name": "deep-rese')).toEqual({

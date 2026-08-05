@@ -81,22 +81,37 @@ function text(value: unknown): string | undefined {
  * fall back to the tool's name, which is still true, just less useful.
  */
 export function describeTool(toolName: string, args?: string): ToolDescription {
+  // A *result* arrives already decorated with what it acted on — the engine
+  // sends `Skill: tech-spec` and `transfer_to_agent: simple-llm` — so the tool
+  // is the part before the colon and the thing it touched is the part after.
+  // Matching the whole string against the bare builtin name classified every one
+  // of them as a plain tool, which is what a browser showed the moment a run
+  // actually used a skill. A stored row frequently has only this to go on: its
+  // arguments live on the assistant message, which is not always to hand.
+  const colon = toolName.indexOf(": ");
+  const base = colon === -1 ? toolName : toolName.slice(0, colon);
+  const decorated = colon === -1 ? undefined : toolName.slice(colon + 2);
   const fields = fieldsOf(args);
-  if (toolName === SKILL) {
-    return { kind: "skill", name: text(fields.skill_name) ?? SKILL };
+  if (base === SKILL) {
+    return { kind: "skill", name: text(fields.skill_name) ?? decorated ?? SKILL };
   }
-  if (toolName === TRANSFER) {
-    return { kind: "agent", name: text(fields.agent_name) ?? "agent" };
+  if (base === TRANSFER) {
+    return { kind: "agent", name: text(fields.agent_name) ?? decorated ?? "agent" };
   }
-  if (toolName === DISPATCH) {
+  if (base === DISPATCH) {
     const tasks = Array.isArray(fields.tasks) ? fields.tasks : [];
     const names = tasks
       .map((task) => text((task as Record<string, unknown> | null)?.agent_name))
       .filter((name): name is string => name !== undefined);
-    return { kind: "agents", name: names.length > 0 ? names.join(", ") : "agents" };
+    if (names.length > 0) {
+      return { kind: "agents", name: names.join(", ") };
+    }
+    return { kind: "agents", name: decorated ?? "agents" };
   }
-  if (IMAGE.includes(toolName)) {
-    return { kind: "image", name: toolName };
+  if (IMAGE.includes(base)) {
+    return { kind: "image", name: decorated ?? base };
   }
+  // Anything else keeps its whole name: an MCP tool is free to contain a colon,
+  // and the half before it is not a builtin to be read as one.
   return { kind: "tool", name: toolName };
 }

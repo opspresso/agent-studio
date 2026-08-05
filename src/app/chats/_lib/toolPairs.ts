@@ -35,6 +35,20 @@ export interface ToolPair {
  * Calls keep their original order so a row does not jump as its result lands,
  * and a result nothing claimed is appended rather than dropped.
  */
+/**
+ * The tool a name refers to, without what it acted on. A *result* comes back as
+ * `Skill: tech-spec` where its call went out as `Skill`, so the fallback has to
+ * compare the halves that can agree. It is only ever the fallback — the id above
+ * is exact, and two skills in one turn would land here in call order.
+ */
+function baseName(name: string | undefined): string | undefined {
+  if (name === undefined) {
+    return undefined;
+  }
+  const colon = name.indexOf(": ");
+  return colon === -1 ? name : name.slice(0, colon);
+}
+
 export function pairToolTraffic(
   calls: readonly LiveToolCall[],
   results: readonly LiveToolResult[],
@@ -53,7 +67,8 @@ export function pairToolTraffic(
         ? byId
         : calls.findIndex(
             (call, at) =>
-              !claimed.has(at) && (result.name === undefined || call.name === result.name),
+              !claimed.has(at) &&
+              (result.name === undefined || baseName(call.name) === baseName(result.name)),
           );
     if (index === -1) {
       orphans.push(result);
