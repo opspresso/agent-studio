@@ -14,6 +14,7 @@ import {
   withLeadingWarnings,
 } from "./run";
 import { claimChatRun } from "./runLease";
+import { teeToRunLog } from "./runLog";
 
 export interface SendMessageInput {
   chatId: string;
@@ -27,6 +28,19 @@ export interface SendMessageInput {
   signal?: AbortSignal;
 }
 
+export interface SendMessageResult {
+  /**
+   * The claim this turn holds on the chat. The caller announces it so a reader
+   * that loses the connection can name the run it wants back, or stop it.
+   */
+  runId: string;
+  /** Where the user's turn landed, so a reader arriving mid-run does not draw it twice. */
+  userSeq: number;
+  stream: AsyncGenerator<unknown>;
+  /** Tell the run its reader left, so it starts writing itself down. */
+  onClientGone: () => void;
+}
+
 /**
  * Append a user message to an existing chat, run the agent against the full
  * history, and return a stream that persists the assistant reply on completion.
@@ -34,7 +48,7 @@ export interface SendMessageInput {
 export async function sendMessage(
   deps: ChatDeps,
   input: SendMessageInput,
-): Promise<AsyncGenerator<unknown>> {
+): Promise<SendMessageResult> {
   const chat = await deps.chats.get(input.chatId);
   if (!chat) {
     throw new ChatNotFoundError();
@@ -106,17 +120,24 @@ export async function sendMessage(
       signal: input.signal,
     });
 
-    // Ahead of the answer: a chat too long to replay in full, and an attachment
-    // that could not be stored — the reader needs both before reading the reply.
-    return runAndPersist(
+    // Outside persistence, so the log's terminal entry lands after the assistant
+    // message and before the lease is released.
+    const tee = teeToRunLog(
       deps,
-      chat,
-      withLeadingWarnings(
-        [...uploaded.warnings, ...read.warnings, ...imageWarnings, ...history.warnings],
-        source,
-      ),
+      input.chatId,
       runId,
+      // Ahead of the answer: a chat too long to replay in full, and an attachment
+      // that could not be stored — the reader needs both before reading the reply.
+      runAndPersist(
+        deps,
+        chat,
+        withLeadingWarnings(
+          [...uploaded.warnings, ...read.warnings, ...imageWarnings, ...history.warnings],
+          source,
+        ),
+      ),
     );
+    return { runId, userSeq, stream: tee.stream, onClientGone: tee.onClientGone };
   } catch (error) {
     await deps.chats.releaseRun(input.chatId, runId);
     throw error;

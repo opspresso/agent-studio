@@ -493,6 +493,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
       "src/application/llm/engine.ts",
       "src/application/execution/subagentRunner.ts",
       "src/app/api/_lib/sse.ts",
+      "src/app/api/chats/_lib/frames.ts",
       "src/shared/mergeGenerators.ts",
       "src/shared/detachOnReturn.ts",
       "src/infrastructure/slack/profileCache.ts",

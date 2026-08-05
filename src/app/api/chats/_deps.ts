@@ -1,6 +1,7 @@
 import { executeAgent } from "@/application/execution/runProject";
 import { executionDeps } from "@/lib/container";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
+import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import {
@@ -17,6 +18,7 @@ import type { ChatDeps } from "@/application/chat/deps";
  */
 export const chatDeps: ChatDeps = {
   chats: chatRepository,
+  runLog: chatRunLogRepository,
   projects: projectRepository,
   versions: versionRepository,
   // Spread whole: `caller` rides through on the same shape the facade takes, and

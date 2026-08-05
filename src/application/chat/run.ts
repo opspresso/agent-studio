@@ -161,10 +161,14 @@ const MAX_PERSISTED_WARNINGS = 20;
  * message; subagent chunks still reach the client for live rendering.
  *
  * Persistence is best-effort and runs on every exit path — normal completion,
- * an engine error, and client disconnect (`generator.return()`) — so a dropped
- * connection persists what streamed instead of leaving a dangling user turn.
- * A persistence failure is logged, never thrown: throwing on the return path
- * would reject the SSE `cancel()`, and the client already saw the answer.
+ * an engine error, and a consumer that stopped early (`generator.return()`) — so
+ * an interrupted run persists what streamed instead of leaving a dangling user
+ * turn. A persistence failure is logged, never thrown: throwing on the return
+ * path would reject the SSE `cancel()`, and the client already saw the answer.
+ *
+ * The run lease is **not** released here. `teeToRunLog` wraps this and owns the
+ * release, so the terminal log entry lands between the two — see the ordering
+ * this file's caller depends on in `runLog.ts`.
  *
  * The turn's top-level tool calls AND their results are stored, which is what
  * lets `toEngineMessages` pair them and replay the recent ones — without it a
@@ -182,7 +186,6 @@ export async function* runAndPersist(
   deps: ChatDeps,
   chat: Chat,
   source: AsyncGenerator<EngineChunk>,
-  runId?: string,
 ): AsyncGenerator<EngineChunk> {
   let content = "";
   const toolMessages: {
@@ -291,10 +294,7 @@ export async function* runAndPersist(
     }
     await persist();
   } finally {
-    // Covers client disconnect and engine errors — persist() is idempotent.
+    // Covers an early return and engine errors — persist() is idempotent.
     await persist();
-    if (runId) {
-      await deps.chats.releaseRun(chat.chatId, runId);
-    }
   }
 }
