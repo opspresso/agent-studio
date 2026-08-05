@@ -24,6 +24,7 @@
  */
 
 import { isTopLevelChunk } from "@/domain/llm/types";
+import { unrefTimer } from "@/shared/unrefTimer";
 import { toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { readSse } from "./sseClient";
@@ -171,7 +172,7 @@ export function createRunStore(): RunStore {
       return;
     }
     const timer = setTimeout(() => evict(canon), ORPHAN_TTL_MS);
-    (timer as unknown as { unref?: () => void }).unref?.();
+    unrefTimer(timer);
     evictions.set(canon, timer);
     capFinished();
   }
@@ -234,38 +235,50 @@ export function createRunStore(): RunStore {
       for (;;) {
         let rebuilding = attempt > 0;
         let ended = false;
-        const res = await request();
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string };
-          finish(key, "failed", body.error ?? `request failed (${res.status})`);
-          return;
-        }
-        for await (const chunk of readSse(res)) {
-          if (controller.signal.aborted) {
+        // A stream can stop two ways and only one of them resolves: a body that
+        // closes cleanly ends the `for await`, while a connection cut — the ALB
+        // dropping an idle stream is the one this deployment actually sees —
+        // rejects out of it. Both mean the same thing here, so the read is
+        // caught and both fall through to the reconnect decision below. Letting
+        // the reject reach the outer catch reported a run still producing as a
+        // network failure, and never tried to pick it back up.
+        let lost: string | undefined;
+        try {
+          const res = await request();
+          if (!res.ok) {
+            const body = (await res.json().catch(() => ({}))) as { error?: string };
+            finish(key, "failed", body.error ?? `request failed (${res.status})`);
             return;
           }
-          if (chunk.ended) {
-            ended = true;
-            continue;
-          }
-          if (chunk.chat || chunk.runId) {
-            adopt(key, chunk);
-            continue;
-          }
-          if (chunk.error) {
-            // An authored error is a subagent failure the parent usually answers
-            // past; only a top-level one is the run's.
-            if (isTopLevelChunk(chunk)) {
-              update(key, (prev) => ({ ...prev, error: chunk.error }));
+          for await (const chunk of readSse(res)) {
+            if (controller.signal.aborted) {
+              return;
             }
-            continue;
+            if (chunk.ended) {
+              ended = true;
+              continue;
+            }
+            if (chunk.chat || chunk.runId) {
+              adopt(key, chunk);
+              continue;
+            }
+            if (chunk.error) {
+              // An authored error is a subagent failure the parent usually
+              // answers past; only a top-level one is the run's.
+              if (isTopLevelChunk(chunk)) {
+                update(key, (prev) => ({ ...prev, error: chunk.error }));
+              }
+              continue;
+            }
+            const fold = rebuilding;
+            rebuilding = false;
+            update(key, (prev) => ({
+              ...prev,
+              live: reduceChunk(fold ? EMPTY_TURN : prev.live, chunk),
+            }));
           }
-          const fold = rebuilding;
-          rebuilding = false;
-          update(key, (prev) => ({
-            ...prev,
-            live: reduceChunk(fold ? EMPTY_TURN : prev.live, chunk),
-          }));
+        } catch (error) {
+          lost = error instanceof Error ? error.message : "stream error";
         }
         if (controller.signal.aborted) {
           return;
@@ -275,15 +288,27 @@ export function createRunStore(): RunStore {
           return;
         }
 
-        // The body closed without the run saying it was over.
+        // The stream stopped without the run saying it was over.
         const entry = entries.get(canonical(key));
         const chatId = entry?.chatId;
         const runId = entry?.runId;
         if (!chatId || !runId || attempt >= MAX_RECONNECTS) {
-          finish(key, "failed", "The connection to this reply was lost.");
+          finish(key, "failed", lost ?? "The connection to this reply was lost.");
           return;
         }
-        if ((await activeRunOf(chatId, controller.signal)) !== runId) {
+        let active: string | undefined;
+        try {
+          active = await activeRunOf(chatId, controller.signal);
+        } catch {
+          // The probe is on the same broken network as the stream was. Treat it
+          // as "cannot say", and let the attempt count end this rather than a
+          // one-off failure the next poll might have answered.
+          active = runId;
+        }
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (active !== runId) {
           // It finished in the gap; the answer is in the conversation.
           finish(key, "finished");
           return;
@@ -302,6 +327,12 @@ export function createRunStore(): RunStore {
   }
 
   function create(key: string, partial: Partial<RunEntry>): void {
+    // Whatever was here is gone, including its pending eviction — a timer armed
+    // for the *previous* turn would otherwise fire sixty seconds later and take
+    // this one, still streaming, with it.
+    if (entries.has(key)) {
+      evict(key);
+    }
     entries.set(key, {
       id: nextId++,
       status: "streaming",
@@ -328,13 +359,9 @@ export function createRunStore(): RunStore {
     },
 
     startTurn(chatId, pending) {
-      const existing = entries.get(chatId);
-      if (existing?.status === "streaming") {
+      if (entries.get(chatId)?.status === "streaming") {
         // The client-side mirror of the server's one-run-per-chat lease.
         return chatId;
-      }
-      if (existing) {
-        evict(chatId);
       }
       create(chatId, { chatId, pendingUser: pending });
       void pump(chatId, (signal) =>

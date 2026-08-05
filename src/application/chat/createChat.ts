@@ -115,6 +115,7 @@ export async function createChat(
         chat,
         withLeadingWarnings([...uploaded.warnings, ...read.warnings], source),
       ),
+      input.signal,
     );
     return { chat, runId, userSeq, stream: tee.stream, onClientGone: tee.onClientGone };
   } catch (error) {

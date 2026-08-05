@@ -37,6 +37,31 @@ function sseOpen(frames: unknown[]): Response {
   );
 }
 
+/**
+ * An SSE response whose connection is cut mid-stream. This rejects out of
+ * `readSse` rather than ending it, which is what the ALB's idle timeout does —
+ * and is a different code path from a body that closes.
+ */
+function sseCut(frames: unknown[]): Response {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      // Delivered a frame per read, then cut: `error()` discards whatever is
+      // still queued, so enqueuing everything up front would model a connection
+      // that failed before saying anything.
+      pull(controller) {
+        const frame = frames[index++];
+        if (frame === undefined) {
+          controller.error(new TypeError("network error"));
+          return;
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
+      },
+    }),
+  );
+}
+
 /** Answer each request in order, recording the URLs asked for. */
 function stubFetch(responses: Array<() => Response>): { urls: string[] } {
   const urls: string[] = [];
@@ -201,6 +226,51 @@ describe("runStore", () => {
     ]);
   });
 
+  /**
+   * The cut this deployment actually sees. It rejects out of `readSse` instead
+   * of ending it, and a version of this that let the rejection reach the outer
+   * catch reported a run still producing as a network failure and never tried
+   * to pick it back up.
+   */
+  it("reconnects after a connection cut, not just a clean close", async () => {
+    const { urls } = stubFetch([
+      () => sseCut([{ runId: "run-1" }, { delta: { content: "half" } }]),
+      () => Response.json({ activeRun: { runId: "run-1" } }),
+      () =>
+        sse([
+          { runId: "run-1" },
+          { delta: { content: "half" } },
+          { delta: { content: " and half" } },
+          { ended: true },
+        ]),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")).toMatchObject({ status: "finished", live: { text: "half and half" } });
+    expect(urls).toEqual([
+      "/api/chats/c1/messages",
+      "/api/chats/c1",
+      "/api/chats/c1/runs/run-1/stream",
+    ]);
+  });
+
+  it("reports the cut once the attempts run out, with what went wrong", async () => {
+    stubFetch([
+      () => sseCut([{ runId: "run-1" }]),
+      () => Response.json({ activeRun: { runId: "run-1" } }),
+      () => sseCut([]),
+      () => Response.json({ activeRun: { runId: "run-1" } }),
+      () => sseCut([]),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    expect(store.get("c1")).toMatchObject({ status: "failed", error: "network error" });
+  });
+
   it("does not reconnect to a run that has already finished", async () => {
     const { urls } = stubFetch([
       () => sse([{ runId: "run-1" }, { delta: { content: "all of it" } }], { close: true }),
@@ -246,6 +316,28 @@ describe("runStore", () => {
     await vi.advanceTimersByTimeAsync(61_000);
     expect(store.get("c1")).toBeUndefined();
     expect(store.get("c2")?.status).toBe("streaming");
+  });
+
+  /**
+   * The eviction armed for a finished turn must not outlive the turn itself. It
+   * did: attaching to a run inside the sixty-second window left the old timer
+   * running, and it deleted the new streaming entry when it fired — the reply
+   * simply stopped painting, with no error to explain it.
+   */
+  it("does not let a retired turn's eviction take the one that replaced it", async () => {
+    vi.useFakeTimers();
+    stubFetch([
+      () => sse([{ delta: { content: "first" } }, { ended: true }]),
+      () => sseOpen([{ runId: "run-7" }, { delta: { content: "resumed" } }]),
+    ]);
+    const store = fresh();
+    store.startTurn("c1", PENDING);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.get("c1")?.status).toBe("finished");
+
+    store.attach("c1", "run-7");
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(store.get("c1")).toMatchObject({ status: "streaming", live: { text: "resumed" } });
   });
 
   it("frees a claimed turn at once, and ignores a claim on a turn since replaced", async () => {

@@ -27,6 +27,8 @@
 import type { EngineChunk } from "@/domain/llm/types";
 import type { RunLogEntry } from "@/domain/chat/runLog";
 import { log } from "@/shared/logger";
+import { unrefTimer } from "@/shared/unrefTimer";
+import { STOPPED_NOTICE, wasStopped } from "./cancelRun";
 import type { ChatDeps } from "./deps";
 
 /** How often a detached run writes down what it has produced since the last write. */
@@ -63,6 +65,19 @@ function warningFrame(message: string): string {
 }
 
 /**
+ * A frame's size as DynamoDB counts it.
+ *
+ * `String.length` counts UTF-16 units, and `JSON.stringify` leaves non-ASCII
+ * text alone — so a Korean run measured that way is three times the size it
+ * reports, and a row built to a 300,000-"character" budget is a 900KB item the
+ * service refuses. `run.ts` weighs its own budget the same way, for the same
+ * reason.
+ */
+function frameBytes(frame: string): number {
+  return Buffer.byteLength(frame, "utf8");
+}
+
+/**
  * What goes in the log for one chunk.
  *
  * An image never does: the bytes are far past a row, and even at the row limit a
@@ -86,9 +101,10 @@ function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
     log.error("chat", "run log frame could not be serialised", error);
     return warningFrame("Part of this run could not be kept for replay.");
   }
-  if (frame.length > MAX_FRAME_BYTES) {
+  const size = frameBytes(frame);
+  if (size > MAX_FRAME_BYTES) {
     return warningFrame(
-      `A ${frame.length}-character part of this run was too large to keep for replay; it is in the saved conversation.`,
+      `A ${size}-byte part of this run was too large to keep for replay; it is in the saved conversation.`,
     );
   }
   return frame;
@@ -121,14 +137,17 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
     return next;
   }
 
-  function record(chunk: EngineChunk): void {
-    const frame = frameFor(chunk, deps.storeImage !== undefined);
+  function push(frame: string): void {
     buffered.push(frame);
-    bufferedBytes += frame.length;
+    bufferedBytes += frameBytes(frame);
     while (bufferedBytes > MAX_BUFFERED_BYTES && buffered.length > 1) {
-      bufferedBytes -= buffered.shift()!.length;
+      bufferedBytes -= frameBytes(buffered.shift()!);
       droppedFrames += 1;
     }
+  }
+
+  function record(chunk: EngineChunk): void {
+    push(frameFor(chunk, deps.storeImage !== undefined));
   }
 
   /** The buffered frames as rows, oldest first, each under the item limit. */
@@ -151,13 +170,14 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
     let batch: string[] = [];
     let batchBytes = 0;
     for (const frame of frames) {
-      if (batch.length > 0 && batchBytes + frame.length > MAX_ROW_BYTES) {
+      const size = frameBytes(frame);
+      if (batch.length > 0 && batchBytes + size > MAX_ROW_BYTES) {
         rows.push({ seq: seq++, payload: `[${batch.join(",")}]` });
         batch = [];
         batchBytes = 0;
       }
       batch.push(frame);
-      batchBytes += frame.length;
+      batchBytes += size;
     }
     if (batch.length > 0) {
       rows.push({ seq: seq++, payload: `[${batch.join(",")}]` });
@@ -178,16 +198,36 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
     ]);
   }
 
+  /**
+   * Wait out the flush interval, or wake early because the run finished — a run
+   * that ends mid-wait releases its lease as soon as the last row lands rather
+   * than half a second later.
+   *
+   * The wake handler is registered once, not once per iteration: a run that
+   * lives to the deadline flushes over a thousand times, and a `then` per pass
+   * would leave that many closures held on one promise until it settles.
+   */
+  const waiters = new Set<() => void>();
+  void ending.then(() => {
+    for (const waiter of waiters) {
+      waiter();
+    }
+    waiters.clear();
+  });
+
   function sleepUntilNextFlush(): Promise<void> {
     return new Promise((resolve) => {
-      const timer = setTimeout(resolve, FLUSH_INTERVAL_MS);
-      (timer as unknown as { unref?: () => void }).unref?.();
-      // A run that finishes mid-wait releases its lease as soon as the last row
-      // lands, rather than half a second later.
-      void ending.then(() => {
+      let wakeEarly = (): void => undefined;
+      const timer = setTimeout(() => {
+        waiters.delete(wakeEarly);
+        resolve();
+      }, FLUSH_INTERVAL_MS);
+      unrefTimer(timer);
+      wakeEarly = () => {
         clearTimeout(timer);
         resolve();
-      });
+      };
+      waiters.add(wakeEarly);
     });
   }
 
@@ -206,7 +246,11 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
   return {
     record,
     detach(): void {
-      if (!detached) {
+      // `ended` closes the door: a disconnect landing while `finish` is still
+      // unwinding would otherwise start a second pump, which writes the whole
+      // buffer and a *second* terminal entry after the lease has been released
+      // — inverting the one ordering a resume depends on.
+      if (!detached && !ended) {
         detached = true;
         pumping = pump();
       }
@@ -230,6 +274,8 @@ export function teeToRunLog(
   chatId: string,
   runId: string,
   source: AsyncGenerator<EngineChunk>,
+  /** The run's own signal, so a stop can be told from a failure. */
+  signal?: AbortSignal,
 ): RunLogTee {
   const writer = createWriter(deps, chatId, runId);
 
@@ -241,14 +287,31 @@ export function teeToRunLog(
         yield chunk;
       }
     } catch (thrown) {
-      error = thrown instanceof Error ? thrown.message : String(thrown);
-      throw thrown;
+      // A stop the reader asked for is not a failure. The engine has no way to
+      // say so — it rethrows the abort like any other — so the difference is
+      // read off the signal that carried it, and the run ends the way a
+      // finished one does: what streamed is persisted, the stream closes
+      // cleanly, and the reader gets a note rather than a red banner.
+      if (!wasStopped(signal)) {
+        error = thrown instanceof Error ? thrown.message : String(thrown);
+        throw thrown;
+      }
+      const note = { warning: STOPPED_NOTICE };
+      writer.record(note);
+      yield note;
     } finally {
       // `source` is `runAndPersist`, so its own `finally` — the assistant
       // message, the images — has already run by the time this does. That is
       // the ordering the terminal entry promises a reader.
       await writer.finish(error);
-      await deps.chats.releaseRun(chatId, runId);
+      try {
+        await deps.chats.releaseRun(chatId, runId);
+      } catch (thrown) {
+        // Last statement of a `finally`: a throw here would replace the run's
+        // real outcome, turning a delivered answer into an error the reader
+        // sees after reading it. The claim expires on its own.
+        log.error("chat", "run lease release failed", thrown);
+      }
     }
   }
 

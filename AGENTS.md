@@ -131,6 +131,7 @@ about to make copy number two.
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
 | Detaching a stream from the consumer that walked away | `src/shared/detachOnReturn.ts` |
+| Keeping a background timer from holding the process open | `src/shared/unrefTimer.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
 | Deriving why a run ended from its chunks | `chunkTermination`/`runTermination` in `src/domain/llm/types.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |

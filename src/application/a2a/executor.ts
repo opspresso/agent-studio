@@ -17,6 +17,7 @@ import {
 import { generateImage } from "@/application/image/generateImage";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { log } from "@/shared/logger";
+import { unrefTimer } from "@/shared/unrefTimer";
 
 /**
  * Inbound A2A is authenticated by one shared app key, so there is no caller to
@@ -219,7 +220,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
         },
       );
     }, CANCEL_POLL_MS);
-    (timer as unknown as { unref?: () => void }).unref?.();
+    unrefTimer(timer);
     return () => clearInterval(timer);
   }
 

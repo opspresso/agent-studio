@@ -136,6 +136,7 @@ export async function sendMessage(
           source,
         ),
       ),
+      input.signal,
     );
     return { runId, userSeq, stream: tee.stream, onClientGone: tee.onClientGone };
   } catch (error) {

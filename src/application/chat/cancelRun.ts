@@ -14,6 +14,7 @@
 
 import type { ChatRepository } from "@/domain/chat/repository";
 import { log } from "@/shared/logger";
+import { unrefTimer } from "@/shared/unrefTimer";
 import type { ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError } from "./errors";
 
@@ -24,6 +25,24 @@ import { ChatForbiddenError, ChatNotFoundError } from "./errors";
  * provider, one long image call) has no other moment to notice.
  */
 const CANCEL_POLL_MS = 2_000;
+
+/**
+ * What a run is aborted *with* when the reader asked it to stop.
+ *
+ * The engine cannot tell the two kinds of abort apart — it rethrows whichever
+ * one it got — so the reason is where the intent survives. Without it a
+ * deliberate stop arrives at the reader as `This operation was aborted` in a
+ * red banner, and is recorded in the replay log as a failure.
+ */
+export const STOP_REASON = "chat-run-stopped";
+
+/** What the reader is told in place of that error. */
+export const STOPPED_NOTICE = "Stopped.";
+
+/** Whether this run ended because someone stopped it, rather than by failing. */
+export function wasStopped(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true && signal.reason === STOP_REASON;
+}
 
 export interface CancelChatRunInput {
   chatId: string;
@@ -66,7 +85,7 @@ export function watchChatCancel(
         // Also stops on a lease that no longer names this run: something else
         // has taken the chat over, so this one is finishing into nothing.
         if (active === null || active.runId !== runId || active.cancelRequestedAt) {
-          controller.abort();
+          controller.abort(STOP_REASON);
         }
       },
       (error) => {
@@ -75,6 +94,6 @@ export function watchChatCancel(
     );
   }, CANCEL_POLL_MS);
   // Never a reason to hold the process open by itself.
-  (timer as unknown as { unref?: () => void }).unref?.();
+  unrefTimer(timer);
   return () => clearInterval(timer);
 }

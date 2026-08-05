@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { attachmentSrc } from "@/app/_lib/imageAttachments";
 import type { AgentProject } from "../_lib/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
@@ -44,6 +44,8 @@ export function NewChatPanel() {
     useAttachments({ documents: true });
   /** The turn this panel started, read back from the store that owns it. */
   const [key, setKey] = useState<string | null>(null);
+  const keyRef = useRef<string | null>(null);
+  keyRef.current = key;
   const entry = useRunEntry(key);
   /**
    * Latched, not derived from the entry: the thread below frees the entry once
@@ -82,14 +84,14 @@ export function NewChatPanel() {
   useEffect(
     () =>
       onNewChat(() => {
-        setKey((current) => {
-          if (current) {
-            // Stops reading, not the run: a reply already in flight finishes and
-            // is there in the sidebar, rather than being thrown away silently.
-            runStore.abort(current);
-          }
-          return null;
-        });
+        // Outside the state updater, which has to stay pure — React re-runs one
+        // it discards, and double-invokes it in development.
+        if (keyRef.current) {
+          // Stops reading, not the run: a reply already in flight finishes and
+          // is there in the sidebar, rather than being thrown away silently.
+          runStore.abort(keyRef.current);
+        }
+        setKey(null);
         setHandedOver(null);
         setMessage("");
         clear();
@@ -108,7 +110,15 @@ export function NewChatPanel() {
 
   function start() {
     const trimmed = message.trim();
-    if (!projectName || (!trimmed && attachments.length === 0 && documents.length === 0) || key) {
+    // Guarded on the turn still running, not on there having been one: a first
+    // message refused (409, over the cost limit, a dropped network) leaves the
+    // key set, and guarding on that alone made Send do nothing for the rest of
+    // the session — silently, since the button still looks enabled.
+    if (
+      !projectName ||
+      (!trimmed && attachments.length === 0 && documents.length === 0) ||
+      starting
+    ) {
       return;
     }
     setKey(
