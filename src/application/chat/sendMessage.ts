@@ -135,8 +135,10 @@ export async function sendMessage(
           [...uploaded.warnings, ...read.warnings, ...imageWarnings, ...history.warnings],
           source,
         ),
+        // So a stop is persisted as the note it is, rather than surfacing here
+        // as a failure the log would keep.
+        input.signal,
       ),
-      input.signal,
     );
     return { runId, userSeq, stream: tee.stream, onClientGone: tee.onClientGone };
   } catch (error) {

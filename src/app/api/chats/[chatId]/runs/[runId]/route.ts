@@ -1,10 +1,33 @@
 import { withAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { cancelChatRun } from "@/application/chat/cancelRun";
+import { isChatRunActive } from "@/application/chat/runLease";
 import { chatDeps } from "../../../_deps";
 import { runIdSchema } from "../../../_lib/schemas";
 
 type RouteContext = { params: Promise<{ chatId: string; runId: string }> };
+
+/**
+ * Whether this run is still going.
+ *
+ * What a reader asks when its stream ended without the frame that says the run
+ * did: reconnect, or take the answer from the conversation. Deliberately small —
+ * the alternative is `GET /api/chats/{chatId}`, which ships the whole thread and
+ * signs every image in it to answer the same yes or no.
+ */
+export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) => {
+  const { chatId, runId } = await ctx.params;
+  const parsed = runIdSchema.safeParse(runId);
+  if (!parsed.success) {
+    return invalidRequest(parsed.error);
+  }
+  try {
+    const active = await isChatRunActive(chatDeps.chats, chatId, parsed.data, user.email);
+    return Response.json({ active });
+  } catch (error) {
+    return apiError(error);
+  }
+});
 
 /**
  * Stop a run in progress.

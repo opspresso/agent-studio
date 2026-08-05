@@ -39,3 +39,23 @@ export async function* withRunFrames(
   }
   yield { ended: true };
 }
+
+/**
+ * The same envelope around a run being *watched* rather than started.
+ *
+ * The head frame goes first here, with nothing pulled ahead of it. It has to:
+ * nothing in a replay can be refused — `openRunLogReplay` has already awaited
+ * the ownership check and thrown its 404 — and the log of a run another window
+ * is attached to is empty by design, so its first frame is the quiet notice five
+ * seconds later. Pulling for that before answering would leave the browser with
+ * no status line and no headers for five seconds, which a proxy reads as a dead
+ * backend rather than a slow one.
+ */
+export async function* withReplayFrames(
+  head: Record<string, unknown>,
+  stream: AsyncGenerator<unknown>,
+): AsyncGenerator<unknown> {
+  yield head;
+  yield* stream;
+  yield { ended: true };
+}

@@ -1186,7 +1186,10 @@ mint is wired to the cancel watch instead.
 That makes stopping a run an explicit act: `DELETE /api/chats/{chatId}/runs/{runId}` writes
 `cancelRequestedAt` on the chat row and `watchChatCancel` polls for it, because the instance
 serving the press is not necessarily the one running the answer — the same shape the A2A
-executor uses for `tasks/cancel`.
+executor uses for `tasks/cancel`. The engine rethrows whichever abort it was given, so *which*
+kind it was survives on the signal's reason and is read back by `endNoticeFor`: a stop and a
+claim that has moved on each end the run the way a finished one ends, with their own note
+streamed **and** persisted onto the message the run just saved.
 
 To let a reader come back, `teeToRunLog` (`src/application/chat/runLog.ts`) keeps a **replay
 log**: short-TTL rows in the chat's own partition, each carrying a batch of the run's frames.
@@ -1207,8 +1210,11 @@ On the client the stream is owned by a module-level store (`src/app/chats/_lib/r
 above the router, so a navigation cannot interrupt a turn: components subscribe through
 `useSyncExternalStore` and a view that remounts finds the run still going. A stream that ends
 without the `{ ended: true }` frame is a lost connection, not a finished run, so the store
-checks `activeRun` and reattaches to the replay endpoint — from the start, which is safe
-because `reduceChunk` is a pure fold.
+asks `GET /api/chats/{chatId}/runs/{runId}` whether it is still going and reattaches to the
+replay endpoint — from the start, which is safe because `reduceChunk` is a pure fold. Its
+reconnect budget counts *consecutive* failures: a ten-minute reply survives any number of cuts
+that reconnect cleanly, under a lifetime ceiling so a stream that opens and dies every time
+still ends.
 
 `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`): a tool row
 always carries `toolCallId`, an assistant row may carry `toolCalls`/`images`, a user row may

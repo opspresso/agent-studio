@@ -28,7 +28,6 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { RunLogEntry } from "@/domain/chat/runLog";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
-import { STOPPED_NOTICE, wasStopped } from "./cancelRun";
 import type { ChatDeps } from "./deps";
 
 /** How often a detached run writes down what it has produced since the last write. */
@@ -40,6 +39,14 @@ const FLUSH_INTERVAL_MS = 500;
  * the oldest frames go, and the reader is told they did (see `droppedFrames`).
  */
 const MAX_BUFFERED_BYTES = 350_000;
+
+/**
+ * What the buffer is trimmed back to once it overflows. Dropping exactly enough
+ * for each new frame means one `shift` per frame for the rest of the run, over
+ * an array holding thousands of them; trimming to a low-water mark makes it one
+ * pass per 70KB produced instead.
+ */
+const BUFFER_LOW_WATER_BYTES = 280_000;
 
 /** One stored row, kept well under the 400KB item limit. */
 const MAX_ROW_BYTES = 300_000;
@@ -85,6 +92,12 @@ function frameBytes(frame: string): number {
  * place, plus the picture itself once the run ends and the message is written —
  * unless nothing stores images here, in which case the original connection was
  * the only place it ever existed, and that is worth saying out loud.
+ *
+ * Which is why every chunk is serialised as it arrives rather than at flush
+ * time, even for the runs — most of them — that never detach and never write a
+ * byte. Buffering the chunks themselves would be cheaper per frame and would
+ * hold a generated image's megabytes for the whole run, for a reader who is
+ * probably still there.
  */
 function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
   if (chunk.image) {
@@ -123,27 +136,32 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
   const ending = new Promise<void>((resolve) => {
     wake = resolve;
   });
-  // Writes are serialised: rows carry the sequence they are stored at, and two
-  // flushes in flight would race for it.
-  let chain: Promise<void> = Promise.resolve();
 
-  function enqueue(task: () => Promise<void>): Promise<void> {
-    const next = chain.then(task).catch((error) => {
+  async function write(task: () => Promise<void>): Promise<void> {
+    try {
+      await task();
+    } catch (error) {
       // A log nobody can write is a resume that will not work; the run itself is
-      // unaffected and must not be taken down with it.
+      // unaffected and must not be taken down with it. What it costs is a hole:
+      // the rows are gone and their sequence numbers are spent, which `replayRunLog`
+      // reports as the gap it is rather than reading straight past.
       log.error("chat", "run log write failed", error);
-    });
-    chain = next;
-    return next;
+    }
   }
 
   function push(frame: string): void {
     buffered.push(frame);
     bufferedBytes += frameBytes(frame);
-    while (bufferedBytes > MAX_BUFFERED_BYTES && buffered.length > 1) {
-      bufferedBytes -= frameBytes(buffered.shift()!);
-      droppedFrames += 1;
+    if (bufferedBytes <= MAX_BUFFERED_BYTES) {
+      return;
     }
+    let dropped = 0;
+    while (bufferedBytes > BUFFER_LOW_WATER_BYTES && dropped < buffered.length - 1) {
+      bufferedBytes -= frameBytes(buffered[dropped]!);
+      dropped += 1;
+    }
+    buffered = buffered.slice(dropped);
+    droppedFrames += dropped;
   }
 
   function record(chunk: EngineChunk): void {
@@ -231,12 +249,18 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
     });
   }
 
+  /**
+   * The only thing that writes, and it writes one row set at a time — rows carry
+   * the sequence they are stored at, so two flushes in flight would race for it.
+   * A failed flush does not take the terminal entry down with it: that entry is
+   * what a reader is waiting on to know the run is over.
+   */
   async function pump(): Promise<void> {
     for (;;) {
-      await enqueue(writeBuffered);
+      await write(writeBuffered);
       if (ended) {
         const { error } = ended;
-        await enqueue(() => writeTerminal(error));
+        await write(() => writeTerminal(error));
         return;
       }
       await sleepUntilNextFlush();
@@ -274,8 +298,6 @@ export function teeToRunLog(
   chatId: string,
   runId: string,
   source: AsyncGenerator<EngineChunk>,
-  /** The run's own signal, so a stop can be told from a failure. */
-  signal?: AbortSignal,
 ): RunLogTee {
   const writer = createWriter(deps, chatId, runId);
 
@@ -287,18 +309,11 @@ export function teeToRunLog(
         yield chunk;
       }
     } catch (thrown) {
-      // A stop the reader asked for is not a failure. The engine has no way to
-      // say so — it rethrows the abort like any other — so the difference is
-      // read off the signal that carried it, and the run ends the way a
-      // finished one does: what streamed is persisted, the stream closes
-      // cleanly, and the reader gets a note rather than a red banner.
-      if (!wasStopped(signal)) {
-        error = thrown instanceof Error ? thrown.message : String(thrown);
-        throw thrown;
-      }
-      const note = { warning: STOPPED_NOTICE };
-      writer.record(note);
-      yield note;
+      // Whatever reaches here is a genuine failure: a stop is answered a layer
+      // down, by `runAndPersist`, which is the only place that can also write
+      // the note onto the message it just saved.
+      error = thrown instanceof Error ? thrown.message : String(thrown);
+      throw thrown;
     } finally {
       // `source` is `runAndPersist`, so its own `finally` — the assistant
       // message, the images — has already run by the time this does. That is

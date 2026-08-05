@@ -8,7 +8,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
-import { runAndPersist, userTurnContent } from "@/application/chat/run";
+import { runAndPersist, userTurnContent, withLeadingWarnings } from "@/application/chat/run";
 import { getChat } from "@/application/chat/getChat";
 import {
   REPLAY_URL_TTL_SECONDS,
@@ -22,7 +22,7 @@ import { claimChatRun } from "@/application/chat/runLease";
 import { cancelChatRun, watchChatCancel } from "@/application/chat/cancelRun";
 import { teeToRunLog } from "@/application/chat/runLog";
 import { createChatSchema, sendMessageSchema } from "@/app/api/chats/_lib/schemas";
-import { withRunFrames } from "@/app/api/chats/_lib/frames";
+import { withReplayFrames, withRunFrames } from "@/app/api/chats/_lib/frames";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -1126,6 +1126,62 @@ describe("run stream frames", () => {
       })(),
     ).rejects.toThrow("provider hung up");
     expect(seen).toEqual([{ runId: "r1" }, { delta: { content: "partial" } }]);
+  });
+
+  /**
+   * The refusal above has to survive a turn that carries leading warnings — a
+   * truncated history, an attachment that could not be stored. Emitted ahead of
+   * the run they answer that first pull from a list, without the engine having
+   * been touched, and the refusal lands mid-stream on a committed 200 exactly as
+   * if nothing guarded it.
+   */
+  it("still refuses before any frame when the turn carries leading warnings", async () => {
+    async function* refused(): AsyncGenerator<EngineChunk> {
+      throw new RateLimitedError("over the daily cost limit", 42);
+    }
+    const stream = withRunFrames(
+      { runId: "r1" },
+      withLeadingWarnings(["3 earlier runs were left out"], refused()),
+    );
+    await expect(stream.next()).rejects.toBeInstanceOf(RateLimitedError);
+  });
+
+  it("keeps the leading warnings ahead of the answer they are about", async () => {
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "hi" } };
+    }
+    const seen: unknown[] = [];
+    for await (const frame of withRunFrames(
+      { runId: "r1" },
+      withLeadingWarnings(["a", "b"], source()),
+    )) {
+      seen.push(frame);
+    }
+    expect(seen).toEqual([
+      { runId: "r1" },
+      { warning: "a" },
+      { warning: "b" },
+      { delta: { content: "hi" } },
+      { ended: true },
+    ]);
+  });
+
+  /**
+   * A replay has nothing to refuse — the ownership check is awaited before the
+   * generator exists — and the log of a run another window is holding is empty
+   * by design, so its first frame is a notice five seconds out. Pulling for that
+   * before answering leaves the browser with no headers for five seconds, which
+   * a proxy reads as a dead backend rather than a slow one.
+   */
+  it("answers a replay with its head frame before pulling anything", async () => {
+    let pulled = false;
+    async function* slow(): AsyncGenerator<unknown> {
+      pulled = true;
+      yield { warning: "still going" };
+    }
+    const stream = withReplayFrames({ runId: "r1" }, slow());
+    expect(await stream.next()).toEqual({ done: false, value: { runId: "r1" } });
+    expect(pulled).toBe(false);
   });
 });
 

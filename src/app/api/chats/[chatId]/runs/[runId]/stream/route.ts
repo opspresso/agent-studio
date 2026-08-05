@@ -4,7 +4,7 @@ import { sseResponse } from "@/app/api/_lib/sse";
 import { openRunLogReplay } from "@/application/chat/replayRunLog";
 import { chatDeps } from "../../../../_deps";
 import { runIdSchema } from "../../../../_lib/schemas";
-import { withRunFrames } from "../../../../_lib/frames";
+import { withReplayFrames } from "../../../../_lib/frames";
 
 type RouteContext = { params: Promise<{ chatId: string; runId: string }> };
 
@@ -31,7 +31,7 @@ export const GET = withAuth(async (user, _request: Request, ctx: RouteContext) =
     // The same frames a run's own stream carries, so one client reducer reads
     // both — including the trailing one, which is what says the run is over
     // rather than the connection.
-    return await sseResponse(withRunFrames({ runId: parsed.data }, stream));
+    return await sseResponse(withReplayFrames({ runId: parsed.data }, stream));
   } catch (error) {
     return apiError(error);
   }

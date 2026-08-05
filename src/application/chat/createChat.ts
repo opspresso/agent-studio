@@ -114,8 +114,10 @@ export async function createChat(
         deps,
         chat,
         withLeadingWarnings([...uploaded.warnings, ...read.warnings], source),
+        // So a stop is persisted as the note it is, rather than surfacing here
+        // as a failure the log would keep.
+        input.signal,
       ),
-      input.signal,
     );
     return { chat, runId, userSeq, stream: tee.stream, onClientGone: tee.onClientGone };
   } catch (error) {

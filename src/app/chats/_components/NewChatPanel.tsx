@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { attachmentSrc } from "@/app/_lib/imageAttachments";
-import type { AgentProject } from "../_lib/types";
+import { EMPTY_TURN, type AgentProject } from "../_lib/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { useRunEntry } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
@@ -174,7 +174,10 @@ export function NewChatPanel() {
                 createdAt: "",
               }}
             />
-            <LiveAssistant turn={entry.live} />
+            {/* Nothing yet and nothing coming — a first message refused leaves
+                an entry holding an empty turn, and its bubble would promise a
+                reply under the error saying there is none. */}
+            {(starting || entry.live !== EMPTY_TURN) && <LiveAssistant turn={entry.live} />}
           </Stack>
         )}
       </ScrollArea>

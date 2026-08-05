@@ -7,7 +7,7 @@ import type { ChatMessageImage } from "@/domain/chat/types";
 import { useRunEntry } from "../_lib/runHooks";
 import { pinnedImages } from "../_lib/pins";
 import { runStore } from "../_lib/runStore";
-import type { Chat, ChatMessage } from "../_lib/types";
+import { EMPTY_TURN, type Chat, type ChatMessage } from "../_lib/types";
 import { Composer, LiveAssistant, MessageView } from "./parts";
 import { Alert, Badge, Box, Flex, Group, ScrollArea, Stack, Text } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
@@ -15,6 +15,21 @@ import { BADGE } from "@/app/_components/badgeColors";
 interface Fetched {
   messages: ChatMessage[];
   activeRun?: { runId: string };
+}
+
+/** How often a retire sync that could not answer is tried again, and how far apart. */
+const RETIRE_RETRIES = 3;
+const RETIRE_RETRY_MS = 2_000;
+
+/**
+ * How many times this view will pick up the same run. The retire path below can
+ * start an attach, so without a ceiling a run that cannot be read at all would
+ * have every failure ask for it again.
+ */
+const MAX_ATTACHES = 2;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function ChatThread({ chatId }: { chatId: string }) {
@@ -44,6 +59,8 @@ export function ChatThread({ chatId }: { chatId: string }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const syncSeq = useRef(0);
   const consuming = useRef<number | null>(null);
+  /** The run this view last picked up, and how many times — see `MAX_ATTACHES`. */
+  const attached = useRef<{ runId: string; count: number } | null>(null);
 
   const shown = entry && entry.id !== consumedId ? entry : null;
 
@@ -76,6 +93,34 @@ export function ChatThread({ chatId }: { chatId: string }) {
     };
   }, [chatId]);
 
+  /**
+   * Pick up a run this view did not start — a reload mid-reply, a second window,
+   * or a stream this view gave up on while the run carried on writing.
+   *
+   * Anything not still streaming may be attached over, including a turn whose
+   * connection was given up on: the server says a run is in flight, so a
+   * finished entry from a stream that lost it is exactly what should be replaced
+   * rather than what should block the replacement. Reported back, because the
+   * error such a turn left behind is no longer true once its run is being read
+   * again.
+   */
+  const attachIfRunning = useCallback(
+    (fresh: Fetched): boolean => {
+      const runId = fresh.activeRun?.runId;
+      if (!runId || runStore.get(chatId)?.status === "streaming") {
+        return false;
+      }
+      const taken = attached.current?.runId === runId ? attached.current.count : 0;
+      if (taken >= MAX_ATTACHES) {
+        return false;
+      }
+      attached.current = { runId, count: taken + 1 };
+      runStore.attach(chatId, runId);
+      return true;
+    },
+    [chatId],
+  );
+
   useEffect(() => {
     let dropped = false;
     void (async () => {
@@ -83,21 +128,12 @@ export function ChatThread({ chatId }: { chatId: string }) {
       if (dropped || !fresh) {
         return;
       }
-      // A run this view did not start — a reload mid-reply, or a second window.
-      // Picking it up is what makes the answer keep arriving here.
-      //
-      // Anything not still streaming may be attached over, including a turn
-      // whose connection was given up on: the server says a run is in flight, so
-      // a finished entry from a stream that lost it is exactly what should be
-      // replaced rather than what should block the replacement.
-      if (fresh.activeRun && runStore.get(chatId)?.status !== "streaming") {
-        runStore.attach(chatId, fresh.activeRun.runId);
-      }
+      attachIfRunning(fresh);
     })();
     return () => {
       dropped = true;
     };
-  }, [chatId, syncFromServer]);
+  }, [syncFromServer, attachIfRunning]);
 
   // Retire a finished turn: fetch first, then commit everything at once.
   useEffect(() => {
@@ -107,25 +143,47 @@ export function ChatThread({ chatId }: { chatId: string }) {
     consuming.current = shown.id;
     const turn = shown;
     void (async () => {
-      const fresh = await syncFromServer();
-      if (!fresh) {
-        consuming.current = null;
-        return;
+      // A sync that cannot answer — a transient 5xx, or one overtaken by a
+      // fresher request — is tried again rather than dropped. Nothing re-fires
+      // this effect afterwards, so giving up on the first failure leaves the
+      // turn un-retired: `runStore.release` is never called, and a minute later
+      // the store's own eviction takes the finished answer off the screen with
+      // no error and nothing to click.
+      for (let attempt = 0; ; attempt += 1) {
+        const fresh = await syncFromServer();
+        // Still the retire in charge of this turn? Deliberately this rather than
+        // a flag an effect cleanup sets: the re-run does not redo the work — the
+        // guard above returns early — so a cleanup flag would abandon the retire
+        // and start nothing in its place, which in development's strict mode is
+        // every single mount.
+        if (consuming.current !== turn.id) {
+          return;
+        }
+        if (fresh) {
+          // Nothing may await between here and `setConsumedId`: these land in
+          // one commit, which is what stops the streamed bubble disappearing
+          // before its persisted replacement is on screen.
+          setSessionImagesBySeq((prev) => ({
+            ...prev,
+            ...pinnedImages(fresh.messages, {
+              images: turn.live.images,
+              attachments: turn.pendingUser?.attachments ?? [],
+            }),
+          }));
+          const resumed = attachIfRunning(fresh);
+          setError(resumed ? null : (turn.error ?? null));
+          setConsumedId(turn.id);
+          return;
+        }
+        if (attempt >= RETIRE_RETRIES) {
+          consuming.current = null;
+          setError("This reply is saved, but the conversation could not be reloaded.");
+          return;
+        }
+        await delay(RETIRE_RETRY_MS);
       }
-      // Nothing may await between here and `setConsumedId`: these land in one
-      // commit, which is what stops the streamed bubble disappearing before its
-      // persisted replacement is on screen.
-      setSessionImagesBySeq((prev) => ({
-        ...prev,
-        ...pinnedImages(fresh.messages, {
-          images: turn.live.images,
-          attachments: turn.pendingUser?.attachments ?? [],
-        }),
-      }));
-      setError(turn.error ?? null);
-      setConsumedId(turn.id);
     })();
-  }, [shown, syncFromServer]);
+  }, [shown, syncFromServer, attachIfRunning]);
 
   // After the commit, not during it: this frees the streamed image bytes.
   useEffect(() => {
@@ -174,6 +232,11 @@ export function ChatThread({ chatId }: { chatId: string }) {
   }
 
   const streaming = shown?.status === "streaming";
+  // An entry exists before it holds anything — just attached, or failed before
+  // the first chunk — and an empty bubble under the user's turn promises a reply
+  // that is not coming. While it streams the "Thinking…" bubble is the right
+  // answer to that; settled and still empty, there is nothing to draw.
+  const live = shown && (streaming || shown.live !== EMPTY_TURN) ? shown.live : null;
   // The user's turn is written before the run starts, so a view that arrives
   // mid-run has it in `messages` already — drawing the pending copy too would
   // show it twice.
@@ -228,7 +291,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
               }}
             />
           )}
-          {shown && <LiveAssistant turn={shown.live} />}
+          {live && <LiveAssistant turn={live} />}
           <div ref={bottomRef} />
         </Stack>
       </ScrollArea>

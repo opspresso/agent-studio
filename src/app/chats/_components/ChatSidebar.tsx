@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActionIcon, Button, Loader, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
 import { IconPlus, IconX } from "@tabler/icons-react";
 import type { Chat } from "../_lib/types";
-import { useRunningChats } from "../_lib/runHooks";
+import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
 import classes from "./ChatSidebar.module.css";
 
@@ -26,7 +26,11 @@ export function ChatSidebar() {
   const router = useRouter();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const running = useRunningChats();
+  // Keys, not chat ids: a chat still being created counts under its placeholder,
+  // so a first message refused before it learned its id still reloads this list
+  // — the chat and its user turn are already on the server by then. Matching
+  // chat ids below ignores the placeholders on its own.
+  const running = useRunningKeys();
 
   const load = useCallback(async () => {
     const res = await fetch("/api/chats");
