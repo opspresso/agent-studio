@@ -84,14 +84,16 @@ function ToolRow({ pair, author }: { pair: ToolPair; author?: string | undefined
           <Badge size="xs" color={kind.color} radius="sm">
             {kind.label}
           </Badge>
+          {/* Where it came from, then what ran — the server narrows down what
+              the tool name means, so it reads better in front of it. */}
+          {described.source && (
+            <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+              {described.source} ·
+            </Text>
+          )}
           <Text fz="xs" fw={500} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
             {described.name}
           </Text>
-          {described.source && (
-            <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-              · {described.source}
-            </Text>
-          )}
           {author && (
             <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
               via {author}
