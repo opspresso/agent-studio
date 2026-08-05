@@ -1,5 +1,6 @@
 import type { SlackClientPort } from "@/application/slack/types";
 import { log } from "@/shared/logger";
+import { unrefTimer } from "@/shared/unrefTimer";
 
 /**
  * How a Slack reply is delivered — the single owner of that decision.
@@ -183,7 +184,7 @@ export function createReplySink(
         void sendStatus(lastStatus, lastStatusLoading);
       }, STATUS_REFRESH_MS);
       // A pending refresh must never be what keeps the process alive.
-      (timer as unknown as { unref?: () => void }).unref?.();
+      unrefTimer(timer);
       return () => clearInterval(timer);
     },
 

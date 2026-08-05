@@ -373,7 +373,9 @@ content until the first disconnects; the stream says so rather than appearing st
 `DELETE /api/chats/{chatId}/runs/{runId}` is the only way to end a run early. It records the
 request and answers `{ cancelled: true }`; `{ cancelled: false }` means the run had already
 finished, which is not an error. Both run routes reject a `runId` that is not a UUID with
-`400`.
+`400`. A stopped run ends like a finished one — what had streamed is persisted, the stream
+closes with `{ "ended": true }`, and the reader gets a `warning` frame rather than an
+`error`.
 
 `images` are the user's attachments as inline bytes — `[ { b64, mimeType } ]`, at most 4 per
 turn, 5MB each, `image/png|jpeg|gif|webp`. They reach the model as content parts and are

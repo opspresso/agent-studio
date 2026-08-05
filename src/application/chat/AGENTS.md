@@ -30,6 +30,13 @@ into `ChatDeps.runAgent`.
   left; the run finishes anyway and persists its answer. The stop is explicit
   (`cancelChatRun` writes `cancelRequestedAt`, `watchChatCancel` polls for it and aborts),
   because the instance serving the press need not be the one running the answer.
+- **A stop is not a failure, and the engine cannot say which it was** — it rethrows the
+  abort it was given either way. The intent survives on the signal instead:
+  `watchChatCancel` aborts with `STOP_REASON`, and `teeToRunLog` reads it back through
+  `wasStopped` to end the run the way a finished one ends — what streamed is persisted, the
+  stream closes cleanly, and the reader gets `STOPPED_NOTICE` as a warning. Without that the
+  press answers itself with a red `This operation was aborted` over the partial answer, and
+  the replay log keeps it as the run's error.
 - **persist → terminal entry → release the lease.** `teeToRunLog` wraps `runAndPersist`,
   so a reader that sees the terminal entry can fetch the chat and find the assistant
   message already there, and a reader that sees the claim gone has therefore already seen

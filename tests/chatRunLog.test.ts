@@ -7,6 +7,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
 import { runAndPersist } from "@/application/chat/run";
 import { teeToRunLog } from "@/application/chat/runLog";
+import { STOP_REASON, STOPPED_NOTICE } from "@/application/chat/cancelRun";
 
 const CHAT: Chat = {
   chatId: "c1",
@@ -271,6 +272,126 @@ describe("teeToRunLog", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /**
+   * DynamoDB counts bytes; `String.length` counts UTF-16 units, and
+   * `JSON.stringify` leaves non-ASCII alone. Measured the wrong way a Korean run
+   * builds a row three times the size it reports — past the 400KB item limit,
+   * where the append fails, the sequence has already moved on, and the reader
+   * gets a hole no gap check can see.
+   */
+  it("sizes rows by bytes, so a multi-byte run does not build one past the limit", async () => {
+    const { deps, appended } = recordingDeps();
+    // 40,000 characters of Korean is 120,000 bytes; ten of them are 1.2MB, which
+    // is one row if length is what counts and five if bytes are.
+    const chunks = Array.from({ length: 10 }, () => ({
+      delta: { content: "가".repeat(40_000) },
+    }));
+    await run(deps, chunks, { leaveAfter: chunks.length });
+
+    expect(appended.length).toBeGreaterThan(1);
+    for (const entry of appended) {
+      expect(Buffer.byteLength(entry.payload, "utf8")).toBeLessThanOrEqual(400_000);
+    }
+  });
+
+  /**
+   * A stop is something the reader asked for, and the engine cannot say so — it
+   * rethrows the abort like any other. Reported as an error it reaches them as a
+   * red banner over the answer they were given, and is kept in the log as a
+   * failure a resume replays.
+   */
+  it("ends cleanly with a note when the reader stopped the run", async () => {
+    const { deps, appended, frames } = recordingDeps();
+    const controller = new AbortController();
+    async function* stopped(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "as far as I got" } };
+      controller.abort(STOP_REASON);
+      controller.signal.throwIfAborted();
+    }
+    const tee = teeToRunLog(
+      deps,
+      "c1",
+      "run-1",
+      runAndPersist(deps, CHAT, stopped()),
+      controller.signal,
+    );
+    const seen: EngineChunk[] = [];
+    // Resolves rather than rejects: the run is over the way a finished one is.
+    for await (const chunk of tee.stream) {
+      seen.push(chunk);
+      tee.onClientGone();
+    }
+
+    expect(seen.at(-1)).toEqual({ warning: STOPPED_NOTICE });
+    expect(appended.at(-1)).toMatchObject({ terminal: true });
+    expect(appended.at(-1)?.error).toBeUndefined();
+    expect(frames().at(-1)).toEqual({ warning: STOPPED_NOTICE });
+  });
+
+  it("still reports a genuine failure as one", async () => {
+    const { deps, appended } = recordingDeps();
+    const controller = new AbortController();
+    async function* failing(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "partial" } };
+      throw new Error("provider hung up");
+    }
+    const tee = teeToRunLog(
+      deps,
+      "c1",
+      "run-1",
+      runAndPersist(deps, CHAT, failing()),
+      controller.signal,
+    );
+    await expect(
+      (async () => {
+        for await (const _chunk of tee.stream) {
+          tee.onClientGone();
+        }
+      })(),
+    ).rejects.toThrow("provider hung up");
+    expect(appended.at(-1)).toMatchObject({ terminal: true, error: "provider hung up" });
+  });
+
+  /**
+   * Last statement of a `finally`: a throw there replaces whatever the run
+   * actually did, so a delivered answer arrives followed by an error about
+   * bookkeeping. The claim expires on its own.
+   */
+  it("does not let a failed lease release become the run's outcome", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { deps } = recordingDeps();
+    deps.chats.releaseRun = async () => {
+      throw new Error("dynamo is down");
+    };
+    // The answer streamed and persisted; the run has to end that way.
+    await expect(run(deps, [{ delta: { content: "the answer" } }])).resolves.toBeUndefined();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  /**
+   * `detachOnReturn` has not marked itself finished until the tee's `finally`
+   * returns, so a disconnect can land while the lease release is in flight. A
+   * second pump started there writes the whole buffer and another terminal entry
+   * *after* the lease is gone, inverting the one ordering a resume depends on.
+   */
+  it("ignores a disconnect that lands after the run already ended", async () => {
+    const { deps, appended, calls } = recordingDeps();
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { delta: { content: "done" } };
+    }
+    const tee = teeToRunLog(deps, "c1", "run-1", runAndPersist(deps, CHAT, source()));
+    for await (const _chunk of tee.stream) {
+      // read to the end without leaving
+    }
+    tee.onClientGone();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(appended).toEqual([]);
+    expect(calls.filter((call) => call.startsWith("runLog"))).toEqual([]);
+    expect(calls.at(-1)).toBe("chats.releaseRun");
   });
 
   it("keeps the run going when the log cannot be written", async () => {

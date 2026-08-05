@@ -18,6 +18,7 @@
  */
 
 import { log } from "@/shared/logger";
+import { unrefTimer } from "@/shared/unrefTimer";
 import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
 
@@ -50,7 +51,7 @@ export interface ReplayRunLogInput {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
-    (timer as unknown as { unref?: () => void }).unref?.();
+    unrefTimer(timer);
   });
 }
 

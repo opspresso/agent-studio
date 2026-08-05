@@ -85,7 +85,12 @@ export function ChatThread({ chatId }: { chatId: string }) {
       }
       // A run this view did not start — a reload mid-reply, or a second window.
       // Picking it up is what makes the answer keep arriving here.
-      if (fresh.activeRun && !runStore.get(chatId)) {
+      //
+      // Anything not still streaming may be attached over, including a turn
+      // whose connection was given up on: the server says a run is in flight, so
+      // a finished entry from a stream that lost it is exactly what should be
+      // replaced rather than what should block the replacement.
+      if (fresh.activeRun && runStore.get(chatId)?.status !== "streaming") {
         runStore.attach(chatId, fresh.activeRun.runId);
       }
     })();
