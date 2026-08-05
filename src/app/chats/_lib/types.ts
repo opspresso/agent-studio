@@ -5,6 +5,15 @@ export type { Chat, ChatMessage };
 /** A single SSE frame from a chat stream. */
 export interface StreamChunk {
   chat?: Chat;
+  /** Head frame: the run this stream is carrying, for reattaching or stopping it. */
+  runId?: string;
+  /** Head frame: where the user's turn landed, so a mid-run arrival does not draw it twice. */
+  userSeq?: number;
+  /**
+   * Trailing frame: the *run* is over, as opposed to the connection. A closed
+   * body says nothing about which of the two happened.
+   */
+  ended?: boolean;
   delta?: { content?: string; toolCalls?: unknown[] };
   toolResult?: unknown;
   image?: { b64: string; mimeType: string; prompt?: string };

@@ -1,39 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readSse } from "../_lib/sseClient";
-import { reduceChunk } from "../_lib/stream";
-import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
+import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
-import { EMPTY_TURN, type Chat, type ChatMessage, type LiveImage, type LiveTurn } from "../_lib/types";
 import type { ChatMessageImage } from "@/domain/chat/types";
-import { isTopLevelChunk } from "@/domain/llm/types";
-import { Composer, LiveAssistant, MessageView, liveImageSrc } from "./parts";
-import { refreshChats } from "./ChatSidebar";
+import { useRunEntry } from "../_lib/runHooks";
+import { pinnedImages } from "../_lib/pins";
+import { runStore } from "../_lib/runStore";
+import type { Chat, ChatMessage } from "../_lib/types";
+import { Composer, LiveAssistant, MessageView } from "./parts";
 import { Alert, Badge, Box, Flex, Group, ScrollArea, Stack, Text } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
 
-/** Streamed first turn handed over from NewChatPanel so the thread paints
- * without a loading gap; the persisted copy replaces it in one commit. */
-export interface ThreadHandoff {
-  chat: Chat;
-  pendingUser: {
-    content: string;
-    attachments: Attachment[];
-    documents: DocumentAttachment[];
-  };
-  live: LiveTurn;
+interface Fetched {
+  messages: ChatMessage[];
+  activeRun?: { runId: string };
 }
 
-export function ChatThread({ chatId, initial }: { chatId: string; initial?: ThreadHandoff }) {
-  const [chat, setChat] = useState<Chat | null>(initial?.chat ?? null);
+export function ChatThread({ chatId }: { chatId: string }) {
+  // The turn in flight lives in the store, above the router — a navigation away
+  // and back finds it still going rather than losing it.
+  const entry = useRunEntry(chatId);
+  const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [pendingUser, setPendingUser] = useState<{
-    content: string;
-    attachments: Attachment[];
-    documents: DocumentAttachment[];
-  } | null>(initial?.pendingUser ?? null);
-  const [live, setLive] = useState<LiveTurn | null>(initial?.live ?? null);
   // Images already on screen this session, keyed by the message they persisted
   // to. Substituted for that message's stored copies at render, because the
   // stored URL points at an object the browser has never fetched — swapping the
@@ -43,19 +32,29 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
   const [sessionImagesBySeq, setSessionImagesBySeq] = useState<
     Record<number, ChatMessageImage[]>
   >({});
-  const [status, setStatus] = useState<"loading" | "ready" | "not-found">(
-    initial ? "ready" : "loading",
-  );
+  const [status, setStatus] = useState<"loading" | "ready" | "not-found">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
+  /**
+   * The last turn this view has finished showing. Retiring a turn by id rather
+   * than by clearing the store is what keeps the swap to the persisted thread a
+   * single commit: the streamed bubble stays on screen until its replacement is
+   * already in state.
+   */
+  const [consumedId, setConsumedId] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const syncSeq = useRef(0);
+  const consuming = useRef<number | null>(null);
 
-  // Replace whatever is on screen with the persisted thread in a single
-  // commit: fetch first, then batch all state updates, so the streamed bubble
-  // and the pending user message never disappear before their persisted
-  // replacements are ready. On a failed fetch the screen is left untouched.
-  const syncFromServer = useCallback(async (): Promise<ChatMessage[] | null> => {
+  const shown = entry && entry.id !== consumedId ? entry : null;
+
+  // Two syncs can be in flight — the mount's and a finished turn's — and the
+  // slower one must not overwrite fresher messages with staler ones.
+  const syncFromServer = useCallback(async (): Promise<Fetched | null> => {
+    const ticket = ++syncSeq.current;
     const res = await fetch(`/api/chats/${chatId}`);
+    if (ticket !== syncSeq.current) {
+      return null;
+    }
     if (res.status === 404) {
       setStatus("not-found");
       return null;
@@ -63,112 +62,84 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
     if (!res.ok) {
       return null;
     }
-    const data = (await res.json()) as { chat?: Chat; messages?: ChatMessage[] };
+    const data = (await res.json()) as {
+      chat?: Chat;
+      messages?: ChatMessage[];
+      activeRun?: { runId: string };
+    };
     setChat(data.chat ?? null);
     setMessages(data.messages ?? []);
-    setLive(null);
-    setPendingUser(null);
     setStatus("ready");
-    return data.messages ?? [];
+    return {
+      messages: data.messages ?? [],
+      ...(data.activeRun ? { activeRun: data.activeRun } : {}),
+    };
   }, [chatId]);
 
-  // Sync, then pin the turn's images — the user's attachments to the user
-  // message, the generated ones to the assistant message — so the persisted
-  // thread keeps rendering the bytes already on screen.
-  const syncAndPin = useCallback(
-    async (streamedImages: LiveImage[], attachments: Attachment[]) => {
+  useEffect(() => {
+    let dropped = false;
+    void (async () => {
+      const fresh = await syncFromServer();
+      if (dropped || !fresh) {
+        return;
+      }
+      // A run this view did not start — a reload mid-reply, or a second window.
+      // Picking it up is what makes the answer keep arriving here.
+      if (fresh.activeRun && !runStore.get(chatId)) {
+        runStore.attach(chatId, fresh.activeRun.runId);
+      }
+    })();
+    return () => {
+      dropped = true;
+    };
+  }, [chatId, syncFromServer]);
+
+  // Retire a finished turn: fetch first, then commit everything at once.
+  useEffect(() => {
+    if (!shown || shown.status === "streaming" || consuming.current === shown.id) {
+      return;
+    }
+    consuming.current = shown.id;
+    const turn = shown;
+    void (async () => {
       const fresh = await syncFromServer();
       if (!fresh) {
-        return fresh;
+        consuming.current = null;
+        return;
       }
-      const pinned: Record<number, ChatMessageImage[]> = {};
-      if (attachments.length > 0) {
-        const lastUser = [...fresh].reverse().find((message) => message.role === "user");
-        if (lastUser) {
-          pinned[lastUser.seq] = attachments.map((attachment) => ({
-            url: attachmentSrc(attachment),
-          }));
-        }
-      }
-      if (streamedImages.length > 0) {
-        const lastAssistant = [...fresh]
-          .reverse()
-          .find((message) => message.role === "assistant");
-        if (lastAssistant) {
-          pinned[lastAssistant.seq] = streamedImages.map((image) =>
-            image.prompt === undefined
-              ? { url: liveImageSrc(image) }
-              : { url: liveImageSrc(image), prompt: image.prompt },
-          );
-        }
-      }
-      if (Object.keys(pinned).length > 0) {
-        setSessionImagesBySeq((prev) => ({ ...prev, ...pinned }));
-      }
-      return fresh;
-    },
-    [syncFromServer],
-  );
+      // Nothing may await between here and `setConsumedId`: these land in one
+      // commit, which is what stops the streamed bubble disappearing before its
+      // persisted replacement is on screen.
+      setSessionImagesBySeq((prev) => ({
+        ...prev,
+        ...pinnedImages(fresh.messages, {
+          images: turn.live.images,
+          attachments: turn.pendingUser?.attachments ?? [],
+        }),
+      }));
+      setError(turn.error ?? null);
+      setConsumedId(turn.id);
+    })();
+  }, [shown, syncFromServer]);
 
-  // Consumed once: a later re-sync (e.g. a chatId change) must not pin the
-  // handed-over first turn's images onto another thread's messages.
-  const handoff = useRef(
-    initial ? { images: initial.live.images, attachments: initial.pendingUser.attachments } : null,
-  );
-
+  // After the commit, not during it: this frees the streamed image bytes.
   useEffect(() => {
-    const carried = handoff.current;
-    handoff.current = null;
-    void syncAndPin(carried?.images ?? [], carried?.attachments ?? []);
-  }, [syncAndPin]);
+    if (consumedId !== null) {
+      runStore.release(chatId, consumedId);
+    }
+  }, [chatId, consumedId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, live, pendingUser]);
+  }, [messages, shown]);
 
-  async function handleSend(
+  function handleSend(
     content: string,
     attachments: Attachment[],
     documents: DocumentAttachment[],
   ) {
-    setSending(true);
     setError(null);
-    setPendingUser({ content, attachments, documents });
-    setLive(EMPTY_TURN);
-    const streamedImages: LiveImage[] = [];
-    try {
-      const res = await fetch(`/api/chats/${chatId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, images: toRequestImages(attachments), documents }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(data.error ?? `request failed (${res.status})`);
-        return;
-      }
-      for await (const chunk of readSse(res)) {
-        if (chunk.error) {
-          // An authored error is a subagent failure the parent usually answers
-          // past; a page-level banner would report a finished conversation as
-          // failed. Only a top-level error is the run's.
-          if (isTopLevelChunk(chunk)) {
-            setError(chunk.error);
-          }
-          continue;
-        }
-        if (chunk.image) {
-          streamedImages.push(chunk.image);
-        }
-        setLive((prev) => reduceChunk(prev ?? EMPTY_TURN, chunk));
-      }
-    } catch (streamError) {
-      setError(streamError instanceof Error ? streamError.message : "stream error");
-    } finally {
-      setSending(false);
-      await syncAndPin(streamedImages, attachments);
-      refreshChats();
-    }
+    runStore.startTurn(chatId, { content, attachments, documents });
   }
 
   if (status === "not-found") {
@@ -180,6 +151,16 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
       </Flex>
     );
   }
+
+  const streaming = shown?.status === "streaming";
+  // The user's turn is written before the run starts, so a view that arrives
+  // mid-run has it in `messages` already — drawing the pending copy too would
+  // show it twice.
+  const pendingUser =
+    shown?.pendingUser && !messages.some((message) => message.seq === shown.userSeq)
+      ? shown.pendingUser
+      : null;
+  const banner = shown?.error ?? error;
 
   return (
     <Flex direction="column" h="100%">
@@ -197,16 +178,16 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
       )}
       <ScrollArea style={{ flex: 1, minHeight: 0 }} pb="md">
         <Stack gap="sm">
-          {status === "loading" && (
+          {status === "loading" && !shown && (
             <Text fz="sm" c="dimmed">
               Loading…
             </Text>
           )}
           {messages.map((message) => {
             const pinned = sessionImagesBySeq[message.seq];
-            const shown =
+            const rendered =
               pinned && message.role !== "tool" ? { ...message, images: pinned } : message;
-            return <MessageView key={`${message.seq}`} message={shown} />;
+            return <MessageView key={`${message.seq}`} message={rendered} />;
           })}
           {pendingUser !== null && (
             <MessageView
@@ -226,17 +207,21 @@ export function ChatThread({ chatId, initial }: { chatId: string; initial?: Thre
               }}
             />
           )}
-          {live && <LiveAssistant turn={live} />}
+          {shown && <LiveAssistant turn={shown.live} />}
           <div ref={bottomRef} />
         </Stack>
       </ScrollArea>
-      {error && (
+      {banner && (
         <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
-          {error}
+          {banner}
         </Alert>
       )}
       <Box pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
-        <Composer onSend={handleSend} disabled={sending} />
+        <Composer
+          onSend={handleSend}
+          disabled={streaming}
+          {...(streaming && shown.runId ? { onStop: () => runStore.cancelRun(chatId) } : {})}
+        />
       </Box>
     </Flex>
   );
