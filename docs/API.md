@@ -109,6 +109,8 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/chats` | `GET` `POST` | session |
 | `/api/chats/{chatId}` | `GET` `DELETE` | owner of the chat |
 | `/api/chats/{chatId}/messages` | `POST` | owner of the chat |
+| `/api/chats/{chatId}/runs/{runId}` | `DELETE` | owner of the chat |
+| `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | owner of the chat |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/me` | `GET` | session |
@@ -344,17 +346,34 @@ for users created before login tracking was introduced until their next successf
 Chats are private to their owner and run only against agent projects.
 
 ```
-GET    /api/chats                         → { chats }
-POST   /api/chats                         { projectName, firstMessage, images?, documents? } → SSE
-GET    /api/chats/{chatId}                → { chat, messages }
-DELETE /api/chats/{chatId}                → 204
-POST   /api/chats/{chatId}/messages       { content, images?, documents? } → SSE
+GET    /api/chats                            → { chats }
+POST   /api/chats                            { projectName, firstMessage, images?, documents? } → SSE
+GET    /api/chats/{chatId}                   → { chat, messages, activeRun? }
+DELETE /api/chats/{chatId}                   → 204
+POST   /api/chats/{chatId}/messages          { content, images?, documents? } → SSE
+GET    /api/chats/{chatId}/runs/{runId}/stream → SSE
+DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 ```
 
-The create stream starts with `{ "chat": {…} }` so clients learn the new `chatId` before
-assistant deltas. Message streams use the standard SSE framing and persist user, assistant,
-tool, and image display data. A project with neither a published version nor a runnable
-draft is rejected with `400`.
+Both run streams open with a head frame — `{ chat?, runId, userSeq }`, carrying the new
+`chatId` on a create — and close with `{ "ended": true }`. That last frame is the only thing
+that distinguishes a finished run from a dropped connection; a body that simply stops looks
+identical. Streams otherwise use the standard SSE framing and persist user, assistant, tool,
+and image display data. A project with neither a published version nor a runnable draft is
+rejected with `400`.
+
+**A run outlives the connection that started it.** Hanging up means the reader left, not
+stop: the run finishes and persists either way. `GET /api/chats/{chatId}` reports
+`activeRun: { runId }` while one is in flight, and
+`GET /api/chats/{chatId}/runs/{runId}/stream` replays everything it has produced so far and
+then follows it live — always from the start, so there is no cursor to keep. Note that a run
+writes nothing down while a reader is attached, so a *second* viewer of the same run sees no
+content until the first disconnects; the stream says so rather than appearing stalled.
+
+`DELETE /api/chats/{chatId}/runs/{runId}` is the only way to end a run early. It records the
+request and answers `{ cancelled: true }`; `{ cancelled: false }` means the run had already
+finished, which is not an error. Both run routes reject a `runId` that is not a UUID with
+`400`.
 
 `images` are the user's attachments as inline bytes — `[ { b64, mimeType } ]`, at most 4 per
 turn, 5MB each, `image/png|jpeg|gif|webp`. They reach the model as content parts and are

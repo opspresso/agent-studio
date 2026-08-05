@@ -130,6 +130,7 @@ about to make copy number two.
 | Evaluating when a schedule fires | `src/domain/trigger/cron.ts` |
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
+| Detaching a stream from the consumer that walked away | `src/shared/detachOnReturn.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
 | Deriving why a run ended from its chunks | `chunkTermination`/`runTermination` in `src/domain/llm/types.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |
@@ -161,6 +162,8 @@ same rule applies to:
 | `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
 | Turning a stored image reference into an address | `resolveImageUrl` in `src/domain/chat/imageRefs.ts` |
 | How long a signed image URL lives, per reader | `src/application/chat/imageUrls.ts` |
+| Who releases a chat's run lease | `teeToRunLog` in `src/application/chat/runLog.ts` |
+| How a chat run reaches the browser | `src/app/api/chats/_lib/detachedRun.ts` |
 | Row TTLs | `src/infrastructure/db/ttl.ts` |
 | The UTC day a usage row is keyed by | `utcDay` in `src/shared/date.ts` |
 | What a repo sync did, and what it left to a person | `src/domain/sync/types.ts` |
@@ -258,6 +261,26 @@ One line each — the linked section is the authority.
   `src/application/chat/AGENTS.md` before
   changing `run.ts` or `messageMapping.ts`; the mechanics are in
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#chat).
+- **A chat run outlives the connection that started it.** The browser hanging up means "the
+  reader left", not "stop": the stream detaches (`src/shared/detachOnReturn.ts`), the run
+  finishes and persists, and the reader can pick it back up. Three things follow, and each
+  one looks like tidying up to undo. **A chat route must not pass an `AbortController` to
+  `sseResponse`** — that is the old behaviour, exactly. **The wrapper that detaches must be
+  the outermost thing the response consumes**, because a plain `async function*` above it
+  swallows the `return()` that carries the disconnect (`mergeGenerators.ts` says why). And
+  **the client must not abort its `fetch` on unmount**, which is the same mistake from the
+  other end. The one way to stop a run is `DELETE /api/chats/{id}/runs/{runId}`, which the
+  run learns by polling — the instance serving the press is not necessarily the one running
+  the answer.
+- **The chat run log is a buffer, not a record**, and it is written **only after the reader
+  leaves** — while someone is attached they are seeing every frame already, so writing them
+  down as well would cost a write every half-second of every run to serve the few that get
+  abandoned. Its ordering is the contract a resume rests on: **persist → terminal entry →
+  release the lease**, which is why the lease release lives in `runLog.ts` rather than in
+  `runAndPersist`. Two consequences worth knowing before changing either: image bytes are
+  never logged (a note goes in their place), and while a window is attached the log is empty,
+  so a *second* window watching the same run sees nothing until the first one closes — which
+  `replayRunLog` says out loud rather than showing as a stall.
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
   composers, API bodies and Slack all read them) and the `data:` encoding in
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.

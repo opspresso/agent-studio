@@ -171,6 +171,7 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | Trigger dedup claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
 | Chat message | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
+| Chat run log (replay buffer, short TTL) | `CHAT#{chatId}` | `RUNLOG#{runId}#{seq zero-padded 6}` | — | — |
 | Skill | `SKILL#{name}` | `META` | `TYPE#SKILL` | `{name}` |
 | MCP server | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
@@ -1168,10 +1169,46 @@ self-call — and streams SSE to the client.
 
 One chat carries **one run at a time**: `claimChatRun` (`src/application/chat/runLease.ts`)
 takes a conditional-write lease on the chat row (`activeRunId`, expiring after
-`RUN_LEASE_SECONDS`), a second send while it holds is a `ChatConflictError` (409), and the
-run releases the lease in its `finally`. This is separate from the per-caller run-slot guard:
-that bounds a *person's* concurrency, this keeps two runs from interleaving one chat's
-append-only history.
+`RUN_LEASE_SECONDS`), and a second send while it holds is a `ChatConflictError` (409). This is
+separate from the per-caller run-slot guard: that bounds a *person's* concurrency, this keeps
+two runs from interleaving one chat's append-only history.
+
+#### A run outlives its connection
+
+A chat run used to end when the browser did. The SSE layer aborted it on `cancel()`, so a
+reload, a closed tab or a hard navigation left a half-written answer and a dangling user turn.
+It now **detaches** instead: `detachOnReturn` (`src/shared/detachOnReturn.ts`) turns the
+consumer's `return()` into "the reader left", keeps pulling the run to completion in the
+background, and the route registers the remainder with `after()` so a graceful shutdown waits
+for it. The chat routes therefore pass **no `AbortController`** to `sseResponse` — the one they
+mint is wired to the cancel watch instead.
+
+That makes stopping a run an explicit act: `DELETE /api/chats/{chatId}/runs/{runId}` writes
+`cancelRequestedAt` on the chat row and `watchChatCancel` polls for it, because the instance
+serving the press is not necessarily the one running the answer — the same shape the A2A
+executor uses for `tasks/cancel`.
+
+To let a reader come back, `teeToRunLog` (`src/application/chat/runLog.ts`) keeps a **replay
+log**: short-TTL rows in the chat's own partition, each carrying a batch of the run's frames.
+It writes **nothing while a reader is attached** — they are seeing every frame already — and
+flushes the whole run so far the moment the connection drops, then every 500ms after.
+`GET /api/chats/{chatId}/runs/{runId}/stream` replays it from the start and follows it, and
+`getChat` reports `activeRun` so a browser that reloaded knows what to ask for. Ordering is the
+contract: **persist → terminal entry → release the lease**, which is why the lease release
+lives in `runLog.ts` rather than in `runAndPersist`.
+
+Two things the log deliberately cannot do. Image bytes never go in it (a note goes in their
+place; the picture arrives with the persisted message, or not at all when no object storage is
+configured — which the note says). And while one window is attached the log is empty, so a
+second window watching the same run sees nothing until the first closes — reported after five
+seconds rather than left looking stalled.
+
+On the client the stream is owned by a module-level store (`src/app/chats/_lib/runStore.ts`),
+above the router, so a navigation cannot interrupt a turn: components subscribe through
+`useSyncExternalStore` and a view that remounts finds the run still going. A stream that ends
+without the `{ ended: true }` frame is a lost connection, not a finished run, so the store
+checks `activeRun` and reattaches to the replay endpoint — from the start, which is safe
+because `reduceChunk` is a pure fold.
 
 `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`): a tool row
 always carries `toolCallId`, an assistant row may carry `toolCalls`/`images`, a user row may
