@@ -17,7 +17,13 @@ import {
   Typography,
   UnstyledButton,
 } from "@mantine/core";
-import { IconChevronDown, IconChevronRight, IconFileText, IconSend } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconFileText,
+  IconPlayerStopFilled,
+  IconSend,
+} from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
 import { imageDataUrl } from "@/domain/llm/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
@@ -245,6 +251,7 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
 
 export function Composer({
   onSend,
+  onStop,
   disabled,
   placeholder,
 }: {
@@ -253,6 +260,12 @@ export function Composer({
     attachments: Attachment[],
     documents: DocumentAttachment[],
   ) => void;
+  /**
+   * Present while a reply is running. It takes the send button's place because
+   * it is the only way to end a run: closing the tab no longer does, so a reply
+   * nobody wants would otherwise hold a slot until the run deadline.
+   */
+  onStop?: () => void;
   disabled?: boolean;
   placeholder?: string;
 }) {
@@ -302,18 +315,32 @@ export function Composer({
           placeholder={placeholder ?? "Send a message…"}
           style={{ flex: 1 }}
         />
-        <ActionIcon
-          type="submit"
-          variant="filled"
-          size="input-sm"
-          radius="xl"
-          disabled={
-            disabled || (!value.trim() && attachments.length === 0 && documents.length === 0)
-          }
-          aria-label="Send"
-        >
-          <IconSend size={18} />
-        </ActionIcon>
+        {onStop ? (
+          <ActionIcon
+            type="button"
+            variant="filled"
+            color="red"
+            size="input-sm"
+            radius="xl"
+            onClick={onStop}
+            aria-label="Stop"
+          >
+            <IconPlayerStopFilled size={16} />
+          </ActionIcon>
+        ) : (
+          <ActionIcon
+            type="submit"
+            variant="filled"
+            size="input-sm"
+            radius="xl"
+            disabled={
+              disabled || (!value.trim() && attachments.length === 0 && documents.length === 0)
+            }
+            aria-label="Send"
+          >
+            <IconSend size={18} />
+          </ActionIcon>
+        )}
       </Group>
     </form>
   );

@@ -3,17 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ActionIcon, Button, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Button, Loader, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
 import { IconPlus, IconX } from "@tabler/icons-react";
 import type { Chat } from "../_lib/types";
+import { useRunningChats } from "../_lib/runHooks";
+import { runStore } from "../_lib/runStore";
 import classes from "./ChatSidebar.module.css";
 
-const REFRESH_EVENT = "chats:refresh";
 const NEW_CHAT_EVENT = "chats:new";
-
-export function refreshChats() {
-  window.dispatchEvent(new CustomEvent(REFRESH_EVENT));
-}
 
 /** Subscribe to the "New chat" press. The button routes to /chats, but a panel
  * that swapped the URL to /chats/<id> without a route change is already that
@@ -29,6 +26,7 @@ export function ChatSidebar() {
   const router = useRouter();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const running = useRunningChats();
 
   const load = useCallback(async () => {
     const res = await fetch("/api/chats");
@@ -39,21 +37,21 @@ export function ChatSidebar() {
     setLoaded(true);
   }, []);
 
+  // Reloads when a run starts or ends, because the running set only changes
+  // then. The sidebar is mounted for the whole `/chats` segment, which is why it
+  // is the right place to notice: a run can now finish with no thread on screen,
+  // and a view that told the sidebar itself would never fire.
   useEffect(() => {
     void load();
-  }, [load, pathname]);
-
-  useEffect(() => {
-    const handler = () => void load();
-    window.addEventListener(REFRESH_EVENT, handler);
-    return () => window.removeEventListener(REFRESH_EVENT, handler);
-  }, [load]);
+  }, [load, pathname, running]);
 
   const activeId = pathname.startsWith("/chats/") ? pathname.split("/")[2] : undefined;
 
   async function handleDelete(chatId: string) {
     const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
     if (res.ok) {
+      // Otherwise its stream keeps reading rows that no longer exist.
+      runStore.abort(chatId);
       await load();
       if (activeId === chatId) {
         router.push("/chats");
@@ -93,6 +91,7 @@ export function ChatSidebar() {
               >
                 {chat.title}
               </UnstyledButton>
+              {running.includes(chat.chatId) && <Loader size={10} />}
               <ActionIcon
                 size="sm"
                 variant="subtle"

@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { readSse } from "../_lib/sseClient";
-import { reduceChunk } from "../_lib/stream";
-import { attachmentSrc, toRequestImages, type Attachment } from "@/app/_lib/imageAttachments";
-import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
-import { EMPTY_TURN, type AgentProject, type Chat, type LiveTurn } from "../_lib/types";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { useEffect, useState } from "react";
+import { attachmentSrc } from "@/app/_lib/imageAttachments";
+import type { AgentProject } from "../_lib/types";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import { useRunEntry } from "../_lib/runHooks";
+import { runStore } from "../_lib/runStore";
 import { ChatThread } from "./ChatThread";
 import { LiveAssistant, MessageView } from "./parts";
-import { onNewChat, refreshChats } from "./ChatSidebar";
+import { onNewChat } from "./ChatSidebar";
 import {
   ActionIcon,
   Alert,
@@ -24,7 +22,7 @@ import {
   Textarea,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
-import { IconSend } from "@tabler/icons-react";
+import { IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
 
 const PROJECT_KEY = "agent-studio-chat-project";
 
@@ -40,29 +38,20 @@ export function NewChatPanel() {
     sync: false,
   });
   const [message, setMessage] = useState("");
-  const [sentMessage, setSentMessage] = useState<{
-    content: string;
-    attachments: Attachment[];
-    documents: DocumentAttachment[];
-  } | null>(null);
   // Staged attachments survive an error for a retry, the same way the typed
-  // message does; a successful start navigates away and unmounts them.
-  const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt, clear } =
+  // message does.
+  const { attachments, documents, attachError, addFiles, removeDocumentAt, removeAt, clear } =
     useAttachments({ documents: true });
-  const [live, setLive] = useState<LiveTurn | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // The created chat, captured from the stream's envelope chunk. Once the
-  // first turn finishes, the panel renders ChatThread in place instead of
-  // navigating — a route change here would unmount the streamed answer and
-  // flash a loading screen, which reads as a page reload.
-  const [handoffChat, setHandoffChat] = useState<Chat | null>(null);
-  const [done, setDone] = useState(false);
-  // Which turn the panel is showing. A reset retires the current one, so a
-  // stream still in flight is aborted and whatever chunk it already read is
-  // dropped instead of painting over the emptied panel.
-  const runRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
+  /** The turn this panel started, read back from the store that owns it. */
+  const [key, setKey] = useState<string | null>(null);
+  const entry = useRunEntry(key);
+  /**
+   * Latched, not derived from the entry: the thread below frees the entry once
+   * it has shown the turn, and a chat id read straight off it would go undefined
+   * at that moment and unmount the thread from underneath itself.
+   */
+  const [handedOver, setHandedOver] = useState<string | null>(null);
+  const chatId = entry?.chat?.chatId ?? handedOver;
 
   useEffect(() => {
     async function loadProjects() {
@@ -89,107 +78,48 @@ export function NewChatPanel() {
 
   // The first turn swaps the URL to /chats/<id> without a route change, so this
   // panel stays the mounted /chats segment: "New chat" navigates nowhere and
-  // this is the only thing that clears the finished thread.
+  // this is the only thing that clears the thread it handed over to.
   useEffect(
     () =>
       onNewChat(() => {
-        runRef.current += 1;
-        abortRef.current?.abort();
-        abortRef.current = null;
-        setSentMessage(null);
-        setLive(null);
-        setHandoffChat(null);
-        setDone(false);
-        setError(null);
-        setStarting(false);
+        setKey((current) => {
+          if (current) {
+            // Stops reading, not the run: a reply already in flight finishes and
+            // is there in the sidebar, rather than being thrown away silently.
+            runStore.abort(current);
+          }
+          return null;
+        });
+        setHandedOver(null);
         setMessage("");
         clear();
       }),
     [clear],
   );
 
-  async function start() {
+  // Shallow swap only — the panel keeps rendering the same turn. A hard refresh
+  // from here serves /chats/[chatId] as usual.
+  useEffect(() => {
+    if (chatId) {
+      setHandedOver(chatId);
+      window.history.replaceState(null, "", `/chats/${chatId}`);
+    }
+  }, [chatId]);
+
+  function start() {
     const trimmed = message.trim();
-    if (
-      !projectName ||
-      (!trimmed && attachments.length === 0 && documents.length === 0) ||
-      starting
-    ) {
+    if (!projectName || (!trimmed && attachments.length === 0 && documents.length === 0) || key) {
       return;
     }
-    const run = ++runRef.current;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStarting(true);
-    setError(null);
-    setSentMessage({ content: trimmed, attachments, documents });
-    setLive(EMPTY_TURN);
-    try {
-      const res = await fetch("/api/chats", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectName,
-          firstMessage: trimmed,
-          images: toRequestImages(attachments),
-          documents,
-        }),
-        signal: controller.signal,
-      });
-      if (runRef.current !== run) {
-        return;
-      }
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(data.error ?? `request failed (${res.status})`);
-        setSentMessage(null);
-        setLive(null);
-        return;
-      }
-      for await (const chunk of readSse(res)) {
-        if (runRef.current !== run) {
-          return;
-        }
-        if (chunk.chat) {
-          setHandoffChat(chunk.chat);
-          // Shallow URL swap only — the panel keeps rendering the stream. A
-          // hard refresh from here serves /chats/[chatId] as usual.
-          window.history.replaceState(null, "", `/chats/${chunk.chat.chatId}`);
-          continue;
-        }
-        if (chunk.error) {
-          // Same rule as ChatThread: only a top-level error is the run's — an
-          // authored one is a subagent failure the parent may answer past.
-          if (isTopLevelChunk(chunk)) {
-            setError(chunk.error);
-          }
-          continue;
-        }
-        setLive((prev) => reduceChunk(prev ?? EMPTY_TURN, chunk));
-      }
-    } catch (streamError) {
-      if (runRef.current === run) {
-        setError(streamError instanceof Error ? streamError.message : "stream error");
-      }
-    } finally {
-      // The chat is created before the first chunk, so the sidebar is refreshed
-      // even for a turn the panel has moved on from.
-      refreshChats();
-      if (runRef.current === run) {
-        abortRef.current = null;
-        setStarting(false);
-        setDone(true);
-      }
-    }
+    setKey(
+      runStore.startNewChat(projectName, { content: trimmed, attachments, documents }),
+    );
   }
 
-  if (done && handoffChat && sentMessage) {
-    return (
-      <ChatThread
-        chatId={handoffChat.chatId}
-        initial={{ chat: handoffChat, pendingUser: sentMessage, live: live ?? EMPTY_TURN }}
-      />
-    );
+  // Once the chat exists the thread takes over, reading the very same store
+  // entry — so the streamed answer keeps painting with no loading gap.
+  if (chatId) {
+    return <ChatThread chatId={chatId} />;
   }
 
   if (projectsLoaded && projects.length === 0) {
@@ -205,10 +135,12 @@ export function NewChatPanel() {
     );
   }
 
+  const starting = entry?.status === "streaming";
+
   return (
     <Flex direction="column" h="100%">
       <ScrollArea style={{ flex: 1, minHeight: 0 }} pb="md">
-        {sentMessage === null ? (
+        {entry?.pendingUser === undefined ? (
           <Flex h="100%" align="center" justify="center" py="xl">
             <Text fz="sm" c="dimmed">
               Pick an agent project and send your first message.
@@ -221,25 +153,25 @@ export function NewChatPanel() {
                 chatId: "",
                 seq: 0,
                 role: "user",
-                content: sentMessage.content,
-                documents: sentMessage.documents.map((document) => ({
+                content: entry.pendingUser.content,
+                documents: entry.pendingUser.documents.map((document) => ({
                   name: document.name,
                   text: "",
                 })),
-                images: sentMessage.attachments.map((attachment) => ({
+                images: entry.pendingUser.attachments.map((attachment) => ({
                   url: attachmentSrc(attachment),
                 })),
                 createdAt: "",
               }}
             />
-            {live && <LiveAssistant turn={live} />}
+            <LiveAssistant turn={entry.live} />
           </Stack>
         )}
       </ScrollArea>
 
-      {error && (
+      {entry?.error && (
         <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
-          {error}
+          {entry.error}
         </Alert>
       )}
 
@@ -275,7 +207,7 @@ export function NewChatPanel() {
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-                  void start();
+                  start();
                 }
               }}
               autosize
@@ -286,17 +218,30 @@ export function NewChatPanel() {
               disabled={starting}
               style={{ flex: 1 }}
             />
-            <ActionIcon
-              variant="filled"
-              size="input-sm"
-              radius="xl"
-              onClick={() => void start()}
-              loading={starting}
-              disabled={(!message.trim() && attachments.length === 0) || !projectName}
-              aria-label="Start chat"
-            >
-              <IconSend size={18} />
-            </ActionIcon>
+            {starting && entry?.runId ? (
+              <ActionIcon
+                variant="filled"
+                color="red"
+                size="input-sm"
+                radius="xl"
+                onClick={() => key && runStore.cancelRun(key)}
+                aria-label="Stop"
+              >
+                <IconPlayerStopFilled size={16} />
+              </ActionIcon>
+            ) : (
+              <ActionIcon
+                variant="filled"
+                size="input-sm"
+                radius="xl"
+                onClick={() => start()}
+                loading={starting}
+                disabled={(!message.trim() && attachments.length === 0) || !projectName}
+                aria-label="Start chat"
+              >
+                <IconSend size={18} />
+              </ActionIcon>
+            )}
           </Group>
         </Stack>
       </Box>
