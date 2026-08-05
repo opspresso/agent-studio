@@ -100,11 +100,21 @@ would have completed.
 **Autoscale on `agent_studio_active_runs`, not CPU.** Runs are I/O bound — an instance
 saturated with them still reads as idle CPU.
 
+**A chat run no longer sheds when its reader leaves.** A closed tab means the reader left, not
+stop (see [ARCHITECTURE.md](ARCHITECTURE.md#a-run-outlives-its-connection)), so the gauge now
+counts runs nobody is watching — a more honest number, but a page full of users reloading no
+longer drops load. Only a Stop press, or the run deadline, ends one early. Abandoned chat runs
+also bill in full and hold a per-caller run slot until they finish; `MAX_CONCURRENT_RUNS_PER_ACTOR`
+and the daily cost guard are what bound that.
+
 **Alert on failures and duration, not the gauge.** The gauge says how busy an instance is and
 nothing about whether the work is succeeding or how long it now takes. A cancelled run (a
 client that hung up) is deliberately not counted as a failure, or a page full of users
-navigating away would read as an outage. The histogram's top finite bucket is `600` — the run
-deadline itself — so anything past it is a run that outlived its own limit.
+navigating away would read as an outage — this still applies to `/predict`, `/agent`,
+`/chat/completions` and Slack, which do abort on their caller's signal; chats reach it only
+through a Stop press. The histogram's top finite bucket is `600` — the run deadline itself —
+so anything past it is a run that outlived its own limit, and an abandoned chat run left to
+the deadline lands there as a *failure*.
 
 **Alert on a non-zero `agent_studio_unknown_model_calls_total` rate.** A model id missing from
 `src/domain/llm/models.ts` still runs, but its usage is booked at **$0** — the miss is
@@ -169,11 +179,15 @@ but the rows accumulate one per run).
 | Trigger deliveries | 30 days | `TRIGGER_RUN_RETENTION_DAYS` | delivery start |
 | Inbound A2A tasks | 1 day | `A2A_TASK_RETENTION_DAYS` | last write |
 | Audit records | 400 days | `AUDIT_RETENTION_DAYS` | the act's `createdAt` |
+| Chat run replay logs | run lease + 15 min | *(derived, not configurable)* | the row's write |
 
 Usage and audit rows are kept longest — the dashboard queries up to 184 days back, and the
 questions an audit row answers ("who changed the admin list last quarter") are asked long
 after the act. A trace and its deletion reference share one expiry so the reference never
-dangles.
+dangles. Chat run replay logs are the exception to the whole table: they are a buffer a
+disconnected reader catches up from, not a record, and their window is derived from
+`MAX_RUN_DURATION_MS` rather than configured — one that could be set shorter than a run would
+leave a resume with a hole in the middle of it.
 
 DynamoDB's physical purge is only eventually consistent (up to ~48h), so **reads also filter
 out already-expired rows**. `traceRepository` keeps pulling bounded pages until its `Limit` is

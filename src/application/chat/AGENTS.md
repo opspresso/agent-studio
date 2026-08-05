@@ -12,15 +12,40 @@ into `ChatDeps.runAgent`.
 - `title.ts` — first-message → title, truncated to 50 chars.
 - `messageMapping.ts` — stored `ChatMessage[]` → OpenAI-shaped engine messages.
 - `run.ts` — `resolveVersion` (published → latest fallback) and `runAndPersist`
-  (tee the engine stream to the client, persist afterward, release the run lease in
-  its `finally`).
+  (tee the engine stream to the client, persist afterward). It does **not** release the
+  run lease; `runLog.ts` wraps it and does.
 - `runLease.ts` — `claimChatRun`: one in-flight run per chat, taken as a conditional
   write on the chat row (`activeRunId`, `RUN_LEASE_SECONDS`); a losing claim is a
   `ChatConflictError` (409).
+- `runLog.ts` — `teeToRunLog`: buffers the run's frames, writes them down once the reader
+  leaves, and owns the terminal entry and the lease release.
+- `replayRunLog.ts` — `openRunLogReplay`: replay the log from the start, then follow it.
+- `cancelRun.ts` — `cancelChatRun` (persist the ask) and `watchChatCancel` (the running
+  side's poll for it).
 - `createChat.ts` / `sendMessage.ts` / `listChats.ts` / `getChat.ts` / `deleteChat.ts`.
 
 ## Design decisions (read before changing)
 
+- **A run is not the request that started it.** The browser hanging up means the reader
+  left; the run finishes anyway and persists its answer. The stop is explicit
+  (`cancelChatRun` writes `cancelRequestedAt`, `watchChatCancel` polls for it and aborts),
+  because the instance serving the press need not be the one running the answer.
+- **persist → terminal entry → release the lease.** `teeToRunLog` wraps `runAndPersist`,
+  so a reader that sees the terminal entry can fetch the chat and find the assistant
+  message already there, and a reader that sees the claim gone has therefore already seen
+  the terminal entry. Inside `runAndPersist` the terminal entry would land before the
+  image uploads and the message writes. The lease release moved here for the same reason:
+  left in `runAndPersist` it produced one write's worth of "no claim, no terminal entry",
+  and a tail that lands in that window reports a finished run as lost.
+- **The log is written only after the reader leaves.** While someone is attached they see
+  every frame, so writing them down as well would cost a DynamoDB write every half-second
+  of every run to serve the few that get abandoned. `teeToRunLog` buffers instead and
+  flushes the whole run so far the moment the connection drops. What it costs: while a
+  window is attached the log is empty, so a *second* window watching the same run has
+  nothing to show — `replayRunLog` says so after five seconds rather than looking stalled.
+  Image bytes never go in the log (a note goes in their place); the picture arrives with
+  the persisted message, or — with no object storage configured — not at all, which the
+  note says.
 - **Version resolution**: `resolveVersion` asks the version repo for `"published"`
   (the port resolves the pointer) and falls back to the newest version by `createdAt`.
 - **Persistence is flattened, but tool traffic is replayed.** After a run, `runAndPersist`
@@ -96,8 +121,12 @@ into `ChatDeps.runAgent`.
   persisted assistant content, tool calls and tool rows alike.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return
   a generator; the LLM call only starts when the route's `sseResponse` iterates it.
-- **chatId delivery**: `POST /api/chats` streams SSE, so the route prepends a
-  `{ chat }` envelope frame before the engine chunks so the client learns the id.
+- **Envelope frames**: both run streams open with a head frame naming the run
+  (`{ chat?, runId, userSeq }` — the chat id on a new chat, the run id for reattaching or
+  stopping it, and where the user's turn landed so a reader arriving mid-run does not draw
+  it twice) and close with `{ ended: true }`. The trailing one exists because a closed body
+  says nothing about *why* it closed: a client that cannot tell a finished run from a cut
+  connection either reconnects to nothing or reports a truncated run as an answer.
 - **Ownership**: reads (`getChat`) treat non-owner as 404; mutations (`sendMessage`,
   `deleteChat`) return 403 on owner mismatch, 404 when missing.
 
