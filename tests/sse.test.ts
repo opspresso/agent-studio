@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { sseResponse } from "@/app/api/_lib/sse";
 import { apiError } from "@/app/api/_lib/http";
 import { RateLimitedError } from "@/application/errors";
+import { detachOnReturn } from "@/shared/detachOnReturn";
 
 describe("sseResponse", () => {
   /**
@@ -102,6 +103,39 @@ describe("sseResponse cancellation", () => {
     await reader.cancel("client disconnected");
 
     expect(abortController.signal.aborted).toBe(true);
+    expect(finalized).toBe(true);
+  });
+
+  /**
+   * The chat routes pass no controller and wrap their stream in
+   * `detachOnReturn`, so a disconnect must neither abort the run nor block on
+   * closing it — `cancel()` has to settle while the source is still working.
+   */
+  it("settles a cancel promptly and leaves a detached source running", async () => {
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let finalized = false;
+    async function* source(): AsyncGenerator<unknown> {
+      try {
+        yield { delta: "first" };
+        await gate;
+        yield { delta: "second" };
+      } finally {
+        finalized = true;
+      }
+    }
+
+    const { stream, drained } = detachOnReturn(source());
+    const response = await sseResponse(stream);
+    const reader = response.body!.getReader();
+    await expect(reader.read()).resolves.toMatchObject({ done: false });
+    await reader.cancel("client disconnected");
+
+    expect(finalized).toBe(false);
+    release();
+    await drained;
     expect(finalized).toBe(true);
   });
 });

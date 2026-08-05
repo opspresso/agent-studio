@@ -460,6 +460,11 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "merging concurrent generators",
     pattern: /IteratorResult</,
     owner: "src/shared/mergeGenerators.ts",
+    // `detachOnReturn` hand-rolls an iterator for the same reason this one does
+    // — `return()` cannot reach a generator parked at an `await` — so it spells
+    // the type out too. It merges nothing; the shared token is generator
+    // plumbing, not a second copy of the merge.
+    alsoAllowedUnder: ["src/shared/detachOnReturn.ts"],
   },
   {
     // Two consumers derived this identically, and they would have drifted the
@@ -489,6 +494,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
       "src/application/execution/subagentRunner.ts",
       "src/app/api/_lib/sse.ts",
       "src/shared/mergeGenerators.ts",
+      "src/shared/detachOnReturn.ts",
       "src/infrastructure/slack/profileCache.ts",
     ],
   },
