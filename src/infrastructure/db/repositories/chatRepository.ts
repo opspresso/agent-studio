@@ -277,7 +277,10 @@ export const chatRepository: ChatRepository = {
         new UpdateCommand({
           TableName: getTableName(),
           Key: keys.chat(chatId),
-          UpdateExpression: "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt",
+          // The cancel flag is cleared with the claim: left behind by the
+          // previous run, it would stop this one before it produced a token.
+          UpdateExpression:
+            "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt REMOVE cancelRequestedAt",
           ConditionExpression:
             "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND " +
             "(attribute_not_exists(activeRunId) OR activeRunExpiresAt < :now)",
@@ -303,7 +306,7 @@ export const chatRepository: ChatRepository = {
         new UpdateCommand({
           TableName: getTableName(),
           Key: keys.chat(chatId),
-          UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt",
+          UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt, cancelRequestedAt",
           ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
           ExpressionAttributeValues: { ":runId": runId },
         }),
@@ -312,6 +315,53 @@ export const chatRepository: ChatRepository = {
       if (!(error instanceof Error) || error.name !== "ConditionalCheckFailedException") {
         throw error;
       }
+    }
+  },
+
+  async getActiveRun(chatId) {
+    const res = await getDocumentClient().send(
+      new GetCommand({
+        TableName: getTableName(),
+        Key: keys.chat(chatId),
+        ProjectionExpression: "activeRunId, activeRunExpiresAt, cancelRequestedAt",
+        // The two readers of this both need an answer that is current: a run
+        // polling for its own cancel, and a browser asking whether the run it
+        // is about to attach to still exists. A tiny projection makes the
+        // consistent read cheap enough not to trade one for the other.
+        ConsistentRead: true,
+      }),
+    );
+    const runId = res.Item?.activeRunId;
+    if (typeof runId !== "string") {
+      return null;
+    }
+    const cancelRequestedAt = res.Item?.cancelRequestedAt;
+    return {
+      runId,
+      expiresAtSeconds: Number(res.Item?.activeRunExpiresAt ?? 0),
+      ...(typeof cancelRequestedAt === "string" ? { cancelRequestedAt } : {}),
+    };
+  },
+
+  async requestCancel(chatId, runId) {
+    try {
+      await getDocumentClient().send(
+        new UpdateCommand({
+          TableName: getTableName(),
+          Key: keys.chat(chatId),
+          UpdateExpression: "SET cancelRequestedAt = :now",
+          // Scoped to the named run: a stop pressed on a run that has since
+          // finished must not reach whatever the chat is doing now.
+          ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
+          ExpressionAttributeValues: { ":runId": runId, ":now": new Date().toISOString() },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.name === "ConditionalCheckFailedException") {
+        return false;
+      }
+      throw error;
     }
   },
 

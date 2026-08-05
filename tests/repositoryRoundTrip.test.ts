@@ -323,7 +323,10 @@ describe("chatRepository message round-trip", () => {
     await chatRepository.releaseRun("c-run", "run-1");
 
     expect(commands[0]).toMatchObject({
-      UpdateExpression: "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt",
+      // The claim clears any cancel the previous run left behind, or the next
+      // run stops before it has produced a token.
+      UpdateExpression:
+        "SET activeRunId = :runId, activeRunExpiresAt = :expiresAt REMOVE cancelRequestedAt",
       ExpressionAttributeValues: {
         ":runId": "run-1",
         ":now": 100,
@@ -331,7 +334,37 @@ describe("chatRepository message round-trip", () => {
       },
     });
     expect(commands[1]).toMatchObject({
-      UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt",
+      UpdateExpression: "REMOVE activeRunId, activeRunExpiresAt, cancelRequestedAt",
+      ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
+      ExpressionAttributeValues: { ":runId": "run-1" },
+    });
+  });
+
+  it("reports the stored claim, and scopes a cancel to the run named", async () => {
+    const claimed = keys.chat("c-claimed");
+    store.set(`${claimed.PK}|${claimed.SK}`, {
+      ...claimed,
+      activeRunId: "run-1",
+      activeRunExpiresAt: 200,
+    });
+    const idle = keys.chat("c-idle");
+    store.set(`${idle.PK}|${idle.SK}`, { ...idle });
+
+    // Returned as stored, expiry included: only a reader holding the current
+    // time can say whether the claim still means a run is in flight.
+    await expect(chatRepository.getActiveRun("c-claimed")).resolves.toEqual({
+      runId: "run-1",
+      expiresAtSeconds: 200,
+    });
+    await expect(chatRepository.getActiveRun("c-idle")).resolves.toBeNull();
+
+    commands.length = 0;
+    await chatRepository.requestCancel("c-claimed", "run-1");
+    // A stop pressed on a run that has since finished must not reach whatever
+    // the chat is doing now — the condition is what enforces it. (The fake
+    // client evaluates none; `scripts/integration-check.ts` covers the refusal.)
+    expect(commands[0]).toMatchObject({
+      UpdateExpression: "SET cancelRequestedAt = :now",
       ConditionExpression: "attribute_exists(PK) AND activeRunId = :runId",
       ExpressionAttributeValues: { ":runId": "run-1" },
     });

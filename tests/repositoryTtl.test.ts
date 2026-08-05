@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { expiresAtSeconds, RETENTION } from "@/infrastructure/db/ttl";
+import { expiresAtSeconds, RETENTION, RUN_LOG_TTL_SECONDS } from "@/infrastructure/db/ttl";
+import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 
 interface Captured {
   constructor: { name: string };
@@ -41,6 +42,9 @@ vi.mock("@/infrastructure/db/client", () => ({
 const { traceRepository } = await import("@/infrastructure/db/repositories/traceRepository");
 const { usageRepository } = await import("@/infrastructure/db/repositories/usageRepository");
 const { chatRepository } = await import("@/infrastructure/db/repositories/chatRepository");
+const { chatRunLogRepository } = await import(
+  "@/infrastructure/db/repositories/chatRunLogRepository"
+);
 
 const NOW_ISO = "2026-07-01T00:00:00Z";
 const expiredSec = Math.floor(Date.parse("2026-06-01T00:00:00Z") / 1000);
@@ -211,5 +215,31 @@ describe("chat TTL", () => {
     ];
     const messages = await chatRepository.listMessages("c1");
     expect(messages.map((m) => m.content)).toEqual(["fresh"]);
+  });
+});
+
+/**
+ * The replay log is a buffer, not a record: it expires within the hour, and its
+ * window is derived from the run lease rather than configured — a log that
+ * outlived its run by less would leave a resume with a hole in the middle.
+ */
+describe("chat run log TTL", () => {
+  it("expires a run log entry a fixed window from when it was written", async () => {
+    vi.setSystemTime(new Date("2026-08-05T00:00:00Z"));
+    await chatRunLogRepository.append("c1", "run-1", [{ seq: 0, payload: "[]" }]);
+    const put = state.sent.find((c) => c.constructor.name === "PutCommand")!;
+    expect((put.input.Item as Record<string, unknown>).expiresAt).toBe(
+      Math.floor(Date.parse("2026-08-05T00:00:00Z") / 1000) + RUN_LOG_TTL_SECONDS,
+    );
+    expect(RUN_LOG_TTL_SECONDS).toBeGreaterThan(RUN_LEASE_SECONDS);
+  });
+
+  it("filters expired entries from read()", async () => {
+    state.queryItems = [
+      { seq: 0, payload: '[{"delta":{"content":"fresh"}}]', expiresAt: freshSec },
+      { seq: 1, payload: '[{"delta":{"content":"old"}}]', expiresAt: expiredSec },
+    ];
+    const entries = await chatRunLogRepository.read("c1", "run-1", 0);
+    expect(entries.map((entry) => entry.seq)).toEqual([0]);
   });
 });
