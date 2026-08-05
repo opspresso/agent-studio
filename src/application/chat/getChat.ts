@@ -8,6 +8,17 @@ import { log } from "@/shared/logger";
 export interface ChatWithMessages {
   chat: Chat;
   messages: ChatMessage[];
+  /**
+   * The run in flight, when there is one — what a browser that reloaded mid-run
+   * names to pick it back up, or to stop it.
+   *
+   * Derived here rather than carried on `Chat`: the claim is stored on the chat
+   * row, and a `Chat` that holds it is a `Chat` that `update()` writes back,
+   * which is how a live lease gets overwritten by a stale copy. Absent once the
+   * claim has expired — an instance that died mid-run leaves one behind, and it
+   * says nothing about a run still running.
+   */
+  activeRun?: { runId: string };
 }
 
 /**
@@ -44,6 +55,8 @@ export async function getChat(
     throw new ChatNotFoundError();
   }
   const messages = await deps.chats.listMessages(chatId);
+  const active = await deps.chats.getActiveRun(chatId);
+  const running = active !== null && active.expiresAtSeconds * 1000 > Date.now();
   // Signed for the reader who is about to look at them. A stored row holds an
   // object key, never an address that keeps working after this response.
   const resolved = await resolveMessageImages(
@@ -58,5 +71,9 @@ export async function getChat(
     // picture go" with something other than a guess.
     log.warn("chat", `${resolved.dropped} image(s) of chat ${chatId} could not be addressed`);
   }
-  return { chat, messages: resolved.messages };
+  return {
+    chat,
+    messages: resolved.messages,
+    ...(running && active ? { activeRun: { runId: active.runId } } : {}),
+  };
 }

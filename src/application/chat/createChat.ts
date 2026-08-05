@@ -13,6 +13,7 @@ import {
 } from "./run";
 import { titleFromMessage } from "./title";
 import { claimChatRun } from "./runLease";
+import { teeToRunLog } from "./runLog";
 
 export interface CreateChatInput {
   projectName: string;
@@ -28,7 +29,16 @@ export interface CreateChatInput {
 
 export interface CreateChatResult {
   chat: Chat;
+  /**
+   * The claim this turn holds on the chat. The caller announces it so a reader
+   * that loses the connection can name the run it wants back, or stop it.
+   */
+  runId: string;
+  /** Where the user's turn landed, so a reader arriving mid-run does not draw it twice. */
+  userSeq: number;
   stream: AsyncGenerator<unknown>;
+  /** Tell the run its reader left, so it starts writing itself down. */
+  onClientGone: () => void;
 }
 
 /**
@@ -68,9 +78,10 @@ export async function createChat(
     const attachments = input.images ?? [];
     const uploaded = await storeMessageImages(deps, attachments);
     const read = await readMessageDocuments(deps, input.documents ?? []);
+    const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
     const userMessage: ChatMessage = {
       chatId: chat.chatId,
-      seq: await deps.chats.reserveMessageSeq(chat.chatId),
+      seq: userSeq,
       role: "user",
       content: input.firstMessage,
       ...(uploaded.stored.length > 0 ? { images: uploaded.stored } : {}),
@@ -92,16 +103,20 @@ export async function createChat(
       signal: input.signal,
     });
 
-    return {
-      chat,
+    // Outside persistence, so the log's terminal entry lands after the assistant
+    // message and before the lease is released.
+    const tee = teeToRunLog(
+      deps,
+      chat.chatId,
+      runId,
       // An attachment that could not be stored is said so before the answer.
-      stream: runAndPersist(
+      runAndPersist(
         deps,
         chat,
         withLeadingWarnings([...uploaded.warnings, ...read.warnings], source),
-        runId,
       ),
-    };
+    );
+    return { chat, runId, userSeq, stream: tee.stream, onClientGone: tee.onClientGone };
   } catch (error) {
     await deps.chats.releaseRun(chat.chatId, runId);
     throw error;

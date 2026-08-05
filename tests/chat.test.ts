@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
 import type { ChatRepository } from "@/domain/chat/repository";
+import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ChatDeps } from "@/application/chat/deps";
@@ -16,8 +17,12 @@ import {
 import { deleteChat } from "@/application/chat/deleteChat";
 import { sendMessage } from "@/application/chat/sendMessage";
 import { ChatConflictError, ChatForbiddenError, ChatNotFoundError } from "@/application/chat/errors";
+import { RateLimitedError } from "@/application/errors";
 import { claimChatRun } from "@/application/chat/runLease";
+import { cancelChatRun, watchChatCancel } from "@/application/chat/cancelRun";
+import { teeToRunLog } from "@/application/chat/runLog";
 import { createChatSchema, sendMessageSchema } from "@/app/api/chats/_lib/schemas";
+import { withRunFrames } from "@/app/api/chats/_lib/frames";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -50,7 +55,9 @@ function message(partial: {
 }
 
 function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
-  const state: { deleted: boolean; activeRunId?: string } = { deleted: false };
+  const state: { deleted: boolean; activeRunId?: string; cancelRequestedAt?: string } = {
+    deleted: false,
+  };
   let current = initial;
   let msgs = messages;
   const repo: ChatRepository = {
@@ -84,7 +91,24 @@ function makeChatRepo(initial: Chat | null, messages: ChatMessage[] = []) {
     async releaseRun(_chatId, runId) {
       if (state.activeRunId === runId) {
         state.activeRunId = undefined;
+        state.cancelRequestedAt = undefined;
       }
+    },
+    async getActiveRun() {
+      return state.activeRunId
+        ? {
+            runId: state.activeRunId,
+            expiresAtSeconds: 4_102_444_800,
+            ...(state.cancelRequestedAt ? { cancelRequestedAt: state.cancelRequestedAt } : {}),
+          }
+        : null;
+    },
+    async requestCancel(_chatId, runId) {
+      if (state.activeRunId !== runId) {
+        return false;
+      }
+      state.cancelRequestedAt = "2026-01-01T00:00:00.000Z";
+      return true;
     },
     async reserveMessageSeq() {
       return msgs.reduce((max, message) => Math.max(max, message.seq), -1) + 1;
@@ -128,9 +152,31 @@ const emptyVersions: VersionRepository = {
 
 async function* emptyAgent(): AsyncGenerator<EngineChunk> {}
 
+/** Records what a run wrote down for a reader that left, in order. */
+function makeRunLog() {
+  const entries: Array<{ runId: string; entry: RunLogEntry }> = [];
+  const repo: ChatRunLogRepository = {
+    async append(_chatId, runId, appended) {
+      for (const entry of appended) {
+        entries.push({ runId, entry });
+      }
+    },
+    async read(_chatId, runId, fromSeq) {
+      return entries
+        .filter((row) => row.runId === runId && row.entry.seq >= fromSeq)
+        .map((row) => row.entry);
+    },
+  };
+  /** Every frame the log holds, flattened back out of its batches. */
+  const frames = (): unknown[] =>
+    entries.flatMap((row) => JSON.parse(row.entry.payload) as unknown[]);
+  return { repo, entries, frames };
+}
+
 function makeDeps(repo: ChatRepository, overrides: Partial<ChatDeps> = {}): ChatDeps {
   return {
     chats: repo,
+    runLog: makeRunLog().repo,
     projects: emptyProjects,
     versions: emptyVersions,
     runAgent: () => emptyAgent(),
@@ -821,7 +867,7 @@ describe("chat image attachments", () => {
         return emptyAgent();
       },
     });
-    const stream = await sendMessage(deps, {
+    const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "and now?",
       userEmail: "owner@x.com",
@@ -847,7 +893,7 @@ describe("chat image attachments", () => {
       },
     });
 
-    const stream = await sendMessage(deps, {
+    const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "what is this?",
       images: [PNG],
@@ -883,7 +929,7 @@ describe("chat image attachments", () => {
       },
     });
 
-    const stream = await sendMessage(deps, {
+    const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "",
       images: [PNG],
@@ -947,24 +993,139 @@ describe("chat run lease", () => {
     await expect(claimChatRun(repo, "c1")).resolves.toEqual(expect.any(String));
   });
 
-  it("releases the lease when stream persistence is cancelled", async () => {
+  it("releases the lease when a run is cut short", async () => {
     const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
+    const deps = makeDeps(repo);
     const runId = await claimChatRun(repo, "c1");
     async function* source(): AsyncGenerator<EngineChunk> {
       yield { delta: { content: "partial" } };
       yield { delta: { content: "unread" } };
     }
-    const stream = runAndPersist(
-      makeDeps(repo),
-      chatFixture("owner@x.com"),
-      source(),
+    const { stream } = teeToRunLog(
+      deps,
+      "c1",
       runId,
+      runAndPersist(deps, chatFixture("owner@x.com"), source()),
     );
 
     await stream.next();
     await stream.return(undefined);
 
     expect(state.activeRunId).toBeUndefined();
+  });
+});
+
+/**
+ * Closing the tab used to be the stop button. Now that a run outlives its
+ * reader, stopping one is a deliberate act — and a persisted one, because the
+ * instance answering the press is not necessarily the one running the answer.
+ */
+describe("stopping a run", () => {
+  it("records the stop, and treats one aimed at a finished run as nothing to do", async () => {
+    const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
+    const deps = makeDeps(repo);
+    const runId = await claimChatRun(repo, "c1");
+
+    await expect(
+      cancelChatRun(deps, { chatId: "c1", runId: "some-other-run", userEmail: "owner@x.com" }),
+    ).resolves.toEqual({ cancelled: false });
+
+    await expect(
+      cancelChatRun(deps, { chatId: "c1", runId, userEmail: "owner@x.com" }),
+    ).resolves.toEqual({ cancelled: true });
+    expect(state.cancelRequestedAt).toEqual(expect.any(String));
+  });
+
+  it("refuses a stop from anyone but the owner", async () => {
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const deps = makeDeps(repo);
+    const runId = await claimChatRun(repo, "c1");
+
+    await expect(
+      cancelChatRun(deps, { chatId: "c1", runId, userEmail: "someone@x.com" }),
+    ).rejects.toBeInstanceOf(ChatForbiddenError);
+    await expect(
+      cancelChatRun(deps, { chatId: "missing", runId, userEmail: "owner@x.com" }),
+    ).rejects.toBeInstanceOf(ChatNotFoundError);
+  });
+
+  it("aborts the run once a stop lands, and once the lease names someone else", async () => {
+    vi.useFakeTimers();
+    try {
+      const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+      const runId = await claimChatRun(repo, "c1");
+      const controller = new AbortController();
+      const stop = watchChatCancel(repo, "c1", runId, controller);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(controller.signal.aborted).toBe(false);
+
+      await repo.requestCancel("c1", runId);
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(controller.signal.aborted).toBe(true);
+      stop();
+
+      // A lease that has moved on means this run is finishing into nothing.
+      const orphaned = new AbortController();
+      const stopOrphan = watchChatCancel(repo, "c1", "a-run-that-lost-its-claim", orphaned);
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(orphaned.signal.aborted).toBe(true);
+      stopOrphan();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("run stream frames", () => {
+  /**
+   * A closed body says nothing about *why* it closed. The trailing frame is how
+   * a client tells a finished run from a cut-off one — and it is absent when the
+   * run throws, because the SSE layer answers that with an `{error}` frame.
+   */
+  it("wraps the run in a head frame and an explicit end", async () => {
+    async function* source(): AsyncGenerator<unknown> {
+      yield { delta: { content: "hi" } };
+    }
+    const seen: unknown[] = [];
+    for await (const frame of withRunFrames({ runId: "r1", userSeq: 3 }, source())) {
+      seen.push(frame);
+    }
+    expect(seen).toEqual([
+      { runId: "r1", userSeq: 3 },
+      { delta: { content: "hi" } },
+      { ended: true },
+    ]);
+  });
+
+  /**
+   * A run refused over its cost limit throws on its first `next()`. The head
+   * frame must not be emitted ahead of that, or the response is already
+   * committed to `200 text/event-stream` and the 429 — with its `Retry-After` —
+   * arrives as a data frame nobody reads as a status.
+   */
+  it("lets a refusal on the first chunk throw before any frame is emitted", async () => {
+    async function* refused(): AsyncGenerator<unknown> {
+      throw new RateLimitedError("over the daily cost limit", 42);
+    }
+    const stream = withRunFrames({ runId: "r1" }, refused());
+    await expect(stream.next()).rejects.toBeInstanceOf(RateLimitedError);
+  });
+
+  it("emits no end frame when the run throws", async () => {
+    async function* failing(): AsyncGenerator<unknown> {
+      yield { delta: { content: "partial" } };
+      throw new Error("provider hung up");
+    }
+    const seen: unknown[] = [];
+    await expect(
+      (async () => {
+        for await (const frame of withRunFrames({ runId: "r1" }, failing())) {
+          seen.push(frame);
+        }
+      })(),
+    ).rejects.toThrow("provider hung up");
+    expect(seen).toEqual([{ runId: "r1" }, { delta: { content: "partial" } }]);
   });
 });
 
@@ -1020,7 +1181,7 @@ describe("attached documents", () => {
       },
     });
 
-    const stream = await sendMessage(deps, {
+    const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "summarise this",
       documents: [
@@ -1080,7 +1241,7 @@ describe("attached documents", () => {
     });
 
     const chunks: unknown[] = [];
-    const stream = await sendMessage(deps, {
+    const { stream } = await sendMessage(deps, {
       chatId: "c1",
       content: "summarise this",
       documents: [{ b64: "AAAA", mimeType: "application/pdf", name: "locked.pdf" }],

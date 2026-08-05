@@ -28,6 +28,13 @@ export const createChatSchema = z
     { message: "firstMessage or an attachment is required" },
   );
 
+/**
+ * A run id comes off the URL and ends up composed into a sort key, so it is
+ * checked for shape before it is used as one. `claimChatRun` mints these with
+ * `randomUUID`, and nothing else may name a run.
+ */
+export const runIdSchema = z.uuid();
+
 export const sendMessageSchema = z
   .object({
     content: z.string().default(""),

@@ -2,23 +2,17 @@ import { withAuth } from "@/lib/session";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { bodyTooLarge, BodyTooLargeError, readTurnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
-import { sseResponse } from "@/app/api/_lib/sse";
 import { createChat } from "@/application/chat/createChat";
 import { listChats } from "@/application/chat/listChats";
-import type { Chat } from "@/domain/chat/types";
+import { watchChatCancel } from "@/application/chat/cancelRun";
 import { chatDeps } from "./_deps";
+import { detachedRunResponse } from "./_lib/detachedRun";
 import { createChatSchema } from "./_lib/schemas";
 
 export const GET = withAuth(async (user) => {
   const chats = await listChats(chatDeps, user.email);
   return Response.json({ chats });
 });
-
-/** Prepend a `{ chat }` envelope so the client learns the chatId before deltas arrive. */
-async function* withChatMeta(chat: Chat, stream: AsyncGenerator<unknown>): AsyncGenerator<unknown> {
-  yield { chat };
-  yield* stream;
-}
 
 export const POST = withAuth(async (user, request: Request) => {
   let body: unknown;
@@ -38,8 +32,10 @@ export const POST = withAuth(async (user, request: Request) => {
 
   const caller = sessionCaller(user);
   try {
+    // Wired to the cancel watch, not to the connection: a browser that hangs up
+    // no longer stops the run, so a Stop press is the only thing that does.
     const abortController = new AbortController();
-    const { chat, stream } = await createChat(chatDeps, {
+    const { chat, runId, userSeq, stream, onClientGone } = await createChat(chatDeps, {
       projectName: parsed.data.projectName,
       firstMessage: parsed.data.firstMessage,
       ...(parsed.data.images ? { images: parsed.data.images } : {}),
@@ -48,7 +44,13 @@ export const POST = withAuth(async (user, request: Request) => {
       ...(caller ? { caller } : {}),
       signal: abortController.signal,
     });
-    return await sseResponse(withChatMeta(chat, stream), abortController);
+    const stopWatch = watchChatCancel(chatDeps.chats, chat.chatId, runId, abortController);
+    return await detachedRunResponse({
+      head: { chat, runId, userSeq },
+      stream,
+      onClientGone,
+      onDrained: stopWatch,
+    });
   } catch (error) {
     return apiError(error);
   }

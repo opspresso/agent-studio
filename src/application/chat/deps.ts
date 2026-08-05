@@ -1,5 +1,6 @@
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import type { ChatRepository } from "@/domain/chat/repository";
+import type { ChatRunLogRepository } from "@/domain/chat/runLog";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { Project, Version } from "@/domain/project/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
@@ -50,6 +51,12 @@ export interface AttachedDocumentInput {
 
 export interface ChatDeps {
   chats: ChatRepository;
+  /**
+   * Where a run writes itself down once its reader leaves. Required, not
+   * optional: an unwired deployment would lose every resume silently, and a
+   * chat that cannot be picked back up is exactly what this exists to fix.
+   */
+  runLog: ChatRunLogRepository;
   projects: ProjectRepository;
   versions: VersionRepository;
   runAgent: AgentRunner;
