@@ -8,6 +8,7 @@
  */
 
 import { positiveIntEnv } from "@/lib/config";
+import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 
 const SECONDS_PER_DAY = 86_400;
 
@@ -52,6 +53,18 @@ export const RETENTION = {
     return retentionDays("AUDIT_RETENTION_DAYS", 400);
   },
 };
+
+/**
+ * How long a chat run's replay log lives.
+ *
+ * Not a retention window like the ones above — nothing is kept here, it is a
+ * buffer a disconnected reader catches up from. Derived from the run lease so
+ * the log always outlives the run that writes it: a log expiring first would
+ * leave a resume with a hole in the middle of a run still in progress. The
+ * margin past it is how long after the answer someone may still reopen the tab
+ * and watch the tail rather than reading the finished message.
+ */
+export const RUN_LOG_TTL_SECONDS = RUN_LEASE_SECONDS + 15 * 60;
 
 /** Unix-seconds TTL: `retentionDays` after `baseIso`. Falls back to now for an
  * unparseable base so a row is never written without an expiry. */

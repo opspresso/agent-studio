@@ -29,6 +29,24 @@ export const keys = {
   }),
   chatMessagePrefix: () => "MSG#",
   chatOwnerPartition: (email: string) => `CHATOWNER#${email}`,
+  /**
+   * A batch of a run's stream, kept just long enough for a reader that lost the
+   * connection to catch up. Padded like `chatMessage` so the sort order is the
+   * arrival order past the 9→10 boundary.
+   */
+  chatRunLog: (chatId: string, runId: string, seq: number) => ({
+    PK: `CHAT#${chatId}`,
+    SK: `RUNLOG#${runId}#${String(seq).padStart(6, "0")}`,
+  }),
+  /**
+   * Sort-key bounds for reading one run's log from `fromSeq` on. A range rather
+   * than a `begins_with` prefix, because a tail asks for what it has not seen —
+   * `999999` is the widest a six-digit sequence can be.
+   */
+  chatRunLogRange: (runId: string, fromSeq: number) => ({
+    from: `RUNLOG#${runId}#${String(fromSeq).padStart(6, "0")}`,
+    to: `RUNLOG#${runId}#999999`,
+  }),
 
   settings: () => ({ PK: "SETTINGS#app", SK: "META" }),
 

@@ -9,6 +9,22 @@ export interface Chat {
   updatedAt: string;
 }
 
+/**
+ * The run a chat has claimed, exactly as stored.
+ *
+ * The lease is returned raw rather than as "is a run in flight": an instance
+ * that died mid-run leaves the claim behind until it expires, so only a reader
+ * holding the current time can say whether it still means anything. `getChat`
+ * makes that judgement; nothing else should.
+ */
+export interface ActiveChatRun {
+  runId: string;
+  /** Unix seconds. Past means the claim is stale, not that a run is running. */
+  expiresAtSeconds: number;
+  /** Set once someone asked this run to stop; the run polls for it. */
+  cancelRequestedAt?: string;
+}
+
 export type ChatRole = "user" | "assistant" | "tool";
 
 /**

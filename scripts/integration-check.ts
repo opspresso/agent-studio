@@ -49,6 +49,9 @@ async function main() {
     "@/infrastructure/db/repositories/externalAgentRepository"
   );
   const { chatRepository } = await import("@/infrastructure/db/repositories/chatRepository");
+  const { chatRunLogRepository } = await import(
+    "@/infrastructure/db/repositories/chatRunLogRepository"
+  );
   const { mcpConnectionRepository } = await import(
     "@/infrastructure/db/repositories/mcpConnectionRepository"
   );
@@ -386,6 +389,104 @@ async function main() {
     assert.ok(ownChats.some((c) => c.chatId === chatId), "chat owner GSI listing");
     pass("chat meta/messages/owner listing");
 
+    // ---------- chat run lease + cancel ----------
+    // The conditions are the whole point of these two, and a fake document
+    // client evaluates none of them.
+    assert.equal(await chatRepository.claimRun(chatId, "run-1", 100, 4_102_444_800), true);
+    assert.equal(
+      await chatRepository.claimRun(chatId, "run-2", 100, 4_102_444_800),
+      false,
+      "a second run cannot take a live claim",
+    );
+    assert.deepEqual(await chatRepository.getActiveRun(chatId), {
+      runId: "run-1",
+      expiresAtSeconds: 4_102_444_800,
+    });
+    assert.equal(
+      await chatRepository.requestCancel(chatId, "run-2"),
+      false,
+      "a stop aimed at a run that is not the active one is refused",
+    );
+    assert.equal(await chatRepository.requestCancel(chatId, "run-1"), true);
+    assert.ok(
+      (await chatRepository.getActiveRun(chatId))?.cancelRequestedAt,
+      "the run reads back the stop asked of it",
+    );
+    // A fresh claim clears the previous run's stop, or the next run dies on its
+    // first poll.
+    await chatRepository.releaseRun(chatId, "run-1");
+    assert.equal(await chatRepository.getActiveRun(chatId), null, "release frees the claim");
+    await chatRepository.claimRun(chatId, "run-3", 100, 4_102_444_800);
+    assert.equal(
+      (await chatRepository.getActiveRun(chatId))?.cancelRequestedAt,
+      undefined,
+      "a new claim clears the stop the last run was asked for",
+    );
+    await chatRepository.releaseRun(chatId, "run-3");
+    pass("chat run lease + scoped cancel");
+
+    // ---------- chat run log ----------
+    const seqBeforeLog = await chatRepository.reserveMessageSeq(chatId);
+    // Written past the 9→10 boundary: the padded sort key is what keeps arrival
+    // order and sort order the same thing.
+    await chatRunLogRepository.append(
+      chatId,
+      "run-1",
+      Array.from({ length: 12 }, (_, seq) => ({
+        seq,
+        payload: JSON.stringify([{ delta: { content: `part-${seq}` } }]),
+      })),
+    );
+    await chatRunLogRepository.append(chatId, "run-1", [{ seq: 12, payload: "[]", terminal: true }]);
+    const replay = await chatRunLogRepository.read(chatId, "run-1", 0);
+    assert.deepEqual(
+      replay.map((entry) => entry.seq),
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "run log replays in sequence order",
+    );
+    assert.equal(replay.at(-1)?.terminal, true, "the terminal entry is last");
+    assert.deepEqual(
+      (await chatRunLogRepository.read(chatId, "run-1", 10)).map((entry) => entry.seq),
+      [10, 11, 12],
+      "a tail reads only what it has not seen",
+    );
+    assert.deepEqual(
+      await chatRunLogRepository.read(chatId, "run-other", 0),
+      [],
+      "one run's log is invisible to another's",
+    );
+    // The log shares the chat's partition; neither of the message readers may
+    // pick it up, or a replay row would surface as a message.
+    assert.equal(
+      (await chatRepository.listMessages(chatId)).length,
+      2,
+      "run log rows are not chat messages",
+    );
+    assert.equal(
+      await chatRepository.reserveMessageSeq(chatId),
+      seqBeforeLog + 1,
+      "run log rows do not move the message sequence",
+    );
+    // Deleting a chat mid-run must not leave its replay rows behind. The cascade
+    // sweeps everything but `META` without knowing the log exists, which is the
+    // property worth pinning — a future row type inherits it for free.
+    const sweptChatId = `it-chat-swept-${suffix}`;
+    await chatRepository.create({
+      chatId: sweptChatId,
+      title: "Swept",
+      ownerEmail: "it@example.com",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await chatRunLogRepository.append(sweptChatId, "run-1", [{ seq: 0, payload: "[]" }]);
+    await chatRepository.delete(sweptChatId);
+    assert.deepEqual(
+      await chatRunLogRepository.read(sweptChatId, "run-1", 0),
+      [],
+      "deleting a chat sweeps its run log",
+    );
+    pass("chat run log append/replay/tail + cascade delete");
+
     // ---------- usage (atomic ADD, twice) ----------
     const usageDelta = {
       projectName,
@@ -574,6 +675,7 @@ async function main() {
     await mcpRepository.delete(`it-mcp-${suffix}`).catch(() => {});
     await externalAgentRepository.delete(`it-agent-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
+    await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
     if (auditFixtures.length > 0) {
       const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
       const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
