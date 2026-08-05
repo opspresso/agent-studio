@@ -1,0 +1,29 @@
+/*
+ * The reading column.
+ *
+ * Messages used to be laid out as a fraction of whatever width the window
+ * happened to be — `maw="80%"` — so a line of prose ran to 1,400 pixels on a
+ * wide screen and the conversation sat lopsided against the left edge. A fixed
+ * measure, centred, is what every reading surface settles on for the same
+ * reason: past roughly ninety characters the eye loses the start of the next
+ * line. The composer takes the same column so the two line up.
+ */
+.column {
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
+  padding-inline: var(--mantine-spacing-md);
+}
+
+/*
+ * The jump-to-latest control, over the bottom of the thread rather than in the
+ * flow — appearing in the flow would resize the scroll container, which is the
+ * one thing this whole surface is trying not to do while a reply streams.
+ */
+.jump {
+  position: absolute;
+  bottom: var(--mantine-spacing-md);
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: var(--surface-shadow);
+}

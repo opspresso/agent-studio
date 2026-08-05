@@ -1,15 +1,11 @@
+/*
+ * Desktop only — narrow screens get the drawer instead, so there is no squashed
+ * variant of this to keep working.
+ */
 .sidebar {
   flex-shrink: 0;
-  width: 100%;
-  max-height: 10rem;
+  width: 16rem;
   overflow: hidden;
-}
-
-@media (min-width: $mantine-breakpoint-md) {
-  .sidebar {
-    width: 16rem;
-    max-height: none;
-  }
 }
 
 .row {

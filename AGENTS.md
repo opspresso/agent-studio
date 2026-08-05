@@ -169,6 +169,9 @@ same rule applies to:
 | The UTC day a usage row is keyed by | `utcDay` in `src/shared/date.ts` |
 | What a repo sync did, and what it left to a person | `src/domain/sync/types.ts` |
 | The brand palette and component defaults | `src/app/theme.ts` |
+| Who owns the chat viewport while a reply streams | `useStickToBottom` in `src/app/chats/_components/ChatThread.tsx` |
+| Pairing a tool call with the result that answered it | `src/app/chats/_lib/toolPairs.ts` |
+| What a tool call reads as to a person | `describeTool` in `src/app/_lib/toolCalls.ts` |
 
 ## Subsystem map
 
@@ -273,6 +276,23 @@ One line each — the linked section is the authority.
   other end. The one way to stop a run is `DELETE /api/chats/{id}/runs/{runId}`, which the
   run learns by polling — the instance serving the press is not necessarily the one running
   the answer.
+- **Nothing in the chat view scrolls the viewport on its own.** A reply streams through the
+  store dozens of times a second, so anything keyed on that — a `scrollIntoView` in an effect
+  was the version that shipped — drags the reader back down every time they try to read what
+  scrolled past, and `smooth` on top of it restarts its own animation before finishing, which
+  is what "the screen bounces" turned out to be. `use-stick-to-bottom` owns the viewport
+  instead: it follows only while the reader is already at the bottom, and the only thing that
+  overrules them is sending a message. Three consequences. **The jump-to-latest control keys
+  on `isNearBottom`, not `isAtBottom`** — the latter stays true until the library judges the
+  reader *meant* to leave, and it skips that judgement entirely while content is resizing,
+  which during a reply is always. **Nothing inside the thread may be a scroll container on
+  both axes**: the library finds the viewport by walking up from whatever the pointer is over
+  to the first `overflow: auto|scroll` ancestor, so a code block that is one swallows the
+  wheel and the reader can never escape (see `.markdown pre` in `parts.module.css`). And the
+  **store notifies on a collection window rather than per frame**, because each notification
+  re-renders the thread; `MessageView` is memoised against reference-stable messages for the
+  same reason, since re-parsing every message's markdown per token is what made the reply
+  judder in the first place.
 - **The chat run log is a buffer, not a record**, and it is written **only after the reader
   leaves** — while someone is attached they are seeing every frame already, so writing them
   down as well would cost a write every half-second of every run to serve the few that get

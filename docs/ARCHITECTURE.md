@@ -1208,7 +1208,22 @@ seconds rather than left looking stalled.
 
 On the client the stream is owned by a module-level store (`src/app/chats/_lib/runStore.ts`),
 above the router, so a navigation cannot interrupt a turn: components subscribe through
-`useSyncExternalStore` and a view that remounts finds the run still going. A stream that ends
+`useSyncExternalStore` and a view that remounts finds the run still going. The store folds
+every frame into its entry as it lands but **notifies subscribers on a collection window**,
+because a notification is a render of the whole thread; the window widens as the answer does,
+since the render it schedules gets more expensive the more markdown there is to re-parse.
+`MessageView` is memoised against a reference-stable message array so a streaming reply
+redraws itself and nothing else.
+
+The **viewport belongs to `use-stick-to-bottom`** (`ChatThread`), not to an effect: it follows
+the reply only while the reader is already at the bottom, offers a jump-to-latest control when
+they are not, and is overruled by exactly one thing — sending a message. What it replaced
+scrolled on every render, which both trapped the reader at the bottom and, being a `smooth`
+scroll restarted dozens of times a second, made the thread judder. Two constraints it imposes
+are easy to undo by accident and are commented where they live: the jump control reads
+`isNearBottom` (geometry) rather than `isAtBottom` (intent, and unavailable mid-resize), and
+nothing inside the thread may be a scroll container on both axes, or it swallows the wheel
+events the library follows. A stream that ends
 without the `{ ended: true }` frame is a lost connection, not a finished run, so the store
 asks `GET /api/chats/{chatId}/runs/{runId}` whether it is still going and reattaches to the
 replay endpoint — from the start, which is safe because `reduceChunk` is a pure fold. Its

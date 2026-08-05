@@ -2,34 +2,28 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
-  ActionIcon,
   Alert,
   Badge,
+  Box,
   Code,
   Group,
   Image,
   Paper,
   Stack,
   Text,
-  Textarea,
   Typography,
   UnstyledButton,
 } from "@mantine/core";
-import {
-  IconChevronDown,
-  IconChevronRight,
-  IconFileText,
-  IconPlayerStopFilled,
-  IconSend,
-} from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
 import { imageDataUrl } from "@/domain/llm/types";
-import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
-import type { Attachment } from "@/app/_lib/imageAttachments";
-import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
+import { CopyButton } from "@/app/_components/CopyButton";
+import { describeTool, type ToolKind } from "@/app/_lib/toolCalls";
+import type { ToolChatMessage } from "@/domain/chat/types";
 import type { ChatMessage, LiveImage, LiveTurn } from "../_lib/types";
+import { pairToolTraffic, type ToolPair } from "../_lib/toolPairs";
 import classes from "./parts.module.css";
 import { SUBAGENT_COLOR } from "@/app/_components/badgeColors";
 
@@ -46,9 +40,9 @@ function MessageTimestamp({ createdAt }: { createdAt: string }) {
 }
 
 /**
- * Markdown inside a bubble. Mantine's `Typography` owns the element styles the
- * `.chat-markdown` stylesheet used to hand-write; only the outer bubble's
- * margin collapse and wrapping are ours.
+ * Markdown inside a message. Mantine's `Typography` owns the element styles the
+ * `.chat-markdown` stylesheet used to hand-write; only the wrapping and the
+ * outer margin collapse are ours.
  */
 function MarkdownContent({ content }: { content: string }) {
   return (
@@ -58,62 +52,163 @@ function MarkdownContent({ content }: { content: string }) {
   );
 }
 
-export function ToolResultBlock({ content, label }: { content: string; label?: string }) {
+/** What each kind of tool row is called and coloured, for the badge on it. */
+const TOOL_KIND: Record<ToolKind, { label: string; color: string }> = {
+  skill: { label: "Skill", color: "grape" },
+  agent: { label: "Agent", color: SUBAGENT_COLOR },
+  agents: { label: "Agents", color: SUBAGENT_COLOR },
+  image: { label: "Image", color: "teal" },
+  tool: { label: "Tool", color: "gray" },
+};
+
+/**
+ * One tool's traffic: what was asked, and what came back, in a single row that
+ * opens. Two rows for one call is what this replaced — see `pairToolTraffic`.
+ *
+ * The header says *what kind* of thing ran and *which one*, without being
+ * opened. Every skill in the system is one `Skill` call and every hand-off is
+ * one `transfer_to_agent`, so a row labelled with the tool's own name told the
+ * reader a skill had been loaded and never which — the answer was in the
+ * arguments, behind a click.
+ */
+function ToolRow({ pair, author }: { pair: ToolPair; author?: string | undefined }) {
   const [open, setOpen] = useState(false);
+  const done = pair.content !== undefined;
+  const described = describeTool(pair.name ?? "tool", pair.args);
+  const kind = TOOL_KIND[described.kind] ?? TOOL_KIND.tool;
   return (
-    <Paper withBorder radius="md" style={{ overflow: "hidden" }} my={4}>
+    <Paper withBorder radius="md" style={{ overflow: "hidden" }} my={4} w="100%">
       <UnstyledButton onClick={() => setOpen((prev) => !prev)} className={classes.toolToggle}>
         <Group gap="xs" wrap="nowrap">
           {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-          <Text fz="xs" fw={500}>
-            {label ?? "Tool result"}
+          <Badge size="xs" color={kind.color} radius="sm">
+            {kind.label}
+          </Badge>
+          <Text fz="xs" fw={500} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {described.name}
+          </Text>
+          {author && (
+            <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+              via {author}
+            </Text>
+          )}
+          <Text fz="xs" c="dimmed" ml="auto" style={{ whiteSpace: "nowrap" }}>
+            {done ? "✅" : "…"}
           </Text>
         </Group>
       </UnstyledButton>
       {open && (
-        <Code block fz="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-          {content}
-        </Code>
+        <Stack gap={0}>
+          {pair.args !== undefined && (
+            <Code block fz="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {pair.args}
+            </Code>
+          )}
+          {done && (
+            <Code block fz="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {pair.content}
+            </Code>
+          )}
+        </Stack>
       )}
     </Paper>
   );
 }
 
+/**
+ * A stored tool row.
+ *
+ * `args` comes from the assistant message that declared the call, which the
+ * thread attaches before rendering — without it a reloaded conversation can only
+ * say `Skill`, never which skill, because the arguments live on the call and the
+ * call is not what was stored here.
+ */
+function StoredToolRow({
+  message,
+  callArgs,
+}: {
+  message: ToolChatMessage;
+  callArgs?: string | undefined;
+}) {
+  return (
+    <ToolRow
+      pair={{
+        name: message.toolName ?? "tool",
+        ...(callArgs === undefined ? {} : { args: callArgs }),
+        content: message.content,
+      }}
+      author={message.author}
+    />
+  );
+}
+
+/**
+ * An image with its space reserved before it loads.
+ *
+ * Without the ratio the row is zero-high until the bytes arrive and then jumps
+ * to full size, shoving everything below it — which during a reply is the text
+ * the reader is in the middle of.
+ */
 export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
-  return <Image src={src} alt={alt} radius="md" maw="80%" />;
+  return (
+    <Box maw="80%" w="100%" style={{ aspectRatio: "1 / 1" }}>
+      <Image src={src} alt={alt} radius="md" h="100%" w="100%" fit="contain" />
+    </Box>
+  );
 }
 
 export function liveImageSrc(image: LiveImage): string {
   return imageDataUrl(image);
 }
 
-export function AuthorBadge({ path }: { path: string[] }) {
+/**
+ * Who is answering, right now. Rendered by the composer rather than inside the
+ * thread: a run hands off between agents repeatedly, and a row that appears and
+ * disappears inside the scroll container shoves the reply while it is being read.
+ */
+export function RunningAgents({ paths }: { paths: string[][] }) {
+  if (paths.length === 0) {
+    return null;
+  }
   return (
-    <Badge color={SUBAGENT_COLOR} radius="xl" mb={4}>
-      via {path.join(" → ")}
-    </Badge>
+    <Group gap={4}>
+      {paths.map((path) => (
+        <Badge key={path.join(">")} color={SUBAGENT_COLOR} radius="xl">
+          via {path.join(" → ")}
+        </Badge>
+      ))}
+    </Group>
   );
 }
 
 /** A binding the run could not use — shown live and again on reload. */
 function WarningNote({ text }: { text: string }) {
   return (
-    <Alert color="yellow" variant="light" py={6} px="sm" maw="80%" fz="xs">
+    <Alert color="yellow" variant="light" py={6} px="sm" fz="xs" w="100%">
       {text}
     </Alert>
   );
 }
 
-/** The assistant's bubble, shared by the persisted and the streaming views. */
-function AssistantBubble({ children }: { children: React.ReactNode }) {
-  return (
-    <Paper withBorder radius="lg" px="md" py="xs" fz="sm">
-      {children}
-    </Paper>
-  );
-}
-
-export function MessageView({ message }: { message: ChatMessage }) {
+/**
+ * One stored message.
+ *
+ * Memoised, and the thread hands it reference-stable messages so the memo can
+ * hold: a reply streams through the store dozens of times a second, and every
+ * one of those renders used to walk the whole conversation and re-parse each
+ * message's markdown from scratch. Forty messages made that a thousand-odd
+ * parses a second, which is the jank the streamed reply was juddering through.
+ * Nothing here depends on the turn in flight, so none of it needs redrawing
+ * while one arrives.
+ */
+export const MessageView = memo(function MessageView({
+  message,
+  callArgs,
+}: {
+  message: ChatMessage;
+  /** For a tool row: the arguments its call carried — see `storedToolArgs`. */
+  callArgs?: string | undefined;
+}) {
   if (message.role === "user") {
     return (
       <Stack gap={4} align="flex-end">
@@ -163,24 +258,11 @@ export function MessageView({ message }: { message: ChatMessage }) {
   }
 
   if (message.role === "tool") {
-    return (
-      <Group justify="flex-start">
-        <div style={{ width: "100%", maxWidth: "80%" }}>
-          <ToolResultBlock
-            content={message.content}
-            label={
-              message.toolName
-                ? `✅ tool result: ${message.toolName}${message.author ? ` (via ${message.author})` : ""}`
-                : undefined
-            }
-          />
-        </div>
-      </Group>
-    );
+    return <StoredToolRow message={message} {...(callArgs === undefined ? {} : { callArgs })} />;
   }
 
   return (
-    <Stack gap={4} align="flex-start">
+    <Stack gap={4} align="flex-start" className={classes.turn}>
       {(message.warnings ?? []).map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
@@ -195,15 +277,20 @@ export function MessageView({ message }: { message: ChatMessage }) {
             ]
           : [],
       )}
-      <div style={{ maxWidth: "80%" }}>
-        <AssistantBubble>
-          <MarkdownContent content={message.content} />
-        </AssistantBubble>
+      <div className={classes.answer}>
+        <MarkdownContent content={message.content} />
       </div>
-      <MessageTimestamp createdAt={message.createdAt} />
+      <Group gap="xs" align="center">
+        <MessageTimestamp createdAt={message.createdAt} />
+        {message.content && (
+          <span className={classes.actions}>
+            <CopyButton text={message.content} />
+          </span>
+        )}
+      </Group>
     </Stack>
   );
-}
+});
 
 export function LiveAssistant({ turn }: { turn: LiveTurn }) {
   return (
@@ -211,18 +298,8 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
       {turn.warnings.map((warning, index) => (
         <WarningNote key={`warning-${index}`} text={warning} />
       ))}
-      {turn.toolCalls.map((call, index) => (
-        <div key={`call-${index}`} style={{ width: "100%", maxWidth: "80%" }}>
-          <ToolResultBlock content={call.args} label={`🔧 tool call: ${call.name}`} />
-        </div>
-      ))}
-      {turn.tools.map((tool, index) => (
-        <div key={`result-${index}`} style={{ width: "100%", maxWidth: "80%" }}>
-          <ToolResultBlock
-            content={tool.content}
-            label={tool.name ? `✅ tool result: ${tool.name}` : undefined}
-          />
-        </div>
+      {pairToolTraffic(turn.toolCalls, turn.tools).map((pair, index) => (
+        <ToolRow key={`tool-${index}`} pair={pair} />
       ))}
       {turn.images.map((image, index) => (
         <GeneratedImage
@@ -231,117 +308,15 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
           alt={image.prompt ?? "Generated image"}
         />
       ))}
-      <div style={{ maxWidth: "80%" }}>
-        {turn.authorPaths.map((path) => (
-          <AuthorBadge key={path.join(">")} path={path} />
-        ))}
-        <AssistantBubble>
-          {turn.text ? (
-            <MarkdownContent content={turn.text} />
-          ) : (
-            <Text fz="sm" c="dimmed">
-              Thinking…
-            </Text>
-          )}
-        </AssistantBubble>
+      <div className={classes.answer}>
+        {turn.text ? (
+          <MarkdownContent content={turn.text} />
+        ) : (
+          <Text fz="sm" c="dimmed">
+            Thinking…
+          </Text>
+        )}
       </div>
     </Stack>
-  );
-}
-
-export function Composer({
-  onSend,
-  onStop,
-  disabled,
-  placeholder,
-}: {
-  onSend: (
-    content: string,
-    attachments: Attachment[],
-    documents: DocumentAttachment[],
-  ) => void;
-  /**
-   * Present while a reply is running. It takes the send button's place because
-   * it is the only way to end a run: closing the tab no longer does, so a reply
-   * nobody wants would otherwise hold a slot until the run deadline.
-   */
-  onStop?: () => void;
-  disabled?: boolean;
-  placeholder?: string;
-}) {
-  const [value, setValue] = useState("");
-  const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt, clear } =
-    useAttachments({ documents: true });
-
-  function submit() {
-    const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0 && documents.length === 0) || disabled) {
-      return;
-    }
-    setValue("");
-    clear();
-    onSend(trimmed, attachments, documents);
-  }
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <AttachmentBar
-        attachments={attachments}
-        documents={documents}
-        attachError={attachError}
-        onRemove={removeAt}
-        onRemoveDocument={removeDocumentAt}
-      />
-      <Group gap="xs" align="flex-end" wrap="nowrap">
-        <AttachButton onPick={(files) => void addFiles(files)} disabled={disabled} documents />
-        <Textarea
-          value={value}
-          onChange={(event) => setValue(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-          autosize
-          minRows={1}
-          maxRows={8}
-          radius="xl"
-          placeholder={placeholder ?? "Send a message…"}
-          style={{ flex: 1 }}
-        />
-        {onStop ? (
-          <ActionIcon
-            type="button"
-            variant="filled"
-            color="red"
-            size="input-sm"
-            radius="xl"
-            onClick={onStop}
-            aria-label="Stop"
-          >
-            <IconPlayerStopFilled size={16} />
-          </ActionIcon>
-        ) : (
-          <ActionIcon
-            type="submit"
-            variant="filled"
-            size="input-sm"
-            radius="xl"
-            disabled={
-              disabled || (!value.trim() && attachments.length === 0 && documents.length === 0)
-            }
-            aria-label="Send"
-          >
-            <IconSend size={18} />
-          </ActionIcon>
-        )}
-      </Group>
-    </form>
   );
 }

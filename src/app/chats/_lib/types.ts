@@ -28,12 +28,17 @@ export interface StreamChunk {
 }
 
 export interface LiveToolCall {
+  /** The provider's call id. What its result is matched back to. */
+  id?: string | undefined;
+  /** As the engine named it — see `parseWireToolCall` on why it is not decorated. */
   name: string;
   args: string;
 }
 
 export interface LiveToolResult {
-  name?: string;
+  /** The call this answers. Absent only for a result nothing declared. */
+  id?: string | undefined;
+  name?: string | undefined;
   content: string;
 }
 

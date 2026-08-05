@@ -1,7 +1,6 @@
 /*
- * What `TypographyStylesProvider` does not decide for a chat bubble: the
- * bubble's own edges, and how an unbroken token behaves inside a max-width
- * message.
+ * What `TypographyStylesProvider` does not decide for a chat message: the
+ * message's own edges, and how an unbroken token behaves inside one.
  */
 .markdown {
   overflow-wrap: anywhere;
@@ -15,9 +14,22 @@
   margin-bottom: 0;
 }
 
+/*
+ * Wrapped, and deliberately **not** a scroll container on both axes.
+ *
+ * The thread sticks to the bottom by watching wheel events, and that watch walks
+ * up from whatever the pointer is over until it finds the first element whose
+ * computed `overflow` shorthand is `auto` or `scroll` — a code block that is one
+ * on both axes stops the walk dead, so scrolling up over the code in an answer
+ * never registered as the reader leaving. Naming the axes separately keeps the
+ * horizontal safety valve for an unbreakable token while making the shorthand
+ * `auto hidden`, which the walk passes through.
+ */
 .markdown pre {
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .toolToggle {
@@ -31,4 +43,35 @@
 
 .toolToggle:hover {
   color: var(--mantine-color-text);
+}
+
+/*
+ * An assistant answer is body text, not a speech bubble.
+ *
+ * A bordered box around every reply fought the markdown inside it — headings,
+ * lists and code blocks each draw their own edges, and nesting them in one more
+ * left a chat of boxes in boxes. The user's turn keeps its bubble, because there
+ * the bubble is what says who is speaking; with only two participants, the reply
+ * needs no such marker and reads better without one.
+ */
+.answer {
+  width: 100%;
+}
+
+/* Revealed on hover, so a conversation is not a column of buttons. */
+.actions {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.turn:hover .actions,
+.actions:focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  /* Nothing to hover with: the actions are simply always there. */
+  .actions {
+    opacity: 1;
+  }
 }

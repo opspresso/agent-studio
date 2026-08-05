@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
-import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { describeTool, parseWireToolCall } from "@/app/_lib/toolCalls";
 import {
   chunkAuthorPath,
   mergeVisitedPath,
@@ -436,7 +436,10 @@ export function RunPanel({
             <Accordion.Item key={`call-${i}`} value={`call-${i}`}>
               <Accordion.Control>
                 <Text fz="xs" fw={500}>
-                  🔧 tool call: {call.name}
+                  {/* `parseWireToolCall` hands back the tool's own name now, so
+                      naming what actually ran — which skill, which agent — is
+                      done here, where it was already being spelled out. */}
+                  🔧 tool call: {describeTool(call.name, call.args).name}
                   {call.author && (
                     <Text component="span" c="dimmed" fz="xs" ml={4}>
                       ({call.author})

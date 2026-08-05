@@ -13,10 +13,10 @@ export function stringifyToolResult(toolResult: unknown): string {
   return typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult, null, 2);
 }
 
-function toolResultName(toolResult: unknown): string | undefined {
-  if (toolResult && typeof toolResult === "object" && "name" in toolResult) {
-    const name = (toolResult as { name: unknown }).name;
-    return typeof name === "string" ? name : undefined;
+function toolResultField(toolResult: unknown, field: string): string | undefined {
+  if (toolResult && typeof toolResult === "object" && field in toolResult) {
+    const value = (toolResult as Record<string, unknown>)[field];
+    return typeof value === "string" ? value : undefined;
   }
   return undefined;
 }
@@ -49,7 +49,13 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   if (chunk.toolResult !== undefined) {
     tools = [
       ...tools,
-      { name: toolResultName(chunk.toolResult), content: stringifyToolResult(chunk.toolResult) },
+      {
+        // Carried so the result can be put back beside the call that asked for
+        // it — the ids are unique within a run, which is exactly this turn.
+        id: toolResultField(chunk.toolResult, "toolCallId"),
+        name: toolResultField(chunk.toolResult, "name"),
+        content: stringifyToolResult(chunk.toolResult),
+      },
     ];
   }
   if (chunk.image) {

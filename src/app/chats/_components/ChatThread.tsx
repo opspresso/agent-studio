@@ -1,16 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import type { ChatMessageImage } from "@/domain/chat/types";
 import { useRunEntry } from "../_lib/runHooks";
 import { pinnedImages } from "../_lib/pins";
+import { storedToolArgs } from "../_lib/toolPairs";
 import { runStore } from "../_lib/runStore";
 import { EMPTY_TURN, type Chat, type ChatMessage } from "../_lib/types";
-import { Composer, LiveAssistant, MessageView } from "./parts";
-import { Alert, Badge, Box, Flex, Group, ScrollArea, Stack, Text } from "@mantine/core";
+import { LiveAssistant, MessageView, RunningAgents } from "./parts";
+import { Composer } from "./Composer";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Box,
+  Flex,
+  Group,
+  ScrollArea,
+  Stack,
+  Text,
+} from "@mantine/core";
+import { IconArrowDown } from "@tabler/icons-react";
 import { BADGE } from "@/app/_components/badgeColors";
+import classes from "./ChatThread.module.css";
 
 interface Fetched {
   messages: ChatMessage[];
@@ -56,13 +71,55 @@ export function ChatThread({ chatId }: { chatId: string }) {
    * already in state.
    */
   const [consumedId, setConsumedId] = useState<number | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  /**
+   * Who owns the viewport while a reply streams.
+   *
+   * Not an effect that scrolls on every render, which is what this replaced: the
+   * store hands out a new entry per stream frame, so a `scrollIntoView` keyed on
+   * it ran dozens of times a second, dragged the reader back down every time
+   * they tried to leave, and — being `smooth` — restarted its own animation
+   * before the last one finished, which is the juddering that was reported.
+   *
+   * `instant` on both counts is deliberate. On resize it is what pins the last
+   * line to the bottom edge instead of animating after it; on the initial render
+   * it lands at the bottom rather than scrolling the whole history past the
+   * reader to get there.
+   */
+  const { scrollRef, contentRef, isNearBottom, scrollToBottom } = useStickToBottom({
+    resize: "instant",
+    initial: "instant",
+  });
   const syncSeq = useRef(0);
   const consuming = useRef<number | null>(null);
   /** The run this view last picked up, and how many times — see `MAX_ATTACHES`. */
   const attached = useRef<{ runId: string; count: number } | null>(null);
 
   const shown = entry && entry.id !== consumedId ? entry : null;
+
+  /**
+   * The conversation as it is drawn, rebuilt only when it actually changes.
+   *
+   * Substituting this session's images inline — `{...message, images: pinned}`
+   * in the render — minted a new object for those messages on every pass, which
+   * is every stream frame, and a memoised `MessageView` cannot hold against a
+   * new prop. Doing it here means the array and its entries keep their identity
+   * for the whole of a reply.
+   */
+  const drawn = useMemo(
+    () =>
+      messages.map((message) => {
+        const pinned = sessionImagesBySeq[message.seq];
+        return pinned && message.role !== "tool" ? { ...message, images: pinned } : message;
+      }),
+    [messages, sessionImagesBySeq],
+  );
+
+  /**
+   * What each stored tool row was called with. Its own message does not carry
+   * that — the arguments are on the assistant message that declared the call —
+   * so without this a reloaded conversation says a skill ran and never which.
+   */
+  const toolArgs = useMemo(() => storedToolArgs(messages), [messages]);
 
   // Two syncs can be in flight — the mount's and a finished turn's — and the
   // slower one must not overwrite fresher messages with staler ones.
@@ -193,24 +250,23 @@ export function ChatThread({ chatId }: { chatId: string }) {
   }, [chatId, consumedId]);
 
   /**
-   * Land at the bottom when a thread opens, follow along after.
+   * Land at the bottom the first time the thread has anything to show.
    *
-   * Smoothly scrolling into place on the first paint animates through the whole
-   * history to reach where the reader already wanted to be — the longer the
-   * chat, the longer they watch it happen. Following a reply as it arrives is
-   * the opposite: the movement is what says new text landed. Keyed by chat id
-   * so the jump happens again on a thread this view swapped to rather than
-   * remounted for.
+   * `initial` covers a container that already holds its content on mount, and
+   * this one never does: the list is empty until a fetch comes back, and the
+   * hook sees that arrival as an ordinary resize — which it correctly refuses to
+   * scroll on, because a reader who is not at the bottom should not be dragged
+   * there. On first paint that leaves the reader at the top of the history
+   * rather than at the end of it, which is where they opened the chat to be.
    */
-  const anchoredTo = useRef<string | null>(null);
+  const landed = useRef(false);
   useEffect(() => {
-    if (status !== "ready") {
+    if (status !== "ready" || landed.current) {
       return;
     }
-    const behavior = anchoredTo.current === chatId ? "smooth" : "instant";
-    anchoredTo.current = chatId;
-    bottomRef.current?.scrollIntoView({ behavior });
-  }, [chatId, status, messages, shown]);
+    landed.current = true;
+    void scrollToBottom({ animation: "instant" });
+  }, [status, scrollToBottom]);
 
   function handleSend(
     content: string,
@@ -219,6 +275,11 @@ export function ChatThread({ chatId }: { chatId: string }) {
   ) {
     setError(null);
     runStore.startTurn(chatId, { content, attachments, documents });
+    // The one place that overrules the reader. Sending is asking for the answer,
+    // so it takes them back down however far up they had scrolled — and
+    // `ignoreEscapes` holds them there for the trip rather than letting the
+    // scroll they are still coasting from cancel it.
+    void scrollToBottom({ ignoreEscapes: true });
   }
 
   if (status === "not-found") {
@@ -249,63 +310,93 @@ export function ChatThread({ chatId }: { chatId: string }) {
   return (
     <Flex direction="column" h="100%">
       {chat?.projectName && (
-        <Group
-          gap="xs"
+        <Box
           pb="xs"
           mb="sm"
           style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
         >
-          <Badge color={BADGE.owned} radius="xl">
-            {chat.projectName}
-          </Badge>
-        </Group>
+          <Group gap="xs" className={classes.column}>
+            <Badge color={BADGE.owned} radius="xl">
+              {chat.projectName}
+            </Badge>
+          </Group>
+        </Box>
       )}
-      <ScrollArea style={{ flex: 1, minHeight: 0 }} pb="md">
-        <Stack gap="sm">
-          {status === "loading" && !shown && (
-            <Text fz="sm" c="dimmed">
-              Loading…
-            </Text>
-          )}
-          {messages.map((message) => {
-            const pinned = sessionImagesBySeq[message.seq];
-            const rendered =
-              pinned && message.role !== "tool" ? { ...message, images: pinned } : message;
-            return <MessageView key={`${message.seq}`} message={rendered} />;
-          })}
-          {pendingUser !== null && (
-            <MessageView
-              message={{
-                chatId,
-                seq: -1,
-                role: "user",
-                content: pendingUser.content,
-                documents: pendingUser.documents.map((document) => ({
-                  name: document.name,
-                  text: "",
-                })),
-                images: pendingUser.attachments.map((attachment) => ({
-                  url: attachmentSrc(attachment),
-                })),
-                createdAt: "",
-              }}
-            />
-          )}
-          {live && <LiveAssistant turn={live} />}
-          <div ref={bottomRef} />
-        </Stack>
-      </ScrollArea>
-      {banner && (
-        <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
-          {banner}
-        </Alert>
-      )}
+      <Box style={{ position: "relative", flex: 1, minHeight: 0 }}>
+        <ScrollArea viewportRef={scrollRef} h="100%" pb="md">
+          {/* The element the stick-to-bottom ResizeObserver watches. It has to be
+              inside the viewport and wrap everything that grows. */}
+          <div ref={contentRef}>
+            <Stack gap="sm" className={classes.column}>
+              {status === "loading" && !shown && (
+                <Text fz="sm" c="dimmed">
+                  Loading…
+                </Text>
+              )}
+              {drawn.map((message) => (
+                <MessageView
+                  key={`${message.seq}`}
+                  message={message}
+                  {...(toolArgs.has(message.seq) ? { callArgs: toolArgs.get(message.seq) } : {})}
+                />
+              ))}
+              {pendingUser !== null && (
+                <MessageView
+                  message={{
+                    chatId,
+                    seq: -1,
+                    role: "user",
+                    content: pendingUser.content,
+                    documents: pendingUser.documents.map((document) => ({
+                      name: document.name,
+                      text: "",
+                    })),
+                    images: pendingUser.attachments.map((attachment) => ({
+                      url: attachmentSrc(attachment),
+                    })),
+                    createdAt: "",
+                  }}
+                />
+              )}
+              {live && <LiveAssistant turn={live} />}
+            </Stack>
+          </div>
+        </ScrollArea>
+        {/* Only while the reader has left the bottom. Nothing drags them back
+            on its own any more, so this is how they say they want to follow
+            along again — the affordance every chat surface pairs with that.
+            Keyed on `isNearBottom`, which is pure geometry, rather than on
+            `isAtBottom`, which stays true until the library is satisfied the
+            reader *meant* to leave — and during a reply it never gets to
+            decide, because it skips that judgement while the content resizes. */}
+        {!isNearBottom && (
+          <ActionIcon
+            variant="filled"
+            color="gray"
+            radius="xl"
+            size="lg"
+            onClick={() => void scrollToBottom()}
+            aria-label="Jump to the latest message"
+            className={classes.jump}
+          >
+            <IconArrowDown size={18} />
+          </ActionIcon>
+        )}
+      </Box>
       <Box pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
-        <Composer
-          onSend={handleSend}
-          disabled={streaming}
-          {...(streaming && shown.runId ? { onStop: () => runStore.cancelRun(chatId) } : {})}
-        />
+        <Box className={classes.column}>
+          {banner && (
+            <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
+              {banner}
+            </Alert>
+          )}
+          <Composer
+            onSend={handleSend}
+            disabled={streaming}
+            status={<RunningAgents paths={live?.authorPaths ?? []} />}
+            {...(streaming && shown.runId ? { onStop: () => runStore.cancelRun(chatId) } : {})}
+          />
+        </Box>
       </Box>
     </Flex>
   );

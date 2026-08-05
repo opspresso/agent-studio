@@ -1,28 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { attachmentSrc } from "@/app/_lib/imageAttachments";
+import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
+import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type AgentProject } from "../_lib/types";
-import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { useRunEntry } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
 import { ChatThread } from "./ChatThread";
-import { LiveAssistant, MessageView } from "./parts";
+import { LiveAssistant, MessageView, RunningAgents } from "./parts";
+import { Composer } from "./Composer";
 import { onNewChat } from "./ChatSidebar";
-import {
-  ActionIcon,
-  Alert,
-  Box,
-  Flex,
-  Group,
-  ScrollArea,
-  Select,
-  Stack,
-  Text,
-  Textarea,
-} from "@mantine/core";
+import { Alert, Box, Flex, Group, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
-import { IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
+import classes from "./ChatThread.module.css";
 
 const PROJECT_KEY = "agent-studio-chat-project";
 
@@ -37,13 +27,10 @@ export function NewChatPanel() {
     defaultValue: "",
     sync: false,
   });
-  const [message, setMessage] = useState("");
-  // Staged attachments survive an error for a retry, the same way the typed
-  // message does.
-  const { attachments, documents, attachError, addFiles, removeDocumentAt, removeAt, clear } =
-    useAttachments({ documents: true });
   /** The turn this panel started, read back from the store that owns it. */
   const [key, setKey] = useState<string | null>(null);
+  /** Bumped to remount the composer, which is what discards a draft. */
+  const [composerKey, setComposerKey] = useState(0);
   const keyRef = useRef<string | null>(null);
   keyRef.current = key;
   const entry = useRunEntry(key);
@@ -93,10 +80,11 @@ export function NewChatPanel() {
         }
         setKey(null);
         setHandedOver(null);
-        setMessage("");
-        clear();
+        // The composer owns the draft and its attachments; remounting it under a
+        // new key is what clears them.
+        setComposerKey((n) => n + 1);
       }),
-    [clear],
+    [],
   );
 
   // Shallow swap only — the panel keeps rendering the same turn. A hard refresh
@@ -108,22 +96,19 @@ export function NewChatPanel() {
     }
   }, [chatId]);
 
-  function start() {
-    const trimmed = message.trim();
+  function start(
+    content: string,
+    attachments: Attachment[],
+    documents: DocumentAttachment[],
+  ) {
     // Guarded on the turn still running, not on there having been one: a first
     // message refused (409, over the cost limit, a dropped network) leaves the
     // key set, and guarding on that alone made Send do nothing for the rest of
     // the session — silently, since the button still looks enabled.
-    if (
-      !projectName ||
-      (!trimmed && attachments.length === 0 && documents.length === 0) ||
-      starting
-    ) {
+    if (!projectName || starting) {
       return;
     }
-    setKey(
-      runStore.startNewChat(projectName, { content: trimmed, attachments, documents }),
-    );
+    setKey(runStore.startNewChat(projectName, { content, attachments, documents }));
   }
 
   // Once the chat exists the thread takes over, reading the very same store
@@ -157,7 +142,7 @@ export function NewChatPanel() {
             </Text>
           </Flex>
         ) : (
-          <Stack gap="sm">
+          <Stack gap="sm" className={classes.column}>
             <MessageView
               message={{
                 chatId: "",
@@ -182,81 +167,41 @@ export function NewChatPanel() {
         )}
       </ScrollArea>
 
-      {entry?.error && (
-        <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
-          {entry.error}
-        </Alert>
-      )}
-
       <Box pt="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
-        <Stack gap="xs">
-          <Group gap="xs" align="center">
-            <Text fz="xs" fw={500} c="dimmed">
-              Project
-            </Text>
-            <Select
-              value={projectName}
-              onChange={(value) => setProjectName(value ?? "")}
-              disabled={starting}
-              allowDeselect={false}
-              data={projects.map((project) => ({
-                value: project.name,
-                label: project.displayName || project.name,
-              }))}
-            />
-          </Group>
-          <AttachmentBar
-            attachments={attachments}
-            documents={documents}
-            attachError={attachError}
-            onRemove={removeAt}
-            onRemoveDocument={removeDocumentAt}
+        <Box className={classes.column}>
+          {entry?.error && (
+            <Alert color="red" variant="light" mb="xs" py={6} px="sm" fz="xs">
+              {entry.error}
+            </Alert>
+          )}
+          <Composer
+            key={composerKey}
+            onSend={start}
+            disabled={starting}
+            placeholder="Send your first message…"
+            status={<RunningAgents paths={entry?.live.authorPaths ?? []} />}
+            leading={
+              <Group gap="xs" align="center">
+                <Text fz="xs" fw={500} c="dimmed">
+                  Project
+                </Text>
+                <Select
+                  value={projectName}
+                  onChange={(value) => setProjectName(value ?? "")}
+                  disabled={starting}
+                  allowDeselect={false}
+                  data={projects.map((project) => ({
+                    value: project.name,
+                    label: project.displayName || project.name,
+                  }))}
+                />
+              </Group>
+            }
+            {...(starting && entry?.runId && key
+              ? { onStop: () => runStore.cancelRun(key) }
+              : {})}
           />
-          <Group gap="xs" align="flex-end" wrap="nowrap">
-            <AttachButton onPick={(files) => void addFiles(files)} disabled={starting} documents />
-            <Textarea
-              value={message}
-              onChange={(event) => setMessage(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  start();
-                }
-              }}
-              autosize
-              minRows={1}
-              maxRows={8}
-              radius="xl"
-              placeholder="Send your first message…"
-              disabled={starting}
-              style={{ flex: 1 }}
-            />
-            {starting && entry?.runId ? (
-              <ActionIcon
-                variant="filled"
-                color="red"
-                size="input-sm"
-                radius="xl"
-                onClick={() => key && runStore.cancelRun(key)}
-                aria-label="Stop"
-              >
-                <IconPlayerStopFilled size={16} />
-              </ActionIcon>
-            ) : (
-              <ActionIcon
-                variant="filled"
-                size="input-sm"
-                radius="xl"
-                onClick={() => start()}
-                loading={starting}
-                disabled={(!message.trim() && attachments.length === 0) || !projectName}
-                aria-label="Start chat"
-              >
-                <IconSend size={18} />
-              </ActionIcon>
-            )}
-          </Group>
-        </Stack>
+        </Box>
       </Box>
     </Flex>
   );

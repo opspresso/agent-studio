@@ -107,6 +107,35 @@ const MAX_RECONNECTS = 2;
  */
 const MAX_TOTAL_RECONNECTS = 20;
 
+/**
+ * How long a burst of stream frames is collected before subscribers are told,
+ * and how far that stretches as the answer grows.
+ *
+ * A frame is roughly a token; a subscriber is a render of the whole thread, and
+ * that render re-parses the answer's markdown. Telling them per frame spent the
+ * entire frame budget re-parsing text that had grown by four characters, and the
+ * jank it produced is what made the viewport judder while a reply streamed.
+ *
+ * The **entry is replaced on every frame regardless** — `get()` is never a frame
+ * behind — so this delays a notification, never the state behind it.
+ *
+ * The interval grows with the answer because the render it schedules does too:
+ * re-parsing 25KB of markdown costs an order of magnitude more than 500 bytes,
+ * and one fixed interval either wastes renders on short answers or spends the
+ * whole budget on long ones — which are the ones this exists for.
+ */
+const MIN_NOTIFY_MS = 50;
+const MAX_NOTIFY_MS = 200;
+/** One further millisecond of collecting per this many characters of answer. */
+const CHARS_PER_EXTRA_MS = 128;
+
+function notifyDelayFor(entry: RunEntry): number {
+  // Text alone: it is what the markdown renderer walks, and the tool results and
+  // images beside it are drawn once each rather than re-parsed per frame.
+  const extra = Math.floor(entry.live.text.length / CHARS_PER_EXTRA_MS);
+  return Math.min(MAX_NOTIFY_MS, MIN_NOTIFY_MS + extra);
+}
+
 const NO_RUNS: readonly string[] = Object.freeze([]);
 
 export function createRunStore(): RunStore {
@@ -116,6 +145,8 @@ export function createRunStore(): RunStore {
   const controllers = new Map<string, AbortController>();
   const evictions = new Map<string, ReturnType<typeof setTimeout>>();
   const listeners = new Set<() => void>();
+  /** The open frame-collection window, if one is running. */
+  let collecting: ReturnType<typeof setTimeout> | undefined;
   let running: readonly string[] = NO_RUNS;
   let nextId = 1;
   let nextPlaceholder = 1;
@@ -140,11 +171,32 @@ export function createRunStore(): RunStore {
     }
   }
 
+  /**
+   * Tell everyone now, and drop any collection window in progress — whatever it
+   * was holding goes out with this.
+   */
   function emit(): void {
+    if (collecting !== undefined) {
+      clearTimeout(collecting);
+      collecting = undefined;
+    }
     refreshRunning();
     for (const listener of listeners) {
       listener();
     }
+  }
+
+  /** Tell everyone once the window closes, collecting whatever lands first. */
+  function emitSoon(delayMs: number): void {
+    if (collecting !== undefined) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      collecting = undefined;
+      emit();
+    }, delayMs);
+    unrefTimer(timer);
+    collecting = timer;
   }
 
   function update(key: string, updater: (prev: RunEntry) => RunEntry): void {
@@ -155,6 +207,25 @@ export function createRunStore(): RunStore {
     }
     entries.set(canon, updater(prev));
     emit();
+  }
+
+  /**
+   * Fold a stream frame into the turn.
+   *
+   * Same replacement as `update`, but subscribers hear about it on the
+   * collection window rather than per frame. Everything else — the head frame,
+   * an error, a run ending — goes through `update`/`emit` and flushes at once,
+   * because those are the states a reader acts on rather than reads.
+   */
+  function updateLive(key: string, updater: (prev: RunEntry) => RunEntry): void {
+    const canon = canonical(key);
+    const prev = entries.get(canon);
+    if (!prev) {
+      return;
+    }
+    const next = updater(prev);
+    entries.set(canon, next);
+    emitSoon(notifyDelayFor(next));
   }
 
   function evict(key: string): void {
@@ -321,7 +392,7 @@ export function createRunStore(): RunStore {
             }
             const fold = rebuilding;
             rebuilding = false;
-            update(key, (prev) => ({
+            updateLive(key, (prev) => ({
               ...prev,
               live: reduceChunk(fold ? EMPTY_TURN : prev.live, chunk),
             }));

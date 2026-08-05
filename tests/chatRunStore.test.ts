@@ -124,6 +124,50 @@ describe("runStore", () => {
     });
   });
 
+  /**
+   * A frame is roughly a token; a notification is a render of the whole thread,
+   * markdown re-parse and all. One render per frame is what made a long reply
+   * judder, so frames are collected — while the entry itself stays current,
+   * because a reader that asks must never get a frame behind what arrived.
+   */
+  it("collects a burst of frames into one notification, without holding the turn back", async () => {
+    vi.useFakeTimers();
+    stubFetch([
+      () => sseOpen(["a", "b", "c", "d", "e"].map((content) => ({ delta: { content } }))),
+    ]);
+    const store = fresh();
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    // Every frame is folded in already…
+    expect(store.get("c1")?.live.text).toBe("abcde");
+    // …but they did not cost a render each. The one is the turn starting.
+    expect(notifications).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(notifications).toBe(2);
+  });
+
+  it("tells everyone at once when the run ends, rather than on the next window", async () => {
+    vi.useFakeTimers();
+    stubFetch([() => sse([{ delta: { content: "done" } }, { ended: true }])]);
+    const store = fresh();
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    store.startTurn("c1", PENDING);
+    await settle();
+
+    // No timer advanced: ending flushed the frame that was still being collected.
+    expect(store.get("c1")).toMatchObject({ status: "finished", live: { text: "done" } });
+    expect(notifications).toBe(2);
+  });
+
   it("returns the same snapshot object until something changes", async () => {
     stubFetch([() => sse([{ delta: { content: "a" } }, { ended: true }])]);
     const store = fresh();

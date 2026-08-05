@@ -3,8 +3,19 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ActionIcon, Button, Loader, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
-import { IconPlus, IconX } from "@tabler/icons-react";
+import {
+  ActionIcon,
+  Button,
+  Drawer,
+  Group,
+  Loader,
+  ScrollArea,
+  Stack,
+  Text,
+  UnstyledButton,
+} from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { IconMessages, IconPlus, IconX } from "@tabler/icons-react";
 import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
@@ -26,6 +37,7 @@ export function ChatSidebar() {
   const router = useRouter();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [drawerOpen, drawer] = useDisclosure(false);
   // Keys, not chat ids: a chat still being created counts under its placeholder,
   // so a first message refused before it learned its id still reloads this list
   // — the chat and its user turn are already on the server by then. Matching
@@ -49,6 +61,11 @@ export function ChatSidebar() {
     void load();
   }, [load, pathname, running]);
 
+  // A tap that opens a chat has done what the drawer was opened for.
+  useEffect(() => {
+    drawer.close();
+  }, [pathname, drawer]);
+
   const activeId = pathname.startsWith("/chats/") ? pathname.split("/")[2] : undefined;
 
   async function handleDelete(chatId: string) {
@@ -63,53 +80,87 @@ export function ChatSidebar() {
     }
   }
 
-  return (
-    <Stack component="aside" gap="sm" className={classes.sidebar}>
-      <Button
-        component={Link}
-        href="/chats"
-        onClick={() => window.dispatchEvent(new CustomEvent(NEW_CHAT_EVENT))}
-        radius="xl"
-        leftSection={<IconPlus size={16} />}
-      >
-        New chat
-      </Button>
-      <ScrollArea style={{ flex: 1, minHeight: 0 }} scrollbarSize={6} pr={4}>
-        <Stack gap={2}>
-          {loaded && chats.length === 0 && (
-            <Text fz="xs" c="dimmed" px="xs" py="md">
-              No chats yet.
-            </Text>
-          )}
-          {chats.map((chat) => (
-            <div
-              key={chat.chatId}
-              className={classes.row}
-              data-active={chat.chatId === activeId || undefined}
+  const newChat = (
+    <Button
+      component={Link}
+      href="/chats"
+      onClick={() => window.dispatchEvent(new CustomEvent(NEW_CHAT_EVENT))}
+      radius="xl"
+      leftSection={<IconPlus size={16} />}
+    >
+      New chat
+    </Button>
+  );
+
+  const list = (
+    <ScrollArea style={{ flex: 1, minHeight: 0 }} scrollbarSize={6} pr={4}>
+      <Stack gap={2}>
+        {loaded && chats.length === 0 && (
+          <Text fz="xs" c="dimmed" px="xs" py="md">
+            No chats yet.
+          </Text>
+        )}
+        {chats.map((chat) => (
+          <div
+            key={chat.chatId}
+            className={classes.row}
+            data-active={chat.chatId === activeId || undefined}
+          >
+            <UnstyledButton
+              component={Link}
+              href={`/chats/${chat.chatId}`}
+              fz="sm"
+              className={classes.title}
             >
-              <UnstyledButton
-                component={Link}
-                href={`/chats/${chat.chatId}`}
-                fz="sm"
-                className={classes.title}
-              >
-                {chat.title}
-              </UnstyledButton>
-              {running.includes(chat.chatId) && <Loader size={10} />}
-              <ActionIcon
-                size="sm"
-                variant="subtle"
-                color="red"
-                className={classes.delete}
-                onClick={() => void handleDelete(chat.chatId)}
-                aria-label="Delete chat"
-              >
-                <IconX size={14} />
-              </ActionIcon>
-            </div>
-          ))}
+              {chat.title}
+            </UnstyledButton>
+            {running.includes(chat.chatId) && <Loader size={10} />}
+            <ActionIcon
+              size="sm"
+              variant="subtle"
+              color="red"
+              className={classes.delete}
+              onClick={() => void handleDelete(chat.chatId)}
+              aria-label="Delete chat"
+            >
+              <IconX size={14} />
+            </ActionIcon>
+          </div>
+        ))}
+      </Stack>
+    </ScrollArea>
+  );
+
+  return (
+    <>
+      {/* Desktop: a column beside the thread. */}
+      <Stack component="aside" gap="sm" className={classes.sidebar} visibleFrom="md">
+        {newChat}
+        {list}
+      </Stack>
+
+      {/*
+       * Narrow: a drawer, not a squashed column. The list used to sit above the
+       * thread capped at ten rems, which gave the conversation less room the
+       * more chats there were and still showed only three of them.
+       */}
+      <Group gap="xs" hiddenFrom="md" wrap="nowrap">
+        <Button
+          variant="default"
+          radius="xl"
+          leftSection={<IconMessages size={16} />}
+          onClick={drawer.open}
+        >
+          Chats
+        </Button>
+        {newChat}
+      </Group>
+      {/* No `hiddenFrom` needed: the only thing that opens it is hidden there. */}
+      <Drawer opened={drawerOpen} onClose={drawer.close} title="Chats" size="80%">
+        <Stack gap="sm" h="100%">
+          {list}
         </Stack>
-      </ScrollArea>
-    </Stack>
+      </Drawer>
+    </>
   );
 }
