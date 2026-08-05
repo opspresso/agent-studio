@@ -1856,6 +1856,21 @@ export async function* runAgent(
       ...(input.canDispatch ? { canDispatch: input.canDispatch } : {}),
     },
   );
+  /**
+   * Which server served a tool, for the reader.
+   *
+   * An MCP tool's name is the server's own — `aws___search_documentation` — and
+   * says nothing about which connection answered it once a version has several
+   * attached. It rides on the result's display name the way a skill's and a
+   * transfer's target already do; what the context receives is the content and a
+   * call id, never this.
+   */
+  const serverByTool = new Map<string, string>();
+  for (const server of input.mcpServers ?? []) {
+    for (const toolName of server.toolNames) {
+      serverByTool.set(toolName, server.name);
+    }
+  }
   const filter = input.parameters?.piiFiltering ? new PiiFilter() : undefined;
 
   // Derived once, from the messages the run was handed rather than the array
@@ -2535,6 +2550,10 @@ export async function* runAgent(
           resultName = `${SKILL_TOOL_NAME}: ${skillName}`;
         }
       } else {
+        const server = serverByTool.get(call.name);
+        if (server) {
+          resultName = `${server}: ${call.name}`;
+        }
         const settled = mcpSettled.get(call.id);
         if (!settled) {
           content = `Error: Tool '${call.name}' cannot be executed in this context.`;

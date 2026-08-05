@@ -169,13 +169,24 @@ describe("describeTool", () => {
     });
   });
 
-  /** An MCP tool is free to contain a colon; its first half is not a builtin. */
-  it("leaves a colon in an ordinary tool's name alone", () => {
+  /**
+   * The half in front of the colon is the MCP server, which the tool's own name
+   * never says — `aws___search_documentation` is what the *server* calls it, and
+   * a version with several servers attached gives no way to tell them apart.
+   */
+  it("reads an unknown prefix as the server that served the tool", () => {
+    expect(describeTool("aws-knowledge: aws___search_documentation")).toEqual({
+      kind: "tool",
+      name: "aws___search_documentation",
+      source: "aws-knowledge",
+    });
+  });
+
+  it("leaves an undecorated tool name whole, colons and all", () => {
     expect(describeTool("aws:search_documentation")).toEqual({
       kind: "tool",
       name: "aws:search_documentation",
     });
-    expect(describeTool("server: lookup")).toEqual({ kind: "tool", name: "server: lookup" });
   });
 
   /** Args arrive a character at a time, so half of one is the normal case. */

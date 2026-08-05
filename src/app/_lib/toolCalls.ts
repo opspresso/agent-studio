@@ -38,6 +38,8 @@ export interface ToolDescription {
   kind: ToolKind;
   /** What actually ran: the skill, the agent, or the tool's own name. */
   name: string;
+  /** Where it came from, when that is not the tool: the MCP server that served it. */
+  source?: string;
 }
 
 /**
@@ -111,7 +113,10 @@ export function describeTool(toolName: string, args?: string): ToolDescription {
   if (IMAGE.includes(base)) {
     return { kind: "image", name: decorated ?? base };
   }
-  // Anything else keeps its whole name: an MCP tool is free to contain a colon,
-  // and the half before it is not a builtin to be read as one.
-  return { kind: "tool", name: toolName };
+  // Not a builtin, so the half in front is the MCP server that served it — the
+  // one thing an MCP tool's own name never says, and the thing worth knowing
+  // once a version has several servers attached.
+  return decorated === undefined
+    ? { kind: "tool", name: toolName }
+    : { kind: "tool", name: decorated, source: base };
 }

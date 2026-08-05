@@ -94,7 +94,13 @@ export interface EngineChunk {
   /** Emitted after a tool (MCP / Skill) finished executing. */
   toolResult?: {
     toolCallId: string;
-    /** Display name; Skill loads include the loaded skill ("Skill: <name>"). */
+    /**
+     * Display name, and only that — the context receives `content` and the call
+     * id. It carries what the tool acted on after a colon: the skill a `Skill`
+     * load read, the agent a transfer went to, and the server an MCP tool came
+     * from ("aws-knowledge: aws___search_documentation"), which the tool's own
+     * name never says.
+     */
     name: string;
     content: string;
     /**

@@ -87,6 +87,11 @@ function ToolRow({ pair, author }: { pair: ToolPair; author?: string | undefined
           <Text fz="xs" fw={500} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
             {described.name}
           </Text>
+          {described.source && (
+            <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+              · {described.source}
+            </Text>
+          )}
           {author && (
             <Text fz="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
               via {author}

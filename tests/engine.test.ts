@@ -71,6 +71,64 @@ describe("runAgent tool loop", () => {
     expect(recorded).toHaveLength(2);
   });
 
+  /**
+   * An MCP tool's name is the server's own — `aws___search_documentation` — and
+   * says nothing about which connection answered it once a version has several
+   * attached. It rides on the display name, the way a skill's and a transfer's
+   * target already do, and never on what the context receives.
+   */
+  it("names the server that served an MCP tool on the result", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "search_docs", "{}"), usageChunk(10, 5)],
+      [contentChunk("Found it."), usageChunk(8, 4)],
+    ]);
+    const chunks = await collect(
+      runAgent(
+        { channel, callMcpTool: async () => ({ text: "a page" }) },
+        {
+          projectName: "docs-bot",
+          model: MODEL,
+          systemPrompt: "You are helpful.",
+          messages: [{ role: "user", content: "find the docs" }],
+          mcpTools: [
+            { type: "function", function: { name: "search_docs", description: "", parameters: {} } },
+          ],
+          mcpServers: [{ name: "aws-knowledge", description: "", toolNames: ["search_docs"] }],
+        },
+      ),
+    );
+
+    expect(chunks.find((c) => c.toolResult)?.toolResult).toEqual({
+      toolCallId: "call_1",
+      name: "aws-knowledge: search_docs",
+      content: "a page",
+    });
+  });
+
+  it("leaves a tool no connected server claims under its own name", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_1", "search_docs", "{}"), usageChunk(10, 5)],
+      [contentChunk("Found it."), usageChunk(8, 4)],
+    ]);
+    const chunks = await collect(
+      runAgent(
+        { channel, callMcpTool: async () => ({ text: "a page" }) },
+        {
+          projectName: "docs-bot",
+          model: MODEL,
+          systemPrompt: "You are helpful.",
+          messages: [{ role: "user", content: "find the docs" }],
+          mcpTools: [
+            { type: "function", function: { name: "search_docs", description: "", parameters: {} } },
+          ],
+          mcpServers: [{ name: "aws-knowledge", description: "", toolNames: ["something_else"] }],
+        },
+      ),
+    );
+
+    expect(chunks.find((c) => c.toolResult)?.toolResult).toMatchObject({ name: "search_docs" });
+  });
+
   it("labels a Skill load's toolResult with the loaded skill name", async () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "call_1", "Skill", '{"skill_name":"image-generation"}'), usageChunk(10, 5)],
