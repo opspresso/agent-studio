@@ -21,6 +21,27 @@ describe("pairToolTraffic", () => {
   });
 
   /**
+   * Which server served an MCP tool only ever reaches the client on the result —
+   * a call goes out under the bare name the model used. Keeping the call's name
+   * left every row in a running reply saying `get_me`, and it named its server
+   * only once the page had reloaded and was reading the stored row instead.
+   */
+  it("takes the name from the result, which is the one that knows the server", () => {
+    expect(
+      pairToolTraffic(
+        [{ id: "c1", name: "get_me", args: "{}" }],
+        [{ id: "c1", name: "github: get_me", content: "octocat" }],
+      ),
+    ).toEqual([{ id: undefined, name: "github: get_me", args: "{}", content: "octocat" }]);
+  });
+
+  it("keeps the call's name while the call is still running", () => {
+    expect(pairToolTraffic([{ id: "c1", name: "get_me", args: "{}" }], [])).toEqual([
+      { id: undefined, name: "get_me", args: "{}" },
+    ]);
+  });
+
+  /**
    * The case two flat lists cannot express: the same tool twice, where "which
    * result belongs to which call" is the only question the reader has.
    */

@@ -12,6 +12,11 @@ import type { ChatMessage, LiveToolCall, LiveToolResult } from "./types";
  * belongs to which call once the same tool has run twice.
  */
 export interface ToolPair {
+  /**
+   * The tool as it should read. The call's bare name until its result lands,
+   * then the result's, which is the one the engine decorated with what it acted
+   * on — the skill, the agent, the MCP server.
+   */
   name?: string | undefined;
   /** The arguments the model sent. Absent for a result with no call to match. */
   args?: string | undefined;
@@ -75,7 +80,15 @@ export function pairToolTraffic(
       continue;
     }
     claimed.add(index);
-    pairs[index] = { ...pairs[index], content: result.content };
+    pairs[index] = {
+      ...pairs[index],
+      // The result's name wins: it is the display name the engine built, and it
+      // carries what the call's name cannot — the MCP server that served it. A
+      // call goes out as the bare `get_me`, so a row keyed on it stayed bare for
+      // the whole of a run and only named its server once the page reloaded.
+      ...(result.name === undefined ? {} : { name: result.name }),
+      content: result.content,
+    };
   }
 
   for (const orphan of orphans) {
