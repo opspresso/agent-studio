@@ -170,7 +170,8 @@ same rule applies to:
 | What a repo sync did, and what it left to a person | `src/domain/sync/types.ts` |
 | The brand palette and component defaults | `src/app/theme.ts` |
 | Who owns the chat viewport while a reply streams | `useStickToBottom` in `src/app/chats/_components/ChatThread.tsx` |
-| Pairing a tool call with the result that answered it | `src/app/chats/_lib/toolPairs.ts` |
+| Pairing a tool call with the result that answered it | `src/app/_lib/toolPairs.ts` |
+| Drawing one tool's traffic as one row | `src/app/_components/ToolRow.tsx` |
 | What a tool call reads as to a person | `describeTool` in `src/app/_lib/toolCalls.ts` |
 
 ## Subsystem map

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pairToolTraffic, storedToolArgs } from "@/app/chats/_lib/toolPairs";
+import { storedToolArgs } from "@/app/chats/_lib/toolPairs";
+import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { describeTool, parseWireToolCall } from "@/app/_lib/toolCalls";
 import type { ChatMessage } from "@/domain/chat/types";
 

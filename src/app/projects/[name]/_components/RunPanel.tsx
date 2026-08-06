@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
-import { describeTool, parseWireToolCall } from "@/app/_lib/toolCalls";
+import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { pairToolTraffic } from "@/app/_lib/toolPairs";
+import { ToolRow } from "@/app/_components/ToolRow";
 import {
   chunkAuthorPath,
   mergeVisitedPath,
@@ -14,11 +16,9 @@ import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
-  Accordion,
   Alert,
   Badge,
   Button,
-  Code,
   Group,
   Image,
   Input,
@@ -32,14 +32,17 @@ import {
 import { BADGE, SUBAGENT_COLOR } from "@/app/_components/badgeColors";
 
 interface ToolResultView {
+  /** The call this answers — what pairs a result back to the row it belongs on. */
+  id?: string | undefined;
   name: string;
   content: string;
-  author?: string;
+  author?: string | undefined;
 }
 interface ToolCallView {
+  id?: string | undefined;
   name: string;
   args: string;
-  author?: string;
+  author?: string | undefined;
 }
 
 function extractVariables(...sources: string[]): string[] {
@@ -212,6 +215,7 @@ export function RunPanel({
         }
         if (chunk.toolResult) {
           const result: ToolResultView = {
+            id: chunk.toolResult.toolCallId,
             name: chunk.toolResult.name,
             content: chunk.toolResult.content,
             author: chunk.author,
@@ -430,50 +434,16 @@ export function RunPanel({
         />
       ))}
 
+      {/* The same paired rows the chat draws — one row per call, badged by what
+          kind of thing ran, named with what it actually did. Two accordion
+          lists (calls, then results) were this surface's own rendering of the
+          same wire format, and they had already drifted from the chat's. */}
       {(toolCalls.length > 0 || toolResults.length > 0) && (
-        <Accordion variant="contained" chevronPosition="left" radius="md" multiple>
-          {toolCalls.map((call, i) => (
-            <Accordion.Item key={`call-${i}`} value={`call-${i}`}>
-              <Accordion.Control>
-                <Text fz="xs" fw={500}>
-                  {/* `parseWireToolCall` hands back the tool's own name now, so
-                      naming what actually ran — which skill, which agent — is
-                      done here, where it was already being spelled out. */}
-                  🔧 tool call: {describeTool(call.name, call.args).name}
-                  {call.author && (
-                    <Text component="span" c="dimmed" fz="xs" ml={4}>
-                      ({call.author})
-                    </Text>
-                  )}
-                </Text>
-              </Accordion.Control>
-              <Accordion.Panel>
-                <Code block fz="xs">
-                  {call.args}
-                </Code>
-              </Accordion.Panel>
-            </Accordion.Item>
+        <Stack gap={0}>
+          {pairToolTraffic(toolCalls, toolResults).map((pair, i) => (
+            <ToolRow key={`tool-${i}`} pair={pair} />
           ))}
-          {toolResults.map((result, i) => (
-            <Accordion.Item key={`result-${i}`} value={`result-${i}`}>
-              <Accordion.Control>
-                <Text fz="xs" fw={500}>
-                  ✅ tool result: {result.name}
-                  {result.author && (
-                    <Text component="span" c="dimmed" fz="xs" ml={4}>
-                      ({result.author})
-                    </Text>
-                  )}
-                </Text>
-              </Accordion.Control>
-              <Accordion.Panel>
-                <Code block fz="xs">
-                  {result.content}
-                </Code>
-              </Accordion.Panel>
-            </Accordion.Item>
-          ))}
-        </Accordion>
+        </Stack>
       )}
 
       {cost !== null && (

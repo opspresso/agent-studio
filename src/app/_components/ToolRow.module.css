@@ -1,0 +1,12 @@
+.toolToggle {
+  display: block;
+  width: 100%;
+  padding: 6px var(--mantine-spacing-sm);
+  text-align: left;
+  color: var(--mantine-color-dimmed);
+  background-color: var(--mantine-color-default-hover);
+}
+
+.toolToggle:hover {
+  color: var(--mantine-color-text);
+}
