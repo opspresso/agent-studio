@@ -141,14 +141,11 @@ function truncateForPersist(content: string): string {
  * one kind of warning, and `yield*` still forwards a client disconnect to the
  * run underneath.
  *
- * The source is asked for its first chunk *before* any of them goes out, which
- * is what keeps a refused run refusable. A run is turned away — over its daily
- * cost limit, out of slots — on the generator's first `next()`, and the SSE
- * layer can only answer that with a 429 while it is still holding the response
- * back. A leading warning answered that first pull from this list without ever
- * starting the run, so the response was already committed to `200
- * text/event-stream` and the refusal arrived as a mid-stream data frame with no
- * status and no `Retry-After`.
+ * The source is asked for its first chunk *before* any of them goes out. A run
+ * is turned away — over its daily cost limit, out of slots — on the generator's
+ * first `next()`, and a leading warning that answered that pull from this list
+ * would speak for a run that never started: the reader would see a trimmed
+ * history reported, then the refusal, for an answer that never began.
  */
 export async function* withLeadingWarnings(
   warnings: string[],

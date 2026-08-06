@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ChatRepository } from "@/domain/chat/repository";
+import { isLiveClaim } from "@/domain/chat/types";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { ChatConflictError, ChatNotFoundError } from "./errors";
 
@@ -41,7 +42,5 @@ export async function isChatRunActive(
     throw new ChatNotFoundError();
   }
   const active = await chats.getActiveRun(chatId);
-  return (
-    active !== null && active.runId === runId && active.expiresAtSeconds * 1000 > Date.now()
-  );
+  return isLiveClaim(active, Date.now()) && active.runId === runId;
 }

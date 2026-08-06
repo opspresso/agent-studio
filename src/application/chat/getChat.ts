@@ -1,4 +1,4 @@
-import type { Chat, ChatMessage } from "@/domain/chat/types";
+import { isLiveClaim, type Chat, type ChatMessage } from "@/domain/chat/types";
 import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
 import { resolveMessageImages } from "./resolveImages";
@@ -56,7 +56,7 @@ export async function getChat(
   }
   const messages = await deps.chats.listMessages(chatId);
   const active = await deps.chats.getActiveRun(chatId);
-  const running = active !== null && active.expiresAtSeconds * 1000 > Date.now();
+  const running = isLiveClaim(active, Date.now());
   // Signed for the reader who is about to look at them. A stored row holds an
   // object key, never an address that keeps working after this response.
   const resolved = await resolveMessageImages(

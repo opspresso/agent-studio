@@ -142,16 +142,19 @@ into `ChatDeps.runAgent`.
   persisted assistant content, tool calls and tool rows alike.
 - **`ChatDeps.runAgent` is lazy**: `createChat`/`sendMessage` do their writes and return
   a generator; the LLM call only starts when the route's `sseResponse` iterates it.
-- **A refusal has to beat the head frame.** A run is turned away — over its daily cost
-  limit, out of slots — on the engine generator's *first* `next()`, and the SSE layer can
-  only answer that with a 429 while it is still holding the response back. So
-  `withLeadingWarnings` pulls the source before emitting a warning, even though its warnings
-  come out first: answered from the list instead, that first pull never reached the engine,
-  the response was already committed to `200 text/event-stream`, and the refusal arrived as a
-  data frame with no status and no `Retry-After`. The replay stream has the opposite rule —
-  nothing in it can be refused, so `withReplayFrames` answers with the head frame before
-  pulling anything, or a reader watching a run whose log is empty waits five seconds for
-  HTTP headers.
+- **The head frame beats the run.** `withRunFrames` and `withReplayFrames` both answer
+  with the head frame before pulling anything: `sseResponse` builds the `Response` around
+  the first value it sees, so until then there are no headers, no keepalive and no chat id
+  on the wire — and a run whose first token is a minute out (a reasoning prefill, a heavy
+  document turn) would be cut by the ALB's 60s idle timeout having sent *nothing*, leaving
+  the client with no run to reattach to or stop. The price is the refusal path: a run
+  turned away — over its daily cost limit, out of slots — throws on the engine generator's
+  first `next()`, which now lands on a response already committed to
+  `200 text/event-stream`, so the chat routes deliver it as the SSE `{error}` frame rather
+  than a 429 with a `Retry-After`. The chat client reads both shapes as the run's error;
+  the agent API routes, whose callers do read statuses, still refuse before committing via
+  `sseResponse`'s own first pull. `withLeadingWarnings` keeps pulling the source before
+  emitting a warning, so a refused run fails before anything claims to speak for it.
 - **Envelope frames**: both run streams open with a head frame naming the run
   (`{ chat?, runId, userSeq }` — the chat id on a new chat, the run id for reattaching or
   stopping it, and where the user's turn landed so a reader arriving mid-run does not draw

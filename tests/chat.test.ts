@@ -1099,16 +1099,35 @@ describe("run stream frames", () => {
   });
 
   /**
-   * A run refused over its cost limit throws on its first `next()`. The head
-   * frame must not be emitted ahead of that, or the response is already
-   * committed to `200 text/event-stream` and the 429 — with its `Retry-After` —
-   * arrives as a data frame nobody reads as a status.
+   * The response bytes wait on this generator's first value: `sseResponse`
+   * builds the `Response` around it, and the keepalive starts with it. A run
+   * whose first token is a minute out must not hold the headers — and the chat
+   * id the client needs to reattach — off the wire while the ALB counts down
+   * its idle timeout.
    */
-  it("lets a refusal on the first chunk throw before any frame is emitted", async () => {
+  it("answers with the head frame before pulling the run", async () => {
+    let pulled = false;
+    async function* slow(): AsyncGenerator<unknown> {
+      pulled = true;
+      yield { delta: { content: "hi" } };
+    }
+    const stream = withRunFrames({ runId: "r1" }, slow());
+    expect(await stream.next()).toEqual({ done: false, value: { runId: "r1" } });
+    expect(pulled).toBe(false);
+  });
+
+  /**
+   * The other side of that ordering: a run refused over its cost limit throws
+   * on its first `next()`, which is now after the head frame — the SSE layer
+   * answers it with an `{error}` frame on the committed stream, no longer with
+   * a 429.
+   */
+  it("delivers a refusal after the head frame, as the stream's failure", async () => {
     async function* refused(): AsyncGenerator<unknown> {
       throw new RateLimitedError("over the daily cost limit", 42);
     }
     const stream = withRunFrames({ runId: "r1" }, refused());
+    expect(await stream.next()).toEqual({ done: false, value: { runId: "r1" } });
     await expect(stream.next()).rejects.toBeInstanceOf(RateLimitedError);
   });
 
@@ -1129,13 +1148,13 @@ describe("run stream frames", () => {
   });
 
   /**
-   * The refusal above has to survive a turn that carries leading warnings — a
-   * truncated history, an attachment that could not be stored. Emitted ahead of
-   * the run they answer that first pull from a list, without the engine having
-   * been touched, and the refusal lands mid-stream on a committed 200 exactly as
-   * if nothing guarded it.
+   * The refusal has to survive a turn that carries leading warnings — a
+   * truncated history, an attachment that could not be stored. The warnings
+   * pull the engine before speaking for it, so a refused run fails on the frame
+   * after the head rather than emitting warnings about a run that never
+   * started.
    */
-  it("still refuses before any frame when the turn carries leading warnings", async () => {
+  it("refuses right after the head frame when the turn carries leading warnings", async () => {
     async function* refused(): AsyncGenerator<EngineChunk> {
       throw new RateLimitedError("over the daily cost limit", 42);
     }
@@ -1143,6 +1162,7 @@ describe("run stream frames", () => {
       { runId: "r1" },
       withLeadingWarnings(["3 earlier runs were left out"], refused()),
     );
+    expect(await stream.next()).toEqual({ done: false, value: { runId: "r1" } });
     await expect(stream.next()).rejects.toBeInstanceOf(RateLimitedError);
   });
 

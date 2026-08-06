@@ -27,11 +27,17 @@ export function Composer({
   leading,
   status,
 }: {
+  /**
+   * Returns whether the send was accepted. `false` keeps the draft — text and
+   * attachments — exactly as typed: a run can start between the render that
+   * enabled the composer and the press, and clearing before asking is how a
+   * typed message used to vanish into that window.
+   */
   onSend: (
     content: string,
     attachments: Attachment[],
     documents: DocumentAttachment[],
-  ) => void;
+  ) => boolean;
   /**
    * Present while a reply is running. It takes the send button's place because
    * it is the only way to end a run: closing the tab no longer does, so a reply
@@ -60,10 +66,11 @@ export function Composer({
     if (empty || disabled) {
       return;
     }
-    const trimmed = value.trim();
+    if (!onSend(value.trim(), attachments, documents)) {
+      return;
+    }
     setValue("");
     clear();
-    onSend(trimmed, attachments, documents);
   }
 
   return (

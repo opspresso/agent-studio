@@ -100,15 +100,17 @@ export function NewChatPanel() {
     content: string,
     attachments: Attachment[],
     documents: DocumentAttachment[],
-  ) {
+  ): boolean {
     // Guarded on the turn still running, not on there having been one: a first
-    // message refused (409, over the cost limit, a dropped network) leaves the
+    // message refused (a 409, the cost limit, a dropped network) leaves the
     // key set, and guarding on that alone made Send do nothing for the rest of
-    // the session — silently, since the button still looks enabled.
+    // the session — silently, since the button still looks enabled. Refused
+    // sends report themselves so the composer keeps the draft.
     if (!projectName || starting) {
-      return;
+      return false;
     }
     setKey(runStore.startNewChat(projectName, { content, attachments, documents }));
+    return true;
   }
 
   // Once the chat exists the thread takes over, reading the very same store

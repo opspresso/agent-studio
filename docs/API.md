@@ -359,7 +359,11 @@ DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 Both run streams open with a head frame — `{ chat?, runId, userSeq }`, carrying the new
 `chatId` on a create — and close with `{ "ended": true }`. That last frame is the only thing
 that distinguishes a finished run from a dropped connection; a body that simply stops looks
-identical. Streams otherwise use the standard SSE framing and persist user, assistant, tool,
+identical. The head frame is sent before the run produces anything, so the response commits
+to `200 text/event-stream` immediately: the client always learns `chatId`/`runId` even when
+the model's first token is a minute out, and a refusal raised by the run itself (the daily
+cost guard, the concurrency guard) arrives as an `{error}` frame on that stream rather than
+as a `429`. Streams otherwise use the standard SSE framing and persist user, assistant, tool,
 and image display data. A project with neither a published version nor a runnable draft is
 rejected with `400`.
 

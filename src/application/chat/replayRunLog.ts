@@ -17,6 +17,7 @@
  *   ever finish this, and saying so is the only honest ending.
  */
 
+import { isLiveClaim } from "@/domain/chat/types";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 import type { ChatDeps } from "./deps";
@@ -96,15 +97,15 @@ async function* replayRunLog(
 
   for (;;) {
     const entries = await deps.runLog.read(input.chatId, input.runId, nextSeq);
-    if (entries.length > 0) {
-      const first = entries[0];
-      // Rows that are not there, checked on every read rather than only the
-      // first. Two things make a hole: the retention window taking the start of
-      // a long-abandoned run, and a flush that failed after its sequence numbers
-      // were already spent — which lands in the *middle*, where a check that had
-      // run once and set a flag walked straight past it. The run's own
+    for (const entry of entries) {
+      // Rows that are not there, checked entry by entry rather than once per
+      // read. Two things make a hole: the retention window taking the start of
+      // a long-abandoned run, and a flush that failed after its sequence
+      // numbers were already spent — which lands in the *middle*, and just as
+      // easily inside one read's batch as between two reads. A check on the
+      // batch's first row walked straight past the former. The run's own
       // dropped-frame notice covers only what it chose to forget.
-      if (first && first.seq > nextSeq) {
+      if (entry.seq > nextSeq) {
         yield {
           warning:
             nextSeq === 0
@@ -112,35 +113,40 @@ async function* replayRunLog(
               : "Part of this reply could not be read back; what follows skips it.",
         };
       }
-      quietSince = Date.now();
-      for (const entry of entries) {
-        for (const frame of parseFrames(entry.payload)) {
-          yield frame;
+      for (const frame of parseFrames(entry.payload)) {
+        yield frame;
+      }
+      nextSeq = entry.seq + 1;
+      if (entry.terminal) {
+        if (entry.error) {
+          yield { error: entry.error };
         }
-        nextSeq = entry.seq + 1;
-        if (entry.terminal) {
-          if (entry.error) {
-            yield { error: entry.error };
-          }
-          return;
-        }
+        return;
       }
     }
 
-    const active = await deps.chats.getActiveRun(input.chatId);
-    if (active === null || active.runId !== input.runId) {
-      // No terminal entry and no claim: the run finished with a reader attached,
-      // so it never wrote itself down. Its answer is in the conversation, which
-      // the client fetches once this stream ends.
-      return;
-    }
-    if (active.expiresAtSeconds * 1000 <= Date.now()) {
-      yield { error: LOST_RUN_ERROR };
-      return;
-    }
-    if (!noticed && Date.now() - quietSince >= QUIET_NOTICE_MS) {
-      noticed = true;
-      yield { warning: QUIET_NOTICE };
+    if (entries.length > 0) {
+      quietSince = Date.now();
+    } else {
+      // Liveness is asked only when the log is quiet: a batch just delivered
+      // means the run was alive to write it, and the claim is one
+      // strongly-consistent read per poll — paid beside every delivered batch,
+      // it doubled the cost of exactly the iterations that were going well.
+      const active = await deps.chats.getActiveRun(input.chatId);
+      if (active === null || active.runId !== input.runId) {
+        // No terminal entry and no claim: the run finished with a reader
+        // attached, so it never wrote itself down. Its answer is in the
+        // conversation, which the client fetches once this stream ends.
+        return;
+      }
+      if (!isLiveClaim(active, Date.now())) {
+        yield { error: LOST_RUN_ERROR };
+        return;
+      }
+      if (!noticed && Date.now() - quietSince >= QUIET_NOTICE_MS) {
+        noticed = true;
+        yield { warning: QUIET_NOTICE };
+      }
     }
     await sleep(POLL_INTERVAL_MS);
   }

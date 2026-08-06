@@ -29,8 +29,9 @@ function makeDeps(options: {
   entries?: RunLogEntry[];
   active?: ActiveChatRun | null;
   messages?: ChatMessage[];
-}): { deps: ChatDeps; entries: RunLogEntry[] } {
+}): { deps: ChatDeps; entries: RunLogEntry[]; activeReads: () => number } {
   const entries = options.entries ?? [];
+  let activeReads = 0;
   const runLog: ChatRunLogRepository = {
     async append(_chatId, _runId, appended) {
       entries.push(...appended);
@@ -57,6 +58,7 @@ function makeDeps(options: {
     },
     async releaseRun() {},
     async getActiveRun() {
+      activeReads += 1;
       return options.active === undefined ? null : options.active;
     },
     async requestCancel() {
@@ -70,6 +72,7 @@ function makeDeps(options: {
 
   return {
     entries,
+    activeReads: () => activeReads,
     deps: {
       chats,
       runLog,
@@ -154,9 +157,20 @@ describe("openRunLogReplay", () => {
         entries: [frame(0, "half an ans")],
         active: { runId: "run-1", expiresAtSeconds: DEAD_LEASE },
       });
-      const seen = await collect(
-        await openRunLogReplay(deps, { chatId: "c1", runId: "run-1", userEmail: "owner@x.com" }),
-      );
+      const seen: unknown[] = [];
+      const reading = (async () => {
+        for await (const value of await openRunLogReplay(deps, {
+          chatId: "c1",
+          runId: "run-1",
+          userEmail: "owner@x.com",
+        })) {
+          seen.push(value);
+        }
+      })();
+      // The claim is only looked at once the log goes quiet — one poll after
+      // the logged half-answer is delivered.
+      await vi.advanceTimersByTimeAsync(500);
+      await reading;
       expect(seen).toEqual([
         { delta: { content: "half an ans" } },
         { error: expect.stringContaining("claim expired") },
@@ -218,6 +232,45 @@ describe("openRunLogReplay", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /**
+   * The same failed flush, seen in one read: a reader connecting after the run
+   * ended gets the whole log as a single batch, and the hole sits between two
+   * entries *of that batch* rather than between two reads. Checked per entry —
+   * a check on the batch's first row walks straight past this one, and the
+   * reply plays back with its middle missing and nothing saying so.
+   */
+  it("reports a gap inside a single read's batch", async () => {
+    const { deps } = makeDeps({
+      entries: [frame(0, "first"), frame(2, "third"), { seq: 3, payload: "[]", terminal: true }],
+      active: { runId: "run-1", expiresAtSeconds: LIVE_LEASE },
+    });
+    const seen = await collect(
+      await openRunLogReplay(deps, { chatId: "c1", runId: "run-1", userEmail: "owner@x.com" }),
+    );
+    expect(seen).toEqual([
+      { delta: { content: "first" } },
+      { warning: expect.stringContaining("could not be read back") },
+      { delta: { content: "third" } },
+    ]);
+  });
+
+  /**
+   * Liveness is asked only when the log is quiet. A batch just delivered means
+   * the run was alive to write it, and the claim is a strongly-consistent read
+   * per poll — paid beside every batch, it doubled the cost of exactly the
+   * iterations that were going well.
+   */
+  it("does not read the claim while the log is delivering", async () => {
+    const { deps, activeReads } = makeDeps({
+      entries: [frame(0, "hello"), { seq: 1, payload: "[]", terminal: true }],
+      active: { runId: "run-1", expiresAtSeconds: LIVE_LEASE },
+    });
+    await collect(
+      await openRunLogReplay(deps, { chatId: "c1", runId: "run-1", userEmail: "owner@x.com" }),
+    );
+    expect(activeReads()).toBe(0);
   });
 
   it("follows the log as it grows, and says why it is empty for long", async () => {

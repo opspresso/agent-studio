@@ -429,7 +429,13 @@ describe("teeToRunLog", () => {
       // read to the end without leaving
     }
     tee.onClientGone();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The wrongly-started pump this guards against reaches its first append
+    // synchronously and its terminal entry a few promise hops later; turning
+    // the microtask queue over a bounded number of times lets both land
+    // without depending on a real timer.
+    for (let i = 0; i < 8; i += 1) {
+      await Promise.resolve();
+    }
 
     expect(appended).toEqual([]);
     expect(calls.filter((call) => call.startsWith("runLog"))).toEqual([]);

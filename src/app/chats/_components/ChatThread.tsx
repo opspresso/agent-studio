@@ -160,6 +160,12 @@ export function ChatThread({ chatId }: { chatId: string }) {
    * rather than what should block the replacement. Reported back, because the
    * error such a turn left behind is no longer true once its run is being read
    * again.
+   *
+   * One run can slip past the streaming check: a new chat's own, still keyed
+   * under its `new:` placeholder until the head frame names the chat. The
+   * store cannot match it to this `chatId` before that, so a click landing in
+   * the round-trip the head frame takes opens a short-lived duplicate stream —
+   * which `adopt()` discards the moment the head arrives.
    */
   const attachIfRunning = useCallback(
     (fresh: Fetched): boolean => {
@@ -272,14 +278,20 @@ export function ChatThread({ chatId }: { chatId: string }) {
     content: string,
     attachments: Attachment[],
     documents: DocumentAttachment[],
-  ) {
+  ): boolean {
+    if (runStore.startTurn(chatId, { content, attachments, documents }) === null) {
+      // A run got in between the render that enabled the composer and the
+      // press. The reply now streaming is on screen; the composer keeps the
+      // draft for after it.
+      return false;
+    }
     setError(null);
-    runStore.startTurn(chatId, { content, attachments, documents });
     // The one place that overrules the reader. Sending is asking for the answer,
     // so it takes them back down however far up they had scrolled — and
     // `ignoreEscapes` holds them there for the trip rather than letting the
     // scroll they are still coasting from cancel it.
     void scrollToBottom({ ignoreEscapes: true });
+    return true;
   }
 
   if (status === "not-found") {

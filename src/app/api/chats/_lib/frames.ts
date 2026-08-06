@@ -19,24 +19,23 @@ export async function* withRunFrames(
   head: Record<string, unknown>,
   stream: AsyncGenerator<unknown>,
 ): AsyncGenerator<unknown> {
-  // The run's first chunk is pulled *before* the head frame, for the same reason
-  // `sseResponse` pulls one before building a `Response`: a refused run — over
-  // its daily cost limit, out of slots — throws on that first `next()`, and a
-  // head frame emitted ahead of it would have already committed the response to
-  // `200 text/event-stream`. The refusal would then arrive as a data frame, and
-  // the caller would never see the status or the `Retry-After`. Nothing is
-  // buffered beyond that one chunk, and the frames come out in the same order.
+  // The head frame goes out before the run is pulled at all, and that ordering
+  // is load-bearing: `sseResponse` builds the `Response` around its first value,
+  // so until this yields something there are no headers, no keepalive and no
+  // chat id on the wire. The run's first chunk can be a minute out — a reasoning
+  // prefill, a heavy document turn — and a connection that has sent zero bytes
+  // for 60s is one the ALB cuts, leaving the client with no run to reattach to
+  // or stop while the run itself carries on detached.
   //
-  // The cost is that the head frame waits on the run's first chunk, so a new
-  // chat learns its own id a beat later than it used to. That is invisible — the
-  // view is already showing the sent turn and an empty reply — and it buys back
-  // a refusal the create route had been delivering as a `200` all along.
-  const first = await stream.next();
+  // The cost is the refusal path: a run turned away — over its daily cost
+  // limit, out of slots — throws on its first `next()`, which now lands after
+  // the response has committed to `200 text/event-stream`, so it arrives as the
+  // SSE layer's `{error}` frame rather than as a 429 with a `Retry-After`. The
+  // only readers of these two routes are the chat client, which draws that
+  // frame as the run's error either way; the agent API routes, whose callers do
+  // read statuses, still get theirs from `sseResponse`'s own first pull.
   yield head;
-  if (!first.done) {
-    yield first.value;
-    yield* stream;
-  }
+  yield* stream;
   yield { ended: true };
 }
 

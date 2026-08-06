@@ -458,11 +458,16 @@ describe("runStore", () => {
     expect(store.get("c1")).toBeUndefined();
   });
 
-  it("refuses a second turn while one is still streaming", async () => {
+  /**
+   * The refusal is reported, not swallowed: the composer has the typed message
+   * in hand and clears it only on an accepted send — a silent no here is how a
+   * draft used to vanish when a run got in between the render and the press.
+   */
+  it("refuses a second turn while one is still streaming, and says so", async () => {
     stubFetch([() => sse([{ delta: { content: "first" } }], { close: true })]);
     const store = fresh();
-    store.startTurn("c1", PENDING);
-    store.startTurn("c1", { ...PENDING, content: "impatient" });
+    expect(store.startTurn("c1", PENDING)).toBe("c1");
+    expect(store.startTurn("c1", { ...PENDING, content: "impatient" })).toBeNull();
     expect(store.get("c1")?.pendingUser?.content).toBe("hi");
   });
 

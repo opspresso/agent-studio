@@ -14,8 +14,8 @@ export interface Chat {
  *
  * The lease is returned raw rather than as "is a run in flight": an instance
  * that died mid-run leaves the claim behind until it expires, so only a reader
- * holding the current time can say whether it still means anything. `getChat`
- * makes that judgement; nothing else should.
+ * holding the current time can say whether it still means anything.
+ * `isLiveClaim` makes that judgement; nothing else should spell it.
  */
 export interface ActiveChatRun {
   runId: string;
@@ -23,6 +23,21 @@ export interface ActiveChatRun {
   expiresAtSeconds: number;
   /** Set once someone asked this run to stop; the run polls for it. */
   cancelRequestedAt?: string;
+}
+
+/**
+ * Whether the claim still means a run, judged at `nowMs`.
+ *
+ * The one spelling of that judgement — every reader (`getChat`,
+ * `isChatRunActive`, the replay's follow loop) asks it here, so a future grace
+ * window or clock-skew margin lands in one place instead of drifting across
+ * three.
+ */
+export function isLiveClaim(
+  active: ActiveChatRun | null,
+  nowMs: number,
+): active is ActiveChatRun {
+  return active !== null && active.expiresAtSeconds * 1000 > nowMs;
 }
 
 export type ChatRole = "user" | "assistant" | "tool";

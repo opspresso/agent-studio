@@ -39,9 +39,11 @@ export async function detachedRunResponse(run: DetachedRun): Promise<Response> {
   );
   void drained.finally(run.onDrained);
 
-  // Before anything is registered: `sseResponse` pulls the first chunk, which is
-  // where a refused run (over its cost limit, out of slots) throws, and that
-  // throw has to reach the route's `apiError` as a 429.
+  // `sseResponse`'s first pull is answered by the head frame `withRunFrames`
+  // yields before touching the run, so the response — headers, keepalive —
+  // exists immediately rather than after the engine's first chunk. A refusal
+  // the run throws lands mid-stream as an `{error}` frame; only a failure
+  // *before* this stream exists reaches the route's `apiError` as a status.
   const response = await sseResponse(detached);
 
   // Not what keeps the run alive — its own pending I/O does that. This is what

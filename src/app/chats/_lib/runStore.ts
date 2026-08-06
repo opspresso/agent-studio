@@ -63,15 +63,21 @@ export interface RunStore {
    * created runs under. Identity-stable while membership holds.
    *
    * The placeholders are in here because a caller watching this set is watching
-   * for "a run started or ended", and a create refused before it learned its own
-   * id — over the cost limit, out of slots — never enters the set at all if only
+   * for "a run started or ended", and a create that failed before it learned
+   * its own id — a 409, a dropped network — never enters the set at all if only
    * chat ids count. The chat and its user turn are on the server by then, so the
    * sidebar that never reloaded is a sidebar missing a chat. A caller matching
    * chat ids against this ignores the placeholders on its own.
    */
   runningKeys(): readonly string[];
-  /** Send a turn to an existing chat. Returns the key to read it back by. */
-  startTurn(chatId: string, pending: PendingUser): string;
+  /**
+   * Send a turn to an existing chat. Returns the key to read it back by, or
+   * `null` when the chat already has a turn streaming — the client-side mirror
+   * of the server's one-run-per-chat lease. Said out loud rather than
+   * swallowed: the composer still holds the user's text at this point, and it
+   * keeps it only if it can tell the send went nowhere.
+   */
+  startTurn(chatId: string, pending: PendingUser): string | null;
   /** Start a chat. Returns a placeholder key, aliased to the chat id once it exists. */
   startNewChat(projectName: string, pending: PendingUser): string;
   /** Pick up a run this tab did not start — a reload, or a second window. */
@@ -493,8 +499,12 @@ export function createRunStore(): RunStore {
 
     startTurn(chatId, pending) {
       if (entries.get(chatId)?.status === "streaming") {
-        // The client-side mirror of the server's one-run-per-chat lease.
-        return chatId;
+        // The client-side mirror of the server's one-run-per-chat lease. A run
+        // can get in between the render that enabled the composer and the
+        // press — the mount sync attaching, a retire resolving — and answering
+        // `chatId` here made that look like an accepted send: the composer had
+        // already cleared, and the typed message was simply gone.
+        return null;
       }
       create(chatId, { chatId, pendingUser: pending });
       void pump(chatId, (signal) =>
