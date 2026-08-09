@@ -1,8 +1,15 @@
-import { context as otelContext, trace as otelApi, SpanStatusCode } from "@opentelemetry/api";
+import {
+  context as otelContext,
+  diag,
+  DiagLogLevel,
+  trace as otelApi,
+  SpanStatusCode,
+} from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BasicTracerProvider, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { Trace, TraceSpan } from "@/domain/trace/types";
+import { log } from "@/shared/logger";
 
 /**
  * The OTLP half of trace export — the heavy adapter `withTraceExport` composes
@@ -13,6 +20,11 @@ import type { Trace, TraceSpan } from "@/domain/trace/types";
  * OTEL timeline matches what the traces page shows. The app's trace id rides
  * along as the `app.trace_id` attribute — OTEL mints its own ids, and the
  * attribute is what correlates a collector's view back to `/traces`.
+ *
+ * `exportTrace` only enqueues; the HTTP POST happens later inside the batch
+ * processor, whose failures the SDK reports through its `diag` channel — a
+ * no-op by default, which is a collector outage with no log line. Routing
+ * `diag` into the app logger below is what makes those failures visible.
  */
 
 export interface OtelExportConfig {
@@ -20,6 +32,16 @@ export interface OtelExportConfig {
   endpoint: string;
   headers?: Record<string, string>;
   serviceName: string;
+}
+
+export interface OtelTraceExport {
+  /** Enqueue the finished trace's spans for the next batch export. */
+  exportTrace(trace: Trace): void;
+  /**
+   * Drain the batch queue. Wired to shutdown by the composition root — without
+   * it, every rollout silently discards up to a batch window of spans.
+   */
+  flush(): Promise<void>;
 }
 
 function tracesUrl(endpoint: string): string {
@@ -34,7 +56,19 @@ function spanAttributes(span: TraceSpan): Record<string, string> {
   };
 }
 
-export function createOtelTraceExport(config: OtelExportConfig): (trace: Trace) => void {
+export function createOtelTraceExport(config: OtelExportConfig): OtelTraceExport {
+  // The SDK's internal error path (export rejected, collector unreachable) is
+  // a no-op logger unless one is installed.
+  diag.setLogger(
+    {
+      verbose: () => {},
+      debug: () => {},
+      info: () => {},
+      warn: (message, ...args) => log.warn("otel", String(message), ...args),
+      error: (message, ...args) => log.error("otel", String(message), ...args),
+    },
+    DiagLogLevel.WARN,
+  );
   const provider = new BasicTracerProvider({
     resource: resourceFromAttributes({ "service.name": config.serviceName }),
     spanProcessors: [
@@ -45,7 +79,7 @@ export function createOtelTraceExport(config: OtelExportConfig): (trace: Trace) 
   });
   const tracer = provider.getTracer("agent-studio");
 
-  return (trace: Trace) => {
+  const exportTrace = (trace: Trace) => {
     const root = tracer.startSpan(`${trace.projectType} ${trace.projectName}`, {
       startTime: new Date(trace.startedAt),
       attributes: {
@@ -75,4 +109,6 @@ export function createOtelTraceExport(config: OtelExportConfig): (trace: Trace) 
     }
     root.end(new Date(trace.endedAt));
   };
+
+  return { exportTrace, flush: () => provider.forceFlush() };
 }

@@ -28,7 +28,8 @@ import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
 import { withTraceExport } from "@/infrastructure/telemetry/withTraceExport";
-import type { Trace } from "@/domain/trace/types";
+import type { OtelTraceExport } from "@/infrastructure/telemetry/otelTraceExport";
+import { onShutdown } from "@/shared/lifecycle";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
@@ -144,20 +145,30 @@ const mcpSessions: McpSessionFactory = {
 /**
  * Finished traces double as OTLP spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is
  * set — unset means no export at all. The OTEL SDK sits behind a deferred
- * import like the other heavy adapters, resolved once on the first export.
+ * import like the other heavy adapters, resolved once on the first export —
+ * and un-cached on failure, so one bad chunk load at a cold start costs one
+ * trace, not every trace for the life of the process. The batch buffer is
+ * flushed on drain; without that, every rollout discards its last spans.
  */
 const otelEndpoint = config.otelExporterEndpoint;
-let otelExport: Promise<(trace: Trace) => void> | undefined;
+let otelExport: Promise<OtelTraceExport> | undefined;
 const runTraceRepository = otelEndpoint
   ? withTraceExport(traceRepository, async (trace) => {
-      otelExport ??= import("@/infrastructure/telemetry/otelTraceExport").then((m) =>
-        m.createOtelTraceExport({
-          endpoint: otelEndpoint,
-          headers: config.otelExporterHeaders,
-          serviceName: "agent-studio",
-        }),
-      );
-      (await otelExport)(trace);
+      otelExport ??= import("@/infrastructure/telemetry/otelTraceExport")
+        .then((m) => {
+          const handle = m.createOtelTraceExport({
+            endpoint: otelEndpoint,
+            headers: config.otelExporterHeaders,
+            serviceName: "agent-studio",
+          });
+          onShutdown(() => handle.flush());
+          return handle;
+        })
+        .catch((error: unknown) => {
+          otelExport = undefined;
+          throw error;
+        });
+      (await otelExport).exportTrace(trace);
     })
   : traceRepository;
 
