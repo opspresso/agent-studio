@@ -68,11 +68,18 @@ export async function register(): Promise<void> {
     // act is indistinguishable from one that never happened. Two AWS SDK
     // modules, no client construction (the document client is lazy), so this
     // costs the boot path nothing measurable.
-    const [{ setAuditSink }, { auditRepository }] = await Promise.all([
+    const [{ setAuditSink, assertAuditSinkWired }, { auditRepository }] = await Promise.all([
       import("@/application/audit/recordAudit"),
       import("@/infrastructure/db/repositories/auditRepository"),
     ]);
     setAuditSink(auditRepository);
+    // Reads back what the push landed on, which is not the tautology it looks
+    // like: the two are the same `let` only if both sides resolved the same
+    // module instance. A bundle that ends up with two copies leaves this one
+    // wired and the one every route imports empty — a server that records
+    // nothing and says nothing about it. Fails fast here, beside the config
+    // guardrails, because there is no later moment that could notice.
+    assertAuditSinkWired();
     // The import is inside the guard so the edge build folds it away, and off
     // the awaited path because evaluating the composition root constructs every
     // AWS client — `register` is awaited before the server accepts connections,

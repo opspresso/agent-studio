@@ -49,6 +49,31 @@ export function auditSink(): AuditRepository | undefined {
   return sink;
 }
 
+/**
+ * Refuse to boot a server whose audit trail is not connected.
+ *
+ * The no-op above is right for a test or a script — neither has a table — and
+ * wrong for a running server, where it is total: not one row, for the life of
+ * the process, with nothing in the log to say so. That is the same failure this
+ * module exists to prevent, arriving through the wiring instead of through a
+ * second recording site.
+ *
+ * Boot is the only place it can be caught. `recordAudit` cannot refuse the act
+ * it is recording — audit is a record, not a precondition, which is why a failed
+ * *write* is logged and swallowed. An unwired sink is not a failed write: it is
+ * a structural defect, and the realistic cause is module identity (a second copy
+ * of this module in a bundle, so the push lands on a different `let`) rather
+ * than a forgotten call. Silent and total is exactly what a boot assertion is
+ * for, and `instrumentation.ts` already fails fast on the other guardrails.
+ */
+export function assertAuditSinkWired(): void {
+  if (!sink) {
+    throw new Error(
+      "Audit sink is not wired: recordAudit would silently write nothing for the life of this process.",
+    );
+  }
+}
+
 export interface AuditInput {
   actorEmail: string;
   action: AuditAction;
