@@ -61,6 +61,8 @@ function fixture(
   opts: {
     day?: UsageRow | null;
     dayError?: Error;
+    /** The month's daily rows, returned by `listByProject`. */
+    month?: UsageRow[];
     claimable?: boolean;
     withSlack?: boolean;
   } = {},
@@ -79,8 +81,17 @@ function fixture(
       claims.push({ kind, date });
       return opts.claimable ?? true;
     },
+    async claimMonthAlert(_projectName, month, kind) {
+      claims.push({ kind, date: month });
+      return opts.claimable ?? true;
+    },
     listActorsByProject: async () => [],
-    listByProject: async () => [],
+    async listByProject() {
+      if (opts.dayError) {
+        throw opts.dayError;
+      }
+      return opts.month ?? [];
+    },
     listByDateRange: async () => [],
   };
   return {
@@ -160,6 +171,47 @@ describe("assertWithinCostLimit", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("refuses once the month's summed rows reach the monthly block threshold", async () => {
+    const { deps } = fixture({ month: [row({ m: 6 }), row({ m: 5 })] });
+    await expect(
+      assertWithinCostLimit(deps, project({ monthlyBlockThresholdUsd: 10 })),
+    ).rejects.toThrow(CostLimitExceededError);
+  });
+
+  it("allows monthly spend below the monthly block threshold", async () => {
+    const { deps } = fixture({ month: [row({ m: 4 })] });
+    await expect(
+      assertWithinCostLimit(deps, project({ monthlyBlockThresholdUsd: 10 })),
+    ).resolves.toBeUndefined();
+  });
+
+  it("a monthly refusal waits for the month, not midnight", async () => {
+    const { deps } = fixture({ day: row({ m: 20 }), month: [row({ m: 20 })] });
+    const now = new Date("2026-08-09T12:00:00Z");
+    // Both windows are crossed; the monthly Retry-After is the one that is true.
+    const refusal = await assertWithinCostLimit(
+      deps,
+      project({ blockThresholdUsd: 10, monthlyBlockThresholdUsd: 15 }),
+      now,
+    ).then(
+      () => null,
+      (error: CostLimitExceededError) => error,
+    );
+    expect(refusal).toBeInstanceOf(CostLimitExceededError);
+    expect(refusal?.window).toBe("monthly");
+    const monthEnd = Math.ceil((Date.UTC(2026, 8, 1) - now.getTime()) / 1000);
+    expect(refusal?.retryAfterSeconds).toBe(monthEnd);
+  });
+
+  it("fails open when the monthly usage read fails", async () => {
+    const { deps } = fixture({ dayError: new Error("boom") });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      assertWithinCostLimit(deps, project({ monthlyBlockThresholdUsd: 1 })),
+    ).resolves.toBeUndefined();
+    error.mockRestore();
+  });
+
   it("fails open when the usage read fails", async () => {
     const warn = vi.spyOn(console, "error").mockImplementation(() => {});
     const f = fixture({ dayError: new Error("dynamo down") });
@@ -205,6 +257,20 @@ describe("settleCostLimit", () => {
     expect(f.posted[1]?.text).toContain("alert threshold");
   });
 
+  it("claims the monthly threshold on the month, not a day", async () => {
+    const { deps, claims, posted } = fixture({
+      month: [row({ m: 12 })],
+      withSlack: true,
+    });
+    await settleCostLimit(
+      deps,
+      project({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C123" }, true),
+    );
+    expect(claims).toEqual([{ kind: "alert", date: TODAY.slice(0, 7) }]);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.text).toContain("monthly");
+  });
+
   it("stays silent below every threshold", async () => {
     const f = fixture({ day: row({ m: 1 }) });
     await settleCostLimit(f.deps, project({ alertThresholdUsd: 5, blockThresholdUsd: 10 }, true));
@@ -228,6 +294,7 @@ describe("settleCostLimit", () => {
         record: async () => {},
         getDay: async () => row({ m: 5 }),
         claimAlert: async () => true,
+        claimMonthAlert: async () => true,
         listActorsByProject: async () => [],
     listByProject: async () => [],
         listByDateRange: async () => [],

@@ -41,6 +41,7 @@ const usage: UsageRepository = {
   record: async () => {},
   getDay: async () => null,
   claimAlert: async () => false,
+  claimMonthAlert: async () => false,
   listActorsByProject: async () => [],
   listByProject: async () => [],
   listByDateRange: async () => [],

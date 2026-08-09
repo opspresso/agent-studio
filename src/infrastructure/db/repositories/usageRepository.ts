@@ -231,6 +231,41 @@ export class DynamoUsageRepository implements UsageRepository {
     }
   }
 
+  async claimMonthAlert(
+    projectName: string,
+    month: string,
+    kind: CostAlertKind,
+  ): Promise<boolean> {
+    const marker = ALERT_MARKER[kind];
+    try {
+      await getDocumentClient().send(
+        new UpdateCommand({
+          TableName: getTableName(),
+          Key: keys.usageMonthClaim(projectName, month),
+          // Unlike the daily claim, this row does not exist by construction —
+          // the first claim of a month materialises it, retained as long as the
+          // usage rows whose window it closes.
+          ConditionExpression: "attribute_not_exists(#marker)",
+          UpdateExpression:
+            "SET #marker = :now, entityType = if_not_exists(entityType, :et), " +
+            "expiresAt = if_not_exists(expiresAt, :exp)",
+          ExpressionAttributeNames: { "#marker": marker },
+          ExpressionAttributeValues: {
+            ":now": new Date().toISOString(),
+            ":et": "UsageMonthClaim",
+            ":exp": expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays),
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === "ConditionalCheckFailedException") {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   async listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]> {
     const fromKey = keys.usage(projectName, from);
     const toKey = keys.usage(projectName, to);

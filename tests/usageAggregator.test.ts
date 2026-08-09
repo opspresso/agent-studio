@@ -16,6 +16,9 @@ function fakeUsageRepo(onRecord?: (delta: UsageDelta) => void) {
     async claimAlert() {
       return false;
     },
+    async claimMonthAlert() {
+      return false;
+    },
     async listActorsByProject() {
       return [];
     },

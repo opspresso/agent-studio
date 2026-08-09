@@ -100,6 +100,15 @@ export const keys = {
     PK: `USAGE#${projectName}`,
     SK: `DATE#${date}`,
   }),
+  /**
+   * The once-per-month notification claims for the monthly cost thresholds.
+   * Its own row rather than a marker on a daily row, because the instances
+   * crossing the threshold on different days read different daily rows.
+   */
+  usageMonthClaim: (projectName: string, month: string) => ({
+    PK: `USAGE#${projectName}`,
+    SK: `MONTHCLAIM#${month}`,
+  }),
   usageDatePartition: (date: string) => `USAGEDATE#${date}`,
   /**
    * Per-caller daily usage, in the project's usage partition. Date leads the

@@ -212,17 +212,20 @@ opposite directions on purpose**.
 
 ### Daily cost guard — fails open
 
-Per-project UTC-day thresholds, set under **Project Settings → Daily cost limits**:
+Per-project thresholds over two UTC windows, set under **Project Settings → Cost limits**:
 
-- `alertThresholdUsd` — post a notification once, keep running.
-- `blockThresholdUsd` — refuse every run for the rest of the day. Every execution entry point
-  answers `429` with `Retry-After` set to the seconds until 00:00 UTC, which is exactly when
-  the refusal stops being true.
+- `alertThresholdUsd` / `monthlyAlertThresholdUsd` — post a notification once, keep running.
+- `blockThresholdUsd` / `monthlyBlockThresholdUsd` — refuse every run for the rest of the
+  window. Every execution entry point answers `429` with `Retry-After` set to the seconds
+  until the window rolls over — 00:00 UTC for the day, the first of the next month for the
+  month — which is exactly when the refusal stops being true. The month's spend is its daily
+  rows summed: one bounded query, no separate aggregate to drift.
 
 Notifications go to `alertSlackChannel` through the project's own Slack bot, once per
-threshold per day (a conditional write on the usage row, so two instances crossing together
-still post once). **With no channel or no bot configured the thresholds still block** — a
-missing notification path must not disable the guard.
+threshold per window (a conditional write — on the usage row for the day, on a
+`MONTHCLAIM#{yyyy-MM}` row for the month — so two instances crossing together still post
+once). **With no channel or no bot configured the thresholds still block** — a missing
+notification path must not disable the guard.
 
 **What it bounds, and what it does not.** An agent run buffers its usage and flushes once at
 the end, so the check that admits a run cannot see what already-running runs have spent: runs
