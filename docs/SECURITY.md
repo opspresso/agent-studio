@@ -140,15 +140,16 @@ Three secrets this app issues can be read back in plaintext:
 | Secret | Endpoint | Who |
 |---|---|---|
 | App-wide A2A key | `POST /api/settings/a2a-key/reveal` | admin |
+| Named A2A client key | `POST /api/settings/a2a-keys/{name}/reveal` | admin |
 | Project API token | `POST /api/projects/{name}/token/reveal` | owner or admin |
 | Webhook trigger secret | `POST /api/projects/{name}/triggers/{trigger}/reveal` | owner or admin |
 
-All three are **POST although they read**: the response body is a live credential, so it
+All four are **POST although they read**: the response body is a live credential, so it
 stays out of caches, browser history and prefetches. Every reveal leaves an **audit row** with
 the caller's email, and the server-side log line beside it — the row is what a later question
 queries, the line is what survives the audit store itself being unavailable.
 
-These three are therefore stored **encrypted rather than hashed**, which is a deliberate
+These four are therefore stored **encrypted rather than hashed**, which is a deliberate
 trade: the datastore alone is not enough to use one, but the datastore *plus*
 `AES_ENCRYPTION_KEY` is. **Treat that key as the thing standing between a table dump and
 live project credentials.** Project tokens issued before revealing existed are stored as a
@@ -164,6 +165,7 @@ traceable to what it opens:
 | Prefix | Secret |
 |---|---|
 | `asa_` | app-wide A2A key (admin-managed) |
+| `asc_` | named A2A client key (admin-managed) |
 | `ast_` | project API token (owner-managed) |
 | `asw_` | webhook trigger secret (owner-managed) |
 
@@ -188,9 +190,10 @@ Five surfaces authenticate without a session cookie:
 | Schedule scan | `X-Scan-Token` | `timingSafeEqualString` against `SCHEDULE_SCAN_TOKEN`; unset answers 503 |
 
 One sibling carries no credential at all: a published project's A2A **Agent Card**
-(`/.well-known/agent-card.json`) is served to anyone once `A2A_API_KEY` is configured — that
-is what makes the agent discoverable. It exposes the project's name, description and skills;
-invoking the agent still takes the key.
+(`/.well-known/agent-card.json`) is served to anyone once the surface is enabled — a shared
+`A2A_API_KEY` or at least one named client key — because that is what makes the agent
+discoverable, and the A2A handshake starts with the card. It exposes the project's name,
+description and skills; invoking the agent still takes a key.
 
 The trigger secret is compared **before** the enabled flag is read, so a disabled trigger
 cannot answer a wrong secret differently from an enabled one — that difference is an oracle
@@ -365,8 +368,10 @@ receives the masked message.) Review MCP server registrations on their own terms
 
 Detection is regex-based and covers emails, phone numbers, Korean resident/foreigner
 registration numbers (hyphenated form, with the date half validated) and payment card
-numbers (13-19 digits, Luhn-checked so order ids stay untouched). Treat it as best-effort
-masking, not a guarantee. Off is byte-identical to the unfiltered path.
+numbers (13-19 digits, Luhn-checked so an order id is not masked *as a card* — a span that
+fails the check is re-scanned by the other patterns, keeping whatever the phone pattern
+masked before the card entity existed). Treat it as best-effort masking, not a guarantee.
+Off is byte-identical to the unfiltered path.
 
 ## Caller context
 

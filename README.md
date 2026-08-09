@@ -18,7 +18,7 @@ another agent over A2A. Every run is attributed, priced, and bounded.
 | **Agents** | Another project as a local subagent, or an external OpenAI-compatible / A2A endpoint as a remote one. |
 | **Chats** | Private per-owner conversations against an agent project, with tool traffic and images preserved. |
 | **Cost dashboard** | Daily per-project, per-model spend — plus per-caller attribution, because the project catalog is shared. |
-| **Guards** | Per-project daily cost thresholds, per-caller concurrency limits, and a wall-clock deadline on every run. |
+| **Guards** | Per-project daily and monthly cost thresholds, per-caller concurrency limits, and a wall-clock deadline on every run. |
 | **Integrations** | Per-project Slack bots, webhook triggers, and A2A in both directions. |
 
 ## Stack
@@ -170,8 +170,8 @@ Slack text stream — falling back to editing one message where streaming is una
 ### A2A (Agent2Agent)
 
 Both directions of the [A2A protocol](https://a2a-protocol.org) are supported. **Inbound**:
-set `A2A_API_KEY` and every project with a published version serves a public Agent Card plus a
-JSON-RPC endpoint. **Outbound**: register an agent with protocol `A2A` and its Agent Card URL,
+set `A2A_API_KEY` or issue named client keys from Settings, and every project with a
+published version serves a public Agent Card plus a JSON-RPC endpoint. **Outbound**: register an agent with protocol `A2A` and its Agent Card URL,
 then use it as a remote subagent.
 
 Outbound URLs are operator-provided and SSRF-guarded, but any public URL is allowed — register

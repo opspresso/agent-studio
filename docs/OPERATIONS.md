@@ -105,7 +105,7 @@ stop (see [ARCHITECTURE.md](ARCHITECTURE.md#a-run-outlives-its-connection)), so 
 counts runs nobody is watching — a more honest number, but a page full of users reloading no
 longer drops load. Only a Stop press, or the run deadline, ends one early. Abandoned chat runs
 also bill in full and hold a per-caller run slot until they finish; `MAX_CONCURRENT_RUNS_PER_ACTOR`
-and the daily cost guard are what bound that.
+and the cost guard are what bound that.
 
 **Alert on failures and duration, not the gauge.** The gauge says how busy an instance is and
 nothing about whether the work is succeeding or how long it now takes. A cancelled run (a
@@ -162,7 +162,9 @@ also carries the `actor` that caused the run.
 With `OTEL_EXPORTER_OTLP_ENDPOINT` set, every persisted trace is also exported as OTLP spans
 (see [CONFIGURATION.md](CONFIGURATION.md#observability-and-retention)) — same timestamps, the
 app trace id as the `app.trace_id` attribute, and the same bounded metadata. The DynamoDB row
-stays the record; a collector outage costs log lines, never runs.
+stays the record; a collector outage costs `[otel]` log lines (the SDK's internal error
+channel is routed to the app logger), never runs. The export batch is flushed when the
+instance begins draining, so a rollout keeps its last spans.
 
 ## Row retention
 
@@ -210,7 +212,7 @@ is the deliberate division of the work, not an omission. See
 Both hang off the run bracket (`src/application/execution/runBracket.ts`) and **fail in
 opposite directions on purpose**.
 
-### Daily cost guard — fails open
+### Cost guard — fails open
 
 Per-project thresholds over two UTC windows, set under **Project Settings → Cost limits**:
 
@@ -219,7 +221,10 @@ Per-project thresholds over two UTC windows, set under **Project Settings → Co
   window. Every execution entry point answers `429` with `Retry-After` set to the seconds
   until the window rolls over — 00:00 UTC for the day, the first of the next month for the
   month — which is exactly when the refusal stops being true. The month's spend is its daily
-  rows summed: one bounded query, no separate aggregate to drift.
+  rows summed: one bounded query, no separate aggregate to drift — which is why
+  `USAGE_RETENTION_DAYS` has a floor of a full month (see
+  [CONFIGURATION.md](CONFIGURATION.md#observability-and-retention)); rows expiring
+  mid-month would silently under-count the window.
 
 Notifications go to `alertSlackChannel` through the project's own Slack bot, once per
 threshold per window (a conditional write — on the usage row for the day, on a
@@ -230,9 +235,10 @@ notification path must not disable the guard.
 **What it bounds, and what it does not.** An agent run buffers its usage and flushes once at
 the end, so the check that admits a run cannot see what already-running runs have spent: runs
 starting together all pass, and the block becomes true on the check that follows the flush. It
-is a daily backstop against a runaway loop or a heavy caller — not a hard ceiling and not a
-rate limit. Every read or write failure inside it fails open: the guard must not become a
-second way for a storage blip to stop the platform.
+is a per-window backstop against a runaway loop or a heavy caller — not a hard ceiling and
+not a rate limit. Every read or write failure inside it fails open, and each window fails
+open on its own: a throttled month query skips the monthly check, never the daily one. The
+guard must not become a second way for a storage blip to stop the platform.
 
 ### Concurrency guard — fails closed
 
