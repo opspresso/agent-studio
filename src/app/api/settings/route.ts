@@ -21,10 +21,8 @@ const updateSchema = z.object({
     )
     .max(50)
     .optional(),
-  skillsRepo: z.string().max(4000).optional(),
-  skillsRepoBranch: z.string().max(4000).optional(),
-  toolsRepo: z.string().max(4000).optional(),
-  toolsRepoBranch: z.string().max(4000).optional(),
+  pluginsRepo: z.string().max(4000).optional(),
+  pluginsRepoBranch: z.string().max(4000).optional(),
   githubToken: z.string().max(4000).optional(),
   a2aApiKey: z.string().max(4000).optional(),
   publicBaseUrl: z.string().max(4000).optional(),

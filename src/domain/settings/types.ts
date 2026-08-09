@@ -22,10 +22,8 @@ export interface AppSettings {
   llmApiKey?: string;
   /** When set, replaces the whole LLM_PROVIDER_* env-derived provider list. */
   llmProviders?: LlmProviderSetting[];
-  skillsRepo?: string;
-  skillsRepoBranch?: string;
-  toolsRepo?: string;
-  toolsRepoBranch?: string;
+  pluginsRepo?: string;
+  pluginsRepoBranch?: string;
   /** Secret. */
   githubToken?: string;
   /** Secret. */

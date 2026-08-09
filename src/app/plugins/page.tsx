@@ -1,0 +1,132 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
+import { IconPackage } from "@tabler/icons-react";
+import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
+import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { useViewer } from "@/app/_lib/useViewer";
+import {
+  getPluginsSyncConfig,
+  listPlugins,
+  syncPlugins,
+  type Plugin,
+  type PluginsSyncConfig,
+  type PluginSyncResult,
+  type PluginSyncSelection,
+} from "./api";
+
+export default function PluginsPage() {
+  const viewer = useViewer();
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<PluginSyncResult | null>(null);
+  const [syncConfig, setSyncConfig] = useState<PluginsSyncConfig | null>(null);
+
+  async function runSync(selection: PluginSyncSelection = {}) {
+    setSyncResult(await syncPlugins(selection));
+    await refresh();
+  }
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [nextPlugins, config] = await Promise.all([listPlugins(), getPluginsSyncConfig()]);
+      setPlugins(nextPlugins);
+      setSyncConfig(config);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load plugins");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  return (
+    <Stack gap="lg">
+      <CatalogHeader
+        title="Plugins"
+        description="Agent Plugins packages synced from GitHub — each bundles skills and MCP servers."
+        Icon={IconPackage}
+      >
+        {viewer?.isAdmin && (
+          <Button
+            variant="default"
+            loading={syncing}
+            disabled={!syncConfig?.configured}
+            onClick={async () => {
+              setSyncing(true);
+              setSyncResult(null);
+              setError(null);
+              try {
+                await runSync();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Sync failed");
+              } finally {
+                setSyncing(false);
+              }
+            }}
+          >
+            Sync from GitHub
+          </Button>
+        )}
+      </CatalogHeader>
+
+      {syncConfig && (
+        <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
+          {syncConfig.configured
+            ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
+            : "Plugin sync is not configured. Add the repository and token in Settings."}
+        </Text>
+      )}
+
+      {syncResult && <PluginSyncSummary result={syncResult} onApply={runSync} />}
+
+      {error && (
+        <Alert color="red" variant="light">
+          {error}
+        </Alert>
+      )}
+
+      <CardGrid
+        loading={loading}
+        empty={plugins.length === 0}
+        emptyText="No plugins installed. Configure PLUGINS_REPO in Settings and sync."
+      >
+        {plugins.map((plugin) => (
+          <Card key={plugin.name} h="100%">
+            <Group gap="xs" wrap="nowrap">
+              <Text fw={500} truncate>
+                {plugin.name}
+              </Text>
+              {plugin.version && (
+                <Badge size="xs" variant="light">
+                  v{plugin.version}
+                </Badge>
+              )}
+            </Group>
+            {plugin.description && (
+              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                {plugin.description}
+              </Text>
+            )}
+            <Text fz="xs" c="dimmed" mt={8}>
+              {plugin.skills.length} skill{plugin.skills.length === 1 ? "" : "s"} ·{" "}
+              {plugin.mcpServers.length} server{plugin.mcpServers.length === 1 ? "" : "s"}
+            </Text>
+            <Text fz="xs" c="dimmed" mt={2}>
+              synced {new Date(plugin.syncedAt).toLocaleString()} · {plugin.commitSha.slice(0, 7)}
+            </Text>
+          </Card>
+        ))}
+      </CardGrid>
+    </Stack>
+  );
+}

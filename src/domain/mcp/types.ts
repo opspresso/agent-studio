@@ -232,11 +232,12 @@ export interface McpServer {
   content?: string;
   /**
    * Provenance marker for entries created by a repo sync, e.g.
-   * `"github:opspresso/agent-tools"`. Recorded once at creation and never
-   * revisited, because it answers "where did this come from" rather than "who
-   * may change it" — a later sync updates an entry's document fields whatever
-   * this says, and an entry an operator typed by hand is updated the same way if
-   * the repository later carries its name.
+   * `"github:opspresso/agent-plugins#devops"` — the repo and the plugin that
+   * declared it. It answers "where did this come from" and gates what a sync
+   * may offer: an entry with no source was registered by hand and is never
+   * offered for overwrite or deletion, and one whose source names another
+   * origin changes hands only through an operator-selected takeover, which is
+   * the one write that revises this field.
    */
   source?: string;
   /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */

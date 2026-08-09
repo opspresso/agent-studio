@@ -324,19 +324,12 @@ export const config = {
   get publicBaseUrl(): string | undefined {
     return process.env.PUBLIC_BASE_URL || process.env.BETTER_AUTH_URL || undefined;
   },
-  /** GitHub skills source repo, e.g. "opspresso/agent-skills". */
-  get skillsRepo(): string | undefined {
-    return process.env.SKILLS_REPO || undefined;
+  /** GitHub Agent Plugins source repo, e.g. "opspresso/agent-plugins". */
+  get pluginsRepo(): string | undefined {
+    return process.env.PLUGINS_REPO || undefined;
   },
-  get skillsRepoBranch(): string {
-    return process.env.SKILLS_REPO_BRANCH || "main";
-  },
-  /** GitHub tools source repo, e.g. "opspresso/agent-tools". */
-  get toolsRepo(): string | undefined {
-    return process.env.TOOLS_REPO || undefined;
-  },
-  get toolsRepoBranch(): string {
-    return process.env.TOOLS_REPO_BRANCH || "main";
+  get pluginsRepoBranch(): string {
+    return process.env.PLUGINS_REPO_BRANCH || "main";
   },
   get githubToken(): string | undefined {
     return process.env.GITHUB_TOKEN || undefined;

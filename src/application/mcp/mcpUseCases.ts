@@ -26,6 +26,12 @@ export interface UpdateMcpInput {
   description?: string;
   content?: string;
   headers?: Record<string, string>;
+  /**
+   * Provenance takeover — a sync adopting an entry another sync created. Only
+   * the plugin sync passes this; the update route's schema does not accept it,
+   * so an API caller cannot re-badge an entry.
+   */
+  source?: string;
 }
 
 export interface McpUseCases extends RegistryUseCases<McpServer, CreateMcpInput, UpdateMcpInput> {
@@ -117,6 +123,7 @@ export function createMcpUseCases(
         url: patch.url ?? existing.url,
         description: patch.description ?? existing.description,
         content: patch.content ?? existing.content,
+        source: patch.source ?? existing.source,
         headers:
           patch.headers !== undefined
             ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)

@@ -475,7 +475,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(57);
+    expect(entries.length).toBe(58);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -640,13 +640,30 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/parseList.ts",
   },
   {
-    // Two sync paths read a frontmatter block — SKILL.md and TOOL.md — and a
-    // second parser would let the same document mean different things depending
-    // on which repository it came from. The pattern matches the delimiter regex,
-    // which is where a copy starts.
+    // The plugins sync reads a frontmatter block from two document kinds —
+    // SKILL.md and the MCP extension documents — and a second parser would let
+    // the same document mean different things depending on which kind it came
+    // in as. The pattern matches the delimiter regex, which is where a copy
+    // starts.
     what: "parsing a markdown frontmatter block",
     pattern: /\^---\\r\?\\n/,
     owner: "src/shared/frontmatter.ts",
+  },
+  {
+    // The Agent Plugins spec's name rule, which is deliberately not `isSlug`
+    // (periods are legal). The pattern matches the lookahead that encodes the
+    // no-`--`/no-`..` clause — the part a re-spelling would get subtly wrong.
+    what: "the Agent Plugins name rule",
+    pattern: /\(\?!\.\*\(\?:--\|\\\.\\\.\)\)/,
+    owner: "src/domain/plugin/types.ts",
+  },
+  {
+    // Which mcp.json transports this deployment binds. The sync acts on
+    // `classifyMcpJsonServer` and never inspects a `type` literal itself — a
+    // second site testing the literal is a second transport policy.
+    what: "which MCP transports a plugin may bind",
+    pattern: /"streamable-http"/,
+    owner: "src/domain/plugin/types.ts",
   },
   {
     what: "the subagent nesting limit",

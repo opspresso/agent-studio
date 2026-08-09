@@ -1,15 +1,17 @@
 /**
  * The YAML-ish frontmatter block a synced markdown document opens with.
  *
- * Two sync paths read one: a skill's `SKILL.md` needs `description`, a tool's
- * `TOOL.md` needs `description` and `url`. They must agree on what a document
- * says — a second parser would let the same file mean different things
- * depending on which repository it came from — so the block is parsed here and
- * each caller picks the fields it wants out of `fields`.
+ * The plugins sync reads one from two document kinds: a skill's `SKILL.md`
+ * needs `name` and `description`, an MCP extension document needs
+ * `description`. They must agree on what a document says — a second parser
+ * would let the same file mean different things depending on which kind it
+ * came in as — so the block is parsed here and each caller picks the fields
+ * it wants out of `fields`.
  *
  * Deliberately not a YAML implementation. Flat `key: value` lines plus folded
- * and literal scalars are what these documents use; anything else is ignored
- * rather than guessed at.
+ * and literal scalars are what these documents use; anything else — including
+ * the Agent Skills spec's nested `metadata:` map, which nothing here consumes
+ * — is ignored rather than guessed at.
  */
 export interface Frontmatter {
   /** Keys lowercased; values with surrounding quotes stripped. */

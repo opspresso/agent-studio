@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
-import { SyncSummary } from "@/app/_components/SyncSummary";
-import type { RepoSyncResult, SyncSelection } from "@/domain/sync/types";
 import { createSkill, listSkills, type Skill } from "./api";
 import {
   Alert,
@@ -24,46 +22,18 @@ import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { useViewer } from "@/app/_lib/useViewer";
 
-interface SyncConfig {
-  configured: boolean;
-  repo: string | null;
-  branch: string;
-}
-
 export default function SkillsPage() {
   const viewer = useViewer();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
-  const [syncConfig, setSyncConfig] = useState<SyncConfig | null>(null);
-
-  async function runSync(selection: SyncSelection = {}) {
-    const res = await fetch("/api/skills/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(selection),
-    });
-    const data = (await res.json()) as RepoSyncResult & { error?: string };
-    if (!res.ok) {
-      throw new Error(data.error ?? "Sync failed");
-    }
-    setSyncResult(data);
-    await refresh();
-  }
 
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSkills, config] = await Promise.all([
-        listSkills(),
-        fetch("/api/skills/sync").then((res) => res.json() as Promise<SyncConfig>),
-      ]);
-      setSkills(nextSkills);
-      setSyncConfig(config);
+      setSkills(await listSkills());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load skills");
     } finally {
@@ -79,44 +49,11 @@ export default function SkillsPage() {
     <Stack gap="lg">
       <CatalogHeader
         title="Skills"
-        description="Markdown behavior instructions loaded on demand by the agent engine."
+        description="Markdown behavior instructions loaded on demand by the agent engine. Synced skills arrive through Plugins."
         Icon={IconBook2}
       >
-        {viewer?.isAdmin && <Group gap="sm">
-          <Button
-            variant="default"
-            loading={syncing}
-            disabled={!syncConfig?.configured}
-            onClick={async () => {
-              setSyncing(true);
-              setSyncResult(null);
-              setError(null);
-              try {
-                await runSync();
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Sync failed");
-              } finally {
-                setSyncing(false);
-              }
-            }}
-          >
-            Sync from GitHub
-          </Button>
-          <Button onClick={open}>New skill</Button>
-        </Group>}
+        {viewer?.isAdmin && <Button onClick={open}>New skill</Button>}
       </CatalogHeader>
-
-      {syncConfig && (
-        <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
-          {syncConfig.configured
-            ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
-            : "GitHub sync is not configured. Add the repository and token in Settings."}
-        </Text>
-      )}
-
-      {syncResult && (
-        <SyncSummary result={syncResult} label="skill" onApply={runSync} />
-      )}
 
       {error && (
         <Alert color="red" variant="light">

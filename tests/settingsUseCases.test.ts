@@ -20,8 +20,8 @@ const ENV_KEYS = [
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
   "ALLOWED_EMAIL_DOMAINS",
-  "SKILLS_REPO",
-  "SKILLS_REPO_BRANCH",
+  "PLUGINS_REPO",
+  "PLUGINS_REPO_BRANCH",
   "GITHUB_TOKEN",
   "A2A_API_KEY",
   "PUBLIC_BASE_URL",
@@ -76,7 +76,7 @@ describe("settingsUseCases.getView", () => {
       source: "env",
       secret: true,
     });
-    expect(view.fields.skillsRepoBranch).toEqual({
+    expect(view.fields.pluginsRepoBranch).toEqual({
       value: "main",
       source: "default",
       secret: false,
@@ -128,7 +128,7 @@ describe("settingsUseCases.update", () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);
 
-    await useCases.update({ a2aApiKey: "a2a-secret", skillsRepo: "org/repo" }, ADMIN);
+    await useCases.update({ a2aApiKey: "a2a-secret", pluginsRepo: "org/repo" }, ADMIN);
     const storedKey = current()?.a2aApiKey;
     expect(isEncrypted(storedKey ?? "")).toBe(true);
     expect(decryptSecret(storedKey ?? "")).toBe("a2a-secret");
@@ -136,9 +136,9 @@ describe("settingsUseCases.update", () => {
     await useCases.update({ a2aApiKey: "*".repeat("a2a-secret".length) }, ADMIN);
     expect(current()?.a2aApiKey).toBe(storedKey);
 
-    await useCases.update({ a2aApiKey: "", skillsRepo: "" }, ADMIN);
+    await useCases.update({ a2aApiKey: "", pluginsRepo: "" }, ADMIN);
     expect(current()?.a2aApiKey).toBeUndefined();
-    expect(current()?.skillsRepo).toBeUndefined();
+    expect(current()?.pluginsRepo).toBeUndefined();
   });
 
   it("stores an LLM provider override, resolving masked keys from env, and clears on empty list", async () => {

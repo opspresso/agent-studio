@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * `PUT /api/settings` validates with its own zod schema before anything reaches
  * `settingsUseCases.update`, so a key missing from that schema is silently
  * stripped even though `SettingsUpdate` is typed over every `SettingKey`. That
- * happened to `toolsRepo`/`toolsRepoBranch`: the view exposed them and
- * `getToolsRepoConfig` read the stored override, but no request could set it.
- * This pins the schema against the keys the runtime actually consumes.
+ * happened once to the repo-sync keys: the view exposed them and the runtime
+ * read the stored override, but no request could set it. This pins the schema
+ * against the keys the runtime actually consumes.
  */
 const { useCases } = vi.hoisted(() => ({
   useCases: { update: vi.fn(), getView: vi.fn() },
@@ -37,12 +37,10 @@ beforeEach(() => {
 });
 
 describe("PUT /api/settings", () => {
-  it("forwards the repo-sync keys, tools included, to settingsUseCases.update", async () => {
+  it("forwards the plugins-repo keys to settingsUseCases.update", async () => {
     const body = {
-      skillsRepo: "org/skills",
-      skillsRepoBranch: "main",
-      toolsRepo: "org/tools",
-      toolsRepoBranch: "release",
+      pluginsRepo: "org/plugins",
+      pluginsRepoBranch: "release",
     };
     const res = await put(body);
     expect(res.status).toBe(200);
@@ -50,14 +48,14 @@ describe("PUT /api/settings", () => {
   });
 
   it("400s on a malformed body without reaching the use case", async () => {
-    const res = await put({ toolsRepo: 42 });
+    const res = await put({ pluginsRepo: 42 });
     expect(res.status).toBe(400);
     expect(useCases.update).not.toHaveBeenCalled();
   });
 
   it("forwards unknownModelPolicy, which the run bracket reads", async () => {
-    // The same trap toolsRepo fell into: the field exists on AppSettings and the
-    // bracket reads it, so a schema that forgets it makes "refuse" an
+    // The same trap the repo keys fell into: the field exists on AppSettings and
+    // the bracket reads it, so a schema that forgets it makes "refuse" an
     // unreachable setting — a 200 that changed nothing.
     const res = await put({ unknownModelPolicy: "refuse" });
     expect(res.status).toBe(200);
@@ -76,7 +74,7 @@ describe("PUT /api/settings", () => {
     // The page submits every field on every save and tells the operator to clear
     // one to fall back to env. Refusing "" here made the only un-clearable field
     // 400 the whole form, taking every other edit with it.
-    const body = { skillsRepo: "org/skills", unknownModelPolicy: "" };
+    const body = { pluginsRepo: "org/plugins", unknownModelPolicy: "" };
     const res = await put(body);
     expect(res.status).toBe(200);
     expect(useCases.update).toHaveBeenCalledWith(body, "admin@example.com");

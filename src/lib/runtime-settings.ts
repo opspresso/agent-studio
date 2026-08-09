@@ -106,28 +106,15 @@ export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> 
   return parseProviderConfigs(process.env);
 }
 
-export async function getSkillsRepoConfig(): Promise<{
+export async function getPluginsRepoConfig(): Promise<{
   repo: string | undefined;
   branch: string;
   token: string | undefined;
 }> {
   const stored = await loadSettings();
   return {
-    repo: stored?.skillsRepo ?? config.skillsRepo,
-    branch: stored?.skillsRepoBranch ?? config.skillsRepoBranch,
-    token: stored?.githubToken !== undefined ? decryptSecret(stored.githubToken) : config.githubToken,
-  };
-}
-
-export async function getToolsRepoConfig(): Promise<{
-  repo: string | undefined;
-  branch: string;
-  token: string | undefined;
-}> {
-  const stored = await loadSettings();
-  return {
-    repo: stored?.toolsRepo ?? config.toolsRepo,
-    branch: stored?.toolsRepoBranch ?? config.toolsRepoBranch,
+    repo: stored?.pluginsRepo ?? config.pluginsRepo,
+    branch: stored?.pluginsRepoBranch ?? config.pluginsRepoBranch,
     token: stored?.githubToken !== undefined ? decryptSecret(stored.githubToken) : config.githubToken,
   };
 }

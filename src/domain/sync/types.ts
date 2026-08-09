@@ -1,10 +1,11 @@
 /**
  * What a pull of a source repository did, and what it deliberately did not.
  *
- * Skills and MCP tools sync from different repositories into different
- * registries, but they answer the same four questions about every name, so they
- * answer them in the same shape. One vocabulary is what lets the console render
- * both with one component and an operator read both the same way.
+ * The plugin sync answers the same four questions about every name — created,
+ * existing, orphaned, skipped — for two registries at once, so the vocabulary
+ * for one name's answer lives here while the kind-qualified report shapes live
+ * in `domain/plugin/sync.ts`. One vocabulary is what lets the console render
+ * every skip the same way and an operator read them all alike.
  *
  * **A sync never overwrites and never deletes on its own.** It imports what is
  * missing, and for everything else it reports. What a document would change and
@@ -13,20 +14,10 @@
  * made on purpose — so they are carried out only when a caller names them.
  */
 
-/** Names a caller decided to act on, having seen a previous sync's report. */
-export interface SyncSelection {
-  /** Replace these with the repository's version. */
-  overwrite?: string[];
-  /** Delete these from the registry. */
-  remove?: string[];
-}
-
 /** Why a document in the repository produced no entry. */
 export type SyncSkipReason =
   /** The directory name is not a usable entry name. */
   | "bad-name"
-  /** No `url` anywhere: not in the document, and no stored entry to keep one. */
-  | "missing-url"
   /** The URL was refused — the outbound guard, or a malformed address. */
   | "invalid-url"
   /**
@@ -34,13 +25,45 @@ export type SyncSkipReason =
    * port, never typed, so the repository cannot own it.
    */
   | "managed-url"
-  /** The name was taken between reading the registry and writing. */
+  /**
+   * The name is already registered and not this sync's to change — taken
+   * mid-sync, or registered by hand before the repository ever carried it.
+   */
   | "conflict"
   /**
    * The entry synced, but one of its attachment files did not — too large, or a
    * type the collector does not carry. `detail` names the file and the reason.
    */
-  | "attachment";
+  | "attachment"
+  /**
+   * A `plugin.json` or `mcp.json` that could not be used — malformed JSON, a
+   * name outside the spec's rule, a plugin root nested inside another plugin.
+   * `detail` names the file and the fault.
+   */
+  | "invalid-manifest"
+  /**
+   * A SKILL.md that does not conform to the Agent Skills spec: its frontmatter
+   * `name` does not match the directory, or `description` is missing or over
+   * the spec's 1024-character cap.
+   */
+  | "invalid-skill"
+  /**
+   * An mcp.json server whose transport this deployment never runs (`stdio`,
+   * `sse`). The entry is skipped, never executed — the spec expects exactly
+   * this from a client that only speaks streamable HTTP.
+   */
+  | "unsupported-transport"
+  /**
+   * The server synced, but headers it declared in mcp.json were not imported —
+   * a secret does not belong in git, so credentials are set in the console.
+   * `detail` lists the header names only, never a value.
+   */
+  | "headers-dropped"
+  /**
+   * Two plugins in one snapshot claim the same component name. Every claimant
+   * is skipped — tree order must not decide what the registry holds.
+   */
+  | "duplicate-name";
 
 export interface SyncSkip {
   name: string;
@@ -55,31 +78,11 @@ export interface SyncSkip {
  * `differs` names the fields the document would replace, and empty means the two
  * already agree. Nothing is written for one of these unless the caller asks by
  * name — the stored version may be an edit someone made on purpose, and this
- * cannot tell that apart from a document that simply moved on.
+ * cannot tell that apart from a document that simply moved on. A `source` among
+ * the diffs is the takeover signal: the entry was created by another origin,
+ * and an overwrite adopts it, provenance and all.
  */
 export interface SyncExisting {
   name: string;
   differs: string[];
-}
-
-export interface RepoSyncResult {
-  repo: string;
-  commitSha: string;
-  /** Not in the registry, so imported outright. */
-  created: string[];
-  /** In both. Reported, never written to, unless named in `overwrite`. */
-  existing: SyncExisting[];
-  /** Written because the caller named them. */
-  overwritten: string[];
-  /**
-   * Came from this repository and is no longer in it.
-   *
-   * Only entries this sync created carry that provenance, so an entry someone
-   * registered by hand never appears here — it was never the repository's to
-   * miss, and listing it would put a delete prompt next to it forever.
-   */
-  orphaned: string[];
-  /** Deleted because the caller named them. */
-  removed: string[];
-  skipped: SyncSkip[];
 }

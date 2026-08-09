@@ -22,6 +22,7 @@ import {
   IconChevronRight,
   IconFolder,
   IconMessageCircle,
+  IconPackage,
   IconPlus,
   IconRobot,
   IconSettings,
@@ -47,6 +48,7 @@ const NAV_GROUPS = [
   {
     label: "Intelligence",
     items: [
+      { href: "/plugins", label: "Plugins", Icon: IconPackage },
       { href: "/skills", label: "Skills", Icon: IconBook2 },
       { href: "/tools", label: "Tools", Icon: IconTool },
       { href: "/agents", label: "Agents", Icon: IconRobot },

@@ -53,6 +53,8 @@ export const keys = {
   skill: (name: string) => ({ PK: `SKILL#${name}`, SK: "META" }),
   mcp: (name: string) => ({ PK: `MCP#${name}`, SK: "META" }),
   externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
+  /** An installed Agent Plugins package. The name may contain periods — inert in a key. */
+  plugin: (name: string) => ({ PK: `PLUGIN#${name}`, SK: "META" }),
 
   /**
    * A project's triggers and their delivery history, both in the project
@@ -167,6 +169,7 @@ export const keys = {
    */
   a2aClientKeyHash: (tokenHash: string) => ({ PK: `A2AKEYHASH#${tokenHash}`, SK: "META" }),
 
-  typePartition: (entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT" | "SCHEDULE" | "A2ACLIENT") =>
-    `TYPE#${entityType}`,
+  typePartition: (
+    entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT" | "PLUGIN" | "SCHEDULE" | "A2ACLIENT",
+  ) => `TYPE#${entityType}`,
 } as const;

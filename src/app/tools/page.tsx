@@ -3,16 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
-import { SyncSummary } from "@/app/_components/SyncSummary";
-import {
-  createMcp,
-  getToolsSyncConfig,
-  listMcps,
-  syncTools,
-  type McpServer,
-  type RepoSyncResult,
-  type RepoSyncConfig,
-} from "./api";
+import { createMcp, listMcps, type McpServer } from "./api";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import {
   Alert,
@@ -43,17 +34,12 @@ export default function ToolsPage() {
   const [error, setError] = useState<string | null>(null);
   const [registerOpened, register] = useDisclosure(false);
   const [managedOpened, managed] = useDisclosure(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
-  const [syncConfig, setSyncConfig] = useState<RepoSyncConfig | null>(null);
 
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      const [nextServers, config] = await Promise.all([listMcps(), getToolsSyncConfig()]);
-      setServers(nextServers);
-      setSyncConfig(config);
+      setServers(await listMcps());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load MCP servers");
     } finally {
@@ -69,55 +55,16 @@ export default function ToolsPage() {
     <Stack gap="lg">
       <CatalogHeader
         title="Tools"
-        description="MCP servers that expose tools to agents over streamable HTTP."
+        description="MCP servers that expose tools to agents over streamable HTTP. Synced servers arrive through Plugins."
         Icon={IconTool}
       >
         {viewer?.isAdmin && <Group gap="xs">
-          <Button
-            variant="default"
-            loading={syncing}
-            disabled={!syncConfig?.configured}
-            onClick={async () => {
-              setSyncing(true);
-              setSyncResult(null);
-              setError(null);
-              try {
-                setSyncResult(await syncTools());
-                await refresh();
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Sync failed");
-              } finally {
-                setSyncing(false);
-              }
-            }}
-          >
-            Sync from GitHub
-          </Button>
           <Button variant="default" onClick={managed.open}>
             Run managed
           </Button>
           <Button onClick={register.open}>Register MCP</Button>
         </Group>}
       </CatalogHeader>
-
-      {syncConfig && (
-        <Text fz="xs" c={syncConfig.configured ? "dimmed" : "orange"}>
-          {syncConfig.configured
-            ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
-            : "GitHub sync is not configured. Add the repository and token in Settings."}
-        </Text>
-      )}
-
-      {syncResult && (
-        <SyncSummary
-          result={syncResult}
-          label="tool"
-          onApply={async (selection) => {
-            setSyncResult(await syncTools(selection));
-            await refresh();
-          }}
-        />
-      )}
 
       {error && (
         <Alert color="red" variant="light">

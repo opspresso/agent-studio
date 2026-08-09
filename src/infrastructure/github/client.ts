@@ -1,7 +1,8 @@
 /**
- * The GitHub REST access both sync paths need: read a repository's tree, read a
- * blob. Shared so the skills and tools clients cannot disagree about the API
- * version they pin or how a base64 blob is decoded.
+ * The GitHub REST access the plugins sync needs: read a repository's tree,
+ * read a blob. Kept apart from the plugins client so the API version pinned
+ * and how a base64 blob is decoded stay decided once, whatever reads a repo
+ * next.
  */
 
 /** One entry of a recursive git tree listing. */

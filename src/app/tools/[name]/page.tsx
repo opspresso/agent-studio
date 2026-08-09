@@ -236,8 +236,9 @@ export default function McpDetailPage() {
             {server.url}
           </Text>
           {server.source && (
-            // Where the entry came from, not who owns it: a repo sync only ever
-            // creates, so everything on this page is editable and stays edited.
+            // Where the entry came from, not who owns it: a plugins sync never
+            // writes without an operator naming the entry, so everything on
+            // this page is editable and stays edited.
             <Text fz="xs" c="dimmed" mt={4}>
               registered from {server.source}
             </Text>

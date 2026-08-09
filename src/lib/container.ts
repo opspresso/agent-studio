@@ -54,12 +54,13 @@ import { createDockerProvisioner } from "@/infrastructure/mcp/dockerProvisioner"
 import { createMcpAuthUseCases } from "@/application/mcp/mcpAuthUseCases";
 import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
+import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
+import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
+import type { PluginSyncSelection } from "@/domain/plugin/sync";
+import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
-import { syncSkillsFromSnapshot } from "@/application/skill/syncSkills";
-import { syncToolsFromSnapshot } from "@/application/mcp/syncTools";
-import type { SyncSelection } from "@/domain/sync/types";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { CostAlertSlack } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
@@ -77,9 +78,8 @@ import { createMemberUseCases } from "@/application/member/memberUseCases";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
+  getPluginsRepoConfig,
   getPublicBaseUrl,
-  getSkillsRepoConfig,
-  getToolsRepoConfig,
   getUnknownModelPolicy,
   isConfiguredAdmin,
 } from "./runtime-settings";
@@ -249,6 +249,7 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   internalHostSuffixes: config.mcpInternalHostSuffixes,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
+export const pluginUseCases = createPluginUseCases(pluginRepository);
 /**
  * The project slice, which route handlers used to compose for themselves:
  * twenty of them imported `projectRepository` from here to hand it straight
@@ -268,42 +269,29 @@ export const triggerUseCases = createTriggerUseCases({
 export const settingsUseCases = createSettingsUseCases(settingsRepository, secretCipher, process.env, parseProviderConfigs);
 
 /**
- * Pull the skills repo and upsert every SKILL.md. Assembled here so the route
- * never holds a repository — it only decides how failures map to status codes.
- * The caller passes the config it already resolved: reading it again here would
- * be a second settings load, and one that can straddle the cache TTL and pick a
- * different repo than the caller's own guard checked.
+ * Pull the Agent Plugins repo and sync every plugin's skills and MCP servers.
+ * Assembled here so the route never holds a repository — it only decides how
+ * failures map to status codes. The caller passes the config it already
+ * resolved: reading it again here would be a second settings load, and one
+ * that can straddle the cache TTL and pick a different repo than the caller's
+ * own guard checked. Servers go through `mcpUseCases` so a synced entry faces
+ * the same URL guard a typed one does.
  */
-export const syncSkillsFromRepo = async (
-  repoConfig: Awaited<ReturnType<typeof getSkillsRepoConfig>>,
+export const syncPluginsFromRepo = async (
+  repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
   actorEmail: string,
-  selection?: SyncSelection,
+  selection?: PluginSyncSelection,
 ) => {
-  const { fetchSkillsRepoSnapshot } = await import("@/infrastructure/github/skillsRepoClient");
-  return syncSkillsFromSnapshot(
-    skillRepository,
-    skillUseCases,
-    await fetchSkillsRepoSnapshot(repoConfig),
-    actorEmail,
-    selection,
-  );
-};
-
-/**
- * Pull the tools repo and register every TOOL.md that is not registered yet.
- * Assembled here for the same reason the skills sync is, and it goes through
- * `mcpUseCases` rather than the repository so a synced entry faces the same URL
- * guard and header encryption a typed one does.
- */
-export const syncToolsFromRepo = async (
-  repoConfig: Awaited<ReturnType<typeof getToolsRepoConfig>>,
-  actorEmail: string,
-  selection?: SyncSelection,
-) => {
-  const { fetchToolsRepoSnapshot } = await import("@/infrastructure/github/toolsRepoClient");
-  return syncToolsFromSnapshot(
-    mcpUseCases,
-    await fetchToolsRepoSnapshot(repoConfig),
+  const { fetchPluginsRepoSnapshot } = await import("@/infrastructure/github/pluginsRepoClient");
+  return syncPluginsFromSnapshot(
+    {
+      plugins: pluginRepository,
+      pluginRows: pluginUseCases,
+      skillRepo: skillRepository,
+      skills: skillUseCases,
+      mcps: mcpUseCases,
+    },
+    await fetchPluginsRepoSnapshot(repoConfig),
     actorEmail,
     selection,
   );

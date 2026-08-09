@@ -167,7 +167,7 @@ describe("app settings", () => {
   }
 
   it("records which keys were written, and never their values", async () => {
-    await useCases().update({ llmApiKey: "sk-live-secret", toolsRepo: "org/tools" }, ADMIN);
+    await useCases().update({ llmApiKey: "sk-live-secret", pluginsRepo: "org/plugins" }, ADMIN);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       actorEmail: ADMIN,
@@ -175,7 +175,7 @@ describe("app settings", () => {
       target: "settings:app",
     });
     expect(rows[0]?.detail).toContain("llmApiKey");
-    expect(rows[0]?.detail).toContain("toolsRepo");
+    expect(rows[0]?.detail).toContain("pluginsRepo");
     // The row is the record of who moved a credential, not a copy of it.
     expect(JSON.stringify(rows[0])).not.toContain("sk-live-secret");
   });
@@ -190,17 +190,17 @@ describe("app settings", () => {
     // the detail a constant listing them all, which says only "the form was
     // saved" — and "who changed the admin list last quarter" then has no answer.
     const cases = useCases();
-    await cases.update({ toolsRepo: "org/tools", skillsRepo: "org/skills" }, ADMIN);
+    await cases.update({ pluginsRepo: "org/plugins", pluginsRepoBranch: "next" }, ADMIN);
     rows = [];
-    await cases.update({ toolsRepo: "org/tools", skillsRepo: "org/other" }, ADMIN);
-    expect(rows[0]?.detail).toBe("skillsRepo");
+    await cases.update({ pluginsRepo: "org/plugins", pluginsRepoBranch: "other" }, ADMIN);
+    expect(rows[0]?.detail).toBe("pluginsRepoBranch");
   });
 
   it("says so when a save moved nothing", async () => {
     const cases = useCases();
-    await cases.update({ toolsRepo: "org/tools" }, ADMIN);
+    await cases.update({ pluginsRepo: "org/plugins" }, ADMIN);
     rows = [];
-    await cases.update({ toolsRepo: "org/tools" }, ADMIN);
+    await cases.update({ pluginsRepo: "org/plugins" }, ADMIN);
     expect(rows[0]?.detail).toBe("no fields changed");
   });
 
@@ -210,8 +210,8 @@ describe("app settings", () => {
     const cases = useCases();
     await cases.update({ llmApiKey: "sk-live" }, ADMIN);
     rows = [];
-    await cases.update({ llmApiKey: "****", toolsRepo: "org/tools" }, ADMIN);
-    expect(rows[0]?.detail).toBe("toolsRepo");
+    await cases.update({ llmApiKey: "****", pluginsRepo: "org/plugins" }, ADMIN);
+    expect(rows[0]?.detail).toBe("pluginsRepo");
   });
 });
 

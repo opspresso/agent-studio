@@ -80,13 +80,10 @@ const SECTIONS: SectionDef[] = [
     ],
   },
   {
-    // One section because the token is shared: both syncs read GITHUB_TOKEN.
-    title: "GitHub repos",
+    title: "Plugins repo",
     fields: [
-      { key: "skillsRepo", label: "SKILLS_REPO", placeholder: "opspresso/agent-skills" },
-      { key: "skillsRepoBranch", label: "SKILLS_REPO_BRANCH", placeholder: "main" },
-      { key: "toolsRepo", label: "TOOLS_REPO", placeholder: "opspresso/agent-tools" },
-      { key: "toolsRepoBranch", label: "TOOLS_REPO_BRANCH", placeholder: "main" },
+      { key: "pluginsRepo", label: "PLUGINS_REPO", placeholder: "opspresso/agent-plugins" },
+      { key: "pluginsRepoBranch", label: "PLUGINS_REPO_BRANCH", placeholder: "main" },
       { key: "githubToken", label: "GITHUB_TOKEN" },
     ],
   },
