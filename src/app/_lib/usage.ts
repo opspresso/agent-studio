@@ -3,7 +3,14 @@ import { toISODate } from "./dateRange";
 
 export type { UsageRow };
 
-export type GroupBy = "project" | "model" | "provider";
+export type GroupBy = "project" | "model" | "provider" | "department";
+
+/**
+ * The bucket for projects with no `departmentCode`. A visible key rather than a
+ * dropped row: unattributed spend hidden from a chargeback view reads as "the
+ * departments cover everything", which is exactly the claim it cannot make.
+ */
+export const NO_DEPARTMENT_KEY = "(none)";
 
 export interface UsageGroup {
   key: string;
@@ -25,6 +32,13 @@ export function providerOf(model: string): string {
   return index === -1 ? model : model.slice(0, index);
 }
 
+/** The per-project grouping key — the project itself, or its department. */
+function rowKey(row: UsageRow, by: GroupBy, departments?: ReadonlyMap<string, string>): string {
+  return by === "department"
+    ? departments?.get(row.projectName) || NO_DEPARTMENT_KEY
+    : row.projectName;
+}
+
 export function totalCost(items: UsageRow[]): number {
   return items.reduce((sum, row) => sum + sumRecord(row.costUsd), 0);
 }
@@ -33,7 +47,11 @@ export function totalCalls(items: UsageRow[]): number {
   return items.reduce((sum, row) => sum + sumRecord(row.calls), 0);
 }
 
-export function groupUsage(items: UsageRow[], by: GroupBy): UsageGroup[] {
+export function groupUsage(
+  items: UsageRow[],
+  by: GroupBy,
+  departments?: ReadonlyMap<string, string>,
+): UsageGroup[] {
   const map = new Map<string, { cost: number; calls: number }>();
   const add = (key: string, cost: number, calls: number) => {
     const current = map.get(key) ?? { cost: 0, calls: 0 };
@@ -43,8 +61,8 @@ export function groupUsage(items: UsageRow[], by: GroupBy): UsageGroup[] {
   };
 
   for (const row of items) {
-    if (by === "project") {
-      add(row.projectName, sumRecord(row.costUsd), sumRecord(row.calls));
+    if (by === "project" || by === "department") {
+      add(rowKey(row, by, departments), sumRecord(row.costUsd), sumRecord(row.calls));
       continue;
     }
     for (const model of Object.keys(row.calls)) {
@@ -111,6 +129,7 @@ export function buildDailySeries(
   by: GroupBy,
   from: string,
   to: string,
+  departments?: ReadonlyMap<string, string>,
 ): DailySeries {
   const totals = new Map<string, number>();
   const byDate = new Map<string, Map<string, number>>();
@@ -122,8 +141,8 @@ export function buildDailySeries(
   };
 
   for (const row of items) {
-    if (by === "project") {
-      add(row.date, row.projectName, sumRecord(row.costUsd));
+    if (by === "project" || by === "department") {
+      add(row.date, rowKey(row, by, departments), sumRecord(row.costUsd));
       continue;
     }
     for (const model of Object.keys(row.costUsd)) {

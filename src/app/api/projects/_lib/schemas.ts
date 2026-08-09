@@ -13,7 +13,7 @@ export const createProjectSchema = z.object({
   displayName: z.string().min(1),
   description: z.string().default(""),
   projectType: z.enum(["llm", "agent", "image"]),
-  departmentCode: z.string().optional(),
+  departmentCode: z.string().max(64).optional(),
 });
 
 /**
@@ -56,7 +56,7 @@ export const costLimitsSchema = z
 export const updateProjectSchema = z.object({
   displayName: z.string().min(1).optional(),
   description: z.string().optional(),
-  departmentCode: z.string().optional(),
+  departmentCode: z.string().max(64).optional(),
   costLimits: costLimitsSchema.nullable().optional(),
 });
 
