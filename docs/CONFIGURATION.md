@@ -209,7 +209,7 @@ refusal is reported as a skip rather than failing the whole run.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `A2A_API_KEY` | unset | **runtime** | Shared key for inbound A2A JSON-RPC (`X-A2A-Key`). Unset disables the `/api/a2a` endpoints entirely. Issue one from `/settings` rather than inventing it. |
+| `A2A_API_KEY` | unset | **runtime** | Shared key for inbound A2A JSON-RPC (`X-A2A-Key`). The surface is off only when this is unset **and** no named client key exists (`/settings` → Client keys). Issue one from `/settings` rather than inventing it. |
 
 Agent Card URLs are built from `PUBLIC_BASE_URL`.
 
@@ -218,11 +218,11 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
 | `TRACE_SAMPLE_RATE` | `0.1` | — | `0`–`1`, applied to top-level predict and image runs. Agent runs are always traced. Unlike the limits above, an out-of-range value **clamps** into the range rather than falling back — a rate of `2` means "as much as possible" — while a non-numeric one takes the default. Both say so in the log: a sampling rate that quietly became something else is how a deployment reasons from traces it never recorded. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | — | OTLP HTTP base endpoint (`/v1/traces` appended when absent). When set, every trace the platform persists is also exported as OTEL spans, after the DynamoDB write; export failures are logged, never surfaced to the run. Unset means no export at all, and the OTEL SDK is never loaded. |
-| `OTEL_EXPORTER_OTLP_HEADERS` | unset | — | Standard `key=value,key2=value2` form, sent on every OTLP request. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | — | OTLP HTTP base endpoint (`/v1/traces` appended when absent). When set, every trace the platform persists is also exported as OTEL spans, after the DynamoDB write; export failures surface as `[otel]` log lines, never to the run. Unset means no export at all, and the OTEL SDK is never loaded. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | unset | — | Standard `key=value,key2=value2` form, sent on every OTLP request. Case-preserving: the values are collector credentials, and a normalised bearer token would be a different, wrong token. |
 | `SETTINGS_CACHE_TTL_MS` | `5000` | — | In-memory TTL for the settings row. Bounds cross-instance staleness of every runtime override — see [Resolution order](#resolution-order). Floors at `1`, so `0` degrades to the default rather than disabling the cache. |
 | `TRACE_RETENTION_DAYS` | `30` | — | DynamoDB TTL on the row's `expiresAt`. |
-| `USAGE_RETENTION_DAYS` | `400` | — | Kept well beyond the dashboard's 184-day query window. |
+| `USAGE_RETENTION_DAYS` | `400` | — | Kept well beyond the dashboard's 184-day query window. Floors at `31` — a full month — because the monthly cost guard sums the month's daily rows, and a shorter window would silently under-count spend late in the month. |
 | `CHAT_RETENTION_DAYS` | `180` | — | Measured from the chat's last activity. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | Delivery history is an operational log, not a record to keep. |
 | `A2A_TASK_RETENTION_DAYS` | `1` | — | Ephemeral job state, kept just long enough for `tasks/get`/`tasks/cancel` after `message/send`. |

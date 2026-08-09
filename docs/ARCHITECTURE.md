@@ -395,14 +395,17 @@ row with a lease, claimed by a conditional write — so the limit is exact rathe
 two concurrent acquires can overshoot, and a dead instance releases its hold when the lease
 runs out. State is shared rather than per-process for the obvious reason: `runMetrics` counts
 *this* instance's runs, so a limit built on it would multiply by the number of instances.
-`a2a` gets its own ceiling because its actor id is a constant — the inbound key is shared, so
-one identity stands for every machine caller and the per-caller limit would otherwise become
-a cap on the whole A2A surface.
+`a2a` gets its own ceiling because the shared key's actor id is a constant — one identity
+stands for every anonymous machine caller, and the per-caller limit would otherwise become a
+cap on the whole A2A surface. A **named client key** is exactly the case where that reasoning
+does not apply: its actor is one caller, so it takes the ordinary per-caller limit.
 
 The cost guard (`src/application/usage/costGuard.ts`) reads one day's row with a single
-primary-key `GetItem`, sums every model's `costUsd`, and refuses with `CostLimitExceededError`
-— a `RateLimitedError`, so `apiError` emits `Retry-After` set to the seconds until 00:00 UTC,
-which is exactly when the refusal stops being true.
+primary-key `GetItem` — or, when a monthly threshold is configured, one bounded query over
+the month's daily rows, which carries today's row too and so serves both windows in one read
+— sums every model's `costUsd`, and refuses with `CostLimitExceededError` — a
+`RateLimitedError`, so `apiError` emits `Retry-After` set to the seconds until the window
+rolls over, which is exactly when the refusal stops being true.
 
 Operational tuning for both guards is in [OPERATIONS.md](OPERATIONS.md#spend-and-load-guards).
 
@@ -1358,7 +1361,7 @@ spender. `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names one:
 | `user` | email | — |
 | `project-token` | the **owner's** email | A token authenticates as them; the *kind* is what keeps a machine's spend apart from that person's own runs |
 | `slack` | Slack user id | Slack hands over no email, and guessing a mapping would bill the wrong person |
-| `a2a` | the constant `shared-key` | The key is shared, so there is nobody to name |
+| `a2a` | the constant `shared-key`, or the client key's name | The shared key names nobody; a named client key names its holder, so their runs are attributed and bounded per client |
 | `webhook` | `{project}:{triggerId}` | — |
 | `schedule` | `{project}:{triggerId}` | — |
 

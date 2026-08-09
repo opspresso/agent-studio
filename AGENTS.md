@@ -213,7 +213,7 @@ One line each — the linked section is the authority.
   → `src/application/llm/AGENTS.md`, then
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#llm-engine)
 - **Run bracket** — the single owner of what wraps a top-level run: the in-flight metric, the
-  daily cost guard, the per-caller concurrency guard, the correlation id. Exactly four
+  cost guard, the per-caller concurrency guard, the correlation id. Exactly four
   functions admit a run. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
 - **Images** — three drawing paths (an `image` project, an agent run's builtins, an image
@@ -227,7 +227,7 @@ One line each — the linked section is the authority.
   projects are a shared catalog with owner/admin-gated mutations. **`isAdminEmail` and
   `isConfiguredAdmin` are not interchangeable.** →
   [SECURITY.md](docs/SECURITY.md#authorization-model)
-- **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, three revealable via POST.
+- **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, four revealable via POST.
   → [SECURITY.md](docs/SECURITY.md#secrets-at-rest)
 - **Runtime settings** — DB override → env fallback, cached process-locally. Never read those
   env vars directly at dispatch; go through `src/lib/runtime-settings.ts`. →

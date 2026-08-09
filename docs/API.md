@@ -891,11 +891,13 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
                                                          tasks/get, tasks/cancel)
 ```
 
-`GET /api/a2a` lists the published projects exposed over A2A: `enabled` reports whether
-`A2A_API_KEY` is configured, and each project entry carries
-`{ name, displayName, description, cardUrl }`.
+`GET /api/a2a` lists the published projects exposed over A2A: `enabled` reports whether the
+surface is on — a shared `A2A_API_KEY` or at least one named client key — and each project
+entry carries `{ name, displayName, description, cardUrl }`.
 
-Missing key → `503` (not configured) or `401` (mismatch, constant-time compared).
+`503` (not configured) answers only when the surface is off entirely: no shared key **and**
+no client keys. On an enabled surface a wrong or missing key is `401` — the shared key
+compares in constant time, a client key resolves by hash.
 
 The presented key may be the shared `A2A_API_KEY` (runs attributed to `a2a:shared-key`) or a
 **named client key** (`asc_…`, runs attributed to `a2a:{client}` — per-client attribution and
