@@ -218,11 +218,6 @@ export const skillUseCases = createSkillUseCases(skillRepository);
  * The project slice, which route handlers used to compose for themselves:
  * twenty of them imported `projectRepository` from here to hand it straight
  * back to a use case. Composed once now, like every other slice.
- *
- * `versionRefRepos` is declared below for the console's own validation, and the
- * version slice takes the same object — a version's references are checked
- * against the registry, and two lists of which registries those are is how one
- * of them comes to be missing a lookup.
  */
 export const projectUseCases = createProjectUseCases(projectRepository);
 export const apiTokenUseCases = createApiTokenUseCases(projectRepository, secretCipher);
@@ -285,8 +280,13 @@ export const a2aExposureDeps: A2aExposureDeps = {
     (await import("@/infrastructure/a2a/cards")).buildProjectAgentCardUrl(projectName),
 };
 
-/** Slack Web API access for the per-project bot test. */
-export const slackAuthTest = async (botToken: string) =>
+/**
+ * Slack Web API access for the per-project bot test. Module-local for the same
+ * reason as `versionRefRepos`: `projectSlackUseCases` below is the only
+ * consumer now, and leaving it exported preserves exactly the defect the
+ * comment there names — a route picking which client verifies a token.
+ */
+const slackAuthTest = async (botToken: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.authTest(botToken);
 
 /**
@@ -306,8 +306,14 @@ export const projectSlackUseCases = createProjectSlackUseCases({
 export const slackUserProfile = async (botToken: string, userId: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.userProfile(botToken, userId);
 
-/** Registry lookups a version's mcp/skill/subagent references are validated against. */
-export const versionRefRepos = {
+/**
+ * Registry lookups a version's mcp/skill/subagent references are validated
+ * against. Module-local: the version slice below is the only consumer, and an
+ * exported bundle of repositories is the door the factory just closed —
+ * `REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE` bans the two names, not a object
+ * holding them.
+ */
+const versionRefRepos = {
   skills: skillRepository,
   mcps: mcpRepository,
   externalAgents: externalAgentRepository,

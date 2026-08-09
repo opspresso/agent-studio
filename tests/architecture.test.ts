@@ -54,16 +54,27 @@ const STATIC_IMPORT_RE = /(?:^|\n)[ \t]*(?:import|export)\b([^;]*?)from[ \t]*["'
 const INLINE_IMPORT_RE = /\bimport[ \t]*\([ \t]*["']([^"']+)["']/g;
 
 /**
- * The bindings a `{ … }` clause names, with `type` prefixes and `as` aliases
- * stripped. Only the braces: a default or namespace import binds the module
- * rather than a name, and no rule here asks about one.
+ * Every named binding taken from a module, `type` prefixes and `as` aliases
+ * stripped.
  *
  * A *module* is the wrong grain for some questions.
  * `@/application/image/generateImage` exports one use case, so importing it at
  * all is the signal; `@/application/execution/runProject` is the whole execution
  * facade, and "who may start an agent run" asks about one export of it.
+ *
+ * `import * as ns` binds every export at once, so it answers **yes to every
+ * name** rather than none. Returning `[]` for it — which reads reasonable, since
+ * no clause spells a name out — is an escape hatch from both by-name rules
+ * below: `import * as rp from "…/runProject"` then `rp.executeAgent(…)` is a
+ * fourth entry point neither of them can see. Not hypothetical in this codebase,
+ * which already imports the engine that way in two places.
  */
+const NAMESPACE_IMPORT = "*";
+
 function parseNames(clause: string): string[] {
+  if (/\*\s+as\s+\w/.test(clause)) {
+    return [NAMESPACE_IMPORT];
+  }
   const braces = /\{([^}]*)\}/.exec(clause);
   if (!braces?.[1]) {
     return [];
@@ -72,6 +83,11 @@ function parseNames(clause: string): string[] {
     .split(",")
     .map((entry) => entry.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]!.trim())
     .filter((name) => name.length > 0);
+}
+
+/** Does this import bring `name` into scope, whether by clause or wholesale? */
+function bindsName(imported: ModuleImport, name: string): boolean {
+  return imported.names.includes(name) || imported.names.includes(NAMESPACE_IMPORT);
 }
 
 export interface ModuleImport {
@@ -392,29 +408,93 @@ describe("configuration reads", () => {
  * is the shape of every future fix here too — if a client needs it and a use
  * case needs it, it belongs at the bottom of the graph, not across a boundary.
  */
-const CLIENT_DIRECTIVE = /^\s*["']use client["']/;
+/**
+ * A directive may follow comments, and nearly every file here opens with a
+ * docblock. Anchored without `m` this matched only a file whose very first
+ * characters are the directive, so a client component written in the house
+ * style — docblock, then `"use client"` — would have dropped out of the scan
+ * entirely and been free to import anything.
+ */
+const CLIENT_DIRECTIVE = /^\s*(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*["']use client["']/;
+
 const SERVER_ONLY_LAYERS = ["application", "infrastructure"];
 
-describe("client components", () => {
-  const clientFiles = SOURCE_FILES.filter((file) => CLIENT_DIRECTIVE.test(file.text));
+/**
+ * `lib` is not a layer the rule can ban wholesale — `auth-client` is a client
+ * module by construction — so its server half is named instead. Leaving it out
+ * was worse than the hole it was written to close: `@/lib/container` is the
+ * composition root, and a client component importing it ships every DynamoDB
+ * repository, the AES cipher, both LLM channels and the AWS SDK to the browser.
+ * `config` and `runtime-settings` are the same shape for environment values.
+ */
+const CLIENT_SAFE_LIB = ["@/lib/auth-client"];
 
-  // Without this, a renamed directive or a scan that stopped reaching the page
-  // tree would report zero violations and read exactly like a clean pass.
-  it("are found by the scan", () => {
-    expect(clientFiles.length).toBeGreaterThan(0);
+/**
+ * Every module the browser bundle can reach from a client entry point.
+ *
+ * The directive marks an entry, not the boundary. A module with no directive of
+ * its own is compiled into the client bundle as soon as a client component
+ * imports it, and one already sits in exactly that position:
+ * `src/app/projects/lib/api.ts` is imported by ~19 client components and imports
+ * `@/application/trigger/triggerUseCases` — type-only today, therefore erased,
+ * and one word away from not being. Checking only the marked files would have
+ * called that clean.
+ *
+ * Type-only imports are erased and stop the walk. Dynamic imports do not: a
+ * `await import()` is a separate chunk, not an exclusion, and the code still
+ * ships.
+ */
+function clientReachable(entries: typeof SOURCE_FILES): typeof SOURCE_FILES {
+  const seen = new Map<string, (typeof SOURCE_FILES)[number]>();
+  const queue = [...entries];
+  while (queue.length > 0) {
+    const file = queue.pop()!;
+    if (seen.has(file.path)) {
+      continue;
+    }
+    seen.set(file.path, file);
+    for (const imported of parseImports(file.text)) {
+      if (imported.typeOnly) {
+        continue;
+      }
+      const next = fileFor(resolveSpec(imported.spec, file.path));
+      if (next) {
+        queue.push(next);
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
+describe("the client bundle", () => {
+  const entries = SOURCE_FILES.filter((file) => CLIENT_DIRECTIVE.test(file.text));
+  const reachable = clientReachable(entries);
+
+  // A count, not `> 0`: the scan going blind is the failure mode that reads
+  // exactly like a clean pass, and 54 of 55 entries dropping out would have
+  // satisfied the looser assertion. Update this number when a client component
+  // is added or removed — that is the point of it.
+  it("is scanned from every client entry point", () => {
+    expect(entries.length).toBe(55);
+    expect(entries.map((file) => file.path)).toContain(
+      "src/app/projects/[name]/_components/PromptPreview.tsx",
+    );
+    // The directive-less module the reachability walk exists for.
+    expect(reachable.map((file) => file.path)).toContain("src/app/projects/lib/api.ts");
   });
 
-  it("import no application or infrastructure module", () => {
+  it("reaches no application, infrastructure or server-side lib module", () => {
     const found: string[] = [];
-    for (const file of clientFiles) {
+    for (const file of reachable) {
       for (const { spec, typeOnly } of parseImports(file.text)) {
-        // A type import is erased before the bundler sees it, so it ships
-        // nothing. Everything else — including `await import()`, which is a
-        // bundle split rather than a bundle exclusion — counts.
         if (typeOnly) {
           continue;
         }
-        if (SERVER_ONLY_LAYERS.includes(targetLayer(resolveSpec(spec, file.path)) ?? "")) {
+        const resolved = resolveSpec(spec, file.path);
+        const banned =
+          SERVER_ONLY_LAYERS.includes(targetLayer(resolved) ?? "") ||
+          (targetLayer(resolved) === "lib" && !CLIENT_SAFE_LIB.includes(resolved));
+        if (banned) {
           found.push(`${file.path} -> ${spec}`);
         }
       }
@@ -456,7 +536,7 @@ describe("composition in the app layer", () => {
       (file) =>
         layerOf(file.path) === "app" &&
         !wiringSite(file.path) &&
-        parseImports(file.text).some((i) => i.names.includes(name)),
+        parseImports(file.text).some((i) => bindsName(i, name)),
     ).map((file) => file.path);
     expect(found.sort()).toEqual([]);
   });
@@ -465,7 +545,7 @@ describe("composition in the app layer", () => {
     // Otherwise a rename would empty the rule above and read as a clean pass —
     // the same lie the `configuration reads` exception check exists to catch.
     const sites = SOURCE_FILES.filter(
-      (file) => wiringSite(file.path) && parseImports(file.text).some((i) => i.names.includes(name)),
+      (file) => wiringSite(file.path) && parseImports(file.text).some((i) => bindsName(i, name)),
     );
     expect(sites.length).toBeGreaterThan(0);
   });
@@ -911,7 +991,7 @@ describe("agent runs", () => {
         (i) =>
           resolveSpec(i.spec, file.path) === "@/application/execution/runProject" &&
           !i.typeOnly &&
-          i.names.includes("executeAgent"),
+          bindsName(i, "executeAgent"),
       ),
     ).map((file) => file.path);
     expect(callers.sort()).toEqual([...AGENT_RUN_ENTRY_POINTS].sort());
@@ -1132,7 +1212,10 @@ describe("scanner", () => {
         `import React from "react";`,
       ].join("\n"),
     );
-    expect(parsed.map((i) => i.names)).toEqual([["executeAgent", "Deps"], [], []]);
+    // `* as` binds every export, so it answers yes to every by-name query.
+    expect(parsed.map((i) => i.names)).toEqual([["executeAgent", "Deps"], ["*"], []]);
+    expect(bindsName(parsed[1]!, "executeAgent")).toBe(true);
+    expect(bindsName(parsed[2]!, "executeAgent")).toBe(false);
   });
 
   it("flags a banned import that is not on the allowlist", () => {

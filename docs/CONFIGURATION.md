@@ -251,7 +251,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Tool-result text per turn | `200,000` chars | `src/application/llm/engine.ts` |
 | Transfer transcript carried to a subagent | `8,000` chars | `src/application/llm/engine.ts` |
 | Subagent nesting depth | `5` | `src/application/execution/subagentRunner.ts` |
-| MCP tools declared per run | `120` | `src/application/execution/mcpTools.ts` |
+| MCP tools declared per run | `120` | `src/domain/llm/toolLimits.ts` |
 | A single MCP tool result | `100,000` chars | `src/infrastructure/mcp/toolManager.ts` |
 | An MCP server's HTTP response | `2MB` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth metadata / token response | `256KB` each | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |

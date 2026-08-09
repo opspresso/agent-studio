@@ -8,7 +8,10 @@ type RouteContext = { params: Promise<{ name: string }> };
 export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const versions = await versionUseCases.list(name);
-  return Response.json(versions.map(versionUseCases.toView));
+  // Called with one argument on purpose: `map` would otherwise pass the index
+  // and the array too, which is silent today and is not once `toView` grows a
+  // second parameter.
+  return Response.json(versions.map((version) => versionUseCases.toView(version)));
 });
 
 export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {

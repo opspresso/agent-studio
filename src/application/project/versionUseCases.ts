@@ -477,7 +477,35 @@ export interface VersionUseCasesDeps {
   cipher: SecretCipher;
 }
 
-export function createVersionUseCases(deps: VersionUseCasesDeps) {
+/**
+ * Declared rather than inferred, like the other three slices. `toView` is the
+ * member with the least margin for a silently changed shape — it exists to mask
+ * the secrets a response must not carry — and an inferred surface moves that
+ * check from the factory to each of the eight call sites.
+ */
+export interface VersionUseCases {
+  list(projectName: string): Promise<Version[]>;
+  get(projectName: string, versionName: string): Promise<Version>;
+  create(projectName: string, input: CreateVersionInput, userEmail: string): Promise<Version>;
+  update(
+    projectName: string,
+    versionName: string,
+    input: UpdateVersionInput,
+    userEmail: string,
+  ): Promise<Version>;
+  remove(projectName: string, versionName: string, userEmail: string): Promise<void>;
+  publish(projectName: string, versionName: string, userEmail: string): Promise<Project>;
+  /** See {@link resolveDraftMcpBindings} — a preview's masked headers, resolved. */
+  resolveDraftMcpBindings(
+    projectName: string,
+    versionName: string | undefined,
+    bindings: McpBinding[],
+  ): Promise<McpBinding[]>;
+  /** See {@link toVersionView} — masks the secrets a response must not carry. */
+  toView(version: Version): Version;
+}
+
+export function createVersionUseCases(deps: VersionUseCasesDeps): VersionUseCases {
   return {
     list: (projectName: string): Promise<Version[]> => listVersions(deps.versions, projectName),
 
