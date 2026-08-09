@@ -381,7 +381,10 @@ One line each — the linked section is the authority.
   survive), servers go through `mcpUseCases` (that is how every synced URL faces the SSRF
   guard); and headers declared in `mcp.json` are never imported — a secret does not belong
   in git — with the dropped names reported. `stdio`/`sse` servers are reported and skipped,
-  never executed.
+  never executed. The console's side of the same contract is
+  `src/app/api/_lib/repoOwned.ts`, the single owner of the 403 a route answers when asked
+  to edit or delete a repo-owned entry — a route-layer policy on purpose, because the sync
+  reaches the same use cases and must stay able to.
 - **Docs record the current state, not history.** Completed milestones are deleted from
   `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
   accumulate changelogs in comments or docs.

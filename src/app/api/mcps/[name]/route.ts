@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mcpUseCases } from "@/lib/container";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
+import { REPO_OWNED, repoOwnedRefusal } from "@/app/api/_lib/repoOwned";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -28,6 +29,17 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
   }
   try {
     const { name } = await ctx.params;
+    // The repo owns a synced entry's document fields; credentials are this
+    // console's. So a headers-only patch passes — that is where an operator
+    // sets the token a repository must never carry — while url, description
+    // and content are refused.
+    const { url, description, content } = parsed.data;
+    if (url !== undefined || description !== undefined || content !== undefined) {
+      const refused = repoOwnedRefusal(await mcpUseCases.get(parseName(name)), REPO_OWNED.edit);
+      if (refused) {
+        return refused;
+      }
+    }
     return Response.json(await mcpUseCases.update(parseName(name), parsed.data));
   } catch (error) {
     return apiError(error);
@@ -37,6 +49,10 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
 export const DELETE = withAdminAuth(async (user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
+    const refused = repoOwnedRefusal(await mcpUseCases.get(parseName(name)), REPO_OWNED.remove);
+    if (refused) {
+      return refused;
+    }
     await mcpUseCases.remove(parseName(name), user.email);
     return new Response(null, { status: 204 });
   } catch (error) {

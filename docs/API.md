@@ -94,6 +94,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | session / admin |
 | `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | session / admin |
 | `/api/plugins` | `GET` | session |
+| `/api/plugins/{name}` | `GET` | session |
 | `/api/plugins/sync` | `GET` `POST` | session / admin |
 | `/api/mcps/{name}/tools` | `POST` | session |
 | `/api/mcps/{name}/auth` | `POST` `DELETE` | admin |
@@ -159,6 +160,12 @@ DELETE /api/skills/{name}     → 204                     | 404
 - `skills` items may also carry `files?` (attachment files loadable on demand through the
   Skill tool) and `source?` (provenance of a repo-synced entry, e.g.
   `github:opspresso/agent-plugins#devops` — the repo and the plugin that declared it).
+- **A `source`-bearing entry is repo-owned, and the console refuses to compete with the
+  repository over it (`403`)**: a skill's `PUT`/`DELETE` entirely; an MCP entry's `url`,
+  `description`, `content` and its `DELETE` — a headers-only `PUT` still passes, because
+  credentials are console-owned and never in git (OAuth likewise). A managed synced entry
+  keeps its workload fields (`image`, ports, env) editable. Deletion of a repo-owned entry
+  happens through the plugins sync's orphan selection.
 - `projects` mutations are owner-gated (403). `POST /api/projects` body:
 
 ```json

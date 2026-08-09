@@ -72,6 +72,13 @@ export const MCP_RUNTIME_COLOR: Record<McpRuntime, string> = {
   remote: BADGE.neutral,
 };
 
+/**
+ * The plugin a synced entry came from — a kind, shown on skills and tools.
+ * Blue collides with nothing on those pages (`managed` is grape, credentials
+ * teal/yellow), and its other use (`POST`) never shares a page with these.
+ */
+export const PLUGIN_COLOR = "blue";
+
 /** Local project vs. registered external agent, in the subagent picker. */
 export const SUBAGENT_KIND_COLOR: Record<"local" | "remote", string> = {
   local: "violet",

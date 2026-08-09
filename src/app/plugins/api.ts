@@ -14,6 +14,10 @@ export function listPlugins(): Promise<Plugin[]> {
   return fetch("/api/plugins").then((r) => readJson<Plugin[]>(r));
 }
 
+export function getPlugin(name: string): Promise<Plugin> {
+  return fetch(`/api/plugins/${name}`).then((r) => readJson<Plugin>(r));
+}
+
 export function syncPlugins(selection: PluginSyncSelection = {}): Promise<PluginSyncResult> {
   return fetch("/api/plugins/sync", {
     method: "POST",

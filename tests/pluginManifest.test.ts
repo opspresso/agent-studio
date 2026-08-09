@@ -5,6 +5,7 @@ import {
   MCP_JSON_SCHEMA,
   parseMcpJson,
   parsePluginManifest,
+  parsePluginSource,
   PLUGIN_MANIFEST_SCHEMA,
 } from "@/domain/plugin/types";
 
@@ -116,6 +117,32 @@ describe("parseMcpJson", () => {
     ["an array mcpServers", JSON.stringify({ $schema: MCP_JSON_SCHEMA, mcpServers: [] })],
   ])("refuses %s", (_case, raw) => {
     expect(parseMcpJson(raw).ok).toBe(false);
+  });
+});
+
+describe("parsePluginSource", () => {
+  it("reads the sync's provenance format back into its parts", () => {
+    expect(parsePluginSource("github:opspresso/agent-plugins#devops")).toEqual({
+      repo: "opspresso/agent-plugins",
+      plugin: "devops",
+    });
+  });
+
+  it("keeps a period-bearing plugin name whole", () => {
+    expect(parsePluginSource("github:o/r#org.example.tools")).toEqual({
+      repo: "o/r",
+      plugin: "org.example.tools",
+    });
+  });
+
+  it.each([
+    ["the retired single-repo form", "github:opspresso/agent-skills"],
+    ["a non-github source", "s3:bucket#plugin"],
+    ["an empty repo", "github:#plugin"],
+    ["an empty plugin", "github:o/r#"],
+    ["an empty string", ""],
+  ])("answers null for %s", (_case, source) => {
+    expect(parsePluginSource(source)).toBeNull();
   });
 });
 

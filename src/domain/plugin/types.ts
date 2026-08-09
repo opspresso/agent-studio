@@ -165,6 +165,28 @@ export function classifyMcpJsonServer(entry: unknown): McpServerClassification {
 }
 
 /**
+ * Read a component's provenance string — `github:<repo>#<plugin>`, composed
+ * by the plugins sync — back into its parts. Null for anything else,
+ * including the retired single-repo form (`github:<repo>` with no `#`),
+ * which names no plugin. The sync's `repoPrefix` is the writing side of this
+ * format; a change to either must change both.
+ */
+export function parsePluginSource(
+  source: string,
+): { repo: string; plugin: string } | null {
+  if (!source.startsWith("github:")) {
+    return null;
+  }
+  const hash = source.indexOf("#");
+  if (hash < 0) {
+    return null;
+  }
+  const repo = source.slice("github:".length, hash);
+  const plugin = source.slice(hash + 1);
+  return repo !== "" && plugin !== "" ? { repo, plugin } : null;
+}
+
+/**
  * One installed plugin, as a row. Entirely a projection of the repository —
  * nothing on it is operator-authored — which is why the sync upserts it
  * unconditionally where every other registry row needs a named selection.

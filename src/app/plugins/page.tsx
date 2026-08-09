@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
 import { IconPackage } from "@tabler/icons-react";
 import { PluginSyncSummary } from "@/app/_components/PluginSyncSummary";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
 import {
   getPluginsSyncConfig,
@@ -25,6 +27,7 @@ export default function PluginsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<PluginSyncResult | null>(null);
   const [syncConfig, setSyncConfig] = useState<PluginsSyncConfig | null>(null);
+  const [filter, setFilter] = useState("");
 
   async function runSync(selection: PluginSyncSelection = {}) {
     setSyncResult(await syncPlugins(selection));
@@ -95,37 +98,41 @@ export default function PluginsPage() {
         </Alert>
       )}
 
+      {plugins.length > 0 && (
+        <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter plugins…" />
+      )}
+
       <CardGrid
         loading={loading}
         empty={plugins.length === 0}
         emptyText="No plugins installed. Configure PLUGINS_REPO in Settings and sync."
       >
-        {plugins.map((plugin) => (
-          <Card key={plugin.name} h="100%">
-            <Group gap="xs" wrap="nowrap">
-              <Text fw={500} truncate>
-                {plugin.name}
-              </Text>
-              {plugin.version && (
-                <Badge size="xs" variant="light">
-                  v{plugin.version}
-                </Badge>
+        {plugins
+          .filter((plugin) => matchesFilter(filter, plugin.name, plugin.description))
+          .map((plugin) => (
+            <Card key={plugin.name} component={Link} href={`/plugins/${plugin.name}`} h="100%">
+              <Group gap="xs" wrap="nowrap">
+                <Text fw={500} truncate>
+                  {plugin.name}
+                </Text>
+                {plugin.version && (
+                  <Badge size="xs" variant="light">
+                    v{plugin.version}
+                  </Badge>
+                )}
+              </Group>
+              {plugin.description && (
+                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                  {plugin.description}
+                </Text>
               )}
-            </Group>
-            {plugin.description && (
-              <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-                {plugin.description}
+              <Text fz="xs" c="dimmed" mt={8}>
+                {plugin.skills.length} skill{plugin.skills.length === 1 ? "" : "s"} ·{" "}
+                {plugin.mcpServers.length} server{plugin.mcpServers.length === 1 ? "" : "s"} ·
+                synced {new Date(plugin.syncedAt).toLocaleDateString()} · {plugin.commitSha.slice(0, 7)}
               </Text>
-            )}
-            <Text fz="xs" c="dimmed" mt={8}>
-              {plugin.skills.length} skill{plugin.skills.length === 1 ? "" : "s"} ·{" "}
-              {plugin.mcpServers.length} server{plugin.mcpServers.length === 1 ? "" : "s"}
-            </Text>
-            <Text fz="xs" c="dimmed" mt={2}>
-              synced {new Date(plugin.syncedAt).toLocaleString()} · {plugin.commitSha.slice(0, 7)}
-            </Text>
-          </Card>
-        ))}
+            </Card>
+          ))}
       </CardGrid>
     </Stack>
   );

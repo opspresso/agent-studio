@@ -34,8 +34,9 @@ import {
   NumberInput,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
-import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
+import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { CredentialBadges } from "../_components/CredentialBadges";
+import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 
 /**
@@ -212,6 +213,7 @@ export default function McpDetailPage() {
   }
 
   const headerEntries = Object.entries(server.headers);
+  const plugin = server.source ? parsePluginSource(server.source) : null;
 
   return (
     <Stack gap="lg">
@@ -219,11 +221,21 @@ export default function McpDetailPage() {
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          {/* The same two badges the list shows; the detail page had neither. */}
+          {/* The same badges the list shows; the detail page had none. */}
           <Group gap="xs" wrap="wrap">
             <Title order={1} fz="h2">
               {server.name}
             </Title>
+            {plugin && (
+              <Badge
+                color={PLUGIN_COLOR}
+                component={Link}
+                href={`/plugins/${plugin.plugin}`}
+                style={{ cursor: "pointer" }}
+              >
+                {plugin.plugin}
+              </Badge>
+            )}
             {server.runtime === "managed" && (
               <Badge color={MCP_RUNTIME_COLOR.managed}>managed</Badge>
             )}
@@ -239,7 +251,8 @@ export default function McpDetailPage() {
             // The repo owns url/description/content and rewrites them on sync;
             // headers, OAuth and a managed address stay this console's.
             <Text fz="xs" c="dimmed" mt={4}>
-              registered from {server.source} — document fields follow the repo on sync
+              Owned by {server.source} — document fields follow the repo; credentials are set
+              here.
             </Text>
           )}
           {server.runtime === "managed" && (
@@ -289,11 +302,15 @@ export default function McpDetailPage() {
         {!editing && viewer?.isAdmin && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
-              Edit
+              {server.source ? "Edit credentials" : "Edit"}
             </Button>
-            <Button variant="default" color="red" onClick={onDelete}>
-              Delete
-            </Button>
+            {/* A repo-owned entry leaves through the sync's orphan removal,
+                never this button — the API refuses the delete anyway. */}
+            {!server.source && (
+              <Button variant="default" color="red" onClick={onDelete}>
+                Delete
+              </Button>
+            )}
           </Group>
         )}
       </Group>
@@ -603,6 +620,12 @@ function EditMcpForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The repo owns a synced entry's document fields; the console keeps the
+  // credentials and (for managed) the workload. Locked fields are excluded
+  // from the patch too — a disabled input still holds a value, and sending it
+  // would earn the 403 the API answers document edits with.
+  const documentLocked = Boolean(server.source);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -623,10 +646,11 @@ function EditMcpForm({
             .map((arg) => arg.trim())
             .filter(Boolean),
           endpointPath,
-          description,
-          content,
+          ...(documentLocked ? {} : { description, content }),
           headers,
         });
+      } else if (documentLocked) {
+        await updateMcp(server.name, { headers });
       } else {
         await updateMcp(server.name, {
           url,
@@ -715,6 +739,9 @@ function EditMcpForm({
             onChange={(e) => setUrl(e.currentTarget.value)}
             type="url"
             required
+            disabled={documentLocked}
+            {...(documentLocked ? { description: "Owned by the plugin repository." } : {})}
+            inputWrapperOrder={["label", "input", "description", "error"]}
           />
         )}
         <TextInput
@@ -722,6 +749,9 @@ function EditMcpForm({
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           placeholder="One-line summary shown to the model"
+          disabled={documentLocked}
+          {...(documentLocked ? { description: "Owned by the plugin repository." } : {})}
+          inputWrapperOrder={["label", "input", "description", "error"]}
         />
         <Textarea
           label="Content (markdown)"
@@ -729,9 +759,14 @@ function EditMcpForm({
           onChange={(e) => setContent(e.currentTarget.value)}
           placeholder="Setup steps, caveats, links…"
           autosize
-          minRows={8}
+          minRows={documentLocked ? 3 : 8}
           maxRows={30}
-          description="Operator notes for the console. Not sent to the model — only the description is."
+          disabled={documentLocked}
+          description={
+            documentLocked
+              ? "Owned by the plugin repository — edit it there; the sync applies it."
+              : "Operator notes for the console. Not sent to the model — only the description is."
+          }
           inputWrapperOrder={["label", "input", "description", "error"]}
           styles={monoInput}
         />

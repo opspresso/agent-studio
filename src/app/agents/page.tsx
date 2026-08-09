@@ -30,8 +30,9 @@ import {
 import { IconRobot } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
-import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
+import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL, BADGE } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
 
 export default function AgentsPage() {
@@ -41,6 +42,7 @@ export default function AgentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
+  const [filter, setFilter] = useState("");
 
   async function refresh() {
     setLoading(true);
@@ -76,23 +78,37 @@ export default function AgentsPage() {
         </Alert>
       )}
 
+      {agents.length > 0 && (
+        <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter agents…" />
+      )}
+
       <CardGrid loading={loading} empty={agents.length === 0} emptyText="No external agents yet.">
-        {agents.map((agent) => (
-          <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
-            <Group gap="xs">
-              <Text fw={500}>{agent.name}</Text>
-              <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
-                {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
-              </Badge>
-            </Group>
-            <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
-              {agent.description}
-            </Text>
-            <Text fz="xs" c="dimmed" mt="xs" truncate>
-              {agent.url}
-            </Text>
-          </Card>
-        ))}
+        {agents
+          .filter((agent) => matchesFilter(filter, agent.name, agent.description))
+          .map((agent) => {
+            const headerCount = Object.keys(agent.headers).length;
+            return (
+              <Card key={agent.name} component={Link} href={`/agents/${agent.name}`} h="100%">
+                <Group gap="xs">
+                  <Text fw={500}>{agent.name}</Text>
+                  <Badge color={AGENT_PROTOCOL_COLOR[agent.protocol ?? "openai"]}>
+                    {AGENT_PROTOCOL_LABEL[agent.protocol ?? "openai"]}
+                  </Badge>
+                  {headerCount > 0 && (
+                    <Badge color={BADGE.on}>
+                      {headerCount} header{headerCount === 1 ? "" : "s"}
+                    </Badge>
+                  )}
+                </Group>
+                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                  {agent.description}
+                </Text>
+                <Text fz="xs" c="dimmed" mt="xs" truncate>
+                  {agent.url}
+                </Text>
+              </Card>
+            );
+          })}
       </CardGrid>
 
       {!loading && a2aProjects && a2aProjects.projects.length > 0 && (

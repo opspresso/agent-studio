@@ -7,6 +7,7 @@ import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
 import {
   Alert,
   Anchor,
+  Badge,
   Button,
   Card,
   Group,
@@ -17,6 +18,8 @@ import {
   Title,
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
+import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
+import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
 
 export default function SkillDetailPage() {
@@ -82,26 +85,42 @@ export default function SkillDetailPage() {
     return null;
   }
 
+  const plugin = skill.source ? parsePluginSource(skill.source) : null;
+
   return (
     <Stack gap="lg">
       <BackLink />
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
-          <Title order={1} fz="h2">
-            {skill.name}
-          </Title>
+          <Group gap="xs" wrap="nowrap">
+            <Title order={1} fz="h2">
+              {skill.name}
+            </Title>
+            {plugin && (
+              <Badge
+                color={PLUGIN_COLOR}
+                component={Link}
+                href={`/plugins/${plugin.plugin}`}
+                style={{ cursor: "pointer" }}
+              >
+                {plugin.plugin}
+              </Badge>
+            )}
+          </Group>
           <Text fz="sm" c="dimmed" mt={4}>
             {skill.description}
           </Text>
           {skill.source && (
-            <Text fz="xs" c="orange" mt={4}>
-              Synced from {skill.source} — the repository owns it, so a local edit is replaced
-              on the next plugins sync. Change it in the repo.
+            <Text fz="xs" c="dimmed" mt={4}>
+              Owned by {skill.source} — the console cannot edit or delete it. Change it in the
+              repository; the sync applies it.
             </Text>
           )}
         </div>
-        {!editing && viewer?.isAdmin && (
+        {/* A repo-owned skill has no console actions at all: the API refuses
+            them, so offering the buttons would only manufacture a 403. */}
+        {!editing && viewer?.isAdmin && !skill.source && (
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" onClick={() => setEditing(true)}>
               Edit

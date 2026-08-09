@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { syncPluginsFromRepo, pluginUseCases, repoConfig } = vi.hoisted(() => ({
   syncPluginsFromRepo: vi.fn(),
-  pluginUseCases: { list: vi.fn() },
+  pluginUseCases: { list: vi.fn(), get: vi.fn() },
   repoConfig: {
     value: { repo: "opspresso/agent-plugins", branch: "main", token: "gh-token" } as {
       repo: string | undefined;
@@ -14,9 +14,9 @@ const { syncPluginsFromRepo, pluginUseCases, repoConfig } = vi.hoisted(() => ({
 
 vi.mock("@/lib/session", () => ({
   withAuth:
-    (handler: (...args: any[]) => unknown) =>
+    (handler: (user: unknown, ...args: any[]) => unknown) =>
     (...args: any[]) =>
-      handler(...args),
+      handler({ id: "u1", email: "user@example.com", name: "U", image: null }, ...args),
   withAdminAuth:
     (handler: (user: unknown, ...args: any[]) => unknown) =>
     (...args: any[]) =>
@@ -29,6 +29,7 @@ vi.mock("@/lib/runtime-settings", () => ({
 
 const syncRoute = await import("@/app/api/plugins/sync/route");
 const listRoute = await import("@/app/api/plugins/route");
+const detailRoute = await import("@/app/api/plugins/[name]/route");
 
 const post = (body: unknown) =>
   syncRoute.POST(
@@ -106,5 +107,33 @@ describe("GET /api/plugins", () => {
     pluginUseCases.list.mockResolvedValue(rows);
     const res = await listRoute.GET();
     expect(await res.json()).toEqual(rows);
+  });
+});
+
+describe("GET /api/plugins/[name]", () => {
+  const get = (name: string) =>
+    detailRoute.GET(new Request(`https://studio.example.com/api/plugins/${name}`), {
+      params: Promise.resolve({ name }),
+    });
+
+  it("returns the plugin", async () => {
+    const row = { name: "devops", skills: ["gitops"], mcpServers: ["argocd"] };
+    pluginUseCases.get.mockResolvedValue(row);
+    const res = await get("devops");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(row);
+  });
+
+  it("accepts a period-bearing name — the spec allows it, the registry slug does not", async () => {
+    pluginUseCases.get.mockResolvedValue({ name: "org.example.tools" });
+    const res = await get("org.example.tools");
+    expect(res.status).toBe(200);
+    expect(pluginUseCases.get).toHaveBeenCalledWith("org.example.tools");
+  });
+
+  it("400s a name outside the spec's rule without reaching the use case", async () => {
+    const res = await get("Not--Valid");
+    expect(res.status).toBe(400);
+    expect(pluginUseCases.get).not.toHaveBeenCalled();
   });
 });

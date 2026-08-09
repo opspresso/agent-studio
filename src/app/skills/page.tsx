@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
+import { parsePluginSource } from "@/domain/plugin/types";
 import { createSkill, listSkills, type Skill } from "./api";
 import {
   Alert,
+  Badge,
   Button,
   Card,
   Group,
@@ -20,6 +22,8 @@ import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
+import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
 
 export default function SkillsPage() {
@@ -28,6 +32,7 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
+  const [filter, setFilter] = useState("");
 
   async function refresh() {
     setLoading(true);
@@ -61,19 +66,39 @@ export default function SkillsPage() {
         </Alert>
       )}
 
+      {skills.length > 0 && (
+        <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter skills…" />
+      )}
+
       <CardGrid
         loading={loading}
         empty={skills.length === 0}
         emptyText="No skills yet. Create your first one."
       >
-        {skills.map((skill) => (
-          <Card key={skill.name} component={Link} href={`/skills/${skill.name}`} h="100%">
-            <Text fw={500}>{skill.name}</Text>
-            <Text fz="sm" c="dimmed" mt={4} lineClamp={3}>
-              {skill.description}
-            </Text>
-          </Card>
-        ))}
+        {skills
+          .filter((skill) => matchesFilter(filter, skill.name, skill.description))
+          .map((skill) => {
+            const plugin = skill.source ? parsePluginSource(skill.source) : null;
+            const files = skill.files?.length ?? 0;
+            return (
+              <Card key={skill.name} component={Link} href={`/skills/${skill.name}`} h="100%">
+                <Group gap="xs" wrap="nowrap">
+                  <Text fw={500} truncate>
+                    {skill.name}
+                  </Text>
+                  {plugin && <Badge color={PLUGIN_COLOR}>{plugin.plugin}</Badge>}
+                </Group>
+                <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
+                  {skill.description}
+                </Text>
+                {files > 0 && (
+                  <Text fz="xs" c="dimmed" mt={6}>
+                    {files} attachment{files === 1 ? "" : "s"}
+                  </Text>
+                )}
+              </Card>
+            );
+          })}
       </CardGrid>
 
       <CreateSkillModal
