@@ -456,3 +456,69 @@ export async function publishVersion(
   }
   return updated;
 }
+
+/**
+ * The slice bound to its repositories, composed once by the composition root.
+ * See {@link createProjectUseCases} for why both forms exist and which one a
+ * caller should reach for.
+ *
+ * Every entry here bound five to eight positional arguments at the route
+ * boundary, four of which — both repositories, the reference lookups and the
+ * cipher — were the same values on every call. A route was choosing them, which
+ * meant a route could choose them wrongly: `refs` is what stops a version from
+ * storing a dangling skill or subagent reference, and nothing but convention
+ * had every caller passing it.
+ */
+export interface VersionUseCasesDeps {
+  versions: VersionRepository;
+  projects: ProjectRepository;
+  /** Registry lookups a version's references are validated against. */
+  refs: VersionRefRepos;
+  cipher: SecretCipher;
+}
+
+export function createVersionUseCases(deps: VersionUseCasesDeps) {
+  return {
+    list: (projectName: string): Promise<Version[]> => listVersions(deps.versions, projectName),
+
+    get: (projectName: string, versionName: string): Promise<Version> =>
+      getVersion(deps.versions, projectName, versionName),
+
+    create: (projectName: string, input: CreateVersionInput, userEmail: string): Promise<Version> =>
+      createVersion(deps.versions, deps.projects, projectName, input, userEmail, deps.refs, deps.cipher),
+
+    update: (
+      projectName: string,
+      versionName: string,
+      input: UpdateVersionInput,
+      userEmail: string,
+    ): Promise<Version> =>
+      updateVersion(
+        deps.versions,
+        deps.projects,
+        projectName,
+        versionName,
+        input,
+        userEmail,
+        deps.refs,
+        deps.cipher,
+      ),
+
+    remove: (projectName: string, versionName: string, userEmail: string): Promise<void> =>
+      deleteVersion(deps.versions, deps.projects, projectName, versionName, userEmail),
+
+    publish: (projectName: string, versionName: string, userEmail: string): Promise<Project> =>
+      publishVersion(deps.projects, deps.versions, projectName, versionName, userEmail),
+
+    /** See {@link resolveDraftMcpBindings} — a preview's masked headers, resolved. */
+    resolveDraftMcpBindings: (
+      projectName: string,
+      versionName: string | undefined,
+      bindings: McpBinding[],
+    ): Promise<McpBinding[]> =>
+      resolveDraftMcpBindings(deps.versions, deps.cipher, projectName, versionName, bindings),
+
+    /** See {@link toVersionView} — masks the secrets a response must not carry. */
+    toView: (version: Version): Version => toVersionView(deps.cipher, version),
+  };
+}

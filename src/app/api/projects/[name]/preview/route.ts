@@ -1,7 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { executionDeps, projectRepository, secretCipher, versionRepository } from "@/lib/container";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
-import { resolveDraftMcpBindings } from "@/application/project/versionUseCases";
+import { executionDeps, projectUseCases, versionUseCases } from "@/lib/container";
 import { previewPrompt } from "@/application/execution/runProject";
 import { previewPromptSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -25,7 +23,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   }
   const caller = sessionCaller(user);
   try {
-    const project = await assertProjectWritable(projectRepository, name, user.email);
+    const project = await projectUseCases.assertWritable(name, user.email);
     const { variables, versionName, ...draft } = parsed.data;
     const preview = await previewPrompt(executionDeps, {
       project,
@@ -33,13 +31,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
         ...draft,
         // The console echoes overrides masked; the draft's masks resolve
         // against the stored version, exactly as the save path does.
-        mcpList: await resolveDraftMcpBindings(
-          versionRepository,
-          secretCipher,
-          name,
-          versionName,
-          draft.mcpList,
-        ),
+        mcpList: await versionUseCases.resolveDraftMcpBindings(name, versionName, draft.mcpList),
         projectName: name,
         // The draft may not be saved yet, so it has no name or timestamp of its
         // own; neither reaches the assembled prompt.

@@ -207,3 +207,43 @@ export async function deleteProject(
     detail: `owned by ${project.ownerEmail}`,
   });
 }
+
+/**
+ * The slice bound to its repository, composed once by the composition root.
+ *
+ * **Which form to use is not a preference.** A route handler takes the bound
+ * object; a use case that already holds the repository calls the function
+ * directly. The functions above are the implementation, and they stay exported
+ * because `triggerUseCases`, `mcpAuthUseCases` and `projectSlack` each hold a
+ * `ProjectRepository` of their own already — passing it to a sibling inside the
+ * same layer is ordinary, and handing those three a second object holding the
+ * repository they were injected with would be the indirection, not the fix.
+ *
+ * What was not ordinary is that the *presentation* layer supplied it. Twenty
+ * route handlers imported `projectRepository` from the composition root to hand
+ * it back to a use case, which made each of them a wiring site — while
+ * `tests/architecture.test.ts` declares exactly four and the mcp, skill, agent
+ * and trigger slices had none of this. `tests/architecture.test.ts` now keeps
+ * `projectRepository` and `versionRepository` out of `src/app` entirely, so the
+ * split above is enforced rather than remembered.
+ */
+export interface ProjectUseCases {
+  list(): Promise<Project[]>;
+  get(name: string): Promise<Project>;
+  /** See {@link assertProjectWritable} — owner or admin, and the override is recorded. */
+  assertWritable(name: string, userEmail: string): Promise<Project>;
+  create(input: CreateProjectInput): Promise<Project>;
+  update(name: string, input: UpdateProjectInput, userEmail: string): Promise<Project>;
+  remove(name: string, userEmail: string): Promise<void>;
+}
+
+export function createProjectUseCases(projects: ProjectRepository): ProjectUseCases {
+  return {
+    list: () => listProjects(projects),
+    get: (name) => getProject(projects, name),
+    assertWritable: (name, userEmail) => assertProjectWritable(projects, name, userEmail),
+    create: (input) => createProject(projects, input),
+    update: (name, input, userEmail) => updateProject(projects, name, input, userEmail),
+    remove: (name, userEmail) => deleteProject(projects, name, userEmail),
+  };
+}

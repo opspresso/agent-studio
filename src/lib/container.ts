@@ -62,7 +62,10 @@ import type { CostAlertSlack } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
-import { setAdminCheck } from "@/application/project/projectUseCases";
+import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
+import { createVersionUseCases } from "@/application/project/versionUseCases";
+import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
+import { createProjectSlackUseCases } from "@/application/slack/projectSlack";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import { createMemberUseCases } from "@/application/member/memberUseCases";
@@ -211,6 +214,18 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   internalHostSuffixes: config.mcpInternalHostSuffixes,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
+/**
+ * The project slice, which route handlers used to compose for themselves:
+ * twenty of them imported `projectRepository` from here to hand it straight
+ * back to a use case. Composed once now, like every other slice.
+ *
+ * `versionRefRepos` is declared below for the console's own validation, and the
+ * version slice takes the same object — a version's references are checked
+ * against the registry, and two lists of which registries those are is how one
+ * of them comes to be missing a lookup.
+ */
+export const projectUseCases = createProjectUseCases(projectRepository);
+export const apiTokenUseCases = createApiTokenUseCases(projectRepository, secretCipher);
 export const triggerUseCases = createTriggerUseCases({
   triggers: triggerRepository,
   projects: projectRepository,
@@ -274,6 +289,19 @@ export const a2aExposureDeps: A2aExposureDeps = {
 export const slackAuthTest = async (botToken: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.authTest(botToken);
 
+/**
+ * The project-Slack surface, composed here rather than at each of the three
+ * routes that used it — two of which were reaching for `projectRepository` and
+ * `secretCipher` to do it. Below `slackAuthTest` because it binds it: the
+ * client stays deferred, so a route that wanted a project still does not load
+ * it.
+ */
+export const projectSlackUseCases = createProjectSlackUseCases({
+  projects: projectRepository,
+  cipher: secretCipher,
+  authTest: slackAuthTest,
+});
+
 /** Slack profile lookup (cached) for putting a name on a `slack:` usage row. */
 export const slackUserProfile = async (botToken: string, userId: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.userProfile(botToken, userId);
@@ -285,6 +313,13 @@ export const versionRefRepos = {
   externalAgents: externalAgentRepository,
   projects: projectRepository,
 };
+
+export const versionUseCases = createVersionUseCases({
+  versions: versionRepository,
+  projects: projectRepository,
+  refs: versionRefRepos,
+  cipher: secretCipher,
+});
 
 /** Readiness snapshot for the /api/ready probe (DynamoDB + LLM channel). */
 export const readinessReport = () =>

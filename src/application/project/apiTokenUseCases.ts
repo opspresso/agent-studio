@@ -171,3 +171,35 @@ function matches(
   }
   return false;
 }
+
+/**
+ * The slice bound to its repository and cipher, composed once by the
+ * composition root. See {@link createProjectUseCases} for why both forms exist.
+ *
+ * `verify` is deliberately part of it: `executionAuth.ts` is the one place a
+ * raw Bearer token is checked, and it reached for both the repository and the
+ * cipher to do it. That is the composition root's pairing, not a route's — a
+ * surface that could pass a different cipher could verify against something the
+ * token was never encrypted with.
+ */
+export interface ApiTokenUseCases {
+  generate(name: string, userEmail: string): Promise<{ token: string; masked: string; createdAt: string }>;
+  status(name: string, userEmail: string): Promise<ApiTokenStatus>;
+  reveal(name: string, userEmail: string): Promise<{ token: string; createdAt: string }>;
+  revoke(name: string, userEmail: string): Promise<void>;
+  /** The owner's email on a match, `null` on any mismatch or missing token. */
+  verify(name: string, token: string): Promise<string | null>;
+}
+
+export function createApiTokenUseCases(
+  projects: ProjectRepository,
+  cipher: SecretCipher,
+): ApiTokenUseCases {
+  return {
+    generate: (name, userEmail) => generateApiToken(projects, name, userEmail, cipher),
+    status: (name, userEmail) => getApiTokenStatus(projects, name, userEmail),
+    reveal: (name, userEmail) => revealApiToken(projects, name, userEmail, cipher),
+    revoke: (name, userEmail) => revokeApiToken(projects, name, userEmail),
+    verify: (name, token) => verifyProjectApiToken(projects, name, token, cipher),
+  };
+}

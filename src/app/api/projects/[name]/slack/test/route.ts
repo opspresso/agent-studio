@@ -1,6 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, secretCipher, slackAuthTest } from "@/lib/container";
-import { testProjectSlack } from "@/application/slack/projectSlack";
+import { projectSlackUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -8,13 +7,7 @@ type RouteContext = { params: Promise<{ name: string }> };
 export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    const result = await testProjectSlack(
-      projectRepository,
-      name,
-      user.email,
-      secretCipher,
-      slackAuthTest,
-    );
+    const result = await projectSlackUseCases.test(name, user.email);
     if (!result.ok) {
       return Response.json(
         { error: "Slack is not configured or not enabled for this project" },

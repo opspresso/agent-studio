@@ -17,13 +17,21 @@ vi.mock("@/lib/session", () => ({
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
 }));
 
-vi.mock("@/lib/container", () => ({
+vi.mock("@/lib/container", async () => ({
   executionDeps: {},
-  projectRepository: projectRepo,
-  // Referenced by the draft-mask resolution the route hands to
-  // resolveDraftMcpBindings; a draft with no masked overrides never reads them.
-  versionRepository: { get: vi.fn().mockResolvedValue(null) },
-  secretCipher: {},
+  projectUseCases: (
+    await import("@/application/project/projectUseCases")
+  ).createProjectUseCases(projectRepo as never),
+  // `versions` is read by the draft-mask resolution the route delegates to;
+  // a draft with no masked overrides never reaches it.
+  versionUseCases: (
+    await import("@/application/project/versionUseCases")
+  ).createVersionUseCases({
+    versions: { get: vi.fn().mockResolvedValue(null) } as never,
+    projects: projectRepo as never,
+    refs: {} as never,
+    cipher: {} as never,
+  }),
 }));
 
 vi.mock("@/application/execution/runProject", () => ({

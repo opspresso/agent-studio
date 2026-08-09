@@ -1,10 +1,8 @@
 import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
-import { executionDeps, imageDeps, projectRepository, versionRepository } from "@/lib/container";
+import { executionDeps, imageDeps, projectUseCases, versionUseCases } from "@/lib/container";
 import { generateImage } from "@/application/image/generateImage";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
-import { getProject } from "@/application/project/projectUseCases";
-import { getVersion } from "@/application/project/versionUseCases";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -22,8 +20,8 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     return invalidRequest(parsed.error);
   }
   try {
-    const project = await getProject(projectRepository, name);
-    const versionEntity = await getVersion(versionRepository, name, version);
+    const project = await projectUseCases.get(name);
+    const versionEntity = await versionUseCases.get(name, version);
     if (runStrategyFor(project) === "image") {
       const image = await generateImage(imageDeps, {
         project,

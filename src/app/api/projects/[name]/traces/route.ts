@@ -1,6 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, traceRepository } from "@/lib/container";
-import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { projectUseCases, traceRepository } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -24,7 +23,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   try {
     // Traces hold other users' runtime inputs/outputs, so unlike the shared
     // project catalog they are readable only by the owner and by admins.
-    await assertProjectWritable(projectRepository, name, user.email);
+    await projectUseCases.assertWritable(name, user.email);
     return Response.json({ traces: await traceRepository.listByProject(name, { limit, from, to }) });
   } catch (error) {
     return apiError(error);

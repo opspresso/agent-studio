@@ -424,6 +424,54 @@ describe("client components", () => {
 });
 
 /**
+ * Repositories the presentation layer no longer composes.
+ *
+ * The `app` layer is barred from `infrastructure`, so a route reached for a
+ * repository through the composition root instead — and twenty of them did,
+ * importing `projectRepository` only to hand it straight back to
+ * `getProject(projectRepository, name)`. Legal under every rule above, and
+ * still a route handler making a composition decision: which repository, which
+ * cipher, which registry lookups a version's references are validated against.
+ * `refs` is what stops a version storing a dangling skill reference, and nothing
+ * but convention had each caller passing it.
+ *
+ * The mcp, skill, agent, member and trigger slices never had this — they export
+ * a `createXUseCases` factory that the composition root calls once. The project,
+ * version, API-token and project-Slack slices now do too, and the free functions
+ * they wrap stay exported for the application modules that already hold a
+ * repository of their own.
+ *
+ * A name is added to this list when its slice is converted, not before: a
+ * blanket ban would fail on `traceRepository` and `usageRepository`, whose
+ * slices have not been through this yet, and a rule that cannot be satisfied is
+ * a rule that gets deleted.
+ */
+const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = ["projectRepository", "versionRepository"];
+
+describe("composition in the app layer", () => {
+  const wiringSite = (path: string) => APP_WIRING_SITES.some((site) => path.startsWith(site));
+
+  it.each(REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE)("%s reaches no route handler", (name) => {
+    const found = SOURCE_FILES.filter(
+      (file) =>
+        layerOf(file.path) === "app" &&
+        !wiringSite(file.path) &&
+        parseImports(file.text).some((i) => i.names.includes(name)),
+    ).map((file) => file.path);
+    expect(found.sort()).toEqual([]);
+  });
+
+  it.each(REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE)("%s still reaches a wiring site", (name) => {
+    // Otherwise a rename would empty the rule above and read as a clean pass —
+    // the same lie the `configuration reads` exception check exists to catch.
+    const sites = SOURCE_FILES.filter(
+      (file) => wiringSite(file.path) && parseImports(file.text).some((i) => i.names.includes(name)),
+    );
+    expect(sites.length).toBeGreaterThan(0);
+  });
+});
+
+/**
  * Single-owner invariants.
  *
  * The rules above enforce which direction an import may point. They say nothing
