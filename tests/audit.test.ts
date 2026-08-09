@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  assertAuditSinkWired,
   auditTarget,
   recordAudit,
   setAuditSink,
@@ -78,6 +80,49 @@ describe("recordAudit", () => {
     await expect(
       recordAudit({ actorEmail: "a@example.com", action: "project.delete", target: "project:p" }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The no-op above is right for a script and wrong for a server, and only boot
+ * can tell them apart. These pin both halves: that the assertion actually
+ * refuses an unwired process, and that the two sites which wire one still do.
+ *
+ * The second half is the same shape as `configuration reads`'s "still happen
+ * where the exception says they do" — a wiring site that quietly stopped wiring
+ * would leave the assertion reading stricter than the system is, which is the
+ * same lie as no assertion at all.
+ */
+describe("the audit sink at boot", () => {
+  it("refuses a process that would record nothing", () => {
+    setAuditSink(undefined);
+    expect(() => assertAuditSinkWired()).toThrow(/not wired/);
+  });
+
+  it("passes once a sink is wired", () => {
+    setAuditSink(memorySink());
+    expect(() => assertAuditSinkWired()).not.toThrow();
+  });
+
+  it.each([
+    // The awaited boot path, for the routes that never import the root — the
+    // A2A-key reveal needs nothing from it.
+    "src/instrumentation.ts",
+    // The processes with no instrumentation hook: the scripts and the
+    // integration check compose the container and nothing else.
+    "src/lib/container.ts",
+  ])("%s still wires one", (path) => {
+    expect(readFileSync(new URL(`../${path}`, import.meta.url), "utf8")).toContain(
+      "setAuditSink(",
+    );
+  });
+
+  it("is asserted on the awaited boot path", () => {
+    // Wiring without reading back is what left the gap: the push can land on a
+    // different module instance than the one every route reads.
+    expect(readFileSync(new URL("../src/instrumentation.ts", import.meta.url), "utf8")).toContain(
+      "assertAuditSinkWired()",
+    );
   });
 });
 
