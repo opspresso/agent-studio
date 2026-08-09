@@ -60,11 +60,18 @@ export function auditSink(): AuditRepository | undefined {
  *
  * Boot is the only place it can be caught. `recordAudit` cannot refuse the act
  * it is recording — audit is a record, not a precondition, which is why a failed
- * *write* is logged and swallowed. An unwired sink is not a failed write: it is
- * a structural defect, and the realistic cause is module identity (a second copy
- * of this module in a bundle, so the push lands on a different `let`) rather
- * than a forgotten call. Silent and total is exactly what a boot assertion is
- * for, and `instrumentation.ts` already fails fast on the other guardrails.
+ * *write* is logged and swallowed. An unwired sink is not a failed write, it is
+ * a structural defect, and `instrumentation.ts` already fails fast on the other
+ * guardrails.
+ *
+ * **What it actually proves is narrow, and worth stating exactly.** The caller
+ * reads this back through the same module instance it pushed to, so it cannot
+ * see a *second copy* of this module — the one every route imports — being left
+ * empty. Nothing in-process can: a duplicate is a different `let`, reachable
+ * only through a different import graph. What it does catch is the sink being
+ * pushed as a falsy value — an adapter whose export failed to initialise, a
+ * barrel that resolved to `undefined` — which otherwise surfaces as silence at
+ * the first audited act instead of a refusal at boot.
  */
 export function assertAuditSinkWired(): void {
   if (!sink) {

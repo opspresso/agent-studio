@@ -73,12 +73,12 @@ export async function register(): Promise<void> {
       import("@/infrastructure/db/repositories/auditRepository"),
     ]);
     setAuditSink(auditRepository);
-    // Reads back what the push landed on, which is not the tautology it looks
-    // like: the two are the same `let` only if both sides resolved the same
-    // module instance. A bundle that ends up with two copies leaves this one
-    // wired and the one every route imports empty — a server that records
-    // nothing and says nothing about it. Fails fast here, beside the config
-    // guardrails, because there is no later moment that could notice.
+    // Refuses the boot if that push did not take — an adapter export that failed
+    // to initialise, a barrel resolving to `undefined`. Narrow on purpose, and
+    // the docblock says why: read back through the same module instance it was
+    // pushed to, this cannot see a *duplicate* of that module left empty, and
+    // nothing in-process can. Without it the same defect is silent until the
+    // first audited act, which writes nothing and says nothing.
     assertAuditSinkWired();
     // The import is inside the guard so the edge build folds it away, and off
     // the awaited path because evaluating the composition root constructs every

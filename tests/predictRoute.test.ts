@@ -12,6 +12,13 @@ const { projectRepo, versionRepo, calls } = vi.hoisted(() => ({
 vi.mock("@/lib/container", async () => ({
   executionDeps: {},
   imageDeps: {},
+  // `executionAuth` is loaded for real through `importOriginal` below, and it
+  // imports this. Only `authenticateExecution` is overridden, so narrowing that
+  // override would otherwise fail on an undefined binding rather than say what
+  // is missing.
+  apiTokenUseCases: (
+    await import("@/application/project/apiTokenUseCases")
+  ).createApiTokenUseCases({ getApiToken: async () => null } as never, {} as never),
   projectUseCases: (
     await import("@/application/project/projectUseCases")
   ).createProjectUseCases(projectRepo as never),
