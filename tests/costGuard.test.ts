@@ -63,6 +63,8 @@ function fixture(
     dayError?: Error;
     /** The month's daily rows, returned by `listByProject`. */
     month?: UsageRow[];
+    /** Fails only the month query, so the windows can fail independently. */
+    monthError?: Error;
     claimable?: boolean;
     withSlack?: boolean;
   } = {},
@@ -87,8 +89,8 @@ function fixture(
     },
     listActorsByProject: async () => [],
     async listByProject() {
-      if (opts.dayError) {
-        throw opts.dayError;
+      if (opts.monthError) {
+        throw opts.monthError;
       }
       return opts.month ?? [];
     },
@@ -204,7 +206,7 @@ describe("assertWithinCostLimit", () => {
   });
 
   it("fails open when the monthly usage read fails", async () => {
-    const { deps } = fixture({ dayError: new Error("boom") });
+    const { deps } = fixture({ monthError: new Error("boom") });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
       assertWithinCostLimit(deps, project({ monthlyBlockThresholdUsd: 1 })),
@@ -219,6 +221,35 @@ describe("assertWithinCostLimit", () => {
       assertWithinCostLimit(f.deps, project({ blockThresholdUsd: 1 })),
     ).resolves.toBeUndefined();
     warn.mockRestore();
+  });
+
+  it("a failed month read does not silence the daily check", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { deps } = fixture({ monthError: new Error("throttled"), day: row({ m: 400 }) });
+    const refusal = await assertWithinCostLimit(
+      deps,
+      project({ blockThresholdUsd: 50, monthlyBlockThresholdUsd: 500 }),
+    ).then(
+      () => null,
+      (e: CostLimitExceededError) => e,
+    );
+    // The month query failing open must not admit a run the daily window refuses.
+    expect(refusal).toBeInstanceOf(CostLimitExceededError);
+    expect(refusal?.window).toBe("daily");
+    error.mockRestore();
+  });
+
+  it("refuses on the daily threshold from the month's rows without a second read", async () => {
+    const { deps } = fixture({ dayError: new Error("must not be read"), month: [row({ m: 20 })] });
+    const refusal = await assertWithinCostLimit(
+      deps,
+      project({ blockThresholdUsd: 10, monthlyBlockThresholdUsd: 100 }),
+    ).then(
+      () => null,
+      (e: CostLimitExceededError) => e,
+    );
+    expect(refusal).toBeInstanceOf(CostLimitExceededError);
+    expect(refusal?.window).toBe("daily");
   });
 });
 
@@ -269,6 +300,41 @@ describe("settleCostLimit", () => {
     expect(claims).toEqual([{ kind: "alert", date: TODAY.slice(0, 7) }]);
     expect(posted).toHaveLength(1);
     expect(posted[0]?.text).toContain("monthly");
+  });
+
+  it("settles a monthly-only project without reading the day row", async () => {
+    const f = fixture({ dayError: new Error("must not be read"), month: [row({ m: 12 })] });
+    await settleCostLimit(
+      f.deps,
+      project({ monthlyAlertThresholdUsd: 10, alertSlackChannel: "C1" }, true),
+    );
+    expect(f.claims).toEqual([{ kind: "alert", date: TODAY.slice(0, 7) }]);
+  });
+
+  it("derives the day from the month's rows rather than reading twice", async () => {
+    const f = fixture({ dayError: new Error("must not be read"), month: [row({ m: 20 })] });
+    await settleCostLimit(
+      f.deps,
+      project({ alertThresholdUsd: 5, monthlyAlertThresholdUsd: 100, alertSlackChannel: "C1" }, true),
+    );
+    // The daily alert fired from the month's rows; `getDay` was never called.
+    expect(f.claims).toEqual([{ kind: "alert", date: TODAY }]);
+  });
+
+  it("a failed month read does not swallow the daily notification", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // The month query fails; the daily window falls back to its own read and
+    // still announces its crossed threshold.
+    const f = fixture({ monthError: new Error("boom"), day: row({ m: 5 }) });
+    await settleCostLimit(
+      f.deps,
+      project(
+        { alertThresholdUsd: 4, monthlyAlertThresholdUsd: 100, alertSlackChannel: "C1" },
+        true,
+      ),
+    );
+    expect(f.claims).toEqual([{ kind: "alert", date: TODAY }]);
+    error.mockRestore();
   });
 
   it("stays silent below every threshold", async () => {

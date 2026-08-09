@@ -23,9 +23,9 @@
 import type { Project } from "@/domain/project/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
+import type { UsageRow } from "@/domain/usage/types";
 import { RateLimitedError } from "@/application/errors";
 import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
-import { todayUtc } from "./recordUsage";
 import { utcDay, utcMonth } from "@/shared/date";
 import { log } from "@/shared/logger";
 
@@ -113,25 +113,31 @@ async function spentToday(
   deps: CostGuardDeps,
   projectName: string,
   date: string,
-): Promise<number | null> {
+): Promise<number> {
   const row = await deps.usage.getDay(projectName, date);
-  if (!row) {
-    return 0;
-  }
-  return sumCost(row.costUsd);
+  return row ? sumCost(row.costUsd) : 0;
 }
 
 /**
- * Total USD spent this UTC month so far — the month's daily rows summed, one
- * bounded query over at most 31 rows in the project's own partition.
+ * The month's daily rows — one bounded query over at most 31 rows in the
+ * project's own partition. The result carries today's row too, so a caller that
+ * needs both windows reads once.
  */
-async function spentThisMonth(
+async function monthRowsFor(
   deps: CostGuardDeps,
   projectName: string,
   now: Date,
-): Promise<number> {
-  const rows = await deps.usage.listByProject(projectName, `${utcMonth(now)}-01`, utcDay(now));
+): Promise<UsageRow[]> {
+  return deps.usage.listByProject(projectName, `${utcMonth(now)}-01`, utcDay(now));
+}
+
+function sumRows(rows: UsageRow[]): number {
   return rows.reduce((sum, row) => sum + sumCost(row.costUsd), 0);
+}
+
+function dayFromMonthRows(rows: UsageRow[], date: string): number {
+  const todayRow = rows.find((row) => row.date === date);
+  return todayRow ? sumCost(todayRow.costUsd) : 0;
 }
 
 /** True when the project has no guard configured — the common case, and free. */
@@ -162,12 +168,25 @@ export async function assertWithinCostLimit(
   if (dailyLimit === undefined && monthlyLimit === undefined) {
     return;
   }
-  try {
-    // The monthly window is checked first: when both are crossed, its
-    // `Retry-After` is the one that is true — a caller told to come back at
-    // midnight would only be refused again.
-    if (monthlyLimit !== undefined) {
-      const spent = await spentThisMonth(deps, project.name, now);
+  const today = utcDay(now);
+
+  // The monthly window is checked first: when both are crossed, its
+  // `Retry-After` is the one that is true — a caller told to come back at
+  // midnight would only be refused again. Each window fails open on its own:
+  // a throttled month query must not take the daily check down with it.
+  let monthRows: UsageRow[] | null = null;
+  if (monthlyLimit !== undefined) {
+    try {
+      monthRows = await monthRowsFor(deps, project.name, now);
+    } catch (error) {
+      log.error(
+        "cost-guard",
+        `could not read month spend for "${project.name}"; skipping the monthly check`,
+        error,
+      );
+    }
+    if (monthRows) {
+      const spent = sumRows(monthRows);
       if (spent >= monthlyLimit) {
         throw new CostLimitExceededError(
           project.name,
@@ -178,24 +197,29 @@ export async function assertWithinCostLimit(
         );
       }
     }
-    if (dailyLimit !== undefined) {
-      const spent = await spentToday(deps, project.name, todayUtc());
-      if (spent !== null && spent >= dailyLimit) {
-        throw new CostLimitExceededError(
-          project.name,
-          spent,
-          dailyLimit,
-          secondsUntilUtcMidnight(now),
+  }
+
+  if (dailyLimit !== undefined) {
+    let spent: number | null = null;
+    if (monthRows) {
+      // The month's rows include today's; a second read would fetch the same row.
+      spent = dayFromMonthRows(monthRows, today);
+    } else {
+      try {
+        spent = await spentToday(deps, project.name, today);
+      } catch (error) {
+        // Fail open: the guard exists to bound spend, not to be a second way
+        // for a storage blip to take the platform down.
+        log.error(
+          "cost-guard",
+          `could not read spend for "${project.name}"; allowing the run`,
+          error,
         );
       }
     }
-  } catch (error) {
-    if (error instanceof CostLimitExceededError) {
-      throw error;
+    if (spent !== null && spent >= dailyLimit) {
+      throw new CostLimitExceededError(project.name, spent, dailyLimit, secondsUntilUtcMidnight(now));
     }
-    // Fail open: the guard exists to bound spend, not to be a second way for a
-    // storage blip to take the platform down.
-    log.error("cost-guard", `could not read spend for "${project.name}"; allowing the run`, error);
   }
 }
 
@@ -215,27 +239,49 @@ export async function settleCostLimit(
     return;
   }
   const limits = project.costLimits!;
-  const date = todayUtc();
-  try {
-    const spent = await spentToday(deps, project.name, date);
-    if (spent === null) {
-      return;
+  const date = utcDay(now);
+  const wantsDaily =
+    limits.blockThresholdUsd !== undefined || limits.alertThresholdUsd !== undefined;
+  const wantsMonthly =
+    limits.monthlyBlockThresholdUsd !== undefined || limits.monthlyAlertThresholdUsd !== undefined;
+
+  // One read per window it needs — the month's rows already carry today's, so a
+  // project with both windows configured reads once and a monthly-only project
+  // never touches the day row. Each window settles in its own try: a failed
+  // daily read must not swallow the monthly notification, which may be the only
+  // announcement that runs are now refused.
+  let monthRows: UsageRow[] | null = null;
+  if (wantsMonthly) {
+    try {
+      monthRows = await monthRowsFor(deps, project.name, now);
+    } catch (error) {
+      log.error("cost-guard", `settle could not read month spend for "${project.name}"`, error);
     }
-    // Block is reported ahead of alert: once spend is past both, the fact that
-    // runs are now refused is the more urgent of the two, and each threshold
-    // keeps its own claim so neither swallows the other.
-    if (limits.blockThresholdUsd !== undefined && spent >= limits.blockThresholdUsd) {
-      await notifyOnce(deps, project, "daily", date, "block", spent, limits.blockThresholdUsd);
+  }
+
+  if (wantsDaily) {
+    try {
+      const spent = monthRows
+        ? dayFromMonthRows(monthRows, date)
+        : await spentToday(deps, project.name, date);
+      // Block is reported ahead of alert: once spend is past both, the fact that
+      // runs are now refused is the more urgent of the two, and each threshold
+      // keeps its own claim so neither swallows the other.
+      if (limits.blockThresholdUsd !== undefined && spent >= limits.blockThresholdUsd) {
+        await notifyOnce(deps, project, "daily", date, "block", spent, limits.blockThresholdUsd);
+      }
+      if (limits.alertThresholdUsd !== undefined && spent >= limits.alertThresholdUsd) {
+        await notifyOnce(deps, project, "daily", date, "alert", spent, limits.alertThresholdUsd);
+      }
+    } catch (error) {
+      log.error("cost-guard", `settle failed for "${project.name}" (daily)`, error);
     }
-    if (limits.alertThresholdUsd !== undefined && spent >= limits.alertThresholdUsd) {
-      await notifyOnce(deps, project, "daily", date, "alert", spent, limits.alertThresholdUsd);
-    }
-    if (
-      limits.monthlyBlockThresholdUsd !== undefined ||
-      limits.monthlyAlertThresholdUsd !== undefined
-    ) {
+  }
+
+  if (monthRows) {
+    try {
       const month = utcMonth(now);
-      const monthSpent = await spentThisMonth(deps, project.name, now);
+      const monthSpent = sumRows(monthRows);
       if (
         limits.monthlyBlockThresholdUsd !== undefined &&
         monthSpent >= limits.monthlyBlockThresholdUsd
@@ -264,9 +310,9 @@ export async function settleCostLimit(
           limits.monthlyAlertThresholdUsd,
         );
       }
+    } catch (error) {
+      log.error("cost-guard", `settle failed for "${project.name}" (monthly)`, error);
     }
-  } catch (error) {
-    log.error("cost-guard", `settle failed for "${project.name}"`, error);
   }
 }
 
