@@ -756,10 +756,32 @@ subagent can only answer it mid-stream, so it does, as an authored `error` chunk
 resolved model's provider implements the *edit* endpoint is unknowable until dispatch, which
 is why that refusal is a tool-result error rather than a hidden tool.
 
+**The port states an intent; the adapter speaks each provider's dialect.** Unlike Chat
+Completions — a de-facto standard every provider implements, which is why
+`src/infrastructure/llm/channel.ts` has no provider branch at all — the Images API is *not*
+one shape. `size` and `quality` on the port are the vocabulary the tool schema offers the
+model, and a model knows nothing about which provider will serve it; translating them is
+`src/infrastructure/llm/imageChannel.ts`'s job, and it is the one reader of
+`ResolvedTarget.providerName`. xAI names the same intent `aspect_ratio` + `resolution`,
+**refuses** unknown arguments rather than ignoring them (`400 Argument not supported: size`),
+defaults `response_format` to a URL this adapter cannot use, and takes edits as
+`application/json` only — its API documents the OpenAI SDK's multipart `images.edit()` as
+unsupported, so that one call is hand-rolled over `fetch`. A provider added here needs its
+dialect checked, not assumed: `tests/imageChannelAdapter.test.ts` pins each one's wire form.
+
+**The mime type is read, never assumed.** It used to be hardcoded `image/png`, which held only
+because that is OpenAI's default output format; xAI answers JPEG. The value is not cosmetic —
+it becomes the S3 object's extension and `Content-Type` under an immutable cache header, the
+`data:` prefix on bytes handed back to a *second* model, the Slack upload's filename and the
+A2A artifact's type.
+
 **Usage collapses in exactly one place.** An image model bills three token counts and a usage
 row carries two; `toImageUsageRecord` (`src/domain/llm/models.ts`) owns that collapse for all
-three paths. Recording it is telemetry — the provider has already drawn and billed the image,
-so a failed write is logged rather than turned into a 500 that throws the result away.
+three paths. A provider that reports no token counts at all — xAI prices these per image and
+says so as `cost_in_usd_ticks` — records zeros, and `calculateImageCost` falls back to the
+registry's `perImage`, which is what is actually billed. Recording it is telemetry — the
+provider has already drawn and billed the image, so a failed write is logged rather than
+turned into a 500 that throws the result away.
 
 **Where the bytes go is the consumer's decision, not the engine's.** The same `image` chunk
 reaches every surface — how to read one is in the [EngineChunk contract](#enginechunk-contract)

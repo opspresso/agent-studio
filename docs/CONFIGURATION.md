@@ -81,6 +81,13 @@ All traffic speaks the OpenAI Chat Completions protocol. Model ids are `provider
 | `LLM_API_KEY` | — (required) | **runtime** | Credential for that channel. |
 | `LLM_PROVIDER_<NAME>_BASE_URL` | unset | **runtime** | Registers a per-provider channel. `<NAME>` is the model id's provider prefix, upper-cased. The registry's providers are `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`; the env parser accepts any `[A-Z0-9_]+` name, but a channel outside that list can never match a model id — the `/settings` override path refuses one outright. |
 | `LLM_PROVIDER_<NAME>_API_KEY` | unset | **runtime** | Credential for that channel. |
+
+> A base URL must include the API version path the provider serves from — the adapters append
+> `/chat/completions` and `/images/generations` to it verbatim. `https://api.x.ai` instead of
+> `https://api.x.ai/v1` makes **every** call to that provider a 404, text and image alike, and
+> the symptom is a tool result reading `The requested resource was not found`. `pnpm
+> check-models` reports each channel's reachability, which is the fastest way to see it.
+
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | Provider channels receive the bare model name (the `provider/` prefix stripped). Set this when the channel is itself a router that expects full ids. |
 
 When any provider channel is configured, `GET /api/models` lists only those providers'

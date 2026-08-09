@@ -350,17 +350,23 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     maxTokens: 64_000,
   },
   /*
-   * Deprecated 2026-05-15, retired 2026-08-15. Until then the slugs still
-   * resolve, but xAI redirects them — grok-4.1-fast to grok-4.3 and
-   * grok-code-fast-1 to grok-build-0.1 — and bills at the target's rate. So
-   * `pricing` below mirrors the target's, not the rate these models were
-   * published at: the number this app reports has to be the number that lands
-   * on the invoice, and a stale rate here reads as a discount nobody is
-   * getting. The other fields still describe the model as xAI documented it.
+   * Deprecated 2026-05-15. While a slug still resolved, xAI redirected it —
+   * grok-4.1-fast to grok-4.3 and grok-code-fast-1 to grok-build-0.1 — and
+   * billed at the target's rate. So `pricing` below mirrors the target's, not
+   * the rate these models were published at: the number this app reports has to
+   * be the number that lands on the invoice, and a stale rate here reads as a
+   * discount nobody is getting. The other fields still describe the model as
+   * xAI documented it.
    *
-   * Hidden rather than deleted: a stored version may still name one, and
-   * deleting the entry would price those runs at $0. After the retirement date
-   * the calls fail rather than redirect, and both entries can go.
+   * `grok-4.1-fast` is **gone** — xAI now answers 404 for it, ahead of the
+   * announced 2026-08-15 retirement (verified against the live API).
+   * `grok-code-fast-1` still resolves.
+   *
+   * Hidden rather than deleted, and that stays true past retirement: a stored
+   * version may still name one, and a *past* run's usage row is priced by
+   * looking the model up here — deleting the entry would re-price history at
+   * $0. What retirement changes is that new runs fail at the provider, which
+   * needs no entry to say so.
    */
   {
     id: "xai/grok-4.1-fast",

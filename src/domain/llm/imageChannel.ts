@@ -1,4 +1,13 @@
-/** Image generation channel port (OpenAI Images API shape). */
+/**
+ * Image generation channel port.
+ *
+ * The vocabulary below is OpenAI's, and deliberately so: it is what the tool
+ * schema offers the model, and a model knows nothing about which provider will
+ * serve its request. It states an *intent*, not a wire format — the adapter
+ * translates per provider, because unlike Chat Completions the Images API is
+ * not one shape everybody implements (xAI names the same intent
+ * `aspect_ratio` + `resolution` and refuses these field names outright).
+ */
 
 export interface ImageGenerationParams {
   model: string;
@@ -6,7 +15,7 @@ export interface ImageGenerationParams {
   signal?: AbortSignal;
   /** e.g. "1024x1024", "1536x1024", "1024x1536", "auto" */
   size?: string;
-  /** e.g. "low" | "medium" | "high" | "auto" */
+  /** e.g. "low" | "medium" | "high" | "auto" — a provider without a counterpart drops it. */
   quality?: string;
 }
 
@@ -16,7 +25,7 @@ export interface ImageBytes {
   mimeType: string;
 }
 
-/** Edit an existing image (OpenAI Images edit API shape). */
+/** Edit an existing image. Same intent-not-wire-format rule as above. */
 export interface ImageEditParams {
   model: string;
   prompt: string;
