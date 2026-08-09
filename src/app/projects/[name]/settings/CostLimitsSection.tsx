@@ -81,11 +81,19 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
     }
   }
 
-  // Readable while collapsed: the two thresholds as `alert / block`, a dash
-  // for the one left open, `none` when the guard is off entirely.
+  // Readable while collapsed: each configured window as `alert / block` with
+  // its period, a dash for a threshold left open, `none` when the guard is off.
+  // A monthly-only guard must not read as `– / –`, which says "off".
   const usd = (value: number | "") => (value === "" ? "–" : `$${value}`);
-  const configured =
-    alertUsd !== "" || blockUsd !== "" || monthlyAlertUsd !== "" || monthlyBlockUsd !== "";
+  const windowSummary = (alert: number | "", block: number | "", period: string) =>
+    alert === "" && block === "" ? null : `${usd(alert)} / ${usd(block)}${period}`;
+  const summary = [
+    windowSummary(alertUsd, blockUsd, "/day"),
+    windowSummary(monthlyAlertUsd, monthlyBlockUsd, "/mo"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const configured = summary !== "";
 
   return (
     <CollapsibleSection
@@ -93,7 +101,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
       badge={
         loading ? undefined : (
           <Badge color={stateColor(configured)} radius="xl">
-            {configured ? `${usd(alertUsd)} / ${usd(blockUsd)}` : "none"}
+            {configured ? summary : "none"}
           </Badge>
         )
       }
