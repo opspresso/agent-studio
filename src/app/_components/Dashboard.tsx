@@ -36,7 +36,7 @@ import { DateRangePicker } from "./DateRangePicker";
 import { DailyCostChart } from "./DailyCostChart";
 import classes from "./Dashboard.module.css";
 
-const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider"];
+const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
 
 function formatUsd(value: number, fractionDigits = 2): string {
   return `$${value.toLocaleString(undefined, {
@@ -84,8 +84,34 @@ export function Dashboard() {
   const [to, setTo] = useState(initial.to);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [items, setItems] = useState<UsageRow[]>([]);
+  // projectName → departmentCode, for the chargeback grouping. Best-effort: a
+  // failed load leaves every project in the "(none)" bucket rather than erroring
+  // a dashboard whose other groupings never needed the catalog.
+  const [departments, setDepartments] = useState<ReadonlyMap<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/projects")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((projects: Array<{ name: string; departmentCode?: string }>) => {
+        if (cancelled) {
+          return;
+        }
+        const map = new Map<string, string>();
+        for (const project of projects) {
+          if (project.departmentCode) {
+            map.set(project.name, project.departmentCode);
+          }
+        }
+        setDepartments(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,8 +148,14 @@ export function Dashboard() {
     };
   }, [from, to]);
 
-  const groups = useMemo(() => groupUsage(items, groupBy), [items, groupBy]);
-  const daily = useMemo(() => buildDailySeries(items, groupBy, from, to), [items, groupBy, from, to]);
+  const groups = useMemo(
+    () => groupUsage(items, groupBy, departments),
+    [items, groupBy, departments],
+  );
+  const daily = useMemo(
+    () => buildDailySeries(items, groupBy, from, to, departments),
+    [items, groupBy, from, to, departments],
+  );
   const cost = useMemo(() => totalCost(items), [items]);
   const calls = useMemo(() => totalCalls(items), [items]);
   const maxCost = groups[0]?.cost ?? 0;
