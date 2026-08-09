@@ -9,6 +9,7 @@ import {
   IconApi,
   IconArrowLeft,
   IconChartBar,
+  IconGitCompare,
   IconHistory,
   IconPlayerPlay,
   IconRoute,
@@ -44,6 +45,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const tabs = [
     { href: base, label: "Playground", Icon: IconPlayerPlay },
     { href: `${base}/versions`, label: "Versions", Icon: IconHistory },
+    { href: `${base}/compare`, label: "Compare", Icon: IconGitCompare },
     { href: `${base}/usage`, label: "Usage", Icon: IconChartBar },
     ...(canManage ? [{ href: `${base}/traces`, label: "Traces", Icon: IconRoute }] : []),
     { href: `${base}/api-reference`, label: "API Reference", Icon: IconApi },
