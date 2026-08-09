@@ -284,6 +284,7 @@ export function VersionEditor({
 
       <Checkbox
         label="PII filtering"
+        description="Masks emails, phone numbers, Korean registration numbers and card numbers with reversible tokens before dispatch. What an MCP tool receives is not masked."
         checked={value.parameters.piiFiltering}
         onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
       />

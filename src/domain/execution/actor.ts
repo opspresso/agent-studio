@@ -44,8 +44,8 @@ export const A2A_ACTOR_ID = "shared-key";
  * absent. Mixing the two would put a display name someone can rename into the
  * key a year of usage rows is grouped by.
  *
- * No email, on purpose. PII filtering masks emails and phone numbers but not
- * names (`application/llm/pii.ts`), so anything here reaches the model as
+ * No email, on purpose. PII filtering masks emails, phone and registration/card
+ * numbers but not names (`application/llm/pii.ts`), so anything here reaches the model as
  * written — which is a reason to carry the least that is still useful.
  */
 export interface RunCaller {

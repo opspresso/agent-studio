@@ -189,6 +189,53 @@ describe("PiiFilter", () => {
     expect(filter.mask(original)).toBe(masked);
   });
 
+  it("replaces Korean registration numbers while preserving their format", () => {
+    const filter = new PiiFilter();
+    const original = "주민등록번호 900101-1234567 입니다";
+
+    const masked = filter.mask(original);
+
+    expect(masked).not.toContain("900101-1234567");
+    expect(masked).toMatch(/^주민등록번호 \[\[PII:\d{6}-\d{7}\]\] 입니다$/);
+    expect(filter.restore(masked)).toBe(original);
+    expect(filter.mask(original)).toBe(masked);
+  });
+
+  it("leaves what only looks like a registration number alone", () => {
+    const filter = new PiiFilter();
+    // Month 13, day 32, a 7th digit outside 1-8, and the bare 13-digit form.
+    for (const value of [
+      "991301-1234567",
+      "900132-1234567",
+      "900101-9234567",
+      "9001011234567",
+    ]) {
+      expect(filter.mask(value)).toBe(value);
+    }
+  });
+
+  it("replaces card numbers whole, whatever the separator", () => {
+    const filter = new PiiFilter();
+    for (const original of [
+      "4111-1111-1111-1111",
+      "4111 1111 1111 1111",
+      "4111111111111111",
+    ]) {
+      const masked = filter.mask(original);
+      // The phone pattern used to partially match the separated forms and leave
+      // the last group in the clear — the card entity must take the whole value.
+      expect(masked).toMatch(/^\[\[PII:[\d -]{16,19}\]\]$/);
+      expect(filter.restore(masked)).toBe(original);
+    }
+  });
+
+  it("leaves a digit run that fails Luhn alone", () => {
+    const filter = new PiiFilter();
+    const orderId = "1234-5678-9012-3456";
+
+    expect(filter.mask(orderId)).toBe(orderId);
+  });
+
   it("distinguishes a real value from the contents of an existing placeholder", () => {
     const filter = new PiiFilter();
     const firstMasked = filter.mask("111-111-1111");
