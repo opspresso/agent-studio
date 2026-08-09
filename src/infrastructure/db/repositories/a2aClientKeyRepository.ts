@@ -43,8 +43,15 @@ function fromItem(item: Record<string, unknown>): A2aClientKey {
 
 export const a2aClientKeyRepository: A2aClientKeyRepository = {
   async get(name) {
+    // Consistent, like the sibling repositories: `delete` reads the hash to
+    // remove through this, and a stale miss there would report a revocation
+    // that left the credential alive.
     const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.a2aClientKey(name) }),
+      new GetCommand({
+        TableName: getTableName(),
+        Key: keys.a2aClientKey(name),
+        ConsistentRead: true,
+      }),
     );
     return result.Item ? fromItem(result.Item) : null;
   },
@@ -92,7 +99,7 @@ export const a2aClientKeyRepository: A2aClientKeyRepository = {
   async delete(name) {
     const stored = await this.get(name);
     if (!stored) {
-      return;
+      return false;
     }
     await getDocumentClient().send(
       new TransactWriteCommand({
@@ -102,6 +109,7 @@ export const a2aClientKeyRepository: A2aClientKeyRepository = {
         ],
       }),
     );
+    return true;
   },
 
   async findNameByHash(tokenHash) {

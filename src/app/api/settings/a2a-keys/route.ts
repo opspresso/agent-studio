@@ -11,7 +11,10 @@ import { ValidationError } from "@/application/errors";
  */
 
 const createSchema = z.object({
-  name: z.string().min(1),
+  // The name becomes a partition key and the permanent actor id `a2a:{name}`,
+  // so it is bounded here like `departmentCode`: past the GSI key limit an
+  // unbounded name would surface as a storage 500 instead of a 400.
+  name: z.string().min(1).max(64),
   description: z.string().max(4000).optional(),
 });
 
@@ -28,7 +31,7 @@ export const POST = withAdminAuth(async (user, request: Request) => {
   try {
     const parsed = createSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
-      throw new ValidationError("name is required");
+      throw new ValidationError("name is required and must be at most 64 characters");
     }
     const { key, view } = await a2aClientKeyUseCases.create(
       parsed.data.name,
