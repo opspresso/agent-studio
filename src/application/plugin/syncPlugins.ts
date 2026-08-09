@@ -90,7 +90,7 @@ function sameFiles(a: SkillFile[] | undefined, b: SkillFile[] | undefined): bool
 }
 
 function emptyReport(): PluginKindReport {
-  return { created: [], existing: [], overwritten: [], orphaned: [], removed: [], skipped: [] };
+  return { created: [], overwritten: [], unchanged: [], orphaned: [], removed: [], skipped: [] };
 }
 
 export interface SyncPluginsDeps {
@@ -116,22 +116,19 @@ export interface SyncPluginsDeps {
 /**
  * Pull the Agent Plugins repository into the registries.
  *
- * The discipline is the one every sync here has: **import what is missing,
- * report everything else, act only on a named selection.** What is new is the
- * unit. Provenance is per plugin (`github:<repo>#<plugin>`), so orphaning,
- * takeover and the report are all plugin-scoped, and the selection is
- * kind-qualified because skills and MCP servers are different registries that
- * may hold the same name.
+ * **The repository owns what it declared.** An entry the sync created — or
+ * one it is adopting from another origin (the retired skills/tools repos, a
+ * different plugin) — is brought to the repository's version automatically,
+ * provenance included: the repo is the source of truth, and a console edit to
+ * a repo-owned entry is the anomaly, not the record. An entry with no source
+ * at all was registered by hand and is never touched: it was never any
+ * repository's.
  *
- * **Takeover is an operator's decision.** An entry whose `source` names
- * another origin — the retired skills/tools repos, or a different plugin —
- * is reported as `existing` with `source` among its diffs; only an overwrite
- * naming it rewrites content *and* provenance. An entry with no source at all
- * was registered by hand and is never offered: it was never any repository's.
- *
- * **The plugin row is the one unconditional write.** It is a pure projection
- * of the repository — nothing on it is operator-authored — so gating its
- * refresh behind a selection would only let it go stale.
+ * **A person owns deletion.** What the repository no longer carries is only
+ * reported, per plugin, and deleted when the selection names it — an MCP
+ * entry holds credentials, and a file disappearing from a branch is not
+ * reason enough to destroy them. The selection is kind-qualified because
+ * skills and MCP servers are different registries that may hold one name.
  */
 export async function syncPluginsFromSnapshot(
   deps: SyncPluginsDeps,
@@ -146,8 +143,6 @@ export async function syncPluginsFromSnapshot(
 ): Promise<PluginSyncResult> {
   const repoPrefix = `github:${snapshot.repo}#`;
   const now = new Date().toISOString();
-  const overwriteSkills = new Set(selection.overwrite?.skills ?? []);
-  const overwriteServers = new Set(selection.overwrite?.mcpServers ?? []);
   const removeSkills = new Set(selection.remove?.skills ?? []);
   const removeServers = new Set(selection.remove?.mcpServers ?? []);
   const removePlugins = new Set(selection.remove?.plugins ?? []);
@@ -303,17 +298,15 @@ export async function syncPluginsFromSnapshot(
         });
         continue;
       }
-      const differs = [
-        ...(current.source !== source ? ["source"] : []),
-        ...(current.description !== description ? ["description"] : []),
-        ...(current.content !== body ? ["content"] : []),
-        ...(sameFiles(current.files, files) ? [] : ["files"]),
-      ];
-      if (!overwriteSkills.has(file.name) || differs.length === 0) {
-        // Nothing is written for an entry the caller did not name — and nothing
-        // for one that already agrees either, or `updatedAt` would move on
-        // every sync and make the registry look edited.
-        report.existing.push({ name: file.name, differs });
+      const differs =
+        current.source !== source ||
+        current.description !== description ||
+        current.content !== body ||
+        !sameFiles(current.files, files);
+      if (!differs) {
+        // Nothing is written for an entry that already agrees, or `updatedAt`
+        // would move on every sync and make the registry look edited.
+        report.unchanged.push(file.name);
         continue;
       }
       await deps.skillRepo.put({
@@ -418,12 +411,11 @@ export async function syncPluginsFromSnapshot(
           : {}),
         ...(current.source !== source ? { source } : {}),
       };
-      const differs = Object.keys(patch);
       if (urlDiffers && managed) {
         mcpReport.skipped.push({ name, reason: "managed-url", detail: current.url });
       }
-      if (!overwriteServers.has(name) || differs.length === 0) {
-        mcpReport.existing.push({ name, differs });
+      if (Object.keys(patch).length === 0) {
+        mcpReport.unchanged.push(name);
         continue;
       }
       try {

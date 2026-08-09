@@ -62,10 +62,9 @@ describe("GET /api/plugins/sync", () => {
 });
 
 describe("POST /api/plugins/sync", () => {
-  it("forwards the kind-qualified selection and the caller's email", async () => {
+  it("forwards the kind-qualified removal selection and the caller's email", async () => {
     const selection = {
-      overwrite: { skills: ["gitops"], mcpServers: ["argocd"] },
-      remove: { plugins: ["retired"] },
+      remove: { skills: ["gitops"], mcpServers: ["argocd"], plugins: ["retired"] },
     };
     const res = await post(selection);
     expect(res.status).toBe(200);
@@ -84,7 +83,7 @@ describe("POST /api/plugins/sync", () => {
   });
 
   it("400s on a malformed selection without running the sync", async () => {
-    const res = await post({ overwrite: { skills: "gitops" } });
+    const res = await post({ remove: { skills: "gitops" } });
     expect(res.status).toBe(400);
     expect(syncPluginsFromRepo).not.toHaveBeenCalled();
   });

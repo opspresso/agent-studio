@@ -1,17 +1,20 @@
 /**
  * What a pull of a source repository did, and what it deliberately did not.
  *
- * The plugin sync answers the same four questions about every name — created,
- * existing, orphaned, skipped — for two registries at once, so the vocabulary
- * for one name's answer lives here while the kind-qualified report shapes live
+ * The plugin sync answers the same questions about every name — created,
+ * overwritten, unchanged, orphaned, skipped — for two registries at once, so
+ * the skip vocabulary lives here while the kind-qualified report shapes live
  * in `domain/plugin/sync.ts`. One vocabulary is what lets the console render
  * every skip the same way and an operator read them all alike.
  *
- * **A sync never overwrites and never deletes on its own.** It imports what is
- * missing, and for everything else it reports. What a document would change and
- * what the repository no longer carries are both decisions with consequences
- * only a person can weigh — an entry may hold credentials, or an edit someone
- * made on purpose — so they are carried out only when a caller names them.
+ * **The repository owns what it declared; a person owns deletion.** An entry
+ * the sync created — or one it is adopting from another origin — is brought
+ * to the repository's version automatically: the repo is the source of truth,
+ * and a console edit to a repo-owned entry is the anomaly, not the record. An
+ * entry with no source was registered by hand and is never touched. What the
+ * repository no longer carries is only reported, and deleted when a caller
+ * names it — an MCP entry holds credentials, and a file disappearing from a
+ * branch is not reason enough to destroy them.
  */
 
 /** Why a document in the repository produced no entry. */
@@ -70,19 +73,4 @@ export interface SyncSkip {
   reason: SyncSkipReason;
   /** The refusal's own message, where there is one worth passing on. */
   detail?: string;
-}
-
-/**
- * A name the repository and the registry both hold.
- *
- * `differs` names the fields the document would replace, and empty means the two
- * already agree. Nothing is written for one of these unless the caller asks by
- * name — the stored version may be an edit someone made on purpose, and this
- * cannot tell that apart from a document that simply moved on. A `source` among
- * the diffs is the takeover signal: the entry was created by another origin,
- * and an overwrite adopts it, provenance and all.
- */
-export interface SyncExisting {
-  name: string;
-  differs: string[];
 }

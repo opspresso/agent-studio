@@ -1,15 +1,14 @@
 /**
  * What one pull of the plugins repository carries, and what a sync of it
- * reports. The report vocabulary (`SyncSkip`, `SyncExisting`) is shared with
- * the rest of the registry via `domain/sync/types.ts`; the shapes here exist
- * because a plugin sync answers for two registries at once — skills and MCP
- * servers can hold the same name — so every list is kind-qualified where a
- * single-registry sync's was flat.
+ * reports. The skip vocabulary (`SyncSkip`) lives in `domain/sync/types.ts`;
+ * the shapes here exist because a plugin sync answers for two registries at
+ * once — skills and MCP servers can hold the same name — so every list is
+ * kind-qualified.
  */
 
 import type { SkillFile } from "@/domain/skill/types";
 import type { SkippedAttachment } from "@/domain/skill/files";
-import type { SyncExisting, SyncSkip } from "@/domain/sync/types";
+import type { SyncSkip } from "@/domain/sync/types";
 
 /** One skill found under a plugin root, with its collected attachments. */
 export interface RepoPluginSkill {
@@ -50,21 +49,22 @@ export interface PluginsRepoSnapshot {
 }
 
 /**
- * Names a caller decided to act on, having seen a previous sync's report.
- * Kind-qualified throughout: the two registries may hold the same name, and a
- * flat list could not say which one the operator meant.
+ * Deletions a caller decided on, having seen a previous sync's report — the
+ * one act the sync does not perform on its own, because an MCP entry holds
+ * credentials and a file disappearing from a branch is not reason enough to
+ * destroy them. Kind-qualified: the two registries may hold the same name.
  */
 export interface PluginSyncSelection {
-  overwrite?: { skills?: string[]; mcpServers?: string[] };
   remove?: { skills?: string[]; mcpServers?: string[]; plugins?: string[] };
 }
 
-/** The four answers a sync gives about every name, for one kind. */
+/** The answers a sync gives about every name, for one kind. */
 export interface PluginKindReport {
   created: string[];
-  /** `differs` may include `"source"` — the takeover signal. */
-  existing: SyncExisting[];
+  /** Applied automatically — the repository owns what it declared. */
   overwritten: string[];
+  /** In both, already in agreement; nothing was written. */
+  unchanged: string[];
   orphaned: string[];
   removed: string[];
   skipped: SyncSkip[];

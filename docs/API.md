@@ -451,17 +451,17 @@ test operations require a session and apply the same SSRF guard used during regi
 dispatch. Plugins have no create/update routes: the sync is their only writer, and a plugin
 row goes away through the sync's own `remove` selection.
 
-The sync follows one rule: **import what is missing, report the rest, decide nothing else.**
-The selection is kind-qualified, because the skill and MCP registries may hold the same name:
+The sync follows one rule: **the repository owns what it declared; a person owns deletion.**
+The removal selection is kind-qualified, because the skill and MCP registries may hold the
+same name:
 
 ```
-POST /api/plugins/sync  { "overwrite"?: { "skills"?: ["name"], "mcpServers"?: ["name"] },
-                          "remove"?:    { "skills"?: ["name"], "mcpServers"?: ["name"],
-                                          "plugins"?: ["name"] } }
+POST /api/plugins/sync  { "remove"?: { "skills"?: ["name"], "mcpServers"?: ["name"],
+                                       "plugins"?: ["name"] } }
 → 200 { repo, commitSha,
         plugins: [ { plugin, version?, description?,
-                     skills:     { created, existing, overwritten, orphaned, removed, skipped },
-                     mcpServers: { created, existing, overwritten, orphaned, removed, skipped } } ],
+                     skills:     { created, overwritten, unchanged, orphaned, removed, skipped },
+                     mcpServers: { created, overwritten, unchanged, orphaned, removed, skipped } } ],
         skipped, orphanedPlugins, removedPlugins }
 ```
 
@@ -469,19 +469,20 @@ Per kind, in each plugin's section:
 
 - **created** — in the repository, not in the registry. Imported outright, with
   `source: "github:<repo>#<plugin>"`.
-- **existing** — in both, as `{ name, differs }` where `differs` names the fields the document
-  would replace. **Nothing is written** unless the name is in the matching `overwrite` list:
-  the stored version may be a correction someone made on purpose, and a sync cannot tell that
-  apart from a document that moved on. A `source` among the diffs is a *takeover* — the entry
-  was created by another origin (the retired skills/tools repos, or a different plugin), and
-  an overwrite adopts it, rewriting content and provenance together. An entry with **no**
-  source was registered by hand and is reported as a `conflict` skip instead — it is never
-  offered.
+- **overwritten** — in both and differing; brought to the repository's version
+  **automatically**. This includes a *takeover*: an entry created by another origin (the
+  retired skills/tools repos, or a different plugin) is adopted, content and provenance
+  together. A console edit to a repo-owned entry is replaced on the next sync — the repo is
+  the source of truth. An entry with **no** source was registered by hand and is never
+  touched; it is reported as a `conflict` skip.
+- **unchanged** — in both and already in agreement; nothing was written, so `updatedAt` does
+  not move.
 - **orphaned** — created by a sync of this repository and no longer declared by any plugin in
   it, attributed to the plugin its source names (a section is synthesized for one that
   vanished entirely). **Nothing is deleted** unless the name is in the matching `remove`
-  list. A deletion that does happen leaves a `registry.delete` audit row naming the admin who
-  asked for the sync, exactly as a deletion from the console does.
+  list — an MCP entry holds credentials, and a file disappearing from a branch is not reason
+  enough to destroy them. A deletion that does happen leaves a `registry.delete` audit row
+  naming the admin who asked for the sync, exactly as a deletion from the console does.
 - **skipped** — `[{ name, reason, detail? }]` with `reason` one of `bad-name`, `invalid-url`
   (the outbound guard's message in `detail`), `managed-url` (a managed MCP entry's address
   comes from the provisioner, so the document's was ignored while its other fields applied),
@@ -497,7 +498,7 @@ root nested inside another, a plugin name two roots claim. `orphanedPlugins` lis
 rows the repository no longer carries; removing one (via `remove.plugins`) deletes only the
 row — its components surface individually as orphans, each its own decision.
 
-An overwrite replaces only what the documents own — a skill's description, content and
+A write replaces only what the documents own — a skill's description, content and
 attachments; an MCP entry's `url`, `description`, `content` (from the plugin's
 `org.opspresso.agent-studio/mcp/<name>.md` extension document) and `source`. Encrypted
 headers, a discovered OAuth block and a managed entry's provisioned address are never

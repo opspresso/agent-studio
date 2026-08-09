@@ -351,53 +351,43 @@ describe("syncPluginsFromSnapshot", () => {
     expect(skills.puts).toEqual([]);
   });
 
-  it("reports an existing entry and writes only when named, preserving createdAt", async () => {
+  it("applies a changed document automatically, preserving createdAt", async () => {
     const { deps, skills } = makeDeps({
       skills: [storedSkill("gitops", { content: "older body" })],
     });
-    const plugins = [repoPlugin("devops", { skills: [repoSkill("devops", "gitops")] })];
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([repoPlugin("devops", { skills: [repoSkill("devops", "gitops")] })]),
+      ACTOR,
+    );
 
-    const reported = await syncPluginsFromSnapshot(deps, snapshot(plugins), ACTOR);
-    expect(section(reported, "devops").skills.existing).toEqual([
-      { name: "gitops", differs: ["content"] },
-    ]);
-    expect(skills.puts).toEqual([]);
-
-    const applied = await syncPluginsFromSnapshot(deps, snapshot(plugins), ACTOR, {
-      overwrite: { skills: ["gitops"] },
-    });
-    expect(section(applied, "devops").skills.overwritten).toEqual(["gitops"]);
+    expect(section(result, "devops").skills.overwritten).toEqual(["gitops"]);
     expect(skills.puts[0]).toMatchObject({ createdAt: BEFORE, updatedAt: NOW });
   });
 
-  it("does not write an entry that already agrees, even when named", async () => {
+  it("does not write an entry that already agrees", async () => {
     const { deps, skills } = makeDeps({ skills: [storedSkill("gitops")] });
     const result = await syncPluginsFromSnapshot(
       deps,
       snapshot([repoPlugin("devops", { skills: [repoSkill("devops", "gitops")] })]),
       ACTOR,
-      { overwrite: { skills: ["gitops"] } },
     );
 
-    expect(section(result, "devops").skills.existing).toEqual([{ name: "gitops", differs: [] }]);
+    expect(section(result, "devops").skills.unchanged).toEqual(["gitops"]);
     expect(skills.puts).toEqual([]);
   });
 
-  it("offers a legacy-source entry as a takeover and rewrites provenance only on overwrite", async () => {
+  it("takes over a legacy-source entry automatically, provenance included", async () => {
     const legacy = storedSkill("gitops", { source: "github:opspresso/agent-skills" });
     const { deps, skills } = makeDeps({ skills: [legacy] });
-    const plugins = [repoPlugin("devops", { skills: [repoSkill("devops", "gitops")] })];
 
-    const reported = await syncPluginsFromSnapshot(deps, snapshot(plugins), ACTOR);
-    expect(section(reported, "devops").skills.existing).toEqual([
-      { name: "gitops", differs: ["source"] },
-    ]);
-    expect(skills.puts).toEqual([]);
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([repoPlugin("devops", { skills: [repoSkill("devops", "gitops")] })]),
+      ACTOR,
+    );
 
-    const applied = await syncPluginsFromSnapshot(deps, snapshot(plugins), ACTOR, {
-      overwrite: { skills: ["gitops"] },
-    });
-    expect(section(applied, "devops").skills.overwritten).toEqual(["gitops"]);
+    expect(section(result, "devops").skills.overwritten).toEqual(["gitops"]);
     expect(skills.puts[0]).toMatchObject({
       source: `github:${REPO}#devops`,
       createdAt: BEFORE,
@@ -408,23 +398,20 @@ describe("syncPluginsFromSnapshot", () => {
     const { deps, mcps } = makeDeps({
       servers: [storedServer("argocd", { source: "github:opspresso/agent-tools" })],
     });
-    const plugins = [repoPlugin("devops", { mcpJsonRaw: mcpJson({ argocd: httpServer() }) })];
 
-    const reported = await syncPluginsFromSnapshot(deps, snapshot(plugins), ACTOR);
-    expect(section(reported, "devops").mcpServers.existing).toEqual([
-      { name: "argocd", differs: ["source"] },
-    ]);
-    expect(mcps.patched).toEqual([]);
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([repoPlugin("devops", { mcpJsonRaw: mcpJson({ argocd: httpServer() }) })]),
+      ACTOR,
+    );
 
-    await syncPluginsFromSnapshot(deps, snapshot(plugins), ACTOR, {
-      overwrite: { mcpServers: ["argocd"] },
-    });
+    expect(section(result, "devops").mcpServers.overwritten).toEqual(["argocd"]);
     expect(mcps.patched).toEqual([
       { name: "argocd", patch: { source: `github:${REPO}#devops` } },
     ]);
   });
 
-  it("never offers a hand-registered entry — it was never any repository's", async () => {
+  it("never touches a hand-registered entry — it was never any repository's", async () => {
     const { deps, skills, mcps } = makeDeps({
       skills: [storedSkill("gitops", { source: undefined })],
       servers: [storedServer("argocd", { source: undefined })],
@@ -438,11 +425,10 @@ describe("syncPluginsFromSnapshot", () => {
         }),
       ]),
       ACTOR,
-      { overwrite: { skills: ["gitops"], mcpServers: ["argocd"] } },
     );
 
     const devops = section(result, "devops");
-    expect(devops.skills.existing).toEqual([]);
+    expect(devops.skills.overwritten).toEqual([]);
     expect(devops.skills.skipped).toEqual([
       { name: "gitops", reason: "conflict", detail: "registered by hand; not offered for overwrite" },
     ]);
@@ -605,14 +591,11 @@ describe("syncPluginsFromSnapshot", () => {
       deps,
       snapshot([repoPlugin("devops", { mcpJsonRaw: mcpJson({ argocd: httpServer() }) })]),
       ACTOR,
-      { overwrite: { mcpServers: ["argocd"] } },
     );
 
     // Nothing differs: the document does not carry a description, so it says
     // nothing about the stored one.
-    expect(section(result, "devops").mcpServers.existing).toEqual([
-      { name: "argocd", differs: [] },
-    ]);
+    expect(section(result, "devops").mcpServers.unchanged).toEqual(["argocd"]);
     expect(mcps.patched).toEqual([]);
   });
 
@@ -633,13 +616,14 @@ describe("syncPluginsFromSnapshot", () => {
         }),
       ]),
       ACTOR,
-      { overwrite: { mcpServers: ["memory"] } },
     );
 
     const report = section(result, "devops").mcpServers;
     expect(report.skipped).toEqual([
       { name: "memory", reason: "managed-url", detail: "http://127.0.0.1:9101/mcp" },
     ]);
+    // The address was the only difference, so nothing else was written.
+    expect(report.unchanged).toEqual(["memory"]);
     expect(mcps.patched).toEqual([]);
   });
 
@@ -724,9 +708,7 @@ describe("syncPluginsFromSnapshot", () => {
     );
 
     expect(section(result, "devops").skills.orphaned).toEqual([]);
-    expect(section(result, "research").skills.existing).toEqual([
-      { name: "moved", differs: ["source"] },
-    ]);
+    expect(section(result, "research").skills.overwritten).toEqual(["moved"]);
   });
 
   it("does not orphan an entry whose declared document failed conformance this round", async () => {

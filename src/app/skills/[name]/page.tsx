@@ -96,8 +96,8 @@ export default function SkillDetailPage() {
           </Text>
           {skill.source && (
             <Text fz="xs" c="orange" mt={4}>
-              Synced from {skill.source} — a local edit stays until an operator applies the
-              repository&apos;s version on a plugins sync.
+              Synced from {skill.source} — the repository owns it, so a local edit is replaced
+              on the next plugins sync. Change it in the repo.
             </Text>
           )}
         </div>

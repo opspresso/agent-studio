@@ -236,11 +236,10 @@ export default function McpDetailPage() {
             {server.url}
           </Text>
           {server.source && (
-            // Where the entry came from, not who owns it: a plugins sync never
-            // writes without an operator naming the entry, so everything on
-            // this page is editable and stays edited.
+            // The repo owns url/description/content and rewrites them on sync;
+            // headers, OAuth and a managed address stay this console's.
             <Text fz="xs" c="dimmed" mt={4}>
-              registered from {server.source}
+              registered from {server.source} — document fields follow the repo on sync
             </Text>
           )}
           {server.runtime === "managed" && (

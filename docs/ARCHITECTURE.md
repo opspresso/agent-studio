@@ -819,12 +819,13 @@ Each plugin also becomes a row (`Plugin` in `src/domain/plugin/types.ts`: manife
 plus the component names it declared) — the one thing the sync upserts unconditionally,
 because nothing on it is operator-authored. The console's Plugins page lists them.
 
-**A sync imports what is missing and reports the rest** (`src/domain/sync/types.ts` owns the
-skip vocabulary; the kind-qualified report lives in `src/domain/plugin/sync.ts`): an
-existing entry is rewritten, and an orphaned one deleted, only when the caller names it — an
-entry created by another origin is offered as a takeover that rewrites provenance too — see
-the sync contract in [API.md](API.md#registry-and-integration-operations). Locally created
-skills with other names are untouched.
+**The repository owns what it declared; a person owns deletion**
+(`src/domain/sync/types.ts` owns the skip vocabulary; the kind-qualified report lives in
+`src/domain/plugin/sync.ts`): a repo-sourced entry — including one adopted from another
+origin, provenance rewritten with it — is brought to the repository's version automatically,
+while an orphaned one is deleted only when the caller names it. See the sync contract in
+[API.md](API.md#registry-and-integration-operations). Hand-registered entries are never
+touched.
 
 ### MCP
 

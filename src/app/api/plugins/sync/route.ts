@@ -6,18 +6,17 @@ import { getPluginsRepoConfig } from "@/lib/runtime-settings";
 import { syncPluginsFromRepo } from "@/lib/container";
 
 /**
- * A sync never overwrites or deletes on its own. These name what a previous
- * report said, once a person has looked at it — kind-qualified, because the
- * skills and MCP registries may hold the same name.
+ * The repository's content applies automatically; deletion is the one act
+ * that needs a person. These name what a previous report listed as orphaned —
+ * kind-qualified, because the skills and MCP registries may hold one name.
  */
-const kindSelection = z.object({
-  skills: z.array(z.string()).max(500).optional(),
-  mcpServers: z.array(z.string()).max(500).optional(),
-});
 const selectionSchema = z.object({
-  overwrite: kindSelection.optional(),
-  remove: kindSelection
-    .extend({ plugins: z.array(z.string()).max(500).optional() })
+  remove: z
+    .object({
+      skills: z.array(z.string()).max(500).optional(),
+      mcpServers: z.array(z.string()).max(500).optional(),
+      plugins: z.array(z.string()).max(500).optional(),
+    })
     .optional(),
 });
 
