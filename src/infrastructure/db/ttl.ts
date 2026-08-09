@@ -26,9 +26,14 @@ export const RETENTION = {
   get traceDays(): number {
     return retentionDays("TRACE_RETENTION_DAYS", 30);
   },
-  /** Cost/usage rows — kept well beyond the dashboard's 184-day query window. */
+  /**
+   * Cost/usage rows — kept well beyond the dashboard's 184-day query window.
+   * The floor is a full month, not a day: the monthly cost guard sums the
+   * month's daily rows, and a shorter window would silently under-count spend
+   * late in the month until the block never fired.
+   */
   get usageDays(): number {
-    return retentionDays("USAGE_RETENTION_DAYS", 400);
+    return positiveIntEnv("USAGE_RETENTION_DAYS", 400, 31);
   },
   /** Chats and their messages, measured from last activity. */
   get chatDays(): number {
