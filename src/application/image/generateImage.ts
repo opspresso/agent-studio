@@ -1,6 +1,6 @@
 import { getModelConfig, toImageUsageRecord } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
-import { renderTemplate } from "@/application/llm/template";
+import { renderTemplate } from "@/shared/template";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ImageBytes, ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";

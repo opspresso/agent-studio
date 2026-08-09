@@ -341,6 +341,60 @@ describe("configuration reads", () => {
 });
 
 /**
+ * What ships to the browser, which the layer rules cannot see.
+ *
+ * `src/components` is barred from `application` and `infrastructure` by a rule
+ * above. `src/app` — 165 files, and the only place a client component actually
+ * lives — was barred from `infrastructure` alone, so nothing stopped a
+ * `"use client"` file from importing a use case. One already did:
+ * `PromptPreview.tsx` reached `@/application/llm/template` for a regex over
+ * `{{var}}` placeholders. That module was 29 lines with no imports of its own,
+ * so it cost nothing and read as harmless — which is the point. The same line
+ * naming `@/application/llm/engine` instead pulls the tool loop, the PII filter,
+ * the context budget and the logger into the browser bundle, and no rule here
+ * would have said a word.
+ *
+ * A layer is the wrong axis for this, because the boundary is not where a file
+ * sits but which runtime it is compiled for. So the rule reads the directive,
+ * the way the `configuration reads` rule reads `process.env`.
+ *
+ * The fix for the one occupant was to move the module rather than exempt the
+ * import: a pure helper both sides need is what `src/shared` is defined as. That
+ * is the shape of every future fix here too — if a client needs it and a use
+ * case needs it, it belongs at the bottom of the graph, not across a boundary.
+ */
+const CLIENT_DIRECTIVE = /^\s*["']use client["']/;
+const SERVER_ONLY_LAYERS = ["application", "infrastructure"];
+
+describe("client components", () => {
+  const clientFiles = SOURCE_FILES.filter((file) => CLIENT_DIRECTIVE.test(file.text));
+
+  // Without this, a renamed directive or a scan that stopped reaching the page
+  // tree would report zero violations and read exactly like a clean pass.
+  it("are found by the scan", () => {
+    expect(clientFiles.length).toBeGreaterThan(0);
+  });
+
+  it("import no application or infrastructure module", () => {
+    const found: string[] = [];
+    for (const file of clientFiles) {
+      for (const { spec, typeOnly } of parseImports(file.text)) {
+        // A type import is erased before the bundler sees it, so it ships
+        // nothing. Everything else — including `await import()`, which is a
+        // bundle split rather than a bundle exclusion — counts.
+        if (typeOnly) {
+          continue;
+        }
+        if (SERVER_ONLY_LAYERS.includes(targetLayer(resolveSpec(spec, file.path)) ?? "")) {
+          found.push(`${file.path} -> ${spec}`);
+        }
+      }
+    }
+    expect(found.sort()).toEqual([]);
+  });
+});
+
+/**
  * Single-owner invariants.
  *
  * The rules above enforce which direction an import may point. They say nothing
