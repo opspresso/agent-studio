@@ -27,6 +27,8 @@ import { createChannel } from "@/infrastructure/llm/channel";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
 import { parseProviderConfigs, resolveProviderTarget } from "@/infrastructure/llm/providers";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
+import { withTraceExport } from "@/infrastructure/telemetry/withTraceExport";
+import type { Trace } from "@/domain/trace/types";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
@@ -136,6 +138,26 @@ const mcpSessions: McpSessionFactory = {
       signal,
     ),
 };
+
+/**
+ * Finished traces double as OTLP spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is
+ * set — unset means no export at all. The OTEL SDK sits behind a deferred
+ * import like the other heavy adapters, resolved once on the first export.
+ */
+const otelEndpoint = config.otelExporterEndpoint;
+let otelExport: Promise<(trace: Trace) => void> | undefined;
+const runTraceRepository = otelEndpoint
+  ? withTraceExport(traceRepository, async (trace) => {
+      otelExport ??= import("@/infrastructure/telemetry/otelTraceExport").then((m) =>
+        m.createOtelTraceExport({
+          endpoint: otelEndpoint,
+          headers: config.otelExporterHeaders,
+          serviceName: "agent-studio",
+        }),
+      );
+      (await otelExport)(trace);
+    })
+  : traceRepository;
 
 export {
   channel,
@@ -367,7 +389,7 @@ export const executionDeps: ExecutionDeps = {
   mcpSessions,
   mcpAuth: mcpAuthProvider,
   internalHostSuffixes: config.mcpInternalHostSuffixes,
-  traces: traceRepository,
+  traces: runTraceRepository,
   traceSampleRate: config.traceSampleRate,
   slack: costAlertSlack,
   runSlots: runSlotRepository,
@@ -379,7 +401,7 @@ export const executionDeps: ExecutionDeps = {
 export const imageDeps: ImageGenerationDeps = {
   imageChannel,
   usage: usageRepository,
-  traces: traceRepository,
+  traces: runTraceRepository,
   traceSampleRate: config.traceSampleRate,
   cipher: secretCipher,
   slack: costAlertSlack,

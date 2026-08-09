@@ -159,6 +159,11 @@ stored** — with one caveat: a trace's `error` and `warnings` keep up to 1,000 
 the failure text verbatim, and a provider or tool error string can embed content. Each trace
 also carries the `actor` that caused the run.
 
+With `OTEL_EXPORTER_OTLP_ENDPOINT` set, every persisted trace is also exported as OTLP spans
+(see [CONFIGURATION.md](CONFIGURATION.md#observability-and-retention)) — same timestamps, the
+app trace id as the `app.trace_id` attribute, and the same bounded metadata. The DynamoDB row
+stays the record; a collector outage costs log lines, never runs.
+
 ## Row retention
 
 Traces, usage rows, chats and their messages, trigger deliveries, inbound A2A tasks, Slack
