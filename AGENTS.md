@@ -116,6 +116,15 @@ Each decision below has one owning file. `tests/architecture.test.ts` fails on a
 **and** on the owner losing the definition. Before writing any of these, check whether you are
 about to make copy number two.
 
+**Which layer owns a limit** is a question the table answers case by case, so the rule behind
+it: **a cap something else imposes on us belongs in `domain/`; a cap we chose belongs beside
+the mechanism that spends it.** An image size, a document's extracted characters and the tool
+count one request may declare are all a provider's or a stored item's number — a run only
+discovers them. The turn ceiling, the subagent depth, the transfer transcript budget and how
+many tool calls run at once are this platform's own policy, and each is read by exactly the
+loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for a while: it
+is OpenAI's 128, not a number anyone here picked.
+
 | Decision | Owner |
 |---|---|
 | The shape of an MCP tool | `src/domain/mcp/types.ts` |
@@ -127,7 +136,7 @@ about to make copy number two.
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
 | Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
-| The per-run MCP tool cap | `src/application/execution/mcpTools.ts` |
+| The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
 | How many agents one dispatch may run | `src/application/llm/engine.ts` |
 | How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/engine.ts` |
 | Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |

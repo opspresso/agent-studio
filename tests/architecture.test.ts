@@ -528,7 +528,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     what: "the per-run MCP tool cap",
     pattern: /MAX_MCP_TOOLS_PER_RUN\s*=/,
-    owner: "src/application/execution/mcpTools.ts",
+    owner: "src/domain/llm/toolLimits.ts",
   },
   {
     what: "how many agents one dispatch may run",

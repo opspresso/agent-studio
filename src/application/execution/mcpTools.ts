@@ -4,16 +4,10 @@ import type { Version } from "@/domain/project/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { skipsUrlGuard } from "@/domain/mcp/types";
+import { MAX_MCP_TOOLS_PER_RUN } from "@/domain/llm/toolLimits";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
-
-/**
- * MCP tools one run may declare. Providers reject a request that declares too
- * many (OpenAI's own limit is 128), and the whole run fails with it — so the
- * tail is dropped and reported instead.
- */
-export const MAX_MCP_TOOLS_PER_RUN = 120;
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 
