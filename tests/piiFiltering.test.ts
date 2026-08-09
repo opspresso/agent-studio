@@ -219,19 +219,45 @@ describe("PiiFilter", () => {
     for (const original of [
       "4111-1111-1111-1111",
       "4111 1111 1111 1111",
+      "4111.1111.1111.1111",
       "4111111111111111",
     ]) {
       const masked = filter.mask(original);
       // The phone pattern used to partially match the separated forms and leave
       // the last group in the clear — the card entity must take the whole value.
-      expect(masked).toMatch(/^\[\[PII:[\d -]{16,19}\]\]$/);
+      expect(masked).toMatch(/^\[\[PII:[\d .-]{16,19}\]\]$/);
       expect(filter.restore(masked)).toBe(original);
     }
   });
 
-  it("leaves a digit run that fails Luhn alone", () => {
+  it("masks the card and leaves a suffix bolted onto it", () => {
     const filter = new PiiFilter();
-    const orderId = "1234-5678-9012-3456";
+    const original = "invoice 4111-1111-1111-1111-01";
+
+    const masked = filter.mask(original);
+
+    expect(masked).toMatch(/^invoice \[\[PII:\d{4}-\d{4}-\d{4}-\d{4}\]\]-01$/);
+    expect(filter.restore(masked)).toBe(original);
+  });
+
+  it("keeps the phone-shaped partial mask when a card-shaped run fails Luhn", () => {
+    const filter = new PiiFilter();
+    const original = "mistyped card 4111 1111 1111 1112 end";
+
+    const masked = filter.mask(original);
+
+    // The card branch must not swallow the span and return it untouched: the
+    // phone branch masked `4111 1111 1111` before the card branch existed, and
+    // a number one typo away from a real card deserves no less.
+    expect(masked).toMatch(/^mistyped card \[\[PII:\d{4} \d{4} \d{4}\]\] 1112 end$/);
+    expect(filter.restore(masked)).toBe(original);
+    expect(filter.mask(original)).toBe(masked);
+  });
+
+  it("leaves a bare digit run that fails Luhn alone", () => {
+    const filter = new PiiFilter();
+    // No separators, so the phone fallback has nothing to recognise either.
+    const orderId = "4111111111111112";
 
     expect(filter.mask(orderId)).toBe(orderId);
   });
