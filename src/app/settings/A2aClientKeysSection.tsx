@@ -30,15 +30,21 @@ export function A2aClientKeysSection() {
   const [shown, setShown] = useState<{ name: string; key: string } | null>(null);
 
   async function refresh() {
+    // Throws on failure: a load that silently kept the stale list would render
+    // "no client keys" for a fetch that never answered.
     const res = await fetch("/api/settings/a2a-keys");
-    if (res.ok) {
-      const data = (await res.json()) as { items?: ClientKeyView[] };
-      setItems(data.items ?? []);
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? `Request failed (${res.status})`);
     }
+    const data = (await res.json()) as { items?: ClientKeyView[] };
+    setItems(data.items ?? []);
   }
 
   useEffect(() => {
-    void refresh();
+    refresh().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Failed to load client keys");
+    });
   }, []);
 
   async function call(run: () => Promise<void>) {

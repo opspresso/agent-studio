@@ -84,18 +84,26 @@ export function Dashboard() {
   const [to, setTo] = useState(initial.to);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [items, setItems] = useState<UsageRow[]>([]);
-  // projectName → departmentCode, for the chargeback grouping. Best-effort: a
-  // failed load leaves every project in the "(none)" bucket rather than erroring
-  // a dashboard whose other groupings never needed the catalog.
+  // projectName → departmentCode, for the chargeback grouping. A failed load
+  // does not error the dashboard — the other groupings never needed the
+  // catalog — but it is *said* when the department view is open: every project
+  // silently falling into "(none)" is exactly the false claim that view exists
+  // to avoid.
   const [departments, setDepartments] = useState<ReadonlyMap<string, string>>(new Map());
+  const [departmentsFailed, setDepartmentsFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/projects")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((projects: Array<{ name: string; departmentCode?: string }>) => {
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`request failed (${res.status})`);
+        }
+        return (await res.json()) as Array<{ name: string; departmentCode?: string }>;
+      })
+      .then((projects) => {
         if (cancelled) {
           return;
         }
@@ -106,8 +114,13 @@ export function Dashboard() {
           }
         }
         setDepartments(map);
+        setDepartmentsFailed(false);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) {
+          setDepartmentsFailed(true);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -196,6 +209,13 @@ export function Dashboard() {
       {error && (
         <Alert color="red" variant="light">
           {error}
+        </Alert>
+      )}
+
+      {groupBy === "department" && departmentsFailed && (
+        <Alert color="yellow" variant="light">
+          Project departments could not be loaded, so every project is shown under “(none)”.
+          Reload to attribute this spend.
         </Alert>
       )}
 
