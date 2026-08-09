@@ -7,14 +7,15 @@
  * in `domain/plugin/sync.ts`. One vocabulary is what lets the console render
  * every skip the same way and an operator read them all alike.
  *
- * **The repository owns what it declared; a person owns deletion.** An entry
- * the sync created — or one it is adopting from another origin — is brought
- * to the repository's version automatically: the repo is the source of truth,
- * and a console edit to a repo-owned entry is the anomaly, not the record. An
- * entry with no source was registered by hand and is never touched. What the
- * repository no longer carries is only reported, and deleted when a caller
- * names it — an MCP entry holds credentials, and a file disappearing from a
- * branch is not reason enough to destroy them.
+ * **The repository owns what it declared — by name; a person owns deletion.**
+ * An entry the sync created, one adopted from another origin, and one that
+ * predates provenance entirely are all brought to the repository's version
+ * automatically: the repo is the source of truth, and a console edit to a
+ * name the repo declares is the anomaly, not the record. A hand-registered
+ * entry whose name no plugin declares stays untouched. What the repository no
+ * longer carries is only reported, and deleted when a caller names it — an
+ * MCP entry holds credentials, and a file disappearing from a branch is not
+ * reason enough to destroy them.
  */
 
 /** Why a document in the repository produced no entry. */
@@ -28,10 +29,7 @@ export type SyncSkipReason =
    * port, never typed, so the repository cannot own it.
    */
   | "managed-url"
-  /**
-   * The name is already registered and not this sync's to change — taken
-   * mid-sync, or registered by hand before the repository ever carried it.
-   */
+  /** The name was taken between reading the registry and writing. */
   | "conflict"
   /**
    * The entry synced, but one of its attachment files did not — too large, or a

@@ -185,13 +185,14 @@ recovery while a stale success only serves a slightly old tool list.
 | `PLUGINS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access to the plugins repo. |
 
-**The repository owns what it declared; a person owns deletion.** An entry the sync created
-— or one it adopts from another origin (provenance is per plugin, `github:<repo>#<plugin>`)
-— is brought to the repository's version automatically on every sync, provenance included;
-a console edit to a repo-owned entry is replaced. An entry with no source at all was
-registered by hand and is never touched. A name a previous sync created and the repository
-no longer carries is only reported as orphaned, per plugin, and deleted when a person picks
-it in the console — an MCP entry may hold credentials.
+**The repository owns what it declared — by name; a person owns deletion.** An entry the
+sync created, one it adopts from another origin (provenance is per plugin,
+`github:<repo>#<plugin>`), and one registered by hand before any sync existed are all
+brought to the repository's version automatically on every sync, provenance included; a
+console edit to a name the repo declares is replaced. A hand-registered entry whose name no
+plugin declares stays untouched. A name a previous sync created and the repository no
+longer carries is only reported as orphaned, per plugin, and deleted when a person picks it
+in the console — an MCP entry may hold credentials.
 
 Headers declared in `mcp.json` are **not imported** — a secret does not belong in git — and
 the dropped header names are reported. Credentials are set in the console after the sync. A

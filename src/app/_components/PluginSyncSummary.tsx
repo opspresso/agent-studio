@@ -14,7 +14,7 @@ const SKIP_REASONS: Record<SyncSkip["reason"], string> = {
   "bad-name": "name is not a slug (lowercase letters, digits, hyphens)",
   "invalid-url": "url refused",
   "managed-url": "managed entry — its address comes from the provisioner, not the repo",
-  conflict: "already registered by hand; the repository never touches it",
+  conflict: "registered by someone else mid-sync; the next sync picks it up",
   attachment: "an attachment file was not carried",
   "invalid-manifest": "the manifest could not be used",
   "invalid-skill": "SKILL.md does not conform to the Agent Skills spec",

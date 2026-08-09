@@ -231,13 +231,12 @@ export interface McpServer {
    */
   content?: string;
   /**
-   * Provenance marker for entries created by a repo sync, e.g.
-   * `"github:opspresso/agent-plugins#devops"` — the repo and the plugin that
-   * declared it. It answers "where did this come from" and gates what a sync
-   * may offer: an entry with no source was registered by hand and is never
-   * offered for overwrite or deletion, and one whose source names another
-   * origin changes hands only through an operator-selected takeover, which is
-   * the one write that revises this field.
+   * Provenance marker for entries created or adopted by the plugins sync,
+   * e.g. `"github:opspresso/agent-plugins#devops"` — the repo and the plugin
+   * that declared it. The sync stamps it on create and on adoption (a name a
+   * plugin declares is the repository's, whatever origin — or none — the
+   * stored entry carried), and the console's repo-owned gate reads it. Absent
+   * only for an entry registered by hand whose name no plugin declares.
    */
   source?: string;
   /** Values encrypted at rest (enc:v1: prefix); masked on client reads (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */

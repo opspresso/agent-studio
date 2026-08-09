@@ -116,13 +116,16 @@ export interface SyncPluginsDeps {
 /**
  * Pull the Agent Plugins repository into the registries.
  *
- * **The repository owns what it declared.** An entry the sync created — or
- * one it is adopting from another origin (the retired skills/tools repos, a
- * different plugin) — is brought to the repository's version automatically,
- * provenance included: the repo is the source of truth, and a console edit to
- * a repo-owned entry is the anomaly, not the record. An entry with no source
- * at all was registered by hand and is never touched: it was never any
- * repository's.
+ * **The repository owns what it declared — by name.** An entry the sync
+ * created, one it adopts from another origin (the retired skills/tools
+ * repos, a different plugin), and one that predates provenance entirely
+ * (registered by hand, no source) are all brought to the repository's
+ * version automatically, provenance included: the repo is the source of
+ * truth, and a console edit to a name the repo declares is the anomaly, not
+ * the record. Six servers sat unclaimable behind a "hand-registered is
+ * inviolable" rule that only fit a deployment where the repo is *a* source
+ * rather than *the* source. What stays untouched is a hand-registered entry
+ * whose name no plugin declares — the repository never claimed it.
  *
  * **A person owns deletion.** What the repository no longer carries is only
  * reported, per plugin, and deleted when the selection names it — an MCP
@@ -290,14 +293,6 @@ export async function syncPluginsFromSnapshot(
         report.created.push(file.name);
         continue;
       }
-      if (!current.source) {
-        report.skipped.push({
-          name: file.name,
-          reason: "conflict",
-          detail: "registered by hand; not offered for overwrite",
-        });
-        continue;
-      }
       const differs =
         current.source !== source ||
         current.description !== description ||
@@ -386,14 +381,6 @@ export async function syncPluginsFromSnapshot(
           }
           mcpReport.skipped.push(reported);
         }
-        continue;
-      }
-      if (!current.source) {
-        mcpReport.skipped.push({
-          name,
-          reason: "conflict",
-          detail: "registered by hand; not offered for overwrite",
-        });
         continue;
       }
       // A managed entry's address is the basis for trusting it, and the use

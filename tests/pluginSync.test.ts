@@ -411,7 +411,7 @@ describe("syncPluginsFromSnapshot", () => {
     ]);
   });
 
-  it("never touches a hand-registered entry — it was never any repository's", async () => {
+  it("adopts a source-less entry whose name a plugin declares — the name is the repository's", async () => {
     const { deps, skills, mcps } = makeDeps({
       skills: [storedSkill("gitops", { source: undefined })],
       servers: [storedServer("argocd", { source: undefined })],
@@ -428,13 +428,27 @@ describe("syncPluginsFromSnapshot", () => {
     );
 
     const devops = section(result, "devops");
-    expect(devops.skills.overwritten).toEqual([]);
-    expect(devops.skills.skipped).toEqual([
-      { name: "gitops", reason: "conflict", detail: "registered by hand; not offered for overwrite" },
+    expect(devops.skills.overwritten).toEqual(["gitops"]);
+    expect(devops.mcpServers.overwritten).toEqual(["argocd"]);
+    expect(skills.puts[0]).toMatchObject({
+      source: `github:${REPO}#devops`,
+      createdAt: BEFORE,
+    });
+    expect(mcps.patched).toEqual([
+      { name: "argocd", patch: { source: `github:${REPO}#devops` } },
     ]);
-    expect(devops.mcpServers.skipped).toEqual([
-      { name: "argocd", reason: "conflict", detail: "registered by hand; not offered for overwrite" },
-    ]);
+  });
+
+  it("leaves a hand-registered entry alone when no plugin declares its name", async () => {
+    const { deps, skills, mcps } = makeDeps({
+      skills: [storedSkill("mine", { source: undefined })],
+      servers: [storedServer("also-mine", { source: undefined })],
+    });
+    const result = await syncPluginsFromSnapshot(deps, snapshot([repoPlugin("devops")]), ACTOR);
+
+    // Not claimed, not orphaned, not written — the repository never named it.
+    expect(section(result, "devops").skills.orphaned).toEqual([]);
+    expect(section(result, "devops").mcpServers.orphaned).toEqual([]);
     expect(skills.puts).toEqual([]);
     expect(mcps.patched).toEqual([]);
   });

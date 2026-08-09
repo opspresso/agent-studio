@@ -366,14 +366,15 @@ One line each — the linked section is the authority.
   no stored counterpart is dropped. A mask can only confirm a secret, never create one.
 - **The plugins sync applies the repository; a person owns deletion.**
   `syncPluginsFromSnapshot` (`src/application/plugin/syncPlugins.ts`) pulls the Agent
-  Plugins repo (`PLUGINS_REPO`) into both registries at once. A repo-sourced entry —
-  including one adopted from another origin, provenance rewritten with it — is brought to
-  the repository's version **automatically on every sync**: the repo is the source of truth,
-  and a console edit to a repo-owned entry is the anomaly, not the record. An entry with no
-  `source` was registered by hand and is never touched (`conflict` skip). What the
-  repository no longer carries is only reported as orphaned, per plugin, and deleted when
-  the kind-qualified selection names it — an MCP entry holds credentials, and a file
-  disappearing from a branch is not reason enough to destroy them. **A deletion the sync
+  Plugins repo (`PLUGINS_REPO`) into both registries at once. **A name a plugin declares is
+  the repository's**: whatever the stored entry's origin — this repo, a retired one, or a
+  hand registration with no `source` at all — it is brought to the repository's version
+  automatically on every sync, provenance rewritten with it. A console edit to a declared
+  name is the anomaly, not the record; the one thing the sync never touches is a
+  hand-registered entry whose name no plugin declares. What the repository no longer
+  carries is only reported as orphaned, per plugin, and deleted when the kind-qualified
+  selection names it — an MCP entry holds credentials, and a file disappearing from a
+  branch is not reason enough to destroy them. **A deletion the sync
   performs goes through the use case and names the person who asked for the sync** — it
   takes a required `actorEmail` for that reason, since `remove` is the single owner of the
   `registry.delete` row and a deletion around it leaves no trace at all. Two asymmetries are

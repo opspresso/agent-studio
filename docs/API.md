@@ -477,11 +477,11 @@ Per kind, in each plugin's section:
 - **created** — in the repository, not in the registry. Imported outright, with
   `source: "github:<repo>#<plugin>"`.
 - **overwritten** — in both and differing; brought to the repository's version
-  **automatically**. This includes a *takeover*: an entry created by another origin (the
-  retired skills/tools repos, or a different plugin) is adopted, content and provenance
-  together. A console edit to a repo-owned entry is replaced on the next sync — the repo is
-  the source of truth. An entry with **no** source was registered by hand and is never
-  touched; it is reported as a `conflict` skip.
+  **automatically**. This includes adoption: an entry created by another origin (the
+  retired skills/tools repos, a different plugin) — or by hand, with no source at all — is
+  taken over, content and provenance together, whenever a plugin declares its name. A
+  console edit to a name the repo declares is replaced on the next sync — the repo is the
+  source of truth. A hand-registered entry whose name no plugin declares is never touched.
 - **unchanged** — in both and already in agreement; nothing was written, so `updatedAt` does
   not move.
 - **orphaned** — created by a sync of this repository and no longer declared by any plugin in
