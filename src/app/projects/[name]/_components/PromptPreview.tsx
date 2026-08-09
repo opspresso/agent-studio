@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { findTemplateVariables } from "@/application/llm/template";
+import { findTemplateVariables } from "@/shared/template";
 import { previewPrompt, type PromptPreview, type VersionInput } from "../../lib/api";
 import {
   Alert,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findTemplateVariables, renderTemplate } from "@/application/llm/template";
+import { findTemplateVariables, renderTemplate } from "@/shared/template";
 
 describe("renderTemplate", () => {
   it("substitutes provided variables", () => {

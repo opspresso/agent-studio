@@ -83,7 +83,12 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
 - `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack,
   A2A, GitHub, net/crypto helpers.
 - `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
-  directly**; get repositories and `executionDeps` from a wiring site.
+  directly**; get repositories and `executionDeps` from a wiring site. A **`"use client"`
+  file may not import `application/` or `infrastructure/` at all** — the boundary there is
+  the runtime it compiles for, not the directory it sits in, so the rule reads the
+  directive. A pure helper both a client and a use case need goes to `src/shared/`, which
+  is what `template.ts` did; reaching across instead is how the engine ends up in the
+  browser bundle.
 - `src/lib/` — cross-cutting glue: composition root, auth, session, config, runtime-settings.
   Infrastructure may import it; application may reach only its pure leaves (today
   `runMetrics`); domain never touches it.

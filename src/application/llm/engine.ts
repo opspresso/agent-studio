@@ -39,7 +39,7 @@ import { MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { ValidationError } from "@/application/errors";
 import { createRunContextBudget, type RunContextBudget } from "./contextBudget";
 import { PiiFilter } from "./pii";
-import { renderTemplate } from "./template";
+import { renderTemplate } from "@/shared/template";
 import { formatRunClock } from "@/shared/date";
 import { mergeGenerators } from "@/shared/mergeGenerators";
 import { log } from "@/shared/logger";

@@ -2,7 +2,7 @@
 
 import type { Project, Version } from "@/domain/project/types";
 import type { RunCaller } from "@/domain/execution/actor";
-import { renderTemplate } from "@/application/llm/template";
+import { renderTemplate } from "@/shared/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
 import { callerFor, runClock, runStrategyFor } from "./deps";
