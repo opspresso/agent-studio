@@ -64,4 +64,23 @@ describe("withTraceExport", () => {
     await expect(decorated.put(traceFixture())).rejects.toThrow("storage down");
     expect(exportTrace).not.toHaveBeenCalled();
   });
+
+  it("keeps the reads of a class-instance repository", async () => {
+    // The production repository is a class instance: its methods live on the
+    // prototype, where a spread cannot see them. A decorator built by spread
+    // would satisfy the type and still lose everything but `put`.
+    class ClassRepository implements TraceRepository {
+      async put(): Promise<void> {}
+      async get(): Promise<Trace | null> {
+        return traceFixture();
+      }
+      async listByProject(): Promise<Trace[]> {
+        return [traceFixture()];
+      }
+    }
+    const decorated = withTraceExport(new ClassRepository(), () => {});
+
+    await expect(decorated.get("t-1")).resolves.toMatchObject({ traceId: "t-1" });
+    await expect(decorated.listByProject("demo")).resolves.toHaveLength(1);
+  });
 });

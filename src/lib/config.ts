@@ -1,4 +1,4 @@
-import { parseList } from "@/shared/parseList";
+import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { log } from "@/shared/logger";
 
 export type Stage = "local" | "alpha" | "prod";
@@ -306,15 +306,15 @@ export const config = {
   get otelExporterEndpoint(): string | undefined {
     return process.env.OTEL_EXPORTER_OTLP_ENDPOINT || undefined;
   },
-  /** OTLP headers in the standard `key=value,key2=value2` form. */
+  /**
+   * OTLP headers in the standard `key=value,key2=value2` form. Case-preserving
+   * on purpose — the values are collector credentials, and `parseList`'s
+   * lowercasing would quietly corrupt a bearer token into one every request
+   * gets a 401 for.
+   */
   get otelExporterHeaders(): Record<string, string> | undefined {
-    const entries = parseList(process.env.OTEL_EXPORTER_OTLP_HEADERS ?? "")
-      .map((pair) => pair.split(/=(.*)/s))
-      .filter((parts): parts is [string, string, string] => Boolean(parts[0] && parts[1]));
-    if (entries.length === 0) {
-      return undefined;
-    }
-    return Object.fromEntries(entries.map(([key, value]) => [key.trim(), value.trim()]));
+    const headers = parseKeyValueList(process.env.OTEL_EXPORTER_OTLP_HEADERS ?? "");
+    return Object.keys(headers).length > 0 ? headers : undefined;
   },
   /**
    * Public base URL of this deployment (scheme + host). Behind a reverse

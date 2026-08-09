@@ -11,13 +11,21 @@ import { log } from "@/shared/logger";
  *
  * `put` persists first, and an export failure is logged and swallowed: a
  * collector outage must not fail runs — the row in DynamoDB is the record.
+ * What the catch sees is the enqueue path (a failed lazy import, a rejected
+ * setup); the actual OTLP POST fails later inside the batch processor and is
+ * reported through the OTEL diag channel, which the adapter routes to this
+ * same log scope.
+ *
+ * The reads delegate method by method, not by spread: the wrapped repository
+ * is a class instance, whose methods live on the prototype where a spread
+ * cannot see them — the result would satisfy the type and lose every method
+ * but `put`.
  */
 export function withTraceExport(
   repository: TraceRepository,
   exportTrace: (trace: Trace) => void | Promise<void>,
 ): TraceRepository {
   return {
-    ...repository,
     async put(trace) {
       await repository.put(trace);
       try {
@@ -26,5 +34,7 @@ export function withTraceExport(
         log.error("otel", "span export failed", error);
       }
     },
+    get: (traceId) => repository.get(traceId),
+    listByProject: (projectName, options) => repository.listByProject(projectName, options),
   };
 }

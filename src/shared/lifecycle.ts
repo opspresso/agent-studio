@@ -5,15 +5,34 @@
  * before exit. This module never calls process.exit — the runtime owns that.
  */
 
+import { log } from "./logger";
+
 let draining = false;
 
 export function isShuttingDown(): boolean {
   return draining;
 }
 
+type ShutdownHook = () => void | Promise<void>;
+const hooks: ShutdownHook[] = [];
+
+/**
+ * Run `hook` when the instance begins draining — a last chance to flush a
+ * buffer (OTLP spans) while requests finish. Best-effort: the drain never
+ * waits on a hook, and a hook that throws is logged, not fatal.
+ */
+export function onShutdown(hook: ShutdownHook): void {
+  hooks.push(hook);
+}
+
 /** Mark the instance unready. Exposed as the signal handler and for tests. */
 export function beginShutdown(): void {
   draining = true;
+  for (const hook of hooks) {
+    void Promise.resolve()
+      .then(hook)
+      .catch((error: unknown) => log.error("boot", "shutdown hook failed", error));
+  }
 }
 
 let registered = false;
