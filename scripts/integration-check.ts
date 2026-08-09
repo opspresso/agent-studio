@@ -626,6 +626,40 @@ async function main() {
     assert.equal(mine[0]?.detail, undefined, "an absent detail stays absent");
     pass("audit append + day-partition listing");
 
+    // ---------- A2A client keys (transactional pair + hash lookup) ----------
+    const { a2aClientKeyRepository } = await import(
+      "@/infrastructure/db/repositories/a2aClientKeyRepository"
+    );
+    const clientKeyName = `client-${suffix}`;
+    const clientKey = {
+      name: clientKeyName,
+      token: "enc:v1:asc_integration",
+      tokenHash: "hash-" + suffix,
+      masked: "asc_••••",
+      createdAt: new Date().toISOString(),
+    };
+    await a2aClientKeyRepository.create(clientKey);
+    assert.equal(
+      (await a2aClientKeyRepository.findNameByHash(clientKey.tokenHash)),
+      clientKeyName,
+      "hash row resolves to the client name",
+    );
+    await assert.rejects(
+      () => a2aClientKeyRepository.create(clientKey),
+      "a duplicate name is refused by the conditional pair",
+    );
+    assert.ok(
+      (await a2aClientKeyRepository.list()).some((k) => k.name === clientKeyName),
+      "key listed from the TYPE partition",
+    );
+    await a2aClientKeyRepository.delete(clientKeyName);
+    assert.equal(
+      await a2aClientKeyRepository.findNameByHash(clientKey.tokenHash),
+      null,
+      "deletion removes the hash row too",
+    );
+    pass("A2A client key: transactional pair, hash lookup, full deletion");
+
     // ---------- concurrency slots (conditional claim + lease reclaim) ----------
     const slotActor = `user:slots-${suffix}@example.com`;
     const nowSeconds = Math.floor(Date.now() / 1000);
