@@ -251,6 +251,11 @@ One line each — the linked section is the authority.
   gets the same answer from the facade, which **refuses a non-agent project**: the loop has
   nowhere to put an `llm` project's `userPromptTemplate` and would answer from a bare system
   prompt *successfully*. `/agent` was the one caller with no check of its own.
+  **Those three are a bounded list, like the image one** (`AGENT_RUN_ENTRY_POINTS` in
+  `tests/architecture.test.ts`), because the cost of `executeAgent` being safe to call
+  directly is that *how a run is entered* has three homes while *which project type runs
+  which way* has one. A policy belonging at the entry — a per-surface input cap, a rate
+  limit — has to be put in all three, so a fourth is added on purpose.
 - **The image use case has a bounded caller list, not an owner.** Three surfaces reach
   `application/image/generateImage` directly because each answers in a shape no other can
   (chunks, `{ imageBase64, model, usage }`, an A2A `image` artifact);
