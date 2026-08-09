@@ -300,6 +300,23 @@ export const config = {
     return process.env.A2A_API_KEY || undefined;
   },
   /**
+   * OTLP HTTP endpoint finished traces are exported to, standard OTEL name.
+   * Unset means no export at all — the decorator is simply not applied.
+   */
+  get otelExporterEndpoint(): string | undefined {
+    return process.env.OTEL_EXPORTER_OTLP_ENDPOINT || undefined;
+  },
+  /** OTLP headers in the standard `key=value,key2=value2` form. */
+  get otelExporterHeaders(): Record<string, string> | undefined {
+    const entries = parseList(process.env.OTEL_EXPORTER_OTLP_HEADERS ?? "")
+      .map((pair) => pair.split(/=(.*)/s))
+      .filter((parts): parts is [string, string, string] => Boolean(parts[0] && parts[1]));
+    if (entries.length === 0) {
+      return undefined;
+    }
+    return Object.fromEntries(entries.map(([key, value]) => [key.trim(), value.trim()]));
+  },
+  /**
    * Public base URL of this deployment (scheme + host). Behind a reverse
    * proxy the request URL reflects the bind address, so externally visible
    * URLs (Slack manifests, OAuth callbacks) must come from configuration.

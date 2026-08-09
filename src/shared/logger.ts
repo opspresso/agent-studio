@@ -30,6 +30,7 @@ export type LogScope =
   | "image"
   | "managed-mcp"
   | "mcp"
+  | "otel"
   | "run"
   | "runDeadline"
   | "settings"
