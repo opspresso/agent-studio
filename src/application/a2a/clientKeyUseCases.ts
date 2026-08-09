@@ -23,6 +23,7 @@ import {
 import { generateSecretValue, hashSecret } from "@/shared/generatedSecret";
 import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+import { A2A_ACTOR_ID } from "@/domain/execution/actor";
 import { log } from "@/shared/logger";
 
 export interface A2aClientKeyView {
@@ -68,6 +69,13 @@ export function createA2aClientKeyUseCases(
     async create(name, description, actorEmail) {
       if (!isSlug(name)) {
         throw new ValidationError(`name ${SLUG_RULE}`);
+      }
+      // The name becomes the actor id `a2a:{name}`. A client named after the
+      // shared key's own actor id would be indistinguishable from it — merged
+      // usage rows, the surface-wide concurrency ceiling instead of the
+      // per-client one — which is the opposite of what a named key is for.
+      if (name === A2A_ACTOR_ID) {
+        throw new ValidationError(`"${A2A_ACTOR_ID}" is the shared key's actor id and is reserved`);
       }
       const value = generateSecretValue("a2aClientKey");
       const key = {
@@ -120,7 +128,12 @@ export function createA2aClientKeyUseCases(
     },
 
     async revoke(name, actorEmail) {
-      await repo.delete(name);
+      // The audit row and the 200 must mean the key is gone. A revoke that
+      // found nothing is a 404, not a success that quietly left both rows —
+      // and therefore the credential — in place.
+      if (!(await repo.delete(name))) {
+        throw new NotFoundError(`A2A client key "${name}" not found`);
+      }
       await recordAudit({
         actorEmail,
         action: "secret.revoke",

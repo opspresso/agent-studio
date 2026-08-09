@@ -1,13 +1,13 @@
 import type { AgentCard } from "@a2a-js/sdk";
 import { a2aExposureDeps } from "@/lib/container";
 import { describeProjectA2a } from "@/application/a2a/exposure";
-import { getA2aApiKey } from "@/lib/runtime-settings";
+import { a2aSurfaceEnabled } from "@/app/api/a2a/_lib/auth";
 import { withAuth } from "@/lib/session";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
 export interface ProjectA2aView {
-  /** A2A_API_KEY is configured on this deployment. */
+  /** The inbound surface is on: a shared key or at least one client key. */
   enabled: boolean;
   published: boolean;
   cardUrl: string | null;
@@ -17,7 +17,7 @@ export interface ProjectA2aView {
 
 export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
-  const enabled = !!(await getA2aApiKey());
+  const enabled = await a2aSurfaceEnabled();
   const view = await describeProjectA2a(a2aExposureDeps, name, enabled);
   if (!view) {
     return Response.json({ error: "Project not found" }, { status: 404 });

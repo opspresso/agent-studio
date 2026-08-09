@@ -33,7 +33,7 @@ function inMemoryRepo(): A2aClientKeyRepository & { rows: Map<string, A2aClientK
       rows.set(key.name, key);
     },
     async delete(name) {
-      rows.delete(name);
+      return rows.delete(name);
     },
     async findNameByHash(tokenHash) {
       for (const key of rows.values()) {
@@ -87,6 +87,22 @@ describe("a2aClientKeyUseCases", () => {
     await expect(useCases.create("Not A Slug", undefined, "admin@x.com")).rejects.toThrow(
       ValidationError,
     );
+  });
+
+  it("refuses the shared key's own actor id as a name", async () => {
+    const useCases = createA2aClientKeyUseCases(inMemoryRepo(), cipher);
+
+    // A client named `shared-key` would merge with the anonymous shared-key
+    // actor — same usage rows, same concurrency ceiling — defeating the point.
+    await expect(useCases.create("shared-key", undefined, "admin@x.com")).rejects.toThrow(
+      ValidationError,
+    );
+  });
+
+  it("revoking a key that does not exist is a not-found, not a silent success", async () => {
+    const useCases = createA2aClientKeyUseCases(inMemoryRepo(), cipher);
+
+    await expect(useCases.revoke("ghost", "admin@x.com")).rejects.toThrow(NotFoundError);
   });
 
   it("reveals the stored key and revokes it for good", async () => {

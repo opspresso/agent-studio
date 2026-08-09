@@ -735,6 +735,11 @@ async function main() {
     await externalAgentRepository.delete(`it-agent-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-${suffix}`).catch(() => {});
     await chatRepository.delete(`it-chat-swept-${suffix}`).catch(() => {});
+    // The A2A block deletes its own key on the happy path; an assert between
+    // create and delete would otherwise leak the pair into the shared table.
+    await import("@/infrastructure/db/repositories/a2aClientKeyRepository")
+      .then(({ a2aClientKeyRepository }) => a2aClientKeyRepository.delete(`client-${suffix}`))
+      .catch(() => {});
     if (auditFixtures.length > 0) {
       const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
       const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");

@@ -22,8 +22,8 @@ export interface A2aClientKeyRepository {
   list(): Promise<A2aClientKey[]>;
   /** Conditional create of the key and its hash row; rejects an existing name. */
   create(key: A2aClientKey): Promise<void>;
-  /** Removes the key and its hash row. Idempotent. */
-  delete(name: string): Promise<void>;
+  /** Removes the key and its hash row. False when there was no such key. */
+  delete(name: string): Promise<boolean>;
   /** The client name a raw value's hash resolves to — the verification read. */
   findNameByHash(tokenHash: string): Promise<string | null>;
 }
