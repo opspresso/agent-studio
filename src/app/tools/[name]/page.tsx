@@ -740,7 +740,11 @@ function EditMcpForm({
             type="url"
             required
             disabled={documentLocked}
-            {...(documentLocked ? { description: "Owned by the plugin repository." } : {})}
+            description={
+              documentLocked
+                ? "Owned by the plugin repository."
+                : "Changing the URL drops the stored headers and OAuth block — credentials belong to the address they were entered for."
+            }
             inputWrapperOrder={["label", "input", "description", "error"]}
           />
         )}

@@ -11,7 +11,19 @@ const createSchema = z.object({
 });
 
 export const GET = withAuth(async () => {
-  return Response.json(await skillUseCases.list());
+  // A summary, not the entity: the list pages render a name, a description
+  // and two badges, while a full skill carries its whole markdown body and up
+  // to 200KB of attachments. Detail readers use GET /api/skills/{name}.
+  const skills = await skillUseCases.list();
+  return Response.json(
+    skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      source: skill.source,
+      files: skill.files?.length ?? 0,
+      updatedAt: skill.updatedAt,
+    })),
+  );
 });
 
 export const POST = withAdminAuth(async (_user, request: Request) => {

@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
-import { UpstreamError } from "@/application/errors";
+import { AppError, UpstreamError } from "@/application/errors";
 import { getPluginsRepoConfig } from "@/lib/runtime-settings";
-import { syncPluginsFromRepo } from "@/lib/container";
+import { lastPluginSync, syncPluginsFromRepo } from "@/lib/container";
 
 /**
  * The repository's content applies automatically; deletion is the one act
@@ -26,6 +26,9 @@ export const GET = withAuth(async () => {
     configured: Boolean(repo && token),
     repo: repo ?? null,
     branch,
+    // The last report survives the browser that ran the sync; a reload or a
+    // proxy timeout must not lose the only copy of what happened.
+    last: repo ? await lastPluginSync(repo) : null,
   });
 });
 
@@ -44,11 +47,11 @@ export const POST = withAdminAuth(async (user, request: Request) => {
   try {
     return Response.json(await syncPluginsFromRepo(repoConfig, user.email, parsed.data));
   } catch (error) {
-    // Through `apiError` like every other route. Deciding a status from a
-    // substring of the message answered 500 for "PLUGINS_REPO is not
-    // configured" — our fault, said about theirs.
+    // An error that already knows its status keeps it — a sync already
+    // running is a 409, not an upstream fault. Only a bare Error is assumed
+    // to be GitHub's: the fetch path is the one thing left that throws them.
     return apiError(
-      error instanceof Error && !(error instanceof UpstreamError)
+      error instanceof Error && !(error instanceof AppError)
         ? new UpstreamError(error.message)
         : error,
     );

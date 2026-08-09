@@ -25,7 +25,12 @@ export type AuditAction =
   /** A project and everything in its partition were deleted. */
   | "project.delete"
   /** A shared registry entry (skill, MCP server, external agent) was deleted. */
-  | "registry.delete";
+  | "registry.delete"
+  /**
+   * A sync rewrote an entry's provenance to the repository's — the entry
+   * changed hands. `detail` records the old source (or that there was none).
+   */
+  | "registry.adopt";
 
 export interface AuditEvent {
   /** Unique within its day partition; the sort key pairs it with `createdAt`. */

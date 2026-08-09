@@ -87,10 +87,16 @@ export default function PluginsPage() {
           {syncConfig.configured
             ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
             : "Plugin sync is not configured. Add the repository and token in Settings."}
+          {syncConfig.last &&
+            ` · last synced ${new Date(syncConfig.last.finishedAt).toLocaleString()} by ${syncConfig.last.actorEmail}`}
         </Text>
       )}
 
-      {syncResult && <PluginSyncSummary result={syncResult} onApply={runSync} />}
+      {/* A fresh result replaces the persisted one; otherwise the last sync's
+          report stays on the page — a reload must not lose it. */}
+      {(syncResult ?? syncConfig?.last?.report) && (
+        <PluginSyncSummary result={(syncResult ?? syncConfig?.last?.report)!} onApply={runSync} />
+      )}
 
       {error && (
         <Alert color="red" variant="light">

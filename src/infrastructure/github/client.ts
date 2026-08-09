@@ -12,6 +12,14 @@ export interface GitTreeEntry {
   sha: string;
 }
 
+/**
+ * Per-request deadline. Without one, a hung GitHub read holds the sync — and
+ * the proxy in front of it — until something else gives up first; the known
+ * failure mode is an ALB idle timeout cutting the response with the sync
+ * half-reported.
+ */
+const GITHUB_TIMEOUT_MS = 15_000;
+
 export async function githubApi<T>(path: string, token: string): Promise<T> {
   const res = await fetch(`https://api.github.com${path}`, {
     headers: {
@@ -19,6 +27,7 @@ export async function githubApi<T>(path: string, token: string): Promise<T> {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
     },
+    signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`GitHub ${path} failed: ${res.status}`);

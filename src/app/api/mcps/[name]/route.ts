@@ -49,9 +49,19 @@ export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteConte
 export const DELETE = withAdminAuth(async (user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
-    const refused = repoOwnedRefusal(await mcpUseCases.get(parseName(name)), REPO_OWNED.remove);
+    const existing = await mcpUseCases.get(parseName(name));
+    const refused = repoOwnedRefusal(existing, REPO_OWNED.remove);
     if (refused) {
       return refused;
+    }
+    // Deleting a managed entry here would remove the row and leave the
+    // container running with nothing left that remembers it — only the
+    // managed route's remove also stops the workload.
+    if (existing.runtime === "managed") {
+      return Response.json(
+        { error: "Managed entry — delete it through /api/mcps/managed/{name}, which also stops the container." },
+        { status: 400 },
+      );
     }
     await mcpUseCases.remove(parseName(name), user.email);
     return new Response(null, { status: 204 });

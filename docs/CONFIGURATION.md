@@ -195,10 +195,17 @@ longer carries is only reported as orphaned, per plugin, and deleted when a pers
 in the console — an MCP entry may hold credentials.
 
 Headers declared in `mcp.json` are **not imported** — a secret does not belong in git — and
-the dropped header names are reported. Credentials are set in the console after the sync. A
-cluster-internal URL is registerable this way only if its host is covered by
+the dropped header names are reported. Credentials are set in the console after the sync,
+and they never follow an address: when the repository moves a server's URL, the stored
+headers and OAuth block are dropped and reported (`credentials-reset`) rather than sent to
+the new host. A cluster-internal URL is registerable this way only if its host is covered by
 `MCP_INTERNAL_HOST_SUFFIXES` — the sync faces the same outbound guard a typed URL does, and a
 refusal is reported as a skip rather than failing the whole run.
+
+Sync runs one at a time per repo (a second request answers 409), persists its report (shown
+on `/plugins` across reloads), and can be ticked by the schedule CronJob via
+`POST /api/plugins/sync/scan` (`X-Scan-Token`: the `SCHEDULE_SCAN_TOKEN`), which skips the
+snapshot entirely while the branch head matches the last clean report.
 
 ## Slack
 

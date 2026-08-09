@@ -1,19 +1,24 @@
-import type { SkillFile } from "@/domain/skill/types";
+import type { Skill, SkillFile } from "@/domain/skill/types";
 import type { SkillRepository } from "@/domain/skill/repository";
 import type { SkillUseCases } from "@/application/skill/skillUseCases";
 import type { McpUseCases, UpdateMcpInput } from "@/application/mcp/mcpUseCases";
+import type { ManagedMcpUseCases } from "@/application/mcp/managedMcpUseCases";
 import type { PluginRepository } from "@/domain/plugin/repository";
 import type { PluginUseCases } from "./pluginUseCases";
-import { ConflictError, ValidationError } from "@/application/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import { parseFrontmatter } from "@/shared/frontmatter";
 import { isSlug } from "@/shared/slug";
+import { log } from "@/shared/logger";
 import {
   classifyMcpJsonServer,
   parseMcpJson,
   parsePluginManifest,
+  type Plugin,
   type PluginManifest,
 } from "@/domain/plugin/types";
 import type {
+  OrphanBindings,
   PluginKindReport,
   PluginsRepoSnapshot,
   PluginSyncResult,
@@ -21,6 +26,7 @@ import type {
   PluginSyncSelection,
   RepoPlugin,
 } from "@/domain/plugin/sync";
+import type { McpServer } from "@/domain/mcp/types";
 import type { SyncSkip } from "@/domain/sync/types";
 
 /** The Agent Skills spec's description cap. */
@@ -111,35 +117,61 @@ export interface SyncPluginsDeps {
    * the checks a typed one does — the name rule, the outbound URL guard.
    */
   mcps: Pick<McpUseCases, "list" | "create" | "update" | "remove">;
+  /**
+   * Where a managed entry's deletion goes — the only remove that also stops
+   * the container. Absent on a deployment that cannot run containers, in
+   * which case a managed orphan is reported but never deleted here: deleting
+   * only the row would leave the container running with nothing left that
+   * remembers it.
+   */
+  managedMcps?: Pick<ManagedMcpUseCases, "remove">;
+  /**
+   * Which versions bind the names about to be offered for deletion — the
+   * blast radius next to the delete checkbox. Optional because it needs the
+   * project store; without it orphans report with no binding info.
+   */
+  findBindings?: (skills: string[], mcpServers: string[]) => Promise<OrphanBindings>;
 }
 
 /**
  * Pull the Agent Plugins repository into the registries.
  *
  * **The repository owns what it declared — by name.** An entry the sync
- * created, one it adopts from another origin (the retired skills/tools
- * repos, a different plugin), and one that predates provenance entirely
- * (registered by hand, no source) are all brought to the repository's
- * version automatically, provenance included: the repo is the source of
- * truth, and a console edit to a name the repo declares is the anomaly, not
- * the record. Six servers sat unclaimable behind a "hand-registered is
- * inviolable" rule that only fit a deployment where the repo is *a* source
- * rather than *the* source. What stays untouched is a hand-registered entry
- * whose name no plugin declares — the repository never claimed it.
+ * created, one it adopts from another origin (the retired skills/tools repos,
+ * a different plugin), and one that predates provenance entirely (registered
+ * by hand, no source) are all brought to the repository's version
+ * automatically, provenance included — and every change of hands leaves a
+ * `registry.adopt` audit row. What stays untouched is a hand-registered entry
+ * whose name no plugin declares: the repository never claimed it.
+ *
+ * **Credentials never follow an address.** When the repository moves a
+ * server's URL, the use case drops the stored headers and OAuth block rather
+ * than send the old host's secrets to the new one, and the report says so
+ * (`credentials-reset`). The repo decides where an entry points, never what
+ * it may authenticate as.
+ *
+ * **An unreadable manifest freezes, it does not orphan.** A plugin whose
+ * plugin.json or mcp.json fails to parse keeps its previous row's components
+ * as claims, so a trailing comma cannot line the plugin's servers up under
+ * delete checkboxes — the same reasoning that makes an invalid SKILL.md a
+ * skip rather than an orphan.
+ *
+ * **One failure costs one entry.** Every write is fenced: a refused URL, a
+ * mid-sync race, a storage error each become a skip on that name and the
+ * sync continues. The next sync converges on whatever this one missed.
  *
  * **A person owns deletion.** What the repository no longer carries is only
- * reported, per plugin, and deleted when the selection names it — an MCP
- * entry holds credentials, and a file disappearing from a branch is not
- * reason enough to destroy them. The selection is kind-qualified because
- * skills and MCP servers are different registries that may hold one name.
+ * reported, per plugin and with the versions that bind it, and deleted when
+ * the selection names it — an MCP entry holds credentials, and a file
+ * disappearing from a branch is not reason enough to destroy them.
  */
 export async function syncPluginsFromSnapshot(
   deps: SyncPluginsDeps,
   snapshot: PluginsRepoSnapshot,
   /**
-   * Who asked for the sync; a deletion it performs is recorded against them.
-   * Required, and ahead of the optional selection, so a caller cannot forget
-   * it and write an invented address into the audit trail.
+   * Who asked for the sync; a deletion or adoption it performs is recorded
+   * against them. Required, and ahead of the optional selection, so a caller
+   * cannot forget it and write an invented address into the audit trail.
    */
   actorEmail: string,
   selection: PluginSyncSelection = {},
@@ -160,6 +192,7 @@ export async function syncPluginsFromSnapshot(
   }
 
   const candidates: { plugin: RepoPlugin; manifest: PluginManifest }[] = [];
+  const unreadableRoots: string[] = [];
   for (const plugin of snapshot.plugins) {
     const res = parsePluginManifest(plugin.manifestRaw);
     if (!res.ok) {
@@ -168,6 +201,7 @@ export async function syncPluginsFromSnapshot(
         reason: "invalid-manifest",
         detail: res.reason,
       });
+      unreadableRoots.push(plugin.rootPath);
       continue;
     }
     candidates.push({ plugin, manifest: res.manifest });
@@ -189,10 +223,14 @@ export async function syncPluginsFromSnapshot(
         reason: "duplicate-name",
         detail: `declared at ${claimants.map((c) => c.plugin.rootPath || ".").join(", ")}`,
       });
+      unreadableRoots.push(...claimants.map((c) => c.plugin.rootPath));
       continue;
     }
     parsed.push(...claimants);
   }
+
+  const storedRows = await deps.plugins.list();
+  const rowsByName = new Map(storedRows.map((row) => [row.name, row]));
 
   const sections = new Map<string, PluginSyncSection>();
   const sectionFor = (pluginName: string, manifest?: PluginManifest): PluginSyncSection => {
@@ -215,11 +253,36 @@ export async function syncPluginsFromSnapshot(
   // stored entry is not offered for deletion over a frontmatter typo.
   const skillClaims = new Map<string, string[]>();
   const serverClaims = new Map<string, string[]>();
+  const claim = (map: Map<string, string[]>, name: string, plugin: string) => {
+    map.set(name, [...(map.get(name) ?? []), plugin]);
+  };
+
+  // An unreadable plugin.json (or a duplicated plugin name) freezes the
+  // plugin at its previous state: the last good row's components stay claimed
+  // and the row stays as it was. Without this, one bad commit turns a whole
+  // plugin's servers — credentials and all — into delete candidates.
+  const frozenRowNames = new Set<string>();
+  for (const rootPath of unreadableRoots) {
+    const row = storedRows.find(
+      (candidate) => candidate.repo === snapshot.repo && candidate.rootPath === rootPath,
+    );
+    if (!row) {
+      continue;
+    }
+    frozenRowNames.add(row.name);
+    for (const name of row.skills) {
+      claim(skillClaims, name, row.name);
+    }
+    for (const name of row.mcpServers) {
+      claim(serverClaims, name, row.name);
+    }
+  }
+
   const parsedServers = new Map<string, Record<string, unknown>>();
   for (const { plugin, manifest } of parsed) {
     sectionFor(manifest.name, manifest);
     for (const skill of plugin.skills) {
-      skillClaims.set(skill.name, [...(skillClaims.get(skill.name) ?? []), manifest.name]);
+      claim(skillClaims, skill.name, manifest.name);
     }
     if (plugin.mcpJsonRaw === undefined) {
       continue;
@@ -231,24 +294,67 @@ export async function syncPluginsFromSnapshot(
         reason: "invalid-manifest",
         detail: res.reason,
       });
+      // Frozen, not forgotten: the previous row's servers stay claimed so a
+      // broken mcp.json cannot orphan what it declared last time.
+      for (const name of rowsByName.get(manifest.name)?.mcpServers ?? []) {
+        claim(serverClaims, name, manifest.name);
+      }
       continue;
     }
     parsedServers.set(manifest.name, res.servers);
     for (const name of Object.keys(res.servers)) {
-      serverClaims.set(name, [...(serverClaims.get(name) ?? []), manifest.name]);
+      claim(serverClaims, name, manifest.name);
     }
   }
 
   const storedSkills = new Map((await deps.skillRepo.list()).map((skill) => [skill.name, skill]));
   const storedServers = new Map((await deps.mcps.list()).map((server) => [server.name, server]));
 
+  /**
+   * Run one write behind a fence: a failure becomes a skip on that name and
+   * the sync continues. Known refusals keep their vocabulary; anything else
+   * is `write-failed` with the message, and logged — a fence must not make a
+   * storage fault quieter than a skipped attachment.
+   */
+  const fence = async (
+    skips: SyncSkip[],
+    name: string,
+    op: () => Promise<unknown>,
+  ): Promise<boolean> => {
+    try {
+      await op();
+      return true;
+    } catch (error) {
+      const reported = classify(name, error);
+      if (!reported) {
+        log.error("plugins", `sync write for '${name}' failed`, error);
+      }
+      skips.push(
+        reported ?? {
+          name,
+          reason: "write-failed",
+          detail: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return false;
+    }
+  };
+
+  const adopted = async (kind: "skill" | "mcp", name: string, oldSource: string | undefined, source: string) => {
+    await recordAudit({
+      actorEmail,
+      action: "registry.adopt",
+      target: auditTarget(kind, name),
+      detail: `${oldSource ?? "hand-registered"} → ${source}`,
+    });
+  };
+
   for (const { plugin, manifest } of parsed) {
     const section = sectionFor(manifest.name);
     const source = repoPrefix + manifest.name;
-    const declaredSkills: string[] = [];
-    const declaredServers: string[] = [];
-
     const report = section.skills;
+    const mcpReport = section.mcpServers;
+
     for (const path of plugin.badSkillDirs) {
       report.skipped.push({ name: path, reason: "bad-name" });
     }
@@ -260,6 +366,11 @@ export async function syncPluginsFromSnapshot(
       });
     }
 
+    // Validate everything before writing anything, so the plugin row — which
+    // records what the plugin declares — can be written first. A row written
+    // last meant a mid-sync failure left components pointing at a plugin page
+    // that answered 404.
+    const conformantSkills: Array<{ name: string; doc: ParsedPluginSkillDoc; files?: SkillFile[] }> = [];
     for (const file of plugin.skills) {
       const claimants = skillClaims.get(file.name) ?? [];
       if (claimants.length > 1) {
@@ -275,48 +386,18 @@ export async function syncPluginsFromSnapshot(
         report.skipped.push({ name: file.name, reason: "invalid-skill", detail: parsedDoc.reason });
         continue;
       }
-      declaredSkills.push(file.name);
-      const { description, body } = parsedDoc.doc;
-      const files = file.files.length > 0 ? file.files : undefined;
-      const current = storedSkills.get(file.name);
-
-      if (!current) {
-        await deps.skillRepo.put({
-          name: file.name,
-          description,
-          content: body,
-          files,
-          source,
-          createdAt: now,
-          updatedAt: now,
-        });
-        report.created.push(file.name);
-        continue;
-      }
-      const differs =
-        current.source !== source ||
-        current.description !== description ||
-        current.content !== body ||
-        !sameFiles(current.files, files);
-      if (!differs) {
-        // Nothing is written for an entry that already agrees, or `updatedAt`
-        // would move on every sync and make the registry look edited.
-        report.unchanged.push(file.name);
-        continue;
-      }
-      await deps.skillRepo.put({
+      conformantSkills.push({
         name: file.name,
-        description,
-        content: body,
-        files,
-        source,
-        createdAt: current.createdAt,
-        updatedAt: now,
+        doc: parsedDoc.doc,
+        files: file.files.length > 0 ? file.files : undefined,
       });
-      report.overwritten.push(file.name);
     }
 
-    const mcpReport = section.mcpServers;
+    const acceptedServers: Array<{
+      name: string;
+      url: string;
+      doc: { description?: string; content?: string };
+    }> = [];
     const servers = parsedServers.get(manifest.name);
     for (const [name, entry] of Object.entries(servers ?? {})) {
       const claimants = serverClaims.get(name) ?? [];
@@ -345,7 +426,6 @@ export async function syncPluginsFromSnapshot(
         });
         continue;
       }
-      declaredServers.push(name);
       if (classified.declaredHeaderNames.length > 0) {
         // The server still syncs; what was left behind is said out loud, by
         // name only — never a value.
@@ -356,30 +436,96 @@ export async function syncPluginsFromSnapshot(
         });
       }
       const doc = plugin.mcpDocs.find((candidate) => candidate.server === name);
-      const parsedDoc = doc ? parseMcpDoc(doc.content) : {};
-      const current = storedServers.get(name);
+      acceptedServers.push({ name, url: classified.url, doc: doc ? parseMcpDoc(doc.content) : {} });
+    }
 
+    const existingRow = rowsByName.get(manifest.name);
+    const declaredServers =
+      plugin.mcpJsonRaw !== undefined && servers === undefined
+        ? // mcp.json unreadable: freeze the previous declaration.
+          existingRow?.mcpServers ?? []
+        : acceptedServers.map((server) => server.name);
+    const row: Plugin = {
+      name: manifest.name,
+      version: manifest.version,
+      description: manifest.description,
+      repo: snapshot.repo,
+      rootPath: plugin.rootPath,
+      commitSha: snapshot.commitSha,
+      skills: conformantSkills.map((skill) => skill.name),
+      mcpServers: declaredServers,
+      syncedAt: now,
+      createdAt: existingRow?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await fence(repoSkips, `plugin:${manifest.name}`, () => deps.plugins.put(row));
+
+    for (const { name, doc, files } of conformantSkills) {
+      const current = storedSkills.get(name);
       if (!current) {
-        try {
-          const created = await deps.mcps.create({
-            name,
-            url: classified.url,
-            description: parsedDoc.description,
-            content: parsedDoc.content,
-            source,
-            // Never from the repository: a secret does not belong in git, so a
-            // server that needs one is registered here and credentialed in the
-            // console.
-            headers: {},
-          });
+        const created: Skill = {
+          name,
+          description: doc.description,
+          content: doc.body,
+          files,
+          source,
+          createdAt: now,
+          updatedAt: now,
+        };
+        if (await fence(report.skipped, name, () => deps.skillRepo.put(created))) {
+          report.created.push(name);
+        }
+        continue;
+      }
+      const fields = [
+        ...(current.source !== source ? ["source"] : []),
+        ...(current.description !== doc.description ? ["description"] : []),
+        ...(current.content !== doc.body ? ["content"] : []),
+        ...(sameFiles(current.files, files) ? [] : ["files"]),
+      ];
+      if (fields.length === 0) {
+        // Nothing is written for an entry that already agrees, or `updatedAt`
+        // would move on every sync and make the registry look edited.
+        report.unchanged.push(name);
+        continue;
+      }
+      const next: Skill = {
+        name,
+        description: doc.description,
+        content: doc.body,
+        files,
+        source,
+        createdAt: current.createdAt,
+        updatedAt: now,
+      };
+      if (await fence(report.skipped, name, () => deps.skillRepo.put(next))) {
+        report.overwritten.push({ name, fields });
+        if (current.source !== source) {
+          await adopted("skill", name, current.source, source);
+        }
+      }
+    }
+
+    for (const { name, url, doc } of acceptedServers) {
+      const current = storedServers.get(name);
+      if (!current) {
+        if (
+          await fence(mcpReport.skipped, name, async () => {
+            const created = await deps.mcps.create({
+              name,
+              url,
+              description: doc.description,
+              content: doc.content,
+              source,
+              // Never from the repository: a secret does not belong in git, so
+              // a server that needs one is registered here and credentialed in
+              // the console.
+              headers: {},
+            });
+            storedServers.set(name, created);
+          })
+        ) {
           mcpReport.created.push(name);
-          storedServers.set(name, created);
-        } catch (error) {
-          const reported = classify(name, error);
-          if (!reported) {
-            throw error;
-          }
-          mcpReport.skipped.push(reported);
         }
         continue;
       }
@@ -387,15 +533,18 @@ export async function syncPluginsFromSnapshot(
       // case refuses to move one. Left out of the patch so the rest of the
       // document can still apply, and reported either way.
       const managed = current.runtime === "managed";
-      const urlDiffers = classified.url !== current.url;
+      const urlDiffers = url !== current.url;
+      // A document the repository no longer carries no longer describes the
+      // server: for an entry that is already this plugin's, the stored
+      // description and notes clear rather than outlive their source. An entry
+      // still changing hands keeps what it had until the repo provides one.
+      const ours = current.source === source;
+      const description = doc.description ?? (ours && current.description ? "" : undefined);
+      const content = doc.content ?? (ours && current.content ? "" : undefined);
       const patch: UpdateMcpInput = {
-        ...(urlDiffers && !managed ? { url: classified.url } : {}),
-        ...(parsedDoc.description && parsedDoc.description !== current.description
-          ? { description: parsedDoc.description }
-          : {}),
-        ...(parsedDoc.content && parsedDoc.content !== current.content
-          ? { content: parsedDoc.content }
-          : {}),
+        ...(urlDiffers && !managed ? { url } : {}),
+        ...(description !== undefined && description !== current.description ? { description } : {}),
+        ...(content !== undefined && content !== current.content ? { content } : {}),
         ...(current.source !== source ? { source } : {}),
       };
       if (urlDiffers && managed) {
@@ -405,80 +554,125 @@ export async function syncPluginsFromSnapshot(
         mcpReport.unchanged.push(name);
         continue;
       }
-      try {
-        await deps.mcps.update(name, patch);
-        mcpReport.overwritten.push(name);
-      } catch (error) {
-        const reported = classify(name, error);
-        if (!reported) {
-          throw error;
+      // Moving the address costs the credentials entered for the old one —
+      // the use case drops stored headers and any OAuth block rather than
+      // send them to whatever the repository now points at. Reported here,
+      // where the operator who must re-enter them is looking.
+      if (patch.url !== undefined && (Object.keys(current.headers).length > 0 || current.auth)) {
+        const lost = [
+          ...(Object.keys(current.headers).length > 0
+            ? [`${Object.keys(current.headers).length} header(s)`]
+            : []),
+          ...(current.auth ? ["OAuth"] : []),
+        ];
+        mcpReport.skipped.push({
+          name,
+          reason: "credentials-reset",
+          detail: `moved to ${patch.url}; dropped ${lost.join(" and ")}`,
+        });
+      }
+      if (await fence(mcpReport.skipped, name, () => deps.mcps.update(name, patch))) {
+        mcpReport.overwritten.push({ name, fields: Object.keys(patch) });
+        if (current.source !== source) {
+          await adopted("mcp", name, current.source, source);
         }
-        mcpReport.skipped.push(reported);
       }
     }
-
-    // The row is a projection of what this sync just read, so it is refreshed
-    // whether or not anything else was written; only `createdAt` survives.
-    const existingRow = await deps.plugins.get(manifest.name);
-    await deps.plugins.put({
-      name: manifest.name,
-      version: manifest.version,
-      description: manifest.description,
-      repo: snapshot.repo,
-      rootPath: plugin.rootPath,
-      commitSha: snapshot.commitSha,
-      skills: declaredSkills,
-      mcpServers: declaredServers,
-      syncedAt: now,
-      createdAt: existingRow?.createdAt ?? now,
-      updatedAt: now,
-    });
   }
 
   // Orphans, by provenance prefix. A component that moved between plugins is
   // claimed under its new plugin — a takeover, not an orphan — so only a name
   // no plugin declares at all lands here, attributed to the plugin its stored
   // source still names (a section is synthesized for one that vanished).
+  const orphanSkills: Array<{ skill: Skill; report: PluginKindReport }> = [];
+  const orphanServers: Array<{ server: McpServer; report: PluginKindReport }> = [];
   for (const skill of storedSkills.values()) {
     if (!skill.source?.startsWith(repoPrefix) || skillClaims.has(skill.name)) {
       continue;
     }
-    const section = sectionFor(skill.source.slice(repoPrefix.length));
+    const report = sectionFor(skill.source.slice(repoPrefix.length)).skills;
     if (!removeSkills.has(skill.name)) {
-      section.skills.orphaned.push(skill.name);
+      orphanSkills.push({ skill, report });
       continue;
     }
-    await deps.skills.remove(skill.name, actorEmail);
-    section.skills.removed.push(skill.name);
+    if (await fence(report.skipped, skill.name, () => deps.skills.remove(skill.name, actorEmail))) {
+      report.removed.push(skill.name);
+    }
   }
   for (const server of storedServers.values()) {
     if (!server.source?.startsWith(repoPrefix) || serverClaims.has(server.name)) {
       continue;
     }
-    const section = sectionFor(server.source.slice(repoPrefix.length));
+    const report = sectionFor(server.source.slice(repoPrefix.length)).mcpServers;
     if (!removeServers.has(server.name)) {
-      section.mcpServers.orphaned.push(server.name);
+      orphanServers.push({ server, report });
       continue;
     }
-    await deps.mcps.remove(server.name, actorEmail);
-    section.mcpServers.removed.push(server.name);
+    if (server.runtime === "managed") {
+      // Only the managed use case also stops the container. Without it,
+      // deleting the row would leave the workload running with nothing left
+      // that remembers it — so on a deployment that cannot reach it, the
+      // orphan stays reported instead.
+      if (!deps.managedMcps) {
+        report.skipped.push({
+          name: server.name,
+          reason: "write-failed",
+          detail:
+            "managed entry; the managed runtime is not configured here, so its container cannot be stopped",
+        });
+        continue;
+      }
+      const managedMcps = deps.managedMcps;
+      if (
+        await fence(report.skipped, server.name, () => managedMcps.remove(server.name, actorEmail))
+      ) {
+        report.removed.push(server.name);
+      }
+      continue;
+    }
+    if (await fence(report.skipped, server.name, () => deps.mcps.remove(server.name, actorEmail))) {
+      report.removed.push(server.name);
+    }
+  }
+
+  // The delete checkbox gets its blast radius: which versions bind each
+  // orphan. One batched lookup, only when there is an orphan to annotate.
+  let bindings: OrphanBindings = { skills: {}, mcpServers: {} };
+  if (deps.findBindings && (orphanSkills.length > 0 || orphanServers.length > 0)) {
+    try {
+      bindings = await deps.findBindings(
+        orphanSkills.map((entry) => entry.skill.name),
+        orphanServers.map((entry) => entry.server.name),
+      );
+    } catch (error) {
+      // The annotation is advisory; losing it must not lose the report.
+      log.error("plugins", "binding lookup for orphans failed", error);
+    }
+  }
+  for (const { skill, report } of orphanSkills) {
+    report.orphaned.push({ name: skill.name, boundTo: bindings.skills[skill.name] ?? [] });
+  }
+  for (const { server, report } of orphanServers) {
+    report.orphaned.push({ name: server.name, boundTo: bindings.mcpServers[server.name] ?? [] });
   }
 
   // Plugin rows the snapshot no longer carries. Removing one does not cascade:
-  // its components surface individually above, each its own decision.
+  // its components surface individually above, each its own decision. A row
+  // frozen by an unreadable manifest is present, not gone — never offered.
   const parsedNames = new Set(parsed.map((candidate) => candidate.manifest.name));
   const orphanedPlugins: string[] = [];
   const removedPlugins: string[] = [];
-  for (const row of await deps.plugins.list()) {
-    if (row.repo !== snapshot.repo || parsedNames.has(row.name)) {
+  for (const row of storedRows) {
+    if (row.repo !== snapshot.repo || parsedNames.has(row.name) || frozenRowNames.has(row.name)) {
       continue;
     }
     if (!removePlugins.has(row.name)) {
       orphanedPlugins.push(row.name);
       continue;
     }
-    await deps.pluginRows.remove(row.name, actorEmail);
-    removedPlugins.push(row.name);
+    if (await fence(repoSkips, `plugin:${row.name}`, () => deps.pluginRows.remove(row.name, actorEmail))) {
+      removedPlugins.push(row.name);
+    }
   }
 
   return {
@@ -492,13 +686,18 @@ export async function syncPluginsFromSnapshot(
 }
 
 /**
- * Turn a write failure into what the operator is told, or `null` when it is
- * not ours to explain — an unknown error is a bug and must reach the caller
- * rather than be filed as a skipped server.
+ * Turn a write failure into the vocabulary the report already speaks, or
+ * `null` for a fault with no name yet — the fence files those as
+ * `write-failed` with the message, so nothing aborts the sync.
  */
 function classify(name: string, error: unknown): SyncSkip | null {
   if (error instanceof ConflictError) {
     return { name, reason: "conflict" };
+  }
+  if (error instanceof NotFoundError) {
+    // The mirror race of `conflict`: the entry vanished between reading the
+    // registry and writing. The next sync finds whatever is true by then.
+    return { name, reason: "conflict", detail: "removed mid-sync" };
   }
   if (error instanceof ValidationError) {
     return { name, reason: "invalid-url", detail: error.message };

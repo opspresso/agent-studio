@@ -17,7 +17,9 @@ import type {
   RepoPlugin,
   RepoPluginSkill,
 } from "@/domain/plugin/sync";
-import { ConflictError, ValidationError } from "@/application/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/application/errors";
+import { setAuditSink } from "@/application/audit/recordAudit";
+import type { AuditEvent } from "@/domain/audit/types";
 
 const REPO = "opspresso/agent-plugins";
 const NOW = "2026-02-02T00:00:00.000Z";
@@ -361,7 +363,9 @@ describe("syncPluginsFromSnapshot", () => {
       ACTOR,
     );
 
-    expect(section(result, "devops").skills.overwritten).toEqual(["gitops"]);
+    expect(section(result, "devops").skills.overwritten).toEqual([
+      { name: "gitops", fields: ["content"] },
+    ]);
     expect(skills.puts[0]).toMatchObject({ createdAt: BEFORE, updatedAt: NOW });
   });
 
@@ -387,7 +391,9 @@ describe("syncPluginsFromSnapshot", () => {
       ACTOR,
     );
 
-    expect(section(result, "devops").skills.overwritten).toEqual(["gitops"]);
+    expect(section(result, "devops").skills.overwritten).toEqual([
+      { name: "gitops", fields: ["source"] },
+    ]);
     expect(skills.puts[0]).toMatchObject({
       source: `github:${REPO}#devops`,
       createdAt: BEFORE,
@@ -405,7 +411,9 @@ describe("syncPluginsFromSnapshot", () => {
       ACTOR,
     );
 
-    expect(section(result, "devops").mcpServers.overwritten).toEqual(["argocd"]);
+    expect(section(result, "devops").mcpServers.overwritten).toEqual([
+      { name: "argocd", fields: ["source"] },
+    ]);
     expect(mcps.patched).toEqual([
       { name: "argocd", patch: { source: `github:${REPO}#devops` } },
     ]);
@@ -428,8 +436,8 @@ describe("syncPluginsFromSnapshot", () => {
     );
 
     const devops = section(result, "devops");
-    expect(devops.skills.overwritten).toEqual(["gitops"]);
-    expect(devops.mcpServers.overwritten).toEqual(["argocd"]);
+    expect(devops.skills.overwritten).toEqual([{ name: "gitops", fields: ["source"] }]);
+    expect(devops.mcpServers.overwritten).toEqual([{ name: "argocd", fields: ["source"] }]);
     expect(skills.puts[0]).toMatchObject({
       source: `github:${REPO}#devops`,
       createdAt: BEFORE,
@@ -597,9 +605,12 @@ describe("syncPluginsFromSnapshot", () => {
     expect(plugins.puts).toEqual([]);
   });
 
-  it("leaves a stored description alone when the plugin carries no extension document", async () => {
+  it("clears a repo-owned description whose extension document is gone", async () => {
+    // The entry is already this plugin's; the repo removing its document means
+    // the stored description no longer has a source — it clears rather than
+    // outliving it.
     const { deps, mcps } = makeDeps({
-      servers: [storedServer("argocd", { description: "typed by an operator" })],
+      servers: [storedServer("argocd", { description: "from the old doc" })],
     });
     const result = await syncPluginsFromSnapshot(
       deps,
@@ -607,10 +618,32 @@ describe("syncPluginsFromSnapshot", () => {
       ACTOR,
     );
 
-    // Nothing differs: the document does not carry a description, so it says
-    // nothing about the stored one.
-    expect(section(result, "devops").mcpServers.unchanged).toEqual(["argocd"]);
-    expect(mcps.patched).toEqual([]);
+    expect(section(result, "devops").mcpServers.overwritten).toEqual([
+      { name: "argocd", fields: ["description"] },
+    ]);
+    expect(mcps.patched).toEqual([{ name: "argocd", patch: { description: "" } }]);
+  });
+
+  it("keeps a stored description through an adoption that carries no document", async () => {
+    // Still changing hands: the entry keeps what it had until the repo
+    // provides its own document.
+    const { deps, mcps } = makeDeps({
+      servers: [
+        storedServer("argocd", { source: undefined, description: "typed by an operator" }),
+      ],
+    });
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([repoPlugin("devops", { mcpJsonRaw: mcpJson({ argocd: httpServer() }) })]),
+      ACTOR,
+    );
+
+    expect(section(result, "devops").mcpServers.overwritten).toEqual([
+      { name: "argocd", fields: ["source"] },
+    ]);
+    expect(mcps.patched).toEqual([
+      { name: "argocd", patch: { source: `github:${REPO}#devops` } },
+    ]);
   });
 
   it("keeps a managed server's address out of the patch and says so", async () => {
@@ -641,17 +674,18 @@ describe("syncPluginsFromSnapshot", () => {
     expect(mcps.patched).toEqual([]);
   });
 
-  it("classifies the use case's refusals and rethrows anything else", async () => {
+  it("classifies the use case's refusals and fences everything else as a skip", async () => {
     const refuse = {
       taken: new ConflictError("taken"),
       blocked: new ValidationError("Blocked URL"),
+      vanished: new NotFoundError("gone"),
     };
     const { deps } = makeDeps({ refuse });
     const result = await syncPluginsFromSnapshot(
       deps,
       snapshot([
         repoPlugin("devops", {
-          mcpJsonRaw: mcpJson({ taken: httpServer(), blocked: httpServer() }),
+          mcpJsonRaw: mcpJson({ taken: httpServer(), blocked: httpServer(), vanished: httpServer() }),
         }),
       ]),
       ACTOR,
@@ -659,16 +693,24 @@ describe("syncPluginsFromSnapshot", () => {
     expect(section(result, "devops").mcpServers.skipped).toEqual([
       { name: "taken", reason: "conflict" },
       { name: "blocked", reason: "invalid-url", detail: "Blocked URL" },
+      { name: "vanished", reason: "conflict", detail: "removed mid-sync" },
     ]);
 
-    const { deps: failing } = makeDeps({ refuse: { boom: new Error("storage down") } });
-    await expect(
-      syncPluginsFromSnapshot(
-        failing,
-        snapshot([repoPlugin("devops", { mcpJsonRaw: mcpJson({ boom: httpServer() }) })]),
-        ACTOR,
-      ),
-    ).rejects.toThrow("storage down");
+    // A fault with no name is fenced, not fatal: the sync finishes and the
+    // healthy sibling still lands.
+    const { deps: failing, mcps } = makeDeps({ refuse: { boom: new Error("storage down") } });
+    const fenced = await syncPluginsFromSnapshot(
+      failing,
+      snapshot([
+        repoPlugin("devops", { mcpJsonRaw: mcpJson({ boom: httpServer(), fine: httpServer() }) }),
+      ]),
+      ACTOR,
+    );
+    expect(section(fenced, "devops").mcpServers.skipped).toEqual([
+      { name: "boom", reason: "write-failed", detail: "storage down" },
+    ]);
+    expect(section(fenced, "devops").mcpServers.created).toEqual(["fine"]);
+    expect(mcps.created.map((input) => input.name)).toEqual(["fine"]);
   });
 
   it("carries the collector's attachment skips and bad skill directories", async () => {
@@ -702,7 +744,7 @@ describe("syncPluginsFromSnapshot", () => {
       { remove: { mcpServers: ["gone-server"] } },
     );
 
-    expect(section(result, "devops").skills.orphaned).toEqual(["kept"]);
+    expect(section(result, "devops").skills.orphaned).toEqual([{ name: "kept", boundTo: [] }]);
     expect(section(result, "vanished").mcpServers.removed).toEqual(["gone-server"]);
     expect(skills.removed).toEqual([]);
     expect(mcps.removed).toEqual([{ name: "gone-server", actor: ACTOR }]);
@@ -722,7 +764,9 @@ describe("syncPluginsFromSnapshot", () => {
     );
 
     expect(section(result, "devops").skills.orphaned).toEqual([]);
-    expect(section(result, "research").skills.overwritten).toEqual(["moved"]);
+    expect(section(result, "research").skills.overwritten).toEqual([
+      { name: "moved", fields: ["source"] },
+    ]);
   });
 
   it("does not orphan an entry whose declared document failed conformance this round", async () => {
@@ -811,6 +855,272 @@ describe("syncPluginsFromSnapshot", () => {
     });
     expect(applied.removedPlugins).toEqual(["retired"]);
     expect(plugins.removed).toEqual([{ name: "retired", actor: ACTOR }]);
+  });
+
+  it("reports dropped credentials when the repository moves a server's address", async () => {
+    // The use case drops stored headers and OAuth on a URL move; the sync's
+    // job is to say so where the operator is looking, and to still send the
+    // move — the repo decides where an entry points, never what it may
+    // authenticate as.
+    const { deps, mcps } = makeDeps({
+      servers: [
+        storedServer("github", {
+          url: "https://api.githubcopilot.com/mcp/",
+          headers: { Authorization: "enc:v1:…" },
+          auth: { type: "oauth2" } as never,
+        }),
+      ],
+    });
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([
+        repoPlugin("devops", {
+          mcpJsonRaw: mcpJson({ github: httpServer("https://elsewhere.test/mcp") }),
+        }),
+      ]),
+      ACTOR,
+    );
+
+    const report = section(result, "devops").mcpServers;
+    expect(report.overwritten).toEqual([{ name: "github", fields: ["url"] }]);
+    expect(report.skipped).toEqual([
+      {
+        name: "github",
+        reason: "credentials-reset",
+        detail: "moved to https://elsewhere.test/mcp; dropped 1 header(s) and OAuth",
+      },
+    ]);
+    expect(mcps.patched).toEqual([
+      { name: "github", patch: { url: "https://elsewhere.test/mcp" } },
+    ]);
+  });
+
+  it("adopts a source-less managed entry with a source-only patch", async () => {
+    const { deps, mcps } = makeDeps({
+      servers: [
+        storedServer("memory", {
+          source: undefined,
+          runtime: "managed",
+          url: "http://127.0.0.1:9101/mcp",
+        }),
+      ],
+    });
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([
+        repoPlugin("agent-craft", {
+          mcpJsonRaw: mcpJson({ memory: httpServer("http://mcp-memory.svc/mcp") }),
+        }),
+      ]),
+      ACTOR,
+    );
+
+    const report = section(result, "agent-craft").mcpServers;
+    expect(report.overwritten).toEqual([{ name: "memory", fields: ["source"] }]);
+    expect(report.skipped).toEqual([
+      { name: "memory", reason: "managed-url", detail: "http://127.0.0.1:9101/mcp" },
+    ]);
+    expect(mcps.patched).toEqual([
+      { name: "memory", patch: { source: `github:${REPO}#agent-craft` } },
+    ]);
+  });
+
+  it("routes a managed orphan's removal through the managed use case, or refuses without it", async () => {
+    const managedRemoved: Array<{ name: string; actor: string }> = [];
+    const base = {
+      servers: [
+        storedServer("memory", { runtime: "managed", source: `github:${REPO}#agent-craft` }),
+      ],
+    };
+
+    // With the managed runtime available, the removal stops the container too.
+    const withManaged = makeDeps(base);
+    const routed = await syncPluginsFromSnapshot(
+      { ...withManaged.deps, managedMcps: { remove: async (name, actor) => {
+        managedRemoved.push({ name, actor });
+      } } },
+      snapshot([repoPlugin("agent-craft")]),
+      ACTOR,
+      { remove: { mcpServers: ["memory"] } },
+    );
+    expect(section(routed, "agent-craft").mcpServers.removed).toEqual(["memory"]);
+    expect(managedRemoved).toEqual([{ name: "memory", actor: ACTOR }]);
+    expect(withManaged.mcps.removed).toEqual([]);
+
+    // Without it, deleting only the row would leave the container running
+    // with nothing left that remembers it — refused and said so.
+    const withoutManaged = makeDeps(base);
+    const refused = await syncPluginsFromSnapshot(
+      withoutManaged.deps,
+      snapshot([repoPlugin("agent-craft")]),
+      ACTOR,
+      { remove: { mcpServers: ["memory"] } },
+    );
+    expect(section(refused, "agent-craft").mcpServers.removed).toEqual([]);
+    expect(section(refused, "agent-craft").mcpServers.skipped[0]).toMatchObject({
+      name: "memory",
+      reason: "write-failed",
+    });
+    expect(withoutManaged.mcps.removed).toEqual([]);
+  });
+
+  it("replaces a skill's stored attachments with the repository's", async () => {
+    const { deps, skills } = makeDeps({
+      skills: [
+        storedSkill("gitops", {
+          files: [{ path: "references/old.md", content: "old" }],
+        }),
+      ],
+    });
+    const repoFiles = [{ path: "references/new.md", content: "new" }];
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([
+        repoPlugin("devops", {
+          skills: [{ ...repoSkill("devops", "gitops"), files: repoFiles }],
+        }),
+      ]),
+      ACTOR,
+    );
+
+    expect(section(result, "devops").skills.overwritten).toEqual([
+      { name: "gitops", fields: ["files"] },
+    ]);
+    expect(skills.puts[0]?.files).toEqual(repoFiles);
+  });
+
+  it("freezes a plugin whose mcp.json broke — previous servers stay claimed, the row keeps them", async () => {
+    const row: Plugin = {
+      name: "devops",
+      repo: REPO,
+      rootPath: "plugins/devops",
+      commitSha: "old-sha",
+      skills: [],
+      mcpServers: ["argocd"],
+      syncedAt: BEFORE,
+      createdAt: BEFORE,
+      updatedAt: BEFORE,
+    };
+    const { deps, plugins, mcps } = makeDeps({
+      servers: [storedServer("argocd")],
+      pluginRows: [row],
+    });
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([repoPlugin("devops", { mcpJsonRaw: "{broken" })]),
+      ACTOR,
+      // Even named for removal: a trailing comma must not delete credentials.
+      { remove: { mcpServers: ["argocd"] } },
+    );
+
+    expect(section(result, "devops").mcpServers.orphaned).toEqual([]);
+    expect(section(result, "devops").mcpServers.removed).toEqual([]);
+    expect(mcps.removed).toEqual([]);
+    expect(plugins.puts[0]?.mcpServers).toEqual(["argocd"]);
+  });
+
+  it("freezes a plugin whose plugin.json broke — nothing orphans, the row stays", async () => {
+    const row: Plugin = {
+      name: "devops",
+      repo: REPO,
+      rootPath: "plugins/devops",
+      commitSha: "old-sha",
+      skills: ["gitops"],
+      mcpServers: ["argocd"],
+      syncedAt: BEFORE,
+      createdAt: BEFORE,
+      updatedAt: BEFORE,
+    };
+    const { deps, plugins, skills, mcps } = makeDeps({
+      skills: [storedSkill("gitops", { source: `github:${REPO}#devops` })],
+      servers: [storedServer("argocd", { source: `github:${REPO}#devops` })],
+      pluginRows: [row],
+    });
+    const result = await syncPluginsFromSnapshot(
+      deps,
+      snapshot([repoPlugin("devops", { manifestRaw: "{broken" })]),
+      ACTOR,
+      { remove: { skills: ["gitops"], mcpServers: ["argocd"], plugins: ["devops"] } },
+    );
+
+    expect(result.skipped[0]).toMatchObject({ reason: "invalid-manifest" });
+    expect(result.orphanedPlugins).toEqual([]);
+    expect(result.removedPlugins).toEqual([]);
+    expect(skills.removed).toEqual([]);
+    expect(mcps.removed).toEqual([]);
+    expect(plugins.puts).toEqual([]);
+    expect(plugins.store.get("devops")).toEqual(row);
+  });
+
+  it("writes the plugin row even when a component write fails", async () => {
+    const { deps, plugins } = makeDeps({ refuse: { boom: new Error("storage down") } });
+    await syncPluginsFromSnapshot(
+      deps,
+      snapshot([repoPlugin("devops", { mcpJsonRaw: mcpJson({ boom: httpServer() }) })]),
+      ACTOR,
+    );
+    expect(plugins.puts).toHaveLength(1);
+    expect(plugins.puts[0]?.mcpServers).toEqual(["boom"]);
+  });
+
+  it("annotates orphans with the versions that bind them", async () => {
+    const { deps } = makeDeps({
+      skills: [storedSkill("kept", { source: `github:${REPO}#devops` })],
+    });
+    const result = await syncPluginsFromSnapshot(
+      {
+        ...deps,
+        findBindings: async (skillNames) => ({
+          skills: Object.fromEntries(skillNames.map((name) => [name, ["bot/v1", "bot/v2"]])),
+          mcpServers: {},
+        }),
+      },
+      snapshot([repoPlugin("devops")]),
+      ACTOR,
+    );
+    expect(section(result, "devops").skills.orphaned).toEqual([
+      { name: "kept", boundTo: ["bot/v1", "bot/v2"] },
+    ]);
+  });
+
+  it("records an adoption in the audit trail", async () => {
+    const rows: AuditEvent[] = [];
+    setAuditSink({
+      append: async (event) => void rows.push(event),
+      listByDay: async () => [],
+    });
+    try {
+      const { deps } = makeDeps({
+        skills: [storedSkill("gitops", { source: "github:opspresso/agent-skills" })],
+        servers: [storedServer("argocd", { source: undefined })],
+      });
+      await syncPluginsFromSnapshot(
+        deps,
+        snapshot([
+          repoPlugin("devops", {
+            skills: [repoSkill("devops", "gitops")],
+            mcpJsonRaw: mcpJson({ argocd: httpServer() }),
+          }),
+        ]),
+        ACTOR,
+      );
+    } finally {
+      setAuditSink(undefined);
+    }
+
+    expect(rows.map((row) => ({ action: row.action, target: row.target, detail: row.detail }))).toEqual([
+      {
+        action: "registry.adopt",
+        target: "skill:gitops",
+        detail: `github:opspresso/agent-skills → github:${REPO}#devops`,
+      },
+      {
+        action: "registry.adopt",
+        target: "mcp:argocd",
+        detail: `hand-registered → github:${REPO}#devops`,
+      },
+    ]);
+    expect(rows.every((row) => row.actorEmail === ACTOR)).toBe(true);
   });
 
   it("leaves another repo's plugin rows alone", async () => {

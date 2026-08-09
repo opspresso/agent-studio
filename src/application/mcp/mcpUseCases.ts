@@ -107,15 +107,18 @@ export function createMcpUseCases(
       ) {
         await assertAllowedUrl(policy, patch.url);
       }
-      // The OAuth block was read out of the *old* address's well-known
-      // documents: its `resource` names that server, and its endpoints belong to
-      // whichever authorization server vouched for it. Carrying it across a move
-      // would leave the entry describing a server it no longer points at — and
-      // every project's stored token is bound by RFC 8707 to that stale
-      // `resource` while being sent to the new address. Dropped instead, which
-      // is the state a never-discovered entry is already in: the entry keeps
-      // working on its own headers, and an admin re-runs Discover to get an
-      // `auth` block that describes where it points now.
+      // Credentials belong to the address they were entered for. The OAuth
+      // block was read out of the *old* address's well-known documents — its
+      // `resource` names that server — and the stored headers carry secrets an
+      // operator typed for that host. Carrying either across a move would send
+      // the old host's credentials to whatever the new URL points at, which is
+      // exactly the exfiltration a repo commit (or a typo) must not be able to
+      // cause: the plugins sync moves URLs automatically, so the address is
+      // only as trusted as the last writer of the repository. Both are dropped
+      // instead, the state a freshly registered entry is already in. Masked
+      // header echoes cannot resurrect the old secrets either — against an
+      // empty base, a mask confirms nothing; only a value typed in the same
+      // save survives the move.
       const movedAddress = patch.url !== undefined && patch.url !== existing.url;
       const { auth: discarded, ...withoutAuth } = existing;
       const updated: McpServer = {
@@ -124,16 +127,17 @@ export function createMcpUseCases(
         description: patch.description ?? existing.description,
         content: patch.content ?? existing.content,
         source: patch.source ?? existing.source,
-        headers:
-          patch.headers !== undefined
+        headers: movedAddress
+          ? cipher.mergeHeaderUpdate({}, patch.headers ?? {})
+          : patch.headers !== undefined
             ? cipher.mergeHeaderUpdate(existing.headers, patch.headers)
             : existing.headers,
         updatedAt: now,
       };
-      if (movedAddress && discarded) {
+      if (movedAddress && (discarded || Object.keys(existing.headers).length > 0)) {
         log.warn(
           "mcp",
-          `'${existing.name}' moved to ${updated.url}; its OAuth configuration was dropped and must be rediscovered`,
+          `'${existing.name}' moved to ${updated.url}; its stored credentials were dropped and must be re-entered`,
         );
       }
       // A new url or new credentials can mean a different tool list, so an

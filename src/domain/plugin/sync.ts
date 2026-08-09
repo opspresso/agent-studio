@@ -58,16 +58,56 @@ export interface PluginSyncSelection {
   remove?: { skills?: string[]; mcpServers?: string[]; plugins?: string[] };
 }
 
+/**
+ * One entry the sync rewrote, and which fields moved. `fields` may name
+ * `source` (an adoption — the entry changed hands), so a console edit that
+ * was replaced and an ordinary document refresh read differently.
+ */
+export interface SyncWrite {
+  name: string;
+  fields: string[];
+}
+
+/**
+ * One entry the repository no longer declares, with the version bindings that
+ * would dangle if it were deleted — the blast radius the delete checkbox
+ * needs, as `project/version` labels. Empty when nothing binds it.
+ */
+export interface SyncOrphan {
+  name: string;
+  boundTo: string[];
+}
+
 /** The answers a sync gives about every name, for one kind. */
 export interface PluginKindReport {
   created: string[];
   /** Applied automatically — the repository owns what it declared. */
-  overwritten: string[];
+  overwritten: SyncWrite[];
   /** In both, already in agreement; nothing was written. */
   unchanged: string[];
-  orphaned: string[];
+  orphaned: SyncOrphan[];
   removed: string[];
   skipped: SyncSkip[];
+}
+
+/** Which versions bind the names a sync is about to offer for deletion. */
+export interface OrphanBindings {
+  skills: Record<string, string[]>;
+  mcpServers: Record<string, string[]>;
+}
+
+/**
+ * Whether a report carries a fenced write failure — the one outcome a
+ * commit-unchanged tick must not skip past, because only a re-run repairs it.
+ */
+export function reportHasFailures(report: PluginSyncResult): boolean {
+  const failed = (skips: SyncSkip[]) => skips.some((skip) => skip.reason === "write-failed");
+  return (
+    failed(report.skipped) ||
+    report.plugins.some(
+      (section) => failed(section.skills.skipped) || failed(section.mcpServers.skipped),
+    )
+  );
 }
 
 /** One plugin's slice of the report — also synthesized for a vanished plugin. */

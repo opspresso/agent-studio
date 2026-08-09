@@ -1,13 +1,16 @@
 import type { Plugin } from "@/domain/plugin/types";
 import type { PluginSyncResult, PluginSyncSelection } from "@/domain/plugin/sync";
+import type { PluginSyncRecord } from "@/domain/plugin/repository";
 import { readJson } from "@/app/_lib/httpClient";
 
-export type { Plugin, PluginSyncResult, PluginSyncSelection };
+export type { Plugin, PluginSyncRecord, PluginSyncResult, PluginSyncSelection };
 
 export interface PluginsSyncConfig {
   configured: boolean;
   repo: string | null;
   branch: string;
+  /** The persisted outcome of the last sync, whoever ran it. */
+  last: PluginSyncRecord | null;
 }
 
 export function listPlugins(): Promise<Plugin[]> {

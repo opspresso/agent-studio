@@ -369,12 +369,17 @@ One line each — the linked section is the authority.
   Plugins repo (`PLUGINS_REPO`) into both registries at once. **A name a plugin declares is
   the repository's**: whatever the stored entry's origin — this repo, a retired one, or a
   hand registration with no `source` at all — it is brought to the repository's version
-  automatically on every sync, provenance rewritten with it. A console edit to a declared
-  name is the anomaly, not the record; the one thing the sync never touches is a
-  hand-registered entry whose name no plugin declares. What the repository no longer
-  carries is only reported as orphaned, per plugin, and deleted when the kind-qualified
-  selection names it — an MCP entry holds credentials, and a file disappearing from a
-  branch is not reason enough to destroy them. **A deletion the sync
+  automatically on every sync, provenance rewritten with it and a `registry.adopt` audit
+  row left behind. A console edit to a declared name is the anomaly, not the record; the
+  one thing the sync never touches is a hand-registered entry whose name no plugin
+  declares. **Credentials never follow an address**: a URL move drops stored headers and
+  OAuth (`mcpUseCases.apply` owns that, `credentials-reset` reports it) — the repo decides
+  where an entry points, never what it may authenticate as. An unreadable
+  `plugin.json`/`mcp.json` freezes the plugin at its last row instead of orphaning its
+  components, every write is fenced to a per-name `write-failed` skip, and what the
+  repository no longer carries is only reported as orphaned — with the version bindings
+  that would dangle — and deleted when the kind-qualified selection names it (managed
+  entries through the managed use case, so the container stops with the row). **A deletion the sync
   performs goes through the use case and names the person who asked for the sync** — it
   takes a required `actorEmail` for that reason, since `remove` is the single owner of the
   `registry.delete` row and a deletion around it leaves no trace at all. Two asymmetries are

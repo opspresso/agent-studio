@@ -56,8 +56,14 @@ import { createMcpAuthProvider } from "@/application/mcp/mcpAuthProvider";
 import { createSkillUseCases } from "@/application/skill/skillUseCases";
 import { createPluginUseCases } from "@/application/plugin/pluginUseCases";
 import { syncPluginsFromSnapshot } from "@/application/plugin/syncPlugins";
+import { findRegistryBindings } from "@/application/plugin/bindingIndex";
+import { ConflictError } from "@/application/errors";
 import type { PluginSyncSelection } from "@/domain/plugin/sync";
 import { pluginRepository } from "@/infrastructure/db/repositories/pluginRepository";
+import {
+  pluginSyncLock,
+  pluginSyncReportRepository,
+} from "@/infrastructure/db/repositories/pluginSyncRepository";
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
@@ -277,24 +283,65 @@ export const settingsUseCases = createSettingsUseCases(settingsRepository, secre
  * own guard checked. Servers go through `mcpUseCases` so a synced entry faces
  * the same URL guard a typed one does.
  */
+/** How long a crashed sync may hold the door shut. Syncs finish in seconds. */
+const PLUGIN_SYNC_LEASE_MS = 5 * 60_000;
+
 export const syncPluginsFromRepo = async (
   repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
   actorEmail: string,
   selection?: PluginSyncSelection,
 ) => {
-  const { fetchPluginsRepoSnapshot } = await import("@/infrastructure/github/pluginsRepoClient");
-  return syncPluginsFromSnapshot(
-    {
-      plugins: pluginRepository,
-      pluginRows: pluginUseCases,
-      skillRepo: skillRepository,
-      skills: skillUseCases,
-      mcps: mcpUseCases,
-    },
-    await fetchPluginsRepoSnapshot(repoConfig),
-    actorEmail,
-    selection,
-  );
+  const repo = repoConfig.repo ?? "";
+  // One sync per repo at a time: a second one would double every GitHub read
+  // and leave two contradicting reports.
+  const lease = await pluginSyncLock.acquire(repo, PLUGIN_SYNC_LEASE_MS);
+  if (!lease) {
+    throw new ConflictError("A plugins sync is already running; wait for it to finish.");
+  }
+  try {
+    const { fetchPluginsRepoSnapshot } = await import("@/infrastructure/github/pluginsRepoClient");
+    const result = await syncPluginsFromSnapshot(
+      {
+        plugins: pluginRepository,
+        pluginRows: pluginUseCases,
+        skillRepo: skillRepository,
+        skills: skillUseCases,
+        mcps: mcpUseCases,
+        ...(managedMcpUseCases ? { managedMcps: managedMcpUseCases } : {}),
+        findBindings: (skills, mcpServers) =>
+          findRegistryBindings(
+            { projects: projectRepository, versions: versionRepository },
+            skills,
+            mcpServers,
+          ),
+      },
+      await fetchPluginsRepoSnapshot(repoConfig),
+      actorEmail,
+      selection,
+    );
+    // The report outlives the browser that requested the sync — reloads and
+    // load-balancer timeouts must not lose the only copy of what happened.
+    await pluginSyncReportRepository.put({
+      repo,
+      report: result,
+      actorEmail,
+      finishedAt: new Date().toISOString(),
+    });
+    return result;
+  } finally {
+    await pluginSyncLock.release(repo, lease);
+  }
+};
+
+/** The persisted last report for the configured repo, for the console. */
+export const lastPluginSync = (repo: string) => pluginSyncReportRepository.get(repo);
+
+/** The branch head alone — what the tick compares before paying for a snapshot. */
+export const pluginsRepoHeadSha = async (
+  repoConfig: Awaited<ReturnType<typeof getPluginsRepoConfig>>,
+) => {
+  const { fetchRepoHeadSha } = await import("@/infrastructure/github/pluginsRepoClient");
+  return fetchRepoHeadSha(repoConfig);
 };
 
 /** A2A exposure: repositories plus the card renderer. */

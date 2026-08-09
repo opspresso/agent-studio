@@ -24,6 +24,24 @@ import type {
 } from "@/domain/plugin/sync";
 import { fetchBlobText, githubApi } from "./client";
 
+/**
+ * Just the branch head, for the tick's is-anything-new check — one API call
+ * against the ~30 a full snapshot costs, which is what makes a once-a-minute
+ * tick affordable.
+ */
+export async function fetchRepoHeadSha(
+  { repo, branch, token }: { repo?: string; branch: string; token?: string },
+): Promise<string> {
+  if (!repo || !token) {
+    throw new Error("PLUGINS_REPO and GITHUB_TOKEN must be configured");
+  }
+  const ref = await githubApi<{ object: { sha: string } }>(
+    `/repos/${repo}/git/ref/heads/${branch}`,
+    token,
+  );
+  return ref.object.sha;
+}
+
 export async function fetchPluginsRepoSnapshot(
   { repo, branch, token }: { repo?: string; branch: string; token?: string },
 ): Promise<PluginsRepoSnapshot> {
@@ -59,15 +77,11 @@ export async function fetchPluginsRepoSnapshot(
     if (!manifestEntry) {
       continue;
     }
-    const manifestRaw = await fetchBlobText(repo, manifestEntry.sha, token);
 
     const mcpJsonPath = root.rootPath === "" ? "mcp.json" : `${root.rootPath}/mcp.json`;
     const mcpJsonEntry = entries.find(
       (entry) => entry.type === "blob" && entry.path === mcpJsonPath,
     );
-    const mcpJsonRaw = mcpJsonEntry
-      ? await fetchBlobText(repo, mcpJsonEntry.sha, token)
-      : undefined;
 
     // A directory name that is not a slug cannot become a registry entry name.
     // Reported rather than dropped: a document nobody ever sees is the failure
@@ -78,43 +92,56 @@ export async function fetchPluginsRepoSnapshot(
       .filter((candidate) => !isSlug(candidate.name))
       .map((candidate) => candidate.skillMdPath);
     const { selected, skipped } = selectSkillAttachments(entries, skillRoots);
+    const docEntries = entries.filter(
+      (entry) => entry.type === "blob" && mcpDocServerName(entry.path, root) !== null,
+    );
+
+    // One plugin's blobs fetch together — a serial walk multiplied every
+    // network round trip by the file count, which is what let a slow GitHub
+    // read push the whole sync past the proxy's idle timeout.
+    const [manifestRaw, mcpJsonRaw, attachments, skillMds, docs] = await Promise.all([
+      fetchBlobText(repo, manifestEntry.sha, token),
+      mcpJsonEntry ? fetchBlobText(repo, mcpJsonEntry.sha, token) : Promise.resolve(undefined),
+      Promise.all(
+        selected.map(async (attachment) => ({
+          attachment,
+          content: await fetchBlobText(repo, attachment.sha, token),
+        })),
+      ),
+      Promise.all(
+        skillRoots.map(async (skillRoot) => {
+          const skillMd = entries.find((entry) => entry.path === skillRoot.skillMdPath);
+          return skillMd
+            ? { skillRoot, content: await fetchBlobText(repo, skillMd.sha, token) }
+            : null;
+        }),
+      ),
+      Promise.all(
+        docEntries.map(async (entry) => ({
+          server: mcpDocServerName(entry.path, root) ?? "",
+          path: entry.path,
+          content: await fetchBlobText(repo, entry.sha, token),
+        })),
+      ),
+    ]);
+
     const attachmentsByName = new Map<string, SkillFile[]>();
-    for (const attachment of selected) {
-      const content = await fetchBlobText(repo, attachment.sha, token);
+    for (const { attachment, content } of attachments) {
       const list = attachmentsByName.get(attachment.name) ?? [];
       list.push({ path: attachment.relPath, content });
       attachmentsByName.set(attachment.name, list);
     }
 
-    const skills: RepoPluginSkill[] = [];
-    for (const skillRoot of skillRoots) {
-      const skillMd = entries.find((entry) => entry.path === skillRoot.skillMdPath);
-      if (!skillMd) {
-        continue;
-      }
-      skills.push({
+    const skills: RepoPluginSkill[] = skillMds
+      .filter((loaded): loaded is NonNullable<typeof loaded> => loaded !== null)
+      .map(({ skillRoot, content }) => ({
         name: skillRoot.name,
         path: skillRoot.skillMdPath,
-        content: await fetchBlobText(repo, skillMd.sha, token),
+        content,
         files: attachmentsByName.get(skillRoot.name) ?? [],
-      });
-    }
+      }));
 
-    const mcpDocs: RepoPluginDoc[] = [];
-    for (const entry of entries) {
-      if (entry.type !== "blob") {
-        continue;
-      }
-      const server = mcpDocServerName(entry.path, root);
-      if (server === null) {
-        continue;
-      }
-      mcpDocs.push({
-        server,
-        path: entry.path,
-        content: await fetchBlobText(repo, entry.sha, token),
-      });
-    }
+    const mcpDocs: RepoPluginDoc[] = docs;
 
     plugins.push({
       rootPath: root.rootPath,

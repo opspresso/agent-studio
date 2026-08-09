@@ -165,6 +165,35 @@ describe("MCP registry secret contract", () => {
     expect(store.get("m")?.auth).toBeUndefined();
   });
 
+  it("drops the stored headers when the entry is moved, and a masked echo cannot resurrect them", async () => {
+    // Headers are secrets an operator typed for the old host. Carried across
+    // a move they would be sent to whatever the new URL points at — and the
+    // plugins sync moves URLs automatically, so the address is only as
+    // trusted as the last writer of the repository. The console posts masked
+    // echoes back on save; against the empty base a mask confirms nothing.
+    const { repo, store } = makeMcpRepo();
+    const useCases = createMcpUseCases(repo);
+    await useCases.create({
+      name: "m",
+      url: "https://mcp.example/mcp",
+      headers: { Authorization: "Bearer token-1" },
+    });
+
+    await useCases.update("m", {
+      url: "https://other.example/mcp",
+      headers: { Authorization: "****" },
+    });
+    expect(store.get("m")?.headers).toEqual({});
+
+    // A value typed in the same save is a new credential for the new host.
+    await useCases.update("m", {
+      url: "https://third.example/mcp",
+      headers: { Authorization: "Bearer token-2" },
+    });
+    expect(isEncrypted(store.get("m")!.headers.Authorization!)).toBe(true);
+    expect(store.get("m")!.headers.Authorization).not.toContain("token-1");
+  });
+
   it("keeps the OAuth block when the address is unchanged", async () => {
     // Editing headers or a description must not cost an entry its discovery —
     // that would make every unrelated save a reconnect for every project.

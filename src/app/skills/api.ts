@@ -3,6 +3,16 @@ import { assertOk, jsonHeaders, readJson } from "@/app/_lib/httpClient";
 
 export type { Skill };
 
+/** What the list endpoint ships — the card's fields, never the body. */
+export interface SkillSummary {
+  name: string;
+  description: string;
+  source?: string;
+  /** Attachment count; the files themselves come with the detail read. */
+  files: number;
+  updatedAt: string;
+}
+
 export interface CreateSkillInput {
   name: string;
   description: string;
@@ -14,8 +24,8 @@ export interface UpdateSkillInput {
   content?: string;
 }
 
-export function listSkills(): Promise<Skill[]> {
-  return fetch("/api/skills").then((r) => readJson<Skill[]>(r));
+export function listSkills(): Promise<SkillSummary[]> {
+  return fetch("/api/skills").then((r) => readJson<SkillSummary[]>(r));
 }
 
 export function getSkill(name: string): Promise<Skill> {

@@ -31,6 +31,7 @@ export type LogScope =
   | "managed-mcp"
   | "mcp"
   | "otel"
+  | "plugins"
   | "run"
   | "runDeadline"
   | "settings"

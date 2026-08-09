@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { syncPluginsFromRepo, pluginUseCases, repoConfig } = vi.hoisted(() => ({
+const { syncPluginsFromRepo, pluginUseCases, lastPluginSync, repoConfig } = vi.hoisted(() => ({
   syncPluginsFromRepo: vi.fn(),
   pluginUseCases: { list: vi.fn(), get: vi.fn() },
+  lastPluginSync: vi.fn(async () => null),
   repoConfig: {
     value: { repo: "opspresso/agent-plugins", branch: "main", token: "gh-token" } as {
       repo: string | undefined;
@@ -22,7 +23,7 @@ vi.mock("@/lib/session", () => ({
     (...args: any[]) =>
       handler({ id: "u1", email: "admin@example.com", name: "A", image: null }, ...args),
 }));
-vi.mock("@/lib/container", () => ({ syncPluginsFromRepo, pluginUseCases }));
+vi.mock("@/lib/container", () => ({ syncPluginsFromRepo, pluginUseCases, lastPluginSync }));
 vi.mock("@/lib/runtime-settings", () => ({
   getPluginsRepoConfig: vi.fn(async () => repoConfig.value),
 }));
@@ -46,19 +47,21 @@ beforeEach(() => {
 });
 
 describe("GET /api/plugins/sync", () => {
-  it("reports whether the sync is configured, without the token", async () => {
+  it("reports whether the sync is configured, without the token, with the last report", async () => {
     const res = await syncRoute.GET();
     expect(await res.json()).toEqual({
       configured: true,
       repo: "opspresso/agent-plugins",
       branch: "main",
+      last: null,
     });
+    expect(lastPluginSync).toHaveBeenCalledWith("opspresso/agent-plugins");
   });
 
   it("says unconfigured when the repo or token is missing", async () => {
     repoConfig.value = { repo: undefined, branch: "main", token: "gh-token" };
     const res = await syncRoute.GET();
-    expect(await res.json()).toEqual({ configured: false, repo: null, branch: "main" });
+    expect(await res.json()).toEqual({ configured: false, repo: null, branch: "main", last: null });
   });
 });
 

@@ -157,9 +157,11 @@ DELETE /api/skills/{name}     → 204                     | 404
 - `mcps` also accept an optional `content` (markdown operator notes). `description` is the
   one-line summary the model sees in an agent run's server table; `content` is console-only
   and never reaches the model.
-- `skills` items may also carry `files?` (attachment files loadable on demand through the
-  Skill tool) and `source?` (provenance of a repo-synced entry, e.g.
-  `github:opspresso/agent-plugins#devops` — the repo and the plugin that declared it).
+- `GET /api/skills` returns summaries — `{ name, description, source?, files: count,
+  updatedAt }` — because the list pages render a card, not a document; the full entity
+  (markdown `content`, the attachment `files[]` themselves) comes from
+  `GET /api/skills/{name}`. `source?` is the provenance of a repo-synced entry, e.g.
+  `github:opspresso/agent-plugins#devops` — the repo and the plugin that declared it.
 - **A `source`-bearing entry is repo-owned, and the console refuses to compete with the
   repository over it (`403`)**: a skill's `PUT`/`DELETE` entirely; an MCP entry's `url`,
   `description`, `content` and its `DELETE` — a headers-only `PUT` still passes, because
@@ -436,10 +438,23 @@ GET  /api/plugins
       skills: ["name"], mcpServers: ["name"], syncedAt, createdAt, updatedAt } ]
 
 GET  /api/plugins/sync
-→ { configured, repo, branch }
+→ { configured, repo, branch,
+    last: { repo, report, actorEmail, finishedAt } | null }   (the persisted last report)
 
 POST /api/plugins/sync
-→ the sync report described below | 503 (not configured)
+→ the sync report described below | 409 (a sync is already running) | 503 (not configured)
+
+POST /api/plugins/sync/scan          (X-Scan-Token: SCHEDULE_SCAN_TOKEN)
+→ 202 { started } | 200 { upToDate } | 401 | 503
+```
+
+`/sync/scan` is the CronJob tick: it compares the branch head against the last report and
+answers `upToDate` without paying for a snapshot when nothing merged (unless that report
+carried a `write-failed` skip — only a re-run repairs one). A tick syncs as `scheduler`,
+never deletes (removal selections exist only in the console), and shares the schedule
+ticker's token — one CronJob credential per deployment.
+
+```
 
 POST /api/mcps/{name}/tools
 → { tools } | 502 (connection failure)
@@ -467,8 +482,9 @@ POST /api/plugins/sync  { "remove"?: { "skills"?: ["name"], "mcpServers"?: ["nam
                                        "plugins"?: ["name"] } }
 → 200 { repo, commitSha,
         plugins: [ { plugin, version?, description?,
-                     skills:     { created, overwritten, unchanged, orphaned, removed, skipped },
-                     mcpServers: { created, overwritten, unchanged, orphaned, removed, skipped } } ],
+                     skills:     { created, overwritten: [{name, fields}], unchanged,
+                                   orphaned: [{name, boundTo}], removed, skipped },
+                     mcpServers: { …same shape… } } ],
         skipped, orphanedPlugins, removedPlugins }
 ```
 
@@ -477,28 +493,36 @@ Per kind, in each plugin's section:
 - **created** — in the repository, not in the registry. Imported outright, with
   `source: "github:<repo>#<plugin>"`.
 - **overwritten** — in both and differing; brought to the repository's version
-  **automatically**. This includes adoption: an entry created by another origin (the
-  retired skills/tools repos, a different plugin) — or by hand, with no source at all — is
-  taken over, content and provenance together, whenever a plugin declares its name. A
-  console edit to a name the repo declares is replaced on the next sync — the repo is the
-  source of truth. A hand-registered entry whose name no plugin declares is never touched.
+  **automatically**, with `fields` naming what moved. `source` among them is an adoption: an
+  entry created by another origin (the retired skills/tools repos, a different plugin) — or
+  by hand, with no source at all — changed hands, which also leaves a `registry.adopt`
+  audit row. A console edit to a name the repo declares is replaced on the next sync — the
+  repo is the source of truth. A hand-registered entry whose name no plugin declares is
+  never touched. **Credentials never follow an address**: a URL move drops the entry's
+  stored headers and OAuth block (reported as `credentials-reset`) rather than send the old
+  host's secrets wherever the repository now points.
 - **unchanged** — in both and already in agreement; nothing was written, so `updatedAt` does
   not move.
 - **orphaned** — created by a sync of this repository and no longer declared by any plugin in
   it, attributed to the plugin its source names (a section is synthesized for one that
-  vanished entirely). **Nothing is deleted** unless the name is in the matching `remove`
-  list — an MCP entry holds credentials, and a file disappearing from a branch is not reason
-  enough to destroy them. A deletion that does happen leaves a `registry.delete` audit row
-  naming the admin who asked for the sync, exactly as a deletion from the console does.
+  vanished entirely), with `boundTo` listing the `project/version` bindings that would
+  dangle. **Nothing is deleted** unless the name is in the matching `remove` list — an MCP
+  entry holds credentials, and a file disappearing from a branch is not reason enough to
+  destroy them. An unreadable `plugin.json`/`mcp.json` orphans nothing: the plugin freezes
+  at its last good state until the file parses again. Deleting a managed entry routes
+  through the managed use case so the container stops with the row; a deletion leaves a
+  `registry.delete` audit row naming the admin who asked, exactly as from the console.
 - **skipped** — `[{ name, reason, detail? }]` with `reason` one of `bad-name`, `invalid-url`
   (the outbound guard's message in `detail`), `managed-url` (a managed MCP entry's address
   comes from the provisioner, so the document's was ignored while its other fields applied),
-  `conflict`, `attachment` (a skill synced but one of its files did not), `invalid-manifest`
-  (an unusable `mcp.json`, or an unusable server entry inside one), `invalid-skill` (a
-  SKILL.md outside the Agent Skills spec), `unsupported-transport` (`stdio`/`sse` — reported,
-  never executed), `headers-dropped` (the server synced but mcp.json's declared headers were
-  not imported; `detail` lists their names only), `duplicate-name` (two plugins claim the
-  name; every claimant is skipped).
+  `conflict` (a mid-sync race, either direction), `attachment` (a skill synced but one of
+  its files did not), `invalid-manifest` (an unusable `mcp.json`, or an unusable server
+  entry inside one), `invalid-skill` (a SKILL.md outside the Agent Skills spec),
+  `unsupported-transport` (`stdio`/`sse` — reported, never executed), `headers-dropped` (the
+  server synced but mcp.json's declared headers were not imported; `detail` lists their
+  names only), `duplicate-name` (two plugins claim the name; every claimant is skipped),
+  `credentials-reset` (see above), `write-failed` (one write was fenced off; the rest of the
+  sync continued and the next run converges).
 
 The top-level `skipped` carries what no plugin owns — an unusable `plugin.json`, a plugin
 root nested inside another, a plugin name two roots claim. `orphanedPlugins` lists plugin

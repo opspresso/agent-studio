@@ -1,37 +1,62 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Checkbox, Divider, Group, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Button, Checkbox, Divider, Group, Stack, Text } from "@mantine/core";
 import type { SyncSkip } from "@/domain/sync/types";
 import type {
   PluginKindReport,
   PluginSyncResult,
   PluginSyncSelection,
+  SyncOrphan,
+  SyncWrite,
 } from "@/domain/plugin/sync";
+import { BADGE } from "@/app/_components/badgeColors";
 
 /** What a skip means, in words an operator can act on. */
 const SKIP_REASONS: Record<SyncSkip["reason"], string> = {
   "bad-name": "name is not a slug (lowercase letters, digits, hyphens)",
   "invalid-url": "url refused",
   "managed-url": "managed entry — its address comes from the provisioner, not the repo",
-  conflict: "registered by someone else mid-sync; the next sync picks it up",
+  conflict: "raced a concurrent change; the next sync converges",
   attachment: "an attachment file was not carried",
   "invalid-manifest": "the manifest could not be used",
   "invalid-skill": "SKILL.md does not conform to the Agent Skills spec",
   "unsupported-transport": "a transport this deployment never runs",
   "headers-dropped": "synced without its declared headers — credentials are set in the console",
   "duplicate-name": "more than one plugin claims this name",
+  "credentials-reset": "its address moved, so stored credentials were dropped — re-enter them",
+  "write-failed": "one write failed; the rest of the sync continued",
 };
+
+/** The skips that mean an operator has something to do, not just to know. */
+const ATTENTION_REASONS = new Set<SyncSkip["reason"]>([
+  "credentials-reset",
+  "write-failed",
+  "invalid-manifest",
+  "invalid-skill",
+  "duplicate-name",
+]);
 
 function toggle(list: string[], name: string): string[] {
   return list.includes(name) ? list.filter((entry) => entry !== name) : [...list, name];
 }
 
+function SkipLine({ skip }: { skip: SyncSkip }) {
+  return (
+    <Text fz="xs" c={ATTENTION_REASONS.has(skip.reason) ? "orange" : undefined}>
+      {skip.name} — {SKIP_REASONS[skip.reason]}
+      {skip.detail ? `: ${skip.detail}` : ""}
+    </Text>
+  );
+}
+
 /**
  * The outcome of a plugins sync. The repository's content applied itself —
- * created and overwritten are records, not proposals — so the only decision
- * left here is deletion: entries the repository no longer carries, unticked by
- * default because an MCP entry may hold credentials.
+ * created and overwritten are records, not proposals — so what this shows is
+ * what happened (by name, with the fields that moved; `source` among them is
+ * an adoption) and the one decision left: deletion, with each orphan's
+ * version bindings next to the checkbox, because a name a version still binds
+ * does not stop being bound by being deleted.
  */
 export function PluginSyncSummary({
   result,
@@ -88,33 +113,67 @@ export function PluginSyncSummary({
     picked: string[],
     setPicked: (next: string[]) => void,
   ) {
-    if (report.orphaned.length === 0 && report.skipped.length === 0) {
+    if (
+      report.created.length === 0 &&
+      report.overwritten.length === 0 &&
+      report.removed.length === 0 &&
+      report.orphaned.length === 0 &&
+      report.skipped.length === 0
+    ) {
       return null;
     }
     return (
       <Stack gap={4}>
+        {report.created.length > 0 && (
+          <Text fz="xs">
+            <Badge size="xs" color={BADGE.on} mr={6}>
+              created
+            </Badge>
+            {report.created.join(", ")}
+          </Text>
+        )}
+        {report.overwritten.map((entry: SyncWrite) => (
+          <Text key={`ow-${entry.name}`} fz="xs">
+            <Badge size="xs" color="blue" mr={6}>
+              updated
+            </Badge>
+            {entry.name} — {entry.fields.join(", ")}
+            {entry.fields.includes("source") ? " (adopted)" : ""}
+          </Text>
+        ))}
+        {report.removed.length > 0 && (
+          <Text fz="xs">
+            <Badge size="xs" color={BADGE.broken} mr={6}>
+              deleted
+            </Badge>
+            {report.removed.join(", ")}
+          </Text>
+        )}
         {report.orphaned.length > 0 && (
           <>
             <Text fz="xs" c="dimmed">
               These {label} came from this plugin and are no longer in it — ticked entries are
-              deleted. Anything registered by hand is never listed here.
+              deleted on Apply. A version still binding one keeps a dangling name.
             </Text>
-            {report.orphaned.map((name) => (
+            {report.orphaned.map((orphan: SyncOrphan) => (
               <Checkbox
-                key={`rm-${name}`}
+                key={`rm-${orphan.name}`}
                 size="xs"
-                checked={picked.includes(name)}
-                onChange={() => setPicked(toggle(picked, name))}
-                label={name}
+                checked={picked.includes(orphan.name)}
+                onChange={() => setPicked(toggle(picked, orphan.name))}
+                label={
+                  orphan.boundTo.length > 0
+                    ? `${orphan.name} — bound by ${orphan.boundTo.slice(0, 5).join(", ")}${
+                        orphan.boundTo.length > 5 ? ` +${orphan.boundTo.length - 5} more` : ""
+                      }`
+                    : orphan.name
+                }
               />
             ))}
           </>
         )}
         {report.skipped.map((skip) => (
-          <Text key={`${skip.name}-${skip.reason}`} fz="xs">
-            {skip.name} — {SKIP_REASONS[skip.reason]}
-            {skip.detail ? `: ${skip.detail}` : ""}
-          </Text>
+          <SkipLine key={`${skip.name}-${skip.reason}`} skip={skip} />
         ))}
       </Stack>
     );
@@ -132,10 +191,7 @@ export function PluginSyncSummary({
         </Text>
 
         {result.skipped.map((skip) => (
-          <Text key={`${skip.name}-${skip.reason}`} fz="xs">
-            {skip.name} — {SKIP_REASONS[skip.reason]}
-            {skip.detail ? `: ${skip.detail}` : ""}
-          </Text>
+          <SkipLine key={`${skip.name}-${skip.reason}`} skip={skip} />
         ))}
 
         {result.plugins.map((section) => {

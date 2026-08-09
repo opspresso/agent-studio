@@ -64,7 +64,19 @@ export type SyncSkipReason =
    * Two plugins in one snapshot claim the same component name. Every claimant
    * is skipped — tree order must not decide what the registry holds.
    */
-  | "duplicate-name";
+  | "duplicate-name"
+  /**
+   * The entry's address moved, so the credentials entered for the old host —
+   * stored headers and any discovered OAuth block — were dropped rather than
+   * sent to the new one. Re-enter them in the console.
+   */
+  | "credentials-reset"
+  /**
+   * One write failed and was fenced off; the rest of the sync continued.
+   * `detail` carries the failure. The next sync converges — nothing here is
+   * lost beyond this run.
+   */
+  | "write-failed";
 
 export interface SyncSkip {
   name: string;

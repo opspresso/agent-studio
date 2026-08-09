@@ -55,6 +55,9 @@ export const keys = {
   externalAgent: (name: string) => ({ PK: `AGENT#${name}`, SK: "META" }),
   /** An installed Agent Plugins package. The name may contain periods — inert in a key. */
   plugin: (name: string) => ({ PK: `PLUGIN#${name}`, SK: "META" }),
+  /** The last plugins-sync report for one source repo, and the sync's lease. */
+  pluginSyncReport: (repo: string) => ({ PK: `PLUGINSYNC#${repo}`, SK: "REPORT" }),
+  pluginSyncLock: (repo: string) => ({ PK: `PLUGINSYNC#${repo}`, SK: "LOCK" }),
 
   /**
    * A project's triggers and their delivery history, both in the project

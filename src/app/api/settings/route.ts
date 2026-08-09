@@ -21,8 +21,12 @@ const updateSchema = z.object({
     )
     .max(50)
     .optional(),
-  pluginsRepo: z.string().max(4000).optional(),
-  pluginsRepoBranch: z.string().max(4000).optional(),
+  // "owner/repo" or empty (clears the override). Free text here surfaced a
+  // typo only as "GitHub /repos/x//git/ref failed: 404" at the first sync.
+  pluginsRepo: z
+    .union([z.literal(""), z.string().max(200).regex(/^[\w.-]+\/[\w.-]+$/, "must be owner/repo")])
+    .optional(),
+  pluginsRepoBranch: z.string().max(200).optional(),
   githubToken: z.string().max(4000).optional(),
   a2aApiKey: z.string().max(4000).optional(),
   publicBaseUrl: z.string().max(4000).optional(),

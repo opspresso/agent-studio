@@ -15,7 +15,7 @@ import {
 } from "@mantine/core";
 import { CardList } from "@/app/_components/CardGrid";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
-import { listSkills, type Skill } from "@/app/skills/api";
+import { listSkills, type SkillSummary } from "@/app/skills/api";
 import { listMcps, type McpServer } from "@/app/tools/api";
 import { getPlugin, type Plugin } from "../api";
 
@@ -24,7 +24,7 @@ export default function PluginDetailPage() {
   const name = params.name;
 
   const [plugin, setPlugin] = useState<Plugin | null>(null);
-  const [skills, setSkills] = useState<Map<string, Skill>>(new Map());
+  const [skills, setSkills] = useState<Map<string, SkillSummary>>(new Map());
   const [servers, setServers] = useState<Map<string, McpServer>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,9 +129,9 @@ export default function PluginDetailPage() {
               <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
                 {skill.description}
               </Text>
-              {(skill.files?.length ?? 0) > 0 && (
+              {skill.files > 0 && (
                 <Text fz="xs" c="dimmed" mt={6}>
-                  {skill.files?.length} attachment{skill.files?.length === 1 ? "" : "s"}
+                  {skill.files} attachment{skill.files === 1 ? "" : "s"}
                 </Text>
               )}
             </Card>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toSlug } from "@/shared/slug";
 import { parsePluginSource } from "@/domain/plugin/types";
-import { createSkill, listSkills, type Skill } from "./api";
+import { createSkill, listSkills, type SkillSummary } from "./api";
 import {
   Alert,
   Badge,
@@ -28,7 +28,7 @@ import { useViewer } from "@/app/_lib/useViewer";
 
 export default function SkillsPage() {
   const viewer = useViewer();
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
@@ -79,7 +79,7 @@ export default function SkillsPage() {
           .filter((skill) => matchesFilter(filter, skill.name, skill.description))
           .map((skill) => {
             const plugin = skill.source ? parsePluginSource(skill.source) : null;
-            const files = skill.files?.length ?? 0;
+            const files = skill.files;
             return (
               <Card key={skill.name} component={Link} href={`/skills/${skill.name}`} h="100%">
                 <Group gap="xs" wrap="nowrap">
