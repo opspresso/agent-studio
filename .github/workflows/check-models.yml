@@ -1,0 +1,39 @@
+name: Check models
+
+# Diffs the model registry against what every configured channel actually
+# serves (`scripts/check-models.ts`). Scheduled rather than part of `verify`:
+# it needs live provider APIs and real credentials, so a provider outage or a
+# fork without secrets must not fail pull requests. `--strict --since=30d` is
+# the one form with a meaningful exit code (docs/DEVELOPMENT.md).
+#
+# Requires repository secrets: LLM_BASE_URL, LLM_API_KEY.
+
+on:
+  schedule:
+    # Mondays 01:00 UTC — after a weekend of provider releases, before the week's work.
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+jobs:
+  check-models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check model registry against served models
+        env:
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: pnpm check-models --strict --since=30d
