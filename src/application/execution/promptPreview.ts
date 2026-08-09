@@ -44,7 +44,7 @@ export async function previewPrompt(
   const warnings: string[] = [];
   if (version.parameters.piiFiltering) {
     warnings.push(
-      "PII filtering is on: emails and phone numbers are replaced with tokens before dispatch.",
+      "PII filtering is on: emails, phone numbers, Korean registration numbers and card numbers are replaced with tokens before dispatch.",
     );
   }
 

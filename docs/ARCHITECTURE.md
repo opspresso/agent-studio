@@ -697,7 +697,8 @@ for a failure — which is what lets consumers read the ending instead of inferr
 - **Fallback**: on a retryable error (429/5xx) from the primary model **before the first
   chunk**, retry once with `fallbackModel`. A mid-stream failure yields an `{error}` chunk and
   does not retry.
-- **PII filtering** (`parameters.piiFiltering`): emails and phone numbers in outbound
+- **PII filtering** (`parameters.piiFiltering`): emails, phone numbers, Korean registration
+  numbers and Luhn-valid card numbers in outbound
   messages and variables are regex-masked with reversible format-preserving `[[PII:…]]` tokens
   before dispatch (`src/application/llm/pii.ts`); originals are restored in responses —
   streaming included, with token-boundary buffering — and the mapping carries across subagent

@@ -179,9 +179,10 @@ only trusted agents.
 
 ### PII filtering
 
-Opt in per version. Emails and phone numbers are replaced with reversible,
-format-preserving tokens before any LLM call and restored in the response, streaming included
-— the model never sees the real values. It is regex-based and covers emails and phones only,
+Opt in per version. Emails, phone numbers, Korean registration numbers (주민등록번호·
+외국인등록번호) and payment card numbers are replaced with reversible, format-preserving
+tokens before any LLM call and restored in the response, streaming included — the model
+never sees the real values. It is regex-based and covers only those entities,
 and **it does not mask what a connected MCP server receives**. Read
 [docs/SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops) before relying on it.
 

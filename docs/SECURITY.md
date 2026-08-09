@@ -363,7 +363,9 @@ still sees the PII it is passed. (A subagent transfer is the opposite: the child
 receives the masked message.) Review MCP server registrations on their own terms;
 `piiFiltering` does not cover them.
 
-Detection is regex-based and covers emails and phone numbers only. Treat it as best-effort
+Detection is regex-based and covers emails, phone numbers, Korean resident/foreigner
+registration numbers (hyphenated form, with the date half validated) and payment card
+numbers (13-19 digits, Luhn-checked so order ids stay untouched). Treat it as best-effort
 masking, not a guarantee. Off is byte-identical to the unfiltered path.
 
 ## Caller context
@@ -372,7 +374,8 @@ Opt-in per version via `parameters.callerContext`. With it on, a Slack run tells
 is asking — display name, timezone, and the avatar's URL — and labels each speaker when a thread
 holds more than one human.
 
-**A name is PII that `piiFiltering` does not mask.** Its patterns match emails and phone numbers,
+**A name is PII that `piiFiltering` does not mask.** Its patterns match emails, phone and
+registration/card numbers,
 and a person's name matches neither, so anything the caller block carries reaches the model as
 written even with filtering on. That is why the block carries **no email**, and why this is a
 per-version opt-in rather than default behaviour: turning it on is a decision to put real
@@ -414,7 +417,8 @@ Other properties worth knowing:
 - **Nothing fetches on the document's behalf.** A URL inside an attachment is text like any
   other; only a tool the version bound can act on it, under that tool's own guard.
 - **Text goes through the PII filter** like the rest of the turn when the version opts in —
-  with the same limits (emails and phone numbers, not names).
+  with the same limits (emails, phone numbers, Korean registration numbers and card
+  numbers — not names).
 - **Chats store the extracted text, not the file**, under the chat's own retention and the
   owner-private read rule. A 10MB PDF is never persisted; up to 40,000 characters per turn of
   what was read is.
