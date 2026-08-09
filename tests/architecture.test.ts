@@ -53,12 +53,35 @@ const STATIC_IMPORT_RE = /(?:^|\n)[ \t]*(?:import|export)\b([^;]*?)from[ \t]*["'
  */
 const INLINE_IMPORT_RE = /\bimport[ \t]*\([ \t]*["']([^"']+)["']/g;
 
+/**
+ * The bindings a `{ … }` clause names, with `type` prefixes and `as` aliases
+ * stripped. Only the braces: a default or namespace import binds the module
+ * rather than a name, and no rule here asks about one.
+ *
+ * A *module* is the wrong grain for some questions.
+ * `@/application/image/generateImage` exports one use case, so importing it at
+ * all is the signal; `@/application/execution/runProject` is the whole execution
+ * facade, and "who may start an agent run" asks about one export of it.
+ */
+function parseNames(clause: string): string[] {
+  const braces = /\{([^}]*)\}/.exec(clause);
+  if (!braces?.[1]) {
+    return [];
+  }
+  return braces[1]
+    .split(",")
+    .map((entry) => entry.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]!.trim())
+    .filter((name) => name.length > 0);
+}
+
 export interface ModuleImport {
   spec: string;
   /** True for `import type …` / `export type …`, whose cost is compile-time only. */
   typeOnly: boolean;
   /** True for `import("x")`. Only a *static* import joins a module's own graph. */
   dynamic: boolean;
+  /** Named bindings taken from the module; empty for a default or dynamic import. */
+  names: string[];
 }
 
 export function parseImports(source: string): ModuleImport[] {
@@ -68,6 +91,7 @@ export function parseImports(source: string): ModuleImport[] {
       // `import { type A }` mixes a type in with value imports — not type-only.
       typeOnly: /^type\b/.test((match[1] ?? "").trim()),
       dynamic: false,
+      names: parseNames(match[1] ?? ""),
     })),
     ...[...source.matchAll(INLINE_IMPORT_RE)].map((match) => ({
       spec: match[1]!,
@@ -75,6 +99,11 @@ export function parseImports(source: string): ModuleImport[] {
       // parser. The stricter reading wins: a banned target is reported either way.
       typeOnly: false,
       dynamic: true,
+      // A dynamic import's bindings are in the destructuring that follows, not
+      // in a clause. Left empty rather than guessed: `["*"]` would make every
+      // by-name query match `container.ts`, which imports this same facade for
+      // a different export.
+      names: [],
     })),
   ];
 }
@@ -794,6 +823,54 @@ describe("image runs", () => {
 });
 
 /**
+ * Who may start an agent run.
+ *
+ * The same shape as the image list above, for the other half of the facade.
+ * `executeAgent` is safe to call directly — it refuses a non-agent project
+ * itself, which is the check `/agent` was the one caller to lack — so three
+ * surfaces do: the `/agent` route, and the two `runAgent` bindings that let a
+ * chat and a Slack thread inject the facade at their own wiring site.
+ *
+ * What that costs is that "how a run is entered" has more than one place, while
+ * "which project type runs which way" has exactly one (`runStrategyFor`). A
+ * policy that belongs at the entry — a per-surface input cap, a rate limit —
+ * therefore has three homes and nothing saying where they are. This is that
+ * statement, and it is why a fourth is added here on purpose.
+ *
+ * Keyed on the import rather than on the text: `chat/deps.ts` and `slack/types.ts`
+ * both name `executeAgent` in a doc comment describing what their injected
+ * `runAgent` is bound to. Those are descriptions of the boundary, not crossings
+ * of it, and a list that included them would come to mean "files that mention
+ * it".
+ *
+ * A surface that can render any project type calls `streamProjectRun`; one that
+ * answers with a completion calls `executeProject`/`executeProjectStream`. Both
+ * reach the agent loop through `runStrategyFor` and neither belongs here.
+ */
+const AGENT_RUN_ENTRY_POINTS = [
+  // Answers with SSE chunks, for a caller driving one version directly.
+  "src/app/api/projects/[name]/versions/[version]/agent/route.ts",
+  // Binds `ChatDeps.runAgent`; the chat use cases never see the facade.
+  "src/app/api/chats/_deps.ts",
+  // Binds `SlackEventDeps.runAgent`, the same way.
+  "src/app/api/slack/events/_lib/handleEventRequest.ts",
+];
+
+describe("agent runs", () => {
+  it("start at the entry points that declare themselves here", () => {
+    const callers = SOURCE_FILES.filter((file) =>
+      parseImports(file.text).some(
+        (i) =>
+          resolveSpec(i.spec, file.path) === "@/application/execution/runProject" &&
+          !i.typeOnly &&
+          i.names.includes("executeAgent"),
+      ),
+    ).map((file) => file.path);
+    expect(callers.sort()).toEqual([...AGENT_RUN_ENTRY_POINTS].sort());
+  });
+});
+
+/**
  * A synthetic event read from inside a state updater.
  *
  * React nulls `SyntheticEvent.currentTarget` once the handler returns — it only
@@ -963,12 +1040,13 @@ describe("scanner", () => {
       ].join("\n"),
     );
     expect(parsed).toEqual([
-      { spec: "@/domain/a", typeOnly: false, dynamic: false },
-      { spec: "@/domain/b", typeOnly: true, dynamic: false },
-      { spec: "@/domain/cd", typeOnly: false, dynamic: false },
-      { spec: "@/infrastructure/e", typeOnly: true, dynamic: false },
-      // An inline `type` among value imports is still a value import.
-      { spec: "@/domain/fg", typeOnly: false, dynamic: false },
+      { spec: "@/domain/a", typeOnly: false, dynamic: false, names: ["a"] },
+      { spec: "@/domain/b", typeOnly: true, dynamic: false, names: ["B"] },
+      { spec: "@/domain/cd", typeOnly: false, dynamic: false, names: ["c", "d"] },
+      { spec: "@/infrastructure/e", typeOnly: true, dynamic: false, names: ["E"] },
+      // An inline `type` among value imports is still a value import, and the
+      // name it carries is the binding without its `type` prefix.
+      { spec: "@/domain/fg", typeOnly: false, dynamic: false, names: ["F", "g"] },
     ]);
   });
 
@@ -980,8 +1058,10 @@ describe("scanner", () => {
       ].join("\n"),
     );
     expect(parsed).toEqual([
-      { spec: "@/lib/config", typeOnly: false, dynamic: true },
-      { spec: "@/infrastructure/db/client", typeOnly: false, dynamic: true },
+      // No names: the bindings are in the destructuring, not in a clause. See
+      // `parseImports` for why they are not guessed at.
+      { spec: "@/lib/config", typeOnly: false, dynamic: true, names: [] },
+      { spec: "@/infrastructure/db/client", typeOnly: false, dynamic: true, names: [] },
     ]);
   });
 
@@ -990,7 +1070,21 @@ describe("scanner", () => {
       [`export type A = () => number;`, `import { b } from "@/domain/b";`].join("\n"),
     );
     // One import, and a value one — not `A`'s `export type` pinned to `b`.
-    expect(parsed).toEqual([{ spec: "@/domain/b", typeOnly: false, dynamic: false }]);
+    expect(parsed).toEqual([{ spec: "@/domain/b", typeOnly: false, dynamic: false, names: ["b"] }]);
+  });
+
+  it("reads a clause's bindings without its aliases or default", () => {
+    // What the by-name entry-point checks rest on. An alias binds a local name
+    // the rule never asks about, and a namespace or default import names the
+    // module rather than an export — so neither is a named binding.
+    const parsed = parseImports(
+      [
+        `import { executeAgent as run, type Deps } from "@/application/execution/runProject";`,
+        `import * as engine from "@/application/llm/engine";`,
+        `import React from "react";`,
+      ].join("\n"),
+    );
+    expect(parsed.map((i) => i.names)).toEqual([["executeAgent", "Deps"], [], []]);
   });
 
   it("flags a banned import that is not on the allowlist", () => {
