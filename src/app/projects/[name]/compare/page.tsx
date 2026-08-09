@@ -15,7 +15,7 @@ import {
   type Version,
 } from "../../lib/api";
 import { findTemplateVariables } from "@/shared/template";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   Alert,
   Badge,
@@ -45,6 +45,8 @@ interface SideResult {
   toolCallCount: number;
   durationMs: number | null;
   image: ImageResult | null;
+  /** Pictures an agent run drew with its builtin image tool. */
+  agentImages: Array<{ b64: string; mimeType: string }>;
 }
 
 const IDLE: SideResult = {
@@ -56,6 +58,7 @@ const IDLE: SideResult = {
   toolCallCount: 0,
   durationMs: null,
   image: null,
+  agentImages: [],
 };
 
 function versionOptions(versions: Version[], published: string | undefined) {
@@ -179,6 +182,10 @@ export default function ComparePage() {
         if (callCount > 0) {
           setSide((prev) => ({ ...prev, toolCallCount: prev.toolCallCount + callCount }));
         }
+        if (chunk.image) {
+          const generated = chunk.image;
+          setSide((prev) => ({ ...prev, agentImages: [...prev.agentImages, generated] }));
+        }
         if (chunk.usage) {
           const spent = chunk.usage.costUsd;
           setSide((prev) => ({ ...prev, costUsd: (prev.costUsd ?? 0) + spent }));
@@ -236,17 +243,21 @@ export default function ComparePage() {
             minRows={2}
           />
         )}
-        {varNames.map((varName) => (
-          <TextInput
-            key={varName}
-            label={varName}
-            value={variables[varName] ?? ""}
-            onChange={(e) => {
-              const value = e.currentTarget.value;
-              setVariables((prev) => ({ ...prev, [varName]: value }));
-            }}
-          />
-        ))}
+        {/* Only the predict path renders the template; an agent run takes the
+            message as-is, so showing variable inputs there would collect values
+            the run silently ignores (RunPanel draws none there either). */}
+        {project.projectType === "llm" &&
+          varNames.map((varName) => (
+            <TextInput
+              key={varName}
+              label={varName}
+              value={variables[varName] ?? ""}
+              onChange={(e) => {
+                const value = e.currentTarget.value;
+                setVariables((prev) => ({ ...prev, [varName]: value }));
+              }}
+            />
+          ))}
         <Group>
           <Button onClick={run} loading={running} disabled={!canRun}>
             Run both
@@ -283,7 +294,7 @@ export default function ComparePage() {
                   ))}
                   {side.image ? (
                     <Image
-                      src={`data:${side.image.mimeType};base64,${side.image.imageBase64}`}
+                      src={imageDataUrl({ b64: side.image.imageBase64, mimeType: side.image.mimeType })}
                       alt="Generated image"
                       radius="sm"
                     />
@@ -292,6 +303,14 @@ export default function ComparePage() {
                       {side.text || (side.running ? "…" : "Run to see this version's answer.")}
                     </Text>
                   )}
+                  {side.agentImages.map((generated, imageIndex) => (
+                    <Image
+                      key={imageIndex}
+                      src={imageDataUrl(generated)}
+                      alt="Image drawn during the run"
+                      radius="sm"
+                    />
+                  ))}
                   <Group gap="xs">
                     {side.costUsd !== null && (
                       <Badge variant="light" color="teal">
