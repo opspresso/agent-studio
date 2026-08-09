@@ -113,6 +113,18 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
   grandchild inherits the original conversation rather than a transcript of a transcript,
   while an **image child gets the bare message** — that message is its image prompt, so a
   conversation prepended to it would be drawn.
+- **A transfer that came back empty says why**, through the same `observeChildFailure` a
+  dispatched task uses and under the same rule: **the returned text decides**, and the
+  captured error only ever explains an *empty* answer. A child never throws, so its failure
+  exists solely as an authored `error` chunk — and every consumer drops those, on the
+  grounds that the parent answers past them. That was true of `dispatch_agents`, which folds
+  the reason into its tool result, and false of a transfer, which left the model an empty
+  "For context" turn and no account of it; the model wrote one of its own, and the same
+  provider refusal that reported itself through the `GenerateImage` builtin vanished through
+  a transfer to an image project. A transfer additionally emits **one `warning`** when the
+  answer is empty, which a dispatch does not need: a dispatch's reason rides in a tool result
+  the reader can see, while a transfer's marker is a fixed string that never varies. The
+  agent is named inside the warning text, because warnings surface without author labels.
 - **`dispatch_agents` is fan-out; `transfer_to_agent` is handoff.** One call runs several
   children at once and collects their answers, so it stays a *single* entry in call order —
   whatever ran before it in that order has already run — and the answers land in **one tool

@@ -1109,6 +1109,67 @@ describe("executeAgent local subagent projectType dispatch", () => {
     ).toBe(true);
   });
 
+  it("says why an image child came back with nothing, rather than leaving the model to guess", async () => {
+    // The reported failure, end to end. The provider refuses, `runImageSubagent`
+    // reports it as an authored `error` chunk and returns "" — and every
+    // consumer drops authored errors, on the grounds that the parent answers
+    // past them. It did answer, but until the transfer folded the reason into
+    // its context it had none, and wrote one of its own.
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a cat"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("The image was refused."), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    deps.imageChannel.generateImage = async () => {
+      throw new Error("400 rejected by the safety system. safety_violations=[sexual].");
+    };
+    deps.projects.get = (async (name: string) =>
+      name === "painter-img"
+        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
+        : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string, versionName: string) =>
+      projectName === "painter-img" && versionName === "v1"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "painter-img",
+            model: "google/gemini-3-pro-image",
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+
+    const chunks = await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "painter-img", type: "local" }],
+        },
+        messages: [{ role: "user", content: "고양이 그려줘" }],
+      }),
+    );
+
+    // The child still reports the way it always did, and draws nothing.
+    const failure = chunks.find((chunk) => chunk.error);
+    expect(failure?.author).toBe("painter-img");
+    expect(failure?.error).toContain("safety system");
+    expect(chunks.some((chunk) => chunk.image)).toBe(false);
+
+    // The reader is told, on a channel nothing filters by author.
+    const warning = chunks.find((chunk) => chunk.warning);
+    expect(warning?.author).toBeUndefined();
+    expect(warning?.warning).toContain("painter-img");
+    expect(warning?.warning).toContain("safety system");
+
+    // And so is the model, in the very turn it answers from.
+    const context = (channel.seenParams[1]?.messages ?? [])
+      .filter((message) => message.role === "user")
+      .map((message) => (typeof message.content === "string" ? message.content : ""))
+      .join("\n");
+    expect(context).toContain("safety system");
+  });
+
   it("answers a prompt-project child through its user prompt template", async () => {
     // A prompt project's behaviour IS its template. Sending the transfer down
     // the tool loop drops it and the child answers from a bare system prompt.

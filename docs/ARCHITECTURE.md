@@ -479,7 +479,7 @@ consumers must use it instead of re-deriving author semantics.
 | `warning` | run setup, before the first token, for a binding it could not use (deleted skill/subagent, unreachable or blocked MCP server, tools past the per-run cap) | chat warning banner, Slack warning suffix, `Trace.warnings`; never ends the stream |
 | `image` | GenerateImage / EditImage builtins, and image-project subagents | consumed **regardless of author** (delegating to an image subagent is how an agent draws): chat image persistence (S3), Slack upload, OpenAI `images` extension, client gallery |
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
-| `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | every consumer surfaces it, but only a **top-level** error ends the stream — an authored one is a tool error the parent may still answer from |
+| `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | only a **top-level** error ends the stream. An authored one is *dropped* by nearly every consumer (Slack and the trace recorder excepted) because the parent answers past it — so what a failed transfer lost reaches the reader as that transfer's `warning`, and the model as its "For context" turn, not through this field |
 | `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | read through `chunkTermination` (below): OpenAI `finish_reason: "stop"`, client finalize |
 | `finishReason` | engine when a run ends for a reason `done` cannot say — the turn guard (`turn-limit`) and a provider output cut (`output-limit`), each alongside a `warning` naming it | read through `chunkTermination`/`runTermination`: OpenAI `finish_reason: "length"`, trace status `turn-limit`, A2A terminal status message, predict's `finishReason` field |
 | `author` | subagent chunks only — the **innermost** agent | consumers filter via `isTopLevelChunk`; client shows the running agent |
@@ -690,7 +690,11 @@ for a failure — which is what lets consumers read the ending instead of inferr
     `image_ids` it named — an image-project child then *edits* those instead of drawing anew,
     and an agent child sees them as image content parts. A remote (A2A) child cannot take
     images and says so rather than dropping them. The child's final text returns as a
-    "For context: …" user message.
+    "For context: …" user message. When the child returned **nothing**, that message carries
+    the reason its stream reported (`Error: …`) instead of an empty answer, and one `warning`
+    tells the reader the same thing — a child never throws, so its failure exists only as an
+    authored `error` chunk, which nearly every consumer drops. The returned text decides:
+    a child that answered despite a failure along the way is reported as having answered.
   - It also carries the conversation so far as a rendered, PII-masked transcript bounded by
     8,000 chars — **text inside the child's user turn, never replayed messages**, so the child
     cannot read the parent's answers as its own. The turn being answered is excluded (the

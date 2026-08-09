@@ -352,6 +352,101 @@ describe("runAgent tool loop", () => {
   });
 });
 
+describe("a transfer that came back empty", () => {
+  /**
+   * A child never throws: the runner turns its failures into authored `error`
+   * chunks and returns `""`. Every consumer drops those on the grounds that the
+   * parent answers past them — which held only for `dispatch_agents`, the one
+   * path that folded the reason into what the parent reads. A transfer did not,
+   * so a provider refusal reached the model as an empty answer and it wrote a
+   * reason of its own.
+   */
+  function transferRun(child: NonNullable<AgentDeps["runSubagent"]>) {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter","message":"draw"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("parent answer"), usageChunk(1, 1)],
+    ]);
+    const run = runAgent(
+      { channel, recordUsage: async () => {}, runSubagent: child },
+      {
+        projectName: "parent",
+        model: MODEL,
+        messages: [{ role: "user", content: "draw something" }],
+        subagents: [{ name: "painter", description: "draws", type: "local" }],
+      },
+    );
+    return { channel, run };
+  }
+
+  /** The user turns the parent's *next* request carries — where a child's answer lands. */
+  function contextTurns(channel: FakeChannel): string {
+    return (channel.seenParams[1]?.messages ?? [])
+      .filter((message) => message.role === "user")
+      .map((message) => (typeof message.content === "string" ? message.content : ""))
+      .join("\n");
+  }
+
+  it("tells the parent and the reader why, when the child answered nothing", async () => {
+    const { channel, run } = transferRun(async function* () {
+      yield { author: "painter", error: "400 rejected by the safety system" };
+      return "";
+    });
+
+    const chunks = await collect(run);
+
+    expect(contextTurns(channel)).toContain("400 rejected by the safety system");
+    const warnings = chunks.filter((chunk) => chunk.warning);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.warning).toContain("painter");
+    expect(warnings[0]?.warning).toContain("400 rejected by the safety system");
+    // The notice is the run's, not the child's: an authored warning is dropped
+    // by the consumers that gate on `isTopLevelChunk`.
+    expect(warnings[0]?.author).toBeUndefined();
+  });
+
+  it("keeps the child's answer when it recovered from a failure of its own", async () => {
+    const { channel, run } = transferRun(async function* () {
+      yield { author: "painter", error: "a nested transfer failed" };
+      return "drew it anyway";
+    });
+
+    const chunks = await collect(run);
+
+    // The returned text decides, never the error chunks that went past — a
+    // descendant's failure travels out on this same stream.
+    expect(contextTurns(channel)).toContain("drew it anyway");
+    expect(contextTurns(channel)).not.toContain("a nested transfer failed");
+    expect(chunks.some((chunk) => chunk.warning)).toBe(false);
+  });
+
+  it("says so when the child came back empty with no reason at all", async () => {
+    const { channel, run } = transferRun(async function* () {
+      return "";
+    });
+
+    const chunks = await collect(run);
+
+    expect(contextTurns(channel)).toContain("Error: the agent returned no answer.");
+    expect(chunks.filter((chunk) => chunk.warning)).toHaveLength(1);
+  });
+
+  it("leaves a transfer that answered unremarked", async () => {
+    const { channel, run } = transferRun(async function* () {
+      yield { author: "painter", delta: { content: "a painting" } };
+      return "a painting";
+    });
+
+    const chunks = await collect(run);
+
+    expect(contextTurns(channel)).toContain("a painting");
+    expect(contextTurns(channel)).not.toContain("Error:");
+    expect(chunks.some((chunk) => chunk.warning)).toBe(false);
+  });
+});
+
 describe("the conversation a transfer carries is bounded", () => {
   /** Capture what the engine hands the runner as the transcript. */
   function captureTranscript() {

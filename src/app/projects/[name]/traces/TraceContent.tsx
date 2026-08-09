@@ -10,6 +10,20 @@ function subagentLink(span: Trace["spans"][number]): { agent: string; traceId: s
   return { agent: span.author ?? span.name, traceId };
 }
 
+/**
+ * Why a span failed, as the recorder stored it (`output.error`).
+ *
+ * Rendered because `status` alone said only *that* something failed. A failed
+ * transfer is recorded on the parent's subagent span rather than on the run
+ * (the parent may still answer), so for a run that ended in a guess this string
+ * was the only account of what went wrong — and reading it meant opening the
+ * child's own trace, or the table it is stored in.
+ */
+function spanError(span: Trace["spans"][number]): string | null {
+  const error = span.output?.error;
+  return typeof error === "string" && error ? error : null;
+}
+
 function spanTokens(span: Trace["spans"][number]): string {
   const input = span.input?.inputTokens ?? span.output?.inputTokens;
   const output = span.output?.outputTokens;
@@ -38,6 +52,7 @@ export function TraceContent({ trace }: { trace: Trace }) {
           <Table.Tbody>
             {trace.spans.map((span) => {
               const nested = subagentLink(span);
+              const error = spanError(span);
               return (
                 <Table.Tr key={span.spanId}>
                   <Table.Td>{span.kind}</Table.Td>
@@ -52,6 +67,11 @@ export function TraceContent({ trace }: { trace: Trace }) {
                       >
                         trace {nested.traceId.slice(0, 8)} ↗
                       </Anchor>
+                    )}
+                    {error && (
+                      <Text fz="xs" c="red" mt={2} style={{ whiteSpace: "pre-wrap" }}>
+                        {error}
+                      </Text>
                     )}
                   </Table.Td>
                   <Table.Td fz="xs" c="dimmed">{spanTokens(span)}</Table.Td>

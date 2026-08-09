@@ -718,15 +718,27 @@ async function* observeChildFailure(
   source: AsyncGenerator<EngineChunk, string>,
   sink: { error?: string },
 ): AsyncGenerator<EngineChunk, string> {
-  while (true) {
-    const step = await source.next();
-    if (step.done) {
-      return step.value;
+  let completed = false;
+  try {
+    while (true) {
+      const step = await source.next();
+      if (step.done) {
+        completed = true;
+        return step.value;
+      }
+      if (step.value.error && sink.error === undefined) {
+        sink.error = step.value.error;
+      }
+      yield step.value;
     }
-    if (step.value.error && sink.error === undefined) {
-      sink.error = step.value.error;
+  } finally {
+    // A consumer that walks away closes this generator, and a hand-written loop
+    // — unlike the `yield*` this replaced — does not pass that on: the child
+    // would stay suspended holding whatever its run opened, its MCP sessions
+    // included. Same shape as `runSubagentWithPii` above, for the same reason.
+    if (!completed) {
+      await source.return("");
     }
-    yield step.value;
   }
 }
 
@@ -2231,25 +2243,31 @@ export async function* runAgent(
         // The model-written message plus the conversation it refers to. The
         // runner decides where the transcript goes — a child's own kind governs
         // that — and the child's final text returns as a "For context" message.
-        const childText = filter
-          ? yield* runSubagentWithPii(
-              filter,
-              deps.runSubagent,
-              agentName,
-              message,
-              turn + 1,
-              maxTurn,
-              childImages,
-              transcript,
-            )
-          : yield* deps.runSubagent(
-              agentName,
-              message,
-              turn + 1,
-              maxTurn,
-              childImages,
-              transcript,
-            );
+        //
+        // Wrapped like a dispatched task's stream, and for the same reason: a
+        // child never throws — the runner turns its failures into `error` chunks
+        // and returns `""` — so this is the only way to say *why* it came back
+        // with nothing. Only `dispatch_agents` did it, so a refused transfer
+        // reached the parent as an empty answer carrying no reason, and the model
+        // answered by guessing at one. The same provider refusal reported itself
+        // through the `GenerateImage` builtin and vanished through a transfer to
+        // an image project.
+        const outcome: { error?: string } = {};
+        const childText = yield* observeChildFailure(
+          filter
+            ? runSubagentWithPii(
+                filter,
+                deps.runSubagent,
+                agentName,
+                message,
+                turn + 1,
+                maxTurn,
+                childImages,
+                transcript,
+              )
+            : deps.runSubagent(agentName, message, turn + 1, maxTurn, childImages, transcript),
+          outcome,
+        );
         // A successful transfer used to leave no trace at all: only its failures
         // yielded a result, so a reader of the finished conversation could not
         // tell which agent had answered. Marked display-only — the child's
@@ -2272,7 +2290,32 @@ export async function* runAgent(
         // is charged first and the marker is reserved inside the fit, so the
         // whole message this pushes — wrapper, answer, marker — is inside the
         // budget, not riding on its headroom.
-        const maskedChildText = filter?.mask(childText) ?? childText;
+        //
+        // The answer decides whether the transfer failed, never the `error`
+        // chunks that went past — a child answers from a nested transfer's
+        // failure (it arrives as a tool error), and a deeper descendant's error
+        // travels out on this same stream. Only an empty answer is explained by
+        // what `observeChildFailure` caught, which is the rule a dispatched task
+        // already follows.
+        const answer = childText.trim();
+        const childReply =
+          answer ||
+          (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer.");
+        if (!answer) {
+          // The reason reaches the reader, not only the model. Every consumer
+          // drops an authored `error` chunk on the grounds that the parent
+          // answers past it — true, but the parent could not say what happened
+          // either, so the failure was legible in the trace and nowhere else.
+          // A warning because the run goes on; named in the text because
+          // warnings surface without author labels.
+          yield {
+            author,
+            warning: outcome.error
+              ? `Agent '${agentName}' returned no answer: ${outcome.error}`
+              : `Agent '${agentName}' returned no answer.`,
+          };
+        }
+        const maskedChildText = filter?.mask(childReply) ?? childReply;
         contextBudget?.chargeText(subagentContextMessage(agentName, ""));
         const fittedChild = contextBudget?.fitText(maskedChildText, {
           suffix: "\n…[truncated: the run's context budget is exhausted]",
