@@ -12,7 +12,7 @@
  * mean nothing on a horizontally scaled deployment.
  */
 
-import { actorKey, type RunActor } from "@/domain/execution/actor";
+import { A2A_ACTOR_ID, actorKey, type RunActor } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import { RateLimitedError } from "@/application/errors";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
@@ -58,7 +58,10 @@ export class ConcurrencyLimitError extends RateLimitedError {
 const RETRY_AFTER_SECONDS = 15;
 
 export function limitFor(limits: ConcurrencyLimits, actor: RunActor): number {
-  return actor.kind === "a2a" ? limits.a2a : limits.perActor;
+  // Only the *shared* A2A key gets the surface-wide ceiling: its one identity
+  // stands for every machine caller at once. A named client key is one caller,
+  // and gets the same per-actor limit a person does.
+  return actor.kind === "a2a" && actor.id === A2A_ACTOR_ID ? limits.a2a : limits.perActor;
 }
 
 export interface AcquiredSlot {

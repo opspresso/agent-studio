@@ -67,6 +67,8 @@ import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
 import { createVersionUseCases } from "@/application/project/versionUseCases";
 import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
+import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
+import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClientKeyRepository";
 import { createProjectSlackUseCases } from "@/application/slack/projectSlack";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { createAuditUseCases } from "@/application/audit/auditUseCases";
@@ -243,6 +245,10 @@ export const skillUseCases = createSkillUseCases(skillRepository);
  */
 export const projectUseCases = createProjectUseCases(projectRepository);
 export const apiTokenUseCases = createApiTokenUseCases(projectRepository, secretCipher);
+export const a2aClientKeyUseCases = createA2aClientKeyUseCases(
+  a2aClientKeyRepository,
+  secretCipher,
+);
 export const triggerUseCases = createTriggerUseCases({
   triggers: triggerRepository,
   projects: projectRepository,

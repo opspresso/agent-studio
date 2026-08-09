@@ -20,8 +20,9 @@ import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 
 /**
- * Inbound A2A is authenticated by one shared app key, so there is no caller to
- * name. The kind still separates this spend from every human's.
+ * The shared app key authenticates every machine caller as one anonymous
+ * identity; a named client key resolves to its own actor at the route. The
+ * kind still separates this spend from every human's.
  */
 const A2A_ACTOR: RunActor = { kind: "a2a", id: A2A_ACTOR_ID };
 
@@ -44,6 +45,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
     private readonly project: Project,
     private readonly version: Version,
     private readonly store: TaskStore,
+    private readonly actor: RunActor = A2A_ACTOR,
   ) {}
 
   async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
@@ -77,7 +79,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
           project: this.project,
           version: this.version,
           prompt: messages[0] ? messageText(messages[0]) : "",
-          actor: A2A_ACTOR,
+          actor: this.actor,
           signal: controller.signal,
         });
         eventBus.publish({
@@ -108,7 +110,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
         project: this.project,
         version: this.version,
         messages,
-        actor: A2A_ACTOR,
+        actor: this.actor,
         signal: controller.signal,
       });
       let isFirstChunk = true;

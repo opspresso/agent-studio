@@ -18,6 +18,7 @@ import {
 } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import { BADGE } from "@/app/_components/badgeColors";
+import { A2aClientKeysSection } from "./A2aClientKeysSection";
 
 
 type SettingSource = "override" | "env" | "default" | "unset";
@@ -364,6 +365,7 @@ export default function SettingsPage() {
                       &ldquo;Reveal key&rdquo; can show it again later. You can also paste a key of
                       your own into the field above.
                     </Text>
+                    <A2aClientKeysSection />
                   </Stack>
                 )}
 

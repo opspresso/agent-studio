@@ -158,6 +158,15 @@ export const keys = {
   }),
   traceProjectPartition: (projectName: string) => `TRACEPROJECT#${projectName}`,
 
-  typePartition: (entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT" | "SCHEDULE") =>
+  /** A named inbound-A2A client key. */
+  a2aClientKey: (name: string) => ({ PK: `A2ACLIENT#${name}`, SK: "META" }),
+  /**
+   * The verification row: the key value's SHA-256 → the client name. Its own
+   * item so the hot path (every inbound A2A request) is one GetItem rather
+   * than a list-and-compare over every registered client.
+   */
+  a2aClientKeyHash: (tokenHash: string) => ({ PK: `A2AKEYHASH#${tokenHash}`, SK: "META" }),
+
+  typePartition: (entityType: "PROJECT" | "SKILL" | "MCP" | "AGENT" | "SCHEDULE" | "A2ACLIENT") =>
     `TYPE#${entityType}`,
 } as const;

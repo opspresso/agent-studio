@@ -897,6 +897,17 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
 
 Missing key → `503` (not configured) or `401` (mismatch, constant-time compared).
 
+The presented key may be the shared `A2A_API_KEY` (runs attributed to `a2a:shared-key`) or a
+**named client key** (`asc_…`, runs attributed to `a2a:{client}` — per-client attribution and
+concurrency limits). Client keys are admin-managed:
+
+```
+GET    /api/settings/a2a-keys                  (admin) → { items: [{ name, description?, masked, createdAt }] }
+POST   /api/settings/a2a-keys                  (admin) { name, description? } → { key, view }   key shown once
+DELETE /api/settings/a2a-keys/{name}           (admin) revoke
+POST   /api/settings/a2a-keys/{name}/reveal    (admin) → { key, createdAt }                     audited
+```
+
 Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state (`message/send` →
 `tasks/get`/`tasks/cancel`) is persisted per project in DynamoDB, so it survives redeploys and
 is shared across instances; a terminal-state-guarding conditional write keeps a concurrent
