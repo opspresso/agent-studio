@@ -9,9 +9,13 @@ const PHONE_PATTERN =
 // digit, so a checksum would miss exactly the newest ones. Hyphenated form only:
 // a bare 13-digit run is any order id.
 const RRN_PATTERN = /(?<!\d)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])-[1-8]\d{6}(?!\d)/;
-// Payment card: 13-19 digits with a consistent separator (none, space or hyphen).
-// A match still has to pass Luhn in maskSegment, or it is left alone.
-const CARD_PATTERN = /(?<!\d)\d{4}(?<cardsep>[ -]?)\d{4}\k<cardsep>\d{4}\k<cardsep>\d{1,7}(?![\d-])/;
+// Payment card: 13-19 digits with a consistent separator (none, space, dot or
+// hyphen). The trailing guard stops at digits only, so a card with a suffix
+// bolted on (`4111-1111-1111-1111-01`) still masks the card and leaves the
+// suffix; a card fused into a longer digit run stays an order id, like the bare
+// 13-digit RRN above. A match still has to pass Luhn in maskSegment; one that
+// fails is re-scanned with CARD_REJECTED_PATTERN below rather than skipped.
+const CARD_PATTERN = /(?<!\d)\d{4}(?<cardsep>[ .-]?)\d{4}\k<cardsep>\d{4}\k<cardsep>\d{1,7}(?!\d)/;
 // Alternation is first-match-wins, so the order is the precedence. Email stays
 // first: a local part can contain what looks like an RRN or a card, and the whole
 // address must mask as one token. RRN and card come before phone, or the phone
@@ -21,6 +25,12 @@ const PII_PATTERN = new RegExp(
   `${EMAIL_PATTERN.source}|(?<rrn>${RRN_PATTERN.source})|(?<card>${CARD_PATTERN.source})|${PHONE_PATTERN.source}`,
   "gi",
 );
+// What a Luhn-rejected card span is re-scanned with. The card branch consumed a
+// span the phone branch used to partially mask (`4111 1111 1111` of a mistyped
+// `4111 1111 1111 1112`), and returning it untouched would expose what was
+// masked before the card branch existed. The span is digits and separators, so
+// of the other branches only phone can match.
+const CARD_REJECTED_PATTERN = new RegExp(PHONE_PATTERN.source, "gi");
 
 function passesLuhn(digits: string): boolean {
   let sum = 0;
@@ -93,28 +103,36 @@ export class PiiFilter {
   private maskSegment(value: string): string {
     return value.replace(PII_PATTERN, (original, ...args) => {
       const groups = args.at(-1) as Record<string, string | undefined>;
-      // A digit run that merely looks like a card (an order id, a tracking number)
-      // fails Luhn and stays untouched.
+      // A digit run that merely looks like a card (an order id, a tracking
+      // number) fails Luhn and is not masked as a card — but the span is
+      // re-scanned, not returned as-is, so the phone branch keeps the partial
+      // mask it applied before the card branch existed.
       if (groups.card !== undefined && !passesLuhn(original.replace(/\D/g, ""))) {
-        return original;
+        return original.replace(CARD_REJECTED_PATTERN, (fallback) =>
+          this.replacementFor(fallback),
+        );
       }
-      const existing = this.replacementByOriginal.get(original);
-      if (existing) {
-        return existing;
-      }
-
-      let replacement = formatPreservingReplacement(original);
-      while (
-        replacement === original ||
-        this.originalByReplacement.has(replacement) ||
-        this.replacementByOriginal.has(replacement)
-      ) {
-        replacement = formatPreservingReplacement(original);
-      }
-      this.replacementByOriginal.set(original, replacement);
-      this.originalByReplacement.set(replacement, original);
-      return replacement;
+      return this.replacementFor(original);
     });
+  }
+
+  private replacementFor(original: string): string {
+    const existing = this.replacementByOriginal.get(original);
+    if (existing) {
+      return existing;
+    }
+
+    let replacement = formatPreservingReplacement(original);
+    while (
+      replacement === original ||
+      this.originalByReplacement.has(replacement) ||
+      this.replacementByOriginal.has(replacement)
+    ) {
+      replacement = formatPreservingReplacement(original);
+    }
+    this.replacementByOriginal.set(original, replacement);
+    this.originalByReplacement.set(replacement, original);
+    return replacement;
   }
 
   restore(value: string): string {
