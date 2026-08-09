@@ -101,6 +101,19 @@ domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 (`SlackEventDeps`), and `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
 handler assembly over `executionDeps`).
 
+**A use case is composed once, not per route.** A slice exports a `createXUseCases` factory,
+the composition root calls it, and a route handler imports the bound object — which is what
+keeps the wiring-site list above at four. The free functions those factories wrap stay
+exported, and the split between the two forms is not a preference: **a route takes the bound
+object; an application module that already holds the repository calls the function.** A use
+case passing its own injected repository to a sibling in the same layer is ordinary; a route
+handler choosing which repository, which cipher, or which registry lookups a version's
+references are validated against is the presentation layer making a composition decision.
+Twenty of them did, and nothing said so, because importing a repository from the composition
+root breaks no rule above. `REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE` in
+`tests/architecture.test.ts` now keeps the converted ones out of `src/app`; a name is added
+to that list as its slice is converted, never before.
+
 `tests/architecture.test.ts` enforces all of this with **empty allowlists**. When it fails,
 **fix the import — do not widen the rule.**
 

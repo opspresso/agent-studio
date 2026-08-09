@@ -15,8 +15,12 @@ vi.mock("@/lib/session", () => ({
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
 }));
 
-vi.mock("@/lib/container", () => ({
-  projectRepository: projectRepo,
+// The slice is composed over the mocked repository rather than stubbed, so the
+// real owner gate still runs — which is the whole point of these assertions.
+vi.mock("@/lib/container", async () => ({
+  projectUseCases: (
+    await import("@/application/project/projectUseCases")
+  ).createProjectUseCases(projectRepo as never),
   traceRepository: traceRepo,
 }));
 

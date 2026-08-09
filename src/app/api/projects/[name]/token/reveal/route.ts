@@ -1,6 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, secretCipher } from "@/lib/container";
-import { revealApiToken } from "@/application/project/apiTokenUseCases";
+import { apiTokenUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -13,7 +12,7 @@ type RouteContext = { params: Promise<{ name: string }> };
 export const POST = withAuth(async (user, _request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    return Response.json(await revealApiToken(projectRepository, name, user.email, secretCipher));
+    return Response.json(await apiTokenUseCases.reveal(name, user.email));
   } catch (error) {
     return apiError(error);
   }

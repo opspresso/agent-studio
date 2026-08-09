@@ -1,12 +1,9 @@
 import { z } from "zod";
 import { resolvePublicBaseUrl } from "@/lib/public-url";
 import { withAuth } from "@/lib/session";
-import { projectRepository, secretCipher } from "@/lib/container";
+import { projectSlackUseCases } from "@/lib/container";
 import {
   buildProjectSlackManifest,
-  disconnectProjectSlack,
-  getProjectSlack,
-  updateProjectSlack,
   type ProjectSlackResult,
 } from "@/application/slack/projectSlack";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -47,7 +44,7 @@ async function slackResponse({ project, view }: ProjectSlackResult, baseUrl: str
 export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    const result = await getProjectSlack(projectRepository, name, user.email, secretCipher);
+    const result = await projectSlackUseCases.get(name, user.email);
     return await slackResponse(result, await resolveBaseUrl(request));
   } catch (error) {
     return apiError(error);
@@ -61,13 +58,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
     return invalidRequest(parsed.error);
   }
   try {
-    const result = await updateProjectSlack(
-      projectRepository,
-      name,
-      parsed.data,
-      user.email,
-      secretCipher,
-    );
+    const result = await projectSlackUseCases.update(name, parsed.data, user.email);
     return await slackResponse(result, await resolveBaseUrl(request));
   } catch (error) {
     return apiError(error);
@@ -77,12 +68,7 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
 export const DELETE = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   try {
-    const result = await disconnectProjectSlack(
-      projectRepository,
-      name,
-      user.email,
-      secretCipher,
-    );
+    const result = await projectSlackUseCases.disconnect(name, user.email);
     return await slackResponse(result, await resolveBaseUrl(request));
   } catch (error) {
     return apiError(error);

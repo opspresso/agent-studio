@@ -27,13 +27,15 @@ vi.mock("@/lib/session", () => ({
 
 // Only the cipher methods these two routes reach — the port makes that possible
 // without standing up AES or the whole secretEncryption surface.
-vi.mock("@/lib/container", () => ({
-  projectRepository: projectRepo,
-  secretCipher: {
-    decrypt: (value: string) => value.replace("enc:v1:", ""),
-    encrypt: (value: string) => `enc:v1:${value}`,
-    mask: () => "ast_••••wxyz",
-  },
+const cipher = {
+  decrypt: (value: string) => value.replace("enc:v1:", ""),
+  encrypt: (value: string) => `enc:v1:${value}`,
+  mask: () => "ast_••••wxyz",
+};
+vi.mock("@/lib/container", async () => ({
+  apiTokenUseCases: (
+    await import("@/application/project/apiTokenUseCases")
+  ).createApiTokenUseCases(projectRepo as never, cipher as never),
 }));
 vi.mock("@/lib/runtime-settings", () => ({
   getA2aApiKey: async () => state.a2aKey,

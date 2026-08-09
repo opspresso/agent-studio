@@ -1,6 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectRepository, versionRepository } from "@/lib/container";
-import { publishVersion } from "@/application/project/versionUseCases";
+import { versionUseCases } from "@/lib/container";
 import { publishSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sanitizeProject } from "@/app/api/projects/_lib/http";
@@ -14,13 +13,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     return invalidRequest(parsed.error);
   }
   try {
-    const project = await publishVersion(
-      projectRepository,
-      versionRepository,
-      name,
-      parsed.data.versionName,
-      user.email,
-    );
+    const project = await versionUseCases.publish(name, parsed.data.versionName, user.email);
     return Response.json(sanitizeProject(project));
   } catch (error) {
     return apiError(error);

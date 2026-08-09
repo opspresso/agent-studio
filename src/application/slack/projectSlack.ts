@@ -301,3 +301,43 @@ export async function resolveSlackEventBinding(
   }
   return { projectName: project.name, ...runtime };
 }
+
+/**
+ * The project-Slack surface bound to its repository and cipher, composed once
+ * by the composition root. Same split as {@link createProjectUseCases}: a route
+ * takes the bound object, an application module that already holds the
+ * repository calls the function.
+ *
+ * `authTest` is bound here too. It is the Slack HTTP client, deferred by the
+ * composition root so a route that wanted a project did not load it — and a
+ * route choosing which client verifies a token is the same defect as a route
+ * choosing which cipher decrypts one.
+ */
+export interface ProjectSlackUseCases {
+  get(name: string, userEmail: string): Promise<ProjectSlackResult>;
+  update(name: string, update: ProjectSlackUpdate, userEmail: string): Promise<ProjectSlackResult>;
+  disconnect(name: string, userEmail: string): Promise<ProjectSlackResult>;
+  test(name: string, userEmail: string): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }>;
+  /** No session involved — the request signature is the authentication. */
+  resolveEventBinding(
+    projectName: string,
+  ): Promise<{ projectName: string; botToken: string; signingSecret: string } | null>;
+}
+
+export function createProjectSlackUseCases(deps: {
+  projects: ProjectRepository;
+  cipher: SecretCipher;
+  authTest: (botToken: string) => Promise<{ team?: string; user?: string }>;
+}): ProjectSlackUseCases {
+  return {
+    get: (name, userEmail) => getProjectSlack(deps.projects, name, userEmail, deps.cipher),
+    update: (name, update, userEmail) =>
+      updateProjectSlack(deps.projects, name, update, userEmail, deps.cipher),
+    disconnect: (name, userEmail) =>
+      disconnectProjectSlack(deps.projects, name, userEmail, deps.cipher),
+    test: (name, userEmail) =>
+      testProjectSlack(deps.projects, name, userEmail, deps.cipher, deps.authTest),
+    resolveEventBinding: (projectName) =>
+      resolveSlackEventBinding(deps.projects, projectName, deps.cipher),
+  };
+}

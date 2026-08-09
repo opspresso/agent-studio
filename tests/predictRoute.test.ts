@@ -9,11 +9,22 @@ const { projectRepo, versionRepo, calls } = vi.hoisted(() => ({
   calls: [] as string[],
 }));
 
-vi.mock("@/lib/container", () => ({
+vi.mock("@/lib/container", async () => ({
   executionDeps: {},
   imageDeps: {},
-  projectRepository: projectRepo,
-  versionRepository: versionRepo,
+  projectUseCases: (
+    await import("@/application/project/projectUseCases")
+  ).createProjectUseCases(projectRepo as never),
+  // Only `get` is reached here; the reference lookups and the cipher belong to
+  // the write path, which this route does not take.
+  versionUseCases: (
+    await import("@/application/project/versionUseCases")
+  ).createVersionUseCases({
+    versions: versionRepo as never,
+    projects: projectRepo as never,
+    refs: {} as never,
+    cipher: {} as never,
+  }),
 }));
 
 vi.mock("@/app/api/projects/_lib/executionAuth", async (importOriginal) => ({

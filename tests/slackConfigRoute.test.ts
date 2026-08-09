@@ -15,8 +15,15 @@ vi.mock("@/lib/session", () => ({
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
 }));
 
-vi.mock("@/lib/container", async () => ({ projectRepository: projectRepo,
-  secretCipher: (await import("@/infrastructure/crypto/secretCipher")).secretCipher,
+vi.mock("@/lib/container", async () => ({
+  projectSlackUseCases: (
+    await import("@/application/slack/projectSlack")
+  ).createProjectSlackUseCases({
+    projects: projectRepo as never,
+    cipher: (await import("@/infrastructure/crypto/secretCipher")).secretCipher,
+    // Reached only by the sibling `test` route, which this file does not import.
+    authTest: async () => ({}),
+  }),
 }));
 vi.mock("@/lib/public-url", () => ({
   resolvePublicBaseUrl: async () => "https://studio.example.com",

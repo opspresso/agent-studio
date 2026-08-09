@@ -2,8 +2,7 @@ import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import { sessionCaller } from "@/app/api/_lib/caller";
 import { unauthorized } from "@/shared/unauthorized";
 import { getSessionUser } from "@/lib/session";
-import { projectRepository, secretCipher } from "@/lib/container";
-import { verifyProjectApiToken } from "@/application/project/apiTokenUseCases";
+import { apiTokenUseCases } from "@/lib/container";
 
 export interface ExecutionPrincipal {
   email: string;
@@ -42,7 +41,7 @@ export async function authenticateExecution(
   const header = request.headers.get("authorization");
   const bearer = header ? /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim() : undefined;
   if (bearer) {
-    const email = await verifyProjectApiToken(projectRepository, projectName, bearer, secretCipher);
+    const email = await apiTokenUseCases.verify(projectName, bearer);
     return email ? { email, viaToken: true } : unauthorized();
   }
   const user = await getSessionUser();
