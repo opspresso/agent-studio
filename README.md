@@ -13,7 +13,7 @@ another agent over A2A. Every run is attributed, priced, and bounded.
 |---|---|
 | **Projects & versions** | Three project types — `llm` (single-shot prompt), `agent` (multi-turn tool loop), `image` (generate/edit). Versions are immutable snapshots; a pointer marks the published one. |
 | **LLM engine** | One OpenAI-compatible protocol for every provider. Multi-turn tool loop, subagent transfers, per-turn budgets, single-retry fallback, streaming everywhere. |
-| **Skills** | Markdown behaviour instructions loaded on demand — the system prompt carries only a name/description table. Syncable from a GitHub repo. |
+| **Skills** | Markdown behaviour instructions loaded on demand — the system prompt carries only a name/description table. Syncable from an Agent Plugins repo. |
 | **MCP tools** | A shared registry of MCP servers; per-version bindings can narrow the tool list and override outbound headers. Managed servers and OAuth are supported (below). |
 | **Agents** | Another project as a local subagent, or an external OpenAI-compatible / A2A endpoint as a remote one. |
 | **Chats** | Private per-owner conversations against an agent project, with tool traffic and images preserved. |
@@ -100,10 +100,12 @@ per-provider channels to call providers directly. See
 
 ### Skills
 
-Skills sync from a GitHub repo laid out as `skills/<name>/SKILL.md` — the parent directory is
-the slug. Supporting files under a skill's directory (`references/*.md`, templates) are
-collected as attachments and loaded on demand through the `Skill` tool's `file_path`. The repo
-is the source of truth for synced skills; locally created ones are untouched.
+Skills sync from an [Agent Plugins](https://agent-plugins.org/) repo (`PLUGINS_REPO`): each
+plugin declares them at `skills/<name>/SKILL.md` per the Agent Skills spec, alongside an
+`mcp.json` of streamable-HTTP servers. Supporting files under a skill's directory
+(`references/*.md`, templates) are collected as attachments and loaded on demand through the
+`Skill` tool's `file_path`. The repo is the source of truth for synced skills; locally
+created ones are untouched.
 
 ### MCP tools
 

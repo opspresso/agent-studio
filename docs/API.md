@@ -93,7 +93,8 @@ list. `owner` = the project's owner or a configured admin.
 |---|---|---|
 | `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | session / admin |
 | `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | session / admin |
-| `/api/skills/sync`, `/api/mcps/sync` | `GET` `POST` | session / admin |
+| `/api/plugins` | `GET` | session |
+| `/api/plugins/sync` | `GET` `POST` | session / admin |
 | `/api/mcps/{name}/tools` | `POST` | session |
 | `/api/mcps/{name}/auth` | `POST` `DELETE` | admin |
 | `/api/mcps/managed` | `POST` | admin |
@@ -157,7 +158,7 @@ DELETE /api/skills/{name}     → 204                     | 404
   and never reaches the model.
 - `skills` items may also carry `files?` (attachment files loadable on demand through the
   Skill tool) and `source?` (provenance of a repo-synced entry, e.g.
-  `github:opspresso/agent-skills`).
+  `github:opspresso/agent-plugins#devops` — the repo and the plugin that declared it).
 - `projects` mutations are owner-gated (403). `POST /api/projects` body:
 
 ```json
@@ -274,9 +275,9 @@ PUT /api/settings → 200 {…same shape…} | 400
 ```
 
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
-  `llmApiKey`, `skillsRepo`, `skillsRepoBranch`, `toolsRepo`, `toolsRepoBranch`,
-  `githubToken`, `a2aApiKey`, `publicBaseUrl`, `unknownModelPolicy` (`allow` | `refuse`, the
-  only key validated as an enum rather than a bounded string).
+  `llmApiKey`, `pluginsRepo`, `pluginsRepoBranch`, `githubToken`, `a2aApiKey`,
+  `publicBaseUrl`, `unknownModelPolicy` (`allow` | `refuse`, the only key validated as an
+  enum rather than a bounded string).
 
 ```
 POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
@@ -423,16 +424,14 @@ a view that renders neither.
 These endpoints support the console's operational actions in addition to resource CRUD:
 
 ```
-GET  /api/skills/sync
+GET  /api/plugins
+→ [ { name, version?, description?, repo, rootPath, commitSha,
+      skills: ["name"], mcpServers: ["name"], syncedAt, createdAt, updatedAt } ]
+
+GET  /api/plugins/sync
 → { configured, repo, branch }
 
-POST /api/skills/sync
-→ the sync report described below | 503 (not configured)
-
-GET  /api/mcps/sync
-→ { configured, repo, branch }
-
-POST /api/mcps/sync
+POST /api/plugins/sync
 → the sync report described below | 503 (not configured)
 
 POST /api/mcps/{name}/tools
@@ -447,42 +446,66 @@ GET /api/projects/{name}/a2a
 
 `card` is the Agent Card the project publishes, or `null` while no version is published.
 
-Both sync endpoints answer `GET` to a session and require admin access for `POST`. Registry
+The sync endpoint answers `GET` to a session and requires admin access for `POST`. Registry
 test operations require a session and apply the same SSRF guard used during registration and
-dispatch.
+dispatch. Plugins have no create/update routes: the sync is their only writer, and a plugin
+row goes away through the sync's own `remove` selection.
 
-Both syncs follow one rule: **import what is missing, report the rest, decide nothing else.**
+The sync follows one rule: **import what is missing, report the rest, decide nothing else.**
+The selection is kind-qualified, because the skill and MCP registries may hold the same name:
 
 ```
-POST /api/skills/sync   { "overwrite"?: ["name"], "remove"?: ["name"] }
-POST /api/mcps/sync     { "overwrite"?: ["name"], "remove"?: ["name"] }
-→ 200 { repo, commitSha, created, existing, overwritten, orphaned, removed, skipped }
+POST /api/plugins/sync  { "overwrite"?: { "skills"?: ["name"], "mcpServers"?: ["name"] },
+                          "remove"?:    { "skills"?: ["name"], "mcpServers"?: ["name"],
+                                          "plugins"?: ["name"] } }
+→ 200 { repo, commitSha,
+        plugins: [ { plugin, version?, description?,
+                     skills:     { created, existing, overwritten, orphaned, removed, skipped },
+                     mcpServers: { created, existing, overwritten, orphaned, removed, skipped } } ],
+        skipped, orphanedPlugins, removedPlugins }
 ```
 
-- **created** — in the repository, not in the registry. Imported outright.
+Per kind, in each plugin's section:
+
+- **created** — in the repository, not in the registry. Imported outright, with
+  `source: "github:<repo>#<plugin>"`.
 - **existing** — in both, as `{ name, differs }` where `differs` names the fields the document
-  would replace. **Nothing is written** unless the name is in `overwrite`: the stored version
-  may be a correction someone made on purpose, and a sync cannot tell that apart from a
-  document that moved on.
-- **orphaned** — created by a previous sync of this repository and no longer in it. **Nothing
-  is deleted** unless the name is in `remove`. Entries someone registered by hand never
-  appear: they were never the repository's to miss. A deletion that does happen leaves a
-  `registry.delete` audit row naming the admin who asked for the sync, exactly as a deletion
-  from the console does.
-- **skipped** — `[{ name, reason, detail? }]` with `reason` one of `bad-name`, `missing-url`,
-  `invalid-url` (the outbound guard's message in `detail`), `managed-url` (a managed MCP
-  entry's address comes from the provisioner, so the document's was ignored while its other
-  fields applied), `conflict` (the name was taken mid-sync), `attachment` (a skill synced but
-  one of its files did not).
+  would replace. **Nothing is written** unless the name is in the matching `overwrite` list:
+  the stored version may be a correction someone made on purpose, and a sync cannot tell that
+  apart from a document that moved on. A `source` among the diffs is a *takeover* — the entry
+  was created by another origin (the retired skills/tools repos, or a different plugin), and
+  an overwrite adopts it, rewriting content and provenance together. An entry with **no**
+  source was registered by hand and is reported as a `conflict` skip instead — it is never
+  offered.
+- **orphaned** — created by a sync of this repository and no longer declared by any plugin in
+  it, attributed to the plugin its source names (a section is synthesized for one that
+  vanished entirely). **Nothing is deleted** unless the name is in the matching `remove`
+  list. A deletion that does happen leaves a `registry.delete` audit row naming the admin who
+  asked for the sync, exactly as a deletion from the console does.
+- **skipped** — `[{ name, reason, detail? }]` with `reason` one of `bad-name`, `invalid-url`
+  (the outbound guard's message in `detail`), `managed-url` (a managed MCP entry's address
+  comes from the provisioner, so the document's was ignored while its other fields applied),
+  `conflict`, `attachment` (a skill synced but one of its files did not), `invalid-manifest`
+  (an unusable `mcp.json`, or an unusable server entry inside one), `invalid-skill` (a
+  SKILL.md outside the Agent Skills spec), `unsupported-transport` (`stdio`/`sse` — reported,
+  never executed), `headers-dropped` (the server synced but mcp.json's declared headers were
+  not imported; `detail` lists their names only), `duplicate-name` (two plugins claim the
+  name; every claimant is skipped).
 
-An overwrite replaces only what the document owns — a skill's description, content and
-attachments; an MCP entry's `url`, `description` and `content`. Encrypted headers, a
-discovered OAuth block and a managed entry's provisioned address are never touched, and a
-field the document does not carry leaves the stored one alone. Moving an MCP entry's address
-drops the OAuth block read from the old one, so Discover has to be re-run.
+The top-level `skipped` carries what no plugin owns — an unusable `plugin.json`, a plugin
+root nested inside another, a plugin name two roots claim. `orphanedPlugins` lists plugin
+rows the repository no longer carries; removing one (via `remove.plugins`) deletes only the
+row — its components surface individually as orphans, each its own decision.
+
+An overwrite replaces only what the documents own — a skill's description, content and
+attachments; an MCP entry's `url`, `description`, `content` (from the plugin's
+`org.opspresso.agent-studio/mcp/<name>.md` extension document) and `source`. Encrypted
+headers, a discovered OAuth block and a managed entry's provisioned address are never
+touched, and a field the documents do not carry leaves the stored one alone. Moving an MCP
+entry's address drops the OAuth block read from the old one, so Discover has to be re-run.
 
 An upstream failure (GitHub unreachable, a truncated tree) answers `502` through `apiError`
-like every other route; a missing `SKILLS_REPO`/`TOOLS_REPO` or `GITHUB_TOKEN` answers `503`.
+like every other route; a missing `PLUGINS_REPO` or `GITHUB_TOKEN` answers `503`.
 
 Per-project Slack configuration uses these endpoints:
 

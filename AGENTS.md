@@ -142,6 +142,8 @@ is OpenAI's 128, not a number anyone here picked.
 |---|---|
 | The shape of an MCP tool | `src/domain/mcp/types.ts` |
 | Which hosts may skip the outbound URL guard | `src/domain/mcp/types.ts` |
+| Interpreting `plugin.json`/`mcp.json`, and which MCP transports a plugin may bind | `src/domain/plugin/types.ts` |
+| The Agent Plugins name rule | `isPluginName` in `src/domain/plugin/types.ts` |
 | Which storage errors mean a lost conditional write | `src/application/errors.ts` |
 | How an audit row is written | `src/application/audit/recordAudit.ts` |
 | Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
@@ -362,19 +364,25 @@ One line each — the linked section is the authority.
   vitest.
 - **Secrets on update**: a masked or empty value preserves what is stored; a masked value with
   no stored counterpart is dropped. A mask can only confirm a secret, never create one.
-- **The two repo syncs own opposite ends.** `SKILLS_REPO` overwrites — a skill is its
-  document. `TOOLS_REPO` only ever creates: an MCP entry also carries encrypted headers and an
-  OAuth block discovered from the server, so an existing name is left untouched and reported as
-  `skipped`. Making the tools sync upsert "for consistency" destroys credentials.
-- **A repo sync imports and reports; it never overwrites or deletes on its own.** Both syncs
-  (`syncSkillsFromSnapshot`, `syncToolsFromSnapshot`) create what is missing and report the
-  rest — what a document would change, and what the repository no longer carries. Either is
-  acted on only when a caller names it, because the stored version may be a deliberate edit
-  and an entry may hold credentials. Only entries a sync created are listed as orphaned; one
-  someone registered by hand was never the repository's to miss. **A deletion a sync performs
-  goes through the use case and names the person who asked for the sync** — both syncs take a
-  required `actorEmail` for that reason, since `remove` is the single owner of the
-  `registry.delete` row and a deletion around it leaves no trace at all.
+- **The plugins sync imports and reports; it never overwrites or deletes on its own.**
+  `syncPluginsFromSnapshot` (`src/application/plugin/syncPlugins.ts`) pulls the Agent
+  Plugins repo (`PLUGINS_REPO`) into both registries at once: it creates what is missing and
+  reports the rest — what a document would change, and what the repository no longer carries,
+  per plugin. Either is acted on only when a caller names it in the kind-qualified selection,
+  because the stored version may be a deliberate edit and an entry may hold credentials. Only
+  entries a sync created are listed as orphaned; one someone registered by hand was never the
+  repository's to miss, and is reported as a `conflict` skip, never offered. An entry whose
+  `source` names another origin is offered as a **takeover** — the one write that revises
+  provenance, and only when named. **A deletion the sync performs goes through the use case
+  and names the person who asked for the sync** — it takes a required `actorEmail` for that
+  reason, since `remove` is the single owner of the `registry.delete` row and a deletion
+  around it leaves no trace at all. Two asymmetries are load-bearing: skills write straight
+  to the repository (that is how `files` and `source` survive), servers go through
+  `mcpUseCases` (that is how every synced URL faces the SSRF guard); and headers declared in
+  `mcp.json` are never imported — a secret does not belong in git — with the dropped names
+  reported. `stdio`/`sse` servers are reported and skipped, never executed. The one
+  unconditional write is the plugin row itself: it is a pure projection of the repo, so
+  gating its refresh would only let it go stale.
 - **Docs record the current state, not history.** Completed milestones are deleted from
   `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
   accumulate changelogs in comments or docs.

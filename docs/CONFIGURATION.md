@@ -177,25 +177,26 @@ that is down — or a connection whose token was revoked — re-pays a failing h
 the first token of every message. The window is short because a stale failure hides a
 recovery while a stale success only serves a slightly old tool list.
 
-## Source repositories
+## Source repository
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `SKILLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `skills/<name>/SKILL.md`; the parent directory name is the skill slug. |
-| `SKILLS_REPO_BRANCH` | `main` | **runtime** | |
-| `TOOLS_REPO` | unset | **runtime** | `owner/repo`. Layout is `tools/<name>/TOOL.md`; the parent directory name is the registry entry name. Frontmatter carries `url` and `description`; the body becomes the entry's operator notes. An existing entry is reported, never written, until the caller names it for overwrite — and an overwrite replaces only those three fields, so headers and OAuth stay put. |
-| `TOOLS_REPO_BRANCH` | `main` | **runtime** | |
-| `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access. Shared by both syncs. |
+| `PLUGINS_REPO` | unset | **runtime** | `owner/repo` of an [Agent Plugins 1.0.0](https://agent-plugins.org/) repository. Every directory holding a `plugin.json` — the repo root included — is one plugin; a root nested inside another is refused. Per plugin: `skills/<name>/SKILL.md` (Agent Skills spec — frontmatter `name` must match the directory, `description` required), `mcp.json` (only `type: "streamable-http"` servers are bound; `stdio` and `sse` entries are reported and skipped, never executed), and `org.opspresso.agent-studio/mcp/<server>.md` extension documents carrying each server's description (frontmatter) and operator notes (body), which the closed mcp.json schema has no field for. |
+| `PLUGINS_REPO_BRANCH` | `main` | **runtime** | |
+| `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access to the plugins repo. |
 
-Both syncs work the same way: **they import what is missing and report the rest.** A name the
-registry already holds is left alone and reported with the fields the document would replace;
-a name a previous sync created and the repository no longer carries is reported as orphaned.
-Neither is acted on until a person picks it in the console — the stored version may be a
-deliberate edit, and an MCP entry may hold credentials. When an overwrite does happen it
-replaces only what the document owns: encrypted headers, a discovered OAuth block and a
-managed entry's provisioned address are never touched.
+The sync **imports what is missing and reports the rest.** A name the registry already holds
+is left alone and reported with the fields the document would replace; a name a previous sync
+created and the repository no longer carries is reported as orphaned, per plugin. Neither is
+acted on until a person picks it in the console — the stored version may be a deliberate
+edit, and an MCP entry may hold credentials. Provenance is per plugin
+(`github:<repo>#<plugin>`): an entry whose source names another origin is offered as a
+*takeover*, which rewrites content and provenance together, and an entry with no source at
+all was registered by hand and is never offered.
 
-A cluster-internal URL is registerable this way only if its host is covered by
+Headers declared in `mcp.json` are **not imported** — a secret does not belong in git — and
+the dropped header names are reported. Credentials are set in the console after the sync. A
+cluster-internal URL is registerable this way only if its host is covered by
 `MCP_INTERNAL_HOST_SUFFIXES` — the sync faces the same outbound guard a typed URL does, and a
 refusal is reported as a skip rather than failing the whole run.
 

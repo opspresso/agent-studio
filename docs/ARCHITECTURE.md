@@ -175,6 +175,7 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | Skill | `SKILL#{name}` | `META` | `TYPE#SKILL` | `{name}` |
 | MCP server | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
+| Plugin | `PLUGIN#{name}` | `META` | `TYPE#PLUGIN` | `{name}` |
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
 | Usage (daily per caller) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
 | Usage monthly-threshold claim | `USAGE#{projectName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
@@ -795,23 +796,35 @@ Skill { name, description, content (markdown), files?: { path, content }[],
         source?, createdAt, updatedAt }
 ```
 
-`source` marks skills synced from the skills repo (e.g. `github:owner/repo`) — and it is what
-tells an orphan from an entry someone wrote in the console, so both syncs stamp what they
-create and neither ever reports a name it did not. `files` are attachment files collected
-under the skill root.
+`source` marks skills synced from the plugins repo (`github:<repo>#<plugin>` — the repo and
+the plugin that declared it) — and it is what tells an orphan from an entry someone wrote in
+the console, so the sync stamps what it creates and never reports a name it did not. `files`
+are attachment files collected under the skill root.
 
-Sync reads `skills/<name>/SKILL.md` from the configured GitHub repo — the parent directory
-name is the slug — and collects supported text attachments (`src/domain/skill/files.ts`:
-`ALLOWED_SKILL_FILE_EXTENSIONS`) under each `SKILL.md` directory, bounded by per-file,
+The plugins sync (`syncPluginsFromSnapshot`, `src/application/plugin/syncPlugins.ts`) reads
+an [Agent Plugins 1.0.0](https://agent-plugins.org/) repository (`PLUGINS_REPO`): every
+directory holding a `plugin.json` is one plugin (a root nested inside another is refused),
+and each plugin's skills are the immediate children of its `skills/` directory holding a
+SKILL.md that conforms to the Agent Skills spec — frontmatter `name` matching the directory,
+`description` present and within the spec's cap. Interpretation of `plugin.json` and
+`mcp.json` is domain-owned (`src/domain/plugin/types.ts`); the GitHub client only fetches.
+Supported text attachments are collected under each skill root
+(`src/domain/skill/files.ts`: `ALLOWED_SKILL_FILE_EXTENSIONS`), bounded by per-file,
 per-skill and file-count caps and excluding symlinks. `file_path` is normalised and confined
 to the skill root: no absolute paths, no `..`, no cross-skill access. An overwrite replaces
 the whole skill item, so stale attachments drop with it; skipped files are reported with
 reasons.
 
+Each plugin also becomes a row (`Plugin` in `src/domain/plugin/types.ts`: manifest metadata
+plus the component names it declared) — the one thing the sync upserts unconditionally,
+because nothing on it is operator-authored. The console's Plugins page lists them.
+
 **A sync imports what is missing and reports the rest** (`src/domain/sync/types.ts` owns the
-report shape): an existing skill is rewritten, and an orphaned one deleted, only when the
-caller names it — see the sync contract in [API.md](API.md#registry-and-integration-operations).
-Locally created skills with other names are untouched.
+skip vocabulary; the kind-qualified report lives in `src/domain/plugin/sync.ts`): an
+existing entry is rewritten, and an orphaned one deleted, only when the caller names it — an
+entry created by another origin is offered as a takeover that rewrites provenance too — see
+the sync contract in [API.md](API.md#registry-and-integration-operations). Locally created
+skills with other names are untouched.
 
 ### MCP
 
@@ -829,13 +842,18 @@ in the system prompt's server table. `content` is markdown operator notes shown 
 only; unlike a skill's content it never reaches the model. Descriptions are escaped when
 rendered into the table, so a legacy multi-line value cannot break it.
 
-Registry entries can also sync from a GitHub repo (`TOOLS_REPO`, `tools/<name>/TOOL.md`:
-frontmatter `url` + `description`, body → operator notes), under the same rule as skills —
-import what is missing, report the rest (`syncToolsFromSnapshot`,
-`src/application/mcp/syncTools.ts`). The stakes are higher here: an entry also holds
-encrypted headers and a discovered OAuth block, so even a caller-named overwrite replaces
-only the three document-owned fields, and each URL faces the same outbound guard a typed one
-does — a refusal is a skip, not a failed sync.
+Registry entries also arrive through the plugins sync: a plugin's `mcp.json` declares its
+servers, and only `type: "streamable-http"` entries are bound — `stdio` would mean executing
+a repository-supplied command on the host, so it is reported and skipped, never run
+(`classifyMcpJsonServer` in `src/domain/plugin/types.ts` is the one transport decision). The
+closed mcp.json schema has no description field, so each server's model-facing description
+and operator notes ride in the plugin's `org.opspresso.agent-studio/mcp/<server>.md`
+extension document — the reverse-domain client-extension convention the spec defines. The
+stakes are higher here than for skills: an entry also holds encrypted headers and a
+discovered OAuth block, so headers declared in mcp.json are never imported (the dropped
+names are reported), even a caller-named overwrite replaces only the document-owned fields,
+and each URL faces the same outbound guard a typed one does — a refusal is a skip, not a
+failed sync.
 
 Agent runs append a **"Connected MCP Servers"** table (server name, description, aliased tool
 names) to the system prompt so the model knows which server a tool group belongs to; servers
