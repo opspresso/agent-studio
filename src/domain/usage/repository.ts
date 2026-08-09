@@ -31,6 +31,13 @@ export interface UsageRepository {
    * which takes the marker with it.
    */
   claimAlert(projectName: string, date: string, kind: CostAlertKind): Promise<boolean>;
+  /**
+   * The monthly counterpart of `claimAlert`, on its own `MONTHCLAIM#{yyyy-MM}`
+   * row rather than a marker on a daily row: a marker claimed on the day the
+   * threshold was crossed would let an instance running on a later day claim
+   * again, because it reads a different row.
+   */
+  claimMonthAlert(projectName: string, month: string, kind: CostAlertKind): Promise<boolean>;
   listByProject(projectName: string, from: string, to: string): Promise<UsageRow[]>;
   /** Cross-project rows for a date range (dashboard). */
   listByDateRange(from: string, to: string): Promise<UsageRow[]>;

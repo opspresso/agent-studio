@@ -529,6 +529,31 @@ async function main() {
     );
     pass("usage attribution: per-caller rows, project totals unaffected");
 
+    // ---------- monthly threshold claim (conditional, its own row) ----------
+    const month = today.slice(0, 7);
+    assert.equal(
+      await usageRepository.claimMonthAlert(projectName, month, "alert"),
+      true,
+      "first monthly claim wins",
+    );
+    assert.equal(
+      await usageRepository.claimMonthAlert(projectName, month, "alert"),
+      false,
+      "second monthly claim loses",
+    );
+    assert.equal(
+      await usageRepository.claimMonthAlert(projectName, month, "block"),
+      true,
+      "each threshold keeps its own monthly claim",
+    );
+    const monthRows = await usageRepository.listByProject(projectName, today, today);
+    assert.equal(
+      monthRows.length,
+      1,
+      "the month-claim row does not leak into the daily listing",
+    );
+    pass("monthly threshold claim: conditional write on its own row");
+
     // ---------- trigger history (the repair sweep's bounded window) ----------
     // The bound is a sort-key range, not a filter, and a mocked doc client
     // cannot tell a working KeyConditionExpression from a broken one — which is

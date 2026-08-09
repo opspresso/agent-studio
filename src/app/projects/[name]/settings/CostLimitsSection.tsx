@@ -7,8 +7,8 @@ import { stateColor } from "@/app/_components/badgeColors";
 import { getProject, updateProject, type CostLimits } from "../../lib/api";
 
 /**
- * Daily (UTC) spend guards. Two independent thresholds and the channel their
- * notifications go to.
+ * Daily and monthly (UTC) spend guards. Four independent thresholds and the
+ * channel their notifications go to.
  *
  * An empty field means "no limit" rather than zero — a zero block threshold
  * would refuse every run, which is never what clearing a box is meant to say.
@@ -16,6 +16,8 @@ import { getProject, updateProject, type CostLimits } from "../../lib/api";
 export function CostLimitsSection({ projectName }: { projectName: string }) {
   const [alertUsd, setAlertUsd] = useState<number | "">("");
   const [blockUsd, setBlockUsd] = useState<number | "">("");
+  const [monthlyAlertUsd, setMonthlyAlertUsd] = useState<number | "">("");
+  const [monthlyBlockUsd, setMonthlyBlockUsd] = useState<number | "">("");
   const [channel, setChannel] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,6 +34,8 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
         const limits = project.costLimits;
         setAlertUsd(limits?.alertThresholdUsd ?? "");
         setBlockUsd(limits?.blockThresholdUsd ?? "");
+        setMonthlyAlertUsd(limits?.monthlyAlertThresholdUsd ?? "");
+        setMonthlyBlockUsd(limits?.monthlyBlockThresholdUsd ?? "");
         setChannel(limits?.alertSlackChannel ?? "");
       })
       .catch((e: unknown) => {
@@ -56,13 +60,18 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
     const limits: CostLimits = {
       ...(alertUsd === "" ? {} : { alertThresholdUsd: alertUsd }),
       ...(blockUsd === "" ? {} : { blockThresholdUsd: blockUsd }),
+      ...(monthlyAlertUsd === "" ? {} : { monthlyAlertThresholdUsd: monthlyAlertUsd }),
+      ...(monthlyBlockUsd === "" ? {} : { monthlyBlockThresholdUsd: monthlyBlockUsd }),
       ...(channel.trim() ? { alertSlackChannel: channel.trim() } : {}),
     };
     try {
       // Both thresholds cleared means the guard is off, which is `null` — not an
       // object holding only a channel that nothing would ever notify on.
       const hasThreshold =
-        limits.alertThresholdUsd !== undefined || limits.blockThresholdUsd !== undefined;
+        limits.alertThresholdUsd !== undefined ||
+        limits.blockThresholdUsd !== undefined ||
+        limits.monthlyAlertThresholdUsd !== undefined ||
+        limits.monthlyBlockThresholdUsd !== undefined;
       await updateProject(projectName, { costLimits: hasThreshold ? limits : null });
       setSaved(true);
     } catch (e) {
@@ -75,11 +84,12 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
   // Readable while collapsed: the two thresholds as `alert / block`, a dash
   // for the one left open, `none` when the guard is off entirely.
   const usd = (value: number | "") => (value === "" ? "–" : `$${value}`);
-  const configured = alertUsd !== "" || blockUsd !== "";
+  const configured =
+    alertUsd !== "" || blockUsd !== "" || monthlyAlertUsd !== "" || monthlyBlockUsd !== "";
 
   return (
     <CollapsibleSection
-      title="Daily cost limits"
+      title="Cost limits"
       badge={
         loading ? undefined : (
           <Badge color={stateColor(configured)} radius="xl">
@@ -90,9 +100,10 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
     >
       <Stack gap="md">
         <Text fz="sm" c="dimmed">
-          Spend is measured per UTC day across every model this project runs. Leave a field empty
-          for no limit. A blocked project refuses every run — API, chat, Slack and A2A alike —
-          until 00:00 UTC.
+          Spend is measured per UTC day and per UTC month across every model this project runs.
+          Leave a field empty for no limit. A blocked project refuses every run — API, chat,
+          Slack and A2A alike — until the window rolls over: 00:00 UTC for the day, the first
+          of the next month for the month.
         </Text>
         {error && (
           <Alert color="red" variant="light">
@@ -117,6 +128,28 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             onChange={(value) => setBlockUsd(value === "" ? "" : Number(value))}
             min={0}
             step={1}
+            decimalScale={2}
+            disabled={loading}
+          />
+        </Group>
+        <Group grow align="flex-start">
+          <NumberInput
+            label="Monthly alert threshold (USD)"
+            description="Notify once a month, keep running"
+            value={monthlyAlertUsd}
+            onChange={(value) => setMonthlyAlertUsd(value === "" ? "" : Number(value))}
+            min={0}
+            step={10}
+            decimalScale={2}
+            disabled={loading}
+          />
+          <NumberInput
+            label="Monthly block threshold (USD)"
+            description="Refuse runs for the rest of the month"
+            value={monthlyBlockUsd}
+            onChange={(value) => setMonthlyBlockUsd(value === "" ? "" : Number(value))}
+            min={0}
+            step={10}
             decimalScale={2}
             disabled={loading}
           />

@@ -165,25 +165,28 @@ DELETE /api/skills/{name}     → 204                     | 404
   "projectType": "llm | agent | image", "departmentCode": "OPT-optional" }
 ```
 
-#### Daily cost limits
+#### Cost limits
 
 `PUT /api/projects/{name}` also carries the project's spend guards:
 
 ```json
 { "costLimits": { "alertThresholdUsd": 20, "blockThresholdUsd": 50,
+                  "monthlyAlertThresholdUsd": 300, "monthlyBlockThresholdUsd": 500,
                   "alertSlackChannel": "C0123456789" } }
 ```
 
 Sent whole — the object replaces what was stored, `null` clears the guards, and omitting the
 field leaves them untouched. A partial merge would make "drop the block threshold, keep the
-alert" unexpressible. Both thresholds are optional and independent; `alertThresholdUsd` may
-not exceed `blockThresholdUsd` (above it the alert could never fire on its own, because the
+alert" unexpressible. Every threshold is optional and independent; within each window the
+alert may not exceed the block (above it the alert could never fire on its own, because the
 block stops the spending that would reach it).
 
-Spend is the sum of every model's `costUsd` on the project's UTC-day usage row. Once it
-reaches `blockThresholdUsd` every execution entry point answers
-`429 { "error": "Project \"…\" has reached its daily cost limit …" }` with `Retry-After` set
-to the seconds remaining until 00:00 UTC. Crossing either threshold posts once per day to
+Spend is the sum of every model's `costUsd` on the project's UTC-day usage rows — one row for
+the daily window, the month's rows summed for the monthly one. Once a block threshold is
+reached every execution entry point answers
+`429 { "error": "Project \"…\" has reached its daily cost limit …" }` (or `monthly`) with
+`Retry-After` set to the seconds until the window rolls over — 00:00 UTC for the day, the
+first of the next month for the month. Crossing a threshold posts once per window to
 `alertSlackChannel` using the project's own Slack bot; without a channel or bot the
 thresholds still block. See [OPERATIONS.md](OPERATIONS.md#daily-cost-guard--fails-open) for
 what the guard does and does not bound.

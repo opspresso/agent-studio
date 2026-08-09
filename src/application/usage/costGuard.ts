@@ -1,10 +1,12 @@
 /**
- * Daily spend guard for one project.
+ * Spend guard for one project, over the UTC day and the UTC month.
  *
  * The usage aggregates were already there; nothing read them back. A runaway
  * tool loop, or a caller hammering the shared project catalog, could spend
  * without limit inside the per-run bounds (10 minutes, 50 turns) because those
- * bound one run and nothing bounded the day.
+ * bound one run and nothing bounded the day — and a slow burn under the daily
+ * threshold every day was bounded by nothing at all, which is what the monthly
+ * window exists for.
  *
  * **This is a backstop, not an exact cap.** An agent run buffers its usage in
  * `createUsageAggregator` and flushes once at the end, so the pre-check cannot
@@ -24,7 +26,11 @@ import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { RateLimitedError } from "@/application/errors";
 import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { todayUtc } from "./recordUsage";
+import { utcDay, utcMonth } from "@/shared/date";
 import { log } from "@/shared/logger";
+
+/** Which spend window a threshold bounds — the UTC day, or the UTC month. */
+export type CostWindow = "daily" | "monthly";
 
 /**
  * Slack access the guard needs — posting one message. Declared here rather than
@@ -52,17 +58,23 @@ export interface CostGuardDeps {
   slack?: CostAlertSlack;
 }
 
-/** A day's spend has crossed `blockThresholdUsd`; runs are refused until UTC midnight. */
+/**
+ * A window's spend has crossed its block threshold; runs are refused until the
+ * window rolls over — UTC midnight for the day, the first of the next month
+ * for the month.
+ */
 export class CostLimitExceededError extends RateLimitedError {
   constructor(
     readonly projectName: string,
     readonly spentUsd: number,
     readonly limitUsd: number,
     retryAfterSeconds: number,
+    readonly window: CostWindow = "daily",
   ) {
     super(
-      `Project "${projectName}" has reached its daily cost limit ` +
-        `($${spentUsd.toFixed(2)} of $${limitUsd.toFixed(2)}); runs resume at 00:00 UTC.`,
+      `Project "${projectName}" has reached its ${window} cost limit ` +
+        `($${spentUsd.toFixed(2)} of $${limitUsd.toFixed(2)}); runs resume at ` +
+        `${window === "daily" ? "00:00 UTC" : "the start of the next month (UTC)"}.`,
       retryAfterSeconds,
     );
   }
@@ -86,6 +98,16 @@ export function secondsUntilUtcMidnight(now: Date): number {
   return Math.max(1, Math.ceil((midnight - now.getTime()) / 1000));
 }
 
+/** The monthly window's rollover — the first of the next UTC month. */
+export function secondsUntilNextUtcMonth(now: Date): number {
+  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0);
+  return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
+}
+
+function sumCost(costUsd: Record<string, number>): number {
+  return Object.values(costUsd).reduce((sum, value) => sum + (value || 0), 0);
+}
+
 /** Total USD spent on a project for one day, across every model. */
 async function spentToday(
   deps: CostGuardDeps,
@@ -96,14 +118,31 @@ async function spentToday(
   if (!row) {
     return 0;
   }
-  return Object.values(row.costUsd).reduce((sum, value) => sum + (value || 0), 0);
+  return sumCost(row.costUsd);
+}
+
+/**
+ * Total USD spent this UTC month so far — the month's daily rows summed, one
+ * bounded query over at most 31 rows in the project's own partition.
+ */
+async function spentThisMonth(
+  deps: CostGuardDeps,
+  projectName: string,
+  now: Date,
+): Promise<number> {
+  const rows = await deps.usage.listByProject(projectName, `${utcMonth(now)}-01`, utcDay(now));
+  return rows.reduce((sum, row) => sum + sumCost(row.costUsd), 0);
 }
 
 /** True when the project has no guard configured — the common case, and free. */
 function unguarded(project: Project): boolean {
   const limits = project.costLimits;
   return (
-    !limits || (limits.alertThresholdUsd === undefined && limits.blockThresholdUsd === undefined)
+    !limits ||
+    (limits.alertThresholdUsd === undefined &&
+      limits.blockThresholdUsd === undefined &&
+      limits.monthlyAlertThresholdUsd === undefined &&
+      limits.monthlyBlockThresholdUsd === undefined)
   );
 }
 
@@ -118,21 +157,45 @@ export async function assertWithinCostLimit(
   project: Project,
   now: Date = new Date(),
 ): Promise<void> {
-  const limit = project.costLimits?.blockThresholdUsd;
-  if (limit === undefined) {
+  const dailyLimit = project.costLimits?.blockThresholdUsd;
+  const monthlyLimit = project.costLimits?.monthlyBlockThresholdUsd;
+  if (dailyLimit === undefined && monthlyLimit === undefined) {
     return;
   }
-  let spent: number | null;
   try {
-    spent = await spentToday(deps, project.name, todayUtc());
+    // The monthly window is checked first: when both are crossed, its
+    // `Retry-After` is the one that is true — a caller told to come back at
+    // midnight would only be refused again.
+    if (monthlyLimit !== undefined) {
+      const spent = await spentThisMonth(deps, project.name, now);
+      if (spent >= monthlyLimit) {
+        throw new CostLimitExceededError(
+          project.name,
+          spent,
+          monthlyLimit,
+          secondsUntilNextUtcMonth(now),
+          "monthly",
+        );
+      }
+    }
+    if (dailyLimit !== undefined) {
+      const spent = await spentToday(deps, project.name, todayUtc());
+      if (spent !== null && spent >= dailyLimit) {
+        throw new CostLimitExceededError(
+          project.name,
+          spent,
+          dailyLimit,
+          secondsUntilUtcMidnight(now),
+        );
+      }
+    }
   } catch (error) {
+    if (error instanceof CostLimitExceededError) {
+      throw error;
+    }
     // Fail open: the guard exists to bound spend, not to be a second way for a
     // storage blip to take the platform down.
     log.error("cost-guard", `could not read spend for "${project.name}"; allowing the run`, error);
-    return;
-  }
-  if (spent !== null && spent >= limit) {
-    throw new CostLimitExceededError(project.name, spent, limit, secondsUntilUtcMidnight(now));
   }
 }
 
@@ -146,6 +209,7 @@ export async function assertWithinCostLimit(
 export async function settleCostLimit(
   deps: CostGuardDeps,
   project: Project,
+  now: Date = new Date(),
 ): Promise<void> {
   if (unguarded(project)) {
     return;
@@ -161,10 +225,45 @@ export async function settleCostLimit(
     // runs are now refused is the more urgent of the two, and each threshold
     // keeps its own claim so neither swallows the other.
     if (limits.blockThresholdUsd !== undefined && spent >= limits.blockThresholdUsd) {
-      await notifyOnce(deps, project, date, "block", spent, limits.blockThresholdUsd);
+      await notifyOnce(deps, project, "daily", date, "block", spent, limits.blockThresholdUsd);
     }
     if (limits.alertThresholdUsd !== undefined && spent >= limits.alertThresholdUsd) {
-      await notifyOnce(deps, project, date, "alert", spent, limits.alertThresholdUsd);
+      await notifyOnce(deps, project, "daily", date, "alert", spent, limits.alertThresholdUsd);
+    }
+    if (
+      limits.monthlyBlockThresholdUsd !== undefined ||
+      limits.monthlyAlertThresholdUsd !== undefined
+    ) {
+      const month = utcMonth(now);
+      const monthSpent = await spentThisMonth(deps, project.name, now);
+      if (
+        limits.monthlyBlockThresholdUsd !== undefined &&
+        monthSpent >= limits.monthlyBlockThresholdUsd
+      ) {
+        await notifyOnce(
+          deps,
+          project,
+          "monthly",
+          month,
+          "block",
+          monthSpent,
+          limits.monthlyBlockThresholdUsd,
+        );
+      }
+      if (
+        limits.monthlyAlertThresholdUsd !== undefined &&
+        monthSpent >= limits.monthlyAlertThresholdUsd
+      ) {
+        await notifyOnce(
+          deps,
+          project,
+          "monthly",
+          month,
+          "alert",
+          monthSpent,
+          limits.monthlyAlertThresholdUsd,
+        );
+      }
     }
   } catch (error) {
     log.error("cost-guard", `settle failed for "${project.name}"`, error);
@@ -183,12 +282,17 @@ export async function settleCostLimit(
 async function notifyOnce(
   deps: CostGuardDeps,
   project: Project,
-  date: string,
+  window: CostWindow,
+  period: string,
   kind: CostAlertKind,
   spentUsd: number,
   thresholdUsd: number,
 ): Promise<void> {
-  if (!(await deps.usage.claimAlert(project.name, date, kind))) {
+  const claimed =
+    window === "monthly"
+      ? await deps.usage.claimMonthAlert(project.name, period, kind)
+      : await deps.usage.claimAlert(project.name, period, kind);
+  if (!claimed) {
     return;
   }
   const channel = project.costLimits?.alertSlackChannel;
@@ -198,17 +302,18 @@ async function notifyOnce(
     // once in the log is the only place an operator can notice the gap.
     log.warn(
       "cost-guard",
-      `"${project.name}" crossed its ${kind} threshold ` +
+      `"${project.name}" crossed its ${window} ${kind} threshold ` +
         `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no Slack channel configured`,
     );
     return;
   }
+  const resume = window === "daily" ? "00:00 UTC" : "the start of the next month (UTC)";
   const text =
     kind === "block"
-      ? `:no_entry: *${project.displayName}* has reached its daily cost limit — ` +
-        `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${date}, UTC). ` +
-        `Further runs are refused until 00:00 UTC.`
-      : `:warning: *${project.displayName}* has passed its daily cost alert threshold — ` +
-        `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${date}, UTC).`;
+      ? `:no_entry: *${project.displayName}* has reached its ${window} cost limit — ` +
+        `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC). ` +
+        `Further runs are refused until ${resume}.`
+      : `:warning: *${project.displayName}* has passed its ${window} cost alert threshold — ` +
+        `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC).`;
   await deps.slack.postMessage(runtime.botToken, { channel, text });
 }

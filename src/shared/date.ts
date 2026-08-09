@@ -31,6 +31,11 @@ export function utcDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** YYYY-MM in UTC — the month a monthly cost window is keyed by. */
+export function utcMonth(date: Date): string {
+  return date.toISOString().slice(0, 7);
+}
+
 /**
  * A run's wall clock for a system prompt — `2026-07-30 (Thursday) 06:12 UTC`.
  *

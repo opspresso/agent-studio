@@ -42,19 +42,28 @@ export interface SlackIntegration {
 }
 
 /**
- * Daily (UTC) spend guards for one project. Both thresholds are optional and
- * independent: a project may warn without ever blocking, or block without
- * warning first. Absent means no limit — the shape every project had before.
+ * Spend guards for one project, over two UTC windows — the day and the month.
+ * Every threshold is optional and independent: a project may warn without ever
+ * blocking, or block without warning first. Absent means no limit — the shape
+ * every project had before.
  *
- * The window is the UTC day because that is the grain the usage row is keyed
- * at (`USAGE#{project} / DATE#{yyyy-MM-dd}`); a guard on any other window would
- * need an aggregate that does not exist.
+ * The day is the grain the usage row is keyed at
+ * (`USAGE#{project} / DATE#{yyyy-MM-dd}`); the month needs no aggregate of its
+ * own, because it is at most 31 of those rows in one partition.
  */
 export interface CostLimits {
   /** Notify once when the day's spend reaches this, but keep running. */
   alertThresholdUsd?: number;
   /** Refuse further runs for the rest of the UTC day once spend reaches this. */
   blockThresholdUsd?: number;
+  /** Notify once when the UTC month's spend reaches this, but keep running. */
+  monthlyAlertThresholdUsd?: number;
+  /**
+   * Refuse further runs for the rest of the UTC month once spend reaches this.
+   * The month's spend is the sum of its daily rows — at most 31 in one
+   * partition, one bounded query — so no separate aggregate exists to drift.
+   */
+  monthlyBlockThresholdUsd?: number;
   /**
    * Slack channel id the notifications are posted to, using this project's own
    * bot. Without it (or without a configured bot) the thresholds still block —
