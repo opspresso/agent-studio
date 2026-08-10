@@ -1,10 +1,9 @@
 import { withAuth } from "@/lib/session";
 import { traceUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
+import { isUtcDay } from "@/shared/date";
 
 type RouteContext = { params: Promise<{ name: string }> };
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
@@ -13,9 +12,11 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
   const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50;
   const from = params.get("from") || undefined;
   const to = params.get("to") || undefined;
+  // `isUtcDay`, not a shape regex: `2026-02-31` used to pass this route and
+  // ride into the GSI range condition as written.
   if (
-    (from && !DATE_RE.test(from)) ||
-    (to && !DATE_RE.test(to)) ||
+    (from && !isUtcDay(from)) ||
+    (to && !isUtcDay(to)) ||
     (from && to && from > to)
   ) {
     return Response.json({ error: "from/to must be YYYY-MM-DD with from ≤ to" }, { status: 400 });

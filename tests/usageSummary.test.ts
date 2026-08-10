@@ -194,7 +194,14 @@ describe("summaryQuerySchema", () => {
     const result = summaryQuerySchema.safeParse({ from: "05-10-2026", to: "2026-05-11" });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe("must be yyyy-MM-dd");
+      expect(result.error.issues[0]?.message).toBe("must be yyyy-MM-dd, naming a real UTC day");
     }
+  });
+
+  it("rejects a day the calendar does not have", () => {
+    // A shape regex let 2026-02-31 through, and `inclusiveDays` read it as
+    // March 3rd — a range the caller never asked about, answered `{items: []}`.
+    const result = summaryQuerySchema.safeParse({ from: "2026-02-31", to: "2026-03-05" });
+    expect(result.success).toBe(false);
   });
 });

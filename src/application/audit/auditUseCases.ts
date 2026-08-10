@@ -6,7 +6,7 @@
 import { ValidationError } from "@/application/errors";
 import type { AuditRepository } from "@/domain/audit/repository";
 import type { AuditEvent } from "@/domain/audit/types";
-import { utcDay } from "@/shared/date";
+import { isUtcDay, utcDay } from "@/shared/date";
 
 /**
  * How many days one query may span. A range is read a partition at a time, so
@@ -22,29 +22,20 @@ export interface AuditQuery {
   to?: string;
 }
 
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MS_PER_DAY = 86_400_000;
 
 /**
  * The instant a `YYYY-MM-DD` names, or `undefined` when it names no day.
  *
  * The shape check is not the same question as the calendar one, and only the
- * second is load-bearing here. `2026-13-01` parses to `NaN`, which would make
- * the range loop produce nothing and answer `200 {events: []}` — an audit reader
- * told "that is everything" by a query that never ran. `2026-02-31` is worse
- * still: it parses, to March 3rd, silently widening the range past the month
- * that was asked for. Round-tripping through {@link utcDay} is what rejects
- * both.
+ * second is load-bearing here: `2026-13-01` would make the range loop produce
+ * nothing and answer `200 {events: []}` — an audit reader told "that is
+ * everything" by a query that never ran — and `2026-02-31` would silently
+ * widen the range past the month that was asked for. `isUtcDay` owns the
+ * distinction.
  */
 function dayStart(day: string): number | undefined {
-  if (!DAY.test(day)) {
-    return undefined;
-  }
-  const at = Date.parse(`${day}T00:00:00Z`);
-  if (Number.isNaN(at) || utcDay(new Date(at)) !== day) {
-    return undefined;
-  }
-  return at;
+  return isUtcDay(day) ? Date.parse(`${day}T00:00:00Z`) : undefined;
 }
 
 /** Every UTC day from `from` to `to`, inclusive, newest first. */

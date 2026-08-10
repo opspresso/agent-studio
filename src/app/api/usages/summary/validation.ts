@@ -1,9 +1,13 @@
 import { z } from "zod";
+import { isUtcDay } from "@/shared/date";
 
 export const MAX_RANGE_DAYS = 184;
 const DAY_MS = 86_400_000;
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be yyyy-MM-dd");
+// `isUtcDay`, not a shape regex: `2026-02-31` used to pass here and reach
+// `inclusiveDays` as March 3rd, answering `{items: []}` for a range the
+// caller never asked about.
+const dateSchema = z.string().refine(isUtcDay, "must be yyyy-MM-dd, naming a real UTC day");
 
 /** Number of days spanned by [from, to], inclusive of both endpoints. */
 export function inclusiveDays(from: string, to: string): number {

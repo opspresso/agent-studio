@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatRunClock, formatShortDateTime } from "@/shared/date";
+import { formatDateTime, formatRunClock, formatShortDateTime, isUtcDay } from "@/shared/date";
 
 // Rendered output is locale/timezone dependent, so assert shape, not exact strings.
 describe("formatShortDateTime", () => {
@@ -46,5 +46,24 @@ describe("formatRunClock", () => {
       "2026-07-30 (Thursday) 23:59 UTC",
     );
     expect(formatRunClock(new Date("2026-07-31T00:01:00Z"))).toBe("2026-07-31 (Friday) 00:01 UTC");
+  });
+});
+
+describe("isUtcDay", () => {
+  it("accepts a real UTC day", () => {
+    expect(isUtcDay("2026-07-30")).toBe(true);
+    expect(isUtcDay("2024-02-29")).toBe(true);
+  });
+
+  it("rejects a day the calendar does not have, not just a malformed one", () => {
+    // The shape check alone let both of these through: 2026-13-01 parses to
+    // NaN, and 2026-02-31 parses — to March 3rd.
+    expect(isUtcDay("2026-13-01")).toBe(false);
+    expect(isUtcDay("2026-02-31")).toBe(false);
+  });
+
+  it("rejects a malformed string", () => {
+    expect(isUtcDay("2026-7-1")).toBe(false);
+    expect(isUtcDay("not a day")).toBe(false);
   });
 });
