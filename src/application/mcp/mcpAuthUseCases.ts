@@ -25,7 +25,7 @@ import type {
 } from "@/domain/mcp/connection";
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { HeaderOverrides, SecretCipher } from "@/domain/security/secretCipher";
-import type { UrlPolicy } from "@/domain/security/urlPolicy";
+import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
@@ -702,7 +702,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           // edited to a blocked host since it was stored.
           await deps.urlPolicy.assertAllowed(server.url);
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : "Blocked URL" };
+          // Narrowed to the policy's own verdict, like every other surface of
+          // this check: `instanceof Error` relayed a DNS or socket failure's
+          // internals to the console as though the policy had said them.
+          return { ok: false, error: error instanceof BlockedUrlError ? error.message : "Blocked URL" };
         }
       }
       // Assembled exactly as a run assembles it (see execution/mcpTools) — the
