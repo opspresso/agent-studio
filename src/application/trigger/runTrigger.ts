@@ -352,9 +352,13 @@ export async function executeFiring(
         if (chunk.error) {
           error = chunk.error;
         }
-        if (chunk.image) {
-          images += 1;
-        }
+      }
+      // Counted from subagent turns too, like `collectRun`'s: an image
+      // subagent is how an agent project delegates drawing, and behind the
+      // gate above that delegation closed as an empty `succeeded` row — the
+      // exact state `imagesOnlyResult` exists to prevent.
+      if (chunk.image) {
+        images += 1;
       }
       const warning = collectedWarning(chunk, warnings);
       if (warning) {

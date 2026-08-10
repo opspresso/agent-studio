@@ -358,6 +358,22 @@ describe("executeDelivery", () => {
     expect(f.rows[0]?.result).toContain("Generated 1 image");
   });
 
+  it("counts a picture a subagent drew", async () => {
+    // An image subagent is how an agent project delegates drawing, and its
+    // chunks are always authored — counted only behind the top-level gate,
+    // that delegation closed as an empty `succeeded` row, the exact state
+    // `imagesOnlyResult` exists to prevent.
+    const f = fixture({
+      chunks: [
+        { author: "artist", image: { b64: "aW1n", mimeType: "image/png" } },
+        { done: true },
+      ],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]).toMatchObject({ status: "succeeded" });
+    expect(f.rows[0]?.result).toContain("Generated 1 image");
+  });
+
   it("lets an answer speak for itself when a picture came alongside it", async () => {
     // Only a run with nothing else to say needs the substitute; appending it to
     // a real answer would put bookkeeping in the delivered result.
