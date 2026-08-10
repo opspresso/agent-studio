@@ -1,11 +1,5 @@
 import { withAuth } from "@/lib/session";
-import {
-  projectUseCases,
-  secretCipher,
-  slackUserProfile,
-  usageRepository,
-} from "@/lib/container";
-import { listProjectActors } from "@/application/usage/listActors";
+import { usageUseCases } from "@/lib/container";
 import { apiError } from "@/app/api/_lib/http";
 import { summaryQuerySchema } from "@/app/api/usages/summary/validation";
 
@@ -33,13 +27,7 @@ export const GET = withAuth(async (user, request: Request, ctx: RouteContext) =>
     );
   }
   try {
-    const project = await projectUseCases.assertWritable(name, user.email);
-    const items = await listProjectActors(
-      { usage: usageRepository, cipher: secretCipher, resolveSlackProfile: slackUserProfile },
-      project,
-      parsed.data.from,
-      parsed.data.to,
-    );
+    const items = await usageUseCases.actors(name, user.email, parsed.data.from, parsed.data.to);
     return Response.json({ items });
   } catch (error) {
     return apiError(error);

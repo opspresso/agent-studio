@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { usageRepository } from "@/lib/container";
+import { usageUseCases } from "@/lib/container";
 import { invalidRequest } from "@/app/api/_lib/http";
 import { summaryQuerySchema } from "./validation";
 
@@ -16,9 +16,5 @@ export const GET = withAuth(async (_user, request: Request) => {
   }
 
   const { from, to, project } = parsed.data;
-  const items = project
-    ? await usageRepository.listByProject(project, from, to)
-    : await usageRepository.listByDateRange(from, to);
-
-  return Response.json({ items });
+  return Response.json({ items: await usageUseCases.summary(from, to, project) });
 });

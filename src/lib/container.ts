@@ -74,6 +74,7 @@ import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
+import { createUsageUseCases } from "@/application/usage/usageUseCases";
 import { createVersionUseCases } from "@/application/project/versionUseCases";
 import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
 import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
@@ -184,9 +185,7 @@ export {
   imageChannel,
   projectRepository,
   versionRepository,
-  usageRepository,
   createA2aTaskStore,
-  secretCipher,
   urlPolicy,
   mcpConnectionRepository,
   mcpOAuthStateRepository,
@@ -376,9 +375,22 @@ export const projectSlackUseCases = createProjectSlackUseCases({
   authTest: slackAuthTest,
 });
 
-/** Slack profile lookup (cached) for putting a name on a `slack:` usage row. */
-export const slackUserProfile = async (botToken: string, userId: string) =>
+/**
+ * Slack profile lookup (cached) for putting a name on a `slack:` usage row.
+ * Module-local like `slackAuthTest`: `usageUseCases` below is the only
+ * consumer now, and the actors route used to import this alongside the cipher
+ * to assemble the read's dependencies itself.
+ */
+const slackUserProfile = async (botToken: string, userId: string) =>
   (await import("@/infrastructure/slack/client")).slackClient.userProfile(botToken, userId);
+
+/** Usage reads: the dashboard summary and the owner-gated per-caller breakdown. */
+export const usageUseCases = createUsageUseCases({
+  usage: usageRepository,
+  projects: projectRepository,
+  cipher: secretCipher,
+  resolveSlackProfile: slackUserProfile,
+});
 
 /**
  * Registry lookups a version's mcp/skill/subagent references are validated

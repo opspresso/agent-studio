@@ -530,6 +530,8 @@ const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
   "projectRepository",
   "versionRepository",
   "traceRepository",
+  "usageRepository",
+  "secretCipher",
 ];
 
 describe("composition in the app layer", () => {
