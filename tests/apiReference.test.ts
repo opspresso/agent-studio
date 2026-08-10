@@ -68,6 +68,7 @@ describe("buildApiReference — request/response field specs", () => {
       "model",
       "usage",
       "finishReason",
+      "warnings",
     ]);
     // usage carries nested children.
     expect(predict?.responseFields?.find((f) => f.name === "usage")?.children).toBeDefined();

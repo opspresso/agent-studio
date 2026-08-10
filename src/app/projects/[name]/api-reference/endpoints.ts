@@ -257,6 +257,12 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             description:
               'Why the run ended: "completed" when the model finished on its own; "turn-limit" / "output-limit" mark a partial answer stopped at a limit.',
           },
+          {
+            name: "warnings",
+            type: "array[string]",
+            description:
+              "What the run lost on the way to this answer — a binding no longer in the registry, a blocked MCP server, a clipped transfer transcript. Present only when something was lost; a stream says each of these in a warning frame instead.",
+          },
         ],
         responseExample: pretty({
           result: "…assistant text…",
