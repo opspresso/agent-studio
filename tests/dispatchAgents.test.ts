@@ -320,6 +320,58 @@ describe("dispatch_agents", () => {
     expect(result).toContain("beta answered in full");
   });
 
+  /**
+   * The split has to be over what the turn has *left*. A dispatch is one call
+   * among however many the model made in the same response, so sizing the
+   * shares against the per-turn cap builds a group bigger than the budget and
+   * the single fit then cuts it from the tail — erasing exactly the later tasks
+   * the even split exists to protect.
+   */
+  it("splits what the turn has left, not what it started with", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield { author: agentName, delta: { content: agentName } };
+      return `${agentName}:${"x".repeat(30_000)}`;
+    };
+    // Spends most of this turn's tool-result budget before the dispatch runs.
+    const callMcpTool = async () => ({ text: "y".repeat(150_000) });
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_m", "big_tool", "{}"),
+        toolCallChunk(
+          1,
+          "call_d",
+          DISPATCH_TOOL_NAME,
+          JSON.stringify({
+            tasks: [
+              { agent_name: "alpha", message: "one" },
+              { agent_name: "beta", message: "two" },
+              { agent_name: "gamma", message: "three" },
+            ],
+          }),
+        ),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(
+        runAgent(
+          { channel, recordUsage: async () => {}, runSubagent, callMcpTool },
+          inputWith(),
+        ),
+      ),
+    );
+
+    // Every task keeps its section and its own answer. Sized against the cap
+    // instead, the group overran what was left and the last task vanished
+    // heading and all.
+    for (const agentName of ["alpha", "beta", "gamma"]) {
+      expect(result).toContain(`### ${agentName}`);
+      expect(result).toContain(`${agentName}:xxx`);
+    }
+  });
+
   it("refuses tasks past the width limit instead of dropping them", async () => {
     const started: string[] = [];
     const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {

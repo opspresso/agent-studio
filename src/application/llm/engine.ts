@@ -75,6 +75,12 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
  * is never offered this tool.
  */
 const MAX_DISPATCH_TASKS = 4;
+/**
+ * What separates one dispatched agent's section from the next in the single
+ * tool result they share. Named because the budget split has to price it: the
+ * framing is charged to the group whether or not any answer fits.
+ */
+const SECTION_SEPARATOR = "\n\n";
 const DEFAULT_MAX_TURN = 50;
 /**
  * What separates one turn's words from the next turn's in the flattened answer.
@@ -337,6 +343,15 @@ interface ToolResultBudget {
    */
   fit(content: string): string;
   /**
+   * Characters this turn may still spend. Never negative.
+   *
+   * Read by the one producer that has to divide the budget before it spends it:
+   * `dispatch_agents` assembles several answers into a single result, so it
+   * sizes each share against what is left rather than letting the first one
+   * take it all. Everything else simply calls {@link fit} and is cut in order.
+   */
+  remaining(): number;
+  /**
    * Charge a refusal the engine wrote itself and hand it back unchanged.
    *
    * These are bounded by construction, and their exact wording is the whole
@@ -405,7 +420,7 @@ function createToolResultBudget(total: number, runBudget?: RunContextBudget): To
     remaining -= text.length;
     return text;
   };
-  return { fit, charge };
+  return { fit, charge, remaining: () => Math.max(0, remaining) };
 }
 
 /**
@@ -2454,9 +2469,35 @@ export async function* runAgent(
         // Split evenly rather than spent in order: a first task that answers at
         // length would otherwise starve every task after it, which is the whole
         // point of having asked several at once.
+        //
+        // Divided over what this turn has **left**, not over the per-turn cap.
+        // The cap is what the turn started with, and a dispatch is one call
+        // among however many the model made in the same response — so sizing
+        // the shares against it produced a group larger than the budget
+        // remaining, which the single `fit` below then cut from the tail. The
+        // even split survived right up to the point where it mattered, and the
+        // tasks it exists to protect were the ones erased.
+        //
+        // What is not a task's answer comes off the top first: each section's
+        // heading, the blank line between sections, and the reason a task that
+        // could not run carries. Those are the engine's own short strings and
+        // are never the thing to cut. The run's context budget can still bind
+        // tighter — it is measured in tokens, not characters — and when it does
+        // the same `fit` cuts and says so.
+        const sectionHeading = (agentName: string) => `### ${agentName}\n`;
+        const framingChars =
+          plans.reduce(
+            (total, plan) =>
+              total +
+              sectionHeading(plan.agentName).length +
+              ("failure" in plan ? plan.failure.length : 0),
+            0,
+          ) + Math.max(0, plans.length - 1) * SECTION_SEPARATOR.length;
         const perTask = Math.max(
           1,
-          Math.floor(MAX_TOOL_RESULT_CHARS_PER_TURN / Math.max(1, runnable.length)),
+          Math.floor(
+            Math.max(0, resultBudget.remaining() - framingChars) / Math.max(1, runnable.length),
+          ),
         );
         const answerByIndex = new Map<number, { text: string; failed: boolean }>();
         runnable.forEach(({ index, outcome }, position) => {
@@ -2493,8 +2534,8 @@ export async function* runAgent(
         // a failed call — the sections that answered are usable, and the trace
         // reads this prefix to decide whether the span failed.
         const body = sections
-          .map((section) => `### ${section.agentName}\n${section.text}`)
-          .join("\n\n");
+          .map((section) => `${sectionHeading(section.agentName)}${section.text}`)
+          .join(SECTION_SEPARATOR);
         const dispatchText = sections.every((section) => section.failed)
           ? `Error: no agent in this ${DISPATCH_TOOL_NAME} call produced an answer.\n\n${body}`
           : body;
