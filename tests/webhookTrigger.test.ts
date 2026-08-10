@@ -404,7 +404,11 @@ describe("executeDelivery", () => {
     expect(f.rows[0]?.warning).toContain("turn limit");
   });
 
-  it("does not record a subagent's warning as the run's", async () => {
+  it("records a subagent's warning as the run's loss", async () => {
+    // The warning names its own agent, so the row can carry it: a child cut
+    // short degrades the answer whether or not the parent went on, and an
+    // unattended firing's row is the only place that can say so.
+    // `collectedWarning` owns which warnings count, for every consumer alike.
     const f = fixture({
       chunks: [
         { author: "child", warning: "Subagent 'child' stopped at its turn limit (2 turns) before finishing; the main run continues." },
@@ -413,7 +417,8 @@ describe("executeDelivery", () => {
       ],
     });
     await executeDelivery(f.deps, await accept(f), {});
-    expect(f.rows[0]?.warning).toBeUndefined();
+    expect(f.rows[0]?.warning).toContain("Subagent 'child'");
+    expect(f.rows[0]?.result).toBe("answer");
   });
 
   it("records a thrown error as a failure rather than escaping", async () => {

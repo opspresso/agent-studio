@@ -161,6 +161,7 @@ is OpenAI's 128, not a number anyone here picked.
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
 | Deriving why a run ended from its chunks | `chunkTermination`/`runTermination` in `src/domain/llm/types.ts` |
+| Collecting what a run lost from its chunks | `collectedWarning` in `src/domain/llm/types.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |
 | The code a refused sign-in is identified by | `src/shared/signInError.ts` |
 | Writing to the console | `src/shared/logger.ts` |

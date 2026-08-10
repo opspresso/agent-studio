@@ -729,6 +729,23 @@ const SINGLE_OWNERS: SingleOwner[] = [
     ],
   },
   {
+    // Seven consumers each decided which warning chunks count toward a run's
+    // collected losses, and they had split three ways: two kept only top-level
+    // warnings — dropping every loss a subagent reported — and three repeated
+    // what the reader had already been told. `collectedWarning` owns the
+    // decision. The exempt files relay individual warning chunks onward (a
+    // wire delta, a sampled trace preview, a run-log note) rather than
+    // collecting the run's list, so the collection decision never comes up.
+    what: "collecting what a run lost from its chunks",
+    pattern: /chunk\.warning/,
+    owner: "src/domain/llm/types.ts",
+    alsoAllowedUnder: [
+      "src/app/api/projects/_lib/openai.ts",
+      "src/application/trace/recorder.ts",
+      "src/application/chat/run.ts",
+    ],
+  },
+  {
     // The builders each had one owner; the *arguments* did not. `runAgent` and
     // the Playground preview spelled out eight and seven positional arguments
     // apiece, and had already drifted — the preview omitted the eighth, so a

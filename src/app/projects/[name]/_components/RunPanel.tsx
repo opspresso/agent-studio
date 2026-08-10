@@ -14,7 +14,7 @@ import {
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
-import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   Alert,
   Badge,
@@ -186,10 +186,10 @@ export function RunPanel({
           }
           continue;
         }
-        if (chunk.warning) {
-          const reported = chunk.warning;
-          setWarnings((prev) => (prev.includes(reported) ? prev : [...prev, reported]));
-        }
+        setWarnings((prev) => {
+          const reported = collectedWarning(chunk, prev);
+          return reported === undefined ? prev : [...prev, reported];
+        });
         // Track who is running: an authored chunk names a chain that is running
         // now and joins the set; an unauthored one means control is back at the
         // top level and none of them is still going.
