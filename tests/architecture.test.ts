@@ -526,7 +526,11 @@ describe("the client bundle", () => {
  * slices have not been through this yet, and a rule that cannot be satisfied is
  * a rule that gets deleted.
  */
-const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = ["projectRepository", "versionRepository"];
+const REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE = [
+  "projectRepository",
+  "versionRepository",
+  "traceRepository",
+];
 
 describe("composition in the app layer", () => {
   const wiringSite = (path: string) => APP_WIRING_SITES.some((site) => path.startsWith(site));
@@ -541,14 +545,22 @@ describe("composition in the app layer", () => {
     expect(found.sort()).toEqual([]);
   });
 
-  it.each(REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE)("%s still reaches a wiring site", (name) => {
-    // Otherwise a rename would empty the rule above and read as a clean pass —
-    // the same lie the `configuration reads` exception check exists to catch.
-    const sites = SOURCE_FILES.filter(
-      (file) => wiringSite(file.path) && parseImports(file.text).some((i) => bindsName(i, name)),
-    );
-    expect(sites.length).toBeGreaterThan(0);
-  });
+  it.each(REPOSITORIES_THE_ROUTES_NO_LONGER_COMPOSE)(
+    "%s still reaches a wiring site or the composition root",
+    (name) => {
+      // Otherwise a rename would empty the rule above and read as a clean pass —
+      // the same lie the `configuration reads` exception check exists to catch.
+      // The composition root anchors the names no app wiring site needs:
+      // `traceRepository` stopped being exported when its slice was converted,
+      // so the only place left that binds it is `container.ts` itself.
+      const sites = SOURCE_FILES.filter(
+        (file) =>
+          (wiringSite(file.path) || file.path === "src/lib/container.ts") &&
+          parseImports(file.text).some((i) => bindsName(i, name)),
+      );
+      expect(sites.length).toBeGreaterThan(0);
+    },
+  );
 });
 
 /**

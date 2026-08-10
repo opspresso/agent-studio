@@ -73,6 +73,7 @@ import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
+import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createVersionUseCases } from "@/application/project/versionUseCases";
 import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
 import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
@@ -183,7 +184,6 @@ export {
   imageChannel,
   projectRepository,
   versionRepository,
-  traceRepository,
   usageRepository,
   createA2aTaskStore,
   secretCipher,
@@ -399,6 +399,18 @@ export const versionUseCases = createVersionUseCases({
   projects: projectRepository,
   refs: versionRefRepos,
   cipher: secretCipher,
+});
+
+/**
+ * Trace reads, authorization included. The two trace routes used to import the
+ * repository and run the ownership check themselves — the presentation layer
+ * deciding which store a trace is read from, and re-deriving who may see it.
+ * Reads go to the plain repository: the OTLP export wrapper above only matters
+ * to writes.
+ */
+export const traceUseCases = createTraceUseCases({
+  traces: traceRepository,
+  projects: projectRepository,
 });
 
 /** Readiness snapshot for the /api/ready probe (DynamoDB + LLM channel). */

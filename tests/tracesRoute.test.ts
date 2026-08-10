@@ -15,16 +15,16 @@ vi.mock("@/lib/session", () => ({
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),
 }));
 
-// The slice is composed over the mocked repository rather than stubbed, so the
-// real owner gate still runs — which is the whole point of these assertions.
+// The slice is composed over the mocked repositories rather than stubbed, so
+// the real owner gate still runs — which is the whole point of these assertions.
 vi.mock("@/lib/container", async () => ({
-  projectUseCases: (
-    await import("@/application/project/projectUseCases")
-  ).createProjectUseCases(projectRepo as never),
-  traceRepository: traceRepo,
+  traceUseCases: (
+    await import("@/application/trace/traceUseCases")
+  ).createTraceUseCases({ traces: traceRepo as never, projects: projectRepo as never }),
 }));
 
 const { GET } = await import("@/app/api/projects/[name]/traces/route");
+const { GET: GET_ONE } = await import("@/app/api/projects/[name]/traces/[traceId]/route");
 
 const ctx = (name: string) => ({ params: Promise.resolve({ name }) });
 const req = () => new Request("http://localhost/api/projects/proj/traces?limit=10");
@@ -96,5 +96,28 @@ describe("GET /api/projects/[name]/traces (owner-gated)", () => {
     );
     expect(res.status).toBe(400);
     expect(traceRepo.listByProject).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/projects/[name]/traces/[traceId]", () => {
+  const oneCtx = (name: string, traceId: string) => ({
+    params: Promise.resolve({ name, traceId }),
+  });
+
+  it("returns the project's own trace", async () => {
+    projectRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
+    traceRepo.get.mockResolvedValue({ traceId: "t1", projectName: "proj" });
+    const res = await GET_ONE(req(), oneCtx("proj", "t1"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ traceId: "t1", projectName: "proj" });
+  });
+
+  it("hides a trace stored under a different project", async () => {
+    // Which project a trace belongs to is the trace's own record: an owner of
+    // one project must not read another's by guessing ids.
+    projectRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
+    traceRepo.get.mockResolvedValue({ traceId: "t1", projectName: "other" });
+    const res = await GET_ONE(req(), oneCtx("proj", "t1"));
+    expect(res.status).toBe(404);
   });
 });
