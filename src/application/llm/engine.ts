@@ -2120,6 +2120,12 @@ export async function* runAgent(
 
     const remainingContent = contentRestorer?.flush();
     if (remainingContent) {
+      // Counted like any other visible word. The restorer holds back whatever
+      // suffix could still turn out to be half a replacement token, so a turn
+      // the provider cut just after `[[PII:` reaches the reader entirely
+      // through this flush — and a `saidSomething` set only in the loop above
+      // would leave the next turn's first word running straight into it.
+      saidSomething = true;
       yield { author, delta: { content: remainingContent } };
     }
     const remainingReasoning = reasoningRestorer?.flush();
