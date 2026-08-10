@@ -180,16 +180,11 @@ const runTraceRepository = otelEndpoint
     })
   : traceRepository;
 
-export {
-  channel,
-  imageChannel,
-  projectRepository,
-  versionRepository,
-  createA2aTaskStore,
-  urlPolicy,
-  mcpConnectionRepository,
-  mcpOAuthStateRepository,
-};
+// The narrow raw surface: the Slack event wiring site takes the two
+// repositories, the A2A route takes its per-request task store. Everything
+// else leaves this file already composed — a singleton nothing imports is a
+// door with nothing behind it, and five of them stood open here.
+export { projectRepository, versionRepository, createA2aTaskStore };
 
 /**
  * Registry slice singletons. Each slice exports only its `createXUseCases`
