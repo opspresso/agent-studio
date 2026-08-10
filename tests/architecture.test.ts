@@ -54,6 +54,28 @@ const STATIC_IMPORT_RE = /(?:^|\n)[ \t]*(?:import|export)\b([^;]*?)from[ \t]*["'
 const INLINE_IMPORT_RE = /\bimport[ \t]*\([ \t]*["']([^"']+)["']/g;
 
 /**
+ * `import "x"` — a side-effect import binds no name and carries no `from`, so
+ * neither pattern above could see it. It joins the module graph exactly as a
+ * static import does (`instrumentation.ts` documents modules that are wired by
+ * import side effect alone), so a rule blind to it was one bare line away from
+ * unenforced.
+ */
+const SIDE_EFFECT_IMPORT_RE = /(?:^|\n)[ \t]*import[ \t]*["']([^"']+)["']/g;
+
+/**
+ * Comments talk about modules and the environment without touching them, and
+ * the import pattern's `[^;]*?` clause happily spans a docblock: a sentence
+ * like `apart from "could not decide".` between an `export` keyword and the
+ * next semicolon minted a ghost import with that phrase as its specifier.
+ * Harmless while every rule was a blocklist — a ghost has no layer — but a
+ * whitelist rule reads a ghost as a violation, so the scan parses code only.
+ * The `//` stripper skips `://` so a URL inside a string survives.
+ */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(?<!:)\/\/[^\n]*/g, "");
+}
+
+/**
  * Every named binding taken from a module, `type` prefixes and `as` aliases
  * stripped.
  *
@@ -101,15 +123,16 @@ export interface ModuleImport {
 }
 
 export function parseImports(source: string): ModuleImport[] {
+  const code = stripComments(source);
   return [
-    ...[...source.matchAll(STATIC_IMPORT_RE)].map((match) => ({
+    ...[...code.matchAll(STATIC_IMPORT_RE)].map((match) => ({
       spec: match[2]!,
       // `import { type A }` mixes a type in with value imports — not type-only.
       typeOnly: /^type\b/.test((match[1] ?? "").trim()),
       dynamic: false,
       names: parseNames(match[1] ?? ""),
     })),
-    ...[...source.matchAll(INLINE_IMPORT_RE)].map((match) => ({
+    ...[...code.matchAll(INLINE_IMPORT_RE)].map((match) => ({
       spec: match[1]!,
       // Separating a runtime `await import()` from a type-position one needs a
       // parser. The stricter reading wins: a banned target is reported either way.
@@ -119,6 +142,12 @@ export function parseImports(source: string): ModuleImport[] {
       // in a clause. Left empty rather than guessed: `["*"]` would make every
       // by-name query match `container.ts`, which imports this same facade for
       // a different export.
+      names: [],
+    })),
+    ...[...code.matchAll(SIDE_EFFECT_IMPORT_RE)].map((match) => ({
+      spec: match[1]!,
+      typeOnly: false,
+      dynamic: false,
       names: [],
     })),
   ];
@@ -196,9 +225,15 @@ const RULES: Rule[] = [
     allow: [],
   },
   {
-    name: "domain imports no framework, AWS SDK or auth library",
+    // Once a blocklist of four regretted names (`next|react|@aws-sdk|
+    // better-auth`), which left `zod`, `openai`, the MCP SDK and every other
+    // package legal in the one layer whose doctrine is pure TS. The same
+    // reverse rule as application's below, minus the protocol exception —
+    // domain does not even get the A2A SDK.
+    name: "domain imports only the domain and the standard library",
     from: "domain",
-    banned: (spec) => /^(next|react|@aws-sdk|better-auth)/.test(spec),
+    banned: (spec) =>
+      !spec.startsWith("@/") && !spec.startsWith(".") && !spec.startsWith("node:"),
     allow: [],
   },
   {
@@ -249,6 +284,17 @@ const RULES: Rule[] = [
     name: "shared imports nothing from the app",
     from: "shared",
     banned: (spec) => spec.startsWith("@/") && targetLayer(spec) !== "shared",
+    allow: [],
+  },
+  {
+    // The rule above governs `@/…` and a bare package specifier starts with
+    // neither `@/` nor `.` — so the bottom of the graph, which everything
+    // imports and the browser can reach, had no external-dependency rule at
+    // all. An AWS SDK import here would have passed every check in this file.
+    name: "shared imports only its siblings and the standard library",
+    from: "shared",
+    banned: (spec) =>
+      !spec.startsWith("@/") && !spec.startsWith(".") && !spec.startsWith("node:"),
     allow: [],
   },
   {
@@ -372,12 +418,17 @@ const ENV_READ = /process\.env\b/;
 const ENV_READERS_AT_THE_BOTTOM = ["src/shared/runDeadline.ts"];
 
 describe("configuration reads", () => {
-  it("do not reach domain, shared or the adapters", () => {
+  // On comment-stripped text: `settingsUseCases.ts` *talks about* the
+  // environment object it is handed — the composition root passes
+  // `process.env` in, which is the injection this rule exists to force — and
+  // a rule that could not tell prose from a read would ban the comment that
+  // explains the rule.
+  it("do not reach domain, shared, the adapters or the use cases", () => {
     const found = SOURCE_FILES.filter(
       (file) =>
-        ["domain", "shared", "infrastructure"].includes(layerOf(file.path) ?? "") &&
+        ["domain", "shared", "infrastructure", "application"].includes(layerOf(file.path) ?? "") &&
         !ENV_READERS_AT_THE_BOTTOM.includes(file.path) &&
-        ENV_READ.test(file.text),
+        ENV_READ.test(stripComments(file.text)),
     ).map((file) => file.path);
     expect(found.sort()).toEqual([]);
   });
@@ -386,7 +437,8 @@ describe("configuration reads", () => {
     // An exception that stopped being true would leave the rule reading
     // stricter than it is, which is the same lie as an unenforced rule.
     const stale = ENV_READERS_AT_THE_BOTTOM.filter(
-      (path) => !ENV_READ.test(SOURCE_FILES.find((file) => file.path === path)?.text ?? ""),
+      (path) =>
+        !ENV_READ.test(stripComments(SOURCE_FILES.find((file) => file.path === path)?.text ?? "")),
     );
     expect(stale).toEqual([]);
   });
@@ -502,6 +554,23 @@ describe("the client bundle", () => {
           SERVER_ONLY_LAYERS.includes(targetLayer(resolved) ?? "") ||
           (targetLayer(resolved) === "lib" && !CLIENT_SAFE_LIB.includes(resolved));
         if (banned) {
+          found.push(`${file.path} -> ${spec}`);
+        }
+      }
+    }
+    expect(found.sort()).toEqual([]);
+  });
+
+  it("pulls no Node-only module into the browser", () => {
+    // The layer rule above lets a client component import anything in
+    // `shared` — and `shared` holds Node-only modules: `logger` rides on
+    // `node:async_hooks`, `timingSafe` on `node:crypto`. The logger is the
+    // console-writing single owner, which makes it exactly the module a
+    // client component would reach for first.
+    const found: string[] = [];
+    for (const file of reachable) {
+      for (const { spec, typeOnly } of parseImports(file.text)) {
+        if (!typeOnly && spec.startsWith("node:")) {
           found.push(`${file.path} -> ${spec}`);
         }
       }
