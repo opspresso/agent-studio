@@ -9,6 +9,16 @@ import type { ChannelParams } from "./channel";
 export const SUPPORTED_PROVIDERS = ["openai", "anthropic", "google", "xai"] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
+/**
+ * Single-rate by design — one number per token class, the base (sub-threshold,
+ * standard-tier) rate. Three providers now publish a second, higher tier this
+ * shape cannot express: Gemini 3.1 Pro and every current Grok model roughly
+ * double past a 200k-token prompt (xAI re-bills *all* tokens of the request at
+ * the higher rate), and OpenAI's 5.6 family carries a long-context premium.
+ * A run past those thresholds is therefore under-counted here; supporting
+ * tiers means widening this type and `calculateCost` together, not patching a
+ * number.
+ */
 export interface ModelPricing {
   inputPer1M: number;
   outputPer1M: number;
@@ -101,7 +111,8 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     id: "openai/gpt-5.6-terra",
     provider: "openai",
     displayName: "GPT-5.6 Terra",
-    pricing: { inputPer1M: 2.5, outputPer1M: 15.0, cachedInputPer1M: 0.25 },
+    // OpenAI's 2026-07-30 cut; the launch rate was 2.5 / 15.0 / 0.25.
+    pricing: { inputPer1M: 2.0, outputPer1M: 12.0, cachedInputPer1M: 0.2 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: OPENAI_56_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
@@ -110,7 +121,8 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     id: "openai/gpt-5.6-luna",
     provider: "openai",
     displayName: "GPT-5.6 Luna",
-    pricing: { inputPer1M: 1.0, outputPer1M: 6.0, cachedInputPer1M: 0.1 },
+    // OpenAI's 2026-07-30 cut; the launch rate was 1.0 / 6.0 / 0.1.
+    pricing: { inputPer1M: 0.2, outputPer1M: 1.2, cachedInputPer1M: 0.02 },
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: OPENAI_56_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
@@ -272,6 +284,10 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     maxTokens: GEMINI_MAX_OUTPUT,
   },
   {
+    // Shut down by Google on 2026-03-09 (the served id was
+    // `gemini-3-pro-preview`; `gemini-3.1-pro` is the documented successor).
+    // Hidden rather than deleted for the same reason as the retired xAI
+    // entries below: a past run's usage row is priced by looking it up here.
     id: "google/gemini-3-pro",
     provider: "google",
     displayName: "Gemini 3 Pro",
@@ -350,16 +366,21 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     maxTokens: 64_000,
   },
   /*
-   * Deprecated 2026-05-15. While a slug still resolved, xAI redirected it —
-   * grok-4.1-fast to grok-4.3 and grok-code-fast-1 to grok-build-0.1 — and
-   * billed at the target's rate. So `pricing` below mirrors the target's, not
-   * the rate these models were published at: the number this app reports has to
-   * be the number that lands on the invoice, and a stale rate here reads as a
-   * discount nobody is getting. The other fields still describe the model as
-   * xAI documented it.
+   * Retired 2026-05-15 (12:00 PT). xAI keeps the retired slugs of that
+   * generation *resolving*, not erroring: each redirects to its successor —
+   * `grok-4-1-fast-reasoning` to grok-4.3, `grok-code-fast-1` to
+   * grok-build-0.1 — and bills at the target's rate. So `pricing` below
+   * mirrors the target's, not the rate these models were published at: the
+   * number this app reports has to be the number that lands on the invoice,
+   * and a stale rate here reads as a discount nobody is getting. (xAI's
+   * migration page also carries a flat "billed at grok-4.3 pricing" sentence
+   * with no per-slug scoping; the routing table is the reading followed here,
+   * which for `grok-code-fast-1` means grok-build-0.1's rate.) The other
+   * fields still describe the model as xAI documented it.
    *
-   * `grok-4.1-fast` is **gone** — xAI now answers 404 for it, ahead of the
-   * announced 2026-08-15 retirement (verified against the live API).
+   * `grok-4.1-fast` is **gone** — the dotted slug answers 404 (verified
+   * against the live API): the redirect covers only the hyphenated ids xAI
+   * actually served (`grok-4-1-fast-reasoning`/`-non-reasoning`).
    * `grok-code-fast-1` still resolves.
    *
    * Hidden rather than deleted, and that stays true past retirement: a stored
@@ -398,7 +419,11 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     pricing: {
       inputPer1M: 5.0,
       outputPer1M: 0,
-      cachedInputPer1M: 2.0,
+      // Cached *text* input — the pair of `inputPer1M` above. OpenAI's cached
+      // image-input rate ($2.00/MTok) has no field here; nothing reads cached
+      // rates on the image path today (`calculateImageCost` prices raw tokens
+      // only), so the field is kept honest for the day something does.
+      cachedInputPer1M: 1.25,
       imageInputPer1M: 8.0,
       imageOutputPer1M: 30.0,
     },
