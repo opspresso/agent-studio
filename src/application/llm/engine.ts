@@ -1753,6 +1753,14 @@ export interface AgentRunAssembly {
   tools: ChannelToolDef[];
   /** Builtin names actually offered; the tool loop intercepts exactly these. */
   builtinNames: Set<string>;
+  /**
+   * The agents this run actually offered — the prompt's table and both transfer
+   * tools' enums are built from exactly this list, and so is the check that a
+   * requested target was one of them. Returned for the same reason
+   * {@link builtinNames} is: what was offered and what is served must come from
+   * one value, not from two readings of the input that a dep can make disagree.
+   */
+  subagents: SubagentInfo[];
   canEdit: boolean;
   canTransfer: boolean;
   /** Images this run can address, seeded from the input messages. */
@@ -1831,7 +1839,34 @@ export function assembleAgentRun(
     withImageTransfer: canTransfer,
     canDispatch,
   });
-  return { systemPrompt, tools, builtinNames, canEdit, canTransfer, images };
+  return { systemPrompt, tools, builtinNames, subagents, canEdit, canTransfer, images };
+}
+
+/**
+ * Why a requested transfer target cannot be reached, or `undefined` when it can.
+ *
+ * Both transfer tools enumerate the offered names in their schema, but an enum
+ * is a request, not a guarantee — OpenAI-compatible gateways vary in whether
+ * they constrain against one, and a model that invents a name is a routine
+ * outcome, not a platform fault. Before this, such a call was *attempted*: the
+ * runner refused it one layer down as an authored `error` chunk, which the
+ * engine then reported as a lost delegation — a warning in the user's face for
+ * a model typo, a tool-result line promising an answer that was never coming,
+ * and, for the model, "the agent returned no answer" with no hint of what it
+ * could have asked for instead.
+ *
+ * Answered here the way an unloadable skill and an unknown image id already
+ * are: a plain tool error naming the alternatives, which the model can act on
+ * in its next turn.
+ */
+function unreachableAgent(agentName: string, subagents: SubagentInfo[]): string | undefined {
+  if (subagents.some((agent) => agent.name === agentName)) {
+    return undefined;
+  }
+  const names = subagents.map((agent) => agent.name);
+  return `Error: Agent '${agentName}' is not connected to this agent. Available agents: ${
+    names.length > 0 ? names.join(", ") : "none"
+  }`;
 }
 
 async function loadSkillSafe(
@@ -1861,7 +1896,6 @@ export async function* runAgent(
   // Whether a picture an MCP tool returns can enter this run's context at all.
   const imageInputReject = describeImageInputReject(input.model);
   const skills = input.skills ?? [];
-  const subagents = input.subagents ?? [];
   // Top-level chunks stay unauthored: "no author" is the contract every
   // consumer uses to pick out the visible answer. Subagent chunks are the only
   // authored ones — the runSubagent wrapper stamps the subagent's name.
@@ -1869,20 +1903,29 @@ export async function* runAgent(
 
   // One assembly, shared with the Playground preview: what the model is told it
   // can do is decided here and nowhere else.
-  const { systemPrompt, tools, builtinNames, canEdit, canTransfer, images } = assembleAgentRun(
-    deps,
-    {
-      ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
-      messages: input.messages,
-      skills,
-      subagents,
-      ...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
-      ...(input.mcpTools ? { mcpTools: input.mcpTools } : {}),
-      ...(input.now ? { now: input.now } : {}),
-      ...(input.caller ? { caller: input.caller } : {}),
-      ...(input.canDispatch ? { canDispatch: input.canDispatch } : {}),
-    },
-  );
+  const {
+    systemPrompt,
+    tools,
+    builtinNames,
+    // The offered list, not `input.subagents`: the assembly empties it when
+    // nothing can carry a transfer, and everything downstream — the transcript
+    // this run derives, the check that a requested target was offered — has to
+    // agree with what the model was actually told.
+    subagents,
+    canEdit,
+    canTransfer,
+    images,
+  } = assembleAgentRun(deps, {
+    ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+    messages: input.messages,
+    skills,
+    ...(input.subagents ? { subagents: input.subagents } : {}),
+    ...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
+    ...(input.mcpTools ? { mcpTools: input.mcpTools } : {}),
+    ...(input.now ? { now: input.now } : {}),
+    ...(input.caller ? { caller: input.caller } : {}),
+    ...(input.canDispatch ? { canDispatch: input.canDispatch } : {}),
+  });
   /**
    * Which server served a tool, for the reader.
    *
@@ -2229,6 +2272,15 @@ export async function* runAgent(
           });
           continue;
         }
+        // Checked before anything is spent on it, so a name the run never
+        // offered is a tool error the model can correct — not a transfer that
+        // is attempted, refused a layer down, and comes back to the reader as a
+        // warning about a delegation that never existed.
+        const unreachable = unreachableAgent(agentName, subagents);
+        if (unreachable) {
+          yield toolResult(call, unreachable, { bounded: true });
+          continue;
+        }
         // Named images travel as bytes, so the child edits the real picture
         // instead of a description of it.
         const requestedIds = Array.isArray(displayArgs.image_ids)
@@ -2402,6 +2454,13 @@ export async function* runAgent(
               agentName: label,
               failure: "Error: each task needs agent_name and a non-empty message.",
             };
+          }
+          // Same refusal a transfer makes, in the slot this shape already has
+          // for a task that cannot run: its section says why, and the tasks
+          // beside it still run.
+          const unreachable = unreachableAgent(agentName, subagents);
+          if (unreachable) {
+            return { agentName, failure: unreachable };
           }
           const requestedIds = Array.isArray(task.image_ids)
             ? task.image_ids.filter((id): id is string => typeof id === "string")
