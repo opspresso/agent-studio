@@ -746,9 +746,16 @@ therefore ignored for an agent project — an agent run has no prompt template t
 { "result": "…assistant text…", "model": "openai/gpt-5-mini",
   "usage": { "inputTokens": 12, "outputTokens": 34, … },
   "finishReason": "completed",  // why the run ended: "turn-limit" / "output-limit" mark a partial answer
+  "warnings": [ "Skill 'x' is no longer in the registry; it was not offered." ]?,  // only when the run lost something
   "images": [ { "b64": "…", "mimeType": "image/png" } ]?  // only when the run drew something
 }
 ```
+
+`warnings` is what the run reported losing on the way to that answer — a binding no
+longer in the registry, an MCP server the outbound guard blocked, tools past the per-run
+cap, a clipped transfer transcript, a subagent that came back empty. A streamed run says
+each of these in a `warning` frame as it happens; a collected body has no later frame, so
+they travel with the answer. Absent means nothing was lost.
 
 For an `image` project, send `{ "prompt", "size?", "quality?", "images?" }` → `{ imageBase64,
 mimeType, model, usage }`. `images` are source pictures as inline bytes
@@ -787,6 +794,11 @@ is capped at 10MB, and the version's model must have the `imageInput` capability
 `image` subagent) have no place in the OpenAI schema, so they ride along as an extension:
 `images: [ { b64, mimeType, prompt? } ]` on the completion object, and `choices[0].delta.images`
 frames in a stream. Clients that do not know the field simply ignore it.
+
+**What the run lost.** Same treatment, same reason: `warnings: [ "…" ]` on the completion
+object and `choices[0].delta.warnings` frames in a stream. These are the losses a run
+reports as it goes (see `/predict` above); without them a degraded run and a clean one are
+the same response on this surface.
 
 ### `POST /api/projects/{name}/versions/{version}/agent`
 

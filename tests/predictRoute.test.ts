@@ -54,6 +54,7 @@ vi.mock("@/application/execution/runProject", async (importOriginal) => ({
       model: "openai/gpt-5-mini",
       usage: { inputTokens: 1, outputTokens: 2, costUsd: 0.1 },
       images: [],
+      warnings: [],
     };
   },
   executeProjectStream: () => {
