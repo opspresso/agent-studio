@@ -259,13 +259,31 @@ export interface RunImage {
   prompt?: string;
 }
 
+/**
+ * A run drained into one answer — what a surface that cannot stream receives.
+ *
+ * `warnings` is part of the answer, not a detail beside it. A run reports what
+ * it lost as it goes (a skill no longer in the registry, an MCP server the
+ * guard blocked, tools past the per-run cap, a clipped transfer transcript, a
+ * child that came back empty), and a collected surface has no later frame to
+ * say any of it in. Carrying it here is the same judgement `termination`
+ * already made: without it, a degraded run and a clean one are the same JSON.
+ */
+export interface CollectedRun extends RunResult {
+  images: RunImage[];
+  /** What the run lost, in the order it was reported, deduplicated. */
+  warnings: string[];
+  termination?: RunTerminationReason;
+}
+
 /** Drain an agent stream into a single collected answer. */
 export async function collectRun(
   source: AsyncGenerator<EngineChunk>,
   model: string,
-): Promise<RunResult & { images: RunImage[]; termination?: RunTerminationReason }> {
+): Promise<CollectedRun> {
   let content = "";
   const images: RunImage[] = [];
+  const warnings: string[] = [];
   const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
   // Why the run ended, as the engine announced it. Only the top level speaks
   // for the stream: an authored termination is a child's, already absorbed
@@ -279,6 +297,17 @@ export async function collectRun(
         throw new Error(chunk.error);
       }
       continue;
+    }
+    // What the run lost, kept alongside the answer rather than dropped. A
+    // collected surface has no later frame to say it in, and every other
+    // consumer of this stream — chat, Slack, A2A, the console — reports these;
+    // dropping them here is what made a run that silently lost half its tools
+    // indistinguishable from one that had them. Authored ones are kept too:
+    // a subagent's warning names its own agent, and its loss is the caller's
+    // as much as a top-level one. Deduplicated like the chat client does —
+    // several children can report the same missing binding.
+    if (chunk.warning && !warnings.includes(chunk.warning)) {
+      warnings.push(chunk.warning);
     }
     termination = runTermination(chunk) ?? termination;
     if (isTopLevelChunk(chunk) && chunk.delta?.content) {
@@ -297,7 +326,7 @@ export async function collectRun(
       usage.costUsd += chunk.usage.costUsd;
     }
   }
-  return { content, model, usage, images, ...(termination ? { termination } : {}) };
+  return { content, model, usage, images, warnings, ...(termination ? { termination } : {}) };
 }
 
 /**
@@ -310,7 +339,7 @@ export async function collectRun(
 export async function executeProject(
   deps: ExecutionDeps,
   input: ExecuteProjectInput,
-): Promise<RunResult & { images: RunImage[]; termination?: RunTerminationReason }> {
+): Promise<CollectedRun> {
   if (runStrategyFor(input.project) === "image") {
     throw imageRunRefusal(input.project.name);
   }
@@ -324,7 +353,9 @@ export async function executeProject(
   // The termination is the engine's: `runPrompt` reads the provider's
   // finish_reason, so a response cut at the output cap is not stamped
   // "completed" here — that stamp is what once erased the difference.
-  return { ...result, images: [] };
+  // A single-shot run accumulates nothing and resolves no bindings, so it has
+  // nothing to have lost; the empty array keeps one shape for both branches.
+  return { ...result, images: [], warnings: [] };
 }
 
 // --- Agent execution --------------------------------------------------------

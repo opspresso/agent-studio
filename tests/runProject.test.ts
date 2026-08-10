@@ -9,6 +9,7 @@ vi.mock("@/infrastructure/a2a/client", () => ({
 }));
 
 import {
+  collectRun,
   executeAgent,
   executeProject,
   executeProjectStream,
@@ -1786,6 +1787,74 @@ describe("executeProject non-streaming dispatch", () => {
 
     await expect(executeProject(deps, input)).rejects.toBeInstanceOf(ValidationError);
     expect(() => executeProjectStream(deps, input)).toThrow(ValidationError);
+  });
+
+  /**
+   * A collected surface has no later frame to report a loss in, so anything the
+   * run said it lost has to travel with the answer. Dropping it here is what
+   * made a run that resolved half its bindings look exactly like a clean one on
+   * `/predict` and `/chat/completions`.
+   */
+  it("carries what the run lost alongside the answer", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const channel = new FakeChannel([[contentChunk("answered anyway"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+    deps.skills.get = (async () => null) as ExecutionDeps["skills"]["get"];
+    deps.projects.get = (async () => null) as ExecutionDeps["projects"]["get"];
+
+    const run = await executeProject(deps, {
+      project: projectFixture(),
+      version: {
+        ...versionFixture({ piiFiltering: false }),
+        skillList: ["gone-skill"],
+        subagentList: [{ name: "gone-agent", type: "local" }],
+      },
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(run.content).toBe("answered anyway");
+    expect(run.warnings).toEqual([
+      expect.stringContaining("gone-skill"),
+      expect.stringContaining("gone-agent"),
+    ]);
+    warn.mockRestore();
+  });
+
+  it("says nothing lost when the run lost nothing", async () => {
+    const channel = new FakeChannel([[contentChunk("clean"), usageChunk(1, 1)]]);
+    const { deps } = executionDepsFixture(channel);
+
+    const run = await executeProject(deps, {
+      project: projectFixture(),
+      version: versionFixture({ piiFiltering: false }),
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(run.warnings).toEqual([]);
+  });
+
+  /**
+   * A subagent's warning names its own agent, and what a delegation lost is the
+   * caller's loss too — so it is kept, unlike an authored *termination*, which
+   * speaks only for the child. The repeat is dropped: two children reporting
+   * the same missing binding is one thing to tell the caller.
+   */
+  it("keeps an authored warning once, however many children reported it", async () => {
+    const chunks: EngineChunk[] = [
+      { warning: "the run lost something" },
+      { author: "child", warning: "the child lost something" },
+      { author: "other-child", warning: "the child lost something" },
+      { delta: { content: "answer" } },
+      { done: true },
+    ];
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield* chunks;
+    }
+
+    const run = await collectRun(source(), "model");
+
+    expect(run.warnings).toEqual(["the run lost something", "the child lost something"]);
+    expect(run.content).toBe("answer");
   });
 });
 

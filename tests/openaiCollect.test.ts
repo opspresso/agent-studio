@@ -109,6 +109,64 @@ describe("toChatCompletionChunks images", () => {
   });
 });
 
+/**
+ * The OpenAI schema has no field for what a run lost, which is the same problem
+ * `images` has — so it takes the same answer. The two shapes have to agree:
+ * `finish_reason` is here because they once did not.
+ */
+describe("what a run lost, on the OpenAI surface", () => {
+  it("carries warnings as an extension on the collected completion", async () => {
+    const result = await collectRun(
+      stream([
+        { warning: "Skill 'gone' is no longer in the registry; it was not offered." },
+        { delta: { content: "answered anyway" } },
+        { done: true },
+      ]),
+      "m",
+    );
+
+    expect(toChatCompletion(result).warnings).toEqual([
+      "Skill 'gone' is no longer in the registry; it was not offered.",
+    ]);
+  });
+
+  it("omits the field when a run lost nothing", async () => {
+    const result = await collectRun(stream([{ delta: { content: "clean" } }, { done: true }]), "m");
+
+    expect(result.warnings).toEqual([]);
+    expect(toChatCompletion(result)).not.toHaveProperty("warnings");
+  });
+
+  it("streams a warning as a delta extension without a terminal frame", async () => {
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(
+      stream([
+        { warning: "MCP server 'gone' was blocked" },
+        { author: "child", warning: "Subagent 'child' stopped at its turn limit" },
+        { delta: { content: "answered" } },
+        { done: true },
+      ]),
+      "m",
+    )) {
+      frames.push(frame);
+    }
+
+    const deltas = frames.map((f) => (f.choices as Array<{ delta: unknown }>)[0]?.delta);
+    expect(deltas[0]).toEqual({
+      role: "assistant",
+      warnings: ["MCP server 'gone' was blocked"],
+    });
+    // Authored like an image, and for the same reason: a child's warning names
+    // its own agent and the loss is the caller's. Only a *termination* is
+    // filtered by author.
+    expect(deltas[1]).toEqual({
+      warnings: ["Subagent 'child' stopped at its turn limit"],
+    });
+    expect(deltas[2]).toEqual({ content: "answered" });
+    expect(finishReasons(frames)).toEqual(["stop"]);
+  });
+});
+
 describe("authored error chunks", () => {
   it("does not fail the stream when a subagent reports an error", async () => {
     // The engine hands a failed transfer to the parent as a tool error and the

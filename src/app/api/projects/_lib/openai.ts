@@ -37,7 +37,11 @@ function wireFinishReason(termination: RunTerminationReason | undefined): "stop"
 
 /** Wrap a single-shot result as an OpenAI ChatCompletion object. */
 export function toChatCompletion(
-  result: RunResult & { images?: RunImage[]; termination?: RunTerminationReason },
+  result: RunResult & {
+    images?: RunImage[];
+    warnings?: string[];
+    termination?: RunTerminationReason;
+  },
 ): Record<string, unknown> {
   return {
     id: newChatId(),
@@ -57,6 +61,10 @@ export function toChatCompletion(
       total_tokens: result.usage.inputTokens + result.usage.outputTokens,
     },
     ...(result.images && result.images.length > 0 ? { images: result.images } : {}),
+    // Same extension treatment as `images`, and for the same reason: the OpenAI
+    // schema has no field for what a run lost, and dropping it is what left a
+    // degraded run looking exactly like a clean one on this surface.
+    ...(result.warnings && result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
 }
 
@@ -98,6 +106,17 @@ export async function* toChatCompletionChunks(
       // that knows about it receives the picture and one that does not ignores it.
       const images = [chunk.image];
       const delta = sentRole ? { images } : { role: "assistant", images };
+      sentRole = true;
+      yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
+    }
+    if (chunk.warning) {
+      // Before the top-level filter, like `images` above: a subagent's warning
+      // names its own agent and its loss is the caller's too. No OpenAI
+      // counterpart either, so it rides as a `warnings` delta extension — which
+      // is what keeps this stream saying the same thing its collected
+      // counterpart does. A client that does not know the field ignores it.
+      const warnings = [chunk.warning];
+      const delta = sentRole ? { warnings } : { role: "assistant", warnings };
       sentRole = true;
       yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
     }

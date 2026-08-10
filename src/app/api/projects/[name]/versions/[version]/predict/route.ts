@@ -65,6 +65,9 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       // provider output cut — was indistinguishable from a finished one on the
       // one surface that returns a bare `result`.
       ...(run.termination ? { finishReason: run.termination } : {}),
+      // What the run lost on the way to that answer, for the same reason: a
+      // stream says it in a `warning` frame, and a collected body had nowhere.
+      ...(run.warnings.length > 0 ? { warnings: run.warnings } : {}),
       ...(run.images.length > 0 ? { images: run.images } : {}),
     });
   } catch (error) {
