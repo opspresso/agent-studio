@@ -8,7 +8,7 @@
  * exposes an optional `channel` so tests can inject a fake.
  */
 
-import { isTopLevelChunk, messageText, runTermination } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, messageText, runTermination } from "@/domain/llm/types";
 import type {
   ChatMessageInput,
   EngineChunk,
@@ -302,12 +302,11 @@ export async function collectRun(
     // collected surface has no later frame to say it in, and every other
     // consumer of this stream — chat, Slack, A2A, the console — reports these;
     // dropping them here is what made a run that silently lost half its tools
-    // indistinguishable from one that had them. Authored ones are kept too:
-    // a subagent's warning names its own agent, and its loss is the caller's
-    // as much as a top-level one. Deduplicated like the chat client does —
-    // several children can report the same missing binding.
-    if (chunk.warning && !warnings.includes(chunk.warning)) {
-      warnings.push(chunk.warning);
+    // indistinguishable from one that had them. `collectedWarning` owns which
+    // ones count.
+    const warning = collectedWarning(chunk, warnings);
+    if (warning) {
+      warnings.push(warning);
     }
     termination = runTermination(chunk) ?? termination;
     if (isTopLevelChunk(chunk) && chunk.delta?.content) {

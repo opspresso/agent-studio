@@ -3,7 +3,7 @@ import { resolveRunnableVersion } from "@/application/project/resolveRunnableVer
 import { createReplySink } from "@/application/slack/replyStream";
 import type { SlackEventBody, SlackEventDeps, SlackEventFile } from "@/application/slack/types";
 import type { RunCaller } from "@/domain/execution/actor";
-import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
@@ -520,10 +520,12 @@ export async function handleSlackEvent(
         }
         continue;
       }
-      if (chunk.warning) {
-        // A binding the run could not use. It rides out with the answer rather
-        // than replacing it — the run still produced one.
-        warnings.push(chunk.warning);
+      // A binding the run could not use. It rides out with the answer rather
+      // than replacing it — the run still produced one. `collectedWarning`
+      // owns which ones count.
+      const warning = collectedWarning(chunk, warnings);
+      if (warning) {
+        warnings.push(warning);
       }
       // Report tool activity through the status line rather than the answer:
       // a tool-heavy first turn shows progress without spending the message

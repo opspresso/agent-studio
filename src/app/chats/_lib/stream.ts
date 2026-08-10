@@ -1,6 +1,6 @@
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
 import { chunkAuthorPath, removeActivePath, trackActivePath } from "@/app/_lib/authorPaths";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { LiveTurn, StreamChunk } from "./types";
 
 /** Render a tool result payload to a readable string for a collapsible block. */
@@ -61,10 +61,9 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   if (chunk.image) {
     images = [...images, chunk.image];
   }
-  if (typeof chunk.warning === "string" && !warnings.includes(chunk.warning)) {
-    // A nested run can report the same unusable binding as its parent; the
-    // reader only needs to be told once.
-    warnings = [...warnings, chunk.warning];
+  const warning = collectedWarning(chunk, warnings);
+  if (warning !== undefined) {
+    warnings = [...warnings, warning];
   }
   return { text, toolCalls, tools, images, warnings, authorPaths };
 }

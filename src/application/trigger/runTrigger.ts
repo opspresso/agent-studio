@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import type { RunActor } from "@/domain/execution/actor";
 import type { RunSlotRepository } from "@/domain/execution/runSlot";
 import type { EngineChunk } from "@/domain/llm/types";
-import { isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
@@ -340,8 +340,11 @@ export async function executeFiring(
       ...input,
       actor: triggerActor(trigger),
     })) {
-      // Top-level only, like every other consumer: a subagent's text is not the
-      // run's answer (see `isTopLevelChunk`).
+      // Top-level only for the answer, like every other consumer: a subagent's
+      // text is not the run's answer (see `isTopLevelChunk`). What a child
+      // *lost* is the run's loss, though — `collectedWarning` keeps authored
+      // warnings, so the firing's row says why the answer is partial even when
+      // a subagent was the one to say it.
       if (isTopLevelChunk(chunk)) {
         if (chunk.delta?.content) {
           text += chunk.delta.content;
@@ -349,12 +352,13 @@ export async function executeFiring(
         if (chunk.error) {
           error = chunk.error;
         }
-        if (chunk.warning) {
-          warnings.push(chunk.warning);
-        }
         if (chunk.image) {
           images += 1;
         }
+      }
+      const warning = collectedWarning(chunk, warnings);
+      if (warning) {
+        warnings.push(warning);
       }
       traceId ??= chunk.traceId;
     }

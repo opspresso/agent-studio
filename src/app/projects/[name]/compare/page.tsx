@@ -15,7 +15,7 @@ import {
   type Version,
 } from "../../lib/api";
 import { findTemplateVariables } from "@/shared/template";
-import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
+import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   Alert,
   Badge,
@@ -166,14 +166,12 @@ export default function ComparePage() {
           }
           continue;
         }
-        if (chunk.warning) {
-          const reported = chunk.warning;
-          setSide((prev) =>
-            prev.warnings.includes(reported)
-              ? prev
-              : { ...prev, warnings: [...prev.warnings, reported] },
-          );
-        }
+        setSide((prev) => {
+          const reported = collectedWarning(chunk, prev.warnings);
+          return reported === undefined
+            ? prev
+            : { ...prev, warnings: [...prev.warnings, reported] };
+        });
         const content = chunk.delta?.content;
         if (content && isTopLevelChunk(chunk)) {
           setSide((prev) => ({ ...prev, text: prev.text + content }));

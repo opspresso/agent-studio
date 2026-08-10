@@ -184,6 +184,32 @@ export function runTermination(
 }
 
 /**
+ * The warning this chunk adds to a run's collected losses, or undefined when
+ * it adds nothing. The single owned collector — like {@link chunkTermination},
+ * consumers call this instead of re-deriving which warnings count, because the
+ * re-derivations had already split three ways: two surfaces kept only
+ * top-level warnings (dropping every loss a subagent reported), and three
+ * repeated what the reader had already been told.
+ *
+ * Authored warnings are kept: a subagent's warning names its own agent, and
+ * its loss is the caller's as much as a top-level one. Deduplicated against
+ * what the caller already collected: several children can report the same
+ * missing binding, and the reader only needs to be told once.
+ *
+ * Takes the `warning` field alone so client-side wire shapes can use the same
+ * collector, like {@link isTopLevelChunk}.
+ */
+export function collectedWarning(
+  chunk: { warning?: string },
+  collected: readonly string[],
+): string | undefined {
+  if (!chunk.warning || collected.includes(chunk.warning)) {
+    return undefined;
+  }
+  return chunk.warning;
+}
+
+/**
  * Flatten a message body to plain text — the single owned reader for code that
  * needs the words of a turn (templates, prompts, logs). Image parts contribute
  * nothing; callers that care about images use {@link hasImageParts}.

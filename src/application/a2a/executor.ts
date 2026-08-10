@@ -7,7 +7,7 @@
 import type { Message, Part, Task, TaskState } from "@a2a-js/sdk";
 import type { AgentExecutor, ExecutionEventBus, RequestContext, TaskStore } from "@a2a-js/sdk/server";
 import type { Project, Version } from "@/domain/project/types";
-import { isTopLevelChunk, messageText } from "@/domain/llm/types";
+import { collectedWarning, isTopLevelChunk, messageText } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import {
   executeProjectStream,
@@ -133,8 +133,12 @@ export class ProjectA2aExecutor implements AgentExecutor {
           this.publishStatus(eventBus, taskId, contextId, "failed", true, chunk.error);
           return;
         }
-        if (chunk.warning && isTopLevelChunk(chunk)) {
-          warnings.push(chunk.warning);
+        // Authored ones included: a subagent's loss is this task's too, and
+        // filtering to top-level here was how an A2A caller stayed the one
+        // consumer a child's lost binding never reached.
+        const warning = collectedWarning(chunk, warnings);
+        if (warning) {
+          warnings.push(warning);
         }
         const parts = this.chunkParts(chunk);
         if (parts.length === 0) {
