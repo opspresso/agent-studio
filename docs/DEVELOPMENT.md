@@ -169,19 +169,24 @@ Unit tests live under `tests/`. Conventions:
 
 This is the structural gate, and it fails loudly rather than warning. It enforces:
 
-1. **Ten layer rules**, each with an **empty allowlist** — `domain` imports nothing else and
-   no framework/AWS/auth library; `application` imports no `infrastructure` or `app`, and
-   nothing from `lib` beyond its pure leaves; `infrastructure` imports no `application` or
-   `app`; `shared` imports nothing from `@/`; adapters and use cases do not import the
-   composition root; `app` imports no `infrastructure` outside its wiring sites; `lib`
-   imports no `infrastructure` outside its wiring modules; `components` imports no
+1. **Twelve layer rules**, each with an **empty allowlist** — `domain` imports nothing else
+   and no framework/AWS/auth library; `application` imports no `infrastructure` or `app`,
+   nothing from `lib` beyond its pure leaves, and nothing outside the domain and the standard
+   library; `infrastructure` imports no `application` or `app`; `shared` imports nothing from
+   `@/`; adapters and use cases do not import the composition root; `app` imports no
+   `infrastructure` outside its wiring sites; `lib` imports no `infrastructure` outside its
+   wiring modules and no `application` outside the composition root; `components` imports no
    `infrastructure` or `application`.
 2. **Single-owner invariants** — a named decision plus the file that owns it. A second copy
    fails, *and so does the owner losing the definition*. The list is in
    [../AGENTS.md](../AGENTS.md#single-owner-invariants).
-3. **React event handling** — no `currentTarget` read inside a `setState` updater. React nulls
-   `SyntheticEvent.currentTarget` once the handler returns, so a deferred read throws whenever
-   React batches.
+3. **React event handling**, two rules. No `currentTarget` read inside a `setState` updater —
+   React nulls `SyntheticEvent.currentTarget` once the handler returns, so a deferred read
+   throws whenever React batches. And no block-rooted Mantine component (`Badge`, `Group`,
+   `Stack`, …) inside a `<Text>` or `<Title>` — those render a `<p>`/`<h*>`, which a browser
+   *closes* where a `<div>` opens inside it, so the server's HTML and React's tree disagree
+   and hydration fails. `component="span"` on the inner one, or `component="div"` on the
+   outer, is the fix and is what the rule looks for.
 4. **Edge runtime compatibility** — imports that would pull `node:crypto` or the AWS SDK into
    the edge bundle.
 5. **Create modals reset what they declare** — every field a create modal holds in `useState`

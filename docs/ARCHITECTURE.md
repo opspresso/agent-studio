@@ -57,7 +57,8 @@ src/
   components/       # App chrome: the header the root layout mounts (theme toggle, user
                     # menu), and the landing page's sign-in button
   lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
-                    # config + runtime-settings, public URLs, run metrics
+                    # the viewer flags the console gates on (viewer.ts), config +
+                    # runtime-settings, public URLs, run metrics
   shared/           # Dependency-free helpers (dates, slugs, timeouts, PKCE, constant-time
                     # compare, logger). The bottom of the graph: imports nothing from `@/`
   proxy.ts          # The page sign-in gate, and the single owner of which pages are public
@@ -1467,14 +1468,14 @@ any one error or warning string.
 ## UI
 
 ```
-/                     dashboard when signed in, landing page otherwise
+/                     overview when signed in, landing page otherwise
 /login                sign-in screen; where the page gate sends a signed-out visitor
 /projects             project catalog (cards)
 /projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
 /projects/[name]/versions | usage | traces | api-reference | settings
 /chats  /chats/[chatId]
 /skills  /tools (MCP)  /agents  (each + /[name] detail page)
-/dashboard            cost dashboard (range picker, group by project/provider/model)
+/dashboard            redirects to `/`, which carries the cost dashboard as its last section
 /members              admin-only workspace member list with join and last-login times
 /audit                admin-only sensitive-action audit trail
 /settings             admin-only runtime env-var overrides
@@ -1491,6 +1492,18 @@ The header offers system/light/dark themes through `useMantineColorScheme`, with
 `ColorSchemeScript` applying the stored preference before first paint. The control renders the
 default until mount: the preference exists only in the browser, so showing it during SSR would
 be a hydration mismatch.
+
+**Who the chrome is drawn for is resolved on the server**, in the root layout, and handed to
+`AppLayout` as a prop (`resolveViewer` in `src/lib/viewer.ts` owns the flags, and
+`GET /api/me` is the same call for the pages that ask after mounting). The nav used to read
+`useSession()`, which has no cookie during SSR and answers `isPending` — counted as signed in,
+so the server drew the whole navigation for every visitor and a signed-out one watched it
+disappear once the session resolved. That is a hydration mismatch, a visible flash, and the
+shape of the workspace handed to someone `src/proxy.ts` turns away. The consequence is that a
+per-viewer shell cannot be prerendered, so **every page route renders on demand**; the
+prerendered ones were only ever a shell built for nobody, which React discarded on hydration
+anyway. Collapsing the navbar is not enough either — a collapsed navbar is still in the
+document, so its contents are not rendered at all when nobody is signed in.
 
 Each project's **API Reference** tab documents how to call that project from outside the
 console, with its own name and published version filled in, a copyable curl example per

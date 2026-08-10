@@ -159,8 +159,6 @@ is OpenAI's 128, not a number anyone here picked.
 | Evaluating when a schedule fires | `src/domain/trigger/cron.ts` |
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
-| Detaching a stream from the consumer that walked away | `src/shared/detachOnReturn.ts` |
-| Keeping a background timer from holding the process open | `src/shared/unrefTimer.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
 | Deriving why a run ended from its chunks | `chunkTermination`/`runTermination` in `src/domain/llm/types.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |
@@ -184,6 +182,8 @@ same rule applies to:
 | Decision | Owner |
 |---|---|
 | Every DynamoDB key string | `src/infrastructure/db/keys.ts` |
+| Detaching a stream from the consumer that walked away | `src/shared/detachOnReturn.ts` |
+| Keeping a background timer from holding the process open | `src/shared/unrefTimer.ts` |
 | Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
 | Which pages are public | `src/proxy.ts` |
 | Whether a chunk is top-level | `isTopLevelChunk()` in `src/domain/llm/types.ts` |
