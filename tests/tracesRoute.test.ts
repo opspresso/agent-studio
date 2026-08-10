@@ -88,6 +88,17 @@ describe("GET /api/projects/[name]/traces (owner-gated)", () => {
     expect(traceRepo.listByProject).not.toHaveBeenCalled();
   });
 
+  it("rejects a day the calendar does not have", async () => {
+    // Shape-only validation let 2026-02-31 ride into the GSI range condition.
+    projectRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
+    const res = await GET(
+      new Request("http://localhost/api/projects/proj/traces?from=2026-02-31"),
+      ctx("proj"),
+    );
+    expect(res.status).toBe(400);
+    expect(traceRepo.listByProject).not.toHaveBeenCalled();
+  });
+
   it("rejects a reversed range (from > to) with 400", async () => {
     projectRepo.get.mockResolvedValue({ name: "proj", ownerEmail: "owner@example.com" });
     const res = await GET(

@@ -31,6 +31,22 @@ export function utcDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * True when `day` names a real UTC calendar day, `YYYY-MM-DD`. The shape check
+ * alone is not the calendar one: `2026-13-01` parses to NaN, and `2026-02-31`
+ * parses — to March 3rd, silently widening whatever range it bounds.
+ * Round-tripping through {@link utcDay} rejects both. Every reader that
+ * accepts a day from outside validates through this, so three of them cannot
+ * disagree about which days exist — two of the three already did.
+ */
+export function isUtcDay(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    return false;
+  }
+  const at = Date.parse(`${day}T00:00:00Z`);
+  return !Number.isNaN(at) && utcDay(new Date(at)) === day;
+}
+
 /** YYYY-MM in UTC — the month a monthly cost window is keyed by. */
 export function utcMonth(date: Date): string {
   return date.toISOString().slice(0, 7);
