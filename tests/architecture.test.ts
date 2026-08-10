@@ -170,7 +170,14 @@ interface Rule {
  * allowlist entry — folding a permanent exception into the allowlist would
  * destroy "the list is empty" as the signal that the rule is fully enforced.
  */
-const APP_WIRING_SITES = ["src/app/api/chats/_deps.ts", "src/app/api/slack/events/_lib/"];
+const APP_WIRING_SITES = [
+  "src/app/api/chats/_deps.ts",
+  "src/app/api/slack/events/_lib/",
+  // Assembles the A2A SDK handler over `executionDeps` per request —
+  // AGENTS.md's fourth wiring site (the composition root being the first).
+  // Absent from this list it passed only because no banned name crossed it yet.
+  "src/app/api/a2a/[name]/route.ts",
+];
 
 /**
  * Packages `application` may name, because the protocol *is* the contract. See
