@@ -12,7 +12,7 @@
  * being able to read off the signature.
  */
 
-import { imageDataUrl } from "@/domain/llm/types";
+import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
@@ -287,7 +287,10 @@ export async function* runPromptSubagent(
       },
     )) {
       recorder?.observe(chunk);
-      if (chunk.delta?.content) {
+      // The same guard as `runLocalSubagent`'s, though a prompt run cannot
+      // transfer and so never streams an authored chunk: two loops spelling
+      // the collection differently is how the guarded one lost its guard.
+      if (isTopLevelChunk(chunk) && chunk.delta?.content) {
         text += chunk.delta.content;
       }
       // Author is stamped by `authored`; this level only claims its trace id.
@@ -464,7 +467,12 @@ export async function* runLocalSubagent(
       signal,
     })) {
       recorder?.observe(chunk);
-      if (chunk.delta?.content) {
+      // Only the child's own words are its answer. A grandchild's chunks
+      // travel out on this same stream — authored by `authored()` one level
+      // down — and absorbing them credited this child with the grandchild's
+      // words twice over: once inside the answer returned to the parent, once
+      // in the tool result the nested transfer had already delivered.
+      if (isTopLevelChunk(chunk) && chunk.delta?.content) {
         text += chunk.delta.content;
       }
       // Stamp this level's trace id so the parent's trace links to *this* run;
