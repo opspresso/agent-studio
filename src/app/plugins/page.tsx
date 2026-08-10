@@ -19,33 +19,6 @@ import {
   type PluginSyncSelection,
 } from "./api";
 
-/**
- * Whether a persisted report is worth a permanent banner. A clean sync —
- * nothing created, changed, removed, orphaned or skipped — says only "the
- * repo and the registry agree", which the "last synced" caption already
- * covers; with the scheduler ticking every minute, rendering it forever made
- * "Imported 0 · unchanged N" the page's most prominent element. Orphans and
- * skips reappear in every report until resolved, so hiding a clean one loses
- * nothing.
- */
-function noteworthy(report: PluginSyncResult): boolean {
-  return (
-    report.skipped.length > 0 ||
-    report.orphanedPlugins.length > 0 ||
-    report.removedPlugins.length > 0 ||
-    report.plugins.some((section) =>
-      [section.skills, section.mcpServers].some(
-        (kind) =>
-          kind.created.length > 0 ||
-          kind.overwritten.length > 0 ||
-          kind.removed.length > 0 ||
-          kind.orphaned.length > 0 ||
-          kind.skipped.length > 0,
-      ),
-    )
-  );
-}
-
 export default function PluginsPage() {
   const viewer = useViewer();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
@@ -119,13 +92,20 @@ export default function PluginsPage() {
         </Text>
       )}
 
-      {/* A fresh result always shows — the operator just asked for it. The
-          persisted one returns only while it has something to look at. */}
-      {syncResult ? (
-        <PluginSyncSummary result={syncResult} onApply={runSync} />
-      ) : syncConfig?.last && noteworthy(syncConfig.last.report) ? (
-        <PluginSyncSummary result={syncConfig.last.report} onApply={runSync} />
-      ) : null}
+      {/*
+       * The report belongs to the press that produced it. It is the account of
+       * an action the operator just took, so it lives as long as they stay on
+       * the page and no longer — leaving the page, or coming back to it, is
+       * done with it.
+       *
+       * The persisted report is deliberately *not* replayed here. It reads as a
+       * fresh result while being days old, and there is nothing on it to act on
+       * that pressing Sync would not show again: the run is cheap, idempotent,
+       * and reports the same skips and the same orphans. `syncConfig.last` still
+       * dates the last run in the caption above, and `GET /api/plugins/sync`
+       * still carries the whole report for anything that wants it.
+       */}
+      {syncResult && <PluginSyncSummary result={syncResult} onApply={runSync} />}
 
       {error && (
         <Alert color="red" variant="light">
