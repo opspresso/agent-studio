@@ -364,6 +364,16 @@ interface ToolResultBudget {
   charge(content: string): string;
 }
 
+/**
+ * The marker `fit` appends when the per-turn budget cut a result. Shared with
+ * the dispatch assembly, which reserves room for it when sizing each task's
+ * share — the marker lands *on top of* what `fit` kept, so a share sized
+ * without it built a group larger than the budget the shares were carved from.
+ */
+function turnTruncationMarker(kept: number, of: number): string {
+  return `\n…(truncated: kept ${kept} of ${of} chars, this turn's tool output budget is exhausted)`;
+}
+
 function createToolResultBudget(total: number, runBudget?: RunContextBudget): ToolResultBudget {
   let remaining = total;
   const charge = (content: string): string => {
@@ -411,7 +421,7 @@ function createToolResultBudget(total: number, runBudget?: RunContextBudget): To
     }
     let text = turnCut;
     if (turnCut.length < content.length) {
-      const marker = `\n…(truncated: kept ${turnCut.length} of ${content.length} chars, this turn's tool output budget is exhausted)`;
+      const marker = turnTruncationMarker(turnCut.length, content.length);
       // Appended on top of a fit that did not cut, so it is charged where it
       // is appended — everything inserted is charged.
       runBudget?.chargeText(marker);
@@ -2543,14 +2553,40 @@ export async function* runAgent(
         // even split survived right up to the point where it mattered, and the
         // tasks it exists to protect were the ones erased.
         //
-        // What is not a task's answer comes off the top first: each section's
-        // heading, the blank line between sections, and the reason a task that
-        // could not run carries. Those are the engine's own short strings and
-        // are never the thing to cut. The run's context budget can still bind
-        // tighter — it is measured in tokens, not characters — and when it does
-        // the same `fit` cuts and says so.
+        // What is not a task's answer comes off the top first: the group's
+        // `Error:` prefix when nothing succeeded, each section's heading, the
+        // blank line between sections, the reason a task the plan refused
+        // carries, and room for the marker `fit` appends after cutting a
+        // section to its share. Those are this engine's own short strings and
+        // are never the thing to cut. The reason a task that *ran* and failed
+        // carries is different: it is child- or provider-written text whose
+        // length nothing on this side decides, so it is fitted to the task's
+        // share like an answer — uncounted, one long provider error pushed the
+        // group past the budget and the final fit cut the tail: the good
+        // answers. The run's context budget can still bind tighter — it is
+        // measured in tokens, not characters — and when it does the same
+        // `fit` cuts and says so.
         const sectionHeading = (agentName: string) => `### ${agentName}\n`;
+        // A failed group is prefixed before the shares are sized, so the
+        // prefix is known — and priced — here. The answer decides failure, not
+        // the error chunks that went past: a child whose nested transfer
+        // failed still answers from that tool error, and a descendant's
+        // failure surfaces on this same stream — treating either as the
+        // task's outcome would throw away the answer it actually produced,
+        // and one recovered failure per task would report the whole call
+        // failed.
+        const allFailed = runnable.every((_, position) => !(answers[position] ?? "").trim());
+        const groupPrefix = allFailed
+          ? `Error: no agent in this ${DISPATCH_TOOL_NAME} call produced an answer.\n\n`
+          : "";
+        // The widest marker a share's fit can append: kept never prints more
+        // digits than the turn cap, and no answer outgrows a safe integer.
+        const markerAllowance = turnTruncationMarker(
+          MAX_TOOL_RESULT_CHARS_PER_TURN,
+          Number.MAX_SAFE_INTEGER,
+        ).length;
         const framingChars =
+          groupPrefix.length +
           plans.reduce(
             (total, plan) =>
               total +
@@ -2562,38 +2598,25 @@ export async function* runAgent(
           1,
           Math.floor(
             Math.max(0, resultBudget.remaining() - framingChars) / Math.max(1, runnable.length),
-          ),
+          ) - markerAllowance,
         );
-        const answerByIndex = new Map<number, { text: string; failed: boolean }>();
+        const answerByIndex = new Map<number, string>();
         runnable.forEach(({ index, outcome }, position) => {
           const answer = (answers[position] ?? "").trim();
-          // The answer decides, not the error chunks that went past. A child whose
-          // nested transfer failed still answers from that tool error, and a
-          // descendant's failure surfaces on this same stream — treating either as
-          // the task's outcome would throw away the answer it actually produced,
-          // and one recovered failure per task would report the whole call failed.
-          if (answer) {
-            answerByIndex.set(index, {
-              text: createToolResultBudget(perTask).fit(answer),
-              failed: false,
-            });
-            return;
-          }
-          answerByIndex.set(index, {
-            text: outcome.error
-              ? `Error: ${outcome.error}`
-              : "Error: the agent returned no answer.",
-            failed: true,
-          });
+          answerByIndex.set(
+            index,
+            createToolResultBudget(perTask).fit(
+              answer ||
+                (outcome.error ? `Error: ${outcome.error}` : "Error: the agent returned no answer."),
+            ),
+          );
         });
         const sections = plans.map((plan, index) => ({
           agentName: plan.agentName,
-          ...("failure" in plan
-            ? { text: plan.failure, failed: true }
-            : (answerByIndex.get(index) ?? {
-                text: "Error: the agent did not run.",
-                failed: true,
-              })),
+          text:
+            "failure" in plan
+              ? plan.failure
+              : (answerByIndex.get(index) ?? "Error: the agent did not run."),
         }));
         // Prefixed `Error:` only when nothing succeeded. A partial failure is not
         // a failed call — the sections that answered are usable, and the trace
@@ -2601,9 +2624,7 @@ export async function* runAgent(
         const body = sections
           .map((section) => `${sectionHeading(section.agentName)}${section.text}`)
           .join(SECTION_SEPARATOR);
-        const dispatchText = sections.every((section) => section.failed)
-          ? `Error: no agent in this ${DISPATCH_TOOL_NAME} call produced an answer.\n\n${body}`
-          : body;
+        const dispatchText = `${groupPrefix}${body}`;
         // Through the turn budget like any other tool result, which is the reason
         // the answers come back here instead of as an unbudgeted context message.
         yield toolResult(call, dispatchText);

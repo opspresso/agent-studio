@@ -372,6 +372,71 @@ describe("dispatch_agents", () => {
     }
   });
 
+  /**
+   * A task that ran and failed reports child- or provider-written text, whose
+   * length nothing on this side decides. Left out of the accounting, one long
+   * error inflated the group past what the turn had left and the final fit
+   * cut the tail — erasing the good answers the even split exists to protect.
+   */
+  it("fits a runtime failure's reason to its share instead of letting it evict the answers", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      if (agentName === "alpha") {
+        yield { author: agentName, error: `alpha exploded: ${"E".repeat(300_000)}` };
+        return "";
+      }
+      yield { author: agentName, delta: { content: agentName } };
+      return `beta:${"x".repeat(50_000)}`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    // The failure keeps its reason — cut to its share, and saying so.
+    expect(result).toContain("Error: alpha exploded:");
+    expect(result).toContain("truncated");
+    // The other task's answer survives whole.
+    expect(result).toContain(`beta:${"x".repeat(50_000)}`);
+  });
+
+  /**
+   * The marker `fit` appends lands on top of what it kept. Unreserved, a group
+   * of long answers outgrew the budget by a few hundred chars and the final
+   * fit re-cut the tail, leaving two contradictory truncation claims.
+   */
+  it("assembles a group that fits the turn budget, truncation markers included", async () => {
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      yield { author: agentName, delta: { content: agentName } };
+      return "A".repeat(400_000);
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "alpha", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("all done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    // Both sections cut to their share, each saying so once — a third claim
+    // would be the final fit re-cutting what the shares already cut.
+    expect(result).toContain("### alpha");
+    expect(result).toContain("### beta");
+    expect((result.match(/…\(truncated/g) ?? []).length).toBe(2);
+    // Within the cap: nothing left for the final fit to re-cut.
+    expect(result.length).toBeLessThanOrEqual(200_000);
+  });
+
   it("refuses tasks past the width limit instead of dropping them", async () => {
     const started: string[] = [];
     const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
