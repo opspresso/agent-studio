@@ -126,7 +126,7 @@ export function PluginSyncSummary({
       <Stack gap={4}>
         {report.created.length > 0 && (
           <Text fz="xs">
-            <Badge size="xs" color={BADGE.on} mr={6}>
+            <Badge component="span" size="xs" color={BADGE.on} mr={6}>
               created
             </Badge>
             {report.created.join(", ")}
@@ -134,7 +134,7 @@ export function PluginSyncSummary({
         )}
         {report.overwritten.map((entry: SyncWrite) => (
           <Text key={`ow-${entry.name}`} fz="xs">
-            <Badge size="xs" color="blue" mr={6}>
+            <Badge component="span" size="xs" color="blue" mr={6}>
               updated
             </Badge>
             {entry.name} — {entry.fields.join(", ")}
@@ -143,7 +143,7 @@ export function PluginSyncSummary({
         ))}
         {report.removed.length > 0 && (
           <Text fz="xs">
-            <Badge size="xs" color={BADGE.broken} mr={6}>
+            <Badge component="span" size="xs" color={BADGE.broken} mr={6}>
               deleted
             </Badge>
             {report.removed.join(", ")}
