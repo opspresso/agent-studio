@@ -1,0 +1,40 @@
+.countTile {
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease;
+}
+
+.countTile:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 28%, transparent);
+}
+
+.chatRow {
+  display: block;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  transition: background-color 120ms ease;
+}
+
+.chatRow:hover {
+  background-color: var(--surface-highlight);
+}
+
+.getStarted {
+  background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--studio-surface-raised) 86%, transparent),
+    color-mix(in oklab, var(--surface-highlight) 46%, transparent)
+  );
+  box-shadow: var(--surface-shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .countTile {
+    transition: none;
+  }
+
+  .countTile:hover {
+    transform: none;
+  }
+}

@@ -5,7 +5,6 @@ import {
   Alert,
   Card,
   Group,
-  Paper,
   Progress,
   ScrollArea,
   SegmentedControl,
@@ -21,8 +20,8 @@ import {
   IconChartAreaLine,
   IconCoins,
   IconLayersIntersect,
-  IconSparkles,
 } from "@tabler/icons-react";
+import type { Project } from "@/domain/project/types";
 import {
   buildDailySeries,
   groupUsage,
@@ -78,53 +77,35 @@ function StatCard({
   );
 }
 
-export function Dashboard() {
+/**
+ * The cost section of the overview.
+ *
+ * `projects` arrives from the overview rather than being fetched here: it holds
+ * the same list already, and the department map is the only thing this needed it
+ * for. `null` means that load failed — the other groupings never needed the
+ * catalog, so it does not error the section, but it is *said* when the
+ * department view is open: every project silently falling into "(none)" is
+ * exactly the false claim that view exists to avoid.
+ */
+export function Dashboard({ projects }: { projects: Project[] | null }) {
   const initial = useMemo(() => presetRange(30), []);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [items, setItems] = useState<UsageRow[]>([]);
-  // projectName → departmentCode, for the chargeback grouping. A failed load
-  // does not error the dashboard — the other groupings never needed the
-  // catalog — but it is *said* when the department view is open: every project
-  // silently falling into "(none)" is exactly the false claim that view exists
-  // to avoid.
-  const [departments, setDepartments] = useState<ReadonlyMap<string, string>>(new Map());
-  const [departmentsFailed, setDepartmentsFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/projects")
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`request failed (${res.status})`);
-        }
-        return (await res.json()) as Array<{ name: string; departmentCode?: string }>;
-      })
-      .then((projects) => {
-        if (cancelled) {
-          return;
-        }
-        const map = new Map<string, string>();
-        for (const project of projects) {
-          if (project.departmentCode) {
-            map.set(project.name, project.departmentCode);
-          }
-        }
-        setDepartments(map);
-        setDepartmentsFailed(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDepartmentsFailed(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  /** projectName → departmentCode, for the chargeback grouping. */
+  const departments = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const project of projects ?? []) {
+      if (project.departmentCode) {
+        map.set(project.name, project.departmentCode);
+      }
+    }
+    return map;
+  }, [projects]);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,35 +157,23 @@ export function Dashboard() {
 
   return (
     <Stack gap="xl">
-      <div className={classes.hero}>
-        <Group justify="space-between" align="flex-end" gap="xl" wrap="wrap">
-          <div>
-            <Group gap="xs" mb="sm">
-              <ThemeIcon variant="gradient" gradient={{ from: "brand.6", to: "violet.5" }}>
-                <IconSparkles size={16} />
-              </ThemeIcon>
-              <Text fz="xs" fw={600} tt="uppercase" c="brand" lts="0.12em">
-                Live intelligence
-              </Text>
-            </Group>
-            <Title order={1} fz={{ base: 32, md: 42 }} lts="-0.04em">
-              AI operations overview
-            </Title>
-            <Text c="dimmed" mt="xs" maw={620}>
-              Track the cost, volume, and shape of every workload running through your studio.
-            </Text>
-          </div>
-          <Paper withBorder p="sm" className={classes.rangePanel}>
-          <DateRangePicker
-            value={{ from, to }}
-            onChange={(range) => {
-              setFrom(range.from);
-              setTo(range.to);
-            }}
-          />
-          </Paper>
-        </Group>
-      </div>
+      <Group justify="space-between" align="flex-end" gap="md" wrap="wrap">
+        <div>
+          <Title order={2} fz={{ base: 22, md: 26 }} lts="-0.03em">
+            Cost
+          </Title>
+          <Text c="dimmed" fz="sm" mt={4} maw={620}>
+            The cost, volume, and shape of every workload running through your studio.
+          </Text>
+        </div>
+        <DateRangePicker
+          value={{ from, to }}
+          onChange={(range) => {
+            setFrom(range.from);
+            setTo(range.to);
+          }}
+        />
+      </Group>
 
       {error && (
         <Alert color="red" variant="light">
@@ -212,7 +181,7 @@ export function Dashboard() {
         </Alert>
       )}
 
-      {groupBy === "department" && departmentsFailed && (
+      {groupBy === "department" && projects === null && (
         <Alert color="yellow" variant="light">
           Project departments could not be loaded, so every project is shown under “(none)”.
           Reload to attribute this spend.

@@ -20,12 +20,13 @@ import {
   IconChartBar,
   IconFolder,
   IconMessageCircle,
+  IconPackage,
   IconPhoto,
   IconTool,
 } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
 import { getSessionUser } from "@/lib/session";
-import { Dashboard } from "./_components/Dashboard";
+import { Overview } from "./_components/Overview";
 import classes from "./page.module.css";
 
 const DOMAINS = [
@@ -54,6 +55,12 @@ const DOMAINS = [
     Icon: IconBook2,
   },
   {
+    label: "plugins",
+    title: "Agent Plugins",
+    body: "Skills and MCP servers sync from a plugins repository, which stays the source of truth for everything it declares.",
+    Icon: IconPackage,
+  },
+  {
     label: "chats",
     title: "Chats",
     body: "Talk to any agent project over streaming SSE, with tool results inline.",
@@ -73,8 +80,8 @@ const DOMAINS = [
   },
   {
     label: "cost",
-    title: "Cost",
-    body: "Every call priced from the model registry and rolled up per project, per caller, per day.",
+    title: "Cost & guards",
+    body: "Every call priced from the model registry and rolled up per project, per caller, per day — with daily and monthly thresholds that warn, then refuse.",
     Icon: IconChartBar,
   },
 ] as const;
@@ -114,7 +121,7 @@ const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: stri
 export default async function Home() {
   const user = await getSessionUser();
   if (user) {
-    return <Dashboard />;
+    return <Overview userName={user.name} userEmail={user.email} />;
   }
 
   return (
@@ -147,7 +154,7 @@ export default async function Home() {
           <Group mt="xl" gap="md" wrap="wrap">
             <SignInButton />
             <Text fz="sm" c="dimmed">
-              Secure access for your entire AI workspace.
+              Your Google account, on one of this deployment&rsquo;s allowed domains.
             </Text>
           </Group>
           <Group mt={32} gap="xl" wrap="wrap" className={classes.proofRow}>

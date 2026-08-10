@@ -475,7 +475,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(59);
+    expect(entries.length).toBe(60);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1032,12 +1032,86 @@ describe("agent runs", () => {
 const DEFERRED_EVENT_READ =
   /set[A-Z]\w*\(\s*\((?:prev|current)\w*\)\s*=>[\s\S]{0,400}?currentTarget/;
 
+/**
+ * Mantine components whose root element is a block-level `<div>`.
+ *
+ * `<Text>` renders a `<p>`, which accepts phrasing content only: a browser
+ * *closes the paragraph* where a `<div>` opens inside it, so the server's HTML
+ * and React's tree disagree about the shape of the document and hydration
+ * fails. The plugins sync summary put a `<Badge>` inside a `<Text>` and every
+ * sync logged "In HTML, <div> cannot be a descendant of <p>".
+ *
+ * The fix is per-component and cheap — `component="span"` on the inner one, or
+ * a `Group` around both — but nothing made the mistake visible before a browser
+ * ran the page, which is why it is caught here.
+ */
+const BLOCK_ROOTED = [
+  "Badge", "Group", "Stack", "Divider", "Card", "Paper", "Alert", "SimpleGrid",
+  "Progress", "ScrollArea", "ThemeIcon", "Skeleton", "Table", "Center", "Flex",
+  "Grid", "GridCol", "Avatar", "Accordion", "Timeline", "Tabs", "Blockquote",
+  "List", "Chip", "Pill", "Indicator", "RingProgress", "Spoiler", "Collapse",
+];
+
+/**
+ * `<X …>` … `</X>` holding one of the above, with no `component=` override on
+ * either — the override is how a caller *fixes* this, so a tag carrying one is
+ * not a finding. Bounded so the match stays inside one element's own children.
+ */
+const PHRASING_CONTAINERS = ["Text", "Title"];
+
+function nestingOffenders(text: string): string[] {
+  const found: string[] = [];
+  for (const outer of PHRASING_CONTAINERS) {
+    const re = new RegExp(`<${outer}(?![A-Za-z])([^>]*)>([\\s\\S]{0,600}?)</${outer}>`, "g");
+    for (const [, attrs, body] of text.matchAll(re)) {
+      if (/component=/.test(attrs ?? "")) {
+        continue;
+      }
+      for (const inner of BLOCK_ROOTED) {
+        const innerRe = new RegExp(`<${inner}(?![A-Za-z])([^>]*)>`);
+        const hit = innerRe.exec(body ?? "");
+        if (hit && !/component=/.test(hit[1] ?? "")) {
+          found.push(`<${inner}> inside <${outer}>`);
+        }
+      }
+    }
+  }
+  return found;
+}
+
 describe("react event handling", () => {
   it("never reads currentTarget inside a state updater", () => {
     const offenders = SOURCE_FILES.filter(
       (file) => file.path.endsWith(".tsx") && DEFERRED_EVENT_READ.test(file.text),
     ).map((file) => file.path);
     expect(offenders.sort()).toEqual([]);
+  });
+
+  it("never nests a block-rooted component inside Text or Title", () => {
+    const offenders: string[] = [];
+    for (const file of SOURCE_FILES) {
+      if (!file.path.endsWith(".tsx")) {
+        continue;
+      }
+      for (const finding of nestingOffenders(file.text)) {
+        offenders.push(`${file.path}: ${finding}`);
+      }
+    }
+    expect(offenders.sort()).toEqual([]);
+  });
+
+  it("catches the nesting it is meant to catch", () => {
+    expect(nestingOffenders(`<Text fz="xs"><Badge size="xs">created</Badge>a, b</Text>`)).toEqual([
+      "<Badge> inside <Text>",
+    ]);
+    // `component="span"` is the fix, so a tag carrying one is not a finding.
+    expect(
+      nestingOffenders(`<Text fz="xs"><Badge component="span">created</Badge>a</Text>`),
+    ).toEqual([]);
+    // `<Text component="div">` is the other fix — the container is no longer a <p>.
+    expect(nestingOffenders(`<Text component="div"><Badge>x</Badge></Text>`)).toEqual([]);
+    // Phrasing content inside a paragraph is exactly what <p> is for.
+    expect(nestingOffenders(`<Text fz="xs"><Code>npm i</Code> then run it</Text>`)).toEqual([]);
   });
 });
 
