@@ -142,7 +142,12 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
     task order.
   - The budget is **split evenly** across tasks rather than spent in order: a first child
     answering at length would otherwise starve every task after it, which is the whole point
-    of having asked several at once.
+    of having asked several at once. Split over what the turn has **left**
+    (`ToolResultBudget.remaining`), not over `MAX_TOOL_RESULT_CHARS_PER_TURN` — a dispatch is
+    one call among however many the model made in the same response, and sizing the shares
+    against the cap built a group larger than the budget, which the single `fit` then cut from
+    the tail. The section headings and the reasons of tasks that could not run come off the
+    top first: they are the engine's own strings and are never the thing to cut.
   - A task that cannot run (bad shape, unknown `image_ids`, past the width limit) keeps its
     place in the result carrying its reason, and does **not** cancel the others. The group is
     prefixed `Error:` only when *every* task failed — the trace recorder reads that prefix, so
