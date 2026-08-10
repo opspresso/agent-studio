@@ -1122,6 +1122,28 @@ describe("runAgent separates what consecutive turns say", () => {
     expect(joined(await collect(runAgent(deps(channel), input())))).toBe("답입니다.");
   });
 
+  /**
+   * With PII filtering on, a turn's words reach the reader through the stream
+   * restorer, which holds back whatever suffix could still turn out to be half
+   * a replacement token. A turn the provider cut just after `[[PII:` is
+   * delivered entirely by the end-of-turn flush — and "this turn spoke" has to
+   * be true of that too, or the next turn's first word runs into it.
+   */
+  it("counts a turn delivered only by the restorer's flush as having spoken", async () => {
+    const channel = new FakeChannel([
+      [contentChunk("[[PII:"), toolCallChunk(0, "c1", "look", "{}"), usageChunk(1, 1)],
+      [contentChunk("답입니다."), usageChunk(1, 1)],
+    ]);
+    const withPii: RunAgentInput = {
+      ...input(),
+      // Creates a replacement, so the restorer has a token to buffer against.
+      messages: [{ role: "user", content: "mail me at a@b.com" }],
+      parameters: { piiFiltering: true },
+    };
+
+    expect(joined(await collect(runAgent(deps(channel), withPii)))).toBe("[[PII:\n\n답입니다.");
+  });
+
   it("separates three turns, not just the first pair", async () => {
     const channel = new FakeChannel([
       [contentChunk("하나"), toolCallChunk(0, "c1", "look", "{}"), usageChunk(1, 1)],
