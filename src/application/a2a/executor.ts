@@ -247,11 +247,10 @@ export class ProjectA2aExecutor implements AgentExecutor {
   }
 
   private chunkParts(chunk: EngineChunk): Part[] {
-    // Only top-level assistant text goes into the artifact; subagent chunks
-    // are re-authored and would duplicate the parent's final answer.
-    if (!isTopLevelChunk(chunk)) {
-      return [];
-    }
+    // Images are collected from subagent turns too, like `collectRun`'s: an
+    // image subagent is how an agent project delegates drawing, and the
+    // picture is the answer. Behind the top-level gate below, that delegation
+    // published a `completed` task with no artifact at all.
     if (chunk.image) {
       return [
         {
@@ -263,6 +262,11 @@ export class ProjectA2aExecutor implements AgentExecutor {
           },
         },
       ];
+    }
+    // Only top-level assistant text goes into the artifact; subagent chunks
+    // are re-authored and would duplicate the parent's final answer.
+    if (!isTopLevelChunk(chunk)) {
+      return [];
     }
     return chunk.delta?.content ? [{ kind: "text", text: chunk.delta.content }] : [];
   }
