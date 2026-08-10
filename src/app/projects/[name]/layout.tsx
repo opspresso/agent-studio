@@ -15,7 +15,6 @@ import {
   IconRoute,
   IconSparkles,
 } from "@tabler/icons-react";
-import { useSession } from "@/lib/auth-client";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getProject } from "../lib/api";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
@@ -27,7 +26,9 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const name = params.name;
   const base = `/projects/${name}`;
 
-  const { data: session } = useSession();
+  // One source for "who is looking at this": `canEditProject` below reads the
+  // same viewer, and a second hook answering it is a second round trip and a
+  // second thing to keep in step.
   const viewer = useViewer();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
 
@@ -85,7 +86,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
           {ownerEmail && (
             <OwnerLine
               ownerEmail={ownerEmail}
-              isMine={session?.user.email === ownerEmail}
+              isMine={viewer?.email === ownerEmail}
               prefix="Owned by "
             />
           )}

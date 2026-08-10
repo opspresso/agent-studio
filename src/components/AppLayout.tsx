@@ -30,8 +30,7 @@ import {
   IconTool,
   IconUsers,
 } from "@tabler/icons-react";
-import { useSession } from "@/lib/auth-client";
-import { useViewer } from "@/app/_lib/useViewer";
+import type { Viewer } from "@/lib/viewer";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 import classes from "./AppLayout.module.css";
@@ -73,9 +72,12 @@ function isActive(pathname: string, href: string): boolean {
 
 export function AppLayout({
   version,
+  viewer,
   children,
 }: {
   version: string;
+  /** Resolved by the root layout; `null` when nobody is signed in. */
+  viewer: Viewer | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -84,13 +86,13 @@ export function AppLayout({
   /*
    * Every nav target is behind the sign-in gate, so offering them to a
    * signed-out visitor is a row of links that only bounce back to /login.
-   * `isPending` counts as signed in: on a gated page the user always is, and
-   * treating the initial fetch as signed-out would blink the whole nav out and
-   * back on every page load.
+   *
+   * This is a prop rather than `useSession()` because the answer has to be the
+   * same on both sides of hydration: the hook has no cookie during SSR, so it
+   * said `isPending`, the server drew the whole nav for everyone, and a
+   * signed-out visitor watched it vanish. The root layout says why.
    */
-  const { data: session, isPending } = useSession();
-  const viewer = useViewer();
-  const showNav = isPending || session !== null;
+  const showNav = viewer !== null;
 
   return (
     <AppShell
@@ -130,12 +132,20 @@ export function AppLayout({
             )}
             <Group gap="xs" ml="auto" wrap="nowrap">
               <ThemeToggle />
-              <UserMenu />
+              <UserMenu email={viewer?.email ?? null} />
             </Group>
           </Group>
       </AppShell.Header>
 
+      {/*
+       * Collapsing it is not enough: a collapsed navbar is still in the
+       * document, so a signed-out visitor was shipped every link in the studio
+       * and only CSS kept them out of sight. `src/proxy.ts` turns that visitor
+       * away precisely so the shape of the workspace does not reach them.
+       */}
       <AppShell.Navbar className={classes.navbar} p="md">
+        {showNav && (
+        <>
         <Group justify="space-between" mb="lg">
           <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.14em">
             Studio navigation
@@ -197,6 +207,8 @@ export function AppLayout({
             Studio online · v{version}
           </Text>
         </div>
+        </>
+        )}
       </AppShell.Navbar>
 
       <AppShell.Main>

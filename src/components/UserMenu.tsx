@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Group, Skeleton, Text } from "@mantine/core";
-import { signOut, useSession } from "@/lib/auth-client";
+import { Button, Group, Text } from "@mantine/core";
+import { signOut } from "@/lib/auth-client";
 import { SignInButton } from "./SignInButton";
 
-export function UserMenu() {
-  const { data: session, isPending } = useSession();
+/**
+ * `email` comes from the root layout's server-resolved viewer, not from
+ * `useSession()`. The hook has no cookie during SSR, so this rendered a
+ * loading skeleton on the client over a server-rendered sign-out button —
+ * a hydration mismatch on every page. See `src/app/layout.tsx`.
+ */
+export function UserMenu({ email }: { email: string | null }) {
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
@@ -19,18 +24,14 @@ export function UserMenu() {
     }
   }
 
-  if (isPending) {
-    return <Skeleton height={32} circle />;
-  }
-
-  if (!session) {
+  if (email === null) {
     return <SignInButton compact />;
   }
 
   return (
     <Group gap="xs" wrap="nowrap">
       <Text fz="sm" c="dimmed" truncate maw={210} visibleFrom="lg">
-        {session.user.email}
+        {email}
       </Text>
       <Button
         variant="default"

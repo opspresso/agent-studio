@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { Viewer } from "@/lib/viewer";
 
-export interface Viewer {
-  email: string;
-  /** May mutate shared registries and app settings. */
-  isAdmin: boolean;
-  /**
-   * May write a project owned by someone else. Not the same question as
-   * {@link isAdmin} and not interchangeable with it — see `/api/me`.
-   */
-  isConfiguredAdmin: boolean;
-}
+/**
+ * Re-exported so a page keeps importing the viewer's shape from the hook that
+ * hands it over. The shape itself is owned by `src/lib/viewer.ts`, next to the
+ * one derivation of its flags — type-only here, so nothing server-side follows
+ * it into the browser bundle.
+ */
+export type { Viewer };
 
 /**
  * The signed-in user plus whether they are an admin.
