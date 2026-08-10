@@ -316,6 +316,47 @@ describe("runAgent tool loop", () => {
     expect(rejection?.toolResult?.content).toContain("max_turn reached");
   });
 
+  /**
+   * The tool's `agent_name` is an enum, but an enum is advisory — a model that
+   * invents a name used to have the transfer attempted, refused a layer down as
+   * an authored `error`, and reported to the reader as a delegation that came
+   * back empty. It is a call the model can retry, so it is answered like an
+   * unloadable skill: a tool error naming what it could have asked for.
+   */
+  it("refuses a transfer to an agent the run never offered", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"nope","message":"hi"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("answered myself"), usageChunk(1, 1)],
+    ]);
+    const runSubagent = vi.fn(async function* (): AsyncGenerator<EngineChunk, string> {
+      return "never";
+    });
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async () => {}, runSubagent },
+        {
+          projectName: "parent",
+          model: MODEL,
+          messages: [{ role: "user", content: "delegate" }],
+          subagents: [{ name: "child", description: "a child agent", type: "local" }],
+        },
+      ),
+    );
+
+    expect(runSubagent).not.toHaveBeenCalled();
+    const rejection = chunks.find((c) => c.toolResult?.name === "transfer_to_agent");
+    expect(rejection?.toolResult?.content).toContain("'nope' is not connected");
+    // The alternatives, so the next turn can be right.
+    expect(rejection?.toolResult?.content).toContain("Available agents: child");
+    // A model's own mistake is not a loss the user has to be told about, and
+    // the run answers past it.
+    expect(chunks.some((c) => c.warning)).toBe(false);
+    expect(chunks.some((c) => c.done)).toBe(true);
+  });
+
   it("keeps top-level chunks unauthored when subagents are wired", async () => {
     const channel = new FakeChannel([
       [toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"hi"}'), usageChunk(1, 1)],

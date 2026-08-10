@@ -98,6 +98,17 @@ injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
 - A transfer passes the model-written message **and** the bytes of any `image_ids`, so a
   child edits the real picture instead of a description of it. An unknown id fails the
   transfer with the available ids listed, rather than silently transferring without it.
+- **An agent the run never offered is refused before the transfer is attempted**, with the
+  offered names listed — the same answer an unloadable skill and an unknown image id get.
+  `agent_name` is an enum on both tools, but an enum is advisory and a model that invents a
+  name is routine. Attempted, it was refused a layer down as an authored `error` chunk, which
+  the engine then reported as a lost delegation: a warning in the user's face for a model
+  typo, a tool-result line promising an answer that was never coming, and "the agent returned
+  no answer" for the model, with no hint of the alternatives. The list checked against is the
+  one `assembleAgentRun` **offered** (it returns it, like `builtinNames`), never
+  `input.subagents` — what was offered and what is served come from one value. A dispatched
+  task is refused in the slot its shape already has, so the tasks beside it still run. The
+  runner's own unknown-name guard stays as the backstop.
 - A transfer also carries the **conversation so far**, as text — never as messages. A
   child is a different agent with its own system prompt: replayed turns would have it read
   the parent's answers as its own, and the parent's `tool_calls` would name tools the child

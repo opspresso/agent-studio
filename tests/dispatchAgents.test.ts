@@ -401,6 +401,33 @@ describe("dispatch_agents", () => {
     expect(result).toContain("not run");
   });
 
+  it("refuses a task naming an agent the run never offered, and runs the rest", async () => {
+    const started: string[] = [];
+    const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
+      started.push(agentName);
+      yield { author: agentName, delta: { content: agentName } };
+      return `${agentName} answered`;
+    };
+    const channel = new FakeChannel([
+      dispatchTurn([
+        { agent_name: "nope", message: "one" },
+        { agent_name: "beta", message: "two" },
+      ]),
+      [contentChunk("done"), usageChunk(1, 1)],
+    ]);
+
+    const result = dispatchResult(
+      await collect(runAgent({ channel, recordUsage: async () => {}, runSubagent }, inputWith())),
+    );
+
+    expect(started).toEqual(["beta"]);
+    expect(result).toContain("'nope' is not connected");
+    expect(result).toContain("Available agents: alpha, beta, gamma");
+    expect(result).toContain("beta answered");
+    // One task refused is not a failed call — the other answered.
+    expect(result.startsWith("Error:")).toBe(false);
+  });
+
   it("rejects a task with no agent_name without cancelling the others", async () => {
     const runSubagent: NonNullable<AgentDeps["runSubagent"]> = async function* (agentName) {
       yield { author: agentName, delta: { content: agentName } };
