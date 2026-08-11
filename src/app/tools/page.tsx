@@ -11,13 +11,13 @@ import {
   Button,
   Card,
   Group,
-  Modal,
   Stack,
   Text,
   Textarea,
   TextInput,
 } from "@mantine/core";
 import { IconTool } from "@tabler/icons-react";
+import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
@@ -160,8 +160,7 @@ function RegisterMcpModal({
     setRows([]);
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit() {
     setSubmitting(true);
     setError(null);
     try {
@@ -182,64 +181,53 @@ function RegisterMcpModal({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Register MCP server" size="lg">
-      <form onSubmit={submit}>
-        <Stack gap="md">
-          <TextInput
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            onBlur={() => setName(toSlug(name))}
-            placeholder="my-mcp"
-            required
-            description="Lowercase letters, digits, and hyphens only."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-          />
-          <TextInput
-            label="URL"
-            value={url}
-            onChange={(e) => setUrl(e.currentTarget.value)}
-            placeholder="https://example.com/mcp"
-            type="url"
-            required
-          />
-          <TextInput
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-            placeholder="One-line summary shown to the model"
-          />
-          <Textarea
-            label="Content (markdown)"
-            value={content}
-            onChange={(e) => setContent(e.currentTarget.value)}
-            placeholder="Setup steps, caveats, links…"
-            autosize
-            minRows={6}
-            maxRows={24}
-            description="Operator notes for the console. Not sent to the model — only the description is."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-            styles={monoInput}
-          />
+    <FormModal
+      opened={opened}
+      onClose={onClose}
+      title="Register MCP server"
+      error={error}
+      onSubmit={submit}
+      submitLabel="Register"
+      submitting={submitting}
+    >
+      <TextInput
+        label="Name"
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+        onBlur={() => setName(toSlug(name))}
+        placeholder="my-mcp"
+        required
+        description="Lowercase letters, digits, and hyphens only."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+      />
+      <TextInput
+        label="URL"
+        value={url}
+        onChange={(e) => setUrl(e.currentTarget.value)}
+        placeholder="https://example.com/mcp"
+        type="url"
+        required
+      />
+      <TextInput
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.currentTarget.value)}
+        placeholder="One-line summary shown to the model"
+      />
+      <Textarea
+        label="Content (markdown)"
+        value={content}
+        onChange={(e) => setContent(e.currentTarget.value)}
+        placeholder="Setup steps, caveats, links…"
+        autosize
+        minRows={6}
+        maxRows={24}
+        description="Operator notes for the console. Not sent to the model — only the description is."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+        styles={monoInput}
+      />
 
-          <HeaderRowsEditor rows={rows} onChange={setRows} />
-
-          {error && (
-            <Alert color="red" variant="light">
-              {error}
-            </Alert>
-          )}
-
-          <Group justify="flex-end" gap="xs">
-            <Button variant="default" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={submitting}>
-              Register
-            </Button>
-          </Group>
-        </Stack>
-      </form>
-    </Modal>
+      <HeaderRowsEditor rows={rows} onChange={setRows} />
+    </FormModal>
   );
 }

@@ -11,13 +11,13 @@ import {
   Button,
   Card,
   Group,
-  Modal,
   Stack,
   Text,
   Textarea,
   TextInput,
 } from "@mantine/core";
 import { IconBook2 } from "@tabler/icons-react";
+import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid } from "@/app/_components/CardGrid";
@@ -139,8 +139,7 @@ function CreateSkillModal({
     setContent("");
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit() {
     setSubmitting(true);
     setError(null);
     try {
@@ -155,53 +154,42 @@ function CreateSkillModal({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="New skill" size="lg">
-      <form onSubmit={submit}>
-        <Stack gap="md">
-          <TextInput
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            onBlur={() => setName(toSlug(name))}
-            placeholder="my-skill"
-            required
-            description="Lowercase letters, digits, and hyphens only."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-          />
-          <TextInput
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-            placeholder="One-line summary shown to the model"
-            required
-          />
-          <Textarea
-            label="Content (markdown)"
-            value={content}
-            onChange={(e) => setContent(e.currentTarget.value)}
-            placeholder="# Instructions…"
-            autosize
-            minRows={8}
-            maxRows={30}
-            styles={monoInput}
-          />
-
-          {error && (
-            <Alert color="red" variant="light">
-              {error}
-            </Alert>
-          )}
-
-          <Group justify="flex-end" gap="xs">
-            <Button variant="default" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={submitting}>
-              Create
-            </Button>
-          </Group>
-        </Stack>
-      </form>
-    </Modal>
+    <FormModal
+      opened={opened}
+      onClose={onClose}
+      title="New skill"
+      error={error}
+      onSubmit={submit}
+      submitLabel="Create"
+      submitting={submitting}
+    >
+      <TextInput
+        label="Name"
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+        onBlur={() => setName(toSlug(name))}
+        placeholder="my-skill"
+        required
+        description="Lowercase letters, digits, and hyphens only."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+      />
+      <TextInput
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.currentTarget.value)}
+        placeholder="One-line summary shown to the model"
+        required
+      />
+      <Textarea
+        label="Content (markdown)"
+        value={content}
+        onChange={(e) => setContent(e.currentTarget.value)}
+        placeholder="# Instructions…"
+        autosize
+        minRows={8}
+        maxRows={30}
+        styles={monoInput}
+      />
+    </FormModal>
   );
 }

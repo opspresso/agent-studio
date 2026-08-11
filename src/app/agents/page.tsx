@@ -20,7 +20,6 @@ import {
   Button,
   Card,
   Group,
-  Modal,
   Select,
   Stack,
   Text,
@@ -28,6 +27,7 @@ import {
   Title,
 } from "@mantine/core";
 import { IconRobot } from "@tabler/icons-react";
+import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL, BADGE } from "@/app/_components/badgeColors";
@@ -192,8 +192,7 @@ function RegisterAgentModal({
     setRows([]);
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit() {
     setSubmitting(true);
     setError(null);
     try {
@@ -208,70 +207,59 @@ function RegisterAgentModal({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Register external agent" size="lg">
-      <form onSubmit={submit}>
-        <Stack gap="md">
-          <TextInput
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            onBlur={() => setName(toSlug(name))}
-            placeholder="my-agent"
-            required
-            description="Lowercase letters, digits, and hyphens only."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-          />
-          <Select
-            label="Protocol"
-            value={protocol}
-            onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
-            allowDeselect={false}
-            data={[
-              { value: "openai", label: "OpenAI-compatible" },
-              { value: "a2a", label: "A2A" },
-            ]}
-          />
-          <TextInput
-            label={protocol === "a2a" ? "Agent Card URL" : "URL"}
-            value={url}
-            onChange={(e) => setUrl(e.currentTarget.value)}
-            placeholder={
-              protocol === "a2a"
-                ? "https://example.com/.well-known/agent-card.json"
-                : "https://example.com/v1/chat/completions"
-            }
-            type="url"
-            required
-          />
-          <TextInput
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-            required
-          />
+    <FormModal
+      opened={opened}
+      onClose={onClose}
+      title="Register external agent"
+      error={error}
+      onSubmit={submit}
+      submitLabel="Register"
+      submitting={submitting}
+    >
+      <TextInput
+        label="Name"
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+        onBlur={() => setName(toSlug(name))}
+        placeholder="my-agent"
+        required
+        description="Lowercase letters, digits, and hyphens only."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+      />
+      <Select
+        label="Protocol"
+        value={protocol}
+        onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
+        allowDeselect={false}
+        data={[
+          { value: "openai", label: "OpenAI-compatible" },
+          { value: "a2a", label: "A2A" },
+        ]}
+      />
+      <TextInput
+        label={protocol === "a2a" ? "Agent Card URL" : "URL"}
+        value={url}
+        onChange={(e) => setUrl(e.currentTarget.value)}
+        placeholder={
+          protocol === "a2a"
+            ? "https://example.com/.well-known/agent-card.json"
+            : "https://example.com/v1/chat/completions"
+        }
+        type="url"
+        required
+      />
+      <TextInput
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.currentTarget.value)}
+        required
+      />
 
-          <HeaderRowsEditor
-            rows={rows}
-            onChange={setRows}
-            emptyHint="No headers. Add one if the endpoint needs auth."
-          />
-
-          {error && (
-            <Alert color="red" variant="light">
-              {error}
-            </Alert>
-          )}
-
-          <Group justify="flex-end" gap="xs">
-            <Button variant="default" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={submitting}>
-              Register
-            </Button>
-          </Group>
-        </Stack>
-      </form>
-    </Modal>
+      <HeaderRowsEditor
+        rows={rows}
+        onChange={setRows}
+        emptyHint="No headers. Add one if the endpoint needs auth."
+      />
+    </FormModal>
   );
 }

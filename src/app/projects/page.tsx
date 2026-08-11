@@ -8,7 +8,6 @@ import {
   Button,
   Card,
   Group,
-  Modal,
   Stack,
   Text,
   Textarea,
@@ -16,6 +15,7 @@ import {
   Select,
 } from "@mantine/core";
 import { IconFolder } from "@tabler/icons-react";
+import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
 import { useSession } from "@/lib/auth-client";
 import { toSlug } from "@/shared/slug";
@@ -150,8 +150,7 @@ function CreateProjectModal({
     setProjectType("llm");
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit() {
     setSubmitting(true);
     setError(null);
     try {
@@ -172,64 +171,53 @@ function CreateProjectModal({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="New project" size="lg">
-      <form onSubmit={submit}>
-        <Stack gap="md">
-          <TextInput
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            onBlur={() => setName(toSlug(name))}
-            placeholder="my-project"
-            required
-            description="Lowercase letters, digits, and hyphens only. Immutable identifier."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-          />
-          <TextInput
-            label="Display name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.currentTarget.value)}
-            placeholder="My Project"
-          />
-          <Textarea
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-            autosize
-            minRows={3}
-            maxRows={12}
-          />
-          <TextInput
-            label="Department code"
-            value={departmentCode}
-            onChange={(e) => setDepartmentCode(e.currentTarget.value)}
-            placeholder="ENG"
-            description="Optional code used to group project ownership and costs."
-          />
-          <Select
-            label="Type"
-            value={projectType}
-            onChange={(value) => setProjectType((value ?? "llm") as ProjectType)}
-            data={TYPE_OPTIONS}
-            allowDeselect={false}
-          />
-
-          {error && (
-            <Alert color="red" variant="light">
-              {error}
-            </Alert>
-          )}
-
-          <Group justify="flex-end" gap="xs">
-            <Button variant="default" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={submitting}>
-              Create
-            </Button>
-          </Group>
-        </Stack>
-      </form>
-    </Modal>
+    <FormModal
+      opened={opened}
+      onClose={onClose}
+      title="New project"
+      error={error}
+      onSubmit={submit}
+      submitLabel="Create"
+      submitting={submitting}
+    >
+      <TextInput
+        label="Name"
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+        onBlur={() => setName(toSlug(name))}
+        placeholder="my-project"
+        required
+        description="Lowercase letters, digits, and hyphens only. Immutable identifier."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+      />
+      <TextInput
+        label="Display name"
+        value={displayName}
+        onChange={(e) => setDisplayName(e.currentTarget.value)}
+        placeholder="My Project"
+      />
+      <Textarea
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.currentTarget.value)}
+        autosize
+        minRows={3}
+        maxRows={12}
+      />
+      <TextInput
+        label="Department code"
+        value={departmentCode}
+        onChange={(e) => setDepartmentCode(e.currentTarget.value)}
+        placeholder="ENG"
+        description="Optional code used to group project ownership and costs."
+      />
+      <Select
+        label="Type"
+        value={projectType}
+        onChange={(value) => setProjectType((value ?? "llm") as ProjectType)}
+        data={TYPE_OPTIONS}
+        allowDeselect={false}
+      />
+    </FormModal>
   );
 }

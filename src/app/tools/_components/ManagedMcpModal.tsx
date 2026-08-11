@@ -11,18 +11,8 @@
  */
 
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Code,
-  Group,
-  Modal,
-  NumberInput,
-  Stack,
-  Text,
-  Textarea,
-  TextInput,
-} from "@mantine/core";
+import { Code, NumberInput, Textarea, TextInput } from "@mantine/core";
+import { FormModal } from "@/app/_components/FormModal";
 import { monoInput } from "@/app/_components/monoInput";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { createManagedMcp } from "../api";
@@ -69,8 +59,7 @@ export function ManagedMcpModal({
     setRows([]);
   }
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
+  async function submit() {
     setSubmitting(true);
     setError(null);
     try {
@@ -104,128 +93,112 @@ export function ManagedMcpModal({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Run a managed MCP server" size="lg">
-      <form onSubmit={submit}>
-        <Stack gap="md">
-          {error && (
-            <Alert color="red" variant="light">
-              {error}
-            </Alert>
-          )}
-          <TextInput
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            placeholder="image-fetch"
-            pattern={MANAGED_NAME.source}
-            required
-            description="Also the container's name, so the two stay findable together."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-          />
-          <TextInput
-            label="Image"
-            value={image}
-            onChange={(e) => setImage(e.currentTarget.value)}
-            placeholder="…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1"
-            required
-            description="Any registry the host can pull from — its own ECR needs no credentials."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-            styles={monoInput}
-          />
-          <NumberInput
-            label="Container port"
-            value={containerPort}
-            onChange={(value) => setContainerPort(String(value))}
-            min={1}
-            max={65535}
-            required
-            description={
-              <>
-                What it listens on inside itself. The deployed runtime shares this app&apos;s
-                network namespace rather than mapping ports, so the container is told which port
-                to bind and has to honour <Code>PORT</Code>.
-              </>
-            }
-            inputWrapperOrder={["label", "input", "description", "error"]}
-          />
-          <TextInput
-            label="Environment references"
-            value={envRefs}
-            onChange={(e) => setEnvRefs(e.currentTarget.value)}
-            placeholder="/env/prod/mcp-image-fetch"
-            description="SSM parameter names, not values — the secrets never pass through here."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-            styles={monoInput}
-          />
-          <HeaderRowsEditor
-            rows={environmentRows}
-            onChange={setEnvironmentRows}
-            caption="Environment variables"
-            emptyHint="No direct environment variables."
-            addLabel="+ Add variable"
-            keyPlaceholder="VARIABLE_NAME"
-            valuePlaceholder="value"
-          />
-          <Textarea
-            label="Arguments"
-            value={args}
-            onChange={(e) => setArgs(e.currentTarget.value)}
-            placeholder={
-              "--transport\nstreamable-http\n--address\n0.0.0.0:{{PORT}}\n--allowed-hosts\n*"
-            }
-            autosize
-            minRows={3}
-            description="One container entrypoint argument per line. {{PORT}} becomes the effective listen port; arguments are not run through a shell."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-            styles={monoInput}
-          />
-          <TextInput
-            label="Endpoint path"
-            value={endpointPath}
-            onChange={(e) => setEndpointPath(e.currentTarget.value)}
-            placeholder="/mcp"
-            required
-            styles={monoInput}
-          />
-          <TextInput
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-            placeholder="Fetches an image URL and returns its bytes"
-          />
-          <Textarea
-            label="Content (markdown)"
-            value={content}
-            onChange={(e) => setContent(e.currentTarget.value)}
-            placeholder="Setup steps, caveats, links…"
-            autosize
-            minRows={6}
-            maxRows={24}
-            description="Operator notes for the console. Not sent to the model — only the description is."
-            inputWrapperOrder={["label", "input", "description", "error"]}
-            styles={monoInput}
-          />
+    <FormModal
+      opened={opened}
+      onClose={onClose}
+      title="Run a managed MCP server"
+      error={error}
+      onSubmit={submit}
+      submitLabel="Start"
+      submitting={submitting}
+      submitDisabled={!name || !image}
+      hint="Starts a container on this host, reachable only from it."
+    >
+      <TextInput
+        label="Name"
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+        placeholder="image-fetch"
+        pattern={MANAGED_NAME.source}
+        required
+        description="Also the container's name, so the two stay findable together."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+      />
+      <TextInput
+        label="Image"
+        value={image}
+        onChange={(e) => setImage(e.currentTarget.value)}
+        placeholder="…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1"
+        required
+        description="Any registry the host can pull from — its own ECR needs no credentials."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+        styles={monoInput}
+      />
+      <NumberInput
+        label="Container port"
+        value={containerPort}
+        onChange={(value) => setContainerPort(String(value))}
+        min={1}
+        max={65535}
+        required
+        description={
+          <>
+            What it listens on inside itself. The deployed runtime shares this app&apos;s
+            network namespace rather than mapping ports, so the container is told which port
+            to bind and has to honour <Code>PORT</Code>.
+          </>
+        }
+        inputWrapperOrder={["label", "input", "description", "error"]}
+      />
+      <TextInput
+        label="Environment references"
+        value={envRefs}
+        onChange={(e) => setEnvRefs(e.currentTarget.value)}
+        placeholder="/env/prod/mcp-image-fetch"
+        description="SSM parameter names, not values — the secrets never pass through here."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+        styles={monoInput}
+      />
+      <HeaderRowsEditor
+        rows={environmentRows}
+        onChange={setEnvironmentRows}
+        caption="Environment variables"
+        emptyHint="No direct environment variables."
+        addLabel="+ Add variable"
+        keyPlaceholder="VARIABLE_NAME"
+        valuePlaceholder="value"
+      />
+      <Textarea
+        label="Arguments"
+        value={args}
+        onChange={(e) => setArgs(e.currentTarget.value)}
+        placeholder={
+          "--transport\nstreamable-http\n--address\n0.0.0.0:{{PORT}}\n--allowed-hosts\n*"
+        }
+        autosize
+        minRows={3}
+        description="One container entrypoint argument per line. {{PORT}} becomes the effective listen port; arguments are not run through a shell."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+        styles={monoInput}
+      />
+      <TextInput
+        label="Endpoint path"
+        value={endpointPath}
+        onChange={(e) => setEndpointPath(e.currentTarget.value)}
+        placeholder="/mcp"
+        required
+        styles={monoInput}
+      />
+      <TextInput
+        label="Description"
+        value={description}
+        onChange={(e) => setDescription(e.currentTarget.value)}
+        placeholder="Fetches an image URL and returns its bytes"
+      />
+      <Textarea
+        label="Content (markdown)"
+        value={content}
+        onChange={(e) => setContent(e.currentTarget.value)}
+        placeholder="Setup steps, caveats, links…"
+        autosize
+        minRows={6}
+        maxRows={24}
+        description="Operator notes for the console. Not sent to the model — only the description is."
+        inputWrapperOrder={["label", "input", "description", "error"]}
+        styles={monoInput}
+      />
 
-          <HeaderRowsEditor rows={rows} onChange={setRows} />
-
-          <Group
-            justify="flex-end"
-            gap="sm"
-            pt="sm"
-            style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
-          >
-            <Text fz="xs" c="dimmed" mr="auto">
-              Starts a container on this host, reachable only from it.
-            </Text>
-            <Button variant="default" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={submitting} disabled={!name || !image}>
-              Start
-            </Button>
-          </Group>
-        </Stack>
-      </form>
-    </Modal>
+      <HeaderRowsEditor rows={rows} onChange={setRows} />
+    </FormModal>
   );
 }
