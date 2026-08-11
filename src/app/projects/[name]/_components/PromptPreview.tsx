@@ -61,6 +61,7 @@ export function PromptPreview({
   const [preview, setPreview] = useState<PromptPreview | null>(null);
   const [previewOf, setPreviewOf] = useState<string>("");
   const [variables, setVariables] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,7 +69,11 @@ export function PromptPreview({
     () => [...findTemplateVariables(`${draft.systemPrompt}\n${draft.userPromptTemplate}`)],
     [draft.systemPrompt, draft.userPromptTemplate],
   );
-  const current = JSON.stringify({ draft, variables });
+  // Only discovery reads the request, so the box is offered only where it
+  // changes the answer — anywhere else it would suggest the prompt depends on
+  // the turn, which for an agent run it does not.
+  const usesRequest = draft.parameters.dynamicCapabilities === true;
+  const current = JSON.stringify({ draft, variables, message });
   const stale = preview !== null && previewOf !== current;
 
   async function refresh() {
@@ -79,9 +84,10 @@ export function PromptPreview({
         ...draft,
         ...(versionName ? { versionName } : {}),
         variables,
+        ...(usesRequest && message.trim() ? { message } : {}),
       });
       setPreview(result);
-      setPreviewOf(JSON.stringify({ draft, variables }));
+      setPreviewOf(JSON.stringify({ draft, variables, message }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to build the preview");
     } finally {
@@ -148,6 +154,16 @@ export function PromptPreview({
             ))}
           </Stack>
         </Input.Wrapper>
+      )}
+
+      {usesRequest && (
+        <TextInput
+          label="Request"
+          description="Searched against the registry alongside the system prompt. Leave it empty to see what every run starts with."
+          placeholder="e.g. aws eks 최신 버전 알려줘"
+          value={message}
+          onChange={(e) => setMessage(e.currentTarget.value)}
+        />
       )}
 
       {error && (

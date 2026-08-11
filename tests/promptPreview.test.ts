@@ -325,4 +325,107 @@ describe("previewPrompt", () => {
 
     expect(preview.warnings.some((w) => w.includes("PII"))).toBe(true);
   });
+
+  /**
+   * A version with discovery on sends a prompt its author never typed, and this
+   * panel is the only place they can read it before a run happens. A preview
+   * that skipped the search would describe a smaller prompt than the version
+   * actually sends — the same drift the caller block once had, and silent.
+   */
+  describe("with capability discovery on", () => {
+    /** A catalog that answers one skill, and records what it was asked. */
+    function catalogFor(queries: string[][]) {
+      return {
+        embeddings: {
+          embed: async (texts: readonly string[]) => {
+            queries.push([...texts]);
+            return texts.map(() => [1]);
+          },
+        },
+        catalog: {
+          upsert: async () => {},
+          deleteByKeys: async () => {},
+          listKeys: async () => [],
+          query: async (_v: readonly number[], _k: number, filter?: Record<string, unknown>) =>
+            filter?.kind === "skill"
+              ? [{ key: "skill#greeting", score: 0.9, metadata: { name: "greeting", description: "Says hi" } }]
+              : [],
+        },
+      };
+    }
+
+    it("shows a capability the search found, not just what the version bound", async () => {
+      const queries: string[][] = [];
+      const deps = executionDepsFixture(new FakeChannel([]));
+      wireRegistry(deps);
+      deps.catalog = catalogFor(queries);
+
+      const preview = await previewPrompt(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture(),
+          parameters: { piiFiltering: false, dynamicCapabilities: true },
+        },
+        message: "say hello to the customer",
+      });
+
+      const system = preview.messages.find((m) => m.role === "system")?.content ?? "";
+      expect(system).toContain("greeting");
+      expect(preview.warnings.some((w) => w.startsWith("Found "))).toBe(true);
+    });
+
+    it("searches on the request as well as the system prompt", async () => {
+      // Which capabilities a run finds depends on what it is being asked, so a
+      // preview that ignored the request could only ever show the floor.
+      const queries: string[][] = [];
+      const deps = executionDepsFixture(new FakeChannel([]));
+      wireRegistry(deps);
+      deps.catalog = catalogFor(queries);
+
+      await previewPrompt(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture(),
+          parameters: { piiFiltering: false, dynamicCapabilities: true },
+        },
+        message: "say hello to the customer",
+      });
+
+      expect(queries[0]).toEqual(["You are helpful.", "say hello to the customer"]);
+    });
+
+    it("previews the floor every run starts from when no request is given", async () => {
+      const queries: string[][] = [];
+      const deps = executionDepsFixture(new FakeChannel([]));
+      wireRegistry(deps);
+      deps.catalog = catalogFor(queries);
+
+      const preview = await previewPrompt(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture(),
+          parameters: { piiFiltering: false, dynamicCapabilities: true },
+        },
+      });
+
+      expect(queries[0]).toEqual(["You are helpful."]);
+      expect(preview.messages.find((m) => m.role === "system")?.content).toContain("greeting");
+    });
+
+    it("leaves a version that did not opt in exactly as it was", async () => {
+      const queries: string[][] = [];
+      const deps = executionDepsFixture(new FakeChannel([]));
+      wireRegistry(deps);
+      deps.catalog = catalogFor(queries);
+
+      const preview = await previewPrompt(deps, {
+        project: projectFixture(),
+        version: versionFixture(),
+        message: "say hello to the customer",
+      });
+
+      expect(queries).toEqual([]);
+      expect(preview.messages.find((m) => m.role === "system")?.content).not.toContain("greeting");
+    });
+  });
 });

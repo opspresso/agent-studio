@@ -6,7 +6,7 @@ import { renderTemplate } from "@/shared/template";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
 import { callerFor, runClock, runStrategyFor } from "./deps";
-import { resolveRunTools } from "./bindings";
+import { discoveryQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 
@@ -22,6 +22,12 @@ import { buildAgentDeps } from "./subagentRunner";
  * way the tool names are the true ones — so the sessions this opens are
  * released before returning.
  *
+ * A version with `dynamicCapabilities` on searches the catalog here too, on the
+ * same two queries a run uses. Skipping it would put the preview back where the
+ * caller block once had it: describing a smaller prompt than the version
+ * actually sends, and silently — the discovered rows are the ones an author has
+ * no other way to see.
+ *
  * PII masking is not applied: it rewrites content per run, and what a run masks
  * depends on the turn's own text. A version with the filter on says so in its
  * warnings instead.
@@ -32,6 +38,17 @@ export async function previewPrompt(
     project: Project;
     version: Version;
     variables?: Record<string, string>;
+    /**
+     * The request to preview against, when there is one.
+     *
+     * Only discovery reads it — an agent run's user turn comes from the
+     * conversation, and the assembled prompt below still stands before the
+     * first one. But *which* capabilities a run finds depends on what it is
+     * being asked, so without this the preview can only show what the system
+     * prompt alone pulls in: the floor of every run rather than the shape of
+     * any particular one.
+     */
+    message?: string;
     /**
      * Who is previewing. Reaches the prompt on the same condition a run's does
      * — the version's `callerContext` opt-in — because a preview that showed
@@ -91,7 +108,12 @@ export async function previewPrompt(
       "An agent run does not send the user prompt template; the conversation supplies the user turn.",
     );
   }
-  const resolved = await resolveRunTools(deps, version);
+  const resolved = await resolveRunTools(
+    deps,
+    version,
+    undefined,
+    discoveryQueries(version, input.message),
+  );
   try {
     // The same deps a run is given: whether the image section and the image
     // tools appear is decided from them, not from the version alone.
