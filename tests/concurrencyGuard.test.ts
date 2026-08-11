@@ -5,8 +5,8 @@ import {
   limitFor,
   type ConcurrencyGuardDeps,
   type ConcurrencyLimits,
-} from "@/application/execution/concurrencyGuard";
-import { openRun } from "@/application/execution/runBracket";
+} from "@/application/run/concurrencyGuard";
+import { openRun } from "@/application/run/runBracket";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";

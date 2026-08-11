@@ -93,7 +93,11 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
   Infrastructure may import it; application may reach only its pure leaves (today
   `runMetrics`); domain never touches it.
 - `src/shared/` — dependency-free helpers. The bottom of the graph: it imports nothing from
-  `@/`.
+  `@/`. Before adding here, ask whether the helper is really domain vocabulary — a name
+  rule, a format a domain type owns: that belongs in `domain/`, which is pure TS and
+  client-bundle-safe, so "a client component needs it too" is never by itself a reason to
+  put a rule at the bottom. `shared` is for helpers no layer owns (stream plumbing, text
+  cutting, timers).
 
 Composition happens at exactly four wiring sites: `src/lib/container.ts` (repositories, the
 domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
@@ -163,10 +167,10 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
 | What a 401 from an MCP server means | `src/infrastructure/mcp/session.ts` |
 | The name a provider will accept for an MCP tool | `src/infrastructure/mcp/toolManager.ts` |
-| How many agents one dispatch may run | `src/application/llm/engine.ts` |
-| How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/engine.ts` |
+| How many agents one dispatch may run | `src/application/llm/agentAssembly.ts` |
+| How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/agentAssembly.ts` |
 | Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |
-| Whether a run's trace is sampled | `src/application/execution/traceLifecycle.ts` |
+| Whether a run's trace is sampled | `src/application/run/traceLifecycle.ts` |
 | Evaluating when a schedule fires | `src/domain/trigger/cron.ts` |
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
@@ -176,10 +180,10 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The 401 response body | `src/shared/unauthorized.ts` |
 | The code a refused sign-in is identified by | `src/shared/signInError.ts` |
 | Writing to the console | `src/shared/logger.ts` |
-| What wraps a top-level run | `src/application/execution/runBracket.ts` |
+| What wraps a top-level run | `src/application/run/runBracket.ts` |
 | Which project type runs which way | `src/application/execution/deps.ts` |
 | Whether a run's prompt may name its caller | `callerFor` in `src/application/execution/deps.ts` |
-| What a tool result has to do, and in what order | `createToolResultEmitter` in `src/application/llm/engine.ts` |
+| What a tool result has to do, and in what order | `createToolResultEmitter` in `src/application/llm/toolResultBudget.ts` |
 | How the execution facade dispatches an agent project | `src/application/execution/deps.ts` |
 | How a Slack reply is delivered | `src/application/slack/replyStream.ts` |
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |

@@ -10,8 +10,8 @@ import { TraceRecorder } from "@/application/trace/recorder";
 import { actorKey, type RunActor } from "@/domain/execution/actor";
 import { recordUsage } from "@/application/usage/recordUsage";
 import { withRunDeadline } from "@/shared/runDeadline";
-import { openRun, type RunBracketDeps } from "@/application/execution/runBracket";
-import { traceSampled } from "@/application/execution/traceLifecycle";
+import { openRun, type RunBracketDeps } from "@/application/run/runBracket";
+import { traceSampled } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
 
 /**

@@ -1,7 +1,5 @@
-import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import type { RunCaller } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
-import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
 import { log } from "@/shared/logger";
@@ -22,11 +20,20 @@ export interface ActorUsageView extends ActorUsageRow {
   display?: { name: string; avatarUrl?: string };
 }
 
+/** A profile lookup already bound to one project's bot token. */
+export type SlackProfileReader = (userId: string) => Promise<RunCaller | null>;
+
 export interface ListActorsDeps {
   usage: UsageRepository;
-  cipher: SecretCipher;
-  /** `slackClient.userProfile`, injected so this stays free of the HTTP client. */
-  resolveSlackProfile: (botToken: string, userId: string) => Promise<RunCaller | null>;
+  /**
+   * The project's Slack profile lookup, token resolution included — `null` for
+   * a project with no enabled bot, which is what lets the read skip the whole
+   * enrichment pass. A factory rather than a client and a cipher: which token a
+   * project reads with is the slack slice's knowledge, and importing its
+   * resolver from here dragged that slice into every consumer of usage. The
+   * composition root closes over both instead.
+   */
+  profileReaderFor: (project: Project) => SlackProfileReader | null;
 }
 
 /**
@@ -52,8 +59,8 @@ export async function listProjectActors(
       .filter((row) => row.actor.startsWith(SLACK_ACTOR_PREFIX))
       .map((row) => row.actor.slice(SLACK_ACTOR_PREFIX.length)),
   );
-  const runtime = resolveProjectSlackRuntime(deps.cipher, project);
-  if (slackIds.size === 0 || !runtime) {
+  const readProfile = deps.profileReaderFor(project);
+  if (slackIds.size === 0 || !readProfile) {
     return rows;
   }
 
@@ -67,7 +74,7 @@ export async function listProjectActors(
     await Promise.all(
       pending.slice(start, start + PROFILE_BATCH_SIZE).map(async (userId) => {
         try {
-          const profile = await deps.resolveSlackProfile(runtime.botToken, userId);
+          const profile = await readProfile(userId);
           if (profile) {
             profiles.set(userId, profile);
           }

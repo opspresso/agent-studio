@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { log } from "@/shared/logger";
 import { currentRunContext, linkTrace, withRunContext } from "@/shared/runContext";
-import { openRun } from "@/application/execution/runBracket";
+import { openRun } from "@/application/run/runBracket";
 import {
   DURATION_BUCKETS_SECONDS,
   endRun,

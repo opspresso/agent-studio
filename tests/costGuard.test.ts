@@ -6,7 +6,7 @@ import {
   settleCostLimit,
   type CostGuardDeps,
 } from "@/application/usage/costGuard";
-import { openRun } from "@/application/execution/runBracket";
+import { openRun } from "@/application/run/runBracket";
 import { runLocalSubagent } from "@/application/execution/subagentRunner";
 import {
   executeAgent,
@@ -99,15 +99,20 @@ function fixture(
   return {
     deps: {
       usage,
-      cipher: { decrypt: (value: string) => value.replace("enc:", "") } as CostGuardDeps["cipher"],
       ...(opts.withSlack === false
         ? {}
         : {
-            slack: {
-              async postMessage(token, args) {
-                posted.push({ token, ...args });
-                return { ts: "1", channel: args.channel };
-              },
+            // The composition root's closure, emulated: resolve the project's
+            // own token, or report that it has no notification path.
+            postAlert: async (target, args) => {
+              const token = target.slack?.enabled
+                ? target.slack.botToken.replace("enc:", "")
+                : null;
+              if (!token) {
+                return false;
+              }
+              posted.push({ token, ...args });
+              return true;
             },
           }),
     },
@@ -365,11 +370,8 @@ describe("settleCostLimit", () => {
     listByProject: async () => [],
         listByDateRange: async () => [],
       },
-      cipher: { decrypt: (v: string) => v } as CostGuardDeps["cipher"],
-      slack: {
-        postMessage: async () => {
-          throw new Error("slack is down");
-        },
+      postAlert: async () => {
+        throw new Error("slack is down");
       },
     };
     await expect(

@@ -22,7 +22,7 @@ import type { McpConnectionRepository } from "@/domain/mcp/connection";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
-import type { RunBracketDeps } from "./runBracket";
+import type { RunBracketDeps } from "@/application/run/runBracket";
 
 /**
  * Extends the run bracket's deps rather than restating them: every entry point

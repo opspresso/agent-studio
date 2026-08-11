@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { traceSampled } from "@/application/execution/traceLifecycle";
+import { traceSampled } from "@/application/run/traceLifecycle";
 import type { TraceRepository } from "@/domain/trace/repository";
 
 const traces = {} as TraceRepository;

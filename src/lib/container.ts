@@ -69,8 +69,8 @@ import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
-import type { CostAlertSlack } from "@/application/usage/costGuard";
-import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
+import type { PostCostAlert } from "@/application/usage/costGuard";
+import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
@@ -88,7 +88,7 @@ import { createVersionUseCases } from "@/application/project/versionUseCases";
 import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
 import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
 import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClientKeyRepository";
-import { createProjectSlackUseCases } from "@/application/slack/projectSlack";
+import { createProjectSlackUseCases, resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import { createMemberUseCases } from "@/application/member/memberUseCases";
@@ -505,8 +505,13 @@ const slackUserProfile = async (botToken: string, userId: string) =>
 export const usageUseCases = createUsageUseCases({
   usage: usageRepository,
   projects: projectRepository,
-  cipher: secretCipher,
-  resolveSlackProfile: slackUserProfile,
+  // Token resolution closed over here: which token a project reads with is the
+  // slack slice's knowledge, and the usage slice takes a bound reader instead
+  // of the cipher-and-resolver pair it used to import for itself.
+  profileReaderFor: (project) => {
+    const runtime = resolveProjectSlackRuntime(secretCipher, project);
+    return runtime ? (userId) => slackUserProfile(runtime.botToken, userId) : null;
+  },
 });
 
 /**
@@ -547,11 +552,6 @@ export const readinessReport = () =>
   checkReadiness({ checkDb: dbReachable, checkLlm: () => llmReachable(getLlmChannelConfig) });
 
 /**
- * Slack access for the cost guard's threshold notification. Deferred like the
- * other Slack use so a route that only wanted a repository does not load the
- * client; the guard awaits it at the one point it actually posts.
- */
-/**
  * Per-caller concurrency ceilings. Read once here rather than at each guard
  * call: the numbers come from boot env, and a getter per run would re-parse
  * them on every request.
@@ -561,9 +561,22 @@ const concurrencyLimits: ConcurrencyLimits = {
   a2a: config.maxConcurrentRunsA2a,
 };
 
-const costAlertSlack: CostAlertSlack = {
-  postMessage: async (token, args) =>
-    (await import("@/infrastructure/slack/client")).slackClient.postMessage(token, args),
+/**
+ * The cost guard's threshold notification, token resolution included — the
+ * guard takes one closure so the usage slice never imports the slack slice's
+ * resolver. The client stays deferred, like every other Slack use here, so a
+ * route that only wanted a repository does not load it.
+ */
+const postCostAlert: PostCostAlert = async (project, args) => {
+  const runtime = resolveProjectSlackRuntime(secretCipher, project);
+  if (!runtime) {
+    return false;
+  }
+  await (await import("@/infrastructure/slack/client")).slackClient.postMessage(
+    runtime.botToken,
+    args,
+  );
+  return true;
 };
 
 /** Repository + channel bundle passed to the execution facade (executeVersion/Stream/Agent). */
@@ -587,7 +600,7 @@ export const executionDeps: ExecutionDeps = {
   internalHostSuffixes: config.mcpInternalHostSuffixes,
   traces: runTraceRepository,
   traceSampleRate: config.traceSampleRate,
-  slack: costAlertSlack,
+  postAlert: postCostAlert,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
   unknownModelPolicy: getUnknownModelPolicy,
@@ -599,8 +612,7 @@ export const imageDeps: ImageGenerationDeps = {
   usage: usageRepository,
   traces: runTraceRepository,
   traceSampleRate: config.traceSampleRate,
-  cipher: secretCipher,
-  slack: costAlertSlack,
+  postAlert: postCostAlert,
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
   unknownModelPolicy: getUnknownModelPolicy,

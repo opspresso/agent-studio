@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { openRun } from "@/application/execution/runBracket";
-import { assertModelsPriceable } from "@/application/execution/modelPolicy";
+import { openRun } from "@/application/run/runBracket";
+import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import {
   toUnknownModelPolicy,
   type UnknownModelPolicy,

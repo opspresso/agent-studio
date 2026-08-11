@@ -24,12 +24,12 @@ import { withRunDeadline } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
 import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
-import { openRun } from "./runBracket";
+import { openRun } from "@/application/run/runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { discoveryQueries, recentUserQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
-import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
+import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
 
 export type {

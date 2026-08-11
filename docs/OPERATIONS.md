@@ -209,7 +209,7 @@ is the deliberate division of the work, not an omission. See
 
 ## Spend and load guards
 
-Both hang off the run bracket (`src/application/execution/runBracket.ts`) and **fail in
+Both hang off the run bracket (`src/application/run/runBracket.ts`) and **fail in
 opposite directions on purpose**.
 
 ### Cost guard — fails open

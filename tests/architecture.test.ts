@@ -153,8 +153,19 @@ export function parseImports(source: string): ModuleImport[] {
   ];
 }
 
-/** `src/application/foo/bar.ts` → `application`. */
+/**
+ * `src/application/foo/bar.ts` → `application`. A file at the root of `src/`
+ * (`proxy.ts`, `instrumentation.ts`) has no directory to name a layer, so it
+ * was governed by nothing: an infrastructure import there would have passed
+ * every rule in this file — and `proxy.ts` is the single owner of which pages
+ * are public, exactly the file that must not drift quietly. Both are
+ * framework entry points, which is presentation-adjacent glue: they answer to
+ * `app`'s rules.
+ */
 function layerOf(relPath: string): string | null {
+  if (/^src\/[^/]+\.tsx?$/.test(relPath)) {
+    return "app";
+  }
   return /^src\/([^/]+)/.exec(relPath)?.[1] ?? null;
 }
 
@@ -206,6 +217,11 @@ const APP_WIRING_SITES = [
   // AGENTS.md's fourth wiring site (the composition root being the first).
   // Absent from this list it passed only because no banned name crossed it yet.
   "src/app/api/a2a/[name]/route.ts",
+  // The boot path: validates config, then composes the startup audit row and
+  // the managed-MCP resume directly — a wiring site by construction, since the
+  // composition root itself is not loaded until this file decides the runtime
+  // is the Node server.
+  "src/instrumentation.ts",
 ];
 
 /**
@@ -642,6 +658,125 @@ describe("composition in the app layer", () => {
 });
 
 /**
+ * The slice a file or an import specifier belongs to, within `application` —
+ * `src/application/execution/runProject.ts` and `@/application/execution/deps`
+ * are both `execution`; the single-file `errors.ts` kernel is its own slice.
+ */
+function applicationSliceOf(pathOrSpec: string): string | null {
+  const match =
+    /^(?:src|@)\/application\/([^/]+)\//.exec(pathOrSpec) ??
+    /^(?:src|@)\/application\/([^/.]+)(?:\.tsx?)?$/.exec(pathOrSpec);
+  return match?.[1] ?? null;
+}
+
+/**
+ * The layer rules govern edges *between* layers; nothing governed the edges
+ * between application slices, and two cycles had formed before anything said
+ * so: `execution ↔ image` (the facade dispatches image runs, and the image use
+ * case reached back for the run bracket that then lived in `execution`), and
+ * `execution → usage → slack → execution` (the cost guard imported the slack
+ * slice's token resolver, and slack's deps name the facade's input type). A
+ * slice cycle is the stage before a file cycle, and it makes every member
+ * slice untestable and unmovable except as a lump.
+ *
+ * Type-only edges count, exactly as they do in the layer rules: a type is how
+ * this kind of coupling arrives first.
+ */
+describe("application slice graph", () => {
+  it("has no cycles", () => {
+    const edges = new Map<string, Set<string>>();
+    for (const file of SOURCE_FILES) {
+      const from = applicationSliceOf(file.path);
+      if (!from) {
+        continue;
+      }
+      for (const imported of parseImports(file.text)) {
+        const to = applicationSliceOf(resolveSpec(imported.spec, file.path));
+        if (to && to !== from) {
+          (edges.get(from) ?? edges.set(from, new Set()).get(from)!).add(to);
+        }
+      }
+    }
+    // DFS with a path stack; a back edge into the stack is a cycle, reported
+    // as the chain that closes it so the failure names the import to break.
+    const cycles: string[] = [];
+    const done = new Set<string>();
+    const walk = (slice: string, path: string[]): void => {
+      const at = path.indexOf(slice);
+      if (at >= 0) {
+        cycles.push([...path.slice(at), slice].join(" -> "));
+        return;
+      }
+      if (done.has(slice)) {
+        return;
+      }
+      done.add(slice);
+      for (const next of edges.get(slice) ?? []) {
+        walk(next, [...path, slice]);
+      }
+    };
+    for (const slice of [...edges.keys()].sort()) {
+      walk(slice, []);
+    }
+    expect(cycles.sort()).toEqual([]);
+  });
+
+  it("still sees the graph it governs", () => {
+    // The scan going blind reads exactly like a clean pass; anchor one edge
+    // that exists by construction (every slice reports errors through the
+    // shared kernel).
+    const files = SOURCE_FILES.filter((file) => applicationSliceOf(file.path));
+    expect(files.length).toBeGreaterThan(50);
+    expect(applicationSliceOf("src/application/errors.ts")).toBe("errors");
+    expect(applicationSliceOf("@/application/execution/runProject")).toBe("execution");
+  });
+});
+
+/**
+ * An optional field on `ExecutionDeps` is how a feature is off — and how a
+ * forgotten wire looks exactly like a feature that is off. That shape has bitten
+ * before: `resolveRunTools` took its discovery queries as an optional argument,
+ * two call sites omitted them, and a version's `dynamicCapabilities` read as on
+ * while the search never ran (`TOOL_RESOLUTION_SITES` is the patch over that
+ * instance). `mcpConnections` is the same shape today — absent, discovery
+ * treats every OAuth server as unconnected, silently.
+ *
+ * The composition root is the only production builder of the bag, so the rule
+ * is checkable there: every optional field must be *named* in `container.ts` —
+ * a conditional spread (`...(x ? { catalog: … } : {})`) still names it, which
+ * is exactly the distinction wanted. "This deployment turned it off" appears in
+ * the source; "nobody thought about it" does not.
+ *
+ * Only `ExecutionDeps`' own declaration block is parsed; fields inherited from
+ * `RunBracketDeps` arrive through an intersection this regex cannot see, and
+ * each of those is exercised by the run-bracket tests instead.
+ */
+describe("execution deps wiring", () => {
+  it("the composition root decides every optional field by name", () => {
+    const depsFile = SOURCE_FILES.find((file) => file.path === "src/application/execution/deps.ts");
+    const block =
+      /export interface ExecutionDeps[^{]*\{([\s\S]*?)\n\}/.exec(
+        stripComments(depsFile?.text ?? ""),
+      )?.[1] ?? "";
+    const optional = [...block.matchAll(/^\s{2}(\w+)\?:/gm)].map((match) => match[1]!);
+    // The two test seams: a production root must never pin the clock or the
+    // sampling draw, so their absence from container.ts is the correct state.
+    const seams = new Set(["now", "sample"]);
+    // A regression in the interface regex would empty `optional` and read as a
+    // clean pass; the fields this exists for anchor it.
+    expect(optional).toContain("catalog");
+    expect(optional).toContain("mcpConnections");
+    const container = stripComments(
+      SOURCE_FILES.find((file) => file.path === "src/lib/container.ts")?.text ?? "",
+    );
+    const unwired = optional.filter(
+      (name) => !seams.has(name) && !new RegExp(`\\b${name}:`).test(container),
+    );
+    expect(unwired).toEqual([]);
+  });
+});
+
+/**
  * Single-owner invariants.
  *
  * The rules above enforce which direction an import may point. They say nothing
@@ -817,7 +952,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     what: "how many agents one dispatch may run",
     pattern: /MAX_DISPATCH_TASKS\s*=/,
-    owner: "src/application/llm/engine.ts",
+    owner: "src/application/llm/agentAssembly.ts",
   },
   {
     // Where the subtleties of a hand-rolled merge live: exactly one in-flight
@@ -893,7 +1028,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // now, and a second one fails here.
     what: "how an agent run's prompt and tool set are assembled",
     pattern: /build(?:AgentSystemPrompt|AgentTools)\(\{/,
-    owner: "src/application/llm/engine.ts",
+    owner: "src/application/llm/agentAssembly.ts",
   },
   {
     what: "the 401 response body",
@@ -967,7 +1102,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // `lib/runMetrics.ts`.
     what: "what wraps a top-level run",
     pattern: /^\s*beginRun\(\);/m,
-    owner: "src/application/execution/runBracket.ts",
+    owner: "src/application/run/runBracket.ts",
   },
   {
     // The version path and the image path each derived this, with opposite
@@ -976,7 +1111,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // starts.
     what: "whether a run's trace is sampled",
     pattern: /traceSampleRate \?\?/,
-    owner: "src/application/execution/traceLifecycle.ts",
+    owner: "src/application/run/traceLifecycle.ts",
   },
   {
     // "When does this schedule fire" is a wall-clock question, and reading a
@@ -1039,7 +1174,7 @@ const SINGLE_OWNERS: SingleOwner[] = [
     // stored rows — that is reconstruction, not dispatch.
     what: "what a tool result has to do, and in what order",
     pattern: /tool_call_id: call\.id/,
-    owner: "src/application/llm/engine.ts",
+    owner: "src/application/llm/toolResultBudget.ts",
     within: "src/application/llm/",
   },
   {

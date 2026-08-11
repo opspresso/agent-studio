@@ -24,7 +24,7 @@ Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문�
 생기면 실패한다. 새 기능 작업은 그 위에 얹는다: 새 어댑터는 포트 뒤로 가고, 조립은
 AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이다 — 여기 복제했던
 사본은 한 번 낡았다), 새 실행 정책은 **run bracket** 한 곳
-(`src/application/execution/runBracket.ts`)에 붙는다.
+(`src/application/run/runBracket.ts`)에 붙는다.
 
 실행 파사드가 아니다. top-level run을 admit하는 네 함수 중 `generateImage`는 파사드를
 통과하지 않으므로(predict 라우트·A2A executor·트리거 러너가 그 모듈을 직접 부른다),

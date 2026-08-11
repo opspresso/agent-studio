@@ -29,11 +29,11 @@ import {
   runImageSubagent,
 } from "./imageTool";
 import { closeMcp } from "./mcpTools";
-import { assertModelsPriceable } from "./modelPolicy";
+import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
 import { log } from "@/shared/logger";
-import { createTraceRecorder, finishTrace } from "./traceLifecycle";
+import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 
 /**
  * Assemble the injected engine dependencies for an agent run.

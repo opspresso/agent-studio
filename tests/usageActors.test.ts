@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { listProjectActors, type ListActorsDeps } from "@/application/usage/listActors";
+import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
+import type { RunCaller } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
 import type { UsageRepository } from "@/domain/usage/repository";
 import type { ActorUsageRow } from "@/domain/usage/types";
@@ -44,12 +46,16 @@ function row(actor: string, calls = 2, cost = 0.5): ActorUsageRow {
 
 function makeDeps(
   rows: ActorUsageRow[],
-  resolveSlackProfile: ListActorsDeps["resolveSlackProfile"],
+  resolveSlackProfile: (botToken: string, userId: string) => Promise<RunCaller | null>,
 ): ListActorsDeps {
   return {
     usage: { listActorsByProject: async () => rows } as unknown as UsageRepository,
-    cipher: secretCipher,
-    resolveSlackProfile,
+    // The composition root's closure, spelled out: the reader is bound to the
+    // project's own decrypted token, or absent when it has no enabled bot.
+    profileReaderFor: (project) => {
+      const runtime = resolveProjectSlackRuntime(secretCipher, project);
+      return runtime ? (userId) => resolveSlackProfile(runtime.botToken, userId) : null;
+    },
   };
 }
 

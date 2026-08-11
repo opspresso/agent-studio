@@ -7,7 +7,7 @@ import type { ImageBytes } from "@/domain/llm/imageChannel";
 import { getModelConfig, MODEL_CONFIGS, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
-import { createTraceRecorder, finishTrace } from "./traceLifecycle";
+import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
 
 /** Default image model: the first registry entry with the imageGeneration capability. */

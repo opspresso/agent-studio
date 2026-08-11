@@ -342,7 +342,7 @@ enters the tool loop.
 
 Exactly four functions admit a top-level run — the [admit tier](#request-flow)'s
 `executeVersion`, `executeVersionStream` and `executeAgent`, plus `generateImage` — and each
-opens a bracket (`src/application/execution/runBracket.ts`). The bracket is the single owner
+opens a bracket (`src/application/run/runBracket.ts`). The bracket is the single owner
 of everything that wraps a run regardless of how it was started: the in-flight metric, the
 daily cost guard, the per-caller concurrency guard, and the log correlation id.
 

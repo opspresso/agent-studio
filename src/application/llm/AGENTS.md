@@ -1,7 +1,10 @@
 # LLM Engine — invariants to preserve
 
-Read this before editing `engine.ts` or `pii.ts`. The engine is pure logic with everything
-injected (`AgentDeps`), tested with no network/DB via `tests/fakeChannel.ts`.
+Read this before editing `engine.ts`, its two internal modules — `agentAssembly.ts` (what a
+run is told it can do) and `toolResultBudget.ts` (what a result may cost, and what it has to
+do) — or `pii.ts`. The engine is pure logic with everything injected (`AgentDeps`), tested
+with no network/DB via `tests/fakeChannel.ts`; `engine.ts` re-exports both modules' public
+surface, so callers keep one import path.
 
 ## Tool loop (`runAgent`)
 

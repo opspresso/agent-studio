@@ -1,11 +1,38 @@
 /** Trace recorder creation, sampling and termination for one run. */
 
-import type { RunOrigin } from "@/domain/execution/actor";
+import type { RunActor, RunOrigin } from "@/domain/execution/actor";
+import type { ChatMessageInput } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { TraceRepository } from "@/domain/trace/repository";
 import { TraceRecorder } from "@/application/trace/recorder";
-import type { ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { log } from "@/shared/logger";
+
+/**
+ * What sampling reads, stated structurally rather than as a `Pick` of
+ * `ExecutionDeps`: this slice sits beneath the execution facade (the image use
+ * case reaches it without going through `runProject`), so naming the facade's
+ * deps here would point the graph back at the layer above. `ExecutionDeps` and
+ * `ImageGenerationDeps` both satisfy it by shape.
+ */
+export interface TraceSamplingDeps {
+  traces?: TraceRepository;
+  traceSampleRate?: number;
+  /** The sampling draw, injected like `now`; unset means `Math.random`. */
+  sample?: () => number;
+}
+
+/**
+ * The slice of a version run's input the recorder reads — structurally
+ * satisfied by `ExecuteVersionInput`, for the same reason as
+ * {@link TraceSamplingDeps}.
+ */
+interface TracedRunInput {
+  project: Project;
+  version: Version;
+  extraMessages?: ChatMessageInput[];
+  messages?: ChatMessageInput[];
+  actor?: RunActor;
+}
 
 /**
  * Whether this run's trace is recorded — the ONE place the sampling draw is
@@ -14,15 +41,13 @@ import { log } from "@/shared/logger";
  * they would drift apart. `sample` is injected like `now` so a test can pin
  * the outcome at a fractional rate.
  */
-export function traceSampled(
-  deps: Pick<ExecutionDeps, "traces" | "traceSampleRate" | "sample">,
-): boolean {
+export function traceSampled(deps: TraceSamplingDeps): boolean {
   return deps.traces !== undefined && (deps.sample ?? Math.random)() < (deps.traceSampleRate ?? 0);
 }
 
 export function sampledTraceRecorder(
-  deps: Pick<ExecutionDeps, "traces" | "traceSampleRate" | "sample">,
-  input: ExecuteVersionInput,
+  deps: TraceSamplingDeps,
+  input: TracedRunInput,
 ): TraceRecorder | undefined {
   if (!deps.traces || !traceSampled(deps)) {
     return undefined;

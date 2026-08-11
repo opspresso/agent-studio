@@ -21,11 +21,9 @@
  */
 
 import type { Project } from "@/domain/project/types";
-import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import type { UsageRow } from "@/domain/usage/types";
 import { RateLimitedError } from "@/application/errors";
-import { resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
 import { utcDay, utcMonth } from "@/shared/date";
 import { log } from "@/shared/logger";
 
@@ -33,29 +31,31 @@ import { log } from "@/shared/logger";
 export type CostWindow = "daily" | "monthly";
 
 /**
- * Slack access the guard needs — posting one message. Declared here rather than
- * taken from the Slack event deps: this path has no thread, no files and no
- * history, and a port that names only what it uses cannot grow a dependency on
- * the rest by accident.
+ * Posting one alert with the project's own credentials, token resolution
+ * included. One injected function rather than a Slack client and a cipher:
+ * which token a project posts with is the slack slice's knowledge, and
+ * importing its resolver from here was the one edge that pulled that whole
+ * slice — and the mcp and project modules behind it — into every consumer of
+ * the usage slice. The composition root closes over both instead.
+ *
+ * Resolves `false` when the project has no way to be notified (no enabled bot,
+ * no stored token), so the guard can say so in the log; a delivery failure
+ * still rejects.
  */
-export interface CostAlertSlack {
-  postMessage(
-    token: string,
-    args: { channel: string; text: string },
-  ): Promise<{ ts: string; channel: string }>;
-}
+export type PostCostAlert = (
+  project: Project,
+  args: { channel: string; text: string },
+) => Promise<boolean>;
 
 /**
- * Only `usage` is required. Everything else belongs to the notification, which
- * is the optional half of this guard: a project with a block threshold and no
- * way to announce it must still stop spending.
+ * Only `usage` is required. The notification is the optional half of this
+ * guard: a project with a block threshold and no way to announce it must still
+ * stop spending.
  */
 export interface CostGuardDeps {
   usage: UsageRepository;
-  /** Decrypts the project's stored bot token for the notification. */
-  cipher?: SecretCipher;
   /** Absent on a deployment that cannot post to Slack; the guard still blocks. */
-  slack?: CostAlertSlack;
+  postAlert?: PostCostAlert;
 }
 
 /**
@@ -342,24 +342,25 @@ async function notifyOnce(
     return;
   }
   const channel = project.costLimits?.alertSlackChannel;
-  const runtime = deps.cipher ? resolveProjectSlackRuntime(deps.cipher, project) : null;
-  if (!deps.slack || !channel || !runtime) {
-    // Configured thresholds without a notification path still block; saying so
-    // once in the log is the only place an operator can notice the gap.
-    log.warn(
-      "cost-guard",
-      `"${project.name}" crossed its ${window} ${kind} threshold ` +
-        `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no Slack channel configured`,
-    );
-    return;
+  const postAlert = deps.postAlert;
+  if (postAlert && channel) {
+    const resume = window === "daily" ? "00:00 UTC" : "the start of the next month (UTC)";
+    const text =
+      kind === "block"
+        ? `:no_entry: *${project.displayName}* has reached its ${window} cost limit — ` +
+          `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC). ` +
+          `Further runs are refused until ${resume}.`
+        : `:warning: *${project.displayName}* has passed its ${window} cost alert threshold — ` +
+          `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC).`;
+    if (await postAlert(project, { channel, text })) {
+      return;
+    }
   }
-  const resume = window === "daily" ? "00:00 UTC" : "the start of the next month (UTC)";
-  const text =
-    kind === "block"
-      ? `:no_entry: *${project.displayName}* has reached its ${window} cost limit — ` +
-        `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC). ` +
-        `Further runs are refused until ${resume}.`
-      : `:warning: *${project.displayName}* has passed its ${window} cost alert threshold — ` +
-        `$${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)} (${period}, UTC).`;
-  await deps.slack.postMessage(runtime.botToken, { channel, text });
+  // Configured thresholds without a notification path still block; saying so
+  // once in the log is the only place an operator can notice the gap.
+  log.warn(
+    "cost-guard",
+    `"${project.name}" crossed its ${window} ${kind} threshold ` +
+      `($${spentUsd.toFixed(2)} of $${thresholdUsd.toFixed(2)}) with no Slack channel configured`,
+  );
 }
