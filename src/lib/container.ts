@@ -74,6 +74,7 @@ import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
+import { log } from "@/shared/logger";
 import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createS3VectorsStore } from "@/infrastructure/vector/s3VectorsStore";
@@ -358,9 +359,46 @@ export const syncPluginsFromRepo = async (
       actorEmail,
       finishedAt: new Date().toISOString(),
     });
+    await reindexAfterSync();
     return result;
   } finally {
     await pluginSyncLock.release(repo, lease);
+  }
+};
+
+/**
+ * Refresh the capability catalog once a sync has applied the repository.
+ *
+ * The catalog is otherwise rebuilt only by its own hourly tick, and a sync is
+ * the single event that moves the most of it at once — a merge to the plugins
+ * repo can add, rename or retire a dozen skills and servers together. Waiting
+ * up to an hour to notice would mean a run discovering a skill the registry no
+ * longer has, or missing one it just gained.
+ *
+ * This is the one exception to "indexing is never hooked to a write", and the
+ * difference is what a failure would cost. Hanging it off a single registry
+ * save would make an operator's 200 depend on an embedding call; here the sync
+ * has already committed, its report is already persisted, and a failed reindex
+ * changes none of that — the next tick repairs it. So the failure is logged and
+ * swallowed rather than raised.
+ *
+ * Also the only way a **local** deployment refreshes at all: there is no
+ * CronJob outside the cluster, so `pnpm` a sync and the index follows.
+ */
+const reindexAfterSync = async (): Promise<void> => {
+  if (!catalogDeps) {
+    return;
+  }
+  try {
+    const { reindexCatalog } = await import("@/application/catalog/reindexCatalog");
+    const report = await reindexCatalog(catalogDeps);
+    log.info(
+      "catalog",
+      `reindex after plugins sync: indexed=${report.indexed} removed=${report.removed}` +
+        ` undiscovered=${report.undiscovered.length}`,
+    );
+  } catch (error) {
+    log.warn("catalog", "reindex after plugins sync failed; the hourly tick will repair it", error);
   }
 };
 

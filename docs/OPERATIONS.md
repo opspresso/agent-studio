@@ -293,6 +293,10 @@ nothing.
   server level, only without its tools.
 - 503 means `VECTOR_BUCKET` is unset, which is a deployment without a catalog rather than a
   fault. Runs then offer exactly what their versions bound.
+- **A completed plugins sync reindexes too**, on both paths (the console and the minute tick),
+  so a merge to the plugins repo is discoverable without waiting for the hour. That reindex runs
+  after the sync has committed and its report is persisted, so a failure is logged and swallowed
+  — `reindex after plugins sync failed` in the log, repaired by the next tick.
 
 ## Multi-instance caveats
 
