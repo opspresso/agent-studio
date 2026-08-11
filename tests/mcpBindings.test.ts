@@ -158,6 +158,28 @@ describe("per-project MCP header overrides at dispatch", () => {
     expect(headers["x-shared"]).toBe("shared-value");
   });
 
+  it("names the calling project on every request, with no registration", async () => {
+    // What lets a multi-tenant server (mcp-memory) scope its data per project
+    // without anyone configuring a header per binding.
+    const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }]);
+
+    expect(headers["x-tenant-id"]).toBe("painter");
+  });
+
+  it("a binding cannot impersonate another project's tenant", async () => {
+    // The override merge runs first and the project header is applied on top —
+    // in any spelling: a case-variant surviving beside the real one would reach
+    // the server as one comma-joined value, which reads as neither project.
+    const headers = await dispatchHeaders("painter", [
+      {
+        name: "shared-mcp",
+        headers: encryptHeaderOverrides({ "x-tenant-id": "other-project" }),
+      },
+    ]);
+
+    expect(headers["x-tenant-id"]).toBe("painter");
+  });
+
   it("still sends the registry headers when the entry has OAuth the project has not connected", async () => {
     // Discovering OAuth on an entry adds a way to authenticate it. It used to
     // take one away: any `auth` block made the run drop the server outright,

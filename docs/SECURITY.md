@@ -290,6 +290,26 @@ The provisioner takes an image reference, a port and an optional **argv array**,
 shell command. The local adapter passes argv directly to Docker; the SSM adapter shell-quotes
 every argument before assembling its command.
 
+### What an MCP server is told about the caller
+
+Every request a run makes to an MCP server carries `X-Tenant-Id` with the calling project's
+name (`TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts`). It exists so a
+multi-tenant server — mcp-memory scopes its data by it — works per project with no
+per-project registration; a server that does not read it ignores it, and one that already
+treats `X-Tenant-Id` as its tenancy switch acts on ours, which is the point of the generic
+name. It is applied *after* the registry/binding header merge, in any spelling, so a
+version's overrides cannot impersonate another project's tenant, and it rides in the
+session's header map so the discovery cache stays keyed per project. The catalog reindex
+probe and "Test connection" carry no project and send no header — a server that requires one
+refuses those listings and is indexed at server level only.
+
+That header is the **only** identity metadata sent automatically, and its value is the
+project name — never a user's name or email. What a server can learn beyond it is
+(a) whatever the model writes into tool arguments — see *PII filtering, and where it
+stops* — and (b) for OAuth entries, that the registered client is named
+`Agent Studio — <project>` and that the token carries the grant of whoever connected the
+server.
+
 ## MCP OAuth
 
 Registry entries may carry an `auth` block discovered once at registration (RFC 9728

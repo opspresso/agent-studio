@@ -11,6 +11,32 @@ import { log } from "@/shared/logger";
 
 export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
 
+/**
+ * The header every MCP request names its calling project with — the project
+ * name, as a tenant id.
+ *
+ * The platform's own metadata, in the spirit of the protocol's `Mcp-Method` /
+ * `Mcp-Name`: derived from context, sent unconditionally, ignored by a server
+ * that does not read it — and outside the `Mcp-` namespace because it is not
+ * the protocol's. A multi-tenant server (mcp-memory) scopes its data by it
+ * without any per-project registration.
+ *
+ * The generic name is deliberate, both halves of it. What the header carries
+ * is a tenancy fact, not branding — a vendor-named header would have to chase
+ * every product rename while meaning exactly the same thing — and the cost a
+ * generic name buys into is accepted with eyes open: a third-party server that
+ * already treats `X-Tenant-Id` as its tenancy switch will act on ours, which
+ * is the behaviour wanted from a server that understands it at all.
+ *
+ * Applied *here* rather than in the session, which has no project to know
+ * about — and riding in the session's header map is also what keys the
+ * discovery cache per project, so a server free to expose different tools per
+ * tenant is cached per tenant. The catalog probe and "Test connection" carry
+ * no project and therefore no header; a server that requires one refuses those
+ * listings and is indexed at server level only, which the reindex reports.
+ */
+export const TENANT_ID_HEADER = "X-Tenant-Id";
+
 /** What resolving a version's MCP bindings actually reads off the run's deps. */
 export type McpToolDeps = Pick<
   ExecutionDeps,
@@ -85,6 +111,18 @@ export async function buildMcpTools(
             return { warning: `${resolved.unavailable} Its tools were not offered.` };
           }
         }
+        // Applied last: after the merge so neither the registry entry nor a
+        // version's override can impersonate another project's tenant — in any
+        // spelling, since fetch folds two case-variants into one comma-joined
+        // value that reads as neither project — and after the OAuth check
+        // above, so a metadata header never counts as "a way to authenticate"
+        // a server whose connection is unavailable.
+        for (const name of Object.keys(headers)) {
+          if (name.toLowerCase() === TENANT_ID_HEADER.toLowerCase()) {
+            delete headers[name];
+          }
+        }
+        headers[TENANT_ID_HEADER] = version.projectName;
         return {
           server: {
             name: mcp.name,
