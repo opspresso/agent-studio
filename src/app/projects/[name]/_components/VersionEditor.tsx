@@ -200,38 +200,51 @@ export function VersionEditor({
         styles={monoInput}
       />
 
-      <div>
-        <Textarea
-          label="User prompt template"
-          value={value.userPromptTemplate}
-          onChange={(e) => patch({ userPromptTemplate: e.currentTarget.value })}
-          placeholder="Summarize: {{input}}"
-          autosize
-          minRows={4}
-          maxRows={20}
-          styles={monoInput}
-        />
-        <Group justify="space-between" gap="xs" mt={4} wrap="nowrap">
-          <Text fz="xs" c="dimmed">
-            Use {"{{variable}}"} placeholders rendered server-side at run time. Agent runs ignore
-            this template.
-          </Text>
-          <Button
-            variant="default"
-            size="compact-xs"
-            ff="monospace"
-            onClick={() =>
-              patch({
-                userPromptTemplate: value.userPromptTemplate
-                  ? `${value.userPromptTemplate}{{input}}`
-                  : "{{input}}",
-              })
-            }
-          >
-            + {"{{input}}"}
-          </Button>
-        </Group>
-      </div>
+      {/*
+        An agent run never sends the template, so the field would only invite
+        text with nowhere to go. It stays visible while it holds leftover
+        content, so that content can be seen and cleared — clearing it makes
+        the field disappear.
+      */}
+      {(projectType !== "agent" || value.userPromptTemplate !== "") && (
+        <div>
+          <Textarea
+            label="User prompt template"
+            value={value.userPromptTemplate}
+            onChange={(e) => patch({ userPromptTemplate: e.currentTarget.value })}
+            placeholder="Summarize: {{input}}"
+            autosize
+            minRows={4}
+            maxRows={20}
+            styles={monoInput}
+          />
+          <Group justify="space-between" gap="xs" mt={4} wrap="nowrap">
+            <Text fz="xs" c="dimmed">
+              {projectType === "agent" ? (
+                "Agent runs ignore this template — the conversation supplies the user turn. Clear it to remove this field."
+              ) : (
+                <>Use {"{{variable}}"} placeholders rendered server-side at run time.</>
+              )}
+            </Text>
+            {projectType !== "agent" && (
+              <Button
+                variant="default"
+                size="compact-xs"
+                ff="monospace"
+                onClick={() =>
+                  patch({
+                    userPromptTemplate: value.userPromptTemplate
+                      ? `${value.userPromptTemplate}{{input}}`
+                      : "{{input}}",
+                  })
+                }
+              >
+                + {"{{input}}"}
+              </Button>
+            )}
+          </Group>
+        </div>
+      )}
 
       <SimpleGrid cols={2} spacing="sm">
         <NumberField

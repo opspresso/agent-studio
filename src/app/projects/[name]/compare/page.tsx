@@ -120,10 +120,10 @@ export default function ComparePage() {
     const set = new Set<string>();
     for (const versionName of [leftName, rightName]) {
       const version = versions.find((v) => v.versionName === versionName);
-      for (const source of [version?.systemPrompt ?? "", version?.userPromptTemplate ?? ""]) {
-        for (const varName of findTemplateVariables(source)) {
-          set.add(varName);
-        }
+      // Only the user prompt template is rendered with variables — a {{var}} in
+      // the system prompt reaches the model as literal text, so it gets no field.
+      for (const varName of findTemplateVariables(version?.userPromptTemplate ?? "")) {
+        set.add(varName);
       }
     }
     return [...set];

@@ -284,7 +284,12 @@ export default function PlaygroundPage() {
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
           <CollapsibleSection title="Preview">
-            <PromptPreview projectName={name} draft={draft} versionName={selectedName || null} />
+            <PromptPreview
+              projectName={name}
+              projectType={project.projectType}
+              draft={draft}
+              versionName={selectedName || null}
+            />
           </CollapsibleSection>
 
           <CollapsibleSection title="Run">
@@ -292,7 +297,6 @@ export default function PlaygroundPage() {
               projectName={name}
               versionName={dirty && selectedName === "" ? null : selectedName || null}
               projectType={project.projectType}
-              systemPrompt={draft.systemPrompt}
               userPromptTemplate={draft.userPromptTemplate}
               modelAcceptsImages={runImageCapability(models, draft.model, project.projectType)}
             />

@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { findTemplateVariables } from "@/shared/template";
-import { previewPrompt, type PromptPreview, type VersionInput } from "../../lib/api";
+import {
+  previewPrompt,
+  type ProjectType,
+  type PromptPreview,
+  type VersionInput,
+} from "../../lib/api";
 import {
   Alert,
   Button,
@@ -45,10 +50,12 @@ function charCount(preview: PromptPreview): number {
  */
 export function PromptPreview({
   projectName,
+  projectType,
   draft,
   versionName,
 }: {
   projectName: string;
+  projectType: ProjectType;
   draft: VersionInput;
   /**
    * The saved version the draft started from, or null for one never saved. The
@@ -65,9 +72,13 @@ export function PromptPreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only the user prompt template is rendered with variables — a {{var}} in
+  // the system prompt reaches the model as literal text, and an agent run
+  // never sends the template at all — so only a rendered template gets fields.
   const varNames = useMemo(
-    () => [...findTemplateVariables(`${draft.systemPrompt}\n${draft.userPromptTemplate}`)],
-    [draft.systemPrompt, draft.userPromptTemplate],
+    () =>
+      projectType === "agent" ? [] : [...findTemplateVariables(draft.userPromptTemplate)],
+    [projectType, draft.userPromptTemplate],
   );
   // Only discovery reads the request, so the box is offered only where it
   // changes the answer — anywhere else it would suggest the prompt depends on

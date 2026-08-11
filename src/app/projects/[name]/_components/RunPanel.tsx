@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { EngineChunk, ImageResult, ProjectType } from "../../lib/api";
 import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api";
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
+import { findTemplateVariables } from "@/shared/template";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { ToolRow } from "@/app/_components/ToolRow";
 import {
@@ -45,20 +46,6 @@ interface ToolCallView {
   author?: string | undefined;
 }
 
-function extractVariables(...sources: string[]): string[] {
-  const set = new Set<string>();
-  const re = /\{\{(\w+)\}\}/g;
-  for (const src of sources) {
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(src)) !== null) {
-      if (match[1]) {
-        set.add(match[1]);
-      }
-    }
-  }
-  return [...set];
-}
-
 function toolCallView(raw: unknown, author?: string): ToolCallView {
   return { ...parseWireToolCall(raw), author };
 }
@@ -67,21 +54,21 @@ export function RunPanel({
   projectName,
   versionName,
   projectType,
-  systemPrompt,
   userPromptTemplate,
   modelAcceptsImages,
 }: {
   projectName: string;
   versionName: string | null;
   projectType: ProjectType;
-  systemPrompt: string;
   userPromptTemplate: string;
   /** From the model registry; `undefined` when the model is not in the catalog. */
   modelAcceptsImages?: boolean;
 }) {
+  // Only the user prompt template is rendered with variables — a {{var}} in
+  // the system prompt reaches the model as literal text, so it gets no field.
   const varNames = useMemo(
-    () => extractVariables(systemPrompt, userPromptTemplate),
-    [systemPrompt, userPromptTemplate],
+    () => [...findTemplateVariables(userPromptTemplate)],
+    [userPromptTemplate],
   );
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
