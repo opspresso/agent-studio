@@ -730,6 +730,18 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/parseList.ts",
   },
   {
+    // Every optional env read spelled this `|| undefined`, and whitespace went
+    // through all of them: a secret mounted from a file carries a trailing
+    // newline, so `A2A_API_KEY=" "` passed the boot guard, showed as
+    // `source: "env"` on the settings page, and 401'd every request. A second
+    // copy is how the page and the runtime end up disagreeing about whether a
+    // variable is set — which is the direction the bug already ran, since an
+    // override is stored trimmed and the environment was not.
+    what: "whether a configured value is blank",
+    pattern: /\?\.trim\(\) \|\| undefined/,
+    owner: "src/shared/env.ts",
+  },
+  {
     // The plugins sync reads a frontmatter block from two document kinds —
     // SKILL.md and the MCP extension documents — and a second parser would let
     // the same document mean different things depending on which kind it came

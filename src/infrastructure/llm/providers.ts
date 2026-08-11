@@ -15,6 +15,7 @@
  */
 
 import { wireModelId } from "@/domain/llm/models";
+import { optionalEnv } from "@/shared/env";
 import type { ProviderChannelConfig } from "@/domain/settings/types";
 export type { ProviderChannelConfig };
 
@@ -34,13 +35,14 @@ const PROVIDER_ENV_PATTERN = /^LLM_PROVIDER_([A-Z0-9_]+)_BASE_URL$/;
 
 export function parseProviderConfigs(env: Record<string, string | undefined>): ProviderChannelConfig[] {
   const configs: ProviderChannelConfig[] = [];
-  for (const [key, baseUrl] of Object.entries(env)) {
+  for (const [key, rawBaseUrl] of Object.entries(env)) {
     const match = PROVIDER_ENV_PATTERN.exec(key);
+    const baseUrl = optionalEnv(rawBaseUrl);
     if (!match?.[1] || !baseUrl) {
       continue;
     }
     const upperName = match[1];
-    const apiKey = env[`LLM_PROVIDER_${upperName}_API_KEY`];
+    const apiKey = optionalEnv(env[`LLM_PROVIDER_${upperName}_API_KEY`]);
     if (!apiKey) {
       continue;
     }
@@ -48,7 +50,10 @@ export function parseProviderConfigs(env: Record<string, string | undefined>): P
       name: upperName.toLowerCase(),
       baseUrl,
       apiKey,
-      keepModelPrefix: env[`LLM_PROVIDER_${upperName}_KEEP_MODEL_PREFIX`] === "true",
+      // Trimmed like the pair above: a value mounted from a file arrives with a
+      // trailing newline, and `"true\n" === "true"` is false — which would read
+      // as an operator asking for the prefix to be stripped.
+      keepModelPrefix: optionalEnv(env[`LLM_PROVIDER_${upperName}_KEEP_MODEL_PREFIX`]) === "true",
     });
   }
   return configs;

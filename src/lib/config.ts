@@ -1,11 +1,12 @@
 import { parseKeyValueList, parseList } from "@/shared/parseList";
+import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
 
 export type Stage = "local" | "alpha" | "prod";
 
 function required(name: string): string {
-  const value = process.env[name];
-  if (!value) {
+  const value = optionalEnv(process.env[name]);
+  if (value === undefined) {
     throw new Error(`${name} not configured`);
   }
   return value;
@@ -21,7 +22,7 @@ function required(name: string): string {
 const BOOT_REQUIRED_ENV = ["LLM_BASE_URL", "LLM_API_KEY", "AES_ENCRYPTION_KEY"] as const;
 
 export function assertRequiredConfig(): void {
-  const missing = BOOT_REQUIRED_ENV.filter((name) => !process.env[name]);
+  const missing = BOOT_REQUIRED_ENV.filter((name) => optionalEnv(process.env[name]) === undefined);
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
@@ -87,8 +88,8 @@ export function resetConfigWarnings(): void {
  * where zero is not a configuration but an off-switch nothing intends.
  */
 export function positiveIntEnv(name: string, fallback: number, min = 0): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") {
+  const raw = optionalEnv(process.env[name]);
+  if (raw === undefined) {
     return fallback;
   }
   const value = Number(raw);
@@ -107,8 +108,8 @@ export function positiveIntEnv(name: string, fallback: number, min = 0): number 
  * how a deployment ends up reasoning from traces it never recorded.
  */
 export function fractionEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") {
+  const raw = optionalEnv(process.env[name]);
+  if (raw === undefined) {
     return fallback;
   }
   const value = Number(raw);
@@ -135,14 +136,14 @@ export const config = {
     return process.env.DYNAMODB_TABLE_NAME ?? "agent-studio";
   },
   get dynamodbEndpoint(): string | undefined {
-    return process.env.DYNAMODB_ENDPOINT || undefined;
+    return optionalEnv(process.env.DYNAMODB_ENDPOINT);
   },
   get awsRegion(): string {
     return process.env.AWS_REGION ?? "ap-northeast-2";
   },
   /** Public-read S3 bucket for generated images. Unset disables image persistence. */
   get imageBucketName(): string | undefined {
-    return process.env.S3_BUCKET_NAME || undefined;
+    return optionalEnv(process.env.S3_BUCKET_NAME);
   },
   /**
    * The instance managed MCP containers run on, and the registry their images
@@ -151,10 +152,10 @@ export const config = {
    * than half-configured.
    */
   get managedMcpInstanceId(): string | undefined {
-    return process.env.MANAGED_MCP_INSTANCE_ID || undefined;
+    return optionalEnv(process.env.MANAGED_MCP_INSTANCE_ID);
   },
   get managedMcpRegistry(): string | undefined {
-    return process.env.MANAGED_MCP_REGISTRY || undefined;
+    return optionalEnv(process.env.MANAGED_MCP_REGISTRY);
   },
   /**
    * The container managed workloads share a network namespace with — this app's
@@ -168,7 +169,7 @@ export const config = {
    * `managedMcpUseCases`, which is what puts it back.
    */
   get managedMcpNetworkContainer(): string {
-    return process.env.MANAGED_MCP_NETWORK_CONTAINER || "agent-studio";
+    return optionalEnv(process.env.MANAGED_MCP_NETWORK_CONTAINER) ?? "agent-studio";
   },
   get llmBaseUrl(): string {
     return required("LLM_BASE_URL");
@@ -209,12 +210,13 @@ export const config = {
   /**
    * The token the schedule ticker presents (SCHEDULE_SCAN_TOKEN). Unset means
    * this deployment has no ticker and the scan endpoint answers 503 — the
-   * feature is off rather than open. Trimmed because a Kubernetes Secret built
-   * from a file routinely carries a trailing newline the header never can —
-   * untrimmed, that would 401 every tick forever.
+   * feature is off rather than open. The trim `optionalEnv` applies is what
+   * this setting needed first: a Kubernetes Secret built from a file routinely
+   * carries a trailing newline the header never can, and untrimmed that would
+   * 401 every tick forever.
    */
   get scheduleScanToken(): string | undefined {
-    return process.env.SCHEDULE_SCAN_TOKEN?.trim() || undefined;
+    return optionalEnv(process.env.SCHEDULE_SCAN_TOKEN);
   },
   /**
    * How many runs one caller may have in flight at once, and the separate
@@ -293,18 +295,18 @@ export const config = {
    * appended to the interim message and dropped by the final edit.
    */
   get slackLoadingIndicator(): string | undefined {
-    return process.env.SLACK_LOADING_INDICATOR || undefined;
+    return optionalEnv(process.env.SLACK_LOADING_INDICATOR);
   },
   /** Shared key for inbound A2A requests (X-A2A-Key). Unset disables the A2A endpoints. */
   get a2aApiKey(): string | undefined {
-    return process.env.A2A_API_KEY || undefined;
+    return optionalEnv(process.env.A2A_API_KEY);
   },
   /**
    * OTLP HTTP endpoint finished traces are exported to, standard OTEL name.
    * Unset means no export at all — the decorator is simply not applied.
    */
   get otelExporterEndpoint(): string | undefined {
-    return process.env.OTEL_EXPORTER_OTLP_ENDPOINT || undefined;
+    return optionalEnv(process.env.OTEL_EXPORTER_OTLP_ENDPOINT);
   },
   /**
    * OTLP headers in the standard `key=value,key2=value2` form. Case-preserving
@@ -322,17 +324,17 @@ export const config = {
    * URLs (Slack manifests, OAuth callbacks) must come from configuration.
    */
   get publicBaseUrl(): string | undefined {
-    return process.env.PUBLIC_BASE_URL || process.env.BETTER_AUTH_URL || undefined;
+    return optionalEnv(process.env.PUBLIC_BASE_URL) ?? optionalEnv(process.env.BETTER_AUTH_URL);
   },
   /** GitHub Agent Plugins source repo, e.g. "opspresso/agent-plugins". */
   get pluginsRepo(): string | undefined {
-    return process.env.PLUGINS_REPO || undefined;
+    return optionalEnv(process.env.PLUGINS_REPO);
   },
   get pluginsRepoBranch(): string {
-    return process.env.PLUGINS_REPO_BRANCH || "main";
+    return optionalEnv(process.env.PLUGINS_REPO_BRANCH) ?? "main";
   },
   get githubToken(): string | undefined {
-    return process.env.GITHUB_TOKEN || undefined;
+    return optionalEnv(process.env.GITHUB_TOKEN);
   },
   get googleClientId(): string {
     return required("GOOGLE_CLIENT_ID");

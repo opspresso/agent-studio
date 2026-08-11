@@ -28,6 +28,16 @@ invalidation is process-local**: on a multi-instance deployment the TTL is how l
 demoted admin or a rotated A2A key keeps working on the instances that did not serve the
 write. That is why the default is 5 seconds rather than a minute.
 
+An override and an environment variable answer *"is it set?"* the same way: a value that is
+empty or only whitespace counts as **unset** and falls through to the next layer instead of
+becoming the effective one. Saving a blank field on `/settings` removes the override, and
+`A2A_API_KEY=" "` is not a key — including at boot, where it reports as missing. This
+matters most for a secret mounted from a file, which arrives with a trailing newline a
+header cannot carry. `src/shared/env.ts` owns the rule, and the value it returns is trimmed.
+`STAGE`, `DYNAMODB_TABLE_NAME` and `AWS_REGION` are the exceptions — they take an empty
+value literally, and for `STAGE` that is deliberate: an empty value throws, where falling
+back to `local` would skip `assertAccessControlConfig` on a deployed stage.
+
 ## Boot-time validation
 
 `src/instrumentation.ts` runs two checks before the server accepts connections, so a

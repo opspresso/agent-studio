@@ -7,6 +7,7 @@ import type {
 } from "@/domain/settings/types";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
+import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 
@@ -30,36 +31,42 @@ interface FieldSpec {
  * `process.env` at call time, so a spec reaching for it would make the settings
  * view partly uncontrollable — and `config.llmBaseUrl`/`llmApiKey` additionally
  * throw when unset, which a settings *view* must not do.
+ *
+ * The reads go through `optionalEnv` for the same reason `config` does, and
+ * *particularly* here: an override is stored trimmed already (see `update`), so
+ * without it the page would answer the blank question one way for an override
+ * and the other way for the environment, and report a variable holding a space
+ * as the effective value.
  */
 const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
-  { key: "adminEmails", secret: false, env: () => env.ADMIN_EMAILS || undefined },
+  { key: "adminEmails", secret: false, env: () => optionalEnv(env.ADMIN_EMAILS) },
   {
     key: "allowedEmailDomains",
     secret: false,
-    env: () => env.ALLOWED_EMAIL_DOMAINS || undefined,
+    env: () => optionalEnv(env.ALLOWED_EMAIL_DOMAINS),
   },
-  { key: "llmBaseUrl", secret: false, env: () => env.LLM_BASE_URL || undefined },
-  { key: "llmApiKey", secret: true, env: () => env.LLM_API_KEY || undefined },
-  { key: "pluginsRepo", secret: false, env: () => env.PLUGINS_REPO || undefined },
+  { key: "llmBaseUrl", secret: false, env: () => optionalEnv(env.LLM_BASE_URL) },
+  { key: "llmApiKey", secret: true, env: () => optionalEnv(env.LLM_API_KEY) },
+  { key: "pluginsRepo", secret: false, env: () => optionalEnv(env.PLUGINS_REPO) },
   {
     key: "pluginsRepoBranch",
     secret: false,
-    env: () => env.PLUGINS_REPO_BRANCH || undefined,
+    env: () => optionalEnv(env.PLUGINS_REPO_BRANCH),
     defaultValue: "main",
   },
-  { key: "githubToken", secret: true, env: () => env.GITHUB_TOKEN || undefined },
-  { key: "a2aApiKey", secret: true, env: () => env.A2A_API_KEY || undefined },
+  { key: "githubToken", secret: true, env: () => optionalEnv(env.GITHUB_TOKEN) },
+  { key: "a2aApiKey", secret: true, env: () => optionalEnv(env.A2A_API_KEY) },
   {
     key: "publicBaseUrl",
     secret: false,
     // Same precedence as `config.publicBaseUrl`: the explicit setting wins,
     // then the auth URL, which is set on every deployment that has OAuth.
-    env: () => env.PUBLIC_BASE_URL || env.BETTER_AUTH_URL || undefined,
+    env: () => optionalEnv(env.PUBLIC_BASE_URL) ?? optionalEnv(env.BETTER_AUTH_URL),
   },
   {
     key: "unknownModelPolicy",
     secret: false,
-    env: () => env.UNKNOWN_MODEL_POLICY || undefined,
+    env: () => optionalEnv(env.UNKNOWN_MODEL_POLICY),
     defaultValue: "allow",
   },
 ];

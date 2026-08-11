@@ -150,6 +150,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
+| Whether a configured value is blank | `src/shared/env.ts` |
 | Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
