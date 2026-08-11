@@ -4,6 +4,7 @@
  * below can use them without importing the facade itself.
  */
 
+import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import type { LlmChannel } from "@/domain/llm/channel";
@@ -49,6 +50,12 @@ export interface ExecutionDeps extends RunBracketDeps {
   mcpSessions: McpSessionFactory;
   /** Per-project OAuth for registry servers that require it. */
   mcpAuth: McpAuthProvider;
+  /**
+   * The global capability catalog, when this deployment has one. Absent means
+   * a version's `dynamicCapabilities` has nothing to search and the run offers
+   * exactly what it bound — the feature is off rather than failing.
+   */
+  catalog?: CatalogSearchDeps;
   /**
    * DNS suffixes this deployment declared reachable despite resolving privately
    * (`config.mcpInternalHostSuffixes`). Injected rather than read here, because

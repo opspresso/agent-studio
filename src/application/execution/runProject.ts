@@ -25,7 +25,7 @@ import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor
 import type { Project } from "@/domain/project/types";
 import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
-import { resolveRunTools } from "./bindings";
+import { discoveryQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
@@ -198,7 +198,7 @@ export async function* streamProjectRun(
   if (runStrategyFor(input.project) === "image") {
     // An image run's prompt is one string. A chunk consumer's history is the
     // conversation, and only its last user turn can be the thing to draw.
-    const prompt = imagePromptFrom(input.messages);
+    const prompt = latestUserText(input.messages);
     yield* generateImageStream(deps, {
       project: input.project,
       version: input.version,
@@ -213,11 +213,15 @@ export async function* streamProjectRun(
 }
 
 /**
- * The turn an image run draws from: the newest user message, or nothing, in
- * which case the version's own template is the prompt. Text only — an image
- * project's model is given a prompt, not a conversation.
+ * The newest user turn as plain text, or nothing when there is none.
+ *
+ * Two callers want it for different reasons and the same way. An image run
+ * draws this — the version's own template is the fallback when a conversation
+ * has no user turn yet — and capability discovery searches the catalog with it.
+ * Text only: an image project's model is given a prompt rather than a
+ * conversation, and a search query is a query.
  */
-function imagePromptFrom(messages: ChatMessageInput[]): string | undefined {
+function latestUserText(messages: ChatMessageInput[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role === "user") {
@@ -400,10 +404,16 @@ export async function* executeAgent(
     // Tools first, deps second: the dispatcher the deps carry is the one this
     // resolve produced, so the bag is complete when it is built rather than
     // patched afterwards.
+    //
+    // The queries are built here because this is where the request is: the
+    // newest user turn is what the run is being asked for, and the version's
+    // system prompt is what it is generally for. `resolveRunTools` ignores them
+    // unless the version opted in.
     const { skills, subagents, mcp, warnings } = await resolveRunTools(
       deps,
       input.version,
       runSignal,
+      discoveryQueries(input.version, latestUserText(input.messages)),
     );
     closeMcpSessions = mcp.close;
     const agentDeps = await buildAgentDeps(
