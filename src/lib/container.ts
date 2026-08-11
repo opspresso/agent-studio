@@ -73,6 +73,7 @@ import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
+import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createS3VectorsStore } from "@/infrastructure/vector/s3VectorsStore";
@@ -265,7 +266,7 @@ export const skillUseCases = createSkillUseCases(skillRepository);
  * name and the embedding model agreeing.
  */
 const vectorBucket = config.vectorBucketName;
-export const catalogDeps: CatalogIndexDeps | undefined = vectorBucket
+export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = vectorBucket
   ? {
       skills: skillRepository,
       mcps: mcpRepository,
@@ -282,6 +283,7 @@ export const catalogDeps: CatalogIndexDeps | undefined = vectorBucket
       // comparable to what is already in it.
       embeddings: config.embeddingProvider === "bedrock" ? bedrockEmbeddings : openAiEmbeddings,
       catalog: createS3VectorsStore(vectorBucket, config.catalogIndexName),
+      minScore: config.catalogMinScore,
     }
   : undefined;
 export const pluginUseCases = createPluginUseCases(pluginRepository);
