@@ -22,6 +22,7 @@ export type LogScope =
   | "audit"
   | "authz"
   | "boot"
+  | "catalog"
   | "chat"
   | "concurrency"
   | "config"

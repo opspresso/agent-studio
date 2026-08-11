@@ -72,6 +72,9 @@ import type { CostAlertSlack } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
+import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
+import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
+import { createS3VectorsStore } from "@/infrastructure/vector/s3VectorsStore";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
 import { createTraceUseCases } from "@/application/trace/traceUseCases";
 import { createUsageUseCases } from "@/application/usage/usageUseCases";
@@ -249,6 +252,34 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
   internalHostSuffixes: config.mcpInternalHostSuffixes,
 });
 export const skillUseCases = createSkillUseCases(skillRepository);
+
+/**
+ * The capability catalog, when this deployment has a vector store to hold it.
+ * Undefined where it does not: the reindex endpoint answers 503 and a run
+ * resolves exactly the bindings its version names — which is what every run did
+ * before the catalog existed, so the feature is off rather than half-present.
+ *
+ * One bag serves indexing and search: search needs two of these fields, and a
+ * second object naming the same two would be a second place to keep the index
+ * name and the embedding model agreeing.
+ */
+const vectorBucket = config.vectorBucketName;
+export const catalogDeps: CatalogIndexDeps | undefined = vectorBucket
+  ? {
+      skills: skillRepository,
+      mcps: mcpRepository,
+      externalAgents: externalAgentRepository,
+      // The console's "test connection" probe, which already answers exactly
+      // this question. A server that refuses is not an error here — it is
+      // indexed at server level and reported as undiscovered.
+      probeMcpTools: async (serverName) => {
+        const result = await mcpUseCases.testConnection(serverName);
+        return result.ok ? result.tools : undefined;
+      },
+      embeddings: openAiEmbeddings,
+      catalog: createS3VectorsStore(vectorBucket, config.catalogIndexName),
+    }
+  : undefined;
 export const pluginUseCases = createPluginUseCases(pluginRepository);
 /**
  * The project slice, which route handlers used to compose for themselves:
