@@ -31,7 +31,7 @@ import {
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "./modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
-import { buildSkillLoader, createSkillReader, resolveRunTools } from "./bindings";
+import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
 import { createTraceRecorder, finishTrace } from "./traceLifecycle";
 
 /**
@@ -426,7 +426,18 @@ export async function* runLocalSubagent(
     // Everything past it is inside for the older reason: a consumer that stops
     // reading — or a dependency assembly that throws before the first chunk —
     // must still release the sessions the resolve opened.
-    const { skills, subagents, mcp, warnings } = await resolveRunTools(deps, version, signal);
+    // The transfer message is this child's whole request — `subagentContent`
+    // makes it the first user turn — so it is what discovery searches with,
+    // exactly as the newest user turn is at the top level. A child version that
+    // opted in and was handed no queries would silently run on its bindings
+    // alone, which is the difference between the two levels no one would think
+    // to look for.
+    const { skills, subagents, mcp, warnings } = await resolveRunTools(
+      deps,
+      version,
+      signal,
+      discoveryQueries(version, message),
+    );
     closeMcpSessions = mcp.close;
     const childDeps = await buildAgentDeps(
       deps,
