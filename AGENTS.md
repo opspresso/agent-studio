@@ -157,6 +157,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
 | What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |
 | How much a search may add to one run | `DISCOVERY_LIMITS` in `src/application/execution/bindings.ts` |
+| What a run searches the catalog with | `discoveryQueries` in `src/application/execution/bindings.ts` |
 | Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
@@ -278,6 +279,14 @@ One line each — the linked section is the authority.
   `src/infrastructure/db/keys.ts`.
 - **Never leave a list query unpaginated.** A single Query page caps at 1MB and silently
   truncates. Use `queryAll()`.
+- **Resolving a version's tools without `discoveryQueries` silently disables discovery.**
+  `resolveRunTools` takes its queries as an optional fourth argument, so a caller that omits
+  them gets a run where the version's `dynamicCapabilities` still reads as on, the bindings
+  still resolve, and nothing says the search never happened. Two of the three call sites
+  shipped that way — a transferred-to child ran on its bindings alone, and the preview
+  described a smaller prompt than the run it stands for. `TOOL_RESOLUTION_SITES` in
+  `tests/architecture.test.ts` bounds the list and checks each one names the helper; a fourth
+  is added there on purpose.
 - **A new execution entry point calls the facade** rather than re-encoding the `projectType`
   dispatch, and opens the run bracket. Which one says what the surface can render:
   `streamProjectRun` for a consumer that takes a run as chunks, image included;

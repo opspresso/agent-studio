@@ -1179,6 +1179,54 @@ const AGENT_RUN_ENTRY_POINTS = [
   "src/app/api/slack/events/_lib/handleEventRequest.ts",
 ];
 
+/**
+ * Everywhere a version's tools are resolved, and what each one has to remember.
+ *
+ * `resolveRunTools` takes its search queries as an *optional* fourth argument,
+ * and a caller that omits it gets a run with capability discovery silently
+ * switched off — the version's `dynamicCapabilities` still reads as on, the
+ * bindings still resolve, and nothing anywhere says the search never happened.
+ * That is not a hypothetical: two of these three shipped without it. The
+ * subagent path ran every transferred-to child on its bindings alone, and the
+ * preview showed a prompt smaller than the run it claims to describe.
+ *
+ * So the callers are a bounded list, like the agent-run entry points above, and
+ * a fourth is added here on purpose — with `discoveryQueries` in hand.
+ */
+const TOOL_RESOLUTION_SITES = [
+  // The top-level agent run; queries come from the newest user turn.
+  "src/application/execution/runProject.ts",
+  // A transferred-to child; the transfer message is its whole request.
+  "src/application/execution/subagentRunner.ts",
+  // The Playground preview; the request is optional there, and without one it
+  // shows the floor every run starts from.
+  "src/application/execution/promptPreview.ts",
+];
+
+describe("tool resolution", () => {
+  it("happens only where discovery queries are supplied with it", () => {
+    const callers = SOURCE_FILES.filter(
+      (file) =>
+        file.path !== "src/application/execution/bindings.ts" &&
+        /\bresolveRunTools\(/.test(file.text),
+    ).map((file) => file.path);
+    expect(callers.sort()).toEqual([...TOOL_RESOLUTION_SITES].sort());
+  });
+
+  it("passes discovery queries at every one of them", () => {
+    // Naming the helper is the check: it is the only thing that builds the
+    // pair of queries, so a call site that resolves tools without mentioning
+    // it is one that resolves them without a search.
+    for (const path of TOOL_RESOLUTION_SITES) {
+      const file = SOURCE_FILES.find((candidate) => candidate.path === path);
+      expect({ path, usesQueries: /\bdiscoveryQueries\(/.test(file?.text ?? "") }).toEqual({
+        path,
+        usesQueries: true,
+      });
+    }
+  });
+});
+
 describe("agent runs", () => {
   it("start at the entry points that declare themselves here", () => {
     const callers = SOURCE_FILES.filter((file) =>

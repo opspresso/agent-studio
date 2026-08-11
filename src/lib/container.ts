@@ -74,6 +74,7 @@ import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
+import { cacheQueryEmbeddings } from "@/application/catalog/queryCache";
 import { log } from "@/shared/logger";
 import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
 import { cohereEmbeddings } from "@/infrastructure/llm/cohereEmbeddings";
@@ -295,7 +296,10 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = v
       // Which adapter is a deployment fact, not a per-call one: an index is
       // built for one model's dimension, and vectors from another are not
       // comparable to what is already in it.
-      embeddings: EMBEDDINGS[config.embeddingProvider],
+      // Wrapped so a version's system prompt — the same text on every run of
+      // that version — is embedded once per process rather than once per run.
+      // Only queries are cached; a reindex's documents pass straight through.
+      embeddings: cacheQueryEmbeddings(EMBEDDINGS[config.embeddingProvider]),
       catalog: createS3VectorsStore(vectorBucket, config.catalogIndexName),
       minScore: config.catalogMinScore,
     }
