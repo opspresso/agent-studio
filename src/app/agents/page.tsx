@@ -135,9 +135,10 @@ export default function AgentsPage() {
             {a2aProjects.projects.map((project) => (
               <Card
                 key={project.name}
-                h="100%"
+                component="button"
+                type="button"
                 onClick={() => setCardProject(project)}
-                style={{ cursor: "pointer" }}
+                h="100%"
               >
                 <Group gap="xs">
                   <Text fw={500}>{project.displayName || project.name}</Text>
@@ -147,13 +148,9 @@ export default function AgentsPage() {
                   {project.description}
                 </Text>
                 {a2aProjects.enabled && (
-                  // The copy button must not also open the card dialog.
-                  <div
-                    style={{ marginTop: "var(--mantine-spacing-xs)" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <CopyableUrl url={project.cardUrl} />
-                  </div>
+                  <Text fz="xs" c="dimmed" mt="xs" truncate>
+                    {project.cardUrl}
+                  </Text>
                 )}
               </Card>
             ))}
