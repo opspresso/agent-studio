@@ -33,19 +33,19 @@ const DOMAINS = [
   {
     label: "projects",
     title: "Projects & versions",
-    body: "Author prompts as versioned configs. Publish one version; callers pin it or follow the pointer.",
+    body: "Author prompts, agents, and image projects as immutable versions. Publish one; callers pin it or follow the pointer.",
     Icon: IconFolder,
   },
   {
     label: "agent",
     title: "Agent loop",
-    body: "Multi-turn tool execution with turn budgets, skill loading, and transfer to sub-agents.",
+    body: "A multi-turn tool loop with turn budgets, on-demand skills, and subagent transfers — streamed end to end.",
     Icon: IconRobot,
   },
   {
     label: "mcp",
     title: "MCP tools",
-    body: "Register MCP servers once; any version can attach their tools, headers encrypted at rest.",
+    body: "Register a server once; versions bind it, narrow its tools, and override headers — with per-project OAuth, secrets encrypted at rest.",
     Icon: IconTool,
   },
   {
@@ -57,31 +57,31 @@ const DOMAINS = [
   {
     label: "plugins",
     title: "Agent Plugins",
-    body: "Skills and MCP servers sync from a plugins repository, which stays the source of truth for everything it declares.",
+    body: "Skills and MCP servers sync from one plugins repo — the source of truth for every name it declares.",
     Icon: IconPackage,
   },
   {
     label: "chats",
     title: "Chats",
-    body: "Talk to any agent project over streaming SSE, with tool results inline.",
+    body: "Talk to any agent project — replies stream, tool traffic stays inline, and a run outlives the tab that started it.",
     Icon: IconMessageCircle,
   },
   {
     label: "images",
     title: "Images",
-    body: "Draw or edit images from a prompt — as a project type, as agent builtins, or as an image subagent.",
+    body: "Draw or edit from a prompt — as a project type, agent builtins, or an image subagent; an edit can address any image the run has seen.",
     Icon: IconPhoto,
   },
   {
     label: "surfaces",
     title: "Slack, A2A & webhooks",
-    body: "Per-project Slack bots, both A2A directions, webhook triggers — every entry point runs the same engine.",
+    body: "Per-project Slack bots, A2A in both directions, webhook and schedule triggers — every entry point runs the same engine.",
     Icon: IconArrowsShuffle,
   },
   {
     label: "cost",
     title: "Cost & guards",
-    body: "Every call priced from the model registry and rolled up per project, per caller, per day — with daily and monthly thresholds that warn, then refuse.",
+    body: "Every call priced from the model registry and rolled up per project, per caller, per day — daily and monthly thresholds warn, then refuse.",
     Icon: IconChartBar,
   },
 ] as const;
@@ -141,15 +141,16 @@ export default async function Home() {
             leftSection={<IconBolt size={14} />}
             className={classes.eyebrow}
           >
-            Build · orchestrate · observe
+            Version · publish · run
           </Badge>
           <Title order={1} mt="lg" fz={{ base: 42, md: 60 }} lh={1.04} lts="-0.045em">
-            Your AI systems,
-            <span className={classes.gradientText}> finally in one studio.</span>
+            Build an agent once,
+            <span className={classes.gradientText}> call it from anywhere.</span>
           </Title>
           <Text mt="xl" maw={580} c="dimmed" lh={1.7} fz={{ base: "md", md: "lg" }}>
-            Design prompts, connect tools, coordinate agents, and understand every run from one
-            production workspace.
+            Author a prompt or an agent as a project, iterate in versions, publish one — then call
+            it from the console, an OpenAI-compatible API, Slack, a webhook, or another agent.
+            Every run attributed, priced, and bounded.
           </Text>
           <Group mt="xl" gap="md" wrap="wrap">
             <SignInButton />
@@ -159,9 +160,9 @@ export default async function Home() {
           </Group>
           <Group mt={32} gap="xl" wrap="wrap" className={classes.proofRow}>
             <div>
-              <Text fw={650}>One runtime</Text>
+              <Text fw={650}>One engine</Text>
               <Text fz="xs" c="dimmed">
-                Every model and surface
+                Every model, every surface
               </Text>
             </div>
             <div>
@@ -269,7 +270,7 @@ export default async function Home() {
       </section>
 
       <Text ta="center" fz="xs" c="dimmed">
-        Next.js · DynamoDB · OpenAI-compatible channels for every model
+        An internal LLM platform for prompt, agent, and cost management.
       </Text>
     </Stack>
   );

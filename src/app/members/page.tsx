@@ -32,7 +32,7 @@ export default function MembersPage() {
   }, [viewer?.isAdmin]);
 
   if (viewer === null) return <Text c="dimmed">Loading…</Text>;
-  if (!viewer.isAdmin) return <Alert color="gray">Members are available to registry administrators only.</Alert>;
+  if (!viewer.isAdmin) return <Alert color="gray">Members are available to admins only.</Alert>;
 
   return (
     <Stack gap="lg">

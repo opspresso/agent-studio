@@ -56,7 +56,7 @@ export default function PluginsPage() {
     <Stack gap="lg">
       <CatalogHeader
         title="Plugins"
-        description="Agent Plugins packages synced from GitHub — each bundles skills and MCP servers."
+        description="Agent Plugins packages synced from GitHub — each bundles skills and MCP servers, and the repo owns every name it declares."
         Icon={IconPackage}
       >
         {viewer?.isAdmin && (
@@ -120,7 +120,7 @@ export default function PluginsPage() {
       <CardGrid
         loading={loading}
         empty={plugins.length === 0}
-        emptyText="No plugins installed. Configure PLUGINS_REPO in Settings and sync."
+        emptyText="No plugins yet. Add the repository and token in Settings, then sync."
       >
         {plugins
           .filter((plugin) => matchesFilter(filter, plugin.name, plugin.description))

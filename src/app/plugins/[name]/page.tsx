@@ -208,7 +208,8 @@ function MissingCard({ name }: { name: string }) {
         {name}
       </Text>
       <Text fz="xs" c="dimmed" mt={4}>
-        Declared by the plugin but not in the registry — see the last sync report.
+        Declared by the plugin but not in the registry — the last sync skipped it; run a sync to
+        see why.
       </Text>
     </Card>
   );

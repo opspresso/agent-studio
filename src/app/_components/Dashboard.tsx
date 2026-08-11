@@ -163,7 +163,8 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
             Cost
           </Title>
           <Text c="dimmed" fz="sm" mt={4} maw={620}>
-            The cost, volume, and shape of every workload running through your studio.
+            What every project spends, priced per call from the model registry — with daily and
+            monthly limits that warn, then refuse.
           </Text>
         </div>
         <DateRangePicker
@@ -212,9 +213,9 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
 
       <Group justify="space-between" gap="md" wrap="wrap" className={classes.sectionHeading}>
         <div>
-          <Text fw={600}>Usage intelligence</Text>
+          <Text fw={600}>Breakdown</Text>
           <Text fz="xs" c="dimmed">
-            Compare spend across the dimensions that matter.
+            Group spend by project, model, provider, or department.
           </Text>
         </div>
         <SegmentedControl
@@ -233,7 +234,6 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
               Stacked by {groupBy}
             </Text>
           </div>
-          <span className={classes.liveIndicator}>Live</span>
         </Group>
         {items.length === 0 ? (
           <Text fz="sm" c="dimmed" py="lg">

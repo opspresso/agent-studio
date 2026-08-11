@@ -213,7 +213,8 @@ export function VersionEditor({
         />
         <Group justify="space-between" gap="xs" mt={4} wrap="nowrap">
           <Text fz="xs" c="dimmed">
-            Use {"{{variable}}"} placeholders rendered server-side at run time.
+            Use {"{{variable}}"} placeholders rendered server-side at run time. Agent runs ignore
+            this template.
           </Text>
           <Button
             variant="default"

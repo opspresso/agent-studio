@@ -42,7 +42,7 @@ export default function AuditPage() {
   }
 
   if (!viewer.isAdmin) {
-    return <Alert color="gray">Audit events are available to registry administrators only.</Alert>;
+    return <Alert color="gray">Audit events are available to admins only.</Alert>;
   }
 
   return (

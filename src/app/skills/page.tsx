@@ -73,7 +73,7 @@ export default function SkillsPage() {
       <CardGrid
         loading={loading}
         empty={skills.length === 0}
-        emptyText="No skills yet. Create your first one."
+        emptyText="No skills yet. Sync a plugins repo, or create one here."
       >
         {skills
           .filter((skill) => matchesFilter(filter, skill.name, skill.description))

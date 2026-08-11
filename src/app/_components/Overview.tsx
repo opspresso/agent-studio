@@ -169,7 +169,8 @@ export function Overview({
             {firstName ? `Welcome back, ${firstName}` : "Welcome back"}
           </Title>
           <Text c="dimmed" mt={6} maw={620}>
-            Build a prompt or an agent, publish a version, and call it from anywhere.
+            Build a prompt, an agent, or an image project; publish a version and call it from
+            anywhere.
           </Text>
         </div>
         <Group gap="xs" wrap="wrap">
@@ -204,8 +205,8 @@ export function Overview({
       ) : (
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
           <Section
-            title="Your projects"
-            description="The workloads you touched most recently."
+            title="Recent projects"
+            description="Recently updated across the workspace — yours first."
             href="/projects"
             linkLabel="All projects"
           >
@@ -380,9 +381,9 @@ function GetStarted() {
         <Stack gap="xs">
           <Text fw={600}>Start with a project</Text>
           <Text fz="sm" c="dimmed" maw={560} lh={1.6}>
-            A project holds your prompt or agent, and each edit is a version you can publish.
-            Create one, attach skills and MCP tools to a version, then open it in a chat to try
-            it out.
+            A project holds a prompt, an agent, or an image workload, saved as versions you can
+            publish. Create one, attach skills and MCP tools to a version, then try it in the
+            Playground — or in a chat, for an agent project.
           </Text>
           <Group gap="xs" mt={4}>
             <Button component={Link} href="/projects" leftSection={<IconPlus size={16} />}>

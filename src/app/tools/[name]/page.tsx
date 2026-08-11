@@ -251,8 +251,8 @@ export default function McpDetailPage() {
             // The repo owns url/description/content and rewrites them on sync;
             // headers, OAuth and a managed address stay this console's.
             <Text fz="xs" c="dimmed" mt={4}>
-              Owned by {server.source} — document fields follow the repo; credentials are set
-              here.
+              Owned by {server.source} — its URL, description, and notes follow the repo;
+              credentials are set here.
             </Text>
           )}
           {server.runtime === "managed" && (

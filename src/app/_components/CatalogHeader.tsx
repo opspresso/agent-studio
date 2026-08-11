@@ -27,7 +27,7 @@ export function CatalogHeader({
           </ThemeIcon>
           <div>
             <Text fz={10} fw={650} c="brand" tt="uppercase" lts="0.13em" mb={4}>
-              Studio library
+              Studio catalog
             </Text>
             <Title order={1} fz={{ base: 28, md: 36 }} lts="-0.035em">
               {title}

@@ -28,7 +28,7 @@ import { CatalogHeader } from "@/app/_components/CatalogHeader";
 const TYPE_OPTIONS = [
   { value: "llm", label: "llm — single-shot prompt" },
   { value: "agent", label: "agent — multi-turn tool loop" },
-  { value: "image", label: "image — image generation" },
+  { value: "image", label: "image — generate or edit images" },
 ];
 
 export default function ProjectsPage() {
@@ -58,7 +58,7 @@ export default function ProjectsPage() {
     <Stack gap="lg">
       <CatalogHeader
         title="Projects"
-        description="Prompt, agent, and image workloads with versioned configuration."
+        description="Prompt, agent, and image projects — iterate in versions, publish one for callers."
         Icon={IconFolder}
       >
         <Button onClick={open}>New project</Button>

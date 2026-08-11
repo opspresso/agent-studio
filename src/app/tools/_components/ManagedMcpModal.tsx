@@ -128,7 +128,7 @@ export function ManagedMcpModal({
             onChange={(e) => setImage(e.currentTarget.value)}
             placeholder="…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1"
             required
-            description="Any registry the host can pull from. This account's own needs no credentials."
+            description="Any registry the host can pull from — its own ECR needs no credentials."
             inputWrapperOrder={["label", "input", "description", "error"]}
             styles={monoInput}
           />
@@ -201,7 +201,7 @@ export function ManagedMcpModal({
             autosize
             minRows={6}
             maxRows={24}
-            description="Operator notes for the console. Not sent to the model."
+            description="Operator notes for the console. Not sent to the model — only the description is."
             inputWrapperOrder={["label", "input", "description", "error"]}
             styles={monoInput}
           />

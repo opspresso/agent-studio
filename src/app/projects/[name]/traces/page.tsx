@@ -46,7 +46,8 @@ export default function TracesPage() {
         </Text>
       ) : traces.length === 0 ? (
         <Text fz="sm" c="dimmed">
-          No traces recorded in this range.
+          No traces in this range. Agent runs are always traced; prompt and image runs are
+          sampled.
         </Text>
       ) : (
         <Accordion variant="separated" radius="md" multiple>

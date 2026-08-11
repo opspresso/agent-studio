@@ -191,11 +191,18 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         method: "POST",
         path,
         title: "Generate image",
-        description: "Single-shot image generation against the published version.",
+        description:
+          "Single-shot image run against the published version — draws from the prompt, or edits the attached source images when images is present.",
         auth: "token",
         streaming: false,
         requestFields: [
           { name: "prompt", type: "string", required: true, description: "Image generation prompt." },
+          {
+            name: "images",
+            type: "array",
+            description:
+              "Source images to edit, up to 4 of { b64, mimeType }. Present means edit, absent means draw.",
+          },
           { name: "size", type: "string", description: "Requested dimensions, e.g. 1024x1024." },
           { name: "quality", type: "string", description: "Provider-specific quality hint." },
         ],

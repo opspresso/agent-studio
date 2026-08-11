@@ -46,8 +46,7 @@ export default async function LoginPage({
             Sign in to continue
           </Title>
           <Text fz="sm" c="dimmed" lh={1.6}>
-            This page is part of the Agent Studio workspace. Sign in with your work Google account
-            to open it.
+            Sign in with your Google account on one of this deployment&rsquo;s allowed domains.
           </Text>
           <SignInButton callbackURL={next} />
         </Stack>

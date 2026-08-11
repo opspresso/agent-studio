@@ -66,7 +66,7 @@ export default function AgentsPage() {
     <Stack gap="lg">
       <CatalogHeader
         title="Agents"
-        description="External OpenAI-compatible and A2A endpoints, ready to join agent workflows."
+        description="External OpenAI-compatible and A2A endpoints a project version can bind as remote subagents."
         Icon={IconRobot}
       >
         {viewer?.isAdmin && <Button onClick={open}>Register agent</Button>}
@@ -82,7 +82,11 @@ export default function AgentsPage() {
         <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter agents…" />
       )}
 
-      <CardGrid loading={loading} empty={agents.length === 0} emptyText="No external agents yet.">
+      <CardGrid
+        loading={loading}
+        empty={agents.length === 0}
+        emptyText="No external agents yet. Register an OpenAI-compatible or A2A endpoint to use it as a remote subagent."
+      >
         {agents
           .filter((agent) => matchesFilter(filter, agent.name, agent.description))
           .map((agent) => {
@@ -120,7 +124,7 @@ export default function AgentsPage() {
             <Text fz="sm" c="dimmed" mt={4}>
               {a2aProjects.enabled
                 ? "Published projects, exposed as A2A agents — share the Agent Card URL, no registration needed."
-                : "Published projects. Set A2A_API_KEY on the server to expose them as A2A agents."}
+                : "Published projects. Generate an A2A key in Settings to expose them as A2A agents."}
             </Text>
           </div>
           <CardList>

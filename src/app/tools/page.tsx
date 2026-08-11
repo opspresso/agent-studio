@@ -58,7 +58,7 @@ export default function ToolsPage() {
     <Stack gap="lg">
       <CatalogHeader
         title="Tools"
-        description="MCP servers that expose tools to agents over streamable HTTP. Synced servers arrive through Plugins."
+        description="MCP servers that expose tools to agents over streamable HTTP — registered once, bound per version. Synced servers arrive through Plugins."
         Icon={IconTool}
       >
         {viewer?.isAdmin && <Group gap="xs">
@@ -79,7 +79,11 @@ export default function ToolsPage() {
         <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter servers…" />
       )}
 
-      <CardGrid loading={loading} empty={servers.length === 0} emptyText="No MCP servers yet.">
+      <CardGrid
+        loading={loading}
+        empty={servers.length === 0}
+        emptyText="No MCP servers yet. Sync a plugins repo, or register one here."
+      >
         {servers
           .filter((server) => matchesFilter(filter, server.name, server.description))
           .map((server) => {

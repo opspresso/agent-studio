@@ -161,7 +161,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
         />
         <Stack gap="xs">
           <Checkbox
-            label="Enable event handling at"
+            label="Enable event handling at this URL"
             checked={enabled}
             onChange={(e) => setEnabled(e.currentTarget.checked)}
           />
@@ -173,9 +173,10 @@ export function SlackSection({ projectName }: { projectName: string }) {
             Suggested prompts
           </Text>
           <Text fz="xs" c="dimmed" lh={1.6}>
-            Shown when someone opens the agent. Slack takes up to {MAX_SUGGESTED_PROMPTS}; blank
-            rows are ignored. Changing these also changes the manifest above, so re-apply it to the
-            Slack app if you want the chips before the first event arrives.
+            Shown when someone opens this app&apos;s assistant pane in Slack. Slack takes up to{" "}
+            {MAX_SUGGESTED_PROMPTS}; blank rows are ignored. Changing these also changes the
+            manifest above, so re-apply it to the Slack app if you want the new prompts before the
+            first event arrives.
           </Text>
           {prompts.map((prompt, index) => (
             <Group key={index} gap="xs" wrap="nowrap" align="flex-start">
