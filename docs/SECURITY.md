@@ -49,6 +49,17 @@ The `next` parameter arrives from the address bar, so `/login` reads it back thr
 `safeNextPath` (`src/shared/safeNextPath.ts`). `//host` and `/\host` have to be rejected or
 the sign-in flow becomes an open redirect.
 
+A refusal travels back out through the same address bar. Better Auth builds the browser's
+`error` parameter from the thrown error's *message*, so that message is a wire format rather
+than prose — a sentence written there lands in the URL, which is how the deployment's
+allowed-domain list used to reach whoever had just been turned away. The codes live in
+`src/shared/signInError.ts` instead (`EMAIL_DOMAIN_NOT_ALLOWED` is the only one this app
+raises), and `/login` maps them to copy it owns. An unrecognised value collapses to one
+generic line **rather than being echoed**: the parameter is server text, and a deployment
+redirected before that mapping existed can still send a whole sentence naming its domains.
+The codes Better Auth raises on its own — a cancelled consent screen, a stale callback —
+differ in ways only a server log can act on, so they collapse too.
+
 ## Authorization model
 
 **Projects are a shared catalog.** Any signed-in user may read and run any project. Only
@@ -135,7 +146,7 @@ a removal is not a secret.
 
 ### Reveal endpoints
 
-Three secrets this app issues can be read back in plaintext:
+Four secrets this app issues can be read back in plaintext:
 
 | Secret | Endpoint | Who |
 |---|---|---|
@@ -179,7 +190,7 @@ never enough to reconstruct the token.
 
 ## Request authentication for machine callers
 
-Five surfaces authenticate without a session cookie:
+Five credentials authenticate a caller with no session cookie:
 
 | Surface | Credential | Verification |
 |---|---|---|
@@ -187,7 +198,12 @@ Five surfaces authenticate without a session cookie:
 | Slack events | Slack signing secret | HMAC + `timingSafeEqualString`, 5-minute replay window, per-project secret |
 | Inbound A2A | `X-A2A-Key` | Constant-time compare against the shared `A2A_API_KEY` (actor `a2a:shared-key`), else a hash lookup against the admin-issued **named client keys** (actor `a2a:{client}` — attributed and rate-limited per client). With neither configured the endpoints are off |
 | Webhook triggers | `X-Trigger-Secret` | `cipher.decryptEquals` (constant time) |
-| Schedule scan | `X-Scan-Token` | `timingSafeEqualString` against `SCHEDULE_SCAN_TOKEN`; unset answers 503 |
+| CronJob ticks — schedule scan (`/api/triggers/scan`), catalog reindex (`/api/catalog/reindex`), plugins sync (`/api/plugins/sync/scan`) | `X-Scan-Token` | `timingSafeEqualString` against `SCHEDULE_SCAN_TOKEN`; unset answers 503, and a refused token logs a warning on all three |
+
+**One token opens all three ticks**, which makes it the widest of the five. The same string
+that lets a CronJob ask which schedules are due also runs a plugins sync, and that sync
+writes both registries — skills and MCP servers — adopting names the repository declares and
+rewriting provenance with them. Scope and rotate it as a write credential, not as a probe.
 
 One sibling carries no credential at all: a published project's A2A **Agent Card**
 (`/.well-known/agent-card.json`) is served to anyone once the surface is enabled — a shared
@@ -211,7 +227,9 @@ deliveries claim their `Idempotency-Key` the same way.
 
 Operator-registered URLs — MCP servers and external agents — are validated by
 `src/infrastructure/net/ssrfGuard.ts` at **both registration and dispatch**. Rejected:
-non-`http(s)` schemes, and hosts resolving to private, loopback, link-local (including the
+non-`http(s)` schemes, URLs carrying userinfo (`https://user:pass@host` — a credential in the
+address is not how anything here authenticates, and it is a standing way to make a host read
+as something else), and hosts resolving to private, loopback, link-local (including the
 `169.254.169.254` cloud-metadata address) or otherwise reserved ranges.
 
 Dispatch goes through `fetchPublicUrl` (`src/infrastructure/net/publicFetch.ts`), which is
@@ -239,10 +257,11 @@ construction — a Kubernetes Service resolves to a ClusterIP the guard rejects.
 MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 ```
 
-A host under a declared suffix skips the public-URL guard in the three places
-that ask — at registration, at dispatch, and when an admin reads its OAuth
-metadata — each through `skipsUrlGuard`. **The blocked address ranges are not
-widened** — every other entry still faces exactly the check it did before. This
+A host under a declared suffix skips the public-URL guard everywhere the
+question is asked — registering an entry and editing one, the console's "Test
+connection" probe, an admin reading the entry's OAuth metadata, a project's own
+tool list, and dispatch — each through `skipsUrlGuard`. **The blocked address
+ranges are not widened** — every other entry still faces the check it did. This
 is a second narrow exception alongside managed loopback, not a loosening of the
 guard.
 
@@ -302,6 +321,12 @@ version's overrides cannot impersonate another project's tenant, and it rides in
 session's header map so the discovery cache stays keyed per project. The catalog reindex
 probe and "Test connection" carry no project and send no header — a server that requires one
 refuses those listings and is indexed at server level only.
+
+The console's per-project tool list (`listTools` in `src/application/mcp/mcpAuthUseCases.ts`)
+is the one probe that *has* a project and still sends no tenant: it resolves that project's
+OAuth token and assembles the same headers a run would, minus this one. On a server that
+exposes different tools per tenant, the list an owner is shown is therefore not necessarily
+the list their run is offered.
 
 That header is the **only** identity metadata sent automatically, and its value is the
 project name — never a user's name or email. What a server can learn beyond it is

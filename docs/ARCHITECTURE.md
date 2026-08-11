@@ -30,22 +30,30 @@ llm, agents (subagents + external agent registry), skills, mcp, chat, cost/usage
 src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
-    execution/  security/  slack/  trigger/  sync/  audit/
+    execution/  security/  slack/  trigger/  sync/  audit/  plugin/  member/
+    a2a/  catalog/  vector/
   application/      # Use cases. Depends on domain ports only, and never on the
                     # composition root — deps are injected, never pulled.
-    llm/            # The engine: tool loop, PII masking, context budget, document parts
-    execution/      # The facades, the run bracket, binding + MCP tool resolution
+    llm/            # The engine: tool loop, agent-run assembly, tool-result budgets,
+                    # PII masking, context budget, document parts
+    execution/      # The facades, binding + MCP tool resolution, subagents, the image tool
+    run/            # What wraps a top-level run: the bracket, the concurrency guard,
+                    # the unknown-model policy, trace lifecycle
     chat/  slack/  a2a/  trigger/  image/
                     # The surfaces that drive a run, and the image path
     audit/          # The one writer of an audit row, and reading the trail back
+    catalog/        # The capability index: reindex, search, query-embedding cache
     project/  registry/  skill/  mcp/  agent/  usage/  trace/  settings/  health/
+    plugin/  member/
   infrastructure/   # Adapters (app-facing code reaches them via the composition root).
     db/             # Single-table client, key builders, repositories
     llm/            # OpenAI-compatible provider channels, streaming
     mcp/            # MCP HTTP client, session, discovery cache
-    a2a/  agent/  slack/  github/  storage/  net/  crypto/  health/
+    vector/         # The S3 Vectors store the capability catalog is indexed into
+    a2a/  agent/  slack/  github/  storage/  net/  crypto/  health/  telemetry/
                     # A2A + external-agent clients, Slack, the skills- and tools-repo
-                    # clients, S3 image store, SSRF guard, AES, readiness probes
+                    # clients, S3 image store, SSRF guard, AES, readiness probes,
+                    # OTel trace export
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
       _lib/         # Route-handler glue: SSE framing, `apiError`, body size limits
@@ -107,7 +115,7 @@ flowchart TB
   application --> domain
   infrastructure --> domain
   infrastructure --> lib
-  app -->|"only through the wiring sites<br/>container.ts · chats _deps.ts · slack events _lib · per-request A2A assembly"| lib
+  app -->|"only through the wiring sites<br/>container.ts · chats _deps.ts · slack events _lib · per-request A2A assembly · instrumentation.ts"| lib
   lib --> domain
   lib -->|"container.ts — composes the use cases it wires"| application
   lib -->|"wiring modules only"| infrastructure
@@ -121,7 +129,7 @@ flowchart TB
 ### Composition, in a few deliberate places
 
 Composition is distributed rather than centralised in one file, because the three execution
-surfaces need genuinely different bags:
+surfaces need genuinely different bags. **Five sites compose adapters, and no others may:**
 
 | Wiring site | Wires |
 |---|---|
@@ -129,6 +137,7 @@ surfaces need genuinely different bags:
 | `src/app/api/chats/_deps.ts` | The `ChatDeps` bag (bound `runAgent` + repositories) |
 | `src/app/api/slack/events/_lib/` | The `SlackEventDeps` bag (bound `runAgent` + `SlackClientPort`), mirroring `ChatDeps` |
 | `src/app/api/a2a/[name]/route.ts` | Per-request A2A assembly: the SDK's request/transport handlers around `ProjectA2aExecutor` over `executionDeps` — per request because the handler is built around one project's card |
+| `src/instrumentation.ts` | The boot path: the audit sink over `auditRepository`, and the managed-MCP resume. A wiring site by construction — the composition root itself is not loaded until this file decides the runtime is the Node server, and the audit sink has to be wired on the **awaited** boot path (see [Audit records](#audit-records)) |
 
 Three DI styles are in use on purpose:
 
@@ -177,6 +186,8 @@ One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` 
 | MCP server | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
 | External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Plugin | `PLUGIN#{name}` | `META` | `TYPE#PLUGIN` | `{name}` |
+| Plugins-sync report (per source repo) | `PLUGINSYNC#{repo}` | `REPORT` | — | — |
+| Plugins-sync lease | `PLUGINSYNC#{repo}` | `LOCK` | — | — |
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
 | Usage (daily per caller) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
 | Usage monthly-threshold claim | `USAGE#{projectName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
@@ -257,7 +268,7 @@ dispatch. To trace a request, start at the dispatch tier.
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
 | Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it; a firing's row records that it drew, since the row carries text |
-| Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `executeProjectStream` (same `triggerRunnerDeps.run`) |
+| Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (same `triggerRunnerDeps.run`) |
 
 ```mermaid
 flowchart LR
@@ -310,8 +321,8 @@ and hands an `image` project to `generateImage` *before* asking the facade, whic
 The bracket admits both paths — it is what wraps a top-level run however it started.
 
 `generateImage` (`src/application/image/generateImage.ts`) sits outside this module but starts
-a run the same way — the predict route, the A2A executor and the trigger runner reach it
-directly, which is why it joins the admitting functions below. `collectRun`, which drains an
+a run the same way — the facade, the predict route and the A2A executor reach it directly,
+which is why it joins the admitting functions below. `collectRun`, which drains an
 agent stream into one collected answer, stays here, where `executeProject` uses it for the
 non-stream agent case.
 
@@ -350,8 +361,10 @@ Each of those four used to open the in-flight metric for itself, which is exactl
 cost guard had four places it could be forgotten. `tests/architecture.test.ts` now pins the
 bracket, so a fifth entry point that skips it is missing its metric as loudly as its guard.
 
-It is *not* "the execution facade", because `generateImage` is not in one: the predict
-route, the A2A executor and the trigger runner call that module directly.
+It is *not* "the execution facade", because `generateImage` is not in one: the predict route
+and the A2A executor call that module directly, each answering in a shape no chunk stream
+carries. A surface that only needs chunks — the trigger runner is the one — reaches it through
+`streamProjectRun` instead.
 
 **Order is load-bearing at both ends.** The guards run **before** the metric opens, so a
 refused run is never counted, traced, or recorded. `close()` runs **after** the caller has
@@ -477,7 +490,7 @@ consumers must use it instead of re-deriving author semantics.
 | `delta.content` / `delta.reasoningContent` | engine per stream delta (PII-restored) | top-level only: chat persistence, Slack text, OpenAI chunks, A2A artifact, client answer bubble |
 | `delta.toolCalls` | engine when a turn requests tools (display args) | client tool-call rendering; Slack progress indicator |
 | `toolResult` | engine after each tool finishes | chat tool rows (displayed, and replayed into context for the last N turns), client tool panel |
-| `warning` | run setup, before the first token, for a binding it could not use (deleted skill/subagent, unreachable or blocked MCP server, tools past the per-run cap) | chat warning banner, Slack warning suffix, `Trace.warnings`; never ends the stream |
+| `warning` | anywhere a run loses something: at setup for a binding it could not use (deleted skill/subagent, unreachable or blocked MCP server, tools past the per-run cap), and mid-run for a turn or output limit, a context-budget cut, a truncated transfer transcript, a failed transfer, a dropped document | chat warning banner, Slack warning suffix, `Trace.warnings`; never ends the stream |
 | `image` | GenerateImage / EditImage builtins, and image-project subagents | consumed **regardless of author** (delegating to an image subagent is how an agent draws): chat image persistence (S3), Slack upload, OpenAI `images` extension, client gallery |
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
 | `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | only a **top-level** error ends the stream. An authored one is *dropped* by nearly every consumer (Slack and the trace recorder excepted) because the parent answers past it — so what a failed transfer lost reaches the reader as that transfer's `warning`, and the model as its "For context" turn, not through this field |
@@ -606,8 +619,16 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
 `recordUsage`, `callMcpTool`, `loadSkillContent`, `runSubagent`, `generateImage`, `editImage`
 — so it is tested with no network and no DB via `tests/fakeChannel.ts`.
 
+The loop keeps two neighbours, and **`engine.ts` is the façade that re-exports both**, so a
+caller keeps one import path and the split stays an internal one:
+
+| Module | Owns |
+|---|---|
+| `agentAssembly.ts` | What a run is told it can do: `assembleAgentRun`, the system-prompt builders (`buildAgentSystemPrompt`, the skill and server tables, the run clock and caller blocks), the builtin tool definitions and `buildAgentTools`, `BUILTIN_TOOL_NAMES`, the `ImageRegistry`, and `MAX_DISPATCH_TASKS` |
+| `toolResultBudget.ts` | What a result may cost and what it has to do: `createToolResultBudget` and `createToolResultEmitter`, `MAX_TOOL_RESULT_CHARS_PER_TURN`, `MIN_KEPT_RESULT_CHARS`, and the truncation marker |
+
 > `src/application/llm/AGENTS.md` is the authority on the loop invariants. Read it before
-> editing `engine.ts` or `pii.ts`.
+> editing `engine.ts`, `agentAssembly.ts`, `toolResultBudget.ts` or `pii.ts`.
 
 ```mermaid
 flowchart TB
@@ -887,6 +908,17 @@ Agent runs append a **"Connected MCP Servers"** table (server name, description,
 names) to the system prompt so the model knows which server a tool group belongs to; servers
 that are unreachable or expose no tools are omitted.
 
+**Every request a run makes names its calling project**, as `X-Tenant-Id` (`TENANT_ID_HEADER`
+in `src/application/execution/mcpTools.ts`), so a multi-tenant server scopes its data per
+project with no per-project registration. It is stamped **after** the header merge — so
+neither the registry entry nor a version's overrides can spoof another project's tenant, in
+any spelling — and **after** the OAuth-availability check, so metadata never counts as a way
+to authenticate a server whose connection is unavailable. A caller with no project behind it
+sends none: the catalog probe and "Test connection" carry no tenant. Because it rides in the
+same header map, it also keys the [discovery cache](#discovery-cache) per project, so a server
+free to expose different tools per tenant is cached per tenant. The full contract is in
+[SECURITY.md](SECURITY.md#what-an-mcp-server-is-told-about-the-caller).
+
 #### Transport and sessions
 
 Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The protocol has
@@ -1015,9 +1047,10 @@ condition for publish). That split is what lets one shared registry entry serve 
 provider app per project, and it is why the registry is admin-owned while connections are
 owner-owned.
 
-A connection **supplies** credentials rather than gating the server. The resolved token is
-applied last at dispatch — over the registry entry's headers and the binding's overrides — so
-a version cannot substitute its own `Authorization` for the project's connection. When no
+A connection **supplies** credentials rather than gating the server. The resolved token is the
+last **credential** applied at dispatch — over the registry entry's headers and the binding's
+overrides — so a version cannot substitute its own `Authorization` for the project's
+connection. (`X-Tenant-Id` is stamped after it, but it authenticates nothing.) When no
 connection is available the server still runs on whatever those headers hold; it is dropped
 with a warning only when they hold nothing. Discovering OAuth on an entry adds a way to
 authenticate it and must not take away one an operator already configured, so a single entry
@@ -1220,6 +1253,27 @@ one cut across both lets the stronger query erase the weaker: a system prompt re
 Slack 어시스턴트" puts `slack` at 0.583, so a ratio taken over the union sits at 0.408 and
 drops `github` at 0.393 — the entry the request actually named. Two queries asking different
 questions cannot share a proportional cut.
+
+**A server is one candidate, scored by the best evidence from either index.** The two indexes
+are merged into a candidate per server name, each keeping the higher of its tool-hit and
+server-hit scores — comparable because they share one embedding space and each kind was
+already cut against its own best. Source order would not do: with every tool hit outranking
+every server hit, a persona prompt's incidental tool matches filled all three slots ahead of
+the servers the request itself named. What a tool hit knows that a server hit does not — *which*
+tools matched — becomes the binding's `tools` narrowing rather than a ranking privilege, so a
+discovered server does not spend the run's tool budget on the rest of its catalogue; a
+candidate only the server index reached is bound whole and the dispatch-time listing decides.
+
+Both searches are **oversampled past the binding cap** (`DISCOVERY_LIMITS` in
+`src/application/execution/bindings.ts`: tools at four times the server cap, servers at three
+times) because the walk skips candidates — an OAuth server this project has not connected, an
+entry deleted since the index was built — and **a skipped candidate must not cost a slot**.
+Sized at exactly the cap, one unconnected high scorer starved the servers the request asked
+for. Each list is then **sorted by name, not by score**: order carries no meaning downstream,
+but it decides which colliding MCP tool keeps its bare name (alias allocation walks the servers
+in list order, so a swap re-routes a tool call the history replays) and the byte layout of the
+system prompt, which the provider's prompt cache keys on. Scores rank differently for every
+message; names do not.
 
 **Discovery at run time is opt-in and strictly additive.** `parameters.dynamicCapabilities`
 turns it on; `resolveRunTools` then appends what it finds to the version's own lists *before*
@@ -1481,7 +1535,7 @@ audit row answers exactly that and nothing else.
 AuditEvent { eventId, actorEmail,
              action: 'secret.reveal' | 'secret.rotate' | 'secret.revoke'
                    | 'project.admin-override' | 'settings.update'
-                   | 'project.delete' | 'registry.delete',
+                   | 'project.delete' | 'registry.delete' | 'registry.adopt',
              target,        // `kind:name` — `project:my-bot`, `skill:pdf-reader`
              detail?, createdAt }
 ```
@@ -1593,9 +1647,9 @@ any one error or warning string.
 /login                sign-in screen; where the page gate sends a signed-out visitor
 /projects             project catalog (cards)
 /projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
-/projects/[name]/versions | usage | traces | api-reference | settings
+/projects/[name]/versions | usage | traces | api-reference | settings | compare
 /chats  /chats/[chatId]
-/skills  /tools (MCP)  /agents  (each + /[name] detail page)
+/skills  /tools (MCP)  /agents  /plugins  (each + /[name] detail page)
 /dashboard            redirects to `/`, which carries the cost dashboard as its last section
 /members              admin-only workspace member list with join and last-login times
 /audit                admin-only sensitive-action audit trail

@@ -26,11 +26,12 @@ AGENTS.md가 명명한 wiring site에서만 하며(목록은 그쪽이 정본이
 사본은 한 번 낡았다), 새 실행 정책은 **run bracket** 한 곳
 (`src/application/run/runBracket.ts`)에 붙는다.
 
-실행 파사드가 아니다. top-level run을 admit하는 네 함수 중 `generateImage`는 파사드를
-통과하지 않으므로(predict 라우트·A2A executor·트리거 러너가 그 모듈을 직접 부른다),
-파사드에 붙인 정책은 이미지 런에 적용되지 않는다. bracket은 어떻게 시작됐든 모든 top-level
-run을 감싸는 단일 소유자이고, 일일 비용 가드·동시성 가드·미등록 모델 정책이 이미 거기 있다
-(ARCHITECTURE.md의 *The run bracket*).
+실행 파사드가 아니다. `generateImage`를 직접 부르는 곳은 파사드 자신(`runProject.ts`)과
+predict 라우트·A2A executor 셋이라, 그 두 라우트로 시작된 이미지 런은 파사드를 지나지
+않는다 — 트리거처럼 `streamProjectRun`으로 들어오는 런은 지난다. 그래서 파사드에 붙인
+정책은 이미지 런 전부에 적용되지 않는다. 반면 bracket은 top-level run을 admit하는 네 곳
+모두에서 어떻게 시작됐든 그 런을 감싸는 단일 소유자이고, 일일 비용 가드·동시성 가드·미등록
+모델 정책이 이미 거기 있다 (ARCHITECTURE.md의 *The run bracket*).
 
 **규약**
 

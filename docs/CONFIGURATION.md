@@ -68,12 +68,12 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 | `DYNAMODB_ENDPOINT` | unset | — | DynamoDB Local only. **Must be empty in alpha/prod**; a leftover value points the app at a localhost that is not there. |
 | `AES_ENCRYPTION_KEY` | — (required) | — | 32-byte base64. Encrypts every stored secret. See [SECURITY.md](SECURITY.md#secrets-at-rest). |
 | `S3_BUCKET_NAME` | unset | — | Bucket for generated images. **Private**: a chat row stores the object key and every read URL is pre-signed, so the role needs `s3:GetObject` as well as `s3:PutObject`. Unset disables persistence — chat images then render only during the live stream. |
-| `VECTOR_BUCKET` | unset | — | S3 Vectors bucket holding the capability catalog. Unset means the deployment has no catalog: `POST /api/catalog/reindex` answers 503 and a run offers exactly what its version bound. The role needs `s3vectors:PutVectors`, `QueryVectors`, `GetVectors`, `ListVectors` and `DeleteVectors` on the index — `GetVectors` because a search asks for each match's metadata, which the query returns only under that action. A role missing it **reindexes successfully and then fails every lookup**: the writes go through, and each run logs `capability discovery failed; running with bindings only` while the console shows a healthy catalog. |
+| `VECTOR_BUCKET` | unset | — | S3 Vectors bucket holding the capability catalog. Unset means the deployment has no catalog: `POST /api/catalog/reindex` answers 503 and a run offers exactly what its version bound. That 503 has two causes and the token check runs first, so an unset `SCHEDULE_SCAN_TOKEN` produces the same status with a different message. The role needs `s3vectors:PutVectors`, `QueryVectors`, `GetVectors`, `ListVectors` and `DeleteVectors` on the index — `GetVectors` because a search asks for each match's metadata, which the query returns only under that action. A role missing it **reindexes successfully and then fails every lookup**: the writes go through, and each run logs `capability discovery failed; running with bindings only` while the console shows a healthy catalog. |
 | `CATALOG_INDEX` | `capabilities` | — | Index within that bucket. Its dimension must match `EMBEDDING_MODEL`'s and its metric must be cosine. |
 | `EMBEDDING_PROVIDER` | `openai` | — | `cohere` \| `bedrock` \| `openai`. The first two are Bedrock and need no credentials — the pod role carries `bedrock:InvokeModel` — while `openai` reuses `LLM_BASE_URL`/`LLM_API_KEY` and requires that endpoint to serve `/embeddings`. Anything unrecognised reads as `openai`. **The demo cluster runs `cohere`**; see the table below. |
 | `EMBEDDING_MODEL` | per provider: `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0`, `text-embedding-3-small` | — | Changing it means **rebuilding the index** — vectors from two models are not comparable, and nothing in a mixed index reports that; the scores are simply wrong. Cohere v4 is reached through its **inference profile**; the bare model id refuses on-demand invocation outright. |
 | `EMBEDDING_DIM` | `1024` | — | The width the index was created at, asked for on every path. Cohere v4, Titan v2 and OpenAI's v3 models each serve several widths, and none of their defaults is 1024 — `text-embedding-3-small` is natively 1536 — so a provider left to its default answers with vectors the index rejects, and the catalog stays empty with nothing but a background log line to say why. |
-| `CATALOG_MIN_SCORE` | `0.25` | — | Relevance floor, in `(0, 1]`. Belongs to the **embedding model**, not to the search — re-measure it whenever `EMBEDDING_MODEL` changes, or the catalog either answers everything or nothing. See the table below. |
+| `CATALOG_MIN_SCORE` | `0.25` | — | Relevance floor, in `(0, 1]`. Belongs to the **embedding model**, not to the search — re-measure it whenever `EMBEDDING_MODEL` changes, or the catalog either answers everything or nothing. See the table below. Like `TRACE_SAMPLE_RATE` it **clamps** into `0`–`1` with a warning rather than falling back; a non-numeric value takes the default. It is only half the cut — a per-query ratio against that query's own best score is the other half, and the higher of the two wins — so a value clamped to `0` does not admit everything, it removes the answer to the case the ratio cannot see: that nothing in the catalog matches at all. |
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, else the request origin, else `http://localhost:3000` | **runtime** | Scheme + host used to build outward-facing URLs (A2A Agent Cards, Slack manifests, the OAuth callback). Behind a reverse proxy the request URL reflects the bind address, so this has to come from configuration. The request-origin step applies only where a request is at hand — the A2A Agent Card path has none, so with both variables unset a card advertises `localhost`. |
 
 ### Choosing an embedding model
@@ -118,14 +118,13 @@ All traffic speaks the OpenAI Chat Completions protocol. Model ids are `provider
 | `LLM_API_KEY` | — (required) | **runtime** | Credential for that channel. |
 | `LLM_PROVIDER_<NAME>_BASE_URL` | unset | **runtime** | Registers a per-provider channel. `<NAME>` is the model id's provider prefix, upper-cased. The registry's providers are `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`; the env parser accepts any `[A-Z0-9_]+` name, but a channel outside that list can never match a model id — the `/settings` override path refuses one outright. |
 | `LLM_PROVIDER_<NAME>_API_KEY` | unset | **runtime** | Credential for that channel. |
+| `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | Provider channels receive the bare model name (the `provider/` prefix stripped). Set this when the channel is itself a router that expects full ids. |
 
 > A base URL must include the API version path the provider serves from — the adapters append
 > `/chat/completions` and `/images/generations` to it verbatim. `https://api.x.ai` instead of
 > `https://api.x.ai/v1` makes **every** call to that provider a 404, text and image alike, and
 > the symptom is a tool result reading `The requested resource was not found`. `pnpm
 > check-models` reports each channel's reachability, which is the fastest way to see it.
-
-| `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | Provider channels receive the bare model name (the `provider/` prefix stripped). Set this when the channel is itself a router that expects full ids. |
 
 When any provider channel is configured, `GET /api/models` lists only those providers'
 models; with none configured it lists the whole registry.
@@ -177,18 +176,28 @@ setting bounds is spending money under an id nothing can price.
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. The Slack path additionally applies the fixed 3-minute interactive deadline (below), which can only shorten a run. Two derived values move with this one: the run-slot lease (this value plus 60s) and the MCP OAuth token refresh margin (this value plus 5 min). |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | Runs one caller may have in flight. `0` disables the limit. |
-| `MAX_CONCURRENT_RUNS_A2A` | `50` | — | Separate ceiling for inbound A2A, because its actor id is a constant: the inbound key is shared, so one identity stands for every machine caller and the per-caller limit would otherwise cap the whole A2A surface. |
-| `SCHEDULE_SCAN_TOKEN` | unset | — | What the schedule ticker presents to `POST /api/triggers/scan` (`X-Scan-Token`). Unset means this deployment has no ticker: schedule triggers never fire and the endpoint answers 503 — off rather than open. |
+| `MAX_CONCURRENT_RUNS_A2A` | `50` | — | Separate ceiling for calls made with the **shared** A2A key, whose actor id is a constant: one identity stands for every machine caller there, and the per-caller limit would otherwise cap the whole A2A surface. A named client key is one caller and sits under `MAX_CONCURRENT_RUNS_PER_ACTOR` like a person. |
+| `SCHEDULE_SCAN_TOKEN` | unset | — | The one credential every ticker presents (`X-Scan-Token`), shared by the three endpoints a CronJob POSTs: `/api/triggers/scan` (schedules), `/api/plugins/sync/scan` (the plugins repo) and `/api/catalog/reindex` (the capability catalog). Unset means this deployment has no ticker: all three answer 503 and schedule triggers never fire — off rather than open. |
 
 Invalid values (non-integer, negative) degrade to the default with a warning rather than to
 `0` — `Number("abc") || 0` would read as "limit off", which is the opposite of what a typo
 should mean.
 
-**Every numeric setting in this document behaves that way**: they all go through
-`positiveIntEnv` in `src/lib/config.ts`, which is where a setting that reaches this document
-declares itself. Adapters read it from there — `tests/architecture.test.ts` fails on a
-`process.env` read anywhere in `domain`, `shared` or `infrastructure`. The warning is emitted
-once per setting per value, because several of these are read on every row write.
+**Nearly every numeric setting in this document behaves that way**: they go through
+`positiveIntEnv`, which `src/lib/config.ts` owns along with the parse and the warning. Two
+kinds of setting sit outside it, and each says so in its own row: the `0`–`1` values
+(`TRACE_SAMPLE_RATE`, `CATALOG_MIN_SCORE`) **clamp** instead of falling back, and
+`MAX_RUN_DURATION_MS` parses itself in `src/shared/runDeadline.ts` — `application` needs the
+deadline and may not import `lib` — validating it against `AbortSignal.timeout`'s domain and
+degrading to the default with the same warning.
+
+Which helper a setting calls is a separate question from where it *declares* itself: most do
+that in `config.ts`, the retention windows in `src/infrastructure/db/ttl.ts`, and
+`SETTINGS_CACHE_TTL_MS` in `src/lib/runtime-settings.ts`. Adapters never read the variable
+themselves — `tests/architecture.test.ts` fails on a `process.env` read anywhere in `domain`,
+`shared`, `infrastructure` or `application`, with `runDeadline.ts` the one **named** exception,
+so a second one cannot arrive quietly. The warning is emitted once per setting per value,
+because several of these are read on every row write.
 
 ## MCP
 
@@ -197,7 +206,7 @@ once per setting per value, because several of these are read on every row write
 | `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | How long a bound server's tool list is reused, keyed by `url + headers`. A warm entry also lets the session handshake lazily, so a turn that calls no tool makes no MCP request at all. `0` disables caching outright, and no server hint can switch it back on. Whole milliseconds. |
 | `MCP_MAX_SERVER_TTL_MS` | `300000` (5 min) | — | Ceiling on the `ttlMs` a server may request on `tools/list` (SEP-2549). `0` ignores server hints entirely and returns every entry to the local TTL. Whole milliseconds. |
 | `MCP_INTERNAL_HOST_SUFFIXES` | empty | — | Comma-separated DNS suffixes whose hosts an MCP entry may use despite resolving to a private address — typically `<namespace>.svc.cluster.local`. Empty leaves the SSRF guard exactly as it was. See [SECURITY.md](SECURITY.md#declared-internal-hosts). |
-| `MANAGED_MCP_INSTANCE_ID` | unset | — | The host managed MCP containers are started on, through SSM Run Command. |
+| `MANAGED_MCP_INSTANCE_ID` | unset | — | The host managed MCP containers are started on, through SSM Run Command. The literal value `local` runs Docker on this machine instead — app and container then share a loopback interface directly, which is the only way to exercise this path without EC2. |
 | `MANAGED_MCP_REGISTRY` | unset | — | The registry `docker login` authenticates against, so this account's own images pull without a credential being typed. Images from any other registry the host can pull from are allowed; the login is simply skipped for them. |
 | `MANAGED_MCP_NETWORK_CONTAINER` | `agent-studio` | — | The container managed workloads share a network namespace with — this app's own. Every container has its own `127.0.0.1`, so a loopback address only means anything when both ends are in the same namespace. |
 
@@ -291,7 +300,9 @@ to be **enabled on the `expiresAt` attribute of the production table** — see
 | Variable | Default | Notes |
 |---|---|---|
 | `MOCK_LLM_PORT` | `8002` | `scripts/mock-llm.ts` listen port. |
-| `INTEGRATION_MOCK_PORT` | `8002` | Mock LLM port used by `scripts/integration-check.ts`. |
+| `MOCK_LLM_DELAY_MS` | `0` | Milliseconds between streamed chunks; `0` sends them as fast as the socket takes. Raise it with the row below to reproduce a reply that scrolls. |
+| `MOCK_LLM_CHUNKS` | `0` | Roughly how many chunks the answer is padded to; `0` keeps the one-line answer. |
+| `INTEGRATION_MOCK_PORT` | `8002` | Mock LLM port used by `scripts/integration-check.ts`. Overridable so the check can run beside a mock already holding the default port; CI leaves it unset. |
 
 ## Limits fixed in code
 
@@ -301,13 +312,17 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Limit | Value | Owner |
 |---|---|---|
 | Turns per agent run (version `maxTurn` default) | `50` | `src/application/llm/engine.ts` |
-| Agents one `dispatch_agents` call may run | `4` | `src/application/llm/engine.ts` |
-| Tool-result text per turn | `200,000` chars | `src/application/llm/engine.ts` |
+| Agents one `dispatch_agents` call may run | `4` | `src/application/llm/agentAssembly.ts` |
+| Tool-result text per turn | `200,000` chars | `src/application/llm/toolResultBudget.ts` |
 | Transfer transcript carried to a subagent | `8,000` chars | `src/application/llm/engine.ts` |
 | Subagent nesting depth | `5` | `src/application/execution/subagentRunner.ts` |
+| Capabilities one catalog search may add to a run (skills / external agents / MCP servers) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
+| Catalog matches asked of each MCP index, oversampled past that cap — many tool rows collapse to one server, and a candidate the run cannot bind must cost no slot | `4×` (tool index) / `3×` (server index) the MCP server cap | `src/application/execution/bindings.ts` |
+| What a run searches the catalog with (system prompt / newest user turns) | `2,000` chars / `3` turns | `src/application/execution/bindings.ts` |
 | MCP tools declared per run | `120` | `src/domain/llm/toolLimits.ts` |
 | A single MCP tool result | `100,000` chars | `src/infrastructure/mcp/toolManager.ts` |
 | An MCP server's HTTP response | `2MB` | `src/infrastructure/mcp/session.ts` |
+| `tools/list` pages read from one MCP server (the tail past them is dropped, with a warning) | `20` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth metadata / token response | `256KB` each | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery cache entries | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
 | A remote agent's (A2A / external) response | `2MB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
@@ -319,7 +334,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Chat request body (derived from the attachment caps) | ~`84MB` | `src/app/api/_lib/body.ts` |
 | Transfer transcript line kept when a turn overflows | `500` chars minimum | `src/application/llm/engine.ts` |
 | Context-budget estimate (ASCII / other / image part / headroom) | `3` chars per token / `1.5` tokens per char / `2,500` tokens / `2,000` tokens | `src/application/llm/contextBudget.ts` |
-| Tool result kept when the run's context budget cuts it | `500` chars minimum | `src/application/llm/engine.ts` |
+| Tool result kept when the run's context budget cuts it | `500` chars minimum | `src/application/llm/toolResultBudget.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Chat tool traffic replayed into context | `3` turns / `20,000` chars | `src/application/chat/messageMapping.ts` |
 | Inbound webhook trigger / Slack event body | `1MB` each | `src/app/api/triggers/[project]/[trigger]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts` |
@@ -333,7 +348,8 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |
 | Schedule catch-up window (bounds what an outage can fire at once) | `10` min | `src/application/trigger/scanSchedules.ts` |
 | Schedule firings one scan tick drives concurrently | `8` | `src/application/trigger/scanSchedules.ts` |
-| Schedule repair sweep (lost-run recovery) | every `5` min, `50` rows | `src/application/trigger/scanSchedules.ts` |
+| Schedule repair sweep cadence (lost-run recovery) | every `5` min | `src/application/trigger/scanSchedules.ts` |
+| Rows one repair sweep scans | `50` | `src/application/trigger/repairLostRuns.ts` |
 
 ### The run-wide context budget
 

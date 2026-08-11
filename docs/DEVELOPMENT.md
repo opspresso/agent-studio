@@ -94,7 +94,7 @@ instrumentation import.
 |---|---|
 | `scripts/init-local-table.ts` | Create the single table with `GSI1`/`GSI2` on DynamoDB Local. Refuses non-local endpoints. |
 | `scripts/dev-session.ts` | Write a dev user + session straight to DynamoDB and print a signed session cookie — exercises authenticated routes without the OAuth round-trip. |
-| `scripts/mock-llm.ts` | Standalone mock OpenAI-compatible server on `127.0.0.1:8002`. Streams and non-streams; requests a `Skill` tool call once when tools are offered *and* the messages mention `skill named "<slug>"`. |
+| `scripts/mock-llm.ts` | Standalone mock OpenAI-compatible server on `127.0.0.1:8002` (`MOCK_LLM_PORT`). Streams and non-streams; requests a `Skill` tool call once when tools are offered *and* the messages mention `skill named "<slug>"`. `MOCK_LLM_CHUNKS` and `MOCK_LLM_DELAY_MS` pad and slow the answer into a long streaming reply — the only way to see what a chat window does while one arrives; the defaults keep the one-line answer the integration check expects. |
 | `scripts/seed-skills.ts` | Seed sample skills, idempotently. |
 | `scripts/integration-check.ts` | End-to-end repository round-trips + the engine (single-shot and agent loop). |
 | `scripts/check-models.ts` | Diff `src/domain/llm/models.ts` against the ids the configured channels serve. |
@@ -169,30 +169,46 @@ Unit tests live under `tests/`. Conventions:
 
 This is the structural gate, and it fails loudly rather than warning. It enforces:
 
-1. **Twelve layer rules**, each with an **empty allowlist** — `domain` imports nothing else
+1. **Thirteen layer rules**, each with an **empty allowlist** — `domain` imports nothing else
    and no framework/AWS/auth library; `application` imports no `infrastructure` or `app`,
    nothing from `lib` beyond its pure leaves, and nothing outside the domain and the standard
    library; `infrastructure` imports no `application` or `app`; `shared` imports nothing from
-   `@/`; adapters and use cases do not import the composition root; `app` imports no
-   `infrastructure` outside its wiring sites; `lib` imports no `infrastructure` outside its
-   wiring modules and no `application` outside the composition root; `components` imports no
-   `infrastructure` or `application`.
+   `@/` but its own siblings, and no package outside the standard library; adapters and use
+   cases do not import the composition root; `app` imports no `infrastructure` outside its
+   wiring sites; `lib` imports no `infrastructure` outside its wiring modules and no
+   `application` outside the composition root; `components` imports no `infrastructure` or
+   `application`.
 2. **Single-owner invariants** — a named decision plus the file that owns it. A second copy
    fails, *and so does the owner losing the definition*. The list is in
    [../AGENTS.md](../AGENTS.md#single-owner-invariants).
-3. **React event handling**, two rules. No `currentTarget` read inside a `setState` updater —
+3. **Bounded caller lists**, for the three decisions that have a fixed set of call sites
+   rather than an owner: which surfaces start an image run (`IMAGE_RUN_ENTRY_POINTS`), which
+   start an agent run by calling `executeAgent` directly (`AGENT_RUN_ENTRY_POINTS`), and where
+   a version's tools are resolved (`TOOL_RESOLUTION_SITES`, each of which must also name
+   `discoveryQueries` — resolving without them silently disables capability discovery). A
+   fourth entry is added to any of them on purpose, which is what the list buys.
+4. **Composition** — a repository the routes no longer compose reaches no route handler, `app`
+   composes only at its wiring sites, the application slice graph has no cycles, and the
+   composition root decides every optional `ExecutionDeps` field by name.
+5. **Configuration reads** — `process.env` is not reached from domain, shared, the adapters or
+   the use cases; config arrives injected. One file is excepted by name, and the exception is
+   itself checked for still being true.
+6. **The client bundle** — what a `"use client"` entry can reach transitively. The entry count
+   is asserted exactly rather than as merely non-empty, because a scan that has gone blind
+   reads just like a clean pass.
+7. **React event handling**, two rules. No `currentTarget` read inside a `setState` updater —
    React nulls `SyntheticEvent.currentTarget` once the handler returns, so a deferred read
    throws whenever React batches. And no block-rooted Mantine component (`Badge`, `Group`,
    `Stack`, …) inside a `<Text>` or `<Title>` — those render a `<p>`/`<h*>`, which a browser
    *closes* where a `<div>` opens inside it, so the server's HTML and React's tree disagree
    and hydration fails. `component="span"` on the inner one, or `component="div"` on the
    outer, is the fix and is what the rule looks for.
-4. **Edge runtime compatibility** — imports that would pull `node:crypto` or the AWS SDK into
+8. **Edge runtime compatibility** — imports that would pull `node:crypto` or the AWS SDK into
    the edge bundle.
-5. **Create modals reset what they declare** — every field a create modal holds in `useState`
+9. **Create modals reset what they declare** — every field a create modal holds in `useState`
    is cleared before `onCreated()`, so a reopened modal never shows the previous entry's
    values.
-6. **The scanner's own tests**, so a rule that silently stopped matching is caught.
+10. **The scanner's own tests**, so a rule that silently stopped matching is caught.
 
 > When one of these fails, **fix the import — do not widen the rule.** The allowlists are
 > empty on purpose: adding a violation is meant to be a visible decision, not a quiet one.
@@ -215,8 +231,10 @@ Checklist for a new slice:
 - [ ] List queries paginate through `queryAll()` — a single Query page caps at 1MB and an
       unpaginated list silently truncates.
 - [ ] New rows that grow without bound carry an `expiresAt` from `src/infrastructure/db/ttl.ts`.
-- [ ] A new execution entry point calls `executeProjectStream` rather than re-encoding the
-      projectType dispatch, and opens the run bracket.
+- [ ] A new execution entry point calls the facade rather than re-encoding the projectType
+      dispatch, and opens the run bracket — `streamProjectRun` for a consumer that takes a run
+      as chunks, image included; `executeProjectStream`/`executeProject` for one that answers
+      with a completion, which refuse an image project.
 - [ ] A decision that now exists in two places gets a single owner and an entry in
       `SINGLE_OWNERS`.
 - [ ] `pnpm typecheck && pnpm test && pnpm build` pass.

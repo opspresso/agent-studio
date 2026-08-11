@@ -104,8 +104,9 @@ Skills sync from an [Agent Plugins](https://agent-plugins.org/) repo (`PLUGINS_R
 plugin declares them at `skills/<name>/SKILL.md` per the Agent Skills spec, alongside an
 `mcp.json` of streamable-HTTP servers. Supporting files under a skill's directory
 (`references/*.md`, templates) are collected as attachments and loaded on demand through the
-`Skill` tool's `file_path`. The repo is the source of truth for synced skills; locally
-created ones are untouched.
+`Skill` tool's `file_path`. The repo owns every name a plugin declares — an entry registered
+by hand under one of those names is adopted and brought to the repository's version; only a
+name no plugin declares is left alone.
 
 ### MCP tools
 

@@ -111,7 +111,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/chats` | `GET` `POST` | session |
 | `/api/chats/{chatId}` | `GET` `DELETE` | owner of the chat |
 | `/api/chats/{chatId}/messages` | `POST` | owner of the chat |
-| `/api/chats/{chatId}/runs/{runId}` | `DELETE` | owner of the chat |
+| `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | owner of the chat |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | owner of the chat |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
@@ -120,6 +120,9 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
 | `/api/settings/a2a-key/reveal` | `POST` | admin |
+| `/api/settings/a2a-keys` | `GET` `POST` | admin |
+| `/api/settings/a2a-keys/{name}` | `DELETE` | admin |
+| `/api/settings/a2a-keys/{name}/reveal` | `POST` | admin |
 | `/api/audit` | `GET` | admin |
 
 ### Unauthenticated / machine surfaces
@@ -134,6 +137,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/triggers/{project}/{trigger}` | `POST` | `X-Trigger-Secret` |
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
+| `/api/plugins/sync/scan` | `POST` | `X-Scan-Token` |
 | `/api/health` | `GET` | open |
 | `/api/ready` | `GET` | open |
 | `/api/metrics` | `GET` | open |
@@ -143,7 +147,7 @@ list. `owner` = the project's owner or a configured admin.
 All four follow the same shape. Example (skills):
 
 ```
-GET    /api/skills            → 200 [ { name, description, content, createdAt, updatedAt }, … ]
+GET    /api/skills            → 200 [ { name, description, source?, files, updatedAt }, … ]
 GET    /api/skills/{name}     → 200 {…}                 | 404
 POST   /api/skills            → 201 {…}                 | 409 (name exists) | 400
 PUT    /api/skills/{name}     → 200 {…}                 | 404 | 400
@@ -158,6 +162,12 @@ DELETE /api/skills/{name}     → 204                     | 404
 - `mcps` also accept an optional `content` (markdown operator notes). `description` is the
   one-line summary the model sees in an agent run's server table; `content` is console-only
   and never reaches the model.
+- `agents` carry a `protocol` (`openai` | `a2a`, default `openai`) that decides how
+  `POST /api/agents/{name}/message` and an outbound transfer address the remote.
+- A **managed** MCP entry is refused by the shared registry routes it does not own:
+  `DELETE /api/mcps/{name}` is `400` (delete it through `/api/mcps/managed/{name}`, so the
+  container stops with the row), and a `PUT` that moves its `url` is `400` — the address comes
+  from the provisioner.
 - `GET /api/skills` returns summaries — `{ name, description, source?, files: count,
   updatedAt }` — because the list pages render a card, not a document; the full entity
   (markdown `content`, the attachment `files[]` themselves) comes from
@@ -199,7 +209,7 @@ reached every execution entry point answers
 `Retry-After` set to the seconds until the window rolls over — 00:00 UTC for the day, the
 first of the next month for the month. Crossing a threshold posts once per window to
 `alertSlackChannel` using the project's own Slack bot; without a channel or bot the
-thresholds still block. See [OPERATIONS.md](OPERATIONS.md#daily-cost-guard--fails-open) for
+thresholds still block. See [OPERATIONS.md](OPERATIONS.md#cost-guard--fails-open) for
 what the guard does and does not bound.
 
 ### Versions & publish
@@ -216,11 +226,16 @@ structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?,
 dynamicCapabilities? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
-image-capable registry model is rejected with 400. `mcpList`/`skillList`/`subagentList`
+image-capable registry model is rejected with 400, as is a catalog `model` missing a capability
+the version needs — `tools` for an `agent` project, `structuredOutput` for that parameter (an id
+the catalog does not carry is warned about, not refused). `mcpList`/`skillList`/`subagentList`
 entries must resolve to registered MCP servers, skills, agents, or projects — a dangling
 reference is rejected with 400 — and only an `agent` project may carry them at all. On update
 only *newly added* entries are checked, so a version stays editable after a registry entry it
-already referenced is deleted.
+already referenced is deleted. Naming the same server, skill or agent **twice** in one list is
+rejected with 400 on every write, an update resubmitting a stored list included: a duplicate
+binding opens the server's session twice and the second row silently overwrites the first
+everywhere the run keys by name.
 
 `callerContext` names the person asking in the system prompt, **on the surfaces that have
 one**: the console chat and Playground, a session-authenticated run of `predict`, `agent` or
@@ -232,9 +247,10 @@ in. `POST /api/projects/{name}/preview` shows the block exactly when a run from 
 would carry it.
 
 `POST /api/projects/{name}/preview` takes an optional `message` — the request to preview
-against. Only discovery reads it (an agent run's user turn comes from the conversation), but
-*which* capabilities a run finds depends on what it is being asked, so without one the preview
-shows the floor every run starts from rather than the shape of a particular one.
+against, at most 8,000 characters. Only discovery reads it (an agent run's user turn comes from
+the conversation), but *which* capabilities a run finds depends on what it is being asked, so
+without one the preview shows the floor every run starts from rather than the shape of a
+particular one.
 
 `dynamicCapabilities` lets a run reach skills, MCP servers and agents this version never bound,
 found by searching the global catalog with the version's system prompt and the request being
@@ -263,6 +279,9 @@ that server's tools the run offers (absent or empty = all of them).
 
 - A string value replaces a registry default or adds a new header; `null` removes a registry
   default for this version. Matching is case-insensitive, as HTTP header names are.
+- `X-Tenant-Id` is **reserved**. Every spelling of it is dropped after the merge and the calling
+  project's name is stamped in its place, so no binding can name another project's tenant. See
+  [SECURITY.md](SECURITY.md#what-an-mcp-server-is-told-about-the-caller).
 - Omitting `headers` (or sending `{}`) uses the registry headers unchanged.
 - A bare string entry — `"mcpList": ["shared-mcp"]`, the shape before overrides existed — is
   still accepted and normalizes to `{ "name": "shared-mcp" }`.
@@ -302,8 +321,9 @@ PUT /api/settings → 200 {…same shape…} | 400
 
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `pluginsRepo`, `pluginsRepoBranch`, `githubToken`, `a2aApiKey`,
-  `publicBaseUrl`, `unknownModelPolicy` (`allow` | `refuse`, the only key validated as an
-  enum rather than a bounded string).
+  `publicBaseUrl`, `unknownModelPolicy` (`allow` | `refuse` | `""`, the only key validated as
+  an enum). `pluginsRepo` is the other key with a shape of its own — `owner/repo`, or empty to
+  clear it; the rest are bounded strings.
 
 ```
 POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
@@ -321,11 +341,14 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 - `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
   array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
   currently effective key for that provider name. Provider `name` must be one of
-  `openai | google | anthropic | xai`.
+  `openai | google | anthropic | xai`, the list holds at most 50 entries, and a name appearing
+  twice is a `400`.
 - `source` is `override` (DB) | `env` | `default` | `unset`. Secret values are always masked
   (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); a masked value on
   PUT keeps the stored secret, an empty string removes the override (env fallback). Setting `adminEmails` to a list that excludes
-  the caller is rejected with `400`.
+  the caller is rejected with `400`. So is an `adminEmails` or `allowedEmailDomains` value that
+  is not empty but parses to no entries at all (`","`): removing the override is what the empty
+  string is for, and reading that as the same thing would leave the deployment ungated.
 
 ## Audit trail
 
@@ -341,8 +364,9 @@ GET /api/audit?from=2026-08-01&to=2026-08-03
   that. The width is refused from the dates rather than from an enumerated range, so an absurd
   span costs the same as any other rejection.
 - Newest first. `action` is one of `secret.reveal` | `secret.rotate` | `secret.revoke` |
-  `project.admin-override` | `settings.update` | `project.delete` | `registry.delete`;
-  `target` is `kind:name`.
+  `project.admin-override` | `settings.update` | `project.delete` | `registry.delete` |
+  `registry.adopt` (the plugins sync taking an entry another origin created); `target` is
+  `kind:name`.
 - **Read-only, by construction.** There is no write verb here or anywhere else — rows are
   appended by the acts themselves and expire by TTL (`AUDIT_RETENTION_DAYS`). `detail` never
   carries a credential: a settings write records which keys moved, never their values.
@@ -454,12 +478,17 @@ GET  /api/plugins
 → [ { name, version?, description?, repo, rootPath, commitSha,
       skills: ["name"], mcpServers: ["name"], syncedAt, createdAt, updatedAt } ]
 
+GET  /api/plugins/{name}
+→ 200 { …one of the above… } | 404 | 400   ({name} follows the Agent Plugins name rule,
+                                            which allows periods — not the registry slug)
+
 GET  /api/plugins/sync
 → { configured, repo, branch,
     last: { repo, report, actorEmail, finishedAt } | null }   (the persisted last report)
 
 POST /api/plugins/sync
-→ the sync report described below | 409 (a sync is already running) | 503 (not configured)
+→ the sync report described below | 400 (malformed removal selection; each list holds at
+  most 500 names) | 409 (a sync is already running) | 503 (not configured)
 
 POST /api/plugins/sync/scan          (X-Scan-Token: SCHEDULE_SCAN_TOKEN)
 → 202 { started } | 200 { upToDate } | 401 | 503
@@ -565,15 +594,17 @@ DELETE /api/projects/{name}/slack
 POST   /api/projects/{name}/slack/test
 ```
 
-`suggestedPrompts` is `{ title, message }[]`, at most four; blank rows are dropped and a row
-with only one half is a 400. Unlike the two credentials it is not a secret and comes back as
-stored.
+`suggestedPrompts` is `{ title, message }[]`, at most four, with `title` capped at 80 characters
+and `message` at 500; blank rows are dropped and a row with only one half — or one over either
+cap — is a 400. Unlike the two credentials it is not a secret and comes back as stored.
 
-Slack reads return masked credential state plus `eventsUrl`, `suggestedPrompts` and a generated
-app manifest.
+Slack reads return masked credential state plus `configured`, `eventsPath`, `eventsUrl`,
+`suggestedPrompts` and a generated app manifest — every verb answers that same view.
 All four endpoints are limited to the owner and to configured admins (403 for anyone else) — the masked view still exposes the
 bot token / signing secret edges. Masked or omitted secrets are preserved on update, and a
-`PUT` on a non-agent project is a 400 — a Slack bot only attaches to an agent project. The
+`PUT` on a non-agent project is a 400 — a Slack bot only attaches to an agent project. So is a
+`PUT` sending `enabled: true` with neither a stored nor a supplied bot token and signing
+secret: there is nothing to enable. The
 test endpoint returns `{ ok: true, team, botUser }`, `400` when Slack is unconfigured or
 disabled for the project, or `502` for a Slack API failure.
 
@@ -588,9 +619,9 @@ half-enabled.
 ```
 POST   /api/mcps/managed              → 201 { …registry entry… }   | 409 | 400 | 503
 GET    /api/mcps/managed/{name}       → 200 { name, image?, running, reachable, address?, detail? }
-PUT    /api/mcps/managed/{name}       → 200 { …entry… }            | 404 | 409 | 400
-DELETE /api/mcps/managed/{name}       → 204
-POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 409 (restart in flight)
+PUT    /api/mcps/managed/{name}       → 200 { …entry… }            | 404 | 409 | 400 | 403
+DELETE /api/mcps/managed/{name}       → 204                        | 404 | 403
+POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400 | 409 (restart in flight)
 ```
 
 Create body:
@@ -608,7 +639,13 @@ Create body:
   listen port, for images that do not honour the `PORT` environment variable.
 - `environment` values are encrypted in the registry row, masked on reads, and decrypted only
   when building the workload spec. `PORT` is rejected — the runtime owns it. Use `envRefs`
-  when the value should stay in Parameter Store instead.
+  when the value should stay in Parameter Store instead. Keys are `^[A-Za-z_][A-Za-z0-9_]*$`
+  and values run to 16,384 characters.
+- `endpointPath` defaults to `/mcp` and must be an absolute path with no query, fragment or
+  whitespace (`^\/(?!\/)[^\s?#]*$`); anything else is a `400`.
+- The `403` on `PUT`/`DELETE` is the repo-owned refusal every registry route answers: a synced
+  entry's `description` and `content` belong to the repository, while its workload fields
+  (`image`, ports, env) stay editable here.
 - `image` may come from any registry the host can pull from; `MANAGED_MCP_REGISTRY` is the one
   `docker login` authenticates against, and the login is skipped for anything else.
 - `containerPort` is a request, not a guarantee: only an adapter that publishes a port mapping
@@ -669,7 +706,7 @@ PUT    /api/projects/{name}/mcp-connections/{server}
 DELETE /api/projects/{name}/mcp-connections/{server}   → 204
 
 POST   /api/projects/{name}/mcp-connections/{server}/authorize
-→ 200 { url: "https://provider/authorize?…" }
+→ 200 { authorizeUrl: "https://provider/authorize?…" }
 
 POST   /api/projects/{name}/mcp-connections/{server}/tools
        { headerOverrides?: { "X-Tenant": "acme", "X-Shared": null } }
@@ -686,11 +723,18 @@ POST   /api/projects/{name}/mcp-connections/{server}/tools
   rather than being entered by hand.
 - `/authorize` **returns** the provider URL rather than issuing a `3xx`: the caller is the
   console's `fetch`, which would follow a redirect itself instead of sending the user.
+- A registry entry with no `auth` block has nothing to connect to, so `PUT` and `/authorize`
+  answer `400`; `/authorize` also `400`s with no public base URL configured, when the server
+  offers no dynamic registration and no client was entered by hand, and when the stored
+  credentials were issued by a different issuer than the entry now names. `DELETE` answers
+  `404` when the project has no connection to that server; `/tools` needs no connection to
+  run, and its `404` means the registry entry itself is gone.
 - `/tools` lists the server's tools **as this project sees them** — with the project's own
   connection and the binding's header overlay. Distinct from the registry's own
   `POST /api/mcps/{name}/tools` probe, which carries only the entry's static headers and can
   do nothing but 401 against an OAuth server. Owner-gated for the same reason: it spends the
-  project's connection.
+  project's connection. Its `502` also covers the two refusals that never reach the server — a
+  URL the outbound guard blocks, and a connection whose credential cannot be resolved.
 
 ### Callback
 
@@ -851,8 +895,9 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 
 `actor` is `{kind}:{id}` — `user:a@example.com`, `project-token:owner@example.com` (a token
 authenticates as its owner, so the kind is what keeps a machine's spend apart from that
-person's own runs), `slack:U123`, `a2a:shared-key`. The metric fields are per-model maps,
-exactly as in the summary above.
+person's own runs), `slack:U123`, `a2a:shared-key`, and for a trigger firing
+`webhook:{project}:{triggerId}` or `schedule:{project}:{triggerId}`. The metric fields are
+per-model maps, exactly as in the summary above.
 
 `display` puts a face on a `slack:` row, resolved through the project's own bot token. It is
 decoration and may be absent for any reason — no Slack bot, a revoked token, a deactivated user,
@@ -862,8 +907,9 @@ told apart by.
 Owner/admin only, on the same reasoning as traces: project *totals* are open to any
 signed-in user because the catalog is shared, but a breakdown by caller names individuals.
 Range validation matches `/api/usages/summary` (both dates required, `from ≤ to`, ≤ 184
-days). Subagent transfers are attributed to whoever started the run, not to the project
-they transferred into.
+days), though a refusal here is a bare `{ error }` rather than the `issues` array the other
+range endpoints carry. Subagent transfers are attributed to whoever started the run, not to
+the project they transferred into.
 
 ## Triggers
 
@@ -875,7 +921,7 @@ POST   /api/projects/{name}/triggers                     → 201 { …, secret? 
 PUT    /api/projects/{name}/triggers/{trigger}           → 200 { … }           | 404
 DELETE /api/projects/{name}/triggers/{trigger}           → 204                 | 404
 POST   /api/projects/{name}/triggers/{trigger}/reveal    → 200 { secret, createdAt }
-GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }
+GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }   (1–100)
 ```
 
 Create body: `{ triggerId (slug), kind?, description?, enabled?, variables?, payloadMode?,
@@ -945,7 +991,9 @@ Catalog reindex (same shared token, a separate CronJob):
 POST /api/catalog/reindex
   X-Scan-Token: <SCHEDULE_SCAN_TOKEN>
 → 200 { started: true }
-→ 401 (wrong or missing token) | 503 (VECTOR_BUCKET not configured)
+→ 401 (wrong or missing token)
+→ 503 (SCHEDULE_SCAN_TOKEN not configured — answered before the token is compared, so a
+       deployment missing it gets this rather than a 401) | 503 (VECTOR_BUCKET not configured)
 ```
 
 Rebuilds the global capability index from the registries — every skill, every MCP server and
@@ -959,10 +1007,14 @@ often. See [OPERATIONS.md](OPERATIONS.md#catalog-reindex).
 
 ```
 GET /api/projects/{name}/traces?limit=50[&from=2026-07-01&to=2026-07-31]
+→ 200 { traces: [ … ] } | 400
 GET /api/projects/{name}/traces/{traceId}
+→ 200 { …the trace itself, unwrapped… } | 404
 ```
 
-`from`/`to` (YYYY-MM-DD, inclusive) filter the list by trace date via the GSI1 date key.
+`from`/`to` (YYYY-MM-DD, inclusive) filter the list by trace date via the GSI1 date key; a
+malformed day or a reversed range is a `400`. `limit` defaults to 50 and is clamped to 1–100.
+A `traceId` that belongs to another project is a `404`, not someone else's trace.
 
 Both endpoints are limited to the owner and to configured admins (403 for anyone else) — traces hold other users' runtime
 inputs/outputs. Agent runs are always traced. Text and image predict runs are sampled
@@ -981,8 +1033,8 @@ providers' models are listed; with none configured every model is listed.
 
 ## A2A (inbound)
 
-Set `A2A_API_KEY` to enable. Each project with a published version serves a public Agent Card
-and a JSON-RPC endpoint.
+Enabled by `A2A_API_KEY`, or by at least one named client key with no shared key at all. Each
+project with a published version then serves a public Agent Card and a JSON-RPC endpoint.
 
 ```
 GET  /api/a2a                                           (session) → { enabled, projects }
@@ -1006,9 +1058,12 @@ concurrency limits). Client keys are admin-managed:
 ```
 GET    /api/settings/a2a-keys                  (admin) → { items: [{ name, description?, masked, createdAt }] }
 POST   /api/settings/a2a-keys                  (admin) { name, description? } → { key, view }   key shown once
-DELETE /api/settings/a2a-keys/{name}           (admin) revoke
+DELETE /api/settings/a2a-keys/{name}           (admin) → { ok: true } | 404                     revoke
 POST   /api/settings/a2a-keys/{name}/reveal    (admin) → { key, createdAt }                     audited
 ```
+
+A client key's `name` is a slug of at most 64 characters and `shared-key` is reserved for the
+app-wide key, each a `400`; a name already issued is a `409`.
 
 Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state (`message/send` →
 `tasks/get`/`tasks/cancel`) is persisted per project in DynamoDB, so it survives redeploys and
@@ -1020,7 +1075,9 @@ complete/cancel from regressing a finished task. Rows expire via TTL
 
 ```
 GET /api/health   → 200 (static)
-GET /api/ready    → 200 { ready: true, … } | 503 { ready: false, draining?: true }
+GET /api/ready    → 200 { ready: true, checks: { db, llm } }
+                  | 503 { ready: false, draining: true }          (after SIGTERM)
+                  | 503 { ready: false, checks: { db, llm } }     ("ok" | "unreachable" each)
 GET /api/metrics  → 200 text/plain; version=0.0.4
 ```
 

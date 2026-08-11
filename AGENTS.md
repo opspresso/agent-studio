@@ -99,15 +99,17 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
   put a rule at the bottom. `shared` is for helpers no layer owns (stream plumbing, text
   cutting, timers).
 
-Composition happens at exactly four wiring sites: `src/lib/container.ts` (repositories, the
+Composition happens at exactly five wiring sites: `src/lib/container.ts` (repositories, the
 domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 `src/app/api/chats/_deps.ts` (`ChatDeps`), `src/app/api/slack/events/_lib/`
-(`SlackEventDeps`), and `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
-handler assembly over `executionDeps`).
+(`SlackEventDeps`), `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
+handler assembly over `executionDeps`), and `src/instrumentation.ts` (the boot path, which
+wires the audit sink straight from its adapter — the composition root is not loaded until
+this file decides the runtime is the Node server — and resumes the managed MCP containers).
 
 **A use case is composed once, not per route.** A slice exports a `createXUseCases` factory,
 the composition root calls it, and a route handler imports the bound object — which is what
-keeps the wiring-site list above at four. The free functions those factories wrap stay
+keeps the wiring-site list above at five. The free functions those factories wrap stay
 exported, and the split between the two forms is not a preference: **a route takes the bound
 object; an application module that already holds the repository calls the function.** A use
 case passing its own injected repository to a sibling in the same layer is ordinary; a route
@@ -167,6 +169,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
 | What a 401 from an MCP server means | `src/infrastructure/mcp/session.ts` |
 | The name a provider will accept for an MCP tool | `src/infrastructure/mcp/toolManager.ts` |
+| The header that names the calling project to an MCP server | `TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts` |
 | How many agents one dispatch may run | `src/application/llm/agentAssembly.ts` |
 | How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/agentAssembly.ts` |
 | Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |
@@ -230,9 +233,10 @@ One line each — the linked section is the authority.
   skills/MCP tools/subagents and assembles those deps.
   → `src/application/llm/AGENTS.md`, then
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#llm-engine)
-- **Run bracket** — the single owner of what wraps a top-level run: the in-flight metric, the
-  cost guard, the per-caller concurrency guard, the correlation id. Exactly four
-  functions admit a run. →
+- **Run bracket** — the single owner of what wraps a top-level run: the unknown-model refusal
+  (ahead of the guards, and a 400 — it says the version is misconfigured, not that the
+  platform is busy), the in-flight metric, the cost guard, the per-caller concurrency guard,
+  the correlation id. Exactly four functions admit a run. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
 - **Images** — three drawing paths (an `image` project, an agent run's builtins, an image
   subagent) over one `ImageChannel` port; source bytes decide edit vs generate, and
