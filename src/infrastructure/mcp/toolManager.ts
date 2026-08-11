@@ -7,6 +7,8 @@
  *   - failures (transport, JSON-RPC, and the server's own `isError`) come back as
  *     `Error: …` text, never thrown: the model reads them as a tool result and
  *     the trace recorder reads the prefix as a failed span,
+ *   - a result the server marks `input_required` is one of those failures, and
+ *     says so as itself: this client does not answer multi round-trip requests,
  *   - a server that cannot be reached loses only its own tools, and the reason
  *     is reported through {@link ToolManager.warnings} so the run can surface it,
  *   - discovery is served from {@link ../discoveryCache the discovery cache} when
@@ -26,7 +28,6 @@ import { log } from "@/shared/logger";
 import { decodeUtf8Text } from "@/shared/utf8Text";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
-const PROVIDER_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type { McpServerConfig };
 
@@ -35,6 +36,12 @@ export class ToolManager {
   private readonly reservedToolNames: Set<string>;
   private readonly sessionByToolName = new Map<string, McpSession>();
   private readonly originalNameByAlias = new Map<string, string>();
+  /**
+   * Which server an alias came from, for the failure messages. A run may bind
+   * several servers, and "HTTP 500" without one names nothing an operator can
+   * go and look at.
+   */
+  private readonly serverNameByAlias = new Map<string, string>();
   /** One entry per session opened, for teardown. */
   private readonly sessions: McpSession[] = [];
   private _tools: ChannelToolDef[] = [];
@@ -163,7 +170,7 @@ export class ToolManager {
           );
           continue;
         }
-        const alias = allocateToolName(tool.name, usedNames, aliasIndexByName);
+        const alias = allocateToolName(providerToolName(tool.name), usedNames, aliasIndexByName);
         tools.push({
           type: "function",
           function: {
@@ -174,6 +181,7 @@ export class ToolManager {
         });
         this.sessionByToolName.set(alias, entry.session);
         this.originalNameByAlias.set(alias, tool.name);
+        this.serverNameByAlias.set(alias, entry.server.name);
         aliases.push(alias);
       }
       this._toolNamesByServer.set(entry.server.name, aliases);
@@ -189,7 +197,7 @@ export class ToolManager {
    */
   private recordFailure(serverName: string, reason: string, unauthorized: boolean): void {
     if (unauthorized) {
-      this._unauthorizedServers.push(serverName);
+      this.recordUnauthorized(serverName);
       this._warnings.push(
         `MCP server '${serverName}' rejected this project's credentials; it needs to be reconnected before its tools are available.`,
       );
@@ -198,6 +206,21 @@ export class ToolManager {
     this._warnings.push(
       `MCP server '${serverName}' is unreachable (${reason}); its tools are unavailable this run.`,
     );
+  }
+
+  /**
+   * Note that a server rejected this project's credentials.
+   *
+   * The single owner of that list, because two paths reach it and they are not
+   * the same moment: discovery, and a call made against a session the discovery
+   * cache let through uninitialized. A server that fails both — or several calls
+   * in one turn — must still be named once, or the run would ask the owner to
+   * reconnect the same server three times.
+   */
+  private recordUnauthorized(serverName: string): void {
+    if (!this._unauthorizedServers.includes(serverName)) {
+      this._unauthorizedServers.push(serverName);
+    }
   }
 
   /**
@@ -245,30 +268,97 @@ export class ToolManager {
     if (!session || !originalName) {
       return { text: `Error: tool call failed. No MCP server provides the tool '${aliasName}'.` };
     }
+    const serverName = this.serverNameByAlias.get(aliasName) ?? "unknown";
     try {
       const result = (await session.callTool(originalName, args)) as
-        | { content?: unknown[]; isError?: boolean }
+        | {
+            content?: unknown[];
+            isError?: boolean;
+            resultType?: string;
+            structuredContent?: unknown;
+          }
         | undefined;
-      if (!result || !Array.isArray(result.content)) {
+      // A server that needs something more before it can answer — an approval, a
+      // missing argument, a completion — says so with this instead of content
+      // (MRTR, protocol `2026-07-28`). Named here rather than left to the check
+      // below, which would report a server behaving exactly as its protocol says
+      // it should as one that answered with nothing. An older server omits the
+      // field, and the spec requires that to be read as an ordinary result,
+      // which is what passing it through already does.
+      if (result?.resultType === "input_required") {
         return {
-          text: `Error: tool call failed. No content from MCP for tool '${originalName}'.`,
+          text:
+            `Error: tool call failed. The MCP server needs more input before it can answer ` +
+            `'${originalName}' (a multi round-trip request); this client cannot supply it, so ` +
+            `the call did not complete.`,
         };
       }
-      const output = formatToolResult(result.content);
-      // A failed call's images are dropped: the text is the diagnosis, and
-      // attaching a picture to a failure only spends context.
-      return result.isError === true ? { text: asErrorResult(output.text) } : output;
+      if (result && Array.isArray(result.content) && result.content.length > 0) {
+        const output = formatToolResult(result.content);
+        // A failed call's images are dropped: the text is the diagnosis, and
+        // attaching a picture to a failure only spends context.
+        return result.isError === true ? { text: asErrorResult(output.text) } : output;
+      }
+      // The spec asks a server returning structured data to *also* serialize it
+      // into a text block, but only with a SHOULD — so a server that skips it is
+      // conforming enough to be worth reading. Without this its result arrived as
+      // "no content", which is a failure report about a call that succeeded.
+      if (result?.structuredContent !== undefined) {
+        const text = truncateResult(JSON.stringify(result.structuredContent));
+        return { text: result.isError === true ? asErrorResult(text) : text };
+      }
+      if (result?.isError === true) {
+        // The server said the call failed and gave nothing to say why. Reporting
+        // the emptiness instead of the verdict loses the one fact it stated.
+        return {
+          text: `Error: the tool reported a failure but returned nothing to explain it ('${originalName}' on MCP server '${serverName}').`,
+        };
+      }
+      if (result && Array.isArray(result.content)) {
+        // A well-formed answer that is genuinely empty — a delete that removed
+        // something, a write that returns nothing. Not a failure, and this used
+        // to reach the model as the string "[]".
+        return { text: "(the tool returned no content)" };
+      }
+      return {
+        text: `Error: tool call failed. No content from MCP server '${serverName}' for tool '${originalName}'.`,
+      };
     } catch (error) {
       this.signal?.throwIfAborted();
+      if (error instanceof McpHttpError && error.status === 401) {
+        // Discovery is cached, so a run whose cache is warm makes its first
+        // request *here* — meaning this is the only place a token revoked since
+        // the last discovery can surface. Recorded so the console offers a
+        // reconnect instead of leaving the owner to re-diagnose it every run.
+        this.recordUnauthorized(serverName);
+      }
       const message = error instanceof Error ? error.message : String(error);
-      return { text: `Error: tool call failed. ${message}` };
+      return {
+        text: `Error: tool call failed. '${originalName}' on MCP server '${serverName}': ${message}`,
+      };
     }
   }
 }
 
+/**
+ * The name a provider will accept, for a tool its server calls something else.
+ *
+ * MCP allows up to 128 characters and a dot — `admin.tools.list` is the spec's
+ * own example — while a provider's function name is `[A-Za-z0-9_-]{1,64}`. The
+ * two disagree, and refusing the difference used to cost a run every tool whose
+ * name carried a dot. The alias machinery collisions already need is what makes
+ * the difference survivable: `originalNameByAlias` keeps the server's own name,
+ * so nothing about this reaches the wire.
+ */
+function providerToolName(name: string): string {
+  return name.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
+}
+
 function invalidToolReason(tool: McpTool): string | undefined {
-  if (!PROVIDER_TOOL_NAME.test(tool.name)) {
-    return "the name must be 1-64 letters, digits, underscores, or hyphens";
+  // A name with nothing a provider accepts cannot be aliased into one — and an
+  // absent name used to pass this check as the string "undefined".
+  if (typeof tool.name !== "string" || providerToolName(tool.name) === "") {
+    return "the name must contain at least one letter, digit, underscore or hyphen";
   }
   if (
     tool.inputSchema !== undefined &&
@@ -320,6 +410,25 @@ interface ExtractedBlock {
   image?: ImageBytes;
 }
 
+/**
+ * A `resource_link` as the model will read it: the URI first, then whatever the
+ * server offered to identify it. Only the URI is required of the block, and it
+ * is the only part that can be acted on — the rest is there so the model can
+ * decide whether to.
+ */
+function resourceLinkText(link: {
+  uri?: string;
+  name?: string;
+  description?: string;
+  mimeType?: string;
+}): string {
+  if (!link.uri) {
+    return "Invalid resource link: missing uri";
+  }
+  const detail = [link.name, link.mimeType, link.description].filter(Boolean).join(", ");
+  return detail ? `[resource: ${link.uri} (${detail})]` : `[resource: ${link.uri}]`;
+}
+
 function imageBlock(data: string | undefined, mimeType: string | undefined): ExtractedBlock {
   if (!data || !mimeType?.startsWith("image/")) {
     return { text: "[image result omitted]" };
@@ -336,6 +445,9 @@ function extractBlock(block: unknown): ExtractedBlock {
     text?: string;
     data?: string;
     mimeType?: string;
+    uri?: string;
+    name?: string;
+    description?: string;
     resource?: { text?: string; blob?: string; mimeType?: string };
   };
   if (b.type === "text") {
@@ -343,6 +455,20 @@ function extractBlock(block: unknown): ExtractedBlock {
   }
   if (b.type === "image") {
     return imageBlock(b.data, b.mimeType);
+  }
+  if (b.type === "audio") {
+    // Nothing downstream takes audio — a turn carries text and images — so the
+    // bytes stop here. Named rather than dropped: a model told a recording came
+    // back can ask the server for a transcript, which it cannot do about a block
+    // it never learned existed.
+    return {
+      text: `[audio omitted: ${b.mimeType ?? "unknown type"} — this client cannot pass audio to the model. Ask the server for a text transcript.]`,
+    };
+  }
+  if (b.type === "resource_link") {
+    // A pointer rather than a payload: the server is naming something it can be
+    // asked for by URI. The URI is the actionable part, so it leads.
+    return { text: resourceLinkText(b) };
   }
   if (b.type === "resource" && b.resource) {
     if (b.resource.text != null) {
@@ -373,7 +499,11 @@ function extractBlock(block: unknown): ExtractedBlock {
     }
     return { text: "Invalid resource content: missing text and blob" };
   }
-  return { text: `Invalid content type: ${b.type}` };
+  // Deliberately not "invalid": the protocol keeps gaining content types, and a
+  // server sending one this client has not learned yet is ahead of it rather
+  // than wrong. Saying which type arrived is what lets that be told apart from a
+  // server returning nonsense.
+  return { text: `[unsupported content type '${b.type}' — this client could not read it]` };
 }
 
 /** Mark a payload as a failure without stuttering when it already says so. */
@@ -381,19 +511,20 @@ function asErrorResult(output: string): string {
   return output.startsWith("Error:") ? output : `Error: the tool reported a failure. ${output}`;
 }
 
+/** The per-call ceiling, applied wherever a result becomes text. */
+function truncateResult(output: string): string {
+  return output.length > MAX_TOOL_RESULT_LENGTH
+    ? `${output.slice(0, MAX_TOOL_RESULT_LENGTH)}...(truncated after 100KB)`
+    : output;
+}
+
 function formatToolResult(content: unknown[]): McpToolResult {
   const blocks = content.map(extractBlock);
   const data = blocks.map((block) => block.text);
   const images = blocks.flatMap((block) => (block.image ? [block.image] : []));
   const first = data[0];
-  let output: string;
-  if (data.length === 1 && first !== undefined) {
-    output = first;
-  } else {
-    output = JSON.stringify(data);
-  }
-  if (output.length > MAX_TOOL_RESULT_LENGTH) {
-    output = `${output.slice(0, MAX_TOOL_RESULT_LENGTH)}...(truncated after 100KB)`;
-  }
+  const output = truncateResult(
+    data.length === 1 && first !== undefined ? first : JSON.stringify(data),
+  );
   return images.length > 0 ? { text: output, images } : { text: output };
 }

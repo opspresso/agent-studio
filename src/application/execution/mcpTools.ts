@@ -120,11 +120,21 @@ export async function buildMcpTools(
   // A server that rejected the token is the one failure the project itself can
   // fix. Recorded so the console offers a reconnect rather than leaving the
   // owner to re-diagnose it from a warning on every future run.
-  for (const serverName of toolManager.unauthorizedServers) {
-    await deps.mcpAuth.markUnauthorized(version.projectName, serverName).catch((error: unknown) => {
-      log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
-    });
-  }
+  const flagged = new Set<string>();
+  const flagUnauthorized = async (): Promise<void> => {
+    for (const serverName of toolManager.unauthorizedServers) {
+      if (flagged.has(serverName)) {
+        continue;
+      }
+      flagged.add(serverName);
+      await deps.mcpAuth
+        .markUnauthorized(version.projectName, serverName)
+        .catch((error: unknown) => {
+          log.warn("mcp", `could not flag '${serverName}' as needing reauthorization`, error);
+        });
+    }
+  };
+  await flagUnauthorized();
   // Providers cap how many tools one request may declare, and a request over
   // that limit fails outright — losing the tail is strictly better than losing
   // the run. Builtins are added after this, so leave them room.
@@ -155,7 +165,15 @@ export async function buildMcpTools(
         : []),
     ],
     callMcpTool: (name, args) => toolManager.callTool(name, args),
-    close: () => toolManager.close(),
+    close: async () => {
+      // Checked again on the way out, because discovery may have been served
+      // from cache — in which case the run's first request to that server was a
+      // tool call, and a token revoked since the last discovery can only surface
+      // there. Nothing reads the flag until the next run, so the way out is
+      // early enough.
+      await flagUnauthorized();
+      await toolManager.close();
+    },
   };
 }
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolManager";
 import { listMcpTools } from "@/infrastructure/mcp/mcpClient";
-import { PROTOCOL_VERSION } from "@/infrastructure/mcp/session";
+import { McpSession, PROTOCOL_VERSION } from "@/infrastructure/mcp/session";
 import { clearMcpDiscoveryCache, getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
@@ -59,6 +59,14 @@ interface ServerScript {
   listError?: { code: number; message: string };
   /** When set, tools/call reports the MCP spec's own failure flag. */
   callIsError?: boolean;
+  /** When set, tools/call answers with this `resultType` and no content. */
+  callResultType?: string;
+  /** When set, tools/call answers with `structuredContent`. */
+  callStructuredContent?: unknown;
+  /** When set, tools/call omits `content` entirely, as a structured-only server does. */
+  callOmitsContent?: boolean;
+  /** When set, tools/call answers 401 — a token revoked after discovery succeeded. */
+  callUnauthorized?: boolean;
   /** Hook fired as each request arrives, for tests that need to race one. */
   onRequest?: (method: string) => void;
 }
@@ -73,6 +81,9 @@ interface RecordedCall {
   sessionId?: string;
   /** The MCP-Protocol-Version the request stated. */
   protocolVersion?: string;
+  /** The SEP-2243 routing headers, which mirror the body a server compares them to. */
+  mcpMethod?: string;
+  mcpName?: string;
   params?: Record<string, unknown>;
   hasSignal: boolean;
 }
@@ -116,6 +127,8 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     const sent = new Headers(init?.headers);
     const sentSession = sent.get("Mcp-Session-Id") ?? undefined;
     const sentVersion = sent.get("MCP-Protocol-Version") ?? undefined;
+    const sentMcpMethod = sent.get("Mcp-Method") ?? undefined;
+    const sentMcpName = sent.get("Mcp-Name") ?? undefined;
     const body = JSON.parse(String(init?.body ?? "{}")) as {
       method: string;
       id?: number;
@@ -127,6 +140,8 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       httpMethod: init?.method ?? "GET",
       ...(sentSession ? { sessionId: sentSession } : {}),
       ...(sentVersion ? { protocolVersion: sentVersion } : {}),
+      ...(sentMcpMethod ? { mcpMethod: sentMcpMethod } : {}),
+      ...(sentMcpName ? { mcpName: sentMcpName } : {}),
       params: body.params,
       hasSignal: init?.signal instanceof AbortSignal,
     });
@@ -155,6 +170,9 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     if (script.notFoundAfterHandshake && body.method !== "initialize") {
       return new Response("Not found", { status: 404 });
     }
+    if (script.callUnauthorized && body.method === "tools/call") {
+      return new Response("Unauthorized", { status: 401 });
+    }
     let payload: RpcEnvelope;
     let issuedSession: string | undefined;
     if (body.method === "initialize") {
@@ -179,14 +197,19 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         payload = { jsonrpc: "2.0", id: body.id, result: { tools: script.listTools ?? [] } };
       }
     } else if (body.method === "tools/call") {
-      payload = {
-        jsonrpc: "2.0",
-        id: body.id,
-        result: {
-          content: script.callContent ?? [],
-          ...(script.callIsError ? { isError: true } : {}),
-        },
-      };
+      payload = script.callResultType
+        ? { jsonrpc: "2.0", id: body.id, result: { resultType: script.callResultType } }
+        : {
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              ...(script.callOmitsContent ? {} : { content: script.callContent ?? [] }),
+              ...(script.callStructuredContent !== undefined
+                ? { structuredContent: script.callStructuredContent }
+                : {}),
+              ...(script.callIsError ? { isError: true } : {}),
+            },
+          };
     } else {
       payload = { jsonrpc: "2.0", id: body.id, result: {} };
     }
@@ -279,7 +302,9 @@ describe("ToolManager discovery validation", () => {
         listTools: [
           { name: "valid_tool", inputSchema: { type: "object", properties: {} } },
           { name: "implicit_object", inputSchema: {} },
-          { name: "invalid tool" },
+          // Nothing to build an alias out of. A name that merely uses characters
+          // a provider rejects is normalised instead — see the aliasing tests.
+          { name: "" },
           { name: "bad_schema", inputSchema: { type: "string" } },
           { name: "bad_properties", inputSchema: { type: "object", properties: [] } },
         ],
@@ -295,7 +320,7 @@ describe("ToolManager discovery validation", () => {
     ]);
     expect(manager.tools[1]?.function.parameters).toEqual({ type: "object", properties: {} });
     expect(manager.warnings).toEqual([
-      expect.stringContaining("invalid tool"),
+      expect.stringContaining("the name must contain"),
       expect.stringContaining("bad_schema"),
       expect.stringContaining("bad_properties"),
     ]);
@@ -1038,7 +1063,11 @@ describe("ToolManager request timeout", () => {
     await manager.init();
 
     const result = await manager.callTool("slow", {});
-    expect(result.text).toBe("Error: tool call failed. The operation was aborted due to timeout");
+    // The tool and its server are named: a run may bind several, and a bare
+    // reason points at none of them.
+    expect(result.text).toBe(
+      "Error: tool call failed. 'slow' on MCP server 'slow': The operation was aborted due to timeout",
+    );
   });
 });
 
@@ -1193,5 +1222,298 @@ describe("ToolManager session teardown", () => {
     }));
 
     await expect(manager.close()).resolves.toBeUndefined();
+  });
+});
+
+describe("MCP request metadata headers", () => {
+  it("mirrors the method on every request and the name on the one that has one", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    await manager.callTool("search", { q: "otters" });
+
+    // `Mcp-Name` is required only of a request that names something, which is why
+    // `tools/list` carries none while `tools/call` does.
+    expect(calls.map((call) => [call.method, call.mcpMethod, call.mcpName])).toEqual([
+      ["initialize", "initialize", undefined],
+      ["notifications/initialized", "notifications/initialized", undefined],
+      ["tools/list", "tools/list", undefined],
+      ["tools/call", "tools/call", "search"],
+    ]);
+  });
+
+  it("names the tool the server knows, not the alias a collision produced", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("A")] },
+      "https://b.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("B")] },
+    });
+    const manager = new ToolManager([
+      server("a", "https://a.test/mcp"),
+      server("b", "https://b.test/mcp"),
+    ]);
+    await manager.init();
+    await manager.callTool("search_1", {});
+
+    // The header is compared against the body, and the body carries the name
+    // that server uses — the alias exists only on this side.
+    const call = calls.find((entry) => entry.method === "tools/call");
+    expect(call?.mcpName).toBe("search");
+    expect(call?.params?.name).toBe("search");
+  });
+
+  it("is not overridable by a registry entry's own headers", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
+    });
+    const manager = new ToolManager([
+      {
+        name: "a",
+        url: "https://a.test/mcp",
+        headers: { "Mcp-Method": "tools/list", "Mcp-Name": "something_else" },
+      },
+    ]);
+    await manager.init();
+    await manager.callTool("search", {});
+
+    // A server that reads these MUST reject a request whose headers disagree
+    // with its body, so an entry naming one of them would otherwise fail every
+    // call made through that entry.
+    const call = calls.find((entry) => entry.method === "tools/call");
+    expect(call?.mcpMethod).toBe("tools/call");
+    expect(call?.mcpName).toBe("search");
+  });
+
+  it("base64-encodes a name that cannot travel as a plain header value", async () => {
+    const calls = stubMcpFetch({ "https://a.test/mcp": { callContent: [] } });
+    // Driven through the session directly: the tool manager refuses any name
+    // outside `[A-Za-z0-9_-]`, so no call it dispatches can reach this branch.
+    const session = new McpSession("https://a.test/mcp", {});
+
+    await session.callTool("검색", {});
+
+    const call = calls.find((entry) => entry.method === "tools/call");
+    expect(call?.mcpName).toBe(`=?base64?${Buffer.from("검색", "utf-8").toString("base64")}?=`);
+  });
+});
+
+describe("ToolManager multi round-trip requests", () => {
+  it("reports an input_required result as itself, not as an empty answer", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callResultType: "input_required" },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("search", {});
+    expect(result.text.startsWith("Error:")).toBe(true);
+    expect(result.text).toContain("more input");
+    expect(result.text).toContain("search");
+    // The server is behaving exactly as its protocol says it should; saying it
+    // sent no content sends the operator to look at a server that is fine.
+    expect(result.text).not.toContain("No content");
+  });
+
+  it("reads a result carrying no resultType as an ordinary one", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    // Servers older than the field omit it, and the spec requires that to be
+    // read as "complete" rather than as anything needing handling.
+    expect((await manager.callTool("search", {})).text).toBe("ok");
+  });
+});
+
+describe("ToolManager result content blocks", () => {
+  it("renders a resource_link as its URI and what identifies it", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "find" }],
+        callContent: [
+          {
+            type: "resource_link",
+            uri: "file:///project/src/main.rs",
+            name: "main.rs",
+            description: "Primary application entry point",
+            mimeType: "text/x-rust",
+          },
+        ],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("find", {});
+    expect(result.text).toContain("file:///project/src/main.rs");
+    expect(result.text).toContain("main.rs");
+    // A pointer to something, which used to read as a broken server.
+    expect(result.text).not.toContain("Invalid");
+  });
+
+  it("says an audio block arrived rather than dropping it", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "listen" }],
+        callContent: [{ type: "audio", data: "AAAA", mimeType: "audio/wav" }],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    // Nothing downstream takes audio, but a model told a recording exists can
+    // ask for a transcript.
+    const result = await manager.callTool("listen", {});
+    expect(result.text).toContain("audio/wav");
+    expect(result.text).toContain("transcript");
+    expect(result.images ?? []).toHaveLength(0);
+  });
+
+  it("names a content type it does not know instead of calling it invalid", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "future" }], callContent: [{ type: "hologram" }] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    expect((await manager.callTool("future", {})).text).toContain("hologram");
+  });
+});
+
+describe("ToolManager structured content", () => {
+  it("reads structuredContent when the server sent no text block", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "weather" }],
+        callOmitsContent: true,
+        callStructuredContent: { temperature: 22.5, conditions: "Partly cloudy" },
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    // Serializing structured data into a text block is only a SHOULD, so a
+    // server that skips it is still answering — this used to be "no content".
+    const result = await manager.callTool("weather", {});
+    expect(result.text).toBe('{"temperature":22.5,"conditions":"Partly cloudy"}');
+  });
+
+  it("prefers the content blocks when the server sent both", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "weather" }],
+        callContent: [textBlock("22.5C, partly cloudy")],
+        callStructuredContent: { temperature: 22.5 },
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    expect((await manager.callTool("weather", {})).text).toBe("22.5C, partly cloudy");
+  });
+});
+
+describe("ToolManager empty and failed results", () => {
+  it("keeps the server's failure verdict when it explained nothing", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "act" }],
+        callOmitsContent: true,
+        callIsError: true,
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    // "It returned nothing" would lose the one thing the server did state.
+    const result = await manager.callTool("act", {});
+    expect(result.text.startsWith("Error:")).toBe(true);
+    expect(result.text).toContain("reported a failure");
+    expect(result.text).toContain("act");
+  });
+
+  it("reads an empty content array as a call that succeeded with nothing to say", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "del" }], callContent: [] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    // A delete that removed something answers like this; it used to reach the
+    // model as the string "[]".
+    const result = await manager.callTool("del", {});
+    expect(result.text.startsWith("Error:")).toBe(false);
+    expect(result.text).not.toBe("[]");
+  });
+});
+
+describe("ToolManager mid-run authorization failure", () => {
+  it("records a 401 from a tool call, not only from discovery", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callUnauthorized: true },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    expect(manager.unauthorizedServers).toEqual([]);
+
+    const result = await manager.callTool("search", {});
+
+    // A warm discovery cache makes the first tool call the run's first request,
+    // so this is the only place a token revoked since then can surface.
+    expect(result.text.startsWith("Error:")).toBe(true);
+    expect(manager.unauthorizedServers).toEqual(["a"]);
+  });
+
+  it("names a server once however many of its calls are rejected", async () => {
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callUnauthorized: true },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    await manager.callTool("search", {});
+    await manager.callTool("search", {});
+
+    expect(manager.unauthorizedServers).toEqual(["a"]);
+  });
+});
+
+describe("ToolManager provider name aliasing", () => {
+  it("aliases a dotted name rather than dropping the tool", async () => {
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": {
+        listTools: [{ name: "admin.tools.list" }],
+        callContent: [textBlock("ok")],
+      },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    // MCP allows the dot — `admin.tools.list` is the spec's own example — and a
+    // provider's function name does not. Silent, like a collision alias.
+    expect(manager.tools.map((tool) => tool.function.name)).toEqual(["admin_tools_list"]);
+    expect(manager.warnings).toEqual([]);
+    expect((await manager.callTool("admin_tools_list", {})).text).toBe("ok");
+
+    // The server is still called by the name it published.
+    const call = calls.find((entry) => entry.method === "tools/call");
+    expect(call?.params?.name).toBe("admin.tools.list");
+    expect(call?.mcpName).toBe("admin.tools.list");
+  });
+
+  it("shortens a name past the provider's limit and keeps it callable", async () => {
+    const name = `${"a".repeat(70)}.tail`;
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name }], callContent: [textBlock("ok")] },
+    });
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+
+    const alias = manager.tools[0]?.function.name ?? "";
+    expect(alias).toHaveLength(64);
+    expect((await manager.callTool(alias, {})).text).toBe("ok");
   });
 });

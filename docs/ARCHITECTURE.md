@@ -893,8 +893,13 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
 **one owner**, `McpSession` (`src/infrastructure/mcp/session.ts`) — both the engine's
 `ToolManager` and the registry's "Test connection" probe run on it.
 
-- Tool-name collisions get `_1`/`_2` suffix aliases with a reverse mapping. Tool results are
-  capped at 100,000 chars.
+- Tool-name collisions get `_1`/`_2` suffix aliases with a reverse mapping, and the same
+  aliasing carries a name a **provider** would refuse: MCP allows 128 characters and a dot
+  (`admin.tools.list` is the spec's own example) where a function name is
+  `[A-Za-z0-9_-]{1,64}`. The name is normalised into one instead of the tool being dropped,
+  silently, like a collision alias — the server is still called by the name it published.
+  Only a name with nothing to build an alias out of is refused. Tool results are capped at
+  100,000 chars.
 - Servers are contacted **in parallel** at init (one unreachable server would otherwise add
   its full timeout to time-to-first-token) while alias allocation stays in configured order,
   so names are deterministic.
@@ -915,10 +920,44 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
 - After the handshake, requests state the protocol version the **server** agreed to rather
   than the one proposed; a server answering with another revision is not refused, since every
   revision that answers `initialize` still speaks the tool-list shape this client reads.
+- Every POST also mirrors its body into **`Mcp-Method`**, and a request that names something
+  into **`Mcp-Name`** (SEP-2243, required of a client from protocol `2026-07-28`), so a gateway
+  or rate limiter can route and meter without parsing the body. Older servers ignore a header
+  they do not know, which is what makes sending them now free. They are applied **after** a
+  registry entry's own headers, unlike the protocol version: they are derived from the body,
+  and a server that reads them rejects a request where the two disagree (`-32020`), so an entry
+  that happened to name one would otherwise fail every call made through it. A name outside
+  printable ASCII travels Base64-encoded (`=?base64?…?=`) — unreachable through the tool
+  manager, which refuses any name outside `[A-Za-z0-9_-]`, but the session owns the protocol
+  for every caller.
+- A result marked **`resultType: "input_required"`** — the server needs an approval or a
+  missing argument before it can answer (MRTR, protocol `2026-07-28`) — is reported as its own
+  failure rather than falling through the "no content" check, which would send an operator to
+  look at a server behaving exactly as its protocol says it should. This client does not answer
+  those requests. A result omitting the field is an ordinary one, as the spec requires.
 - A tool's **image** results (`image` blocks, and `resource` blobs with an image mime type)
   come back as bytes rather than being dropped: the engine registers them, streams them to the
   user, and attaches them to the turn as a follow-up user message — only when the model
   accepts image input, since a text-only model would reject the parts and fail the turn.
+- **Every other content type is read as the protocol defines it.** A `resource_link` becomes
+  its URI plus whatever identifies it — it is a pointer the model can ask for, not a payload.
+  An `audio` block is named and stops there, because a turn carries only text and images, so
+  the model is told a recording exists and can ask for a transcript. A type this client has
+  not learned is **named rather than called invalid**: the protocol keeps gaining them, and a
+  server ahead of us is not a broken one.
+- **`structuredContent` is read when the server sent no content blocks.** Serializing it into
+  a text block is only a SHOULD, so a server that skips it is still answering — that result
+  used to be reported as "no content", a failure report about a call that succeeded. Content
+  blocks win when both are present, since the text block is the serialization. An `isError`
+  result with nothing to explain it keeps the **verdict** rather than reporting the emptiness;
+  an empty `content` array is a call that succeeded with nothing to say (a delete that
+  removed something), not a failure, and no longer reaches the model as the string `[]`.
+- A **401 from a tool call** flags the connection for reconnection exactly as one from
+  discovery does, and it has to: discovery is cached, so a run with a warm cache makes its
+  first request to that server *at the first tool call*, and a token revoked since the last
+  discovery can surface nowhere else. Recorded once per server however many calls it rejects,
+  and applied when the run releases its sessions. Every tool failure also names the tool and
+  the server — a run may bind several, and a bare `HTTP 500` points at none of them.
 
 #### Discovery cache
 

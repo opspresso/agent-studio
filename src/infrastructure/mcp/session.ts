@@ -100,7 +100,23 @@ export class McpSession {
     return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
   }
 
-  private baseHeaders(): Record<string, string> {
+  /**
+   * The headers every request carries, plus the two that mirror *this* request's
+   * body.
+   *
+   * `Mcp-Method` and `Mcp-Name` are required of a client from protocol
+   * `2026-07-28` (SEP-2243): they let an intermediary — a gateway, a rate
+   * limiter, a WAF — route and meter without parsing the body. A server that
+   * predates them ignores a header it does not know, so sending them now costs
+   * an older server nothing and is what a newer one refuses to work without.
+   *
+   * Applied *after* the caller's own headers, unlike the protocol version above,
+   * because these two are derived from the body rather than chosen: a server
+   * that reads them MUST reject the request when header and body disagree
+   * (`-32020 HeaderMismatch`), so a registry entry whose static headers happened
+   * to name one would otherwise fail every call made through that entry.
+   */
+  private baseHeaders(method?: string, name?: string): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
@@ -109,6 +125,12 @@ export class McpSession {
     };
     if (this.sessionId) {
       headers["Mcp-Session-Id"] = this.sessionId;
+    }
+    if (method !== undefined) {
+      headers["Mcp-Method"] = method;
+    }
+    if (name !== undefined) {
+      headers["Mcp-Name"] = headerValue(name);
     }
     return headers;
   }
@@ -152,7 +174,7 @@ export class McpSession {
     const id = this.nextId++;
     const response = await this.send(this.url, {
       method: "POST",
-      headers: this.baseHeaders(),
+      headers: this.baseHeaders("initialize"),
       body: JSON.stringify({
         jsonrpc: "2.0",
         id,
@@ -205,7 +227,7 @@ export class McpSession {
     // Notify the server that initialization completed.
     await this.send(this.url, {
       method: "POST",
-      headers: this.baseHeaders(),
+      headers: this.baseHeaders("notifications/initialized"),
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
       signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),
     });
@@ -278,7 +300,7 @@ export class McpSession {
     const id = this.nextId++;
     const response = await this.send(this.url, {
       method: "POST",
-      headers: this.baseHeaders(),
+      headers: this.baseHeaders(method, mcpName(params)),
       body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
       signal: this.requestSignal(timeoutMs),
     });
@@ -367,6 +389,40 @@ export class McpSession {
       this.forgetSession();
     }
   }
+}
+
+/**
+ * The `Mcp-Name` a request's body implies: the tool being called, or the
+ * resource being read.
+ *
+ * Read off the params rather than passed alongside them, because the header and
+ * the body are compared by the server — deriving both from one value is what
+ * makes them unable to drift. Absent for a request that names nothing, such as
+ * `tools/list`, where the header is not required either.
+ */
+function mcpName(params: Record<string, unknown>): string | undefined {
+  const name = params.name ?? params.uri;
+  return typeof name === "string" ? name : undefined;
+}
+
+/**
+ * A header value carried the way the transport's value encoding requires.
+ *
+ * HTTP field values are visible ASCII with no leading or trailing whitespace, so
+ * anything else — a resource URI with a non-ASCII path, a name that would itself
+ * be read as the sentinel — travels Base64-encoded between `=?base64?` and `?=`.
+ * Tool names never reach that branch: the tool manager refuses any name outside
+ * `[A-Za-z0-9_-]` before one can be called. It is here because this file owns
+ * the protocol for callers that are not the tool manager, and because sending a
+ * raw non-ASCII value would not merely be non-conforming — `fetch` rejects it,
+ * costing the call rather than the header.
+ */
+function headerValue(value: string): string {
+  const printableAscii = /^[\x20-\x7e]*$/.test(value) && value.trim() === value;
+  if (printableAscii && !(value.startsWith("=?base64?") && value.endsWith("?="))) {
+    return value;
+  }
+  return `=?base64?${Buffer.from(value, "utf-8").toString("base64")}?=`;
 }
 
 /**
