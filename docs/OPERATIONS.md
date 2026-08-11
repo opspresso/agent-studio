@@ -277,6 +277,23 @@ live in the GitOps repository). The contract the ticker has to meet, and nothing
   `errors` > 0 means repository calls failed and were fenced off. A refused token logs a
   warning server-side — a 401 ticker is otherwise invisible from inside the cluster.
 
+## Catalog reindex
+
+`POST /api/catalog/reindex`, same `X-Scan-Token` as above, another CronJob. Unlike the
+schedule ticker there is no window to miss: the tick rebuilds the index from the registries as
+they are now, so a skipped run only delays discovery of whatever changed since the last one.
+**Hourly is ample**; a minute-by-minute tick would probe every MCP server that often for
+nothing.
+
+- **Duplicates are safe.** Keys are derived from the entry, so a second pass writes the same
+  records and computes the same leftovers.
+- The tick returns as soon as the work is handed off; the outcome is in the log line —
+  `indexed`, `removed`, and `undiscovered` naming servers whose tools could not be listed.
+  A server needing an OAuth connection is expected to be in that list: it is still indexed at
+  server level, only without its tools.
+- 503 means `VECTOR_BUCKET` is unset, which is a deployment without a catalog rather than a
+  fault. Runs then offer exactly what their versions bound.
+
 ## Multi-instance caveats
 
 | Behaviour | Bound by | Consequence |
