@@ -1207,13 +1207,16 @@ survive an embedding-model change, so that part cannot be absolute. But a ratio 
 see that *nothing* matches — half of the best bad score is still a bad score, and a request the
 catalog has nothing for comes back full. `DEFAULT_MIN_SCORE` is the floor that says no.
 
-Measured on this deployment's model (Titan v2, normalized, 1024d): a correct answer scores
-0.34–0.41, an unrelated one 0.05–0.12. **A cross-language match — an English query against a
-Korean description — scores about 0.13**, which is not separable from that noise by any
-threshold. The floor is set for precision instead, because the costs are asymmetric: a
-capability it misses is one an explicit binding still provides, while one it wrongly admits
-spends prompt budget on every run. Deployments whose descriptions and requests share a language
-never meet the trade.
+Both numbers belong to the **embedding model**, not to the search, and they do not transfer —
+see [CONFIGURATION.md](CONFIGURATION.md#choosing-an-embedding-model) for the measurements that
+put this deployment on Cohere v4. The short version: its registry is described in English and
+queried in Korean, and that is the one case the alternatives cannot resolve.
+
+**Each query is ranked and cut against its own best, then the survivors are merged.** Sharing
+one cut across both lets the stronger query erase the weaker: a system prompt reading "당신은
+Slack 어시스턴트" puts `slack` at 0.583, so a ratio taken over the union sits at 0.408 and
+drops `github` at 0.393 — the entry the request actually named. Two queries asking different
+questions cannot share a proportional cut.
 
 **Discovery at run time is opt-in and strictly additive.** `parameters.dynamicCapabilities`
 turns it on; `resolveRunTools` then appends what it finds to the version's own lists *before*
