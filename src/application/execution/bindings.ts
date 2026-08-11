@@ -256,7 +256,13 @@ async function discoverCapabilities(
       // separately. Its listing may well succeed at dispatch (a credential fixed
       // since, a server that was down), and if it does not, the run reports it
       // like any other binding that came back empty.
-      { kind: "mcpServer", limit: DISCOVERY_LIMITS.mcpServer },
+      //
+      // Oversampled past the binding cap, because a candidate the loop below
+      // skips — an OAuth server this project has not connected, an entry
+      // deleted since the index was built — must not cost a slot. Sized at
+      // exactly the cap, one unconnected high scorer starved the servers the
+      // request actually asked for.
+      { kind: "mcpServer", limit: DISCOVERY_LIMITS.mcpServer * 3 },
     ]);
 
   const skillList = skills.map((match) => match.name).filter((name) => !boundSkills.has(name));
@@ -276,38 +282,62 @@ async function discoverCapabilities(
       .map((connection) => connection.serverName) ?? [],
   );
 
+  // One candidate per server, scored by the best evidence from either index,
+  // and walked in that order. "Tool hits lead" used to be *source* order —
+  // every tool hit outranked every server hit — so a persona prompt's
+  // incidental tool matches at 0.23 filled all three slots ahead of the
+  // request's own servers at 0.33, which is how "클러스터 상태 어때?"
+  // discovered a document store. What a tool hit knows that a server hit does
+  // not — which tools matched — is kept as the binding's narrowing below, not
+  // as a ranking privilege. The scores are comparable: one embedding space,
+  // and each kind was already cut against its own best.
+  const candidates = new Map<string, { score: number; tools: string[] }>();
+  for (const match of toolHits) {
+    const entry = candidates.get(match.name) ?? { score: 0, tools: [] };
+    entry.score = Math.max(entry.score, match.score);
+    if (match.toolName !== undefined) {
+      entry.tools.push(match.toolName);
+    }
+    candidates.set(match.name, entry);
+  }
+  for (const match of serverHits) {
+    const entry = candidates.get(match.name) ?? { score: 0, tools: [] };
+    entry.score = Math.max(entry.score, match.score);
+    candidates.set(match.name, entry);
+  }
+  // Ties break by name so equal evidence selects the same server every turn.
+  const ranked = [...candidates.entries()]
+    .map(([name, entry]) => ({ name, ...entry }))
+    .sort((a, b) => b.score - a.score || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
   const mcpList: McpBinding[] = [];
   const notes: string[] = [];
-  const seenServers = new Set<string>();
-  // Tool hits lead: they name a server *and* which of its tools to offer, which
-  // is strictly more than a server hit says. A server reached both ways is
-  // bound once, narrowed.
-  for (const match of [...toolHits, ...serverHits]) {
-    if (boundServers.has(match.name) || seenServers.has(match.name)) {
-      continue;
-    }
+  for (const candidate of ranked) {
     if (mcpList.length >= DISCOVERY_LIMITS.mcpServer) {
       break;
     }
-    seenServers.add(match.name);
-    const server = await deps.mcps.get(match.name);
+    if (boundServers.has(candidate.name)) {
+      continue;
+    }
+    const server = await deps.mcps.get(candidate.name);
     if (!server) {
       continue;
     }
-    if (server.auth && !connected.has(match.name)) {
+    if (server.auth && !connected.has(candidate.name)) {
       notes.push(
-        `MCP server '${match.name}' matched this request but this project has not connected it; authorize it from that server's own settings — binding it alone would still leave the run unable to sign in.`,
+        `MCP server '${candidate.name}' matched this request but this project has not connected it; authorize it from that server's own settings — binding it alone would still leave the run unable to sign in.`,
       );
       continue;
     }
     // Narrowed to the tools that actually matched, which is what `McpBinding.tools`
     // is for: a discovered server should not spend the run's tool budget on the
-    // rest of its catalogue. A server hit carries none — nothing knows what it
-    // offers yet — so it is bound whole and the dispatch-time listing decides.
-    const tools = toolHits
-      .filter((entry) => entry.name === match.name && entry.toolName !== undefined)
-      .map((entry) => entry.toolName as string);
-    mcpList.push({ name: match.name, ...(tools.length > 0 ? { tools } : {}) });
+    // rest of its catalogue. A candidate only the server index reached carries
+    // none — nothing knows what it offers yet — so it is bound whole and the
+    // dispatch-time listing decides.
+    mcpList.push({
+      name: candidate.name,
+      ...(candidate.tools.length > 0 ? { tools: candidate.tools } : {}),
+    });
   }
   // Name order, not score order. Order carries no meaning downstream — the
   // prompt tables do not rank, and the bindings always lead — but it decides

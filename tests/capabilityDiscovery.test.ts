@@ -321,6 +321,53 @@ describe("capability discovery", () => {
     expect(resolved.warnings.some((line) => line.includes("discovery failed"))).toBe(true);
   });
 
+  it("picks servers by score, not by which index found them", async () => {
+    // "Tool hits lead" used to be source order: every tool hit outranked every
+    // server hit, so a persona prompt's incidental tool match at a low score
+    // filled a slot ahead of the request's own servers. The narrowing a tool
+    // hit knows is kept; the ranking privilege is not.
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({
+        mcpTool: [found("docs", "read", 0.3)],
+        mcpServer: [
+          found("argocd", undefined, 0.9),
+          found("kubernetes", undefined, 0.85),
+          found("grafana", undefined, 0.8),
+        ],
+      }),
+      servers: [server("docs"), server("argocd"), server("kubernetes"), server("grafana")],
+    });
+    await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(opened[0]?.map((entry) => entry.name).sort()).toEqual([
+      "argocd",
+      "grafana",
+      "kubernetes",
+    ]);
+  });
+
+  it("a skipped candidate does not cost a slot", async () => {
+    // The top scorer needs OAuth this project never connected. Sized at exactly
+    // the cap, it starved the third server the request actually asked for.
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({
+        mcpServer: [
+          found("slack", undefined, 0.9),
+          found("argocd", undefined, 0.85),
+          found("kubernetes", undefined, 0.8),
+          found("grafana", undefined, 0.75),
+        ],
+      }),
+      servers: [server("slack", OAUTH), server("argocd"), server("kubernetes"), server("grafana")],
+    });
+    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(opened[0]?.map((entry) => entry.name).sort()).toEqual([
+      "argocd",
+      "grafana",
+      "kubernetes",
+    ]);
+    expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(true);
+  });
+
   it("offers a discovered set in name order, whatever the scores ranked", async () => {
     // Score order re-ranks with every message, and the discovered order decides
     // MCP alias allocation and the prompt's byte layout — both of which must not
