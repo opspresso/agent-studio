@@ -8,6 +8,7 @@ import {
   createAgent,
   listA2aProjects,
   listAgents,
+  type A2aProjectListItem,
   type A2aProjectListView,
   type AgentProtocol,
   type ExternalAgent,
@@ -20,6 +21,7 @@ import {
   Button,
   Card,
   Group,
+  Modal,
   Select,
   Stack,
   Text,
@@ -27,6 +29,7 @@ import {
   Title,
 } from "@mantine/core";
 import { IconRobot } from "@tabler/icons-react";
+import { CodeBlock } from "@/app/_components/CodeBlock";
 import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
@@ -43,6 +46,7 @@ export default function AgentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
   const [filter, setFilter] = useState("");
+  const [cardProject, setCardProject] = useState<A2aProjectListItem | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -129,18 +133,25 @@ export default function AgentsPage() {
           </div>
           <CardList>
             {a2aProjects.projects.map((project) => (
-              <Card key={project.name} h="100%">
+              <Card
+                key={project.name}
+                h="100%"
+                onClick={() => setCardProject(project)}
+                style={{ cursor: "pointer" }}
+              >
                 <Group gap="xs">
-                  <Anchor component={Link} href={`/projects/${project.name}`} fw={500} c="inherit">
-                    {project.displayName || project.name}
-                  </Anchor>
+                  <Text fw={500}>{project.displayName || project.name}</Text>
                   <Badge color={AGENT_PROTOCOL_COLOR.a2a}>{AGENT_PROTOCOL_LABEL.a2a}</Badge>
                 </Group>
                 <Text fz="sm" c="dimmed" mt={4} lineClamp={2}>
                   {project.description}
                 </Text>
                 {a2aProjects.enabled && (
-                  <div style={{ marginTop: "var(--mantine-spacing-xs)" }}>
+                  // The copy button must not also open the card dialog.
+                  <div
+                    style={{ marginTop: "var(--mantine-spacing-xs)" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <CopyableUrl url={project.cardUrl} />
                   </div>
                 )}
@@ -158,7 +169,73 @@ export default function AgentsPage() {
           void refresh();
         }}
       />
+
+      <AgentCardModal project={cardProject} onClose={() => setCardProject(null)} />
     </Stack>
+  );
+}
+
+function AgentCardModal({
+  project,
+  onClose,
+}: {
+  project: A2aProjectListItem | null;
+  onClose: () => void;
+}) {
+  const [card, setCard] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!project) {
+      return;
+    }
+    let cancelled = false;
+    setCard(null);
+    setError(null);
+    fetch(project.cardUrl)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Request failed (${res.status})`);
+        }
+        return res.json();
+      })
+      .then((data) => !cancelled && setCard(JSON.stringify(data, null, 2)))
+      .catch(
+        (e) =>
+          !cancelled && setError(e instanceof Error ? e.message : "Failed to load the Agent Card"),
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [project]);
+
+  return (
+    <Modal
+      opened={project !== null}
+      onClose={onClose}
+      title={project ? `Agent Card — ${project.displayName || project.name}` : ""}
+      size="lg"
+    >
+      {project && (
+        <Stack gap="sm">
+          <CopyableUrl url={project.cardUrl} />
+          {error ? (
+            <Alert color="red" variant="light">
+              {error}
+            </Alert>
+          ) : card ? (
+            <CodeBlock language="json" code={card} />
+          ) : (
+            <Text fz="sm" c="dimmed">
+              Loading…
+            </Text>
+          )}
+          <Anchor component={Link} href={`/projects/${project.name}`} fz="sm">
+            Open project →
+          </Anchor>
+        </Stack>
+      )}
+    </Modal>
   );
 }
 
