@@ -752,6 +752,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/infrastructure/llm/embeddings.ts",
   },
   {
+    // The other embedding adapter, and the one this deployment uses: it writes
+    // into the same S3 Vectors bucket `mcp-memory` does, so it has to embed
+    // with the same model. A second construction site is a second place that
+    // could ask for a different dimension than the index was built for.
+    what: "invoking a Bedrock model",
+    pattern: /new BedrockRuntimeClient\(/,
+    owner: "src/infrastructure/llm/bedrockEmbeddings.ts",
+  },
+  {
     // One place knows that an index fixes its dimension and its distance
     // metric. A second construction site is how a store ends up queried under a
     // metric it was not built with, which surfaces only as a ranking that is
