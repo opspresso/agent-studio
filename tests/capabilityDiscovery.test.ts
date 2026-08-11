@@ -93,10 +93,13 @@ interface Harness {
   opened: McpServerConfig[][];
 }
 
-function harness(options: {
-  catalog?: CatalogSearchDeps;
-  servers?: McpServer[];
-} = {}): Harness {
+function harness(
+  options: {
+    catalog?: CatalogSearchDeps;
+    servers?: McpServer[];
+    connections?: Array<{ serverName: string; status: string }>;
+  } = {},
+): Harness {
   const registry = new Map((options.servers ?? []).map((entry) => [entry.name, entry]));
   const opened: McpServerConfig[][] = [];
   return {
@@ -109,6 +112,7 @@ function harness(options: {
       externalAgents: { get: async (name: string) => ({ name, description: `agent ${name}` }) },
       projects: { get: async () => null },
       mcps: { get: async (name: string) => registry.get(name) ?? null },
+      mcpConnections: { listByProject: async () => options.connections ?? [] },
       ...(options.catalog ? { catalog: options.catalog } : {}),
       cipher: { mergeOutboundHeaders: () => ({}) },
       urlPolicy: { assertAllowed: async () => {} },
@@ -215,20 +219,40 @@ describe("capability discovery", () => {
     ]);
   });
 
-  it("refuses to add an MCP server that needs its own sign-in", async () => {
-    // Checking whether a connection exists means asking the auth provider for
-    // headers, and that refreshes tokens — a second refresh in one run races the
-    // first with providers that rotate them. A connected server is one somebody
-    // deliberately set up, and binding it is that same deliberate act.
+  it("refuses an OAuth server this project has not connected", async () => {
     const { deps, opened } = harness({
       catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
       servers: [server("slack", OAUTH)],
     });
     const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
     expect(opened).toEqual([]);
-    expect(resolved.warnings.some((line) => line.includes("needs an authorized connection"))).toBe(
-      true,
-    );
+    expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(true);
+  });
+
+  it("offers an OAuth server this project *has* connected", async () => {
+    // Authorizing a server in the console says this project may use it, and
+    // discovery has no business being the one caller that ignores that. The
+    // connection rows answer by being read — resolving the credential would
+    // refresh tokens and make discovery a writer.
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
+      servers: [server("slack", OAUTH)],
+      connections: [{ serverName: "slack", status: "connected" }],
+    });
+    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(opened[0]).toEqual([expect.objectContaining({ name: "slack", tools: ["post"] })]);
+    expect(resolved.warnings.some((line) => line.includes("has not connected it"))).toBe(false);
+  });
+
+  it("treats a connection still awaiting the person as not connected", async () => {
+    // `needs_auth` and `needs_reauth` are rows the console shows as unfinished.
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({ mcpTool: [found("slack", "post")] }),
+      servers: [server("slack", OAUTH)],
+      connections: [{ serverName: "slack", status: "needs_reauth" }],
+    });
+    await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(opened).toEqual([]);
   });
 
   it("reports what it added, so the reader sees the run was widened", async () => {

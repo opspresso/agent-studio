@@ -161,17 +161,25 @@ export function discoveryQueries(version: Version, request: string | undefined):
  * filtered or truncated by this — which is the whole reason a project can turn
  * discovery on without auditing what it already relies on.
  *
- * **An MCP server that requires OAuth is never added.** Not because it could
- * not be checked, but because checking it means asking the auth provider for
- * headers, and that call refreshes tokens — with a provider that rotates
- * refresh tokens, two resolutions in one run race each other and the loser
- * stores a token the provider already revoked (`McpConnectionRepository.updateTokens`
- * says so at length). A server whose credentials are a per-project connection
- * is one somebody deliberately connected, and binding it explicitly is that
- * same deliberate act.
+ * **An MCP server that requires OAuth is added only where this project has
+ * already connected it.** Someone authorizing a server in the console is
+ * saying this project may use it, and there is no reason discovery should be
+ * the one caller that ignores that. What it must not do is *resolve* the
+ * credential to find out: `headersFor` refreshes tokens as a side effect, so
+ * asking it a question would make discovery a writer. The connection rows
+ * answer the same question by being read.
+ *
+ * A connection that has gone stale since — a revoked grant, a rotated client —
+ * is not this function's problem: `buildMcpTools` resolves it for real at
+ * dispatch and reports a server that cannot authenticate, exactly as it does
+ * for one the version bound by hand.
  */
 async function discoverCapabilities(
-  deps: { catalog: CatalogSearchDeps; mcps: Pick<ExecutionDeps["mcps"], "get"> },
+  deps: {
+    catalog: CatalogSearchDeps;
+    mcps: Pick<ExecutionDeps["mcps"], "get">;
+    mcpConnections?: ExecutionDeps["mcpConnections"];
+  },
   version: Version,
   queries: readonly string[],
 ): Promise<{ skillList: string[]; subagentList: SubagentRef[]; mcpList: McpBinding[]; notes: string[] }> {
@@ -206,6 +214,15 @@ async function discoverCapabilities(
     .filter((match) => !boundAgents.has(match.name))
     .map((match) => ({ name: match.name, type: "remote" as const }));
 
+  // One read for the whole run, not one per candidate. `needs_auth` and
+  // `needs_reauth` are connections in name only — the console shows both as
+  // something a person still has to finish — so only `connected` counts.
+  const connected = new Set<string>(
+    (await deps.mcpConnections?.listByProject(version.projectName))
+      ?.filter((connection) => connection.status === "connected")
+      .map((connection) => connection.serverName) ?? [],
+  );
+
   const mcpList: McpBinding[] = [];
   const notes: string[] = [];
   const seenServers = new Set<string>();
@@ -224,9 +241,9 @@ async function discoverCapabilities(
     if (!server) {
       continue;
     }
-    if (server.auth) {
+    if (server.auth && !connected.has(match.name)) {
       notes.push(
-        `MCP server '${match.name}' matched this request but needs an authorized connection; bind it to this version to use it.`,
+        `MCP server '${match.name}' matched this request but this project has not connected it; authorize it on the project's MCP settings, or bind it to this version.`,
       );
       continue;
     }
@@ -257,7 +274,7 @@ async function discoverCapabilities(
  * checks) from needing to know the difference.
  */
 export async function resolveRunTools(
-  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills" | "catalog"> & McpToolDeps,
+  deps: Pick<ExecutionDeps, "externalAgents" | "projects" | "skills" | "catalog" | "mcpConnections"> & McpToolDeps,
   version: Version,
   signal?: AbortSignal,
   queries?: readonly string[],
@@ -271,7 +288,15 @@ export async function resolveRunTools(
   const discoveryNotes: string[] = [];
   if (version.parameters.dynamicCapabilities && deps.catalog && queries && queries.length > 0) {
     try {
-      const found = await discoverCapabilities({ catalog: deps.catalog, mcps: deps.mcps }, version, queries);
+      const found = await discoverCapabilities(
+        {
+          catalog: deps.catalog,
+          mcps: deps.mcps,
+          ...(deps.mcpConnections ? { mcpConnections: deps.mcpConnections } : {}),
+        },
+        version,
+        queries,
+      );
       version = {
         ...version,
         skillList: [...(version.skillList ?? []), ...found.skillList],

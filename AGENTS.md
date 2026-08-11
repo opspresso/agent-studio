@@ -251,8 +251,8 @@ One line each — the linked section is the authority.
 - **Capability catalog** — one global index (skills, MCP servers *and* their tools, external
   agents) rebuilt by a CronJob tick, never on a registry write. A version opting into
   `dynamicCapabilities` has its lists **widened** before resolution, from the system prompt and
-  the request; bindings are never displaced, and an OAuth-bearing MCP server is never added
-  this way. Off entirely without `VECTOR_BUCKET`. →
+  the request; bindings are never displaced, and an OAuth-bearing MCP server is added only
+  where the project has already connected it. Off entirely without `VECTOR_BUCKET`. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#capability-catalog)
 - **PII filtering** — opt-in per version; bounds what the LLM and engine context see, **not**
   what an MCP server receives. → [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
