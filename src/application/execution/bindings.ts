@@ -1,6 +1,8 @@
 /** Resolving a version's skills, subagents and MCP tools for one run. */
 
 import type { McpBinding, SubagentRef, Version } from "@/domain/project/types";
+import { messageText } from "@/domain/llm/types";
+import type { ChatMessageInput } from "@/domain/llm/types";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import { searchCapabilitiesByKind, type CatalogSearchDeps } from "@/application/catalog/searchCatalog";
@@ -146,11 +148,62 @@ const DISCOVERY_LIMITS = { skill: 5, agent: 3, mcpServer: 3 } as const;
  */
 const PROMPT_QUERY_CHARS = 2000;
 
-/** The queries a run searches the catalog with, in the order they are ranked. */
-export function discoveryQueries(version: Version, request: string | undefined): string[] {
-  return [version.systemPrompt.slice(0, PROMPT_QUERY_CHARS), request ?? ""].filter(
-    (query) => query.trim() !== "",
-  );
+/**
+ * How many of the newest user turns search the catalog.
+ *
+ * The newest turn alone reads as the whole request only on a conversation's
+ * first message. A follow-up — "review the first one" — names nothing the
+ * catalog can match, while the turn before it named everything: the capability
+ * the conversation was already using stopped being found exactly when the user
+ * referred back to it, and the model retried a tool call its history replays
+ * but the run no longer declares. A short window keeps those matches alive.
+ * Each turn stays its own query — the search ranks and cuts per query, so an
+ * older turn can only add candidates, never dilute the newest.
+ */
+const REQUEST_QUERY_TURNS = 3;
+
+/**
+ * The newest user turns as discovery request queries, oldest first.
+ *
+ * For the surface that holds a conversation; one with a single request passes
+ * it directly. Text only, like the search itself — an image part says nothing
+ * an embedding can rank.
+ */
+export function recentUserQueries(messages: readonly ChatMessageInput[]): string[] {
+  const texts: string[] = [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (texts.length >= REQUEST_QUERY_TURNS) {
+      break;
+    }
+    const message = messages[index];
+    if (message?.role === "user") {
+      const text = messageText(message).trim();
+      if (text) {
+        texts.push(text);
+      }
+    }
+  }
+  return texts.reverse();
+}
+
+/**
+ * The queries a run searches the catalog with, in the order they are ranked.
+ *
+ * Every query is bounded by the same slice as the prompt's: a user turn
+ * carrying a pasted document would otherwise spend the embedding provider's
+ * input limit on the least discriminating part, or fail the whole search
+ * outright. Deduplicated because a repeated text adds embedding tokens and
+ * vector-store queries for an answer the first copy already gives.
+ */
+export function discoveryQueries(version: Version, requests: readonly string[] = []): string[] {
+  return [
+    ...new Set(
+      [
+        version.systemPrompt.slice(0, PROMPT_QUERY_CHARS),
+        ...requests.map((request) => request.slice(0, PROMPT_QUERY_CHARS)),
+      ].filter((query) => query.trim() !== ""),
+    ),
+  ];
 }
 
 /**
@@ -256,6 +309,18 @@ async function discoverCapabilities(
       .map((entry) => entry.toolName as string);
     mcpList.push({ name: match.name, ...(tools.length > 0 ? { tools } : {}) });
   }
+  // Name order, not score order. Order carries no meaning downstream — the
+  // prompt tables do not rank, and the bindings always lead — but it decides
+  // two things that must not flap between turns of one conversation: which
+  // colliding MCP tool keeps its bare name (alias allocation walks the servers
+  // in list order, so a swap re-routes a tool call the history replays), and
+  // the byte layout of the system prompt, which the provider's prompt cache
+  // keys on. Scores rank differently for every message; names do not.
+  const byName = (a: { name: string }, b: { name: string }) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  skillList.sort();
+  subagentList.sort(byName);
+  mcpList.sort(byName);
   return { skillList, subagentList, mcpList, notes };
 }
 

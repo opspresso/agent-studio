@@ -1197,8 +1197,11 @@ swallowed; the next tick repairs it. It is also the only way a **local** deploym
 all, since the CronJob exists only in the cluster.
 
 Search takes **several queries**, because a run has two things to say about what it needs: the
-version's system prompt (what this agent is generally for) and the newest user turn (what it is
-being asked now). Averaging them into one point describes neither. Each entry keeps its best
+version's system prompt (what this agent is generally for) and the newest user turns (what it
+is being asked now — a short window rather than the last turn alone, because a follow-up like
+"review the first one" names nothing while the turn before it named everything, and the
+capability the conversation was already using must not stop being found the moment the user
+refers back to it). Averaging them into one point describes neither. Each entry keeps its best
 score rather than the sum, so breadth does not outrank fit. Two corrections sit on top of the
 vector: a query naming something exactly is boosted over a description that merely reads like
 it, and results are cut by **two floors, whichever is higher**. The ratio (a fraction of the

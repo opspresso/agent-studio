@@ -429,7 +429,7 @@ export async function* runLocalSubagent(
     // must still release the sessions the resolve opened.
     // The transfer message is this child's whole request — `subagentContent`
     // makes it the first user turn — so it is what discovery searches with,
-    // exactly as the newest user turn is at the top level. A child version that
+    // exactly as the newest user turns are at the top level. A child version that
     // opted in and was handed no queries would silently run on its bindings
     // alone, which is the difference between the two levels no one would think
     // to look for.
@@ -442,7 +442,7 @@ export async function* runLocalSubagent(
       // — so a child that found an agent can also transfer to it.
       version: runVersion,
       discovered,
-    } = await resolveRunTools(deps, version, signal, discoveryQueries(version, message));
+    } = await resolveRunTools(deps, version, signal, discoveryQueries(version, [message]));
     if (discovered.length > 0) {
       // A gain, so it is logged rather than reported as a loss — see the field.
       log.info(

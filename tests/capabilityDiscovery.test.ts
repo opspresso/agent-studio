@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { resolveRunTools } from "@/application/execution/bindings";
+import { discoveryQueries, recentUserQueries, resolveRunTools } from "@/application/execution/bindings";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import type { CapabilityKind } from "@/domain/catalog/types";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
@@ -319,5 +319,51 @@ describe("capability discovery", () => {
     const resolved = await resolveRunTools(deps, version({ skillList: ["bound"] }), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
     expect(resolved.warnings.some((line) => line.includes("discovery failed"))).toBe(true);
+  });
+
+  it("offers a discovered set in name order, whatever the scores ranked", async () => {
+    // Score order re-ranks with every message, and the discovered order decides
+    // MCP alias allocation and the prompt's byte layout — both of which must not
+    // flap between the turns of one conversation.
+    const { deps } = harness({
+      catalog: fakeCatalog({
+        skill: [found("zeta", undefined, 0.9), found("alpha", undefined, 0.85)],
+      }),
+    });
+    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(resolved.skills.map((skill) => skill.name)).toEqual(["alpha", "zeta"]);
+  });
+});
+
+describe("discovery queries", () => {
+  it("searches with the newest user turns, each as its own query", () => {
+    // A follow-up like "review the first one" names nothing the catalog can
+    // match; the turn before it named everything. The window keeps that match
+    // alive without averaging the turns into one query.
+    const messages = [
+      { role: "user" as const, content: "open a PR on the github repo" },
+      { role: "assistant" as const, content: "done" },
+      { role: "user" as const, content: "now review the first one" },
+    ];
+    expect(discoveryQueries(version(), recentUserQueries(messages))).toEqual([
+      "You review pull requests.",
+      "open a PR on the github repo",
+      "now review the first one",
+    ]);
+  });
+
+  it("keeps only the newest user turns and skips blank ones", () => {
+    const messages = [
+      { role: "user" as const, content: "turn 1" },
+      { role: "user" as const, content: "turn 2" },
+      { role: "user" as const, content: "   " },
+      { role: "user" as const, content: "turn 3" },
+      { role: "user" as const, content: "turn 4" },
+    ];
+    expect(recentUserQueries(messages)).toEqual(["turn 2", "turn 3", "turn 4"]);
+  });
+
+  it("deduplicates repeated query texts", () => {
+    expect(discoveryQueries(version({ systemPrompt: "same" }), ["same", "same"])).toEqual(["same"]);
   });
 });

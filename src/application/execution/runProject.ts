@@ -26,7 +26,7 @@ import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor
 import type { Project } from "@/domain/project/types";
 import { openRun } from "./runBracket";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
-import { discoveryQueries, resolveRunTools } from "./bindings";
+import { discoveryQueries, recentUserQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "./traceLifecycle";
@@ -407,7 +407,7 @@ export async function* executeAgent(
     // patched afterwards.
     //
     // The queries are built here because this is where the request is: the
-    // newest user turn is what the run is being asked for, and the version's
+    // newest user turns are what the run is being asked for, and the version's
     // system prompt is what it is generally for. `resolveRunTools` ignores them
     // unless the version opted in.
     const {
@@ -424,7 +424,7 @@ export async function* executeAgent(
       deps,
       input.version,
       runSignal,
-      discoveryQueries(input.version, latestUserText(input.messages)),
+      discoveryQueries(input.version, recentUserQueries(input.messages)),
     );
     closeMcpSessions = mcp.close;
     const agentDeps = await buildAgentDeps(

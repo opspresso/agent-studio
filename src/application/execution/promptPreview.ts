@@ -114,7 +114,7 @@ export async function previewPrompt(
     deps,
     version,
     undefined,
-    discoveryQueries(version, input.message),
+    discoveryQueries(version, input.message === undefined ? [] : [input.message]),
   );
   try {
     // The same deps a run is given: whether the image section and the image

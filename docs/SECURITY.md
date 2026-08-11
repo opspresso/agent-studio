@@ -367,8 +367,9 @@ receives the masked message.) Review MCP server registrations on their own terms
 `piiFiltering` does not cover them.
 
 **Capability discovery is outside it too, and for a structural reason.** A version with
-`dynamicCapabilities` on searches the catalog with the newest user turn as one of its two
-queries, and that text goes to the embedding provider *verbatim* — `resolveRunTools` runs
+`dynamicCapabilities` on searches the catalog with the newest user turns (a short window,
+not just the last) among its queries, and that text goes to the embedding provider *verbatim* —
+`resolveRunTools` runs
 before `engine.runAgent`, which is where the filter is constructed and the only place that
 owns how a run masks. So a request carrying a phone number reaches Bedrock or the configured
 `/embeddings` endpoint unmasked even with filtering on, one call ahead of the dispatch that
