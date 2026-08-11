@@ -108,16 +108,23 @@ async function postForm(
   target: TokenRequestTarget,
   params: Record<string, string>,
 ): Promise<TokenSet> {
+  const headers = authHeaders(target);
   const response = await fetchPublicUrl(target.tokenEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
-      ...authHeaders(target),
+      ...headers,
     },
     body: new URLSearchParams({
       ...params,
-      client_id: target.clientId,
+      // RFC 6749 §2.3: a client must not authenticate two ways in one request.
+      // With `client_secret_basic` the Authorization header already carries the
+      // client's identity, and a body `client_id` beside it reads as a second
+      // method — Notion's token endpoint rejects the pair outright. RFC 6749
+      // §3.2.1 requires the body `client_id` only when the request is not
+      // otherwise authenticated.
+      ...(headers.Authorization ? {} : { client_id: target.clientId }),
       ...authBodyParams(target),
       resource: target.resource,
     }).toString(),

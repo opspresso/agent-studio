@@ -93,17 +93,23 @@ describe("token requests", () => {
   });
 
   it("puts the secret where the server's metadata said to", async () => {
-    for (const [method, inBody, inHeader] of [
-      ["client_secret_post", true, false],
-      ["client_secret_basic", false, true],
-      ["none", false, false],
+    // The last column is RFC 6749 §2.3's one-method rule: with Basic, the
+    // header alone carries the client's identity, and a body `client_id`
+    // beside it is a second authentication method — Notion's token endpoint
+    // rejects the pair outright, which cost every connection to it its
+    // exchange. Everywhere else the body `client_id` is required (§3.2.1).
+    for (const [method, secretInBody, inHeader, idInBody] of [
+      ["client_secret_post", true, false, true],
+      ["client_secret_basic", false, true, false],
+      ["none", false, false, true],
     ] as const) {
       const sent = stub(200, { access_token: "at" });
 
       await oauthClient.exchangeCode({ ...target, tokenEndpointAuthMethod: method }, code);
 
-      expect(sent[0]?.body.has("client_secret")).toBe(inBody);
+      expect(sent[0]?.body.has("client_secret")).toBe(secretInBody);
       expect(sent[0]?.headers.has("authorization")).toBe(inHeader);
+      expect(sent[0]?.body.has("client_id")).toBe(idInBody);
       vi.unstubAllGlobals();
     }
   });
