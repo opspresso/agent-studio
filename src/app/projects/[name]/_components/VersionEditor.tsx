@@ -381,6 +381,14 @@ export function VersionEditor({
             onChange={(subagentList) => patch({ subagentList })}
             options={subagentOptions}
           />
+          {runsTools && (
+            <Checkbox
+              label="Find capabilities for each request"
+              description="Searches the registry with this version's system prompt and the incoming request, and offers what it finds on top of the bindings above. The bindings are always offered in full. MCP servers needing their own sign-in are not added this way — bind those here."
+              checked={value.parameters.dynamicCapabilities ?? false}
+              onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
+            />
+          )}
         </Stack>
       )}
     </Stack>

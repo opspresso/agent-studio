@@ -490,6 +490,10 @@ export const executionDeps: ExecutionDeps = {
   remoteAgents,
   mcpSessions,
   mcpAuth: mcpAuthProvider,
+  // The same bag the reindex uses: search needs two of its fields, and a second
+  // object naming them would be a second place the index name and the embedding
+  // model have to agree.
+  ...(catalogDeps ? { catalog: catalogDeps } : {}),
   internalHostSuffixes: config.mcpInternalHostSuffixes,
   traces: runTraceRepository,
   traceSampleRate: config.traceSampleRate,

@@ -101,6 +101,20 @@ export interface VersionParameters {
   jsonSchema?: Record<string, unknown>;
   imageGeneration?: boolean;
   imageModel?: string;
+  /**
+   * Whether a run may reach capabilities this version did not bind, found by
+   * searching the global catalog with this version's system prompt and the
+   * request being answered.
+   *
+   * Opt-in, and off for everything written before it existed, because it is the
+   * one parameter that changes what a run *can do* rather than how it does it.
+   * A version is a snapshot of configuration; silently widening what an existing
+   * one reaches would make its past traces describe a different agent.
+   *
+   * What it adds is strictly additive: bindings are resolved first and in full,
+   * and nothing found by search can displace or truncate them.
+   */
+  dynamicCapabilities?: boolean;
 }
 
 export interface SubagentRef {

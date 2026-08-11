@@ -102,6 +102,7 @@ export const versionParametersSchema = z.object({
   jsonSchema: z.record(z.string(), z.unknown()).optional(),
   imageGeneration: z.boolean().optional(),
   imageModel: z.string().optional(),
+  dynamicCapabilities: z.boolean().optional(),
 });
 
 export const subagentRefSchema = z.object({
