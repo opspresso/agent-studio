@@ -79,6 +79,7 @@ export async function previewPrompt(
       toolNames: [],
       tools: [],
       warnings,
+      discovered: [],
     };
   }
 
@@ -100,6 +101,7 @@ export async function previewPrompt(
       toolNames: [],
       tools: [],
       warnings,
+      discovered: [],
     };
   }
 
@@ -119,7 +121,9 @@ export async function previewPrompt(
     // tools appear is decided from them, not from the version alone.
     const agentDeps = await buildAgentDeps(
       deps,
-      version,
+      // As widened by discovery, so the preview stands for the run it describes
+      // rather than the version as saved.
+      resolved.version,
       project.name,
       async () => {},
       // A preview runs nothing, so it has no actor to attribute.
@@ -149,6 +153,7 @@ export async function previewPrompt(
       toolNames: tools.map((tool) => tool.function.name),
       tools: tools.map((tool) => tool.function),
       warnings: [...warnings, ...resolved.warnings],
+      discovered: resolved.discovered,
     };
   } finally {
     await closeMcp(resolved.mcp.close);

@@ -152,7 +152,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
 | Whether a configured value is blank | `src/shared/env.ts` |
 | Asking a provider for an embedding | `src/infrastructure/llm/embeddings.ts` |
-| Invoking a Bedrock model | `src/infrastructure/llm/bedrockEmbeddings.ts` |
+| Reaching Bedrock | `src/infrastructure/llm/bedrockClient.ts` |
 | Talking to the vector store | `src/infrastructure/vector/s3VectorsStore.ts` |
 | The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
 | What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |
@@ -256,7 +256,9 @@ One line each — the linked section is the authority.
   where the project has already connected it. Off entirely without `VECTOR_BUCKET`. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#capability-catalog)
 - **PII filtering** — opt-in per version; bounds what the LLM and engine context see, **not**
-  what an MCP server receives. → [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
+  what an MCP server receives, and **not** the request text capability discovery embeds (that
+  search runs before the engine constructs the filter). →
+  [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
 - **SSRF guard** — operator URLs checked at registration *and* dispatch, through
   `fetchPublicUrl`. → [SECURITY.md](docs/SECURITY.md#outbound-requests-ssrf)
 - **Slack / A2A / triggers** — per-project bots, both A2A directions, published-only webhook
@@ -380,9 +382,14 @@ One line each — the linked section is the authority.
   turns a PDF into replacement characters and reports success — so `decodeUtf8Text`
   (`src/shared/utf8Text.ts`) decides, and a caller that cannot use the answer says what it
   dropped. A `try/catch` around a decode is the shape of the bug, not a guard against it.
-- **Report what was lost.** Truncation goes in the tool-result text; a binding that could not
-  be used, a truncated transcript, a dropped history run — all become `warning` chunks. Silent
-  loss is the bug, not the truncation.
+- **Report what was lost — and only what was lost.** Truncation goes in the tool-result text; a
+  binding that could not be used, a truncated transcript, a dropped history run — all become
+  `warning` chunks. Silent loss is the bug, not the truncation. **A gain is not a warning**, and
+  the channel stops meaning anything if it carries both: capability discovery reported what it
+  *found* this way, so every healthy run of a version with it on raised a yellow alert on every
+  turn. It returns `discovered` beside `warnings` now. `collectedWarning` owns what a run lost;
+  a feature that is silently inert — a version asking for discovery where the deployment has no
+  catalog — is a loss and does belong there.
 - **Tests mock at boundaries**: `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
   `vi.mock("@/infrastructure/db/client")`. Keep them deterministic — no real `Date.now`,
   timers, randomness, or network. Repository integration lives in

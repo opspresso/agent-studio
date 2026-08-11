@@ -243,7 +243,7 @@ async function discoverCapabilities(
     }
     if (server.auth && !connected.has(match.name)) {
       notes.push(
-        `MCP server '${match.name}' matched this request but this project has not connected it; authorize it on the project's MCP settings, or bind it to this version.`,
+        `MCP server '${match.name}' matched this request but this project has not connected it; authorize it from that server's own settings — binding it alone would still leave the run unable to sign in.`,
       );
       continue;
     }
@@ -284,43 +284,83 @@ export async function resolveRunTools(
   mcp: ResolvedMcp;
   /** Everything the run lost while resolving, in version-list order. */
   warnings: string[];
+  /**
+   * What a search added beyond the version's own bindings — a **gain**, which is
+   * why it is not in `warnings`.
+   *
+   * It was, and every healthy run of a discovery-enabled version therefore
+   * reported a warning: a yellow alert on every chat turn, a non-empty
+   * `warnings` array in every `/predict` answer, and anything keying on "did
+   * this run report a loss" firing on all of them. `collectedWarning` owns what
+   * a run *lost*, and a capability being found is the opposite of that. The
+   * preview renders this on its own; a run logs it, since what a run actually
+   * used is already visible in its tool traffic.
+   */
+  discovered: string[];
+  /**
+   * The version as this resolve read it — the caller's own where nothing was
+   * discovered, and widened by the search where something was.
+   *
+   * Returned because **the resolved lists are not the whole story**. `subagents`
+   * above is what the model is *told* about, while what it can actually reach is
+   * decided separately by `buildSubagentRunner`, from a `subagentList`. Handing
+   * the caller the widened version is what keeps those two reading the same
+   * list: passing the original meant a discovered agent appeared in the transfer
+   * enum and the prompt's table, and answered `Unknown agent` when the model
+   * used it.
+   */
+  version: Version;
 }> {
   const discoveryNotes: string[] = [];
-  if (version.parameters.dynamicCapabilities && deps.catalog && queries && queries.length > 0) {
-    try {
-      const found = await discoverCapabilities(
-        {
-          catalog: deps.catalog,
-          mcps: deps.mcps,
-          ...(deps.mcpConnections ? { mcpConnections: deps.mcpConnections } : {}),
-        },
-        version,
-        queries,
+  const discovered: string[] = [];
+  // A version that asked for discovery and did not get it says so, on the same
+  // channel a failed search uses. Nothing else can tell the author: the checkbox
+  // stays ticked, the bindings still resolve, the run answers normally, and the
+  // preview shows the same prompt — the feature reads as on and is inert. That
+  // is the shape of the defect this branch was itself found to have, one call
+  // site up, so it is not left to be discovered the same way twice.
+  if (version.parameters.dynamicCapabilities) {
+    if (!deps.catalog) {
+      discoveryNotes.push(
+        "This version is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
       );
-      version = {
-        ...version,
-        skillList: [...(version.skillList ?? []), ...found.skillList],
-        subagentList: [...(version.subagentList ?? []), ...found.subagentList],
-        mcpList: [...(version.mcpList ?? []), ...found.mcpList],
-      };
-      discoveryNotes.push(...found.notes);
-      const added = found.skillList.length + found.subagentList.length + found.mcpList.length;
-      if (added > 0) {
+    } else if (!queries || queries.length === 0) {
+      discoveryNotes.push(
+        "This version is set to find capabilities for each request, but there was nothing to search with — no system prompt and no request text; only its own bindings were offered.",
+      );
+    } else {
+      try {
+        const found = await discoverCapabilities(
+          {
+            catalog: deps.catalog,
+            mcps: deps.mcps,
+            ...(deps.mcpConnections ? { mcpConnections: deps.mcpConnections } : {}),
+          },
+          version,
+          queries,
+        );
+        version = {
+          ...version,
+          skillList: [...(version.skillList ?? []), ...found.skillList],
+          subagentList: [...(version.subagentList ?? []), ...found.subagentList],
+          mcpList: [...(version.mcpList ?? []), ...found.mcpList],
+        };
+        discoveryNotes.push(...found.notes);
+        discovered.push(
+          ...found.skillList,
+          ...found.subagentList.map((ref) => ref.name),
+          ...found.mcpList.map((binding) => binding.name),
+        );
+      } catch (error) {
+        // A catalog that is unreachable, unindexed, or refusing embeddings must
+        // not take the run with it: the version's own bindings are still exactly
+        // what it asked for, and running with them is the behaviour discovery was
+        // added on top of.
+        log.warn("catalog", "capability discovery failed; running with bindings only", error);
         discoveryNotes.push(
-          `Found ${added} capabilit${added === 1 ? "y" : "ies"} for this request: ${[
-            ...found.skillList,
-            ...found.subagentList.map((ref) => ref.name),
-            ...found.mcpList.map((binding) => binding.name),
-          ].join(", ")}.`,
+          "Capability discovery failed; only this version's own bindings were offered.",
         );
       }
-    } catch (error) {
-      // A catalog that is unreachable, unindexed, or refusing embeddings must
-      // not take the run with it: the version's own bindings are still exactly
-      // what it asked for, and running with them is the behaviour discovery was
-      // added on top of.
-      log.warn("catalog", "capability discovery failed; running with bindings only", error);
-      discoveryNotes.push("Capability discovery failed; only this version's own bindings were offered.");
     }
   }
 
@@ -344,8 +384,11 @@ export async function resolveRunTools(
       skills: skills.skills,
       subagents: subagents.subagents,
       mcp: settled.mcp,
-      // Discovery notes lead: what a run was *given* beyond its configuration is
-      // read before what it lost, and both reach the reader the same way.
+      version,
+      discovered,
+      // Discovery's losses lead — a search that could not run, or a server it
+      // matched but the project cannot sign in to, is context for every binding
+      // warning after it. What a search *found* is not here; see `discovered`.
       warnings: [
         ...discoveryNotes,
         ...skills.warnings,

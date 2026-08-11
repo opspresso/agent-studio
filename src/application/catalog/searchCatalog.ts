@@ -70,23 +70,38 @@ const NAME_BOOST = 1.3;
 /** Shortest name allowed to match, so a two-letter entry cannot match everything. */
 const MIN_NAME_LENGTH = 3;
 
-/** `code-review` and "code review" are the same phrase to a person. */
+/**
+ * `code-review`, `code_review` and "code review" are the same phrase to a
+ * person, and so are "slack" and "slack." at the end of a sentence. Every run of
+ * non-letters collapses to one space, which is also what makes a word boundary
+ * expressible below — and `\p{L}` rather than `[a-z]` because half the queries
+ * here are Korean.
+ */
 function normalise(value: string): string {
   return value
     .toLowerCase()
-    .replace(/[-_]+/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 
+/**
+ * Whole words only.
+ *
+ * A substring test read `git` out of "legitimate" and `api`, `run`, `chat` and
+ * `code` out of almost any English sentence — and one of the two queries is a
+ * 2000-character system prompt, so those fired on nearly every run. That matters
+ * more than a wrong boost usually would: the boost is applied *before* the
+ * proportional cut, so a coincidental match can both survive the cut and raise
+ * the top score everything else is measured against.
+ */
 function namedIn(queries: readonly string[], candidates: readonly (string | undefined)[]): boolean {
-  const haystacks = queries.map(normalise);
+  const haystacks = queries.map((query) => ` ${normalise(query)} `);
   return candidates.some((candidate) => {
     if (candidate === undefined) {
       return false;
     }
     const needle = normalise(candidate);
-    return needle.length >= MIN_NAME_LENGTH && haystacks.some((hay) => hay.includes(needle));
+    return needle.length >= MIN_NAME_LENGTH && haystacks.some((hay) => hay.includes(` ${needle} `));
   });
 }
 

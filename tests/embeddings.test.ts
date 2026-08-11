@@ -80,6 +80,22 @@ describe("openAiEmbeddings", () => {
     );
   });
 
+  it("asks for the width the index was created at, not the model's default", async () => {
+    // `text-embedding-3-small` is natively 1536 while every instruction for
+    // creating the index says 1024, so the documented default configuration
+    // produced vectors the index rejected — visible only in a background log.
+    let sent: unknown;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
+        JSON.stringify({ object: "list", data: [{ object: "embedding", index: 0, embedding: [0.1] }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    await openAiEmbeddings.embed(["one"], "document");
+    expect(sent).toMatchObject({ dimensions: 1024, encoding_format: "float" });
+  });
+
   it("makes no request at all for an empty batch", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);

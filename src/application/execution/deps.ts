@@ -194,6 +194,14 @@ export interface PromptPreview {
   }>;
   /** What the preview — and therefore a run — could not resolve. */
   warnings: string[];
+  /**
+   * Capabilities a search added on top of the version's bindings, by name.
+   *
+   * Separate from `warnings` because it is the opposite of one, and this panel
+   * is the only place an author can read it: the prompt above shows the widened
+   * result without saying which rows the version never bound.
+   */
+  discovered: string[];
 }
 
 export function toEngineParameters(version: Version): EngineParameters {

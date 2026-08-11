@@ -56,6 +56,16 @@ export const openAiEmbeddings: EmbeddingPort = {
       const response = await client.embeddings.create({
         model: config.embeddingModel,
         input: batch as string[],
+        // Asked for explicitly, like both Bedrock adapters, because the index
+        // fixes its dimension at creation and this model's native width is not
+        // it: `text-embedding-3-small` is 1536, while every instruction for
+        // creating the index says 1024. Left to the default, the documented
+        // configuration produced vectors the index rejected outright — the
+        // catalog stayed empty and the failure only ever appeared in a
+        // background log line. The v3 models take this; a `dimensions` a model
+        // or a router does not support is an error at the boundary, which is
+        // where a mismatched index would have surfaced anyway.
+        dimensions: config.embeddingDimensions,
         // Stated rather than left to the SDK, which defaults to base64 and
         // decodes the answer itself. That default is a bandwidth optimization
         // against OpenAI; here the base URL is as likely to be a router or a

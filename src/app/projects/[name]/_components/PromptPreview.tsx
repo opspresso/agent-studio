@@ -172,6 +172,14 @@ export function PromptPreview({
         </Alert>
       )}
 
+      {preview && preview.discovered.length > 0 && (
+        // Blue, not yellow: these were *found*, and the prompt above already
+        // includes them without saying which rows the version never bound.
+        <Alert color="blue" variant="light" fz="xs">
+          Found for this request, on top of the bindings: {preview.discovered.join(", ")}
+        </Alert>
+      )}
+
       {preview?.warnings.map((warning, index) => (
         <Alert key={`warning-${index}`} color="yellow" variant="light" fz="xs">
           {warning}

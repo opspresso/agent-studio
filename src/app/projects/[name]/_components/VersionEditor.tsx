@@ -384,7 +384,7 @@ export function VersionEditor({
           {runsTools && (
             <Checkbox
               label="Find capabilities for each request"
-              description="Searches the registry with this version's system prompt and the incoming request, and offers what it finds on top of the bindings above. The bindings are always offered in full. MCP servers needing their own sign-in are not added this way — bind those here."
+              description="Searches the registry with this version's system prompt and the incoming request, and offers what it finds on top of the bindings above. The bindings are always offered in full. An MCP server that needs its own sign-in is offered only once this project has connected it — a connection is made from that server's own settings and shared by every version, so it counts here even where this version never bound the server."
               checked={value.parameters.dynamicCapabilities ?? false}
               onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
             />

@@ -371,7 +371,11 @@ describe("previewPrompt", () => {
 
       const system = preview.messages.find((m) => m.role === "system")?.content ?? "";
       expect(system).toContain("greeting");
-      expect(preview.warnings.some((w) => w.startsWith("Found "))).toBe(true);
+      // Reported as a gain rather than a warning: the panel is the only place an
+      // author can see which rows the version never bound, and the whole point
+      // is that nothing went wrong.
+      expect(preview.discovered).toEqual(["greeting"]);
+      expect(preview.warnings).toEqual([]);
     });
 
     it("searches on the request as well as the system prompt", async () => {

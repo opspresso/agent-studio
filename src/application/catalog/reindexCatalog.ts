@@ -72,9 +72,23 @@ async function collectEntries(
 
   // Probed in parallel: each is a round trip to someone else's server, and a
   // reindex walks every one of them.
+  //
+  // Fenced per server, the way the plugins sync fences a write. `probeMcpTools`
+  // is `testConnection`, which *throws* rather than answering for a server
+  // deleted since `list()` or one whose stored headers no longer decrypt under
+  // the current key — and a bare `Promise.all` turned either into a rejected
+  // rebuild that wrote nothing at all, freezing the whole index until someone
+  // fixed the one bad row. A server that cannot be probed is the case
+  // `undiscovered` already exists for.
   const undiscovered: string[] = [];
   const probed = await Promise.all(
-    servers.map(async (server) => ({ server, tools: await deps.probeMcpTools(server.name) })),
+    servers.map(async (server) => ({
+      server,
+      tools: await deps.probeMcpTools(server.name).catch((error: unknown) => {
+        log.warn("catalog", `probing '${server.name}' failed; indexing it without its tools`, error);
+        return undefined;
+      }),
+    })),
   );
   for (const { server, tools } of probed) {
     // Always present, whether or not its tools could be listed: this is the
@@ -98,20 +112,39 @@ async function collectEntries(
 }
 
 export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexReport> {
+  // Read *before* the registries, and it is the ordering that matters rather
+  // than the cost. Pruning means "keys this pass did not write", and taking that
+  // list at the end makes it "keys written by anyone else since I started" too:
+  // the hourly tick and the reindex a plugins sync fires now overlap as a matter
+  // of course, and the tick — whose snapshot predates the sync — would delete
+  // the very entries the sync had just added, leaving them undiscoverable until
+  // the next hour. Taken first, a key another pass wrote after this one began is
+  // simply not a candidate, and a genuinely stale one is caught on the pass
+  // after. No lock, and nothing to hold across a rebuild.
+  const keysAtStart = await deps.catalog.listKeys();
   const { entries, undiscovered } = await collectEntries(deps);
   // Documents: these are the things a query will be matched *against*.
   const vectors = await deps.embeddings.embed(entries.map(capabilityText), "document");
   const records: VectorRecord[] = [];
+  const keep = new Set<string>();
   for (const [index, entry] of entries.entries()) {
+    const key = capabilityKey(entry);
+    keep.add(key);
     const vector = vectors[index];
-    if (!vector) {
-      // The adapter refuses a count mismatch, so reaching this means a shape
-      // nothing here can act on; skipping keeps the rest of the index correct.
-      log.warn("catalog", `no vector for ${capabilityKey(entry)}; skipping it`);
+    if (!vector || vector.length === 0) {
+      // A short answer or a zero-length vector. The adapters refuse a count
+      // mismatch, so reaching this means a shape nothing here can act on — and
+      // an empty vector is not the harmless case it looks like: the index fixes
+      // its dimension, so writing one fails the whole batch it rides in.
+      //
+      // It is still a live capability, so its key is kept out of the prune
+      // above; otherwise "skip it" quietly meant "delete whatever it already
+      // had", which is the opposite of leaving the index alone.
+      log.warn("catalog", `no usable vector for ${key}; leaving its existing entry alone`);
       continue;
     }
     records.push({
-      key: capabilityKey(entry),
+      key,
       vector,
       metadata: {
         kind: entry.kind,
@@ -127,8 +160,21 @@ export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexRep
   // holding entries that no longer exist, which the next tick removes. The other
   // order would leave a window where a live capability is absent from the index
   // entirely, and searches during it would silently under-answer.
-  const live = new Set(records.map((record) => record.key));
-  const stale = (await deps.catalog.listKeys()).filter((key) => !live.has(key));
+  const stale = keysAtStart.filter((key) => !keep.has(key));
+  // Nothing collected is a claim about the registries, and "every registry is
+  // empty at once" is not a state this platform reaches — a table name pointed
+  // somewhere else, a role that lost its reads, a local process aimed at the
+  // deployed index are. Each of those looks identical from here and would erase
+  // the catalog in one call, so the total wipe is the one prune refused. Said
+  // out loud rather than skipped quietly: an operator who *did* empty the
+  // registries deliberately needs to know why the index still answers.
+  if (entries.length === 0 && stale.length > 0) {
+    log.error(
+      "catalog",
+      `the registries came back empty; refusing to delete all ${stale.length} indexed entries`,
+    );
+    return { indexed: 0, removed: 0, undiscovered };
+  }
   if (stale.length > 0) {
     await deps.catalog.deleteByKeys(stale);
   }

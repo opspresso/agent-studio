@@ -15,6 +15,7 @@
  * the invalidation it was supposed to follow.
  */
 
+import { after } from "next/server";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import { skillRepository } from "@/infrastructure/db/repositories/skillRepository";
@@ -259,16 +260,6 @@ export const mcpAuthUseCases = createMcpAuthUseCases({
 export const skillUseCases = createSkillUseCases(skillRepository);
 
 /**
- * The capability catalog, when this deployment has a vector store to hold it.
- * Undefined where it does not: the reindex endpoint answers 503 and a run
- * resolves exactly the bindings its version names — which is what every run did
- * before the catalog existed, so the feature is off rather than half-present.
- *
- * One bag serves indexing and search: search needs two of these fields, and a
- * second object naming the same two would be a second place to keep the index
- * name and the embedding model agreeing.
- */
-/**
  * Which adapter embeds is a deployment fact, not a per-call one: an index is
  * built for one model's dimension *and* its space, and vectors from another are
  * not comparable to what is already in it. Changing this means rebuilding the
@@ -280,6 +271,16 @@ const EMBEDDINGS = {
   openai: openAiEmbeddings,
 } as const;
 
+/**
+ * The capability catalog, when this deployment has a vector store to hold it.
+ * Undefined where it does not: the reindex endpoint answers 503 and a run
+ * resolves exactly the bindings its version names — which is what every run did
+ * before the catalog existed, so the feature is off rather than half-present.
+ *
+ * One bag serves indexing and search: search needs two of these fields, and a
+ * second object naming the same two would be a second place to keep the index
+ * name and the embedding model agreeing.
+ */
 const vectorBucket = config.vectorBucketName;
 export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = vectorBucket
   ? {
@@ -293,13 +294,21 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = v
         const result = await mcpUseCases.testConnection(serverName);
         return result.ok ? result.tools : undefined;
       },
-      // Which adapter is a deployment fact, not a per-call one: an index is
-      // built for one model's dimension, and vectors from another are not
-      // comparable to what is already in it.
       // Wrapped so a version's system prompt — the same text on every run of
       // that version — is embedded once per process rather than once per run.
       // Only queries are cached; a reindex's documents pass straight through.
-      embeddings: cacheQueryEmbeddings(EMBEDDINGS[config.embeddingProvider]),
+      //
+      // The space a cached vector belongs to is the model *and*, for the
+      // OpenAI-compatible adapter, the endpoint it resolves from runtime
+      // settings — which an admin can repoint without restarting anything. Both
+      // reads are already cached where they live, so this costs nothing per
+      // call and makes a repoint a cache miss instead of a wrong answer.
+      embeddings: cacheQueryEmbeddings(
+        EMBEDDINGS[config.embeddingProvider],
+        config.embeddingProvider === "openai"
+          ? async () => `${(await getLlmChannelConfig()).baseUrl}|${config.embeddingModel}`
+          : () => config.embeddingModel,
+      ),
       catalog: createS3VectorsStore(vectorBucket, config.catalogIndexName),
       minScore: config.catalogMinScore,
     }
@@ -376,7 +385,7 @@ export const syncPluginsFromRepo = async (
       actorEmail,
       finishedAt: new Date().toISOString(),
     });
-    await reindexAfterSync();
+    reindexAfterSync();
     return result;
   } finally {
     await pluginSyncLock.release(repo, lease);
@@ -401,21 +410,42 @@ export const syncPluginsFromRepo = async (
  *
  * Also the only way a **local** deployment refreshes at all: there is no
  * CronJob outside the cluster, so `pnpm` a sync and the index follows.
+ *
+ * **Scheduled, not awaited**, which is why this returns `void` rather than a
+ * promise — an `await` on it would be a no-op, and the signature is what says
+ * so. A reindex probes every registered MCP server, embeds the whole registry
+ * and rewrites the index; awaiting it put all of that between the admin pressing
+ * Sync and their answer, on a deployment that has already lost a response to a
+ * 60-second proxy idle timeout — for work whose outcome that answer does not
+ * depend on. It also ran *inside* `pluginSyncLock`'s five-minute lease, so a
+ * slow one could outlive the lease, let a second sync acquire it, and then have
+ * the first release someone else's. Deferring past the response fixes both: the
+ * `finally` below releases the lease before this callback is ever entered.
  */
-const reindexAfterSync = async (): Promise<void> => {
+const reindexAfterSync = (): void => {
   if (!catalogDeps) {
     return;
   }
+  const deps = catalogDeps;
   try {
-    const { reindexCatalog } = await import("@/application/catalog/reindexCatalog");
-    const report = await reindexCatalog(catalogDeps);
-    log.info(
-      "catalog",
-      `reindex after plugins sync: indexed=${report.indexed} removed=${report.removed}` +
-        ` undiscovered=${report.undiscovered.length}`,
-    );
+    after(async () => {
+      try {
+        const { reindexCatalog } = await import("@/application/catalog/reindexCatalog");
+        const report = await reindexCatalog(deps);
+        log.info(
+          "catalog",
+          `reindex after plugins sync: indexed=${report.indexed} removed=${report.removed}` +
+            ` undiscovered=${report.undiscovered.length}`,
+        );
+      } catch (error) {
+        log.warn("catalog", "reindex after plugins sync failed; the hourly tick will repair it", error);
+      }
+    });
   } catch (error) {
-    log.warn("catalog", "reindex after plugins sync failed; the hourly tick will repair it", error);
+    // `after` throws outside a request scope. Both callers are route handlers,
+    // so this is the caller that does not exist yet — and it must not be the
+    // thing that fails a sync which has already committed and reported.
+    log.warn("catalog", "could not schedule a reindex after the sync; the hourly tick will do it", error);
   }
 };
 
@@ -552,9 +582,7 @@ export const executionDeps: ExecutionDeps = {
   mcpSessions,
   mcpAuth: mcpAuthProvider,
   mcpConnections: mcpConnectionRepository,
-  // The same bag the reindex uses: search needs two of its fields, and a second
-  // object naming them would be a second place the index name and the embedding
-  // model have to agree.
+  // The same bag the reindex uses — see {@link catalogDeps}.
   ...(catalogDeps ? { catalog: catalogDeps } : {}),
   internalHostSuffixes: config.mcpInternalHostSuffixes,
   traces: runTraceRepository,
