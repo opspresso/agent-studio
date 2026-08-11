@@ -152,6 +152,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
 | Whether a configured value is blank | `src/shared/env.ts` |
 | Asking a provider for an embedding | `src/infrastructure/llm/embeddings.ts` |
+| Invoking a Bedrock model | `src/infrastructure/llm/bedrockEmbeddings.ts` |
 | Talking to the vector store | `src/infrastructure/vector/s3VectorsStore.ts` |
 | The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
 | What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |

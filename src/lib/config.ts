@@ -160,13 +160,41 @@ export const config = {
     return optionalEnv(process.env.CATALOG_INDEX) ?? "capabilities";
   },
   /**
+   * Which service embeds. `bedrock` needs no credentials of its own — the pod
+   * role carries `bedrock:InvokeModel` — while `openai` reuses the chat
+   * channel's base URL and key.
+   *
+   * Anything unrecognised falls back to `openai` rather than throwing: an
+   * embedding provider is not worth refusing to boot over, and a deployment
+   * without `VECTOR_BUCKET` never reaches either adapter.
+   */
+  get embeddingProvider(): "bedrock" | "openai" {
+    return optionalEnv(process.env.EMBEDDING_PROVIDER)?.toLowerCase() === "bedrock"
+      ? "bedrock"
+      : "openai";
+  },
+  /**
    * The embedding model, whose dimension must equal the index's. Changing it
    * means rebuilding the index: vectors from two models are not comparable, and
    * nothing in a mixed index would report that — the scores would simply be
    * wrong.
    */
   get embeddingModel(): string {
-    return optionalEnv(process.env.EMBEDDING_MODEL) ?? "text-embedding-3-small";
+    return (
+      optionalEnv(process.env.EMBEDDING_MODEL) ??
+      (config.embeddingProvider === "bedrock"
+        ? "amazon.titan-embed-text-v2:0"
+        : "text-embedding-3-small")
+    );
+  },
+  /**
+   * How many dimensions to ask the model for. Titan v2 serves several from one
+   * model and the index was created for exactly one of them, so this is not a
+   * detail the adapter can leave to a default. Read only by the Bedrock path;
+   * OpenAI's models have a fixed size.
+   */
+  get embeddingDimensions(): number {
+    return positiveIntEnv("EMBEDDING_DIM", 1024, 1);
   },
   /**
    * The instance managed MCP containers run on, and the registry their images

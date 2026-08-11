@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.14",
+    "@aws-sdk/client-bedrock-runtime": "^3.1106.0",
     "@aws-sdk/client-dynamodb": "^3.1090.0",
     "@aws-sdk/client-s3": "^3.1091.0",
     "@aws-sdk/client-s3vectors": "^3.1106.0",

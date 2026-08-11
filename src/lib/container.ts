@@ -73,6 +73,7 @@ import type { ConcurrencyLimits } from "@/application/execution/concurrencyGuard
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { ImageGenerationDeps } from "@/application/image/generateImage";
 import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
+import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createS3VectorsStore } from "@/infrastructure/vector/s3VectorsStore";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
@@ -276,7 +277,10 @@ export const catalogDeps: CatalogIndexDeps | undefined = vectorBucket
         const result = await mcpUseCases.testConnection(serverName);
         return result.ok ? result.tools : undefined;
       },
-      embeddings: openAiEmbeddings,
+      // Which adapter is a deployment fact, not a per-call one: an index is
+      // built for one model's dimension, and vectors from another are not
+      // comparable to what is already in it.
+      embeddings: config.embeddingProvider === "bedrock" ? bedrockEmbeddings : openAiEmbeddings,
       catalog: createS3VectorsStore(vectorBucket, config.catalogIndexName),
     }
   : undefined;
