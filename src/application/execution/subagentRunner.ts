@@ -32,6 +32,7 @@ import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "./modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
+import { log } from "@/shared/logger";
 import { createTraceRecorder, finishTrace } from "./traceLifecycle";
 
 /**
@@ -432,16 +433,27 @@ export async function* runLocalSubagent(
     // opted in and was handed no queries would silently run on its bindings
     // alone, which is the difference between the two levels no one would think
     // to look for.
-    const { skills, subagents, mcp, warnings } = await resolveRunTools(
-      deps,
-      version,
-      signal,
-      discoveryQueries(version, message),
-    );
+    const {
+      skills,
+      subagents,
+      mcp,
+      warnings,
+      // Widened by discovery, and the dispatcher below reads its `subagentList`
+      // — so a child that found an agent can also transfer to it.
+      version: runVersion,
+      discovered,
+    } = await resolveRunTools(deps, version, signal, discoveryQueries(version, message));
+    if (discovered.length > 0) {
+      // A gain, so it is logged rather than reported as a loss — see the field.
+      log.info(
+        "run",
+        `${project.name}: offering ${discovered.length} discovered: ${discovered.join(", ")}`,
+      );
+    }
     closeMcpSessions = mcp.close;
     const childDeps = await buildAgentDeps(
       deps,
-      version,
+      runVersion,
       project.name,
       recordUsageFn,
       origin,

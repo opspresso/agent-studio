@@ -146,6 +146,8 @@ export interface PromptPreview {
     parameters?: Record<string, unknown>;
   }>;
   warnings: string[];
+  /** Names a search added on top of the bindings; a gain, so not a warning. */
+  discovered: string[];
 }
 
 /**

@@ -366,6 +366,18 @@ still sees the PII it is passed. (A subagent transfer is the opposite: the child
 receives the masked message.) Review MCP server registrations on their own terms;
 `piiFiltering` does not cover them.
 
+**Capability discovery is outside it too, and for a structural reason.** A version with
+`dynamicCapabilities` on searches the catalog with the newest user turn as one of its two
+queries, and that text goes to the embedding provider *verbatim* — `resolveRunTools` runs
+before `engine.runAgent`, which is where the filter is constructed and the only place that
+owns how a run masks. So a request carrying a phone number reaches Bedrock or the configured
+`/embeddings` endpoint unmasked even with filtering on, one call ahead of the dispatch that
+would have masked it. In practice that is the same provider account the chat channel already
+uses, which is why it is documented here rather than treated as a separate exposure — but it
+is a decision to make when turning the flag on, not something the filter covers. A deployment
+that cannot accept it leaves `dynamicCapabilities` off on filtered versions, which is the
+default.
+
 Detection is regex-based and covers emails, phone numbers, Korean resident/foreigner
 registration numbers (hyphenated form, with the date half validated) and payment card
 numbers (13-19 digits, Luhn-checked so an order id is not masked *as a card* — a span that

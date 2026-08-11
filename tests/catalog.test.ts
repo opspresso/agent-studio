@@ -132,6 +132,105 @@ describe("reindexCatalog", () => {
     );
     expect(recorded.order).toEqual(["upsert"]);
   });
+
+  it("leaves alone a key another pass wrote while this one was running", async () => {
+    // The hourly tick and the reindex a plugins sync fires overlap as a matter
+    // of course. Reading the index at the end would let the tick — whose
+    // snapshot predates the sync — delete the entries the sync had just added.
+    const recorded = fakeStore(["skill#kept"]);
+    let listed = false;
+    const store: VectorStorePort = {
+      ...recorded.store,
+      async listKeys() {
+        listed = true;
+        return ["skill#kept"];
+      },
+    };
+    await reindexCatalog(
+      indexDeps({
+        catalog: store,
+        skills: {
+          list: async () => {
+            // Whatever a concurrent pass writes lands after this read, so it
+            // cannot be a candidate for this one's prune.
+            expect(listed).toBe(true);
+            return [skill("kept")];
+          },
+        },
+      }),
+    );
+    expect(recorded.deleted).toEqual([]);
+  });
+
+  it("refuses to empty the index when the registries came back empty", async () => {
+    // Every registry empty at once is not a state this platform reaches; a
+    // table name pointed elsewhere or a local process aimed at the deployed
+    // index are, and they look identical from here.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const recorded = fakeStore(["skill#a", "skill#b"]);
+      const report = await reindexCatalog(indexDeps({ catalog: recorded.store }));
+      expect(recorded.deleted).toEqual([]);
+      expect(report).toMatchObject({ indexed: 0, removed: 0 });
+      expect(error).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("keeps indexing when one server's probe throws", async () => {
+    // `testConnection` throws for a server deleted since `list()` or one whose
+    // headers no longer decrypt. A bare `Promise.all` made either freeze the
+    // whole index until someone fixed the one bad row.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const recorded = fakeStore();
+      const report = await reindexCatalog(
+        indexDeps({
+          catalog: recorded.store,
+          skills: { list: async () => [skill("kept")] },
+          mcps: { list: async () => [server("gone", "Deleted"), server("ok", "Fine")] },
+          probeMcpTools: async (name) => {
+            if (name === "gone") {
+              throw new Error("not found");
+            }
+            return [{ name: "search" }];
+          },
+        }),
+      );
+      expect(recorded.upserted.map((record) => record.key)).toEqual([
+        "skill#kept",
+        "mcpServer#gone",
+        "mcpServer#ok",
+        "mcpTool#ok#search",
+      ]);
+      expect(report.undiscovered).toEqual(["gone"]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("keeps an entry whose vector was missing rather than pruning it", async () => {
+    // "Skip it" quietly meant "delete whatever it already had", because the
+    // skipped key never entered the live set the prune is computed against.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const recorded = fakeStore(["skill#a", "skill#b"]);
+      const report = await reindexCatalog(
+        indexDeps({
+          catalog: recorded.store,
+          skills: { list: async () => [skill("a"), skill("b")] },
+          // A shape nothing here can act on, for the second entry only.
+          embeddings: { embed: async (texts) => texts.map((_, index) => (index === 1 ? [] : [1])) },
+        }),
+      );
+      expect(recorded.upserted.map((record) => record.key)).toEqual(["skill#a"]);
+      expect(recorded.deleted).toEqual([]);
+      expect(report).toMatchObject({ indexed: 1, removed: 0 });
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 function searchDeps(matches: VectorMatch[][]): Parameters<typeof searchCapabilities>[0] {
@@ -243,6 +342,39 @@ describe("searchCapabilities", () => {
       { kind: "skill", limit: 5 },
     );
     expect(found[0]?.name).toBe("code-review");
+  });
+
+  it("boosts a name only where the query uses it as a word", async () => {
+    // `git` inside "legitimate" is the shape this caught: one of the two
+    // queries is a 2000-character system prompt, so a substring test boosted
+    // short names on nearly every run — and the boost is applied before the
+    // proportional cut, so it also raises what everything else is measured
+    // against.
+    const found = await searchCapabilities(
+      searchDeps([
+        [
+          match("mcpServer#deploy", 0.9, { name: "deploy", description: "" }),
+          match("mcpServer#git", 0.75, { name: "git", description: "" }),
+        ],
+      ]),
+      ["this is a legitimate deploy request"],
+      { kind: "mcpServer", limit: 5 },
+    );
+    expect(found[0]?.name).toBe("deploy");
+  });
+
+  it("still matches a name at the end of a sentence", async () => {
+    const found = await searchCapabilities(
+      searchDeps([
+        [
+          match("mcpServer#chat-relay", 0.9, { name: "chat-relay", description: "" }),
+          match("mcpServer#slack", 0.75, { name: "slack", description: "" }),
+        ],
+      ]),
+      ["please post this to slack."],
+      { kind: "mcpServer", limit: 5 },
+    );
+    expect(found[0]?.name).toBe("slack");
   });
 
   it("does not embed or query when every query is blank", async () => {

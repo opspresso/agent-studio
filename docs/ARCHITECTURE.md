@@ -1225,10 +1225,22 @@ treats bound and discovered alike. Bindings are never displaced, reordered or tr
 connection is added **only where the project has already connected it** — authorizing one in
 the console says this project may use it, and discovery reads the connection rows rather than
 resolving the credential, which would refresh tokens and make it a writer. A failure of the
-catalog degrades to the bindings with a warning rather than failing the run. What was added is reported
-as a `warning` chunk, ahead of what was lost.
+catalog degrades to the bindings with a warning rather than failing the run — as does a version
+that asked for discovery on a deployment with no catalog, which is otherwise indistinguishable
+from one where the search simply found nothing.
 
-The engine knows none of this. Discovery widens the arrays `assembleAgentRun` already receives.
+**What was *found* is not a warning.** `resolveRunTools` returns it separately, as `discovered`.
+It was a `warning` chunk, which meant every healthy run of a discovery-enabled version reported
+one — a yellow alert on every chat turn, a non-empty `warnings` in every answer, and anything
+keying on "did this run report a loss" firing on all of them. `collectedWarning` owns what a run
+lost, and finding a capability is the opposite. A run logs it; the Playground preview renders it
+on its own, which is the one place an author cannot see it any other way — what a run actually
+*used* is already in its tool traffic.
+
+The engine knows none of this. Discovery widens the arrays `assembleAgentRun` already receives —
+and the version it hands back, so `buildSubagentRunner` builds its dispatch map from the same
+list the model was told about. Given the caller's own version instead, a discovered agent sat in
+the transfer enum and answered `Unknown agent` the moment the model used it.
 
 ### Slack
 

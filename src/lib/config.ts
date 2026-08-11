@@ -196,10 +196,13 @@ export const config = {
     }
   },
   /**
-   * How many dimensions to ask the model for. Titan v2 serves several from one
-   * model and the index was created for exactly one of them, so this is not a
-   * detail the adapter can leave to a default. Read only by the Bedrock path;
-   * OpenAI's models have a fixed size.
+   * How many dimensions to ask the model for.
+   *
+   * Every adapter sends it, because every provider here serves several widths
+   * from one model and none of their defaults is this one — `text-embedding-3-
+   * small` is natively 1536. An index fixes its width at creation, so a
+   * provider left to its default answers with vectors it rejects outright: the
+   * catalog stays empty and the only trace is a background log line.
    */
   get embeddingDimensions(): number {
     return positiveIntEnv("EMBEDDING_DIM", 1024, 1);

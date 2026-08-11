@@ -72,8 +72,9 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 | `CATALOG_INDEX` | `capabilities` | — | Index within that bucket. Its dimension must match `EMBEDDING_MODEL`'s and its metric must be cosine. |
 | `EMBEDDING_PROVIDER` | `openai` | — | `cohere` \| `bedrock` \| `openai`. The first two are Bedrock and need no credentials — the pod role carries `bedrock:InvokeModel` — while `openai` reuses `LLM_BASE_URL`/`LLM_API_KEY` and requires that endpoint to serve `/embeddings`. Anything unrecognised reads as `openai`. **The demo cluster runs `cohere`**; see the table below. |
 | `EMBEDDING_MODEL` | per provider: `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0`, `text-embedding-3-small` | — | Changing it means **rebuilding the index** — vectors from two models are not comparable, and nothing in a mixed index reports that; the scores are simply wrong. Cohere v4 is reached through its **inference profile**; the bare model id refuses on-demand invocation outright. |
-| `EMBEDDING_DIM` | `1024` | — | Bedrock providers only. Cohere v4 and Titan v2 each serve several widths from one model, and the index was created for exactly one of them, so it is asked for explicitly. OpenAI models have a fixed size and ignore this. |
+| `EMBEDDING_DIM` | `1024` | — | The width the index was created at, asked for on every path. Cohere v4, Titan v2 and OpenAI's v3 models each serve several widths, and none of their defaults is 1024 — `text-embedding-3-small` is natively 1536 — so a provider left to its default answers with vectors the index rejects, and the catalog stays empty with nothing but a background log line to say why. |
 | `CATALOG_MIN_SCORE` | `0.25` | — | Relevance floor, in `(0, 1]`. Belongs to the **embedding model**, not to the search — re-measure it whenever `EMBEDDING_MODEL` changes, or the catalog either answers everything or nothing. See the table below. |
+| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, else the request origin, else `http://localhost:3000` | **runtime** | Scheme + host used to build outward-facing URLs (A2A Agent Cards, Slack manifests, the OAuth callback). Behind a reverse proxy the request URL reflects the bind address, so this has to come from configuration. The request-origin step applies only where a request is at hand — the A2A Agent Card path has none, so with both variables unset a card advertises `localhost`. |
 
 ### Choosing an embedding model
 
@@ -95,7 +96,6 @@ token as `3-large` and several times Titan, which at catalog volumes is a dollar
 What Cohere costs instead is that everything scores higher, which is why `CATALOG_MIN_SCORE`
 is 0.25 here and would be 0.15 under Titan. A deployment whose registry and requests share a
 language will not see this difference and can use any of the three.
-| `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, else the request origin, else `http://localhost:3000` | **runtime** | Scheme + host used to build outward-facing URLs (A2A Agent Cards, Slack manifests, the OAuth callback). Behind a reverse proxy the request URL reflects the bind address, so this has to come from configuration. The request-origin step applies only where a request is at hand — the A2A Agent Card path has none, so with both variables unset a card advertises `localhost`. |
 
 ## Authentication and access control
 

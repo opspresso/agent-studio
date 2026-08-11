@@ -21,6 +21,7 @@ import { ValidationError } from "@/application/errors";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
+import { log } from "@/shared/logger";
 import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
 import { openRun } from "./runBracket";
@@ -409,7 +410,17 @@ export async function* executeAgent(
     // newest user turn is what the run is being asked for, and the version's
     // system prompt is what it is generally for. `resolveRunTools` ignores them
     // unless the version opted in.
-    const { skills, subagents, mcp, warnings } = await resolveRunTools(
+    const {
+      skills,
+      subagents,
+      mcp,
+      warnings,
+      // What the resolve actually read, which discovery may have widened. The
+      // dispatcher below is built from its `subagentList`, so the original would
+      // offer a discovered agent and then refuse to transfer to it.
+      version: runVersion,
+      discovered,
+    } = await resolveRunTools(
       deps,
       input.version,
       runSignal,
@@ -418,13 +429,19 @@ export async function* executeAgent(
     closeMcpSessions = mcp.close;
     const agentDeps = await buildAgentDeps(
       runDeps,
-      input.version,
+      runVersion,
       input.project.name,
       usage.record,
       origin,
       runSignal,
       mcp.callMcpTool,
     );
+    // Logged rather than yielded: a capability *found* is a gain, and the
+    // warning channel is where a reader looks for what a run lost. What the run
+    // then did with it shows up in its tool traffic either way.
+    if (discovered.length > 0) {
+      log.info("catalog", `offering ${discovered.length} discovered: ${discovered.join(", ")}`);
+    }
     // Before the first token: what this run lost is part of reading its answer.
     for (const warning of warnings) {
       const chunk: EngineChunk = { warning };

@@ -148,11 +148,33 @@ describe("capability discovery", () => {
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
   });
 
-  it("offers nothing beyond the bindings when the deployment has no catalog", async () => {
+  it("says so when the version asked for discovery and the deployment has no catalog", async () => {
+    // Nothing else can tell the author: the checkbox stays ticked, the bindings
+    // resolve, the run answers normally and the preview shows the same prompt.
     const { deps } = harness();
     const resolved = await resolveRunTools(deps, version({ skillList: ["bound"] }), undefined, QUERIES);
     expect(resolved.skills.map((skill) => skill.name)).toEqual(["bound"]);
+    expect(resolved.warnings).toEqual([
+      "This version is set to find capabilities for each request, but this deployment has no capability catalog; only its own bindings were offered.",
+    ]);
+  });
+
+  it("stays silent for a version that never asked for discovery", async () => {
+    const { deps } = harness();
+    const resolved = await resolveRunTools(
+      deps,
+      version({ parameters: { piiFiltering: false }, skillList: ["bound"] }),
+      undefined,
+      QUERIES,
+    );
     expect(resolved.warnings).toEqual([]);
+  });
+
+  it("says so when there is nothing to search with", async () => {
+    const { deps } = harness({ catalog: fakeCatalog({ skill: [found("discovered")] }) });
+    const resolved = await resolveRunTools(deps, version({ systemPrompt: "" }), undefined, []);
+    expect(resolved.warnings.some((line) => line.includes("nothing to search with"))).toBe(true);
+    expect(resolved.skills).toEqual([]);
   });
 
   it("appends what it finds after the bindings, never in front of them", async () => {
@@ -255,14 +277,37 @@ describe("capability discovery", () => {
     expect(opened).toEqual([]);
   });
 
-  it("reports what it added, so the reader sees the run was widened", async () => {
+  it("hands back the widened version, so a discovered agent can be transferred to", async () => {
+    // Offering an agent and being able to reach it are decided by two different
+    // lists: `subagents` is what the model is told, while `buildSubagentRunner`
+    // builds the dispatch map from a version's `subagentList`. Given the
+    // caller's own version, every discovered agent answered `Unknown agent` the
+    // moment the model used it — advertised, in the transfer enum, unreachable.
+    const { deps } = harness({ catalog: fakeCatalog({ agent: [found("docs-bot")] }) });
+    const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(resolved.subagents.map((entry) => entry.name)).toEqual(["docs-bot"]);
+    expect(resolved.version.subagentList).toEqual([{ name: "docs-bot", type: "remote" }]);
+  });
+
+  it("leaves the version untouched when nothing was discovered", async () => {
+    const { deps } = harness();
+    const bound = version({ skillList: ["bound"] });
+    const resolved = await resolveRunTools(deps, bound, undefined, QUERIES);
+    expect(resolved.version).toBe(bound);
+  });
+
+  it("reports what it added as a gain, not as a warning", async () => {
+    // Reported through `discovered` rather than `warnings`: a capability found
+    // is the opposite of a loss, and routing it through the loss channel made
+    // every healthy run of a discovery-enabled version report a warning — a
+    // yellow alert on every chat turn and a non-empty `warnings` in every
+    // answer.
     const { deps } = harness({
       catalog: fakeCatalog({ skill: [found("a-skill")], agent: [found("an-agent")] }),
     });
     const resolved = await resolveRunTools(deps, version(), undefined, QUERIES);
-    const note = resolved.warnings.find((line) => line.startsWith("Found "));
-    expect(note).toContain("a-skill");
-    expect(note).toContain("an-agent");
+    expect(resolved.discovered).toEqual(["a-skill", "an-agent"]);
+    expect(resolved.warnings).toEqual([]);
   });
 
   it("keeps running on the bindings when the catalog fails", async () => {

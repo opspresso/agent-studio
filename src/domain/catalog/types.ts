@@ -31,22 +31,19 @@ export type CapabilityKind = "skill" | "mcpServer" | "mcpTool" | "agent";
  * that says no, and `mcp-memory` carries the same pair for the same reason.
  *
  * **It does not transfer between models, and the spread is not even similar.**
- * Measured against this registry, on the same four queries:
+ * `0.25` is Cohere v4's number, which is what this deployment embeds with:
+ * under it a correct answer lands around 0.3–0.5 and an unrelated one around
+ * 0.24, so the floor sits just above the noise. Under Titan v2 the whole scale
+ * is lower and the same floor would return nothing; under a model whose correct
+ * answers sit near 0.8 it would admit everything. Changing `EMBEDDING_MODEL`
+ * means re-measuring, which is what `CATALOG_MIN_SCORE` is for.
  *
- * | model | correct | unrelated | Korean query, English description |
- * |---|---|---|---|
- * | Titan v2 (1024d) | 0.34–0.41 | 0.04–0.12 | **0.065** — indistinguishable |
- * | OpenAI 3-large | 0.41–0.58 | 0.06 | 0.169 |
- * | **Cohere v4 (1024d)** | 0.30–0.53 | 0.21–0.24 | **0.393** |
- *
- * Cohere is what this deployment uses, and the middle column is why: a registry
- * described in English is simply unreachable from a Korean request under Titan,
- * which cannot separate "깃헙 레포 알려줘" from noise. What it costs is that
- * everything scores higher — unrelated pairs land at 0.24, where Titan put them
- * at 0.04 — so the floor sits at 0.25 rather than 0.15. Tuned for Titan it
- * would admit every unrelated row; tuned for a model whose correct answers sit
- * near 0.8 it would return nothing at all. Changing `EMBEDDING_MODEL` means
- * re-measuring, which is what `CATALOG_MIN_SCORE` is for.
+ * The measurements themselves — every model tried, what each scored, and why
+ * this deployment is on Cohere — live in
+ * `docs/CONFIGURATION.md#choosing-an-embedding-model` and only there. They were
+ * written out here as well, and the two copies had already drifted into
+ * contradicting each other about where one model's noise floor sat, which
+ * inverted the conclusion a reader drew from whichever they opened.
  */
 export const DEFAULT_MIN_SCORE = 0.25;
 
@@ -64,9 +61,17 @@ export interface CapabilityEntry {
  *
  * Derived rather than random so a reindex is an upsert: the same capability
  * lands on the same key every time, and what is left over is exactly what the
- * registry no longer has. `#` separates because no registry name may contain
- * one — `isSlug` forbids it, and the tool half is the server's own name, which
- * `toolManager` has already reduced to `[A-Za-z0-9_-]`.
+ * registry no longer has.
+ *
+ * `#` separates because a registry name may not contain one — `isSlug` forbids
+ * it — so `kind#name` cannot be ambiguous. The tool half is the **server's own
+ * spelling** of the tool, taken from `tools/list` and constrained by nothing
+ * here; `toolManager`'s reduction to `[A-Za-z0-9_-]` is a different name, the
+ * alias a provider is offered. Storing the raw one is deliberate rather than
+ * incidental: it is what a discovered binding puts in `McpBinding.tools`, and
+ * what `selectOffered` matches against at dispatch. So two tools on one server
+ * whose names differ only by where a `#` falls would collide — a shape no MCP
+ * server has produced, and one that costs a key rather than correctness.
  */
 export function capabilityKey(entry: Pick<CapabilityEntry, "kind" | "name" | "toolName">): string {
   return entry.toolName !== undefined
