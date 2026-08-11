@@ -44,7 +44,9 @@ describe("bedrockEmbeddings", () => {
     // More texts than one wave holds, so the offset arithmetic is exercised
     // rather than assumed.
     const texts = Array.from({ length: 20 }, (_, index) => "x".repeat(index + 1));
-    expect(await bedrockEmbeddings.embed(texts)).toEqual(texts.map((text) => [text.length]));
+    expect(await bedrockEmbeddings.embed(texts, "document")).toEqual(
+      texts.map((text) => [text.length]),
+    );
   });
 
   it("asks for the configured dimension, normalized", async () => {
@@ -52,7 +54,7 @@ describe("bedrockEmbeddings", () => {
     // for exactly one; leaving it to a default is how vectors stop fitting.
     // `normalize` is what makes cosine the metric the index was created with
     // rather than something merely proportional to it.
-    await bedrockEmbeddings.embed(["hello"]);
+    await bedrockEmbeddings.embed(["hello"], "document");
     expect(sent).toEqual([{ inputText: "hello", dimensions: 1024, normalize: true }]);
   });
 
@@ -63,12 +65,12 @@ describe("bedrockEmbeddings", () => {
     module.BedrockRuntimeClient.prototype.send = async () => ({
       body: new TextEncoder().encode(JSON.stringify({ message: "throttled" })),
     });
-    await expect(bedrockEmbeddings.embed(["a"])).rejects.toThrow("returned no embedding");
+    await expect(bedrockEmbeddings.embed(["a"], "document")).rejects.toThrow("returned no embedding");
     module.BedrockRuntimeClient.prototype.send = original;
   });
 
   it("makes no request for an empty batch", async () => {
-    expect(await bedrockEmbeddings.embed([])).toEqual([]);
+    expect(await bedrockEmbeddings.embed([], "document")).toEqual([]);
     expect(sent).toEqual([]);
   });
 });

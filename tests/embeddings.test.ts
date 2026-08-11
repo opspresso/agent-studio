@@ -61,7 +61,7 @@ describe("openAiEmbeddings", () => {
         { object: "embedding", index: 1, embedding: [0.2] },
       ],
     });
-    expect(await openAiEmbeddings.embed(["first", "second", "third"])).toEqual([
+    expect(await openAiEmbeddings.embed(["first", "second", "third"], "document")).toEqual([
       [0.1],
       [0.2],
       [0.3],
@@ -75,7 +75,7 @@ describe("openAiEmbeddings", () => {
       object: "list",
       data: [{ object: "embedding", index: 0, embedding: [0.1] }],
     });
-    await expect(openAiEmbeddings.embed(["one", "two"])).rejects.toThrow(
+    await expect(openAiEmbeddings.embed(["one", "two"], "document")).rejects.toThrow(
       "returned 1 vectors for 2 inputs",
     );
   });
@@ -83,7 +83,7 @@ describe("openAiEmbeddings", () => {
   it("makes no request at all for an empty batch", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    expect(await openAiEmbeddings.embed([])).toEqual([]);
+    expect(await openAiEmbeddings.embed([], "document")).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

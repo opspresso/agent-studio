@@ -13,18 +13,10 @@
  * way the DynamoDB and S3 clients here are already authorized.
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import type { EmbeddingPort } from "@/domain/vector/types";
+import { bedrockRuntime } from "./bedrockClient";
 import { config } from "@/lib/config";
-
-let client: BedrockRuntimeClient | undefined;
-
-function getClient(): BedrockRuntimeClient {
-  if (!client) {
-    client = new BedrockRuntimeClient({ region: config.awsRegion });
-  }
-  return client;
-}
 
 /**
  * Titan embeds **one text per request** — there is no batch form — so a reindex
@@ -35,7 +27,7 @@ function getClient(): BedrockRuntimeClient {
 const CONCURRENCY = 8;
 
 async function embedOne(text: string): Promise<number[]> {
-  const response = await getClient().send(
+  const response = await bedrockRuntime().send(
     new InvokeModelCommand({
       modelId: config.embeddingModel,
       contentType: "application/json",
@@ -64,6 +56,9 @@ async function embedOne(text: string): Promise<number[]> {
 }
 
 export const bedrockEmbeddings: EmbeddingPort = {
+  // Titan embeds both sides of a search into one space, so the purpose is not
+  // read here. Stating it is still the caller's job — which model cares is the
+  // adapter's business, not theirs.
   async embed(texts) {
     const vectors: number[][] = new Array<number[]>(texts.length);
     for (let start = 0; start < texts.length; start += CONCURRENCY) {

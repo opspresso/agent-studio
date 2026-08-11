@@ -15,7 +15,7 @@
  */
 
 import type { CapabilityEntry } from "@/domain/catalog/types";
-import { capabilityKey, capabilityText } from "@/domain/catalog/types";
+import { capabilityKey, capabilityText, catalogDescription } from "@/domain/catalog/types";
 import type { McpTool } from "@/domain/mcp/types";
 import type { McpRepository } from "@/domain/mcp/repository";
 import type { SkillRepository } from "@/domain/skill/repository";
@@ -51,21 +51,6 @@ export interface ReindexReport {
    * matters to whoever reads why a search never surfaces its tools.
    */
   undiscovered: string[];
-}
-
-/**
- * How much of a description is stored beside the vector.
- *
- * The body rides in the vector's metadata so a query answers without a second
- * read, and a store bounds how large that may be. MCP tool descriptions are the
- * ones that get long — some carry usage notes and examples — while what a search
- * result needs is enough to tell one capability from another.
- */
-const MAX_STORED_DESCRIPTION = 500;
-
-function clip(description: string): string {
-  const flat = description.replace(/\s+/g, " ").trim();
-  return flat.length > MAX_STORED_DESCRIPTION ? `${flat.slice(0, MAX_STORED_DESCRIPTION)}…` : flat;
 }
 
 /** Everything the registries currently hold, as entries. */
@@ -114,7 +99,8 @@ async function collectEntries(
 
 export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexReport> {
   const { entries, undiscovered } = await collectEntries(deps);
-  const vectors = await deps.embeddings.embed(entries.map(capabilityText));
+  // Documents: these are the things a query will be matched *against*.
+  const vectors = await deps.embeddings.embed(entries.map(capabilityText), "document");
   const records: VectorRecord[] = [];
   for (const [index, entry] of entries.entries()) {
     const vector = vectors[index];
@@ -131,7 +117,7 @@ export async function reindexCatalog(deps: CatalogIndexDeps): Promise<ReindexRep
         kind: entry.kind,
         name: entry.name,
         ...(entry.toolName !== undefined ? { toolName: entry.toolName } : {}),
-        description: clip(entry.description),
+        description: catalogDescription(entry.description),
       },
     });
   }

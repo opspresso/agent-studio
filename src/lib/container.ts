@@ -76,6 +76,7 @@ import type { CatalogIndexDeps } from "@/application/catalog/reindexCatalog";
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import { log } from "@/shared/logger";
 import { bedrockEmbeddings } from "@/infrastructure/llm/bedrockEmbeddings";
+import { cohereEmbeddings } from "@/infrastructure/llm/cohereEmbeddings";
 import { openAiEmbeddings } from "@/infrastructure/llm/embeddings";
 import { createS3VectorsStore } from "@/infrastructure/vector/s3VectorsStore";
 import { createProjectUseCases, setAdminCheck } from "@/application/project/projectUseCases";
@@ -266,6 +267,18 @@ export const skillUseCases = createSkillUseCases(skillRepository);
  * second object naming the same two would be a second place to keep the index
  * name and the embedding model agreeing.
  */
+/**
+ * Which adapter embeds is a deployment fact, not a per-call one: an index is
+ * built for one model's dimension *and* its space, and vectors from another are
+ * not comparable to what is already in it. Changing this means rebuilding the
+ * index.
+ */
+const EMBEDDINGS = {
+  cohere: cohereEmbeddings,
+  bedrock: bedrockEmbeddings,
+  openai: openAiEmbeddings,
+} as const;
+
 const vectorBucket = config.vectorBucketName;
 export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = vectorBucket
   ? {
@@ -282,7 +295,7 @@ export const catalogDeps: (CatalogIndexDeps & CatalogSearchDeps) | undefined = v
       // Which adapter is a deployment fact, not a per-call one: an index is
       // built for one model's dimension, and vectors from another are not
       // comparable to what is already in it.
-      embeddings: config.embeddingProvider === "bedrock" ? bedrockEmbeddings : openAiEmbeddings,
+      embeddings: EMBEDDINGS[config.embeddingProvider],
       catalog: createS3VectorsStore(vectorBucket, config.catalogIndexName),
       minScore: config.catalogMinScore,
     }

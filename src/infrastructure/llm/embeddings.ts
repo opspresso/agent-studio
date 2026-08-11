@@ -42,6 +42,8 @@ function getClient(baseUrl: string, apiKey: string): OpenAI {
 const BATCH = 96;
 
 export const openAiEmbeddings: EmbeddingPort = {
+  // OpenAI's embedding models use one space for both sides of a search, so the
+  // purpose is not read here — see the port for why callers state it anyway.
   async embed(texts) {
     if (texts.length === 0) {
       return [];

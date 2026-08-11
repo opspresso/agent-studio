@@ -15,7 +15,7 @@
  */
 
 import { DEFAULT_MIN_SCORE, type CapabilityKind } from "@/domain/catalog/types";
-import type { EmbeddingPort, VectorStorePort } from "@/domain/vector/types";
+import type { EmbeddingPort, VectorMatch, VectorStorePort } from "@/domain/vector/types";
 
 export interface CatalogSearchDeps {
   embeddings: EmbeddingPort;
@@ -45,11 +45,13 @@ export interface CapabilityMatch {
  * 0.15–0.41 on Titan v2 and around 0.8 elsewhere, so a threshold tuned for one
  * silently returns nothing at all on the other. A ratio survives the swap.
  *
- * Looser than a memory recall's because the costs are not symmetric: a skill
- * that turns out to be irrelevant is one unread row in a table, while a missing
- * one is a request the agent cannot carry out.
+ * This is the half of the cut that reads the *shape* of a result set, and it
+ * does most of the work when one entry clearly wins: measured against this
+ * registry, "깃헙 레포" puts github at 0.393 with the next server at 0.29, and
+ * only a ratio can express "that gap means the rest are also-rans". The
+ * absolute floor cannot — 0.29 clears it comfortably.
  */
-const KEEP_RATIO = 0.5;
+const KEEP_RATIO = 0.7;
 
 /** Candidates pulled per query before ranking, as a multiple of the limit. */
 const OVERSAMPLE = 4;
@@ -92,55 +94,105 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+/**
+ * Several kinds, one embedding pass.
+ *
+ * A run asks for skills, agents, tools and servers, and embedding the same two
+ * queries once per kind meant four round trips and four times the tokens for
+ * answers that are identical. The vector is the query; only the filter differs.
+ */
+export async function searchCapabilitiesByKind(
+  deps: CatalogSearchDeps,
+  queries: readonly string[],
+  requests: ReadonlyArray<{ kind: CapabilityKind; limit: number }>,
+): Promise<CapabilityMatch[][]> {
+  const usable = queries.map((query) => query.trim()).filter((query) => query !== "");
+  if (usable.length === 0) {
+    return requests.map(() => []);
+  }
+  const vectors = await deps.embeddings.embed(usable, "query");
+  return Promise.all(
+    requests.map(async (request) => {
+      if (request.limit <= 0) {
+        return [];
+      }
+      const topK = Math.max(request.limit * OVERSAMPLE, request.limit);
+      const perQuery = await Promise.all(
+        vectors.map((vector) => deps.catalog.query(vector, topK, { kind: request.kind })),
+      );
+      return rank(deps, usable, request, perQuery);
+    }),
+  );
+}
+
 export async function searchCapabilities(
   deps: CatalogSearchDeps,
   queries: readonly string[],
   request: { kind: CapabilityKind; limit: number },
 ): Promise<CapabilityMatch[]> {
-  const usable = queries.map((query) => query.trim()).filter((query) => query !== "");
-  if (usable.length === 0 || request.limit <= 0) {
-    return [];
-  }
-  const vectors = await deps.embeddings.embed(usable);
-  const topK = Math.max(request.limit * OVERSAMPLE, request.limit);
-  const perQuery = await Promise.all(
-    vectors.map((vector) => deps.catalog.query(vector, topK, { kind: request.kind })),
-  );
+  return (await searchCapabilitiesByKind(deps, queries, [request]))[0] ?? [];
+}
 
-  // Best score across the queries, not the sum: an entry the system prompt and
-  // the message both reach is not twice as relevant as one either reaches
-  // strongly, and summing would rank breadth over fit.
+function rank(
+  deps: CatalogSearchDeps,
+  usable: readonly string[],
+  request: { kind: CapabilityKind; limit: number },
+  perQuery: VectorMatch[][],
+): CapabilityMatch[] {
+
+  // Each query is ranked and cut **against its own best**, and only then are the
+  // survivors merged.
+  //
+  // Sharing one cut across both is what the first version did, and the system
+  // prompt simply erased the request: measured against this registry, "깃헙
+  // 레포" puts github at 0.393, while "당신은 Slack 어시스턴트" puts slack at
+  // 0.583 — so a ratio taken over the union sat at 0.408 and dropped the entry
+  // the user actually asked for. The two queries are asking different
+  // questions, and a proportional cut is only meaningful within one of them.
+  const floor = deps.minScore ?? DEFAULT_MIN_SCORE;
   const best = new Map<string, CapabilityMatch>();
   for (const matches of perQuery) {
+    const scored: Array<{ key: string; match: CapabilityMatch }> = [];
     for (const match of matches) {
       const name = asString(match.metadata.name);
       if (name === undefined) {
         continue;
       }
       const toolName = asString(match.metadata.toolName);
-      const scored: CapabilityMatch = {
-        kind: request.kind,
-        name,
-        ...(toolName !== undefined ? { toolName } : {}),
-        description: asString(match.metadata.description) ?? "",
-        score: match.score * (namedIn(usable, [toolName, name]) ? NAME_BOOST : 1),
-      };
-      const seen = best.get(match.key);
-      if (!seen || scored.score > seen.score) {
-        best.set(match.key, scored);
+      scored.push({
+        key: match.key,
+        match: {
+          kind: request.kind,
+          name,
+          ...(toolName !== undefined ? { toolName } : {}),
+          description: asString(match.metadata.description) ?? "",
+          score: match.score * (namedIn(usable, [toolName, name]) ? NAME_BOOST : 1),
+        },
+      });
+    }
+    scored.sort((a, b) => b.match.score - a.match.score);
+    const top = scored[0];
+    if (!top) {
+      continue;
+    }
+    // Both floors, and the higher one wins. The ratio keeps a strong field from
+    // dragging in its weak tail; the absolute floor answers the case the ratio
+    // cannot see at all — that nothing in the catalog matches this query, where
+    // half of the best bad score is still a bad score.
+    const cut = Math.max(top.match.score * KEEP_RATIO, floor);
+    for (const { key, match } of scored.slice(0, request.limit)) {
+      if (match.score < cut) {
+        break;
+      }
+      // Best score across the queries, not the sum: an entry both reach is not
+      // twice as relevant as one either reaches strongly, and summing would
+      // rank breadth over fit.
+      const seen = best.get(key);
+      if (!seen || match.score > seen.score) {
+        best.set(key, match);
       }
     }
   }
 
-  const ranked = [...best.values()].sort((a, b) => b.score - a.score);
-  const top = ranked[0];
-  if (!top) {
-    return [];
-  }
-  // Both floors, and the higher one wins. The ratio keeps a strong field from
-  // dragging in its weak tail; the absolute floor answers the case the ratio
-  // cannot see at all — that nothing in the catalog matches this request, where
-  // half of the best bad score is still a bad score.
-  const floor = Math.max(top.score * KEEP_RATIO, deps.minScore ?? DEFAULT_MIN_SCORE);
-  return ranked.filter((match) => match.score >= floor).slice(0, request.limit);
+  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, request.limit);
 }

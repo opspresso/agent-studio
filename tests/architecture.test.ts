@@ -752,13 +752,13 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/infrastructure/llm/embeddings.ts",
   },
   {
-    // The other embedding adapter, and the one this deployment uses: it writes
-    // into the same S3 Vectors bucket `mcp-memory` does, so it has to embed
-    // with the same model. A second construction site is a second place that
-    // could ask for a different dimension than the index was built for.
-    what: "invoking a Bedrock model",
+    // Two adapters invoke Bedrock — Titan and Cohere — and they differ only in
+    // the body they send. Reaching the service is one question with one answer
+    // (which region, and that the pod's credentials come from its Pod Identity
+    // association rather than a key), so the client is built once.
+    what: "talking to Bedrock",
     pattern: /new BedrockRuntimeClient\(/,
-    owner: "src/infrastructure/llm/bedrockEmbeddings.ts",
+    owner: "src/infrastructure/llm/bedrockClient.ts",
   },
   {
     // One place knows that an index fixes its dimension and its distance
