@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Avatar, Card, Group, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Avatar, Card, Group, Stack, Table, Text } from "@mantine/core";
 import { IconUsers } from "@tabler/icons-react";
 import type { Member } from "@/domain/member/types";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 
@@ -36,13 +37,11 @@ export default function MembersPage() {
 
   return (
     <Stack gap="lg">
-      <Group gap="md">
-        <IconUsers size={30} />
-        <div>
-          <Title order={1} fz="h2">Members</Title>
-          <Text c="dimmed" fz="sm">People who have signed in to this workspace.</Text>
-        </div>
-      </Group>
+      <PageHeader
+        title="Members"
+        description="People who have signed in to this workspace."
+        Icon={IconUsers}
+      />
 
       {error ? (
         <Alert color="red">{error}</Alert>

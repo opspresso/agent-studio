@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Card, Group, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Badge, Card, Stack, Table, Text } from "@mantine/core";
 import { IconShieldCheck } from "@tabler/icons-react";
 import type { AuditEvent } from "@/domain/audit/types";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { readJson } from "@/app/_lib/httpClient";
@@ -47,13 +48,11 @@ export default function AuditPage() {
 
   return (
     <Stack gap="lg">
-      <Group gap="md">
-        <IconShieldCheck size={30} />
-        <div>
-          <Title order={1} fz="h2">Audit trail</Title>
-          <Text c="dimmed" fz="sm">Sensitive administrative actions, newest first.</Text>
-        </div>
-      </Group>
+      <PageHeader
+        title="Audit trail"
+        description="Sensitive administrative actions, newest first."
+        Icon={IconShieldCheck}
+      />
 
       <DateRangePicker value={range} onChange={setRange} presets={[7, 14, 30]} />
 

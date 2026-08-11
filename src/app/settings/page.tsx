@@ -14,9 +14,10 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { IconSettings } from "@tabler/icons-react";
 import { monoInput } from "@/app/_components/monoInput";
+import { PageHeader } from "@/app/_components/PageHeader";
 import { BADGE } from "@/app/_components/badgeColors";
 import { A2aClientKeysSection } from "./A2aClientKeysSection";
 
@@ -258,15 +259,11 @@ export default function SettingsPage() {
 
   return (
     <Stack gap="lg" maw={860}>
-      <div>
-        <Title order={1} fz="h2">
-          Settings
-        </Title>
-        <Text fz="sm" c="dimmed" mt={4}>
-          Overrides are stored in the database and take precedence over environment variables.
-          Masked values keep the stored secret; clear a field to fall back to env.
-        </Text>
-      </div>
+      <PageHeader
+        title="Settings"
+        description="Overrides are stored in the database and take precedence over environment variables. Masked values keep the stored secret; clear a field to fall back to env."
+        Icon={IconSettings}
+      />
 
       <form onSubmit={save}>
         <Stack gap="xl">
