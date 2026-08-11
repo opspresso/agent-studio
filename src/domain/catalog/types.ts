@@ -17,6 +17,38 @@
  */
 export type CapabilityKind = "skill" | "mcpServer" | "mcpTool" | "agent";
 
+/**
+ * The similarity below which nothing is relevant, whatever the rest of the
+ * field looks like.
+ *
+ * Here rather than beside the search that spends it, because the number belongs
+ * to the **embedding model** — it is a fact about where that model puts a
+ * correct answer, not a policy anyone chose. Measured on this deployment's
+ * model (Titan v2, normalized, 1024d): a correct answer scores 0.34–0.41 and an
+ * unrelated one 0.05–0.12, the same spread `mcp-memory` recorded and the reason
+ * it carries `RECALL_MIN_SIMILARITY` *as well as* a keep ratio.
+ *
+ * A ratio alone cannot answer "nothing here matches" — with every candidate
+ * scoring badly, half of the best bad score is still a bad score, and a search
+ * for something the catalog does not have comes back full. This is the floor
+ * that says no.
+ *
+ * It does not transfer between models: tuned for one whose correct answers sit
+ * near 0.8, it would return nothing at all. Changing `EMBEDDING_MODEL` means
+ * re-measuring it, which is what `CATALOG_MIN_SCORE` is for.
+ *
+ * **What this floor knowingly gives up.** A query in one language against a
+ * description in another scores about 0.13 on the same model — below an
+ * unrelated same-language pair's 0.12 by almost nothing. The two are not
+ * separable by any threshold, so a value that keeps cross-language matches
+ * keeps the noise with them. Chosen for precision because the costs are not
+ * symmetric: a capability this misses is one an explicit binding still
+ * provides, while one it wrongly admits spends prompt budget and dilutes the
+ * model's choice on *every* run. Deployments whose registry descriptions and
+ * user requests share a language never meet the trade at all.
+ */
+export const DEFAULT_MIN_SCORE = 0.15;
+
 export interface CapabilityEntry {
   kind: CapabilityKind;
   /** The registry name this is addressed by; for a tool, its server's name. */

@@ -14,12 +14,18 @@
  * the wrong quantities of each and hide it.
  */
 
-import type { CapabilityKind } from "@/domain/catalog/types";
+import { DEFAULT_MIN_SCORE, type CapabilityKind } from "@/domain/catalog/types";
 import type { EmbeddingPort, VectorStorePort } from "@/domain/vector/types";
 
 export interface CatalogSearchDeps {
   embeddings: EmbeddingPort;
   catalog: VectorStorePort;
+  /**
+   * The relevance floor — see `DEFAULT_MIN_SCORE`. Injected because it belongs
+   * to the embedding model and this layer cannot read configuration; absent
+   * means the domain's measured default.
+   */
+  minScore?: number;
 }
 
 export interface CapabilityMatch {
@@ -131,6 +137,10 @@ export async function searchCapabilities(
   if (!top) {
     return [];
   }
-  const floor = top.score * KEEP_RATIO;
+  // Both floors, and the higher one wins. The ratio keeps a strong field from
+  // dragging in its weak tail; the absolute floor answers the case the ratio
+  // cannot see at all — that nothing in the catalog matches this request, where
+  // half of the best bad score is still a bad score.
+  const floor = Math.max(top.score * KEEP_RATIO, deps.minScore ?? DEFAULT_MIN_SCORE);
   return ranked.filter((match) => match.score >= floor).slice(0, request.limit);
 }

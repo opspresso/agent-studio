@@ -1193,8 +1193,19 @@ version's system prompt (what this agent is generally for) and the newest user t
 being asked now). Averaging them into one point describes neither. Each entry keeps its best
 score rather than the sum, so breadth does not outrank fit. Two corrections sit on top of the
 vector: a query naming something exactly is boosted over a description that merely reads like
-it, and the cut is a **fraction of the best score** rather than an absolute threshold — absolute
-cosine numbers do not survive an embedding-model change.
+it, and results are cut by **two floors, whichever is higher**. The ratio (a fraction of the
+best score) keeps a strong field from dragging in its weak tail; absolute cosine numbers do not
+survive an embedding-model change, so that part cannot be absolute. But a ratio alone cannot
+see that *nothing* matches — half of the best bad score is still a bad score, and a request the
+catalog has nothing for comes back full. `DEFAULT_MIN_SCORE` is the floor that says no.
+
+Measured on this deployment's model (Titan v2, normalized, 1024d): a correct answer scores
+0.34–0.41, an unrelated one 0.05–0.12. **A cross-language match — an English query against a
+Korean description — scores about 0.13**, which is not separable from that noise by any
+threshold. The floor is set for precision instead, because the costs are asymmetric: a
+capability it misses is one an explicit binding still provides, while one it wrongly admits
+spends prompt budget on every run. Deployments whose descriptions and requests share a language
+never meet the trade.
 
 **Discovery at run time is opt-in and strictly additive.** `parameters.dynamicCapabilities`
 turns it on; `resolveRunTools` then appends what it finds to the version's own lists *before*

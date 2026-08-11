@@ -205,6 +205,30 @@ describe("searchCapabilities", () => {
     expect(found.map((entry) => entry.name)).toEqual(["a", "b"]);
   });
 
+  it("returns nothing when the whole field scores badly", async () => {
+    // The case a ratio cannot see: half of the best bad score is still a bad
+    // score, so a ratio alone answers a request the catalog has nothing for
+    // with five irrelevant rows. Measured against Titan v2, this is exactly
+    // where an unrelated query lands.
+    const found = await searchCapabilities(
+      searchDeps([
+        [
+          match("skill#a", 0.117, { name: "a", description: "" }),
+          match("skill#b", 0.094, { name: "b", description: "" }),
+          match("skill#c", 0.07, { name: "c", description: "" }),
+        ],
+      ]),
+      ["calculate the eigenvalues of a matrix"],
+      { kind: "skill", limit: 10 },
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("honours an injected floor, since it belongs to the embedding model", async () => {
+    const deps = { ...searchDeps([[match("skill#a", 0.2, { name: "a", description: "" })]]), minScore: 0.5 };
+    expect(await searchCapabilities(deps, ["q"], { kind: "skill", limit: 5 })).toEqual([]);
+  });
+
   it("matches a hyphenated name written as separate words", async () => {
     const found = await searchCapabilities(
       searchDeps([

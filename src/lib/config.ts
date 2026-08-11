@@ -1,3 +1,4 @@
+import { DEFAULT_MIN_SCORE } from "@/domain/catalog/types";
 import { parseKeyValueList, parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { log } from "@/shared/logger";
@@ -195,6 +196,17 @@ export const config = {
    */
   get embeddingDimensions(): number {
     return positiveIntEnv("EMBEDDING_DIM", 1024, 1);
+  },
+  /**
+   * The catalog's relevance floor, in `(0, 1]`. Belongs to the **embedding
+   * model** rather than to the search: measured on Titan v2 a correct answer
+   * scores 0.34–0.41 and an unrelated one under 0.12, and a threshold tuned for
+   * a model whose correct answers sit near 0.8 would return nothing at all.
+   * Changing `EMBEDDING_MODEL` means re-measuring this — the same warning
+   * `mcp-memory` carries on `RECALL_MIN_SIMILARITY`.
+   */
+  get catalogMinScore(): number {
+    return fractionEnv("CATALOG_MIN_SCORE", DEFAULT_MIN_SCORE);
   },
   /**
    * The instance managed MCP containers run on, and the registry their images
