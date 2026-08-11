@@ -70,10 +70,31 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 | `S3_BUCKET_NAME` | unset | — | Bucket for generated images. **Private**: a chat row stores the object key and every read URL is pre-signed, so the role needs `s3:GetObject` as well as `s3:PutObject`. Unset disables persistence — chat images then render only during the live stream. |
 | `VECTOR_BUCKET` | unset | — | S3 Vectors bucket holding the capability catalog. Unset means the deployment has no catalog: `POST /api/catalog/reindex` answers 503 and a run offers exactly what its version bound. The role needs `s3vectors:PutVectors`, `QueryVectors`, `ListVectors` and `DeleteVectors` on the index. |
 | `CATALOG_INDEX` | `capabilities` | — | Index within that bucket. Its dimension must match `EMBEDDING_MODEL`'s and its metric must be cosine. |
-| `EMBEDDING_PROVIDER` | `openai` | — | `bedrock` \| `openai`. `bedrock` needs no credentials — the pod role carries `bedrock:InvokeModel` — while `openai` reuses `LLM_BASE_URL`/`LLM_API_KEY` and requires that endpoint to serve `/embeddings`. Anything unrecognised reads as `openai`. |
-| `EMBEDDING_MODEL` | `amazon.titan-embed-text-v2:0` under `bedrock`, else `text-embedding-3-small` | — | Changing it means **rebuilding the index** — vectors from two models are not comparable, and nothing in a mixed index reports that; the scores are simply wrong. On the demo cluster this must match what `mcp-memory` embeds with, since both write into the same bucket. |
-| `EMBEDDING_DIM` | `1024` | — | Bedrock only. Titan v2 serves several dimensions from one model and the index was created for exactly one of them, so it is asked for explicitly. OpenAI models have a fixed size and ignore this. |
-| `CATALOG_MIN_SCORE` | `0.15` | — | Relevance floor, in `(0, 1]`. Belongs to the **embedding model**, not to the search: measured on Titan v2 a correct answer scores 0.34–0.41 and an unrelated one under 0.12, so a value tuned for a model whose correct answers sit near 0.8 would return nothing at all. Re-measure it whenever `EMBEDDING_MODEL` changes. Lowering it below ~0.13 admits cross-language noise — see [ARCHITECTURE.md](ARCHITECTURE.md#capability-catalog). |
+| `EMBEDDING_PROVIDER` | `openai` | — | `cohere` \| `bedrock` \| `openai`. The first two are Bedrock and need no credentials — the pod role carries `bedrock:InvokeModel` — while `openai` reuses `LLM_BASE_URL`/`LLM_API_KEY` and requires that endpoint to serve `/embeddings`. Anything unrecognised reads as `openai`. **The demo cluster runs `cohere`**; see the table below. |
+| `EMBEDDING_MODEL` | per provider: `global.cohere.embed-v4:0`, `amazon.titan-embed-text-v2:0`, `text-embedding-3-small` | — | Changing it means **rebuilding the index** — vectors from two models are not comparable, and nothing in a mixed index reports that; the scores are simply wrong. Cohere v4 is reached through its **inference profile**; the bare model id refuses on-demand invocation outright. |
+| `EMBEDDING_DIM` | `1024` | — | Bedrock providers only. Cohere v4 and Titan v2 each serve several widths from one model, and the index was created for exactly one of them, so it is asked for explicitly. OpenAI models have a fixed size and ignore this. |
+| `CATALOG_MIN_SCORE` | `0.25` | — | Relevance floor, in `(0, 1]`. Belongs to the **embedding model**, not to the search — re-measure it whenever `EMBEDDING_MODEL` changes, or the catalog either answers everything or nothing. See the table below. |
+
+### Choosing an embedding model
+
+Measured through the whole pipeline against this deployment's registry, which is described in
+English and queried in Korean:
+
+| model | correct | unrelated | Korean query, English description |
+|---|---|---|---|
+| `amazon.titan-embed-text-v2:0` | 0.34–0.41 | 0.04–0.12 | **0.065** — indistinguishable from noise |
+| `text-embedding-3-large` | 0.41–0.58 | 0.21–0.22 | 0.169 — *below* the noise |
+| **`global.cohere.embed-v4:0`** | 0.30–0.53 | 0.21–0.24 | **0.393** — clear of it |
+
+Only Cohere separates the case this deployment actually has. Under Titan, "깃헙 레포 알려줘"
+scores 0.065 against the `github` server and 0.041 against an unrelated skill, so no threshold
+finds it; under `3-large` it scores *below* the unrelated rows. Cohere costs about the same per
+token as `3-large` and several times Titan, which at catalog volumes is a dollar or two a month
+— the choice is accuracy, not price.
+
+What Cohere costs instead is that everything scores higher, which is why `CATALOG_MIN_SCORE`
+is 0.25 here and would be 0.15 under Titan. A deployment whose registry and requests share a
+language will not see this difference and can use any of the three.
 | `PUBLIC_BASE_URL` | `BETTER_AUTH_URL`, else the request origin, else `http://localhost:3000` | **runtime** | Scheme + host used to build outward-facing URLs (A2A Agent Cards, Slack manifests, the OAuth callback). Behind a reverse proxy the request URL reflects the bind address, so this has to come from configuration. The request-origin step applies only where a request is at hand — the A2A Agent Card path has none, so with both variables unset a card advertises `localhost`. |
 
 ## Authentication and access control
