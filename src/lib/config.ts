@@ -146,6 +146,29 @@ export const config = {
     return optionalEnv(process.env.S3_BUCKET_NAME);
   },
   /**
+   * S3 Vectors bucket holding the capability catalog, and the index within it.
+   *
+   * Unset means this deployment has no catalog: indexing refuses and a run
+   * resolves exactly the bindings its version names, which is what every run did
+   * before. The feature is off rather than half-configured — the same shape
+   * `imageBucketName` and `managedMcpInstanceId` already use.
+   */
+  get vectorBucketName(): string | undefined {
+    return optionalEnv(process.env.VECTOR_BUCKET);
+  },
+  get catalogIndexName(): string {
+    return optionalEnv(process.env.CATALOG_INDEX) ?? "capabilities";
+  },
+  /**
+   * The embedding model, whose dimension must equal the index's. Changing it
+   * means rebuilding the index: vectors from two models are not comparable, and
+   * nothing in a mixed index would report that — the scores would simply be
+   * wrong.
+   */
+  get embeddingModel(): string {
+    return optionalEnv(process.env.EMBEDDING_MODEL) ?? "text-embedding-3-small";
+  },
+  /**
    * The instance managed MCP containers run on, and the registry their images
    * must come from. Both unset means this deployment cannot start containers,
    * and managed servers are simply unavailable — the feature is off rather
