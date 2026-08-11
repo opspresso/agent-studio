@@ -24,7 +24,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   const caller = sessionCaller(user);
   try {
     const project = await projectUseCases.assertWritable(name, user.email);
-    const { variables, versionName, ...draft } = parsed.data;
+    const { variables, versionName, message, ...draft } = parsed.data;
     const preview = await previewPrompt(executionDeps, {
       project,
       version: {
@@ -39,6 +39,8 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
         createdAt: new Date().toISOString(),
       },
       variables,
+      // What capability discovery searches with, when the version enables it.
+      ...(message ? { message } : {}),
       // The person looking at the preview is the one a run started from this
       // page would name. Without it the Playground showed a prompt one block
       // short of what the version actually sends.

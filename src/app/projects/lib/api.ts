@@ -160,7 +160,12 @@ export interface PromptPreview {
  */
 export function previewPrompt(
   name: string,
-  input: VersionInput & { versionName?: string; variables?: Record<string, string> },
+  input: VersionInput & {
+    versionName?: string;
+    variables?: Record<string, string>;
+    /** A request to preview against; only capability discovery reads it. */
+    message?: string;
+  },
 ): Promise<PromptPreview> {
   return fetch(`/api/projects/${name}/preview`, {
     method: "POST",

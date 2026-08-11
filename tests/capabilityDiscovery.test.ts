@@ -187,6 +187,34 @@ describe("capability discovery", () => {
     ]);
   });
 
+  it("finds a server whose tools were never listed, through its server entry", async () => {
+    // A server that refused discovery when the catalog was built has no tool
+    // rows at all. Searching tools alone would make it permanently
+    // undiscoverable — which is most of the point of indexing servers
+    // separately. It binds whole, and the dispatch-time listing decides.
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({ mcpServer: [found("github")] }),
+      servers: [server("github")],
+    });
+    await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(opened[0]).toEqual([expect.objectContaining({ name: "github" })]);
+    expect(opened[0]?.[0]).not.toHaveProperty("tools");
+  });
+
+  it("binds a server reached both ways once, narrowed to its matched tools", async () => {
+    const { deps, opened } = harness({
+      catalog: fakeCatalog({
+        mcpTool: [found("github", "list_repos")],
+        mcpServer: [found("github")],
+      }),
+      servers: [server("github")],
+    });
+    await resolveRunTools(deps, version(), undefined, QUERIES);
+    expect(opened[0]).toEqual([
+      expect.objectContaining({ name: "github", tools: ["list_repos"] }),
+    ]);
+  });
+
   it("refuses to add an MCP server that needs its own sign-in", async () => {
     // Checking whether a connection exists means asking the auth provider for
     // headers, and that refreshes tokens — a second refresh in one run races the

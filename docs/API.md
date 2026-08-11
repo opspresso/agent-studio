@@ -231,6 +231,11 @@ unaffected: its prompt is the rendered template, with no system prompt for the b
 in. `POST /api/projects/{name}/preview` shows the block exactly when a run from that page
 would carry it.
 
+`POST /api/projects/{name}/preview` takes an optional `message` — the request to preview
+against. Only discovery reads it (an agent run's user turn comes from the conversation), but
+*which* capabilities a run finds depends on what it is being asked, so without one the preview
+shows the floor every run starts from rather than the shape of a particular one.
+
 `dynamicCapabilities` lets a run reach skills, MCP servers and agents this version never bound,
 found by searching the global catalog with the version's system prompt and the request being
 answered. It is **additive**: the bindings above are resolved first and in full, and nothing a

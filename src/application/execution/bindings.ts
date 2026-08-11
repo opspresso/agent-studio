@@ -179,7 +179,7 @@ async function discoverCapabilities(
   const boundAgents = new Set((version.subagentList ?? []).map((ref) => ref.name));
   const boundServers = new Set((version.mcpList ?? []).map((binding) => binding.name));
 
-  const [skills, agents, servers] = await Promise.all([
+  const [skills, agents, toolHits, serverHits] = await Promise.all([
     searchCapabilities(deps.catalog, queries, { kind: "skill", limit: DISCOVERY_LIMITS.skill }),
     searchCapabilities(deps.catalog, queries, { kind: "agent", limit: DISCOVERY_LIMITS.agent }),
     // Tools are what a request matches, but a server is what a run can bind —
@@ -187,6 +187,17 @@ async function discoverCapabilities(
     searchCapabilities(deps.catalog, queries, {
       kind: "mcpTool",
       limit: DISCOVERY_LIMITS.mcpServer * 4,
+    }),
+    // And the server index answers for everything the tool index cannot: a
+    // server whose tools could not be listed when the catalog was built has no
+    // tool rows at all, so searching tools alone makes it permanently
+    // undiscoverable — which is most of the point of indexing servers
+    // separately. Its listing may well succeed at dispatch (a credential fixed
+    // since, a server that was down), and if it does not, the run reports it
+    // like any other binding that came back empty.
+    searchCapabilities(deps.catalog, queries, {
+      kind: "mcpServer",
+      limit: DISCOVERY_LIMITS.mcpServer,
     }),
   ]);
 
@@ -201,7 +212,10 @@ async function discoverCapabilities(
   const mcpList: McpBinding[] = [];
   const notes: string[] = [];
   const seenServers = new Set<string>();
-  for (const match of servers) {
+  // Tool hits lead: they name a server *and* which of its tools to offer, which
+  // is strictly more than a server hit says. A server reached both ways is
+  // bound once, narrowed.
+  for (const match of [...toolHits, ...serverHits]) {
     if (boundServers.has(match.name) || seenServers.has(match.name)) {
       continue;
     }
@@ -221,8 +235,9 @@ async function discoverCapabilities(
     }
     // Narrowed to the tools that actually matched, which is what `McpBinding.tools`
     // is for: a discovered server should not spend the run's tool budget on the
-    // rest of its catalogue.
-    const tools = servers
+    // rest of its catalogue. A server hit carries none — nothing knows what it
+    // offers yet — so it is bound whole and the dispatch-time listing decides.
+    const tools = toolHits
       .filter((entry) => entry.name === match.name && entry.toolName !== undefined)
       .map((entry) => entry.toolName as string);
     mcpList.push({ name: match.name, ...(tools.length > 0 ? { tools } : {}) });
