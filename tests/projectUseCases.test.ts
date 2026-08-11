@@ -470,6 +470,33 @@ describe("version reference validation", () => {
     ).rejects.toThrow(/must have unique names/);
   });
 
+  it("rejects the same MCP server bound twice", async () => {
+    // A duplicate opens the server's session twice, and the second row silently
+    // overwrites the first everywhere the run keys by server name. The console
+    // cannot produce one; the API can.
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        "p",
+        { ...versionInput(), mcpList: [{ name: "github" }, { name: "github" }] },
+        OWNER,
+      ),
+    ).rejects.toThrow(/"github" is bound more than once/);
+  });
+
+  it("rejects the same skill bound twice", async () => {
+    await expect(
+      createVersion(
+        makeVersionRepo(),
+        makeProjectRepo([projectFixture("p", { projectType: "agent" })]),
+        "p",
+        { ...versionInput(), skillList: ["review", "review"] },
+        OWNER,
+      ),
+    ).rejects.toThrow(/"review" is bound more than once/);
+  });
+
   it("rejects a create that names an MCP server, skill, or subagent that does not exist", async () => {
     await expect(
       createVersion(

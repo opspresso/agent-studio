@@ -83,18 +83,43 @@ function assertToolBindingsRunnable(
   }
 }
 
-function assertUniqueSubagentNames(subagents: SubagentRef[] | undefined): void {
-  const seen = new Set<string>();
-  const duplicate = (subagents ?? []).find((ref) => {
-    if (seen.has(ref.name)) {
-      return true;
+/**
+ * Reject a list that names the same reference twice. Subagents because the
+ * transfer tools address agents by name, so a duplicate is unaddressable; MCP
+ * bindings because a duplicate opens the server's session twice and the second
+ * row silently overwrites the first everywhere the run keys by server name (the
+ * prompt's server table, the binding's tool selection); skills because a
+ * duplicate is a duplicate row in the prompt's table. The console's pickers
+ * cannot produce any of these — the API can, so the same write boundary that
+ * checks references catches them.
+ */
+function assertUniqueReferences(refs: VersionRefs): void {
+  const firstDuplicate = (names: readonly string[]): string | undefined => {
+    const seen = new Set<string>();
+    for (const name of names) {
+      if (seen.has(name)) {
+        return name;
+      }
+      seen.add(name);
     }
-    seen.add(ref.name);
-    return false;
-  });
-  if (duplicate) {
+    return undefined;
+  };
+  const agent = firstDuplicate((refs.subagentList ?? []).map((ref) => ref.name));
+  if (agent) {
     throw new ValidationError(
-      `Agent name "${duplicate.name}" is used more than once; connected agents must have unique names.`,
+      `Agent name "${agent}" is used more than once; connected agents must have unique names.`,
+    );
+  }
+  const mcp = firstDuplicate((refs.mcpList ?? []).map((binding) => binding.name));
+  if (mcp) {
+    throw new ValidationError(
+      `MCP server "${mcp}" is bound more than once; a server can be bound once per version.`,
+    );
+  }
+  const skill = firstDuplicate(refs.skillList ?? []);
+  if (skill) {
+    throw new ValidationError(
+      `Skill "${skill}" is bound more than once; a skill can be bound once per version.`,
     );
   }
 }
@@ -331,7 +356,7 @@ export async function createVersion(
   assertModelSupports(project, input.model, input.parameters);
   warnUnknownCatalogModel(projectName, input.model);
   assertToolBindingsRunnable(project, input);
-  assertUniqueSubagentNames(input.subagentList);
+  assertUniqueReferences(input);
   await assertReferencesExist(refs, input);
   const existing = await versions.list(projectName);
 
@@ -384,9 +409,9 @@ export async function updateVersion(
   }
   const existing = await getVersion(versions, projectName, versionName);
   assertToolBindingsRunnable(project, input, existing);
-  if (input.subagentList) {
-    assertUniqueSubagentNames(input.subagentList);
-  }
+  // Only the lists this update supplies; an omitted list keeps the stored one,
+  // which its own write already checked.
+  assertUniqueReferences(input);
   await assertReferencesExist(refs, input, existing);
   const updated: Version = {
     ...existing,
