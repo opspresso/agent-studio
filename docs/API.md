@@ -240,7 +240,8 @@ shows the floor every run starts from rather than the shape of a particular one.
 found by searching the global catalog with the version's system prompt and the request being
 answered. It is **additive**: the bindings above are resolved first and in full, and nothing a
 search finds can displace or truncate them. An MCP server that requires its own OAuth
-connection is never added this way — bind it explicitly. What was added is reported as a
+connection is added only where the project has already authorized it; otherwise the run says so
+and you can either connect it or bind it explicitly. What was added is reported as a
 `warning` chunk on the run. Without `VECTOR_BUCKET` the flag is stored and does nothing. See
 [ARCHITECTURE.md](ARCHITECTURE.md#capability-catalog).
 

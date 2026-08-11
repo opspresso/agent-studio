@@ -1221,11 +1221,11 @@ questions cannot share a proportional cut.
 **Discovery at run time is opt-in and strictly additive.** `parameters.dynamicCapabilities`
 turns it on; `resolveRunTools` then appends what it finds to the version's own lists *before*
 resolving, so every later stage — the prompt tables, the tool enums, the reachability checks —
-treats bound and discovered alike. Bindings are never displaced, reordered or truncated. Two
-things it will not do: an MCP server whose credentials are a per-project OAuth connection is
-never added (checking one means asking the auth provider for headers, which refreshes tokens,
-and two refreshes in one run race each other — see `updateTokens`), and a failure of the catalog
-degrades to the bindings with a warning rather than failing the run. What was added is reported
+treats bound and discovered alike. Bindings are never displaced, reordered or truncated. An MCP server whose credentials are a per-project OAuth
+connection is added **only where the project has already connected it** — authorizing one in
+the console says this project may use it, and discovery reads the connection rows rather than
+resolving the credential, which would refresh tokens and make it a writer. A failure of the
+catalog degrades to the bindings with a warning rather than failing the run. What was added is reported
 as a `warning` chunk, ahead of what was lost.
 
 The engine knows none of this. Discovery widens the arrays `assembleAgentRun` already receives.

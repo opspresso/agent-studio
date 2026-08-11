@@ -547,6 +547,7 @@ export const executionDeps: ExecutionDeps = {
   remoteAgents,
   mcpSessions,
   mcpAuth: mcpAuthProvider,
+  mcpConnections: mcpConnectionRepository,
   // The same bag the reindex uses: search needs two of its fields, and a second
   // object naming them would be a second place the index name and the embedding
   // model have to agree.

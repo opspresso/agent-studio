@@ -18,6 +18,7 @@ import type { TraceRepository } from "@/domain/trace/repository";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { McpAuthProvider } from "@/domain/mcp/oauth";
+import type { McpConnectionRepository } from "@/domain/mcp/connection";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
@@ -50,6 +51,15 @@ export interface ExecutionDeps extends RunBracketDeps {
   mcpSessions: McpSessionFactory;
   /** Per-project OAuth for registry servers that require it. */
   mcpAuth: McpAuthProvider;
+  /**
+   * Which registry servers this project has an OAuth connection to.
+   *
+   * Read-only, and separate from {@link mcpAuth} on purpose: resolving headers
+   * refreshes tokens, while capability discovery only needs to know whether a
+   * connection exists before it offers a server it never bound. Absent means
+   * discovery cannot tell, and treats every OAuth server as unconnected.
+   */
+  mcpConnections?: Pick<McpConnectionRepository, "listByProject">;
   /**
    * The global capability catalog, when this deployment has one. Absent means
    * a version's `dynamicCapabilities` has nothing to search and the run offers
