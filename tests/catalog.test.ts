@@ -175,9 +175,9 @@ describe("searchCapabilities", () => {
     // reaches strongly — breadth over fit.
     const found = await searchCapabilities(
       searchDeps([
-        [match("skill#broad", 0.5, { name: "broad", description: "x" })],
+        [match("skill#broad", 0.7, { name: "broad", description: "x" })],
         [
-          match("skill#broad", 0.5, { name: "broad", description: "x" }),
+          match("skill#broad", 0.7, { name: "broad", description: "x" }),
           match("skill#sharp", 0.9, { name: "sharp", description: "y" }),
         ],
       ]),
@@ -190,13 +190,15 @@ describe("searchCapabilities", () => {
 
   it("cuts by a fraction of the best score, not an absolute threshold", async () => {
     // Absolute cosine thresholds do not transfer between embedding models —
-    // `mcp-memory` hit this and wrote it down. A ratio survives the swap.
+    // `mcp-memory` hit this and wrote it down. A ratio survives the swap. Here
+    // every candidate clears the absolute floor, so the ratio is what decides:
+    // `c` is an also-ran next to `a`, and only the shape of the set says so.
     const found = await searchCapabilities(
       searchDeps([
         [
           match("skill#a", 0.8, { name: "a", description: "" }),
-          match("skill#b", 0.5, { name: "b", description: "" }),
-          match("skill#c", 0.2, { name: "c", description: "" }),
+          match("skill#b", 0.6, { name: "b", description: "" }),
+          match("skill#c", 0.3, { name: "c", description: "" }),
         ],
       ]),
       ["anything"],

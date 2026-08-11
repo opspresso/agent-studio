@@ -39,6 +39,18 @@ export interface VectorMatch {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * Which side of a search a text is on.
+ *
+ * Not a hint. Some models embed a question and the thing that answers it into
+ * *different* spaces on purpose, and asking for the wrong one costs real
+ * accuracy — measured on Cohere v4, a Korean query against an English
+ * description scores 0.39 when typed and materially worse when not. Models that
+ * make no distinction ignore it, so the caller always states which it means and
+ * the adapter decides whether that matters.
+ */
+export type EmbeddingPurpose = "document" | "query";
+
 export interface EmbeddingPort {
   /**
    * One vector per text, in the order given.
@@ -47,7 +59,7 @@ export interface EmbeddingPort {
    * and the provider charges per token either way while a round trip per entry
    * is what makes it take minutes.
    */
-  embed(texts: readonly string[]): Promise<number[][]>;
+  embed(texts: readonly string[], purpose: EmbeddingPurpose): Promise<number[][]>;
 }
 
 /**

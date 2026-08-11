@@ -169,10 +169,9 @@ export const config = {
    * embedding provider is not worth refusing to boot over, and a deployment
    * without `VECTOR_BUCKET` never reaches either adapter.
    */
-  get embeddingProvider(): "bedrock" | "openai" {
-    return optionalEnv(process.env.EMBEDDING_PROVIDER)?.toLowerCase() === "bedrock"
-      ? "bedrock"
-      : "openai";
+  get embeddingProvider(): "cohere" | "bedrock" | "openai" {
+    const raw = optionalEnv(process.env.EMBEDDING_PROVIDER)?.toLowerCase();
+    return raw === "cohere" || raw === "bedrock" ? raw : "openai";
   },
   /**
    * The embedding model, whose dimension must equal the index's. Changing it
@@ -181,12 +180,20 @@ export const config = {
    * wrong.
    */
   get embeddingModel(): string {
-    return (
-      optionalEnv(process.env.EMBEDDING_MODEL) ??
-      (config.embeddingProvider === "bedrock"
-        ? "amazon.titan-embed-text-v2:0"
-        : "text-embedding-3-small")
-    );
+    const configured = optionalEnv(process.env.EMBEDDING_MODEL);
+    if (configured) {
+      return configured;
+    }
+    switch (config.embeddingProvider) {
+      // The inference profile, not the bare model id — Cohere v4 refuses
+      // on-demand invocation by id outright.
+      case "cohere":
+        return "global.cohere.embed-v4:0";
+      case "bedrock":
+        return "amazon.titan-embed-text-v2:0";
+      default:
+        return "text-embedding-3-small";
+    }
   },
   /**
    * How many dimensions to ask the model for. Titan v2 serves several from one

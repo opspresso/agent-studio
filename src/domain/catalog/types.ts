@@ -23,31 +23,32 @@ export type CapabilityKind = "skill" | "mcpServer" | "mcpTool" | "agent";
  *
  * Here rather than beside the search that spends it, because the number belongs
  * to the **embedding model** — it is a fact about where that model puts a
- * correct answer, not a policy anyone chose. Measured on this deployment's
- * model (Titan v2, normalized, 1024d): a correct answer scores 0.34–0.41 and an
- * unrelated one 0.05–0.12, the same spread `mcp-memory` recorded and the reason
- * it carries `RECALL_MIN_SIMILARITY` *as well as* a keep ratio.
+ * correct answer, not a policy anyone chose.
  *
- * A ratio alone cannot answer "nothing here matches" — with every candidate
+ * A ratio alone cannot answer "nothing here matches": with every candidate
  * scoring badly, half of the best bad score is still a bad score, and a search
  * for something the catalog does not have comes back full. This is the floor
- * that says no.
+ * that says no, and `mcp-memory` carries the same pair for the same reason.
  *
- * It does not transfer between models: tuned for one whose correct answers sit
- * near 0.8, it would return nothing at all. Changing `EMBEDDING_MODEL` means
- * re-measuring it, which is what `CATALOG_MIN_SCORE` is for.
+ * **It does not transfer between models, and the spread is not even similar.**
+ * Measured against this registry, on the same four queries:
  *
- * **What this floor knowingly gives up.** A query in one language against a
- * description in another scores about 0.13 on the same model — below an
- * unrelated same-language pair's 0.12 by almost nothing. The two are not
- * separable by any threshold, so a value that keeps cross-language matches
- * keeps the noise with them. Chosen for precision because the costs are not
- * symmetric: a capability this misses is one an explicit binding still
- * provides, while one it wrongly admits spends prompt budget and dilutes the
- * model's choice on *every* run. Deployments whose registry descriptions and
- * user requests share a language never meet the trade at all.
+ * | model | correct | unrelated | Korean query, English description |
+ * |---|---|---|---|
+ * | Titan v2 (1024d) | 0.34–0.41 | 0.04–0.12 | **0.065** — indistinguishable |
+ * | OpenAI 3-large | 0.41–0.58 | 0.06 | 0.169 |
+ * | **Cohere v4 (1024d)** | 0.30–0.53 | 0.21–0.24 | **0.393** |
+ *
+ * Cohere is what this deployment uses, and the middle column is why: a registry
+ * described in English is simply unreachable from a Korean request under Titan,
+ * which cannot separate "깃헙 레포 알려줘" from noise. What it costs is that
+ * everything scores higher — unrelated pairs land at 0.24, where Titan put them
+ * at 0.04 — so the floor sits at 0.25 rather than 0.15. Tuned for Titan it
+ * would admit every unrelated row; tuned for a model whose correct answers sit
+ * near 0.8 it would return nothing at all. Changing `EMBEDDING_MODEL` means
+ * re-measuring, which is what `CATALOG_MIN_SCORE` is for.
  */
-export const DEFAULT_MIN_SCORE = 0.15;
+export const DEFAULT_MIN_SCORE = 0.25;
 
 export interface CapabilityEntry {
   kind: CapabilityKind;
@@ -74,6 +75,28 @@ export function capabilityKey(entry: Pick<CapabilityEntry, "kind" | "name" | "to
 }
 
 /**
+ * How much of a description takes part in the catalog at all — both what is
+ * embedded and what is stored beside the vector.
+ *
+ * One number for both, because they have to be the same text. They were not:
+ * the whole description was embedded while a clipped copy was stored, so a
+ * search result showed a summary that was not what matched. An MCP tool
+ * description runs to 1800 characters in this registry, most of it usage notes
+ * and examples that dilute what the entry *is*, and a batch of them overran the
+ * embedding provider's request limit outright.
+ *
+ * What a search needs is enough to tell one capability from another, which the
+ * opening of a description gives.
+ */
+export const MAX_DESCRIPTION_CHARS = 500;
+
+/** A description reduced to what the catalog carries: one line, bounded. */
+export function catalogDescription(description: string): string {
+  const flat = description.replace(/\s+/g, " ").trim();
+  return flat.length > MAX_DESCRIPTION_CHARS ? `${flat.slice(0, MAX_DESCRIPTION_CHARS)}…` : flat;
+}
+
+/**
  * The text an entry is embedded as.
  *
  * The name is included, not just the description: half the registry's names say
@@ -92,6 +115,6 @@ export function capabilityText(entry: CapabilityEntry): string {
     // what makes it addressable in a query ("search the aws docs").
     parts.push(entry.name);
   }
-  parts.push(entry.description);
+  parts.push(catalogDescription(entry.description));
   return parts.filter((part) => part.trim() !== "").join("\n");
 }

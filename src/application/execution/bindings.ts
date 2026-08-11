@@ -3,7 +3,7 @@
 import type { McpBinding, SubagentRef, Version } from "@/domain/project/types";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
-import { searchCapabilities, type CatalogSearchDeps } from "@/application/catalog/searchCatalog";
+import { searchCapabilitiesByKind, type CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
 import { buildMcpTools, closeMcp, type McpToolDeps, type ResolvedMcp } from "./mcpTools";
@@ -133,7 +133,7 @@ export function buildSkillLoader(
  * token** plus every one of its tools competing for the per-run tool cap. The
  * server limit is low for that reason, not out of caution about relevance.
  */
-const DISCOVERY_LIMITS = { skill: 5, agent: 3, mcpServer: 2 } as const;
+const DISCOVERY_LIMITS = { skill: 5, agent: 3, mcpServer: 3 } as const;
 
 /**
  * How much of a system prompt is used as a query.
@@ -179,27 +179,24 @@ async function discoverCapabilities(
   const boundAgents = new Set((version.subagentList ?? []).map((ref) => ref.name));
   const boundServers = new Set((version.mcpList ?? []).map((binding) => binding.name));
 
-  const [skills, agents, toolHits, serverHits] = await Promise.all([
-    searchCapabilities(deps.catalog, queries, { kind: "skill", limit: DISCOVERY_LIMITS.skill }),
-    searchCapabilities(deps.catalog, queries, { kind: "agent", limit: DISCOVERY_LIMITS.agent }),
-    // Tools are what a request matches, but a server is what a run can bind —
-    // so the tool index answers "which server", and the binding is the server.
-    searchCapabilities(deps.catalog, queries, {
-      kind: "mcpTool",
-      limit: DISCOVERY_LIMITS.mcpServer * 4,
-    }),
-    // And the server index answers for everything the tool index cannot: a
-    // server whose tools could not be listed when the catalog was built has no
-    // tool rows at all, so searching tools alone makes it permanently
-    // undiscoverable — which is most of the point of indexing servers
-    // separately. Its listing may well succeed at dispatch (a credential fixed
-    // since, a server that was down), and if it does not, the run reports it
-    // like any other binding that came back empty.
-    searchCapabilities(deps.catalog, queries, {
-      kind: "mcpServer",
-      limit: DISCOVERY_LIMITS.mcpServer,
-    }),
-  ]);
+  // One embedding pass for all four: the vector is the query, and only the
+  // filter differs. Asking per kind meant four identical embeddings per run.
+  const [skills = [], agents = [], toolHits = [], serverHits = []] =
+    await searchCapabilitiesByKind(deps.catalog, queries, [
+      { kind: "skill", limit: DISCOVERY_LIMITS.skill },
+      { kind: "agent", limit: DISCOVERY_LIMITS.agent },
+      // Tools are what a request matches, but a server is what a run can bind —
+      // so the tool index answers "which server", and the binding is the server.
+      { kind: "mcpTool", limit: DISCOVERY_LIMITS.mcpServer * 4 },
+      // And the server index answers for everything the tool index cannot: a
+      // server whose tools could not be listed when the catalog was built has no
+      // tool rows at all, so searching tools alone makes it permanently
+      // undiscoverable — which is most of the point of indexing servers
+      // separately. Its listing may well succeed at dispatch (a credential fixed
+      // since, a server that was down), and if it does not, the run reports it
+      // like any other binding that came back empty.
+      { kind: "mcpServer", limit: DISCOVERY_LIMITS.mcpServer },
+    ]);
 
   const skillList = skills.map((match) => match.name).filter((name) => !boundSkills.has(name));
   // Every catalogued agent is an external one: a project is reachable as a
