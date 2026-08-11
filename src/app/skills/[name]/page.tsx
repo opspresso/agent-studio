@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
+import { useConfirm } from "@/app/_components/useConfirm";
 import {
   Alert,
   Anchor,
@@ -50,8 +51,16 @@ export default function SkillDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name]);
 
+  const { confirm, confirmModal } = useConfirm();
+
   async function onDelete() {
-    if (!confirm(`Delete skill "${name}"? This cannot be undone.`)) {
+    if (
+      !(await confirm({
+        title: "Delete skill",
+        message: `Delete skill "${name}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+      }))
+    ) {
       return;
     }
     try {
@@ -89,6 +98,7 @@ export default function SkillDetailPage() {
 
   return (
     <Stack gap="lg">
+      {confirmModal}
       <BackLink />
 
       <Group justify="space-between" align="flex-start" gap="md">

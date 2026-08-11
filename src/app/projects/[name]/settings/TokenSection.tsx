@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { useConfirm } from "@/app/_components/useConfirm";
 import {
   generateProjectToken,
   getProjectToken,
@@ -32,8 +33,17 @@ export function TokenSection({ projectName }: { projectName: string }) {
     };
   }, [projectName]);
 
+  const { confirm, confirmModal } = useConfirm();
+
   async function generate(regenerate: boolean) {
-    if (regenerate && !confirm("Regenerate the token? The current token stops working immediately.")) {
+    if (
+      regenerate &&
+      !(await confirm({
+        title: "Regenerate token",
+        message: "The current token stops working immediately.",
+        confirmLabel: "Regenerate",
+      }))
+    ) {
       return;
     }
     setBusy(true);
@@ -51,7 +61,13 @@ export function TokenSection({ projectName }: { projectName: string }) {
   }
 
   async function revoke() {
-    if (!confirm("Revoke the token? Callers using it will stop working immediately.")) {
+    if (
+      !(await confirm({
+        title: "Revoke token",
+        message: "Callers using it will stop working immediately.",
+        confirmLabel: "Revoke",
+      }))
+    ) {
       return;
     }
     setBusy(true);
@@ -99,6 +115,7 @@ export function TokenSection({ projectName }: { projectName: string }) {
       }
     >
       <Stack gap="sm">
+        {confirmModal}
         <Text fz="xs" c="dimmed" lh={1.6}>
           A token lets external callers run this project&apos;s execution APIs (predict, chat
           completions, agent) with an <Code>Authorization: Bearer</Code> header instead of a

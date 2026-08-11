@@ -18,6 +18,7 @@ import {
 import { IconSettings } from "@tabler/icons-react";
 import { monoInput } from "@/app/_components/monoInput";
 import { PageHeader } from "@/app/_components/PageHeader";
+import { useConfirm } from "@/app/_components/useConfirm";
 import { BADGE } from "@/app/_components/badgeColors";
 import { A2aClientKeysSection } from "./A2aClientKeysSection";
 
@@ -192,10 +193,16 @@ export default function SettingsPage() {
     }
   }
 
+  const { confirm, confirmModal } = useConfirm();
+
   async function issueA2aKey(replacing: boolean) {
     if (
       replacing &&
-      !confirm("Generate a new A2A_API_KEY? The current key stops working immediately.")
+      !(await confirm({
+        title: "Generate a new A2A_API_KEY",
+        message: "The current key stops working immediately.",
+        confirmLabel: "Generate",
+      }))
     ) {
       return;
     }
@@ -264,6 +271,7 @@ export default function SettingsPage() {
         description="Overrides are stored in the database and take precedence over environment variables. Masked values keep the stored secret; clear a field to fall back to env."
         Icon={IconSettings}
       />
+      {confirmModal}
 
       <form onSubmit={save}>
         <Stack gap="xl">

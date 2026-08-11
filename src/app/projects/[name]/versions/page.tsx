@@ -13,6 +13,7 @@ import {
 } from "../../lib/api";
 import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
+import { useConfirm } from "@/app/_components/useConfirm";
 
 export default function VersionsPage() {
   const params = useParams<{ name: string }>();
@@ -58,8 +59,16 @@ export default function VersionsPage() {
     }
   }
 
+  const { confirm, confirmModal } = useConfirm();
+
   async function remove(versionName: string) {
-    if (!confirm(`Delete version ${versionName}?`)) {
+    if (
+      !(await confirm({
+        title: "Delete version",
+        message: `Delete version ${versionName}? This cannot be undone.`,
+        confirmLabel: "Delete",
+      }))
+    ) {
       return;
     }
     setBusy(versionName);
@@ -84,6 +93,7 @@ export default function VersionsPage() {
 
   return (
     <Stack gap="md">
+      {confirmModal}
       {error && (
         <Alert color="red" variant="light">
           {error}

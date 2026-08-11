@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { CollapsibleCode } from "@/app/_components/CollapsibleCode";
+import { useConfirm } from "@/app/_components/useConfirm";
 import { CopyableUrl } from "@/app/_components/CopyableUrl";
 import {
   disconnectProjectSlack,
@@ -37,6 +38,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm, confirmModal } = useConfirm();
 
   useEffect(() => {
     let cancelled = false;
@@ -102,7 +104,13 @@ export function SlackSection({ projectName }: { projectName: string }) {
   }
 
   async function disconnect() {
-    if (!window.confirm("Remove the Slack bot credentials for this project?")) {
+    if (
+      !(await confirm({
+        title: "Remove Slack credentials",
+        message: "Remove the Slack bot credentials for this project?",
+        confirmLabel: "Remove",
+      }))
+    ) {
       return;
     }
     setBusy(true);
@@ -160,6 +168,7 @@ export function SlackSection({ projectName }: { projectName: string }) {
           styles={monoInput}
         />
         <Stack gap="xs">
+          {confirmModal}
           <Checkbox
             label="Enable event handling at this URL"
             checked={enabled}

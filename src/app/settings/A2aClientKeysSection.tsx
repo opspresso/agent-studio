@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Code, Group, Stack, Table, Text, TextInput } from "@mantine/core";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { useConfirm } from "@/app/_components/useConfirm";
 import { monoInput } from "@/app/_components/monoInput";
 import { BADGE } from "@/app/_components/badgeColors";
 import { toSlug } from "@/shared/slug";
@@ -91,8 +92,16 @@ export function A2aClientKeysSection() {
     });
   }
 
-  function revoke(keyName: string) {
-    if (!confirm(`Revoke the client key "${keyName}"? Its runs stop authenticating immediately.`)) {
+  const { confirm, confirmModal } = useConfirm();
+
+  async function revoke(keyName: string) {
+    if (
+      !(await confirm({
+        title: "Revoke client key",
+        message: `Revoke the client key "${keyName}"? Its runs stop authenticating immediately.`,
+        confirmLabel: "Revoke",
+      }))
+    ) {
       return;
     }
     void call(async () => {
@@ -109,6 +118,7 @@ export function A2aClientKeysSection() {
 
   return (
     <Stack gap="xs">
+      {confirmModal}
       <Group gap="xs">
         <Text fz="sm" fw={500}>
           Client keys

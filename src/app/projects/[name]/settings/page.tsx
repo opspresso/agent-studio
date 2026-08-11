@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { useConfirm } from "@/app/_components/useConfirm";
 import { A2aSection } from "./A2aSection";
 import { CostLimitsSection } from "./CostLimitsSection";
 import { SlackSection } from "./SlackSection";
@@ -27,6 +28,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { confirm, confirmModal } = useConfirm();
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +77,13 @@ export default function SettingsPage() {
   }
 
   async function remove() {
-    if (!confirm(`Delete project "${name}" and all its versions? This cannot be undone.`)) {
+    const ok = await confirm({
+      title: "Delete project",
+      message: `Deleting "${name}" removes all its versions and usage records. This cannot be undone.`,
+      confirmLabel: "Delete project",
+      requireText: name,
+    });
+    if (!ok) {
       return;
     }
     setDeleting(true);
@@ -166,6 +174,8 @@ export default function SettingsPage() {
           </Button>
         </Stack>
       </CollapsibleSection>
+
+      {confirmModal}
     </Stack>
   );
 }

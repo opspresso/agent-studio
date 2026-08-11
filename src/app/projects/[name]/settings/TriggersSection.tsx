@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useConfirm } from "@/app/_components/useConfirm";
 import {
   Alert,
   Badge,
@@ -122,6 +123,8 @@ export function TriggersSection({ projectName }: { projectName: string }) {
     loading ||
     (newKind === "schedule" && (!newCron.trim() || !newTimezone.trim()));
 
+  const { confirm, confirmModal } = useConfirm();
+
   return (
     <CollapsibleSection
       title="Triggers"
@@ -136,6 +139,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
       }
     >
       <Stack gap="lg">
+        {confirmModal}
         <Text fz="sm" c="dimmed">
           An outside system can start a run by posting to a webhook trigger&apos;s URL with its
           secret; a schedule trigger fires on its own cron. Triggers always run the project&apos;s{" "}
@@ -351,11 +355,13 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                   variant="default"
                   size="xs"
                   disabled={busy}
-                  onClick={() => {
+                  onClick={async () => {
                     if (
-                      !confirm(
-                        `Regenerate the secret for "${trigger.triggerId}"? The current secret stops working immediately.`,
-                      )
+                      !(await confirm({
+                        title: "Regenerate secret",
+                        message: `Regenerate the secret for "${trigger.triggerId}"? The current secret stops working immediately.`,
+                        confirmLabel: "Regenerate",
+                      }))
                     ) {
                       return;
                     }
@@ -377,8 +383,14 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                 color="red"
                 size="xs"
                 disabled={busy}
-                onClick={() => {
-                  if (!confirm(`Delete trigger "${trigger.triggerId}"?`)) {
+                onClick={async () => {
+                  if (
+                    !(await confirm({
+                      title: "Delete trigger",
+                      message: `Delete trigger "${trigger.triggerId}"?`,
+                      confirmLabel: "Delete",
+                    }))
+                  ) {
                     return;
                   }
                   void act(() => deleteTrigger(projectName, trigger.triggerId));

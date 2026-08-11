@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useConfirm } from "@/app/_components/useConfirm";
 import {
   deleteMcp,
   getManagedMcpStatus,
@@ -171,12 +172,19 @@ export default function McpDetailPage() {
     }
   }
 
+  const { confirm, confirmModal } = useConfirm();
+
   async function onDelete() {
     const managed = server?.runtime === "managed";
-    const question = managed
-      ? `Delete "${name}" and stop its container? This cannot be undone.`
-      : `Delete MCP server "${name}"? This cannot be undone.`;
-    if (!confirm(question)) {
+    if (
+      !(await confirm({
+        title: managed ? "Delete server and container" : "Delete MCP server",
+        message: managed
+          ? `Delete "${name}" and stop its container? This cannot be undone.`
+          : `Delete MCP server "${name}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+      }))
+    ) {
       return;
     }
     try {
@@ -217,6 +225,7 @@ export default function McpDetailPage() {
 
   return (
     <Stack gap="lg">
+      {confirmModal}
       <BackLink />
 
       <Group justify="space-between" align="flex-start" gap="md">
