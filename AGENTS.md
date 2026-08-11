@@ -151,6 +151,11 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
 | Whether a configured value is blank | `src/shared/env.ts` |
+| Asking a provider for an embedding | `src/infrastructure/llm/embeddings.ts` |
+| Talking to the vector store | `src/infrastructure/vector/s3VectorsStore.ts` |
+| The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
+| What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |
+| How much a search may add to one run | `DISCOVERY_LIMITS` in `src/application/execution/bindings.ts` |
 | Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
@@ -242,6 +247,12 @@ One line each — the linked section is the authority.
 - **MCP** — one session owner, discovery cached per `url + headers`, managed servers on
   loopback by provenance, per-project OAuth connections. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp)
+- **Capability catalog** — one global index (skills, MCP servers *and* their tools, external
+  agents) rebuilt by a CronJob tick, never on a registry write. A version opting into
+  `dynamicCapabilities` has its lists **widened** before resolution, from the system prompt and
+  the request; bindings are never displaced, and an OAuth-bearing MCP server is never added
+  this way. Off entirely without `VECTOR_BUCKET`. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#capability-catalog)
 - **PII filtering** — opt-in per version; bounds what the LLM and engine context see, **not**
   what an MCP server receives. → [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
 - **SSRF guard** — operator URLs checked at registration *and* dispatch, through

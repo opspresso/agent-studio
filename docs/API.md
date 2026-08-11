@@ -133,6 +133,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
 | `/api/triggers/{project}/{trigger}` | `POST` | `X-Trigger-Secret` |
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
+| `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
 | `/api/health` | `GET` | open |
 | `/api/ready` | `GET` | open |
 | `/api/metrics` | `GET` | open |
@@ -211,7 +212,8 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 
 Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
-structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext? }`,
+structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?,
+dynamicCapabilities? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
 image-capable registry model is rejected with 400. `mcpList`/`skillList`/`subagentList`
@@ -228,6 +230,14 @@ is at the other end — and neither do trigger firings or inbound A2A. An image 
 unaffected: its prompt is the rendered template, with no system prompt for the block to live
 in. `POST /api/projects/{name}/preview` shows the block exactly when a run from that page
 would carry it.
+
+`dynamicCapabilities` lets a run reach skills, MCP servers and agents this version never bound,
+found by searching the global catalog with the version's system prompt and the request being
+answered. It is **additive**: the bindings above are resolved first and in full, and nothing a
+search finds can displace or truncate them. An MCP server that requires its own OAuth
+connection is never added this way — bind it explicitly. What was added is reported as a
+`warning` chunk on the run. Without `VECTOR_BUCKET` the flag is stored and does nothing. See
+[ARCHITECTURE.md](ARCHITECTURE.md#capability-catalog).
 
 #### MCP bindings and per-version header overrides
 
@@ -921,6 +931,22 @@ run in the background exactly like webhook deliveries; their outcomes land on th
 history rows (`scheduledFor` carries the occurrence). `alreadyClaimed` counts occurrences
 another tick had already won — expected noise from overlapping windows, not an anomaly. The
 same summary is logged server-side on every tick, which is what an operator alerts on.
+
+Catalog reindex (same shared token, a separate CronJob):
+
+```
+POST /api/catalog/reindex
+  X-Scan-Token: <SCHEDULE_SCAN_TOKEN>
+→ 200 { started: true }
+→ 401 (wrong or missing token) | 503 (VECTOR_BUCKET not configured)
+```
+
+Rebuilds the global capability index from the registries — every skill, every MCP server and
+the tools it offers, every external agent — and deletes what they no longer have. The work runs
+in the background, so the outcome is a log line (`indexed`, `removed`, `undiscovered`) rather
+than the response body. Ticking twice is safe: keys are derived from the entry, so a second
+pass writes the same records. Hourly is ample — a faster tick only probes every MCP server more
+often. See [OPERATIONS.md](OPERATIONS.md#catalog-reindex).
 
 ## Traces
 

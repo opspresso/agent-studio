@@ -742,6 +742,34 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/shared/env.ts",
   },
   {
+    // Two callers embed: a reindex, and a run's discovery. Both have to produce
+    // vectors in the same space as the index they are compared against, which
+    // means the same model *and* the same encoding — a second call site taking
+    // the SDK's base64 default would decode into empty vectors and rank
+    // everything identically, with no error raised anywhere.
+    what: "asking a provider for an embedding",
+    pattern: /embeddings\.create\(/,
+    owner: "src/infrastructure/llm/embeddings.ts",
+  },
+  {
+    // One place knows that an index fixes its dimension and its distance
+    // metric. A second construction site is how a store ends up queried under a
+    // metric it was not built with, which surfaces only as a ranking that is
+    // subtly wrong.
+    what: "talking to the vector store",
+    pattern: /new S3VectorsClient\(/,
+    owner: "src/infrastructure/vector/s3VectorsStore.ts",
+  },
+  {
+    // A reindex derives this key to write an entry, and deletes whatever it did
+    // not derive. A second spelling would therefore orphan every entry of one
+    // kind on the first tick after it appeared — the index would look healthy
+    // and answer nothing.
+    what: "the key a capability is indexed under",
+    pattern: /export function capabilityKey/,
+    owner: "src/domain/catalog/types.ts",
+  },
+  {
     // The plugins sync reads a frontmatter block from two document kinds —
     // SKILL.md and the MCP extension documents — and a second parser would let
     // the same document mean different things depending on which kind it came

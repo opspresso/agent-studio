@@ -1163,6 +1163,51 @@ ExternalAgent { name, url, protocol?: 'openai' | 'a2a' (absent = openai),
 Usable as `type: 'remote'` subagents and via the test-message endpoint. `url` is SSRF-guarded
 like MCP.
 
+### Capability catalog
+
+One **global** index over everything a run could reach — every skill, every MCP server and the
+tools it offers, every external agent. Not per project: which of them a given run may use is
+decided at dispatch from its version's bindings, and an index that had already made that
+decision would need rebuilding whenever a project changed.
+
+```
+CapabilityEntry { kind: 'skill' | 'mcpServer' | 'mcpTool' | 'agent', name, toolName?, description }
+key = kind#name  (or kind#name#toolName)          — src/domain/catalog/types.ts
+```
+
+An MCP server appears **twice over**, and the two answer different questions. A `mcpTool` entry
+is what a request matches — "leave a comment on a PR" lives in a tool's description and nowhere
+else — while `mcpServer` is what a version can actually bind. A server that refuses discovery
+still gets the second one: an OAuth server nobody has connected looks exactly like a broken one
+from here, and it is precisely the entry someone needs in order to connect it.
+
+`reindexCatalog` rewrites the whole index and **then** deletes what it did not write. That order
+is the contract: a crash between the two leaves stale entries the next tick clears, where the
+reverse leaves a window with a live capability missing and searches silently under-answering. It
+runs on the same CronJob token as the schedule scan and the plugins sync
+(`POST /api/catalog/reindex`), and never on a registry write — a save that succeeded must not
+500 because indexing failed, and the catalog only affects what a run *discovers*.
+
+Search takes **several queries**, because a run has two things to say about what it needs: the
+version's system prompt (what this agent is generally for) and the newest user turn (what it is
+being asked now). Averaging them into one point describes neither. Each entry keeps its best
+score rather than the sum, so breadth does not outrank fit. Two corrections sit on top of the
+vector: a query naming something exactly is boosted over a description that merely reads like
+it, and the cut is a **fraction of the best score** rather than an absolute threshold — absolute
+cosine numbers do not survive an embedding-model change.
+
+**Discovery at run time is opt-in and strictly additive.** `parameters.dynamicCapabilities`
+turns it on; `resolveRunTools` then appends what it finds to the version's own lists *before*
+resolving, so every later stage — the prompt tables, the tool enums, the reachability checks —
+treats bound and discovered alike. Bindings are never displaced, reordered or truncated. Two
+things it will not do: an MCP server whose credentials are a per-project OAuth connection is
+never added (checking one means asking the auth provider for headers, which refreshes tokens,
+and two refreshes in one run race each other — see `updateTokens`), and a failure of the catalog
+degrades to the bindings with a warning rather than failing the run. What was added is reported
+as a `warning` chunk, ahead of what was lost.
+
+The engine knows none of this. Discovery widens the arrays `assembleAgentRun` already receives.
+
 ### Slack
 
 Bots are **per project**: `/api/slack/events/[project]` is the only events endpoint, and it
