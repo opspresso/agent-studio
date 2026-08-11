@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { DailyCostChart } from "@/app/_components/DailyCostChart";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { buildDailySeries } from "@/app/_lib/usage";
@@ -100,13 +101,9 @@ export default function UsagePage() {
       )}
 
       {loading ? (
-        <Text fz="sm" c="dimmed">
-          Loading…
-        </Text>
+        <LoadingText />
       ) : rows.length === 0 ? (
-        <Text fz="sm" c="dimmed">
-          No usage recorded in this range.
-        </Text>
+        <EmptyState>No usage recorded in this range.</EmptyState>
       ) : (
         <>
           <Card>

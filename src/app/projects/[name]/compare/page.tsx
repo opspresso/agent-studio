@@ -30,6 +30,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
+import { LoadingText } from "@/app/_components/PageState";
 
 /**
  * One side's outcome, folded from the same chunk stream the playground reads —
@@ -206,11 +207,7 @@ export default function ComparePage() {
   }
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
   if (loadError || !project) {
     return (

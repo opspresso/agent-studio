@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Alert, Anchor, Badge, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { BackLink } from "@/app/_components/BackLink";
+import { LoadingText } from "@/app/_components/PageState";
 import { getTrace, type Trace } from "../../../lib/api";
 import { TraceContent } from "../TraceContent";
 
@@ -22,13 +23,11 @@ export default function TraceDetailPage() {
 
   return (
     <Stack gap="md">
-      <Anchor component={Link} href={`/projects/${name}/traces`} fz="sm" c="dimmed">
-        ← Back to traces
-      </Anchor>
+      <BackLink href={`/projects/${name}/traces`} label="traces" />
       {error ? (
-        <Alert color="red">{error}</Alert>
+        <Alert color="red" variant="light">{error}</Alert>
       ) : !trace ? (
-        <Text c="dimmed" fz="sm">Loading…</Text>
+        <LoadingText />
       ) : (
         <>
           <Group justify="space-between" align="flex-start" wrap="wrap">

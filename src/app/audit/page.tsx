@@ -6,6 +6,7 @@ import { IconShieldCheck } from "@tabler/icons-react";
 import type { AuditEvent } from "@/domain/audit/types";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
@@ -39,7 +40,7 @@ export default function AuditPage() {
   }, [load]);
 
   if (viewer === null) {
-    return <Text c="dimmed">Loading…</Text>;
+    return <LoadingText />;
   }
 
   if (!viewer.isAdmin) {
@@ -57,11 +58,11 @@ export default function AuditPage() {
       <DateRangePicker value={range} onChange={setRange} presets={[7, 14, 30]} />
 
       {error ? (
-        <Alert color="red">{error}</Alert>
+        <Alert color="red" variant="light">{error}</Alert>
       ) : loading ? (
-        <Text c="dimmed">Loading…</Text>
+        <LoadingText />
       ) : events.length === 0 ? (
-        <Card><Text c="dimmed" fz="sm">No audit events in this range.</Text></Card>
+        <EmptyState>No audit events in this range.</EmptyState>
       ) : (
         <Table.ScrollContainer minWidth={760}>
           <Table striped highlightOnHover>

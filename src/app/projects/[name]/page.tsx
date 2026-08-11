@@ -17,6 +17,7 @@ import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { LoadingText } from "@/app/_components/PageState";
 import { Alert, Button, Grid, Group, Select, Stack, Text } from "@mantine/core";
 
 /**
@@ -204,11 +205,7 @@ export default function PlaygroundPage() {
   }
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
   if (error || !project) {
     return (

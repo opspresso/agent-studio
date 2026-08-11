@@ -13,6 +13,7 @@ import {
 } from "../../lib/api";
 import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 
 export default function VersionsPage() {
@@ -84,11 +85,7 @@ export default function VersionsPage() {
   }
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   return (
@@ -101,9 +98,7 @@ export default function VersionsPage() {
       )}
 
       {versions.length === 0 ? (
-        <Text fz="sm" c="dimmed">
-          No versions yet. Create one in the Playground tab.
-        </Text>
+        <EmptyState>No versions yet. Create one in the Playground tab.</EmptyState>
       ) : (
         <Card padding={0}>
           {versions.map((version, index) => {

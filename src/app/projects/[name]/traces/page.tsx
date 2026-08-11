@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import Link from "next/link";
 import { listTraces, type Trace } from "../../lib/api";
@@ -37,18 +38,16 @@ export default function TracesPage() {
       <DateRangePicker value={range} onChange={setRange} />
 
       {loading ? (
-        <Text fz="sm" c="dimmed">
-          Loading…
-        </Text>
+        <LoadingText />
       ) : error ? (
         <Text fz="sm" c="red">
           {error}
         </Text>
       ) : traces.length === 0 ? (
-        <Text fz="sm" c="dimmed">
+        <EmptyState>
           No traces in this range. Agent runs are always traced; prompt and image runs are
           sampled.
-        </Text>
+        </EmptyState>
       ) : (
         <Accordion variant="separated" radius="md" multiple>
           {traces.map((trace) => (

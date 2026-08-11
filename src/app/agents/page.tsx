@@ -31,6 +31,7 @@ import {
 import { IconRobot } from "@tabler/icons-react";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { FormModal } from "@/app/_components/FormModal";
+import { LoadingText } from "@/app/_components/PageState";
 import { useDisclosure } from "@mantine/hooks";
 import { CardGrid, CardList } from "@/app/_components/CardGrid";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL, BADGE } from "@/app/_components/badgeColors";
@@ -223,9 +224,7 @@ function AgentCardModal({
           ) : card ? (
             <CodeBlock language="json" code={card} />
           ) : (
-            <Text fz="sm" c="dimmed">
-              Loading…
-            </Text>
+            <LoadingText />
           )}
           <Anchor component={Link} href={`/projects/${project.name}`} fz="sm">
             Open project →

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -11,11 +10,12 @@ import {
   type AgentProtocol,
   type ExternalAgent,
 } from "../api";
+import { BackLink } from "@/app/_components/BackLink";
 import { HeaderRowsEditor, recordToRows, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
+import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
   Card,
@@ -79,17 +79,13 @@ export default function AgentDetailPage() {
   }
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   if (error && !agent) {
     return (
       <Stack gap="md">
-        <BackLink />
+        <BackLink href="/agents" label="agents" />
         <Alert color="red" variant="light">
           {error}
         </Alert>
@@ -106,7 +102,7 @@ export default function AgentDetailPage() {
   return (
     <Stack gap="lg">
       {confirmModal}
-      <BackLink />
+      <BackLink href="/agents" label="agents" />
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
@@ -195,15 +191,6 @@ export default function AgentDetailPage() {
     </Stack>
   );
 }
-
-function BackLink() {
-  return (
-    <Anchor component={Link} href="/agents" fz="sm" c="dimmed">
-      ← Back to agents
-    </Anchor>
-  );
-}
-
 function MessageTester({ name }: { name: string }) {
   const [message, setMessage] = useState("");
   const [reply, setReply] = useState<string | null>(null);

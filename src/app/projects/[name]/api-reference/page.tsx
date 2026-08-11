@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { LoadingText } from "@/app/_components/PageState";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { Badge, Card, Code, Group, SegmentedControl, Stack, Table, Text } from "@mantine/core";
 import { getProject, getProjectA2a, getProjectSlack } from "../../lib/api";
@@ -227,11 +228,7 @@ export default function ApiReferencePage() {
     );
   }
   if (!endpoints) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   return (

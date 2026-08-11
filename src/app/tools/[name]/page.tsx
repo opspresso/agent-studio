@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { BackLink } from "@/app/_components/BackLink";
+import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import {
   deleteMcp,
@@ -198,17 +200,13 @@ export default function McpDetailPage() {
   }
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   if (error && !server) {
     return (
       <Stack gap="md">
-        <BackLink />
+        <BackLink href="/tools" label="tools" />
         <Alert color="red" variant="light">
           {error}
         </Alert>
@@ -226,7 +224,7 @@ export default function McpDetailPage() {
   return (
     <Stack gap="lg">
       {confirmModal}
-      <BackLink />
+      <BackLink href="/tools" label="tools" />
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
@@ -596,15 +594,6 @@ function OAuthSection({
     </section>
   );
 }
-
-function BackLink() {
-  return (
-    <Anchor component={Link} href="/tools" fz="sm" c="dimmed">
-      ← Back to tools
-    </Anchor>
-  );
-}
-
 function EditMcpForm({
   server,
   onCancel,

@@ -18,6 +18,7 @@ import {
 import { IconSettings } from "@tabler/icons-react";
 import { monoInput } from "@/app/_components/monoInput";
 import { PageHeader } from "@/app/_components/PageHeader";
+import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { BADGE } from "@/app/_components/badgeColors";
 import { A2aClientKeysSection } from "./A2aClientKeysSection";
@@ -249,11 +250,7 @@ export default function SettingsPage() {
   }
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   if (forbidden) {

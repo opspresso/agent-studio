@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { deleteProject, getProject, updateProject } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
+import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { A2aSection } from "./A2aSection";
 import { CostLimitsSection } from "./CostLimitsSection";
@@ -98,11 +99,7 @@ export default function SettingsPage() {
   }
 
   if (loading || viewer === null) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   if (!canEditProject(viewer, ownerEmail)) {

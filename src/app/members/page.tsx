@@ -5,6 +5,7 @@ import { Alert, Avatar, Card, Group, Stack, Table, Text } from "@mantine/core";
 import { IconUsers } from "@tabler/icons-react";
 import type { Member } from "@/domain/member/types";
 import { PageHeader } from "@/app/_components/PageHeader";
+import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 
@@ -32,7 +33,7 @@ export default function MembersPage() {
     return () => { cancelled = true; };
   }, [viewer?.isAdmin]);
 
-  if (viewer === null) return <Text c="dimmed">Loading…</Text>;
+  if (viewer === null) return <LoadingText />;
   if (!viewer.isAdmin) return <Alert color="gray">Members are available to admins only.</Alert>;
 
   return (
@@ -44,11 +45,11 @@ export default function MembersPage() {
       />
 
       {error ? (
-        <Alert color="red">{error}</Alert>
+        <Alert color="red" variant="light">{error}</Alert>
       ) : loading ? (
-        <Text c="dimmed">Loading…</Text>
+        <LoadingText />
       ) : members.length === 0 ? (
-        <Card><Text c="dimmed" fz="sm">No members yet.</Text></Card>
+        <EmptyState>No members yet.</EmptyState>
       ) : (
         <Table.ScrollContainer minWidth={680}>
           <Table striped highlightOnHover>

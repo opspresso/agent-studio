@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteSkill, getSkill, updateSkill, type Skill } from "../api";
+import { BackLink } from "@/app/_components/BackLink";
+import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import {
   Alert,
-  Anchor,
   Badge,
   Button,
   Card,
@@ -72,17 +73,13 @@ export default function SkillDetailPage() {
   }
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   if (error && !skill) {
     return (
       <Stack gap="md">
-        <BackLink />
+        <BackLink href="/skills" label="skills" />
         <Alert color="red" variant="light">
           {error}
         </Alert>
@@ -99,7 +96,7 @@ export default function SkillDetailPage() {
   return (
     <Stack gap="lg">
       {confirmModal}
-      <BackLink />
+      <BackLink href="/skills" label="skills" />
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
@@ -189,15 +186,6 @@ export default function SkillDetailPage() {
     </Stack>
   );
 }
-
-function BackLink() {
-  return (
-    <Anchor component={Link} href="/skills" fz="sm" c="dimmed">
-      ← Back to skills
-    </Anchor>
-  );
-}
-
 function EditSkillForm({
   skill,
   onCancel,

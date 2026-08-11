@@ -13,7 +13,9 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { BackLink } from "@/app/_components/BackLink";
 import { CardList } from "@/app/_components/CardGrid";
+import { LoadingText } from "@/app/_components/PageState";
 import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { listSkills, type SkillSummary } from "@/app/skills/api";
 import { listMcps, type McpServer } from "@/app/tools/api";
@@ -62,17 +64,13 @@ export default function PluginDetailPage() {
   }, [name]);
 
   if (loading) {
-    return (
-      <Text fz="sm" c="dimmed">
-        Loading…
-      </Text>
-    );
+    return <LoadingText />;
   }
 
   if (error || !plugin) {
     return (
       <Stack gap="md">
-        <BackLink />
+        <BackLink href="/plugins" label="plugins" />
         <Alert color="red" variant="light">
           {error ?? "Plugin not found"}
         </Alert>
@@ -85,7 +83,7 @@ export default function PluginDetailPage() {
 
   return (
     <Stack gap="lg">
-      <BackLink />
+      <BackLink href="/plugins" label="plugins" />
 
       <div>
         <Group gap="xs" wrap="nowrap">
@@ -212,13 +210,5 @@ function MissingCard({ name }: { name: string }) {
         see why.
       </Text>
     </Card>
-  );
-}
-
-function BackLink() {
-  return (
-    <Anchor component={Link} href="/plugins" fz="sm" c="dimmed">
-      ← Back to plugins
-    </Anchor>
   );
 }
