@@ -23,7 +23,7 @@ import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import type { McpToolResult } from "@/domain/llm/types";
 import { getCachedDiscovery, setCachedFailure, setCachedTools } from "./discoveryCache";
-import { McpHttpError, McpSession, type McpTool } from "./session";
+import { isUnauthorized, McpSession, type McpTool } from "./session";
 import { log } from "@/shared/logger";
 import { decodeUtf8Text } from "@/shared/utf8Text";
 
@@ -131,7 +131,7 @@ export class ToolManager {
             `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
             reason,
           );
-          const unauthorized = error instanceof McpHttpError && error.status === 401;
+          const unauthorized = isUnauthorized(error);
           setCachedFailure(server.url, server.headers, reason, unauthorized);
           this.recordFailure(server.name, reason, unauthorized);
           return null;
@@ -325,7 +325,7 @@ export class ToolManager {
       };
     } catch (error) {
       this.signal?.throwIfAborted();
-      if (error instanceof McpHttpError && error.status === 401) {
+      if (isUnauthorized(error)) {
         // Discovery is cached, so a run whose cache is warm makes its first
         // request *here* — meaning this is the only place a token revoked since
         // the last discovery can surface. Recorded so the console offers a

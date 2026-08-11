@@ -135,8 +135,9 @@ the mechanism that spends it.** An image size, a document's extracted characters
 count one request may declare are all a provider's or a stored item's number — a run only
 discovers them. The turn ceiling, the subagent depth, the transfer transcript budget and how
 many tool calls run at once are this platform's own policy, and each is read by exactly the
-loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for a while: it
-is OpenAI's 128, not a number anyone here picked.
+loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for a while: the
+ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
+because the engine's builtins are added after the MCP tools are cut and need the room.
 
 | Decision | Owner |
 |---|---|
@@ -152,6 +153,8 @@ is OpenAI's 128, not a number anyone here picked.
 | Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
+| What a 401 from an MCP server means | `src/infrastructure/mcp/session.ts` |
+| The name a provider will accept for an MCP tool | `src/infrastructure/mcp/toolManager.ts` |
 | How many agents one dispatch may run | `src/application/llm/engine.ts` |
 | How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/engine.ts` |
 | Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |

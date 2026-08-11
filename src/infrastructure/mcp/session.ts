@@ -442,6 +442,20 @@ export class McpHttpError extends Error {
 }
 
 /**
+ * Does this failure mean the connection has to be authorized again?
+ *
+ * The single owner of that reading, because what it asks for is unlike every
+ * other failure: a 401 asks the *project* to reconnect, while the rest ask an
+ * operator to go and look at the server. Three places need the answer —
+ * discovery, a tool call made against a session the discovery cache let through
+ * uninitialized, and the registry's probe — and each used to spell the pair out
+ * for itself, so a fourth was free to get either half of it subtly wrong.
+ */
+export function isUnauthorized(error: unknown): boolean {
+  return error instanceof McpHttpError && error.status === 401;
+}
+
+/**
  * Fail on a transport-level error before the body is parsed: an error page is
  * not JSON-RPC, and parsing it would report a JSON syntax error instead of the
  * status the server actually sent.

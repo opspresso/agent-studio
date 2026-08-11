@@ -8,7 +8,7 @@
 import type { McpTool } from "@/domain/mcp/types";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 export type { ListToolsResult };
-import { McpHttpError, McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
+import { isUnauthorized, McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
 
 export type { McpTool };
 
@@ -43,7 +43,7 @@ export async function listMcpTools(
       ok: false,
       error: error instanceof Error ? error.message : "Connection failed",
       // The same 401 the run loop treats as "this connection needs redoing".
-      ...(error instanceof McpHttpError && error.status === 401 ? { unauthorized: true } : {}),
+      ...(isUnauthorized(error) ? { unauthorized: true } : {}),
     };
   } finally {
     // A probe that leaves the session open would strand one per button press.

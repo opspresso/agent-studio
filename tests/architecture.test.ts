@@ -1015,6 +1015,28 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /"EMAIL_DOMAIN_NOT_ALLOWED"/,
     owner: "src/shared/signInError.ts",
   },
+  {
+    // A 401 asks for something no other MCP failure does — the *project* must
+    // reconnect, rather than an operator going to look at the server — and three
+    // places have to tell them apart: discovery, a tool call made against a
+    // session the discovery cache let through uninitialized, and the registry's
+    // probe. Each spelled the pair out for itself, which is how the third one
+    // came to exist without anyone deciding it should.
+    what: "what a 401 from an MCP server means",
+    pattern: /McpHttpError && \w+\.status === 401/,
+    owner: "src/infrastructure/mcp/session.ts",
+  },
+  {
+    // MCP allows a tool name a provider's function name does not (128 characters
+    // and a dot, against `[A-Za-z0-9_-]{1,64}`), so the name is normalised into
+    // one the provider accepts and the alias mapping keeps the server's own. A
+    // second normaliser would disagree about the substitute character or the
+    // cut, and the two names would stop addressing the same tool. The pattern is
+    // the character class, which is the half a copy gets subtly wrong.
+    what: "the name a provider will accept for an MCP tool",
+    pattern: /\[\^A-Za-z0-9_-\]/,
+    owner: "src/infrastructure/mcp/toolManager.ts",
+  },
 ];
 
 describe("single owners", () => {
