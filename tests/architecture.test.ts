@@ -823,11 +823,12 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // The two ways an MCP entry reaches an address the SSRF guard rejects:
     // provenance (we started the container) and declaration (an operator put the
-    // host's suffix in this deployment's configuration). Four call sites ask —
-    // registration, update, the console's probe, and dispatch — and a fifth that
-    // answered for itself would be a hole in the outbound boundary rather than a
-    // duplicated constant. The pattern matches the suffix match itself, which is
-    // the part a copy would get subtly wrong.
+    // host's suffix in this deployment's configuration). Six call sites ask —
+    // registration, update, the console's two probes, the OAuth metadata read,
+    // and dispatch — and a seventh that answered for itself would be a hole in
+    // the outbound boundary rather than a duplicated constant. The pattern
+    // matches the suffix match itself, which is the part a copy would get
+    // subtly wrong.
     what: "which hosts may skip the outbound URL guard",
     pattern: /endsWith\(`\.\$\{/,
     owner: "src/domain/mcp/types.ts",
@@ -912,6 +913,37 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "the key a capability is indexed under",
     pattern: /export function capabilityKey/,
     owner: "src/domain/catalog/types.ts",
+  },
+  {
+    // What a capability is embedded as. A second composition site would embed
+    // one kind under different text than the reindex wrote, and the drift shows
+    // up only as retrieval quality nobody can attribute.
+    what: "what text a capability is embedded as",
+    pattern: /export function capabilityText/,
+    owner: "src/domain/catalog/types.ts",
+  },
+  {
+    // How much a search may add to one run. A second copy of the limits is a
+    // second answer to how large a discovered prompt may grow.
+    what: "how much a search may add to one run",
+    pattern: /const DISCOVERY_LIMITS = \{/,
+    owner: "src/application/execution/bindings.ts",
+  },
+  {
+    // What a run searches the catalog with. The three resolution sites below
+    // (`TOOL_RESOLUTION_SITES`) must call this rather than compose their own
+    // queries — a second composition is a second opinion on what a run asked.
+    what: "what a run searches the catalog with",
+    pattern: /export function discoveryQueries/,
+    owner: "src/application/execution/bindings.ts",
+  },
+  {
+    // One spelling of the header that names the calling project to an MCP
+    // server. A second literal is how a probe and a run end up presenting
+    // different tenants to the same server.
+    what: "the header that names the calling project to an MCP server",
+    pattern: /"X-Tenant-Id"/,
+    owner: "src/application/execution/mcpTools.ts",
   },
   {
     // The plugins sync reads a frontmatter block from two document kinds —

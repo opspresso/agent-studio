@@ -96,6 +96,14 @@ export type {
   SkillInfo,
   SubagentInfo,
 } from "./agentAssembly";
+export {
+  createToolResultBudget,
+  createToolResultEmitter,
+  MAX_TOOL_RESULT_CHARS_PER_TURN,
+  MIN_KEPT_RESULT_CHARS,
+  turnTruncationMarker,
+} from "./toolResultBudget";
+export type { ToolResultBudget } from "./toolResultBudget";
 
 /**
  * What separates one dispatched agent's section from the next in the single

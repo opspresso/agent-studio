@@ -122,3 +122,29 @@ describe("managed loopback dispatch", () => {
     expect(resolved.warnings[0]).toContain("was blocked");
   });
 });
+
+describe("the tenant header", () => {
+  it("stamps every request with the calling project, over any override spelling", async () => {
+    // A version override in any case-variant must not survive the stamp: fetch
+    // folds two spellings into one comma-joined value that names no project.
+    const spoofing = {
+      projectName: "p",
+      mcpList: [{ name: "srv", headers: { "x-TENANT-id": "other-project" } }],
+    } as unknown as Version;
+    const resolved = await buildMcpTools(
+      depsFor(entry({ runtime: "managed" }), strictPolicy()),
+      spoofing,
+    );
+
+    expect(resolved.mcpTools.map((t) => t.function.name)).toEqual(["fetch_image"]);
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls as [
+      RequestInfo | URL,
+      RequestInit?,
+    ][];
+    expect(calls.length).toBeGreaterThan(0);
+    for (const [, init] of calls) {
+      expect(new Headers(init?.headers).get("x-tenant-id")).toBe("p");
+    }
+    await resolved.close?.();
+  });
+});
