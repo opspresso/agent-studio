@@ -1086,6 +1086,30 @@ describe("updateVersion / deleteVersion boundaries", () => {
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
+  it('deleteVersion resolves the "published" sentinel before the guard and the delete key', async () => {
+    // The repository resolves the sentinel on read; deleteVersion must reuse
+    // that name, or the guard compares against the raw segment and the delete
+    // targets the nonexistent VERSION#published key.
+    const versions = makeVersionRepo([versionFixture("p", "1"), versionFixture("p", "2")]);
+    const baseGet = versions.get;
+    versions.get = async (projectName, versionName) =>
+      baseGet(projectName, versionName === "published" ? "2" : versionName);
+    const deletedNames: string[] = [];
+    versions.delete = async (_projectName, versionName) => {
+      deletedNames.push(versionName);
+    };
+    await expect(
+      deleteVersion(
+        versions,
+        makeProjectRepo([projectFixture("p", { publishedVersion: "2" })]),
+        "p",
+        "published",
+        OWNER,
+      ),
+    ).rejects.toThrow(/cannot be deleted/);
+    expect(deletedNames).toEqual([]);
+  });
+
   it("maps a publish race during deletion to ConflictError", async () => {
     const versions = makeVersionRepo([versionFixture("p", "1")]);
     versions.delete = async () => {

@@ -441,15 +441,19 @@ export async function deleteVersion(
   userEmail: string,
 ): Promise<void> {
   const project = await assertProjectWritable(projects, projectName, userEmail);
-  await getVersion(versions, projectName, versionName);
-  if (project.publishedVersion === versionName) {
-    throw new ConflictError(`Published version "${versionName}" cannot be deleted`);
+  // Resolve through the repository so the "published" sentinel names the real
+  // version — the guard below and the delete key must both see that name.
+  const existing = await getVersion(versions, projectName, versionName);
+  if (project.publishedVersion === existing.versionName) {
+    throw new ConflictError(`Published version "${existing.versionName}" cannot be deleted`);
   }
   try {
-    await versions.delete(projectName, versionName, project.updatedAt);
+    await versions.delete(projectName, existing.versionName, project.updatedAt);
   } catch (error) {
     if (isTransactionCancelled(error)) {
-      throw new ConflictError(`Version "${versionName}" changed while it was being deleted`);
+      throw new ConflictError(
+        `Version "${existing.versionName}" changed while it was being deleted`,
+      );
     }
     throw error;
   }
