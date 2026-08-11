@@ -1188,6 +1188,14 @@ runs on the same CronJob token as the schedule scan and the plugins sync
 (`POST /api/catalog/reindex`), and never on a registry write — a save that succeeded must not
 500 because indexing failed, and the catalog only affects what a run *discovers*.
 
+**A completed plugins sync is the one exception**, and the difference is what a failure would
+cost. A sync is the single event that moves the most of the registry at once — a merge can add,
+rename or retire a dozen skills and servers together — so waiting up to an hour would mean runs
+discovering a skill the registry no longer has. By the time it reindexes the sync has already
+committed and its report is already persisted, so a failure changes nothing and is logged and
+swallowed; the next tick repairs it. It is also the only way a **local** deployment refreshes at
+all, since the CronJob exists only in the cluster.
+
 Search takes **several queries**, because a run has two things to say about what it needs: the
 version's system prompt (what this agent is generally for) and the newest user turn (what it is
 being asked now). Averaging them into one point describes neither. Each entry keeps its best
