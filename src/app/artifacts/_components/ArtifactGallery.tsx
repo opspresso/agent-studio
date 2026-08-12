@@ -19,12 +19,13 @@ import {
   Card,
   Group,
   Image,
+  Modal,
   Paper,
   SegmentedControl,
   Stack,
   Text,
 } from "@mantine/core";
-import { IconDownload, IconFile, IconTrash } from "@tabler/icons-react";
+import { IconDownload, IconEye, IconFile, IconTrash } from "@tabler/icons-react";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -51,6 +52,7 @@ export function ArtifactGallery({
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<KindFilter>("all");
   const [filter, setFilter] = useState("");
+  const [preview, setPreview] = useState<ArtifactView | null>(null);
   const { confirm, confirmModal } = useConfirm();
 
   const query = useCallback(
@@ -125,6 +127,30 @@ export function ArtifactGallery({
     <Stack gap="lg">
       {confirmModal}
 
+      {/* One modal for the page, not one per tile: a grid mounts as many portals
+          as it has cards to show at most one of them. */}
+      <Modal
+        opened={preview !== null}
+        onClose={() => setPreview(null)}
+        title={
+          <Text fw={500} lineClamp={1}>
+            {preview?.filename ?? preview?.prompt ?? "Image"}
+          </Text>
+        }
+        size="auto"
+        centered
+      >
+        {preview?.url && (
+          <Image
+            src={preview.url}
+            alt={preview.prompt ?? "Generated image"}
+            fit="contain"
+            mah="75vh"
+            w="auto"
+          />
+        )}
+      </Modal>
+
       {error && (
         <Alert color="red" variant="light">
           {error}
@@ -152,6 +178,7 @@ export function ArtifactGallery({
             key={artifact.artifactId}
             artifact={artifact}
             showProject={showProject}
+            onPreview={() => setPreview(artifact)}
             onDelete={() => void remove(artifact)}
           />
         ))}
@@ -171,10 +198,13 @@ export function ArtifactGallery({
 function ArtifactCard({
   artifact,
   showProject,
+  onPreview,
   onDelete,
 }: {
   artifact: ArtifactView;
   showProject: boolean;
+  /** Images only — a document's address is signed to download, never to render. */
+  onPreview: () => void;
   onDelete: () => void;
 }) {
   // A signed URL is minted offline and never checks the object is there, so an
@@ -192,6 +222,8 @@ function ArtifactCard({
             alt={artifact.prompt ?? "Generated image"}
             h={180}
             fit="cover"
+            onClick={onPreview}
+            style={{ cursor: "pointer" }}
             onError={() => setGone(true)}
           />
         ) : (
@@ -233,15 +265,26 @@ function ArtifactCard({
         )}
 
         <Group gap="xs" mt="auto" justify="space-between">
-          {available ? (
-            <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
+          {/* Two labels because two things happen: an image's address renders, so
+              it opens in place; a document's is signed `attachment`, so a browser
+              saves it whatever the link says. One word for both was wrong for
+              one of them. */}
+          {!available ? (
+            <span />
+          ) : artifact.kind === "image" ? (
+            <Anchor component="button" type="button" onClick={onPreview} fz="sm">
               <Group gap={4}>
-                <IconDownload size={14} />
-                Open
+                <IconEye size={14} />
+                View
               </Group>
             </Anchor>
           ) : (
-            <span />
+            <Anchor href={artifact.url} target="_blank" rel="noreferrer" fz="sm">
+              <Group gap={4}>
+                <IconDownload size={14} />
+                Download
+              </Group>
+            </Anchor>
           )}
           <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label="Delete">
             <IconTrash size={16} />
