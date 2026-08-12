@@ -7,6 +7,10 @@
  */
 
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import {
+  DEFAULT_ARTIFACT_PAGE,
+  MAX_ARTIFACT_PAGE,
+} from "@/application/artifact/artifactUseCases";
 import type { ListArtifactsOptions } from "@/domain/artifact/repository";
 import type { Artifact, ArtifactKind, ArtifactSource } from "@/domain/artifact/types";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
@@ -28,8 +32,13 @@ function oneOf<T extends string>(raw: string | null, allowed: readonly T[]): T |
 
 export function parseArtifactQuery(url: string): ParsedQuery {
   const params = new URL(url).searchParams;
-  const rawLimit = Number(params.get("limit") ?? 24);
-  const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 24;
+  // The clamp the use case already owns. Spelled here as literals, the route
+  // and the use case were free to disagree about page size — which this file's
+  // own header warns about for every other filter it parses.
+  const rawLimit = Number(params.get("limit") ?? DEFAULT_ARTIFACT_PAGE);
+  const limit = Number.isInteger(rawLimit)
+    ? Math.min(Math.max(rawLimit, 1), MAX_ARTIFACT_PAGE)
+    : DEFAULT_ARTIFACT_PAGE;
   const from = params.get("from") || undefined;
   const to = params.get("to") || undefined;
   // `isUtcDay`, not a shape regex: `2026-02-31` would otherwise ride into the

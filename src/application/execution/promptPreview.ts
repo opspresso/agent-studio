@@ -40,6 +40,15 @@ export async function previewPrompt(
     version: Version;
     variables?: Record<string, string>;
     /**
+     * The caller's connection, so a preview stops when they navigate away.
+     *
+     * A preview is the expensive half of a run: it opens every bound MCP server
+     * for discovery and embeds a catalog query. It does not go through the run
+     * bracket — nothing counts it, nothing bounds how many are in flight — so
+     * the connection is the only thing that can end one, and it was not passed.
+     */
+    signal?: AbortSignal;
+    /**
      * The request to preview against, when there is one.
      *
      * Only discovery reads it — an agent run's user turn comes from the
@@ -119,7 +128,7 @@ export async function previewPrompt(
   const resolved = await resolveRunTools(
     deps,
     version,
-    undefined,
+    input.signal,
     discoveryQueries(version, input.message === undefined ? [] : [input.message]),
   );
   try {

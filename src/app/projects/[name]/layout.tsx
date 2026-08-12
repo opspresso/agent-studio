@@ -37,7 +37,20 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     let cancelled = false;
     getProject(name)
       .then((project) => !cancelled && setOwnerEmail(project.ownerEmail))
-      .catch(() => {});
+      // Retried once rather than swallowed. The owner is read only to decide
+      // whether this person may manage the project, so a read that fails leaves
+      // `ownerEmail` null and the *owner* is shown a read-only header — the tabs
+      // their own project needs, missing, with nothing said. Every other ignored
+      // rejection in this codebase carries a line saying why it is harmless;
+      // this one was not harmless.
+      .catch(() =>
+        getProject(name)
+          .then((project) => !cancelled && setOwnerEmail(project.ownerEmail))
+          // A second failure is a project this browser genuinely cannot read,
+          // which the page below reports on its own — the header simply stays
+          // as it is rather than claiming anything about who is looking.
+          .catch(() => {}),
+      );
     return () => {
       cancelled = true;
     };

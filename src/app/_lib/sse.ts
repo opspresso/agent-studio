@@ -2,7 +2,7 @@
  * Parse an SSE `Response` body into decoded JSON chunks. Frames are
  * `data: {json}\n\n` and the stream ends on `data: [DONE]`. Malformed frames
  * are ignored. The single client-side SSE reader — server framing lives in
- * `src/lib/sse.ts`.
+ * `src/app/api/_lib/sse.ts`.
  */
 export async function* readSse<T>(response: Response): AsyncGenerator<T> {
   const reader = response.body?.getReader();

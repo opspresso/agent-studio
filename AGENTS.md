@@ -219,7 +219,7 @@ same rule applies to:
 | Turning a stored image reference into an address | `resolveImageUrl` in `src/domain/chat/imageRefs.ts` |
 | Turning a stored file reference into a download address | `resolveFileUrl` in `src/domain/chat/fileRefs.ts` |
 | A stored object's size, written for a person | `formatBytes` in `src/app/_lib/formatBytes.ts` |
-| How long a signed image URL lives, per reader | `src/application/chat/imageUrls.ts` |
+| How long a signed object URL lives, per reader | `src/application/artifact/urlTtl.ts` |
 | Who releases a chat's run lease | `teeToRunLog` in `src/application/chat/runLog.ts` |
 | How a chat run reaches the browser | `src/app/api/chats/_lib/detachedRun.ts` |
 | Row TTLs | `src/infrastructure/db/ttl.ts` |
