@@ -43,6 +43,24 @@ function idForKey(key: string): string {
   ].join("-");
 }
 
+/**
+ * The object key inside a legacy public URL, or undefined for anything else.
+ *
+ * Deliberately narrow: only an S3 virtual-hosted address, and only its path.
+ * Accepting any URL would mint rows pointing at objects that were never in this
+ * bucket — a gallery full of tiles that can never load and can never be
+ * explained. The bucket name in the URL is *not* checked, because it is the
+ * stale half: the rebrand moved these objects and left the rows behind.
+ */
+function keyFromLegacyUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+  const match = /^https:\/\/[^/]+\.s3[.-][^/]*amazonaws\.com\/(.+)$/.exec(url);
+  const key = match?.[1]?.split("?")[0];
+  return key ? decodeURIComponent(key) : undefined;
+}
+
 function mimeForKey(key: string): string {
   const extension = key.split(".").pop()?.toLowerCase();
   return extension === "jpg" || extension === "jpeg"
@@ -110,14 +128,22 @@ async function main() {
       const images = (message as { images?: Array<{ key?: string; url?: string; prompt?: string }> })
         .images;
       for (const image of images ?? []) {
-        // Legacy public-URL rows are left alone: the object behind one is
-        // already reachable by anyone holding the link, so a row promising a
-        // delete button that cannot take that back would be a lie.
-        if (!image.key) {
+        // A legacy row carries a public URL instead of a key. Those used to be
+        // skipped, on the reasoning that the object behind one was reachable by
+        // anyone holding the link — so a delete button would be a lie.
+        //
+        // That reasoning expired. The bucket is private now, and the rebrand
+        // moved the objects to a new one without rewriting these rows, so every
+        // such URL already 404s. The key inside it still names the object in the
+        // *current* bucket, which is what makes these recoverable: a row here
+        // puts the picture back in front of someone, and gives them a way to
+        // remove it.
+        const key = image.key ?? keyFromLegacyUrl(image.url);
+        if (!key) {
           continue;
         }
         found += 1;
-        const artifactId = idForKey(image.key);
+        const artifactId = idForKey(key);
         if (await artifactRepository.get(artifactId)) {
           skipped += 1;
           continue;
@@ -129,8 +155,8 @@ async function main() {
           artifactId,
           kind: "image",
           source: message.role === "user" ? "attachment" : "generated",
-          key: image.key,
-          mimeType: mimeForKey(image.key),
+          key,
+          mimeType: mimeForKey(key),
           byteSize: 0, // Unknown without a HEAD; the gallery shows what it has.
           projectName: chat.projectName,
           versionName: "",
