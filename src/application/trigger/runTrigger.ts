@@ -14,6 +14,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { cutCodePoints } from "@/shared/utf8Text";
 import type { RunActor } from "@/domain/execution/actor";
 import type { RunSlotRepository } from "@/domain/execution/runSlot";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -124,7 +125,7 @@ export function payloadInput(
   const serialised = payload === undefined ? "" : JSON.stringify(payload, null, 2);
   const body =
     serialised.length > MAX_PAYLOAD_CHARS
-      ? `${serialised.slice(0, MAX_PAYLOAD_CHARS)}\n…[payload truncated]`
+      ? `${cutCodePoints(serialised, MAX_PAYLOAD_CHARS)}\n…[payload truncated]`
       : serialised;
   return {
     ...(trigger.variables ? { variables: trigger.variables } : {}),
@@ -404,9 +405,11 @@ async function finishFiring(
     ...run,
     status: outcome.error ? "failed" : "succeeded",
     endedAt: new Date().toISOString(),
-    ...(outcome.text ? { result: outcome.text.slice(0, MAX_RESULT_CHARS) } : {}),
-    ...(outcome.error ? { error: outcome.error.slice(0, MAX_RESULT_CHARS) } : {}),
-    ...(outcome.warning ? { warning: outcome.warning.slice(0, MAX_RESULT_CHARS) } : {}),
+    // Cut on a character boundary: these land in a DynamoDB row, which will
+    // not store a lone surrogate as written.
+    ...(outcome.text ? { result: cutCodePoints(outcome.text, MAX_RESULT_CHARS) } : {}),
+    ...(outcome.error ? { error: cutCodePoints(outcome.error, MAX_RESULT_CHARS) } : {}),
+    ...(outcome.warning ? { warning: cutCodePoints(outcome.warning, MAX_RESULT_CHARS) } : {}),
     ...(outcome.traceId ? { traceId: outcome.traceId } : {}),
   };
   try {

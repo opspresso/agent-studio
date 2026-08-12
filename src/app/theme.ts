@@ -5,12 +5,11 @@ import { createTheme, type MantineColorsTuple } from "@mantine/core";
 /**
  * The app's single styling decision point.
  *
- * Before Mantine this was three files pretending to be one — `buttonStyles.ts`,
- * `formStyles.ts`, and thirty-odd inline copies that had already drifted apart
- * (buttons with no `disabled:` style, inputs with no focus ring, a badge that
- * lost its dark-mode colour). Anything that used to be a shared class constant
- * belongs in `components.defaultProps` below: a default set here reaches every
- * call site, which is the property those constants were reaching for.
+ * Every styling default belongs in `components.defaultProps` below, because a
+ * default set here reaches every call site. The alternative is what this
+ * replaced: shared class constants beside thirty-odd inline copies that had
+ * drifted apart — buttons with no `disabled:` style, inputs with no focus ring,
+ * a badge that had lost its dark-mode colour.
  */
 
 /**
@@ -81,10 +80,8 @@ export const theme = createTheme({
     // point of the migration.
     Button: { defaultProps: { size: "sm" } },
     ActionIcon: { defaultProps: { variant: "subtle", color: "gray" } },
-    // `cardClass`: rounded-lg border bg-white p-4. The border is still here but
-    // `--studio-border` has stepped back to a hairline — a card is now told
-    // apart by its shadow, so the border only has to stop it bleeding into the
-    // surface behind it.
+    // The border is a hairline: a card is told apart by its shadow, and the
+    // border only has to stop it bleeding into the surface behind it.
     Card: { defaultProps: { withBorder: true, radius: "xl", padding: "lg" } },
     Paper: { defaultProps: { radius: "lg" } },
     // The old `Badge` was neutral; brand-coloured ones passed their own colour.

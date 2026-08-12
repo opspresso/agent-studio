@@ -6,6 +6,7 @@ import type {
 } from "@/domain/chat/types";
 import type { ChannelToolCall, ChatMessageInput } from "@/domain/llm/types";
 import { turnContent } from "@/application/llm/documentParts";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 /**
  * How many earlier assistant turns replay their tool calls and results. Without
@@ -229,7 +230,10 @@ export function toEngineMessages(
       if (budget <= 0) {
         break;
       }
-      const text = pair.content.slice(0, budget);
+      // `cutCodePoints`, not `slice`: this text is replayed into the model's
+      // context, and a cut between the halves of a non-BMP character sends a
+      // lone surrogate to the provider.
+      const text = cutCodePoints(pair.content, budget);
       budget -= text.length;
       pairs.push({
         call: pair.call,
