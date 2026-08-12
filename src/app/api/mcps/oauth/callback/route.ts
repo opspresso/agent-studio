@@ -18,7 +18,7 @@ function resultPage(outcome: CallbackOutcome): Response {
 <body style="font:14px system-ui;padding:2rem;color:#333">
 <p>${escapeHtml(message)}</p>
 <script>
-  try { window.opener && window.opener.postMessage(${JSON.stringify(JSON.stringify(outcome))}, window.location.origin); } catch (e) {}
+  try { window.opener && window.opener.postMessage(${scriptJson(outcome)}, window.location.origin); } catch (e) {}
   if (window.opener) { setTimeout(function () { window.close(); }, 1200); }
 </script>
 </body></html>`;
@@ -32,6 +32,32 @@ function resultPage(outcome: CallbackOutcome): Response {
       "Cache-Control": "no-store",
     },
   });
+}
+
+/**
+ * The outcome as a JS string literal that cannot end the `<script>` carrying it.
+ *
+ * `JSON.stringify` escapes nothing HTML cares about: `</script>` survives it
+ * intact, and an HTML parser ends the element right there — everything after it
+ * is markup, chosen by whoever wrote the string. And this string is the
+ * authorization server's: `abandonAuthorization` relays `error_description`
+ * verbatim once the redirect is attributable, which is the whole point of
+ * attributing it.
+ *
+ * The `<p>` above has been escaped since this file was written, so the value was
+ * known to be untrusted; one value reached two sinks and only one of them was
+ * defended. Escaping `<` covers the closing tag and any `<!--` the parser would
+ * otherwise treat as a comment; U+2028/2029 go with it because JSON leaves them
+ * bare and a script parser reads them as line terminators.
+ *
+ * The escapes decode back to the same characters at runtime, so the message the
+ * opener receives is unchanged.
+ */
+export function scriptJson(outcome: CallbackOutcome): string {
+  return JSON.stringify(JSON.stringify(outcome))
+    .replaceAll("<", "\\u003c")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
 }
 
 function escapeHtml(value: string): string {
