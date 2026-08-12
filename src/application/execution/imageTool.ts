@@ -6,6 +6,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import { getModelConfig, MODEL_CONFIGS, toImageUsageRecord } from "@/domain/llm/models";
 import * as engine from "@/application/llm/engine";
+import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import type { ExecutionDeps } from "./deps";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 import { log } from "@/shared/logger";
@@ -145,10 +146,12 @@ export async function* runImageSubagent(
   try {
     signal?.throwIfAborted();
     const sources = images ?? [];
+    // The child's own style, exactly as its predict path would compose it.
+    const prompt = composeImagePrompt(version, message);
     const result =
       sources.length > 0
-        ? await deps.imageChannel.editImage({ model, prompt: message, images: sources, signal })
-        : await deps.imageChannel.generateImage({ model, prompt: message, signal });
+        ? await deps.imageChannel.editImage({ model, prompt, images: sources, signal })
+        : await deps.imageChannel.generateImage({ model, prompt, signal });
     const recorded = toImageUsageRecord(model, result.usage);
     await recordUsageFn({ projectName: project.name, model, ...recorded });
     recorder?.observeResult({ content: "", model, usage: recorded });

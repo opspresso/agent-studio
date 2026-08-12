@@ -821,7 +821,8 @@ they travel with the answer. Absent means nothing was lost.
 For an `image` project, send `{ "prompt", "size?", "quality?", "images?" }` → `{ imageBase64,
 mimeType, model, usage }`. `images` are source pictures as inline bytes
 (`[ { b64, mimeType } ]`, same caps as a chat attachment): with any present the prompt
-**edits** them, with none it draws from scratch.
+**edits** them, with none it draws from scratch. The version's system prompt, when set, is
+prepended to the prompt as the version's persistent style.
 With `"stream": true`, the response is SSE.
 
 ### `POST /api/projects/{name}/versions/{version}/chat/completions`

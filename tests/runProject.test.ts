@@ -541,7 +541,11 @@ describe("executeAgent image transfer to a subagent", () => {
     );
 
     expect(edits).toEqual([
-      { model: DEFAULT_IMAGE_MODEL, prompt: "make it blue", sources: ["YXR0YWNoZWQ="] },
+      {
+        model: DEFAULT_IMAGE_MODEL,
+        prompt: "You are helpful.\n\nmake it blue",
+        sources: ["YXR0YWNoZWQ="],
+      },
     ]);
     expect(imageModels).toEqual([]); // the generate endpoint was never used
     expect(chunks.find((c) => c.image)?.image).toMatchObject({ b64: "ZWRpdA==" });
@@ -1108,6 +1112,49 @@ describe("executeAgent local subagent projectType dispatch", () => {
     expect(
       recorded.some((d) => d.projectName === "painter-img" && d.model === "google/gemini-3-pro-image"),
     ).toBe(true);
+  });
+
+  it("prepends the image child's own system prompt as style on a transfer", async () => {
+    const channel = new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-img","message":"a cat"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("Here you go."), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+    const seen: string[] = [];
+    const drawUnstyled = deps.imageChannel.generateImage;
+    deps.imageChannel.generateImage = async (params) => {
+      seen.push(params.prompt);
+      return drawUnstyled(params);
+    };
+    deps.projects.get = (async (name: string) =>
+      name === "painter-img"
+        ? { ...projectFixture(), name: "painter-img", projectType: "image" }
+        : null) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string, versionName: string) =>
+      projectName === "painter-img" && versionName === "v1"
+        ? {
+            ...versionFixture({ piiFiltering: false }),
+            projectName: "painter-img",
+            model: "google/gemini-3-pro-image",
+            systemPrompt: "Watercolor, no text.",
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false }),
+          subagentList: [{ name: "painter-img", type: "local" }],
+        },
+        messages: [{ role: "user", content: "고양이 그려줘" }],
+      }),
+    );
+
+    expect(seen).toEqual(["Watercolor, no text.\n\na cat"]);
   });
 
   it("says why an image child came back with nothing, rather than leaving the model to guess", async () => {
@@ -1971,7 +2018,10 @@ describe("streamProjectRun", () => {
       }),
     );
 
-    expect(prompts).toEqual(["a heron", "a otter in watercolour"]);
+    expect(prompts).toEqual([
+      "You are helpful.\n\na heron",
+      "You are helpful.\n\na otter in watercolour",
+    ]);
   });
 
   it("sends every other project type down the completion path", async () => {

@@ -192,7 +192,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         path,
         title: "Generate image",
         description:
-          "Single-shot image run against the published version — draws from the prompt, or edits the attached source images when images is present.",
+          "Single-shot image run against the published version — draws from the prompt, or edits the attached source images when images is present. The version's system prompt is prepended to the prompt as its persistent style.",
         auth: "token",
         streaming: false,
         requestFields: [

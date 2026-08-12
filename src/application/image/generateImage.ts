@@ -1,6 +1,7 @@
 import { getModelConfig, toImageUsageRecord } from "@/domain/llm/models";
 import { ValidationError } from "@/application/errors";
 import { renderTemplate } from "@/shared/template";
+import { composeImagePrompt } from "./composeImagePrompt";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ImageBytes, ImageChannel, ImageGenerationResult } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
@@ -110,12 +111,13 @@ export async function generateImage(
     throw new ValidationError(`Model does not support image generation: ${model}`);
   }
 
-  const prompt =
+  const subject =
     input.prompt?.trim() ||
     renderTemplate(input.version.userPromptTemplate, input.variables ?? {}).trim();
-  if (!prompt) {
+  if (!subject) {
     throw new ValidationError("Image prompt is empty");
   }
+  const prompt = composeImagePrompt(input.version, subject);
 
   // After the validation above, before anything is spent: a refused run should
   // still tell a misconfigured version apart from an exhausted budget.

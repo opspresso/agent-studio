@@ -176,6 +176,33 @@ describe("generateImage", () => {
     ).rejects.toThrow(/prompt is empty/);
   });
 
+  it("prepends the version's system prompt as style, over template and direct prompt alike", async () => {
+    const { deps, prompts, edits } = fakeDeps();
+    const styled = { ...version("openai/gpt-image-2"), systemPrompt: "Watercolor, no text." };
+
+    await generateImage(deps, { project, version: styled, variables: { style: "hanbok" } });
+    expect(prompts[0]).toBe("Watercolor, no text.\n\nA cat wearing hanbok clothes");
+
+    await generateImage(deps, {
+      project,
+      version: styled,
+      prompt: "make it night",
+      images: [{ b64: "c291cmNl", mimeType: "image/png" }],
+    });
+    expect(edits[0]).toEqual({
+      prompt: "Watercolor, no text.\n\nmake it night",
+      sources: ["c291cmNl"],
+    });
+  });
+
+  it("style alone is not a subject: the empty-prompt refusal still stands", async () => {
+    const { deps } = fakeDeps();
+    const styled = { ...version("openai/gpt-image-2", ""), systemPrompt: "Watercolor." };
+    await expect(generateImage(deps, { project, version: styled })).rejects.toThrow(
+      /prompt is empty/,
+    );
+  });
+
   it("edits the source images when any are supplied", async () => {
     const { deps, edits, prompts, recorded } = fakeDeps();
 

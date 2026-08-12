@@ -312,7 +312,26 @@ describe("previewPrompt", () => {
       variables: { animal: "otter" },
     });
 
-    expect(preview.messages).toEqual([{ role: "user", content: "A otter in watercolour" }]);
+    expect(preview.messages).toEqual([
+      { role: "user", content: "You are helpful.\n\nA otter in watercolour" },
+    ]);
+  });
+
+  it("says PII filtering does not apply to an image run, instead of claiming it does", async () => {
+    const deps = executionDepsFixture(new FakeChannel([]));
+
+    const preview = await previewPrompt(deps, {
+      project: { ...projectFixture(), projectType: "image" },
+      version: {
+        ...versionFixture(),
+        userPromptTemplate: "A heron",
+        parameters: { piiFiltering: true },
+      },
+    });
+
+    expect(preview.warnings).toEqual([
+      "PII filtering does not apply to an image run — the prompt reaches the provider unmasked.",
+    ]);
   });
 
   it("says so when PII filtering will rewrite what is sent", async () => {

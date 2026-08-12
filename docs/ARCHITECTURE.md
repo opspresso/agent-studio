@@ -458,8 +458,9 @@ second renderer is a copy, and this copy would drift silently — a preview that
 the run looks exactly like one that is right. For the same reason it **opens real MCP
 sessions**, as a run does: aliases are allocated against live tool lists, so nothing else
 yields the names the model will see. Those sessions are released before it returns. It reads
-the same `runStrategyFor` axis too, so an image project previews its rendered template (which
-*is* its prompt) rather than a system prompt it has none of.
+the same `runStrategyFor` axis too, so an image project previews its style-plus-template
+prompt — composed by `composeImagePrompt`, exactly as a run composes it — rather than a
+system message it has none of.
 
 PII masking is the one thing it does not apply: masking rewrites content per run and what it
 masks depends on the turn's own text, which a preview does not have. A version with the filter
@@ -767,6 +768,14 @@ when it holds source bytes and `generateImage` when it does not — the distinct
 API itself draws. That is what lets "now make it night" land on a picture the user attached,
 one the run drew, or one a transfer handed to an image child through its `image_ids`, without
 any of them needing a separate tool.
+
+**The version's system prompt is its style.** An image provider has no system message, so
+`composeImagePrompt` (`src/application/image/composeImagePrompt.ts`) prepends the version's
+system prompt to every subject prompt — a caller's `prompt`, the rendered template, a
+transfer's message — on the two paths that run an `image` project's version. The agent
+builtins are the deliberate exception: an agent's system prompt is its behaviour, not a
+picture style, so a builtin call sends the model's own prompt untouched. Style alone is not a
+subject — a run with an empty subject prompt is still refused.
 
 **Where the capability is checked decides what a refusal looks like.** `generateImage`
 validates `capabilities.imageGeneration` and renders the prompt *before* opening the run

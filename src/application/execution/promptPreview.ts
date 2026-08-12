@@ -3,6 +3,7 @@
 import type { Project, Version } from "@/domain/project/types";
 import type { RunCaller } from "@/domain/execution/actor";
 import { renderTemplate } from "@/shared/template";
+import { composeImagePrompt } from "@/application/image/composeImagePrompt";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
 import { callerFor, runClock, runStrategyFor } from "./deps";
@@ -60,20 +61,25 @@ export async function previewPrompt(
   const { project, version } = input;
   const warnings: string[] = [];
   if (version.parameters.piiFiltering) {
+    // The filter exists on the chat paths only; an image prompt is sent as-is.
     warnings.push(
-      "PII filtering is on: emails, phone numbers, Korean registration numbers and card numbers are replaced with tokens before dispatch.",
+      runStrategyFor(project) === "image"
+        ? "PII filtering does not apply to an image run — the prompt reaches the provider unmasked."
+        : "PII filtering is on: emails, phone numbers, Korean registration numbers and card numbers are replaced with tokens before dispatch.",
     );
   }
 
   if (runStrategyFor(project) === "image") {
-    // An image run has no system prompt — the rendered template *is* the prompt,
-    // and the Playground's own prompt box overrides it at run time.
-    const prompt = renderTemplate(version.userPromptTemplate, input.variables ?? {}).trim();
-    if (!prompt) {
+    // An image run has no system message — the version's system prompt rides in
+    // front of the prompt as its persistent style, and the Playground's own
+    // prompt box supplies the subject at run time (overriding the template).
+    const subject = renderTemplate(version.userPromptTemplate, input.variables ?? {}).trim();
+    if (!subject) {
       warnings.push(
         "This project's prompt template renders empty; a run would have to supply the prompt itself.",
       );
     }
+    const prompt = composeImagePrompt(version, subject);
     return {
       messages: prompt ? [{ role: "user", content: prompt }] : [],
       toolNames: [],
