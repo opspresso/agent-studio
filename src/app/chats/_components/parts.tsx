@@ -2,7 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Alert, Badge, Box, Group, Image, Paper, Stack, Text, Typography } from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
@@ -73,11 +73,42 @@ function StoredToolRow({
  * Without the ratio the row is zero-high until the bytes arrive and then jumps
  * to full size, shoving everything below it — which during a reply is the text
  * the reader is in the middle of.
+ *
+ * The fallback is for bytes that are no longer there. A signed URL is minted
+ * offline and never checks that the object exists, so an image the bucket's
+ * lifecycle rule swept — or that someone deleted from the artifacts gallery —
+ * fails at fetch time and would otherwise render as a broken icon with nothing
+ * said. That case predates the gallery: retention has always been able to
+ * outlive a transcript.
  */
 export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
+  const [gone, setGone] = useState(false);
   return (
     <Box maw="80%" w="100%" style={{ aspectRatio: "1 / 1" }}>
-      <Image src={src} alt={alt} radius="md" h="100%" w="100%" fit="contain" />
+      {gone ? (
+        <Paper
+          withBorder
+          radius="md"
+          h="100%"
+          w="100%"
+          p="md"
+          style={{ display: "grid", placeItems: "center" }}
+        >
+          <Text size="sm" c="dimmed" ta="center">
+            This image is no longer available.
+          </Text>
+        </Paper>
+      ) : (
+        <Image
+          src={src}
+          alt={alt}
+          radius="md"
+          h="100%"
+          w="100%"
+          fit="contain"
+          onError={() => setGone(true)}
+        />
+      )}
     </Box>
   );
 }

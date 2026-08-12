@@ -72,6 +72,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/projects/{name}/versions/{version}/agent` | `POST` | session or project token |
 | `/api/projects/{name}/token` | `GET` `POST` `DELETE` | owner |
 | `/api/projects/{name}/token/reveal` | `POST` | owner |
+| `/api/projects/{name}/artifacts` | `GET` | owner |
 | `/api/projects/{name}/traces` | `GET` | owner |
 | `/api/projects/{name}/traces/{traceId}` | `GET` | owner |
 | `/api/projects/{name}/usage/actors` | `GET` | owner |
@@ -113,6 +114,8 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/chats/{chatId}/messages` | `POST` | owner of the chat |
 | `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | owner of the chat |
 | `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | owner of the chat |
+| `/api/artifacts` | `GET` | session |
+| `/api/artifacts/{artifactId}` | `DELETE` | creator, project owner, or admin |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
 | `/api/me` | `GET` | session |
@@ -1003,6 +1006,40 @@ in the background, so the outcome is a log line (`indexed`, `removed`, `undiscov
 than the response body. Ticking twice is safe: keys are derived from the entry, so a second
 pass writes the same records. Hourly is ample — a faster tick only probes every MCP server more
 often. See [OPERATIONS.md](OPERATIONS.md#catalog-reindex).
+
+## Artifacts
+
+What runs produced — images and documents — with an address for each. Present only when
+`S3_BUCKET_NAME` is configured; every route below answers `404 {error}` otherwise, rather than
+an empty list, because "you have made nothing" is a different claim from "nothing was ever
+being kept".
+
+```
+GET /api/artifacts?[kind=image|document][&source=generated|attachment][&limit=24][&before=…][&from=2026-08-01&to=2026-08-12]
+→ 200 { artifacts: [ … ], nextBefore?: "2026-08-11T22:03:00.000Z#8f0c…" } | 400 | 404
+GET /api/projects/{name}/artifacts?…same query…
+→ 200 { artifacts: [ … ], nextBefore?: … } | 400 | 403 | 404
+DELETE /api/artifacts/{artifactId}
+→ 204 | 403 | 404
+```
+
+Each row carries `artifactId`, `kind`, `source`, `mimeType`, `byteSize`, `filename?`,
+`projectName`, `versionName`, `actor?`, `producedBy?`, `runId?`, `prompt?`, `createdAt`, and a
+signed `url` (15 minutes; a document's is signed to download under its own name). The URL is
+inlined rather than fetched per tile — pre-signing is a local signature, so a page of them
+costs nothing while a round trip each would make a gallery N+1. It is absent when the address
+could not be minted, and the UI renders that as unavailable rather than a broken image.
+
+**The two listings are not two views of one set.** `/api/artifacts` reads the owner index,
+which only holds rows whose actor names an email — a Slack, A2A, webhook or schedule run does
+not. Those are reachable only through their project, which is therefore the only place they can
+be deleted from. `from`/`to` are UTC days validated as real dates; `before` is the previous
+page's `nextBefore`.
+
+Deletion is permitted to the creator, to the project's owner, and to configured admins.
+Removing someone else's output records an `artifact.delete` audit row; removing your own does
+not. A chat message keeps its own copy of the object key, so an image deleted here renders as
+unavailable in the transcript that showed it — the confirmation says so before the fact.
 
 ## Traces
 

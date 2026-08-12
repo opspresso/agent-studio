@@ -1,8 +1,10 @@
 /**
- * How long a signed image URL lives, by who is going to fetch it.
+ * How long a signed object URL lives, by who is going to fetch it.
  *
  * Two readers, two answers, and the difference is load-bearing rather than
- * cosmetic.
+ * cosmetic. It sits in the artifact slice rather than the chat one because there
+ * are three readers now — the chat view, the replay, and the artifacts gallery —
+ * and the gallery is looking at the same objects.
  */
 
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";

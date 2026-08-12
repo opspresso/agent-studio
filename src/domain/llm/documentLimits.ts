@@ -30,7 +30,7 @@ export const MAX_DOCUMENT_CHARS = 20_000;
 export const MAX_DOCUMENT_CHARS_PER_TURN = 40_000;
 
 /** What a document is read as. `null` is "not something this accepts". */
-export type DocumentKind = "text" | "pdf";
+export type DocumentKind = "text" | "pdf" | "html";
 
 /**
  * Text types worth naming explicitly. Anything under `text/` is already covered;
@@ -110,8 +110,22 @@ export function documentKind(mimeType: string, name = ""): DocumentKind | null {
   if (mime === "application/pdf" || extension === "pdf") {
     return "pdf";
   }
+  // Ahead of the text branch, which `text/html` would otherwise satisfy. A page
+  // handed over as raw markup is mostly tags the model has to read past to find
+  // the sentence — the same file is worth more with the markup taken off.
+  if (
+    mime === "text/html" ||
+    mime === "application/xhtml+xml" ||
+    ((mime === "" || mime === "application/octet-stream") &&
+      (extension === "html" || extension === "htm"))
+  ) {
+    return "html";
+  }
   if (mime.startsWith("text/") || TEXT_MIME_TYPES.has(mime) || mime.endsWith("+json") || mime.endsWith("+xml")) {
     return "text";
+  }
+  if (extension === "html" || extension === "htm") {
+    return "html";
   }
   return TEXT_EXTENSIONS.has(extension) ? "text" : null;
 }

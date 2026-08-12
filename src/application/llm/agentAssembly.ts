@@ -20,6 +20,7 @@ export const TRANSFER_TOOL_NAME = "transfer_to_agent";
 export const DISPATCH_TOOL_NAME = "dispatch_agents";
 export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
+export const FETCH_URL_TOOL_NAME = "FetchUrl";
 /**
  * Every name a builtin may claim. An MCP tool that arrives under one of these
  * must be aliased even when that builtin is inactive for the run: whether a
@@ -32,6 +33,7 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   DISPATCH_TOOL_NAME,
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
+  FETCH_URL_TOOL_NAME,
 ];
 
 /**
@@ -159,7 +161,23 @@ export type ImageEditor = (params: {
 }) => Promise<{ b64: string; mimeType: string }>;
 
 /**
- * The capability half of the engine's deps — the four injected abilities whose
+ * Read a URL the model named.
+ *
+ * One tool rather than the `fetch_image`/`fetch_document` pair the MCP server
+ * split it into. That split existed because a server has to decide before
+ * fetching what `Accept` to send and which block type to answer with; inside the
+ * app it does not, and the cost of it was real — the model had to guess the
+ * target's type, and a wrong guess burned a turn. The sibling server grew a
+ * `crossToolHint` to patch exactly that.
+ */
+export type UrlFetcher = (url: string) => Promise<{
+  text: string;
+  note?: string;
+  image?: { b64: string; mimeType: string };
+}>;
+
+/**
+ * The capability half of the engine's deps — the injected abilities whose
  * *presence* decides what a run is told it can do. Declared here, structurally,
  * rather than as a `Pick` of `AgentDeps`: the assembly is what the loop and the
  * preview share, so it must not import the loop. `AgentDeps` extends this, and
@@ -170,6 +188,7 @@ export interface AgentCapabilityDeps {
   runSubagent?: SubagentRunner;
   generateImage?: ImageGenerator;
   editImage?: ImageEditor;
+  fetchUrl?: UrlFetcher;
 }
 
 /**
@@ -533,6 +552,8 @@ export interface AgentSystemPromptInput {
   now?: Date;
   /** Whether this run is offered `dispatch_agents` (see {@link buildAgentTools}). */
   canDispatch?: boolean;
+  /** Whether this run may read a URL — another way a picture can arrive. */
+  withUrlTool?: boolean;
   /** Who is asking. Omitted keeps the prompt anonymous. */
   caller?: RunCaller;
 }
@@ -550,6 +571,11 @@ export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
   const { base, skills, subagents, mcpServers, images, now, caller } = input;
   const canDispatch = input.canDispatch ?? false;
   const withMcp = mcpServers.length > 0;
+  // Either can hand back a picture, and the empty state below names the routes
+  // an id can actually arrive by. Naming a route this run does not have is the
+  // same defect as listing a skill that can never load — and so is omitting one
+  // it does.
+  const toolsCanReturnImages = withMcp || input.withUrlTool === true;
   const sections: string[] = [];
   if (skills.length > 0) {
     sections.push(skillSystemPromptAddition(skills));
@@ -561,7 +587,7 @@ export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
     sections.push(subagentSystemPromptAddition(subagents, canDispatch));
   }
   if (images.canEdit || images.canTransfer) {
-    sections.push(imageSystemPromptAddition(images.handles, images, withMcp));
+    sections.push(imageSystemPromptAddition(images.handles, images, toolsCanReturnImages));
   }
   const blocks: string[] = [];
   // Ahead of the capability block, and outside it: the clock and the caller are
@@ -604,6 +630,27 @@ const IMAGE_TOOL_DEF: ChannelToolDef = {
         },
       },
       required: ["prompt"],
+    },
+  },
+};
+
+const FETCH_URL_TOOL_DEF: ChannelToolDef = {
+  type: "function",
+  function: {
+    name: FETCH_URL_TOOL_NAME,
+    description:
+      "Read a web address: a page, a PDF, a plain-text or data file, or an image. " +
+      "Returns the text with the markup taken off, or delivers the picture. " +
+      "Use it whenever an address appears in a request, a search result or another tool's output and its contents matter — a link is not its contents.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "The http(s) address to read.",
+        },
+      },
+      required: ["url"],
     },
   },
 };
@@ -664,6 +711,8 @@ export interface AgentToolsInput {
   withImageTool: boolean;
   withEditTool: boolean;
   withImageTransfer: boolean;
+  /** Whether this run may read an address the model names. */
+  withUrlTool: boolean;
   /**
    * Whether fan-out is offered. False for a subagent run: a child that could
    * dispatch would multiply the run count by depth, and these children run
@@ -675,7 +724,8 @@ export interface AgentToolsInput {
 export function buildAgentTools(
   input: AgentToolsInput,
 ): { tools: ChannelToolDef[]; builtinNames: Set<string> } {
-  const { mcpTools, skills, subagents, canLoadSkills, withImageTool, withEditTool } = input;
+  const { mcpTools, skills, subagents, canLoadSkills, withImageTool, withEditTool, withUrlTool } =
+    input;
   const withImageTransfer = input.withImageTransfer;
   const canDispatch = input.canDispatch ?? false;
   const tools: ChannelToolDef[] = [...(mcpTools ?? [])];
@@ -702,6 +752,10 @@ export function buildAgentTools(
   if (withEditTool) {
     tools.push(EDIT_IMAGE_TOOL_DEF);
     builtinNames.add(EDIT_IMAGE_TOOL_NAME);
+  }
+  if (withUrlTool) {
+    tools.push(FETCH_URL_TOOL_DEF);
+    builtinNames.add(FETCH_URL_TOOL_NAME);
   }
   return { tools, builtinNames };
 }
@@ -794,6 +848,9 @@ export function assembleAgentRun(
   if ((canEdit || canTransfer) && input.messages) {
     registerInputImages(images, input.messages);
   }
+  // From the deps, never from the version: a run is told it can do a thing
+  // exactly when the thing was injected, so the preview and the run agree.
+  const withUrlTool = Boolean(deps.fetchUrl);
   const systemPrompt = buildAgentSystemPrompt({
     ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
     skills,
@@ -802,6 +859,7 @@ export function assembleAgentRun(
     images: { handles: images.list(), canEdit, canTransfer },
     ...(input.now ? { now: input.now } : {}),
     canDispatch,
+    withUrlTool,
     ...(input.caller ? { caller: input.caller } : {}),
   });
   const { tools, builtinNames } = buildAgentTools({
@@ -812,6 +870,7 @@ export function assembleAgentRun(
     withImageTool: Boolean(deps.generateImage),
     withEditTool: canEdit,
     withImageTransfer: canTransfer,
+    withUrlTool,
     canDispatch,
   });
   return { systemPrompt, tools, builtinNames, subagents, canEdit, canTransfer, images };

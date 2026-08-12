@@ -29,6 +29,8 @@ import type { Project, Version } from "@/domain/project/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
+import { createArtifactRecorder, type ArtifactRecorder } from "@/application/artifact/runArtifacts";
+import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import { acquireRunSlot, type ConcurrencyGuardDeps } from "./concurrencyGuard";
 import { assertModelsPriceable, type UnknownModelPolicy } from "./modelPolicy";
 
@@ -42,6 +44,12 @@ export type RunBracketDeps = CostGuardDeps &
      * behaves exactly as it did.
      */
     unknownModelPolicy?: () => Promise<UnknownModelPolicy>;
+    /**
+     * Where a run's output is kept. Absent in a deployment with no object
+     * storage, and then a run behaves exactly as it did — the bytes reach the
+     * surface and stop there.
+     */
+    artifacts?: ArtifactStorage;
   };
 
 export interface RunBracket {
@@ -55,6 +63,16 @@ export interface RunBracket {
   close(outcome?: { failed?: boolean }): Promise<void>;
   /** The correlation id every log line in this run carries. */
   readonly runId: string;
+  /**
+   * Where this run's output goes, with the run's own identity already bound —
+   * project, version, actor, transfer chain, correlation id.
+   *
+   * It is built here for the same reason the guards are: four entry points admit
+   * a top-level run, and every one of them produces bytes. Binding the context
+   * at each of them instead would be four places re-deriving who a run belongs
+   * to, which is exactly the copy the attribution types exist to prevent.
+   */
+  readonly artifacts?: ArtifactRecorder;
 }
 
 /**
@@ -102,6 +120,17 @@ export async function openRun(
   let closed = false;
   return {
     runId: context.runId,
+    ...(deps.artifacts
+      ? {
+          artifacts: createArtifactRecorder(deps.artifacts, {
+            projectName: project.name,
+            versionName: version.versionName,
+            ...(actor ? { actor } : {}),
+            ancestry: [project.name],
+            runId: context.runId,
+          }),
+        }
+      : {}),
     async close(outcome = {}) {
       // Idempotent: a generator can reach its `finally` through both a normal
       // return and a consumer's `return()`, and a double decrement would leave

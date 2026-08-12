@@ -1,0 +1,20 @@
+import { withAuth } from "@/lib/session";
+import { artifactStorage, artifactUseCases } from "@/lib/container";
+import { apiError } from "@/app/api/_lib/http";
+import { parseArtifactQuery, toArtifactViews } from "./_lib/query";
+
+export const GET = withAuth(async (user, request: Request) => {
+  if (!artifactUseCases) {
+    return Response.json({ error: "Artifact storage is not configured" }, { status: 404 });
+  }
+  const parsed = parseArtifactQuery(request.url);
+  if (!parsed.ok) {
+    return Response.json({ error: parsed.error }, { status: 400 });
+  }
+  try {
+    const artifacts = await artifactUseCases.listMine(user.email, parsed.options);
+    return Response.json(await toArtifactViews(artifacts, artifactStorage?.objects.sign));
+  } catch (error) {
+    return apiError(error);
+  }
+});

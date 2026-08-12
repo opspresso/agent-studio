@@ -17,6 +17,7 @@ import {
 } from "@/domain/llm/documentExtractor";
 import { documentKind } from "@/domain/llm/documentLimits";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
+import { htmlToText } from "./htmlText";
 
 /** A page break the model can see, since a `note`'s page numbers refer to it. */
 const PAGE_SEPARATOR = "\n\n";
@@ -134,8 +135,68 @@ function plainToText(bytes: Uint8Array, maxChars: number): ExtractedDocument {
   };
 }
 
+/**
+ * A page, with the markup taken off.
+ *
+ * The decode runs first and by the same rule as any other text file, so a page
+ * that is not UTF-8 is refused rather than handed over as replacement
+ * characters — `charset` is what lets a *fetched* page say otherwise, since a
+ * remote server is not something the caller can go and re-save.
+ */
+function htmlToPlainText(
+  bytes: Uint8Array,
+  maxChars: number,
+  charset: string | undefined,
+): ExtractedDocument {
+  const source = decodeDeclared(bytes, charset);
+  if (source === null) {
+    throw new DocumentExtractionError(
+      "it is not UTF-8 text — if it is in another encoding, save it as UTF-8 and attach it again",
+    );
+  }
+  const text = htmlToText(source);
+  if (text.trim() === "") {
+    // An empty answer would read as "the page said nothing", which is a
+    // different claim from "there was nothing here a reader could use".
+    throw new DocumentExtractionError(
+      "it has no readable text — the page may be built entirely by scripts, which are not run here",
+    );
+  }
+  if (text.length <= maxChars) {
+    return { text };
+  }
+  const cut = cutCodePoints(text, maxChars);
+  return {
+    text: cut,
+    note: `the first ${cut.length.toLocaleString("en-US")} of ${text.length.toLocaleString("en-US")} characters`,
+  };
+}
+
+/**
+ * UTF-8, or the encoding the source declared.
+ *
+ * `decodeUtf8Text` stays the owner of "are these bytes text": the declared
+ * branch is only reached when a caller passed a charset, so the attachment path
+ * — which never does — behaves byte for byte as it did.
+ */
+function decodeDeclared(bytes: Uint8Array, charset: string | undefined): string | null {
+  const normalized = charset?.toLowerCase().trim();
+  if (!normalized || normalized === "utf-8" || normalized === "utf8") {
+    return decodeUtf8Text(bytes);
+  }
+  try {
+    // `fatal` off: a legacy page with a stray byte is still worth reading, and
+    // unlike the UTF-8 path there is no round-trip that could confirm it anyway.
+    return new TextDecoder(normalized).decode(bytes);
+  } catch {
+    // An encoding label this runtime does not know. UTF-8 is the better guess
+    // than nothing, and its round trip still refuses genuine binary.
+    return decodeUtf8Text(bytes);
+  }
+}
+
 export const documentExtractor: DocumentExtractor = {
-  async extract({ bytes, mimeType, name, maxChars }) {
+  async extract({ bytes, mimeType, name, maxChars, charset }) {
     const kind = documentKind(mimeType, name);
     if (kind === null) {
       throw new DocumentExtractionError(`${mimeType || "this file type"} is not a document`);
@@ -143,6 +204,11 @@ export const documentExtractor: DocumentExtractor = {
     if (maxChars <= 0) {
       throw new DocumentExtractionError("this turn's document budget is already spent");
     }
-    return kind === "pdf" ? pdfToText(bytes, maxChars) : plainToText(bytes, maxChars);
+    if (kind === "pdf") {
+      return pdfToText(bytes, maxChars);
+    }
+    return kind === "html"
+      ? htmlToPlainText(bytes, maxChars, charset)
+      : plainToText(bytes, maxChars);
   },
 };

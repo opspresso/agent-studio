@@ -56,6 +56,11 @@ export interface GenerateImageOutput {
   mimeType: string;
   model: string;
   usage: { inputTokens: number; outputTokens: number; costUsd: number };
+  /** Set once the bytes were kept; absent in a deployment that keeps nothing. */
+  artifactId?: string;
+  key?: string;
+  /** What was lost — here, that the picture was produced but not stored. */
+  warning?: string;
 }
 
 /**
@@ -85,7 +90,16 @@ export async function* generateImageStream(
   input: GenerateImageInput,
 ): AsyncGenerator<EngineChunk> {
   const image = await generateImage(deps, input);
-  yield { image: { b64: image.imageBase64, mimeType: image.mimeType } };
+  yield {
+    image: {
+      b64: image.imageBase64,
+      mimeType: image.mimeType,
+      ...(image.artifactId ? { artifactId: image.artifactId, key: image.key } : {}),
+    },
+  };
+  if (image.warning) {
+    yield { warning: image.warning };
+  }
   yield { usage: image.usage };
   yield { done: true };
 }
@@ -171,11 +185,25 @@ export async function generateImage(
     recorder?.observeResult({ content: "", model, usage: recorded });
     await finishTrace(recorder);
 
+    // After the usage record and before returning: the row is what makes this
+    // picture findable later, and the three surfaces that call this each answer
+    // in a shape that has nowhere to put the bytes a second time.
+    const stored = await bracket.artifacts?.record({
+      kind: "image",
+      source: "generated",
+      bytes: Buffer.from(result.b64, "base64"),
+      mimeType: result.mimeType,
+      prompt,
+    });
+    const warning = bracket.artifacts?.takeWarning();
+
     return {
       imageBase64: result.b64,
       mimeType: result.mimeType,
       model,
       usage: recorded,
+      ...(stored ? { artifactId: stored.artifactId, key: stored.key } : {}),
+      ...(warning ? { warning } : {}),
     };
   } catch (error) {
     failed = !input.signal?.aborted;

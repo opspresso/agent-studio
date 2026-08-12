@@ -62,6 +62,9 @@ async function main() {
   const { runSlotRepository } = await import("@/infrastructure/db/repositories/runSlotRepository");
   const { triggerRepository } = await import("@/infrastructure/db/repositories/triggerRepository");
   const { auditRepository } = await import("@/infrastructure/db/repositories/auditRepository");
+  const { artifactRepository } = await import(
+    "@/infrastructure/db/repositories/artifactRepository"
+  );
   const { executionDeps } = await import("@/lib/container");
   const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
@@ -150,6 +153,9 @@ async function main() {
   // are collected here so the `finally` can delete them through the client,
   // since this table is shared with every other project on the machine.
   const auditFixtures: Array<{ day: string; createdAt: string; eventId: string }> = [];
+  // Artifacts are not in the project partition either — they outlive the project
+  // the way chats do — so the cascade never reaches them.
+  const artifactFixtures: string[] = [];
 
   try {
     // ---------- project + version ----------
@@ -626,6 +632,91 @@ async function main() {
     assert.equal(mine[0]?.detail, undefined, "an absent detail stays absent");
     pass("audit append + day-partition listing");
 
+    // ---------- artifacts (both indexes, and the sparse one staying sparse) ----------
+    // The two indexes are the point: a Slack run names no email, so the project
+    // index is the only way its output is ever listed or deleted. Mocked doc
+    // clients cannot show that a sparse GSI2 really omits the row.
+    const artifactIds = [`it-art-img-${suffix}`, `it-art-doc-${suffix}`, `it-art-slack-${suffix}`];
+    const artifactRows = [
+      {
+        artifactId: artifactIds[0]!,
+        kind: "image" as const,
+        source: "generated" as const,
+        key: `artifacts/image/${artifactIds[0]}.png`,
+        mimeType: "image/png",
+        byteSize: 2048,
+        projectName,
+        versionName: "1",
+        actor: { kind: "user" as const, id: "it@example.com" },
+        prompt: "a poster",
+        createdAt: now,
+      },
+      {
+        artifactId: artifactIds[1]!,
+        kind: "document" as const,
+        source: "generated" as const,
+        key: `artifacts/document/${artifactIds[1]}.docx`,
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename: "보고서.docx",
+        byteSize: 40960,
+        projectName,
+        versionName: "1",
+        actor: { kind: "user" as const, id: "it@example.com" },
+        createdAt: new Date(Date.parse(now) + 1000).toISOString(),
+      },
+      {
+        artifactId: artifactIds[2]!,
+        kind: "image" as const,
+        source: "generated" as const,
+        key: `artifacts/image/${artifactIds[2]}.png`,
+        mimeType: "image/png",
+        byteSize: 512,
+        projectName,
+        versionName: "1",
+        actor: { kind: "slack" as const, id: "U-integration" },
+        createdAt: new Date(Date.parse(now) + 2000).toISOString(),
+      },
+    ];
+    for (const row of artifactRows) {
+      await artifactRepository.put(row);
+      artifactFixtures.push(row.artifactId);
+    }
+    const storedArtifact = await artifactRepository.get(artifactIds[1]!);
+    assert.equal(storedArtifact?.filename, "보고서.docx", "a Korean filename round-trips");
+    assert.equal(storedArtifact?.byteSize, 40960, "byteSize round-trips");
+
+    const byProject = await artifactRepository.listByProject(projectName);
+    assert.deepEqual(
+      byProject.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
+      [artifactIds[2], artifactIds[1], artifactIds[0]],
+      "the project index returns every artifact, newest first",
+    );
+
+    const byOwner = await artifactRepository.listByOwner("it@example.com");
+    assert.deepEqual(
+      byOwner.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
+      [artifactIds[1], artifactIds[0]],
+      "the owner index omits the Slack run, whose actor names no mailbox",
+    );
+
+    const images = await artifactRepository.listByProject(projectName, { kind: "image" });
+    assert.deepEqual(
+      images.filter((a) => a.artifactId.endsWith(suffix)).map((a) => a.artifactId),
+      [artifactIds[2], artifactIds[0]],
+      "the kind filter drops the document",
+    );
+
+    await artifactRepository.delete(artifactIds[0]!);
+    assert.equal(
+      await artifactRepository.get(artifactIds[0]!),
+      null,
+      "a deleted artifact is gone",
+    );
+    // Idempotent: the object is removed before the row, so an interrupted delete
+    // is retried, and the second attempt must not throw.
+    await artifactRepository.delete(artifactIds[0]!);
+    pass("artifacts: project + owner indexes, sparse owner index, kind filter, idempotent delete");
+
     // ---------- A2A client keys (transactional pair + hash lookup) ----------
     const { a2aClientKeyRepository } = await import(
       "@/infrastructure/db/repositories/a2aClientKeyRepository"
@@ -740,6 +831,9 @@ async function main() {
     await import("@/infrastructure/db/repositories/a2aClientKeyRepository")
       .then(({ a2aClientKeyRepository }) => a2aClientKeyRepository.delete(`client-${suffix}`))
       .catch(() => {});
+    for (const artifactId of artifactFixtures) {
+      await artifactRepository.delete(artifactId).catch(() => {});
+    }
     if (auditFixtures.length > 0) {
       const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
       const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");

@@ -550,7 +550,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(62);
+    expect(entries.length).toBe(65);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -753,19 +753,28 @@ describe("application slice graph", () => {
  */
 describe("execution deps wiring", () => {
   it("the composition root decides every optional field by name", () => {
-    const depsFile = SOURCE_FILES.find((file) => file.path === "src/application/execution/deps.ts");
-    const block =
-      /export interface ExecutionDeps[^{]*\{([\s\S]*?)\n\}/.exec(
-        stripComments(depsFile?.text ?? ""),
-      )?.[1] ?? "";
-    const optional = [...block.matchAll(/^\s{2}(\w+)\?:/gm)].map((match) => match[1]!);
+    // Both halves of the bag: `ExecutionDeps` extends `RunBracketDeps`, so a
+    // field declared on the bracket is just as optional at the wiring site and
+    // just as invisible when it is forgotten. `artifacts` is one — a run with no
+    // object storage and a run whose storage nobody wired look identical from
+    // inside, which is the failure this whole check exists for.
+    const declarations: Array<[string, RegExp]> = [
+      ["src/application/execution/deps.ts", /export interface ExecutionDeps[^{]*\{([\s\S]*?)\n\}/],
+      ["src/application/run/runBracket.ts", /export type RunBracketDeps[^{]*\{([\s\S]*?)\n\s*\};/],
+    ];
+    const optional = declarations.flatMap(([path, blockPattern]) => {
+      const file = SOURCE_FILES.find((f) => f.path === path);
+      const block = blockPattern.exec(stripComments(file?.text ?? ""))?.[1] ?? "";
+      return [...block.matchAll(/^\s{2,4}(\w+)\?:/gm)].map((match) => match[1]!);
+    });
     // The two test seams: a production root must never pin the clock or the
     // sampling draw, so their absence from container.ts is the correct state.
     const seams = new Set(["now", "sample"]);
-    // A regression in the interface regex would empty `optional` and read as a
-    // clean pass; the fields this exists for anchor it.
+    // A regression in either interface regex would empty `optional` and read as
+    // a clean pass; the fields this exists for anchor it.
     expect(optional).toContain("catalog");
     expect(optional).toContain("mcpConnections");
+    expect(optional).toContain("artifacts");
     const container = stripComments(
       SOURCE_FILES.find((file) => file.path === "src/lib/container.ts")?.text ?? "",
     );
@@ -842,6 +851,51 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "how an audit row is written",
     pattern: /const event: AuditEvent = \{/,
     owner: "src/application/audit/recordAudit.ts",
+  },
+  {
+    // The sentence that tells a model the text it is about to read is data.
+    // It shares that sentence with `framedDocument`, which is why the two live
+    // in one file: a page off the open web is if anything likelier to contain
+    // something shaped like an instruction than a file someone attached.
+    what: "how a fetched URL is framed in a turn",
+    pattern: /\[Fetched from /,
+    owner: "src/application/llm/documentParts.ts",
+  },
+  {
+    // Deliberately far above the attachment budget and far below nothing at
+    // all; `documentLimits.ts` explains the asymmetry, and a second copy of
+    // this number would quietly make one of those two comments false.
+    what: "how much of a fetched URL is kept",
+    pattern: /MAX_FETCHED_TEXT_CHARS =/,
+    owner: "src/application/llm/urlContent.ts",
+  },
+  {
+    // Every stored byte goes through it — a generated image, a rendered
+    // document, an attachment. A second writer would spell the provenance its
+    // own way, and a gallery filtering on it would show nothing for half the
+    // rows without anything looking broken.
+    what: "how an artifact row is written",
+    pattern: /const artifact: Artifact = \{/,
+    owner: "src/application/artifact/storeArtifact.ts",
+  },
+  {
+    // The key is derived from the row's id, which is the only reason an object
+    // and its row can find each other — the legacy `images/<uuid>` layout
+    // referenced nothing, so an orphan could never be identified again. A second
+    // site composing this prefix would be free to disagree about the kind
+    // segment, and an S3 lifecycle rule applies to exactly that prefix.
+    what: "the object key an artifact is stored under",
+    pattern: /`artifacts\/\$\{/,
+    owner: "src/domain/artifact/types.ts",
+  },
+  {
+    // The app's only deletion of stored bytes. Deleting an object is the half of
+    // an artifact delete that cannot be undone, and the order it happens in
+    // relative to the row is what makes a retry converge; a second caller would
+    // be free to get that order backwards.
+    what: "deleting a stored object",
+    pattern: /DeleteObjectCommand/,
+    owner: "src/infrastructure/storage/s3ObjectStore.ts",
   },
   {
     what: "which storage errors mean a lost conditional write",
@@ -1309,6 +1363,106 @@ describe("image runs", () => {
       ),
     ).map((file) => file.path);
     expect(callers.sort()).toEqual([...IMAGE_RUN_ENTRY_POINTS].sort());
+  });
+});
+
+/**
+ * Who keeps what a run produced.
+ *
+ * Four functions admit a top-level run and every one of them can produce bytes,
+ * so the recorder is built by the bracket they all open — the same seam the cost
+ * and concurrency guards use, and for the same reason. Attaching it to
+ * `generateImage` instead would have covered a quarter of the cases: an image
+ * reaches the stream from four producers (an image project, the
+ * GenerateImage/EditImage builtins, an image subagent, an MCP tool that returned
+ * one) and only the first is that use case.
+ *
+ * The second assertion is the load-bearing one. A fifth entry point that opens a
+ * bracket and never captures would drop its output silently — the run works, the
+ * gallery is simply missing it — which is exactly the failure that made the
+ * original chat-only storage invisible for years.
+ */
+const ARTIFACT_CAPTURE_SITES = [
+  // Builds the recorder, with the run's identity bound once.
+  "src/application/run/runBracket.ts",
+  // Wraps the agent stream, where every producer's bytes converge.
+  "src/application/execution/runProject.ts",
+  // `generateImage.ts` is deliberately absent: it records the single result an
+  // image project answers with, but reaches it through `bracket.artifacts`
+  // rather than importing the module. The bracket check below is what holds it.
+];
+
+/**
+ * The one place an address the *model* chose is fetched.
+ *
+ * `fetchPublicUrl` was built as the second of two controls: `docs/SECURITY.md`
+ * describes the registration check as the first, and the dispatch check as
+ * narrowing — not closing — the window between them. A URL a model named has no
+ * first control at all, so this adapter is the whole defence.
+ *
+ * The internal-host exemption is the specific thing that must never reach it.
+ * `skipsUrlGuard` exists so this app can talk to its own cluster MCP services;
+ * one line honouring it here turns a prompt injection into a read of
+ * `http://mcp-argocd.agent-mcps.svc.cluster.local/`. Cheap to check, and the
+ * kind of line that looks like a consistency fix to whoever adds it.
+ */
+const MODEL_CHOSEN_URL_FETCHER = "src/infrastructure/net/httpResource.ts";
+
+describe("URLs the model chose", () => {
+  const file = SOURCE_FILES.find((f) => f.path === MODEL_CHOSEN_URL_FETCHER);
+
+  it("are fetched by exactly one adapter", () => {
+    expect(file).toBeDefined();
+    const importers = SOURCE_FILES.filter(
+      (f) =>
+        f.path !== MODEL_CHOSEN_URL_FETCHER &&
+        parseImports(f.text).some(
+          (i) => resolveSpec(i.spec, f.path) === "@/application/llm/urlContent" && !i.typeOnly,
+        ),
+    ).map((f) => f.path);
+    // Only the builtin's builder reaches the use case; nothing else fetches.
+    expect(importers).toEqual(["src/application/execution/urlTool.ts"]);
+  });
+
+  it("never consult the internal-host exemption", () => {
+    const text = file?.text ?? "";
+    const names = parseImports(text).flatMap((i) => i.names);
+    expect(names).not.toContain("skipsUrlGuard");
+    expect(stripComments(text)).not.toMatch(/skipsUrlGuard|internalHostSuffixes|loopback/);
+  });
+
+  it("carry no credential of this deployment's", () => {
+    // Not the tenant header, not an OAuth token, not a bot token. A redirect
+    // cannot forward what was never attached.
+    const text = stripComments(file?.text ?? "");
+    expect(text).not.toMatch(/TENANT_ID_HEADER|Authorization|Bearer|botToken/);
+  });
+});
+
+describe("run artifacts", () => {
+  it("are captured only where this list says", () => {
+    const importers = SOURCE_FILES.filter((file) =>
+      parseImports(file.text).some(
+        (i) =>
+          resolveSpec(i.spec, file.path) === "@/application/artifact/runArtifacts" && !i.typeOnly,
+      ),
+    ).map((file) => file.path);
+    expect(importers.sort()).toEqual([...ARTIFACT_CAPTURE_SITES].sort());
+  });
+
+  it("are captured by every function that opens a run bracket", () => {
+    // `await openRun(` rather than the bare name, so the module that *declares*
+    // it is not asked to also use what it builds.
+    const openers = SOURCE_FILES.filter(
+      (file) => file.path.startsWith("src/") && /await openRun\(/.test(stripComments(file.text)),
+    );
+    // Anchors the check: an `openRun` that stopped matching would empty this and
+    // read as a clean pass.
+    expect(openers.length).toBeGreaterThanOrEqual(2);
+    const missing = openers
+      .filter((file) => !/bracket\.artifacts|captureRunArtifacts\(/.test(stripComments(file.text)))
+      .map((file) => file.path);
+    expect(missing).toEqual([]);
   });
 });
 

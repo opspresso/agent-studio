@@ -80,6 +80,94 @@ function fakeDeps() {
   return { deps: { imageChannel, usage }, recorded, prompts, edits };
 }
 
+/**
+ * An image project with somewhere to keep what it draws.
+ *
+ * The point of wiring this at the bracket is that an image project is only one
+ * of four producers — but it is the one no chunk-stream wrapper covers, since
+ * `/predict` and the A2A executor reach the use case directly.
+ */
+function fakeArtifacts() {
+  const rowsWritten: Array<Record<string, unknown>> = [];
+  const objects = {
+    async put(input: { key: string; bytes: Uint8Array; mimeType: string }) {
+      puts.push(input);
+    },
+    async sign(key: string) {
+      return `https://signed/${key}`;
+    },
+    async delete() {},
+  };
+  const puts: Array<{ key: string; bytes: Uint8Array; mimeType: string }> = [];
+  const rows = {
+    async put(artifact: Record<string, unknown>) {
+      rowsWritten.push(artifact);
+    },
+    async get() {
+      return null;
+    },
+    async listByProject() {
+      return [];
+    },
+    async listByOwner() {
+      return [];
+    },
+    async delete() {},
+  };
+  return { storage: { rows, objects } as never, rowsWritten, puts };
+}
+
+describe("generateImage artifacts", () => {
+  it("keeps what an image project drew, which no chunk wrapper would reach", async () => {
+    // `/predict` and the A2A executor call this use case directly, so a capture
+    // that only wrapped the agent stream would lose every picture they make.
+    const { deps } = fakeDeps();
+    const { storage, rowsWritten, puts } = fakeArtifacts();
+    const result = await generateImage(
+      { ...deps, artifacts: storage },
+      { project, version: version("openai/gpt-image-2"), variables: { style: "hanbok" } },
+    );
+    expect(puts).toHaveLength(1);
+    expect(rowsWritten[0]).toMatchObject({
+      kind: "image",
+      source: "generated",
+      projectName: "img-proj",
+      versionName: "1",
+      prompt: "A cat wearing hanbok clothes",
+    });
+    // The caller is told where it went, so its own answer can carry the address.
+    expect(result.artifactId).toBe(rowsWritten[0]?.artifactId);
+    expect(result.key).toBe(rowsWritten[0]?.key);
+  });
+
+  it("answers exactly as before when the deployment keeps nothing", async () => {
+    const { deps } = fakeDeps();
+    const result = await generateImage(deps, { project, version: version("openai/gpt-image-2") });
+    expect(result.imageBase64).toBe("aGVsbG8=");
+    expect(result.artifactId).toBeUndefined();
+    expect(result.warning).toBeUndefined();
+  });
+
+  it("puts the stored reference on the stream's image chunk", async () => {
+    const { deps } = fakeDeps();
+    const { storage, rowsWritten } = fakeArtifacts();
+    const chunks: EngineChunk[] = [];
+    for await (const chunk of generateImageStream(
+      { ...deps, artifacts: storage },
+      { project, version: version("openai/gpt-image-2") },
+    )) {
+      chunks.push(chunk);
+    }
+    // The bytes stay: an image project's answer *is* the picture, and a live
+    // consumer renders it from the chunk.
+    expect(chunks[0]?.image).toMatchObject({
+      b64: "aGVsbG8=",
+      artifactId: rowsWritten[0]?.artifactId,
+      key: rowsWritten[0]?.key,
+    });
+  });
+});
+
 describe("generateImage", () => {
   it("rejects models without the imageGeneration capability", async () => {
     const { deps } = fakeDeps();

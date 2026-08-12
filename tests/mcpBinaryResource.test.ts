@@ -37,12 +37,11 @@ function stubServer(content: unknown[]) {
   );
 }
 
-async function callWith(content: unknown[]): Promise<string> {
+async function callWith(content: unknown[]) {
   stubServer(content);
   const manager = new ToolManager([SERVER]);
   await manager.init();
-  const result = await manager.callTool("read_file", {});
-  return result.text;
+  return manager.callTool("read_file", {});
 }
 
 afterEach(() => {
@@ -51,24 +50,27 @@ afterEach(() => {
 });
 
 describe("a resource blob that is not an image", () => {
-  it("says a PDF could not be read instead of returning replacement characters", async () => {
+  it("never returns replacement characters for a PDF", async () => {
     const pdf = Buffer.from("255044462d312e340a25e2e3cfd3", "hex").toString("base64");
 
-    const text = await callWith([
+    const result = await callWith([
       { type: "resource", resource: { blob: pdf, mimeType: "application/pdf" } },
     ]);
 
-    expect(text).not.toContain("�");
-    expect(text).toContain("binary resource omitted");
-    expect(text).toContain("application/pdf");
-    // The byte count, so an operator can tell an empty answer from a big one.
-    expect(text).toContain("14 bytes");
+    // The original defect, still pinned: a decode that cannot fail turned this
+    // into a page of U+FFFD presented as a successful result.
+    expect(result.text).not.toContain("\uFFFD");
+    // And now it is carried rather than dropped — the file is the answer.
+    expect(result.files).toEqual([
+      { b64: pdf, mimeType: "application/pdf", name: "file.pdf" },
+    ]);
+    expect(result.text).toContain("14 bytes");
   });
 
   it("decides on the bytes, not on a content type the server got wrong", async () => {
     // Servers label real text `application/octet-stream` routinely. Refusing on
     // the declared type would lose a result that is perfectly readable.
-    const text = await callWith([
+    const result = await callWith([
       {
         type: "resource",
         resource: {
@@ -78,11 +80,11 @@ describe("a resource blob that is not an image", () => {
       },
     ]);
 
-    expect(text).toBe("id,name\n1,bruce");
+    expect(result.text).toBe("id,name\n1,bruce");
   });
 
   it("reads multi-byte text back unchanged", async () => {
-    const text = await callWith([
+    const result = await callWith([
       {
         type: "resource",
         resource: {
@@ -92,11 +94,11 @@ describe("a resource blob that is not an image", () => {
       },
     ]);
 
-    expect(text).toBe("제목: 보고서");
+    expect(result.text).toBe("제목: 보고서");
   });
 
   it("still lets a readable block through when another is binary", async () => {
-    const text = await callWith([
+    const result = await callWith([
       { type: "text", text: "here is the file" },
       {
         type: "resource",
@@ -104,9 +106,9 @@ describe("a resource blob that is not an image", () => {
       },
     ]);
 
-    // Multi-block results are JSON-joined, so the placeholder has to compose
-    // rather than claim the whole call failed.
-    expect(text).toContain("here is the file");
-    expect(text).toContain("binary resource omitted");
+    // Multi-block results are JSON-joined, so the file's placeholder has to
+    // compose rather than claim the whole call failed.
+    expect(result.text).toContain("here is the file");
+    expect(result.text).toContain("delivered to the user");
   });
 });

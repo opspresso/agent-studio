@@ -39,6 +39,15 @@ describe("documentKind", () => {
     expect(documentKind("application/vnd.api+json", "a")).toBe("text");
   });
 
+  it("reads HTML as its own kind, ahead of the text branch", () => {
+    // `text/html` satisfies the text rule too, so order is what decides this.
+    // Handed over as text, a page is mostly markup the model reads past.
+    expect(documentKind("text/html", "page.html")).toBe("html");
+    expect(documentKind("application/xhtml+xml", "page.xhtml")).toBe("html");
+    expect(documentKind("", "saved.htm")).toBe("html");
+    expect(documentKind("application/octet-stream", "saved.html")).toBe("html");
+  });
+
   it("is not a document for an image, whatever it is called", () => {
     // Images have their own path; one arriving here would be read as bytes
     // rather than looked at.
@@ -202,5 +211,69 @@ describe("extracting a document", () => {
         maxChars: 0,
       }),
     ).rejects.toBeInstanceOf(DocumentExtractionError);
+  });
+
+  it("takes the markup off an attached page", async () => {
+    // Behaviour change worth being explicit about: this file used to reach the
+    // model as raw markup, because `documentKind` called it text.
+    const result = await documentExtractor.extract({
+      bytes: Buffer.from(
+        "<title>Report</title><body><script>var x=1</script><p>Revenue rose.</p></body>",
+        "utf-8",
+      ),
+      mimeType: "text/html",
+      name: "page.html",
+      maxChars: 1000,
+    });
+    expect(result.text).toBe("Report\n\nRevenue rose.");
+  });
+
+  it("refuses a page whose text only exists after scripts run", async () => {
+    // Empty output would read as "the page said nothing" — a different claim.
+    await expect(
+      documentExtractor.extract({
+        bytes: Buffer.from("<body><script>render()</script></body>", "utf-8"),
+        mimeType: "text/html",
+        name: "app.html",
+        maxChars: 1000,
+      }),
+    ).rejects.toBeInstanceOf(DocumentExtractionError);
+  });
+
+  it("follows a declared charset only when one was passed", async () => {
+    // EUC-KR bytes for "한글". An upload never declares an encoding, so it takes
+    // the UTF-8 path and is refused — which is right: the person can re-save it.
+    const eucKr = Buffer.from([0xc7, 0xd1, 0xb1, 0xdb]);
+    await expect(
+      documentExtractor.extract({
+        bytes: eucKr,
+        mimeType: "text/html",
+        name: "page.html",
+        maxChars: 1000,
+      }),
+    ).rejects.toBeInstanceOf(DocumentExtractionError);
+
+    // A fetched page can say so, and a remote server is not something the
+    // caller can go and fix.
+    const declared = await documentExtractor.extract({
+      bytes: Buffer.concat([Buffer.from("<p>"), eucKr, Buffer.from("</p>")]),
+      mimeType: "text/html",
+      name: "page.html",
+      maxChars: 1000,
+      charset: "euc-kr",
+    });
+    expect(declared.text).toBe("한글");
+  });
+
+  it("leaves a plain text attachment exactly as it was", async () => {
+    // The charset argument must not change the path an upload takes: no caller
+    // on the attachment side passes one, and this is what pins that.
+    const result = await documentExtractor.extract({
+      bytes: Buffer.from("plain body", "utf-8"),
+      mimeType: "text/plain",
+      name: "a.txt",
+      maxChars: 1000,
+    });
+    expect(result).toEqual({ text: "plain body" });
   });
 });

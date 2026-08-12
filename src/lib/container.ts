@@ -33,6 +33,8 @@ import type { OtelTraceExport } from "@/infrastructure/telemetry/otelTraceExport
 import { onShutdown } from "@/shared/lifecycle";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { urlPolicy } from "@/infrastructure/net/urlPolicy";
+import { httpResourceReader } from "@/infrastructure/net/httpResource";
+import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { mcpToolProbe } from "@/infrastructure/mcp/toolProbe";
 import { config } from "./config";
 import { oauthMetadataClient } from "@/infrastructure/mcp/oauthMetadata";
@@ -40,6 +42,11 @@ import { oauthClient } from "@/infrastructure/mcp/oauthClient";
 import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
+import { artifactRepository } from "@/infrastructure/db/repositories/artifactRepository";
+import {
+  artifactObjectStore,
+  isObjectStoreConfigured,
+} from "@/infrastructure/storage/s3ObjectStore";
 import { auditRepository } from "@/infrastructure/db/repositories/auditRepository";
 import { memberRepository } from "@/infrastructure/db/repositories/memberRepository";
 import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
@@ -92,6 +99,7 @@ import { createProjectSlackUseCases, resolveProjectSlackRuntime } from "@/applic
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import { createMemberUseCases } from "@/application/member/memberUseCases";
+import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import {
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -117,8 +125,30 @@ setAdminCheck(isConfiguredAdmin);
 // push the same repository.
 setAuditSink(auditRepository);
 
+/**
+ * Where a run's output is kept, or nothing.
+ *
+ * The two ports move together: a row naming an object nobody can sign is worse
+ * than no row, and a stored object no row names cannot be found again to delete.
+ * `undefined` is the whole feature being off — the same shape `catalogDeps`
+ * takes when this deployment has no vector bucket.
+ */
+export const artifactStorage = isObjectStoreConfigured()
+  ? { rows: artifactRepository, objects: artifactObjectStore }
+  : undefined;
+
 export const auditUseCases = createAuditUseCases(auditRepository);
 export const memberUseCases = createMemberUseCases(memberRepository);
+
+/**
+ * Reading and removing what runs produced. Undefined when this deployment keeps
+ * nothing — the routes then answer 404 rather than listing an empty gallery,
+ * which would say "you have made nothing" to someone whose images were never
+ * being kept in the first place.
+ */
+export const artifactUseCases = artifactStorage
+  ? createArtifactUseCases(artifactStorage.rows, artifactStorage.objects, projectRepository)
+  : undefined;
 
 /**
  * Reading runtime settings is the composition root's job: the LLM adapters take
@@ -591,6 +621,10 @@ export const executionDeps: ExecutionDeps = {
   imageChannel,
   cipher: secretCipher,
   urlPolicy,
+  http: httpResourceReader,
+  // The same adapter the chat routes wire: an attachment and a fetched page
+  // become text the same way, which is what keeps one owner for extraction.
+  documents: documentExtractor,
   remoteAgents,
   mcpSessions,
   mcpAuth: mcpAuthProvider,
@@ -604,6 +638,7 @@ export const executionDeps: ExecutionDeps = {
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
   unknownModelPolicy: getUnknownModelPolicy,
+  ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 
 /** Dependencies for image-generation projects. */
@@ -616,6 +651,7 @@ export const imageDeps: ImageGenerationDeps = {
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
   unknownModelPolicy: getUnknownModelPolicy,
+  ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 
 /**

@@ -3,13 +3,13 @@ import type { ChatMessage } from "@/domain/chat/types";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { resolveMessageImages } from "./resolveImages";
-import { REPLAY_URL_TTL_SECONDS } from "./imageUrls";
+import { REPLAY_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { toEngineMessages } from "./messageMapping";
 import {
   resolveVersion,
   runAndPersist,
   readMessageDocuments,
-  storeMessageImages,
+  storeAttachedImages,
   userTurnContent,
   withLeadingWarnings,
 } from "./run";
@@ -75,7 +75,11 @@ export async function sendMessage(
     const userSeq = await deps.chats.reserveMessageSeq(input.chatId);
     const now = new Date().toISOString();
     const attachments = input.images ?? [];
-    const uploaded = await storeMessageImages(deps, attachments);
+    const uploaded = await storeAttachedImages(
+      deps,
+      { projectName: project.name, versionName: version.versionName },
+      attachments,
+    );
     const read = await readMessageDocuments(deps, input.documents ?? []);
     const userMessage: ChatMessage = {
       chatId: input.chatId,
@@ -92,7 +96,7 @@ export async function sendMessage(
     // fetched by the *provider*, at whatever point in a run it reaches the turn.
     const resolved = await resolveMessageImages(
       existing,
-      deps.signImageUrl,
+      deps.artifacts?.objects.sign,
       REPLAY_URL_TTL_SECONDS,
     );
     const history = toEngineMessages(resolved.messages);

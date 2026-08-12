@@ -7,7 +7,7 @@ import {
   resolveVersion,
   runAndPersist,
   readMessageDocuments,
-  storeMessageImages,
+  storeAttachedImages,
   userTurnContent,
   withLeadingWarnings,
 } from "./run";
@@ -76,7 +76,11 @@ export async function createChat(
 
   try {
     const attachments = input.images ?? [];
-    const uploaded = await storeMessageImages(deps, attachments);
+    const uploaded = await storeAttachedImages(
+      deps,
+      { projectName: project.name, versionName: version.versionName },
+      attachments,
+    );
     const read = await readMessageDocuments(deps, input.documents ?? []);
     const userSeq = await deps.chats.reserveMessageSeq(chat.chatId);
     const userMessage: ChatMessage = {

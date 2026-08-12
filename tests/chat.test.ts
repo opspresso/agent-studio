@@ -13,7 +13,7 @@ import { getChat } from "@/application/chat/getChat";
 import {
   REPLAY_URL_TTL_SECONDS,
   VIEW_URL_TTL_SECONDS,
-} from "@/application/chat/imageUrls";
+} from "@/application/artifact/urlTtl";
 import { deleteChat } from "@/application/chat/deleteChat";
 import { sendMessage } from "@/application/chat/sendMessage";
 import { ChatConflictError, ChatForbiddenError, ChatNotFoundError } from "@/application/chat/errors";
@@ -171,6 +171,53 @@ function makeRunLog() {
   const frames = (): unknown[] =>
     entries.flatMap((row) => JSON.parse(row.entry.payload) as unknown[]);
   return { repo, entries, frames };
+}
+
+/**
+ * Somewhere for a chat's images to go.
+ *
+ * One bundle rather than the store-and-signer pair it replaces: those had to be
+ * wired together — a stored key with no signer is an image nothing can display —
+ * and only a comment said so.
+ */
+function fakeArtifacts(over: { putFails?: boolean } = {}) {
+  const puts: Array<{ key: string; mimeType: string; bytes: Uint8Array }> = [];
+  const storage = {
+    objects: {
+      async put(input: { key: string; mimeType: string; bytes: Uint8Array }) {
+        if (over.putFails) {
+          throw new Error("upload failed");
+        }
+        puts.push(input);
+      },
+      async sign(key: string, ttl: number) {
+        return `https://signed.example/${key}?ttl=${ttl}`;
+      },
+      async delete() {},
+    },
+    rows: {
+      async put() {},
+      async get() {
+        return null;
+      },
+      async listByProject() {
+        return [];
+      },
+      async listByOwner() {
+        return [];
+      },
+      async delete() {},
+    },
+  } as unknown as NonNullable<ChatDeps["artifacts"]>;
+  return { storage, puts };
+}
+
+/** Artifact storage whose signer is the test's own, for the read-time cases. */
+function signingArtifacts(
+  sign: (key: string, ttl: number) => Promise<string>,
+): NonNullable<ChatDeps["artifacts"]> {
+  const { storage } = fakeArtifacts();
+  return { ...storage, objects: { ...storage.objects, sign } };
 }
 
 function makeDeps(repo: ChatRepository, overrides: Partial<ChatDeps> = {}): ChatDeps {
@@ -501,18 +548,17 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
 
   it("says why a generated image is missing instead of dropping it in silence", async () => {
     // An image that was never stored looks exactly like one that was never made,
-    // and the run reads as though it ignored the request.
+    // and the run reads as though it ignored the request. The capture reports the
+    // failure on the warning channel; this surface's job is to keep that on the
+    // message, so a reload still explains where the picture went.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "draw a cat" }),
     ]);
-    const deps = makeDeps(repo, {
-      storeImage: async () => {
-        throw new Error("AccessDenied");
-      },
-    });
+    const deps = makeDeps(repo, { artifacts: fakeArtifacts().storage });
     async function* source(): AsyncGenerator<EngineChunk> {
       yield { author: "painter", image: { b64: "aW1n", mimeType: "image/png" } };
       yield { delta: { content: "Here it is." } };
+      yield { warning: "One file this run produced could not be stored: AccessDenied" };
     }
     for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), source())) {
       // drain the stream
@@ -523,6 +569,24 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
     expect((assistant as { warnings?: string[] }).warnings?.[0]).toContain("AccessDenied");
   });
 
+  it("does not repeat the capture's warning when storage is configured", async () => {
+    // Two sentences about one lost picture is the noise, not the signal.
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
+      message({ seq: 0, role: "user", content: "draw a cat" }),
+    ]);
+    const deps = makeDeps(repo, { artifacts: fakeArtifacts().storage });
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { image: { b64: "aW1n", mimeType: "image/png" } };
+      yield { delta: { content: "Here it is." } };
+    }
+    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), source())) {
+      // drain the stream
+    }
+
+    const assistant = await repo.listMessages("c1").then((m) => m.find((x) => x.role === "assistant"));
+    expect((assistant as { warnings?: string[] }).warnings).toBeUndefined();
+  });
+
   it("says when images are shown for this turn only", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"), [
       message({ seq: 0, role: "user", content: "draw a cat" }),
@@ -531,7 +595,8 @@ describe("runAndPersist -> toEngineMessages round-trip", () => {
       yield { image: { b64: "aW1n", mimeType: "image/png" } };
       yield { delta: { content: "Here it is." } };
     }
-    // No storeImage configured at all.
+    // No artifact storage configured at all — nothing upstream warned, so this
+    // is the one case the chat surface still speaks for itself.
     for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), source())) {
       // drain the stream
     }
@@ -600,40 +665,48 @@ describe("history bounds", () => {
 });
 
 describe("runAndPersist image persistence", () => {
+  /**
+   * A run whose images were already kept, which is the shape that reaches this
+   * surface now: the run bracket stores what a run produces and stamps the key
+   * onto the chunk, so persistence here is mapping rather than uploading.
+   */
   async function* imageSource(): AsyncGenerator<EngineChunk> {
-    yield { image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } };
+    yield {
+      image: {
+        b64: "aGk=",
+        mimeType: "image/png",
+        prompt: "a cat",
+        artifactId: "art-1",
+        key: "artifacts/image/art-1.png",
+      },
+    };
     yield { delta: { content: "Here is your cat." } };
   }
 
-  it("uploads images via storeImage and persists their object keys, not URLs", async () => {
+  it("persists the object key the run already stored, never an address", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
-    const uploaded: string[] = [];
-    const deps = makeDeps(repo, {
-      storeImage: async (image) => {
-        uploaded.push(image.mimeType);
-        return "images/x.png";
-      },
-    });
+    const deps = makeDeps(repo, { artifacts: fakeArtifacts().storage });
     for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource())) {
       // drain the stream
     }
 
-    expect(uploaded).toEqual(["image/png"]);
     const stored = await repo.listMessages("c1");
     const assistant = stored.find((m) => m.role === "assistant");
     // The key, not an address: a transcript must not carry a link that keeps
-    // working for anyone who ever sees it.
-    expect(assistant?.images).toEqual([{ key: "images/x.png", prompt: "a cat" }]);
+    // working for anyone who ever sees it. The row keeps its own copy rather
+    // than pointing at the artifact row, so rendering needs no second read.
+    expect(assistant?.images).toEqual([{ key: "artifacts/image/art-1.png", prompt: "a cat" }]);
   });
 
-  it("drops the image but keeps the message when the upload fails", async () => {
+  it("drops the image but keeps the message when the run could not store it", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
-    const deps = makeDeps(repo, {
-      storeImage: async () => {
-        throw new Error("upload failed");
-      },
-    });
-    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), imageSource())) {
+    const deps = makeDeps(repo, { artifacts: fakeArtifacts().storage });
+    async function* unstored(): AsyncGenerator<EngineChunk> {
+      // No key: the capture tried and failed, and said so on its own channel.
+      yield { image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } };
+      yield { delta: { content: "Here is your cat." } };
+    }
+    for await (const _ of runAndPersist(deps, chatFixture("owner@x.com"), unstored())) {
       // drain the stream
     }
 
@@ -643,13 +716,15 @@ describe("runAndPersist image persistence", () => {
     expect(assistant?.images).toBeUndefined();
   });
 
-  it("persists no images when storeImage is not wired", async () => {
+  it("persists no images when artifact storage is not wired", async () => {
+    // Unwired storage means the chunks never carry a key in the first place, so
+    // there is nothing for the message to point at.
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
-    for await (const _ of runAndPersist(
-      makeDeps(repo),
-      chatFixture("owner@x.com"),
-      imageSource(),
-    )) {
+    async function* unstored(): AsyncGenerator<EngineChunk> {
+      yield { image: { b64: "aGk=", mimeType: "image/png", prompt: "a cat" } };
+      yield { delta: { content: "Here is your cat." } };
+    }
+    for await (const _ of runAndPersist(makeDeps(repo), chatFixture("owner@x.com"), unstored())) {
       // drain the stream
     }
 
@@ -707,7 +782,7 @@ describe("stored images are signed at read time", () => {
         images: [{ key: "images/x.png", prompt: "a cat" }],
       } as ChatMessage,
     ]);
-    const result = await getChat(makeDeps(repo, { signImageUrl: sign }), "c1", "owner@x.com");
+    const result = await getChat(makeDeps(repo, { artifacts: signingArtifacts(sign) }), "c1", "owner@x.com");
     const assistant = result.messages[0];
     expect(assistant?.role === "assistant" && assistant.images).toEqual([
       { url: `https://signed.example/images/x.png?ttl=${VIEW_URL_TTL_SECONDS}`, prompt: "a cat" },
@@ -722,7 +797,7 @@ describe("stored images are signed at read time", () => {
         images: [{ url: legacy }],
       } as ChatMessage,
     ]);
-    const result = await getChat(makeDeps(repo, { signImageUrl: sign }), "c1", "owner@x.com");
+    const result = await getChat(makeDeps(repo, { artifacts: signingArtifacts(sign) }), "c1", "owner@x.com");
     const assistant = result.messages[0];
     expect(assistant?.role === "assistant" && assistant.images).toEqual([{ url: legacy }]);
   });
@@ -861,7 +936,7 @@ describe("chat image attachments", () => {
     const deps = makeDeps(repo, {
       projects: agentProjects,
       versions: publishedVersions,
-      signImageUrl: sign,
+      artifacts: signingArtifacts(sign),
       runAgent: (params) => {
         seenMessages.push(...params.messages);
         return emptyAgent();
@@ -883,10 +958,11 @@ describe("chat image attachments", () => {
   it("sends the attachment bytes to the engine and persists the uploaded key", async () => {
     const { repo } = makeChatRepo(chatFixture("owner@x.com"));
     const seenMessages: unknown[] = [];
+    const attachmentStore = fakeArtifacts();
     const deps = makeDeps(repo, {
       projects: agentProjects,
       versions: publishedVersions,
-      storeImage: async () => "images/a.png",
+      artifacts: attachmentStore.storage,
       runAgent: (params) => {
         seenMessages.push(...params.messages);
         return emptyAgent();
@@ -913,8 +989,12 @@ describe("chat image attachments", () => {
         ],
       },
     ]);
+    // Stored under the artifact layout, so this attachment now has a row that
+    // can list and delete it — the pre-artifact `images/<uuid>` keys had none.
     const user = (await repo.listMessages("c1")).find((m) => m.role === "user");
-    expect(user?.role === "user" && user.images).toEqual([{ key: "images/a.png" }]);
+    const key = user?.role === "user" ? user.images?.[0]?.key : undefined;
+    expect(key).toMatch(/^artifacts\/image\/[0-9a-f-]+\.png$/);
+    expect(attachmentStore.puts[0]?.key).toBe(key);
   });
 
   it("still runs the turn when image persistence is unconfigured", async () => {

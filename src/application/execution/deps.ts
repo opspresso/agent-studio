@@ -20,6 +20,8 @@ import type { McpSessionFactory } from "@/domain/mcp/toolSession";
 import type { McpAuthProvider } from "@/domain/mcp/oauth";
 import type { McpConnectionRepository } from "@/domain/mcp/connection";
 import type { UrlPolicy } from "@/domain/security/urlPolicy";
+import type { HttpResourceReader } from "@/domain/net/httpResource";
+import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
@@ -45,6 +47,14 @@ export interface ExecutionDeps extends RunBracketDeps {
   cipher: SecretCipher;
   /** Outbound URL policy — wired by the composition root; tests inject a fake. */
   urlPolicy: UrlPolicy;
+  /**
+   * Reads an address the model named — wired by the composition root; tests
+   * inject a fake. Required rather than optional: an optional port that nobody
+   * wired looks exactly like a feature that is switched off.
+   */
+  http: HttpResourceReader;
+  /** Turns attached or fetched bytes into text; tests inject a fake. */
+  documents: DocumentExtractor;
   /** External-agent dispatch — wired by the composition root; tests inject a fake. */
   remoteAgents: RemoteAgentDispatcher;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */

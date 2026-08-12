@@ -9,6 +9,7 @@ import {
   type ReadDocument,
 } from "@/application/llm/documentParts";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
+import { storeArtifact, type ArtifactContext } from "@/application/artifact/storeArtifact";
 import { endNoticeFor } from "./cancelRun";
 import { log } from "@/shared/logger";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
@@ -73,25 +74,61 @@ export async function readMessageDocuments(
 }
 
 /**
- * Upload images for persistence and keep only their URLs — a b64 payload is far
- * beyond the DynamoDB item size limit. Without `storeImage` nothing is stored
- * (live rendering only); a failed upload drops that image, never the message.
+ * Take the keys off images a run already stored.
  *
- * A drop is reported rather than only logged: to the reader an image that was
- * never stored is indistinguishable from one that was never made, and the run
- * looks like it ignored the request. The warnings ride the same channel an
- * unusable binding does, so they reach the live view and the stored message.
+ * Nothing is uploaded here any more: the run bracket keeps what a run produces,
+ * which is what finally covers the pictures this surface never made itself — the
+ * builtins, an image subagent, an MCP tool that returned one. What is left is
+ * mapping the reference onto the message, since the chat row keeps its own copy
+ * of the key rather than a pointer to the artifact row (a message has to render
+ * without a second read, and a replay needs the key inline).
+ *
+ * A drop is still reported rather than only logged: to the reader an image that
+ * was never stored is indistinguishable from one that was never made. When
+ * storage *is* configured the capture already warned about its own failure, so
+ * saying it twice would be the noise, and only the unconfigured case speaks.
  */
-export async function storeMessageImages(
+export function collectGeneratedImages(
+  images: Array<{ b64: string; mimeType: string; prompt?: string; key?: string }>,
+  storageConfigured: boolean,
+): { stored: ChatMessageImage[]; warnings: string[] } {
+  const stored: ChatMessageImage[] = [];
+  for (const image of images) {
+    if (!image.key) {
+      continue;
+    }
+    stored.push(image.prompt === undefined ? { key: image.key } : { key: image.key, prompt: image.prompt });
+  }
+  const missing = images.length - stored.length;
+  if (missing > 0 && !storageConfigured) {
+    return {
+      stored,
+      warnings: [
+        `${missing} image(s) are shown for this turn only: image storage is not configured, so they are not kept with the chat.`,
+      ],
+    };
+  }
+  return { stored, warnings: [] };
+}
+
+/**
+ * Keep an image a person attached, and give the message its key.
+ *
+ * These get an artifact row like anything else. Before that they went to the
+ * same bucket with no inventory at all, which made them the one class of stored
+ * object nothing could ever list or delete — building a gallery with a delete
+ * button while still producing those would be shipping the same hole twice.
+ */
+export async function storeAttachedImages(
   deps: ChatDeps,
-  images: Array<{ b64: string; mimeType: string; prompt?: string }>,
+  context: ArtifactContext,
+  images: Array<{ b64: string; mimeType: string }>,
 ): Promise<{ stored: ChatMessageImage[]; warnings: string[] }> {
   const stored: ChatMessageImage[] = [];
-  const warnings: string[] = [];
   if (images.length === 0) {
-    return { stored, warnings };
+    return { stored, warnings: [] };
   }
-  if (!deps.storeImage) {
+  if (!deps.artifacts) {
     return {
       stored,
       warnings: [
@@ -103,17 +140,23 @@ export async function storeMessageImages(
   let reason = "";
   for (const image of images) {
     try {
-      const key = await deps.storeImage({ b64: image.b64, mimeType: image.mimeType });
-      stored.push(image.prompt === undefined ? { key } : { key, prompt: image.prompt });
+      const artifact = await storeArtifact(deps.artifacts, context, {
+        kind: "image",
+        source: "attachment",
+        bytes: Buffer.from(image.b64, "base64"),
+        mimeType: image.mimeType,
+      });
+      stored.push({ key: artifact.key });
     } catch (error) {
       failed += 1;
       reason = error instanceof Error ? error.message : String(error);
       log.error("chat", "image upload failed", error);
     }
   }
-  if (failed > 0) {
-    warnings.push(`${failed} image(s) could not be stored and will not survive a reload: ${reason}`);
-  }
+  const warnings =
+    failed > 0
+      ? [`${failed} image(s) could not be stored and will not survive a reload: ${reason}`]
+      : [];
   return { stored, warnings };
 }
 
@@ -212,7 +255,7 @@ export async function* runAndPersist(
   // and hanging them off this assistant message would claim results this turn
   // never produced.
   const toolCalls: ChannelToolCall[] = [];
-  const generatedImages: { b64: string; mimeType: string; prompt?: string }[] = [];
+  const generatedImages: { b64: string; mimeType: string; prompt?: string; key?: string }[] = [];
   // Why the run came out the shape it did — a binding it could not use, history
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];
@@ -239,7 +282,7 @@ export async function* runAndPersist(
       return;
     }
     try {
-      const uploaded = await storeMessageImages(deps, generatedImages);
+      const uploaded = collectGeneratedImages(generatedImages, deps.artifacts !== undefined);
       const images = uploaded.stored;
       for (const warning of uploaded.warnings) {
         // Too late to stream — the run is over — but it survives on the message,

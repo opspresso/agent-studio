@@ -1,14 +1,9 @@
 import { executeAgent } from "@/application/execution/runProject";
-import { executionDeps } from "@/lib/container";
+import { artifactStorage, executionDeps } from "@/lib/container";
 import { chatRepository } from "@/infrastructure/db/repositories/chatRepository";
 import { chatRunLogRepository } from "@/infrastructure/db/repositories/chatRunLogRepository";
 import { projectRepository } from "@/infrastructure/db/repositories/projectRepository";
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
-import {
-  isImageStoreConfigured,
-  signImageUrl,
-  storeImage,
-} from "@/infrastructure/storage/s3ImageStore";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import type { ChatDeps } from "@/application/chat/deps";
 
@@ -25,7 +20,7 @@ export const chatDeps: ChatDeps = {
   // the facade — not this boundary — decides whether the version asked for it.
   runAgent: (params) => executeAgent(executionDeps, params),
   documents: documentExtractor,
-  // Both or neither: a stored key with no signer is an image nothing can
-  // display, which is worse than not persisting it at all.
-  ...(isImageStoreConfigured() ? { storeImage, signImageUrl } : {}),
+  // The store and the signer used to be two optional fields held together by a
+  // comment; one bundle makes "both or neither" structural.
+  ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };

@@ -18,11 +18,21 @@ surface, so callers keep one import path.
   gets `loadSkillContent`, so the dep says nothing about what the model was offered.
   `BUILTIN_TOOL_NAMES` is reserved when MCP aliases are allocated, before the run knows which
   builtins it will offer, so an MCP tool never carries a name a builtin might claim.
-- Dispatch of one response: every call is announced first, then the **MCP calls run
-  concurrently** (≤5 in flight) while builtins run strictly in call order — a transfer moves
-  the turn budget and the image tools mutate the image registry. Results, tool messages and
-  the assistant message's `tool_calls` all stay in call order; a dispatcher that throws still
-  tears the run down, at its position in that order.
+- Dispatch of one response: every call is announced first, then the **MCP calls and `FetchUrl`
+  run concurrently** (≤5 in flight, one shared pool) while the *other* builtins run strictly in
+  call order — a transfer moves the turn budget and the image tools mutate the image registry.
+  `FetchUrl` does neither: its bytes are registered below, in order, the way an MCP tool's are,
+  and leaving it sequential would make three links in one answer cost three round trips —
+  slower than the standalone server it replaced. Results, tool messages and the assistant
+  message's `tool_calls` all stay in call order; a dispatcher that throws still tears the run
+  down, at its position in that order. A *fetch* that throws does not: an unreachable address
+  is the tool reporting an outcome, not a transport fault, so it becomes an `Error: …` result.
+- A returned picture takes one path, whoever produced it. `FetchUrl` normalises onto
+  `McpToolResult`, so the image budget, the `img_N` registration, the rejection notice for a
+  model that cannot see one, and the follow-up user message carrying the bytes are all written
+  once. `McpToolResult.files` is the exception that proves it: a file **never enters the
+  context** — a model cannot read a DOCX and the result text names it — so it is yielded as
+  `EngineChunk.file` and touches no budget at all.
 - Every call carries an id unique across the **run**, not just the response: a provider that
   omits ids (some OpenAI-compatible gateways do) gets `call_1`, `call_2`, … from a counter
   shared by every turn. Results are keyed by id, and a chat persists one assistant message

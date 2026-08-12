@@ -54,5 +54,12 @@ export interface DocumentExtractor {
     mimeType: string;
     name: string;
     maxChars: number;
+    /**
+     * The encoding the source declared, when something said so — an HTTP header
+     * on a fetched page. Absent for an upload, which is the difference that
+     * matters: a person whose file is not UTF-8 can go and re-save it, and is
+     * told to, while a remote server is not something the caller can fix.
+     */
+    charset?: string;
   }): Promise<ExtractedDocument>;
 }

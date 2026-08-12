@@ -154,6 +154,9 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Which storage errors mean a lost conditional write | `src/application/errors.ts` |
 | How an audit row is written | `src/application/audit/recordAudit.ts` |
 | Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
+| How an artifact row is written | `src/application/artifact/storeArtifact.ts` |
+| The object key an artifact is stored under | `artifactObjectKey` in `src/domain/artifact/types.ts` |
+| Deleting a stored object | `src/infrastructure/storage/s3ObjectStore.ts` |
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
 | Whether a configured value is blank | `src/shared/env.ts` |
@@ -192,6 +195,8 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
 | User-document caps | `src/domain/llm/documentLimits.ts` |
+| How a fetched URL is framed in a turn | `framedFetchedUrl` in `src/application/llm/documentParts.ts` |
+| How much of a fetched URL is kept | `MAX_FETCHED_TEXT_CHARS` in `src/application/llm/urlContent.ts` |
 | How an attached document is framed in a turn | `src/application/llm/documentParts.ts` |
 | The name every entry is addressed by | `isSlug` in `src/shared/slug.ts` |
 
@@ -238,10 +243,21 @@ One line each — the linked section is the authority.
   platform is busy), the in-flight metric, the cost guard, the per-caller concurrency guard,
   the correlation id. Exactly four functions admit a run. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
-- **Images** — three drawing paths (an `image` project, an agent run's builtins, an image
-  subagent) over one `ImageChannel` port; source bytes decide edit vs generate, and
-  `toImageUsageRecord` is the one collapse into a usage row. →
+- **Images** — four producers (an `image` project, an agent run's builtins, an image
+  subagent, an MCP tool that returned one) over one `ImageChannel` port; source bytes decide
+  edit vs generate, and `toImageUsageRecord` is the one collapse into a usage row. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#images)
+- **Artifacts** — what a run left behind. Captured at the **run bracket**, not at the image use
+  case: all four producers converge on `EngineChunk.image`, and only the first of them is that
+  use case. One row per stored object, reachable by project (GSI1) *and* by person (GSI2,
+  sparse) — a Slack or trigger run names no mailbox, so the project axis is the only way its
+  output is ever listed or deleted. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#artifacts)
+- **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in. It owns no
+  extraction: text, HTML and PDF all pass through the same `DocumentExtractor` an attachment
+  does. The adapter that fetches it is the **only** place an address the *model* chose is
+  requested, and the rules there are load-bearing rather than defence in depth. →
+  [SECURITY.md](docs/SECURITY.md#urls-the-model-chose)
 - **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2`; usage rows are daily
   per-project-per-model maps updated with atomic `ADD`. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
@@ -379,6 +395,18 @@ One line each — the linked section is the authority.
   Documents have their own caps in `src/domain/llm/documentLimits.ts`, kept separate because
   they bound a different thing: an image is bounded by what a provider accepts, a document by
   the prompt its text has to fit and by the 400KB item a chat message is stored as.
+- **A run's bytes are kept at the bracket, never at the producer.** `openRun` is what all four
+  entry points call, so the recorder is built there with the run's identity already bound.
+  Attaching it to `generateImage` instead covers a quarter of the cases: the chat surface's
+  images are mostly builtin and subagent output, which never pass through that use case.
+  `ARTIFACT_CAPTURE_SITES` in `tests/architecture.test.ts` bounds the list, and a second check
+  fails any `openRun` caller that does not also capture — a fifth entry point that forgot would
+  drop its output silently, which is exactly how chat-only storage stayed invisible.
+- **A file a tool produced is not an image.** `EngineChunk.file` is its own axis because ten
+  consumers know `chunk.image` and would upload a DOCX to Slack as a picture or draw it in an
+  `<img>`. The asymmetry: a file's bytes **never enter the model's context** — no image budget,
+  no fallback rule, no follow-up message — and they are stripped from the chunk once stored,
+  since a download link is what a reader needs.
 - **An attachment that is not an image becomes text, at the surface that received it.** A
   model id here may be served by the default router or by its own provider's
   OpenAI-compatible endpoint, and those disagree about file content parts — while capability

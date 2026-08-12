@@ -67,7 +67,7 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 | `DYNAMODB_TABLE_NAME` | `agentdure` | — | The single table. On a shared local DynamoDB this — not the port — is what keeps projects apart. |
 | `DYNAMODB_ENDPOINT` | unset | — | DynamoDB Local only. **Must be empty in alpha/prod**; a leftover value points the app at a localhost that is not there. |
 | `AES_ENCRYPTION_KEY` | — (required) | — | 32-byte base64. Encrypts every stored secret. See [SECURITY.md](SECURITY.md#secrets-at-rest). |
-| `S3_BUCKET_NAME` | unset | — | Bucket for generated images. **Private**: a chat row stores the object key and every read URL is pre-signed, so the role needs `s3:GetObject` as well as `s3:PutObject`. Unset disables persistence — chat images then render only during the live stream. |
+| `S3_BUCKET_NAME` | unset | — | Bucket for what runs produce — generated images and stored documents. **Private**: a row stores the object key and every read URL is pre-signed, so the role needs `s3:GetObject` and `s3:DeleteObject` as well as `s3:PutObject`. Unset disables persistence entirely: runs still draw, the bytes reach the surface and stop, and the artifacts gallery answers 404. |
 | `VECTOR_BUCKET` | unset | — | S3 Vectors bucket holding the capability catalog. Unset means the deployment has no catalog: `POST /api/catalog/reindex` answers 503 and a run offers exactly what its version bound. That 503 has two causes and the token check runs first, so an unset `SCHEDULE_SCAN_TOKEN` produces the same status with a different message. The role needs `s3vectors:PutVectors`, `QueryVectors`, `GetVectors`, `ListVectors` and `DeleteVectors` on the index — `GetVectors` because a search asks for each match's metadata, which the query returns only under that action. A role missing it **reindexes successfully and then fails every lookup**: the writes go through, and each run logs `capability discovery failed; running with bindings only` while the console shows a healthy catalog. |
 | `CATALOG_INDEX` | `capabilities` | — | Index within that bucket. Its dimension must match `EMBEDDING_MODEL`'s and its metric must be cosine. |
 | `EMBEDDING_PROVIDER` | `openai` | — | `cohere` \| `bedrock` \| `openai`. The first two are Bedrock and need no credentials — the pod role carries `bedrock:InvokeModel` — while `openai` reuses `LLM_BASE_URL`/`LLM_API_KEY` and requires that endpoint to serve `/embeddings`. Anything unrecognised reads as `openai`. **The demo cluster runs `cohere`**; see the table below. |
@@ -287,6 +287,7 @@ Agent Card URLs are built from `PUBLIC_BASE_URL`.
 | `CHAT_RETENTION_DAYS` | `180` | — | Measured from the chat's last activity. |
 | `TRIGGER_RUN_RETENTION_DAYS` | `30` | — | Delivery history is an operational log, not a record to keep. |
 | `A2A_TASK_RETENTION_DAYS` | `1` | — | Ephemeral job state, kept just long enough for `tasks/get`/`tasks/cancel` after `message/send`. |
+| `ARTIFACT_RETENTION_DAYS` | `180` | — | Rows naming what runs produced. Matched to `CHAT_RETENTION_DAYS` by default, since that is already a generated image's effective lifetime. **Keep it ≥ `CHAT_RETENTION_DAYS`**: shorter and a picture still visible in a conversation disappears from its own gallery first. This window and the bucket's lifecycle rule are two independent settings — see [OPERATIONS.md](OPERATIONS.md#row-retention). |
 | `AUDIT_RETENTION_DAYS` | `400` | — | Audit records. The longest window here with usage: the question an audit row answers is asked long after the act, and the row is one per sensitive act rather than one per run. |
 
 Retention values are whole days, at least `1`; anything else falls back to the default **with
@@ -316,6 +317,12 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Tool-result text per turn | `200,000` chars | `src/application/llm/toolResultBudget.ts` |
 | Transfer transcript carried to a subagent | `8,000` chars | `src/application/llm/engine.ts` |
 | Subagent nesting depth | `5` | `src/application/execution/subagentRunner.ts` |
+| Addresses one run may read (`FetchUrl`) | `20` | `src/application/llm/engine.ts` |
+| Bytes one `FetchUrl` may pull | `5 MB` | `src/application/llm/urlContent.ts` |
+| Text kept from one fetched address | `90,000` chars | `src/application/llm/urlContent.ts` |
+| HTML source read through before extracting | `500,000` chars | `src/infrastructure/llm/htmlText.ts` |
+| A file one MCP tool result may carry | `1.5 MB` × 4 | `src/infrastructure/mcp/toolManager.ts` |
+| Prompt excerpt kept on an artifact row | `500` chars | `src/application/artifact/storeArtifact.ts` |
 | Capabilities one catalog search may add to a run (skills / external agents / MCP servers) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | Catalog matches asked of each MCP index, oversampled past that cap — many tool rows collapse to one server, and a candidate the run cannot bind must cost no slot | `4×` (tool index) / `3×` (server index) the MCP server cap | `src/application/execution/bindings.ts` |
 | What a run searches the catalog with (system prompt / newest user turns) | `2,000` chars / `3` turns | `src/application/execution/bindings.ts` |

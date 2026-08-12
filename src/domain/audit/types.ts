@@ -30,7 +30,14 @@ export type AuditAction =
    * A sync rewrote an entry's provenance to the repository's — the entry
    * changed hands. `detail` records the old source (or that there was none).
    */
-  | "registry.adopt";
+  | "registry.adopt"
+  /**
+   * Someone removed an artifact that was not their own. A person tidying up
+   * their own gallery is not recorded: row-per-deletion would bury the acts
+   * this trail exists for, and reaching into another run's output is the part
+   * worth keeping.
+   */
+  | "artifact.delete";
 
 export interface AuditEvent {
   /** Unique within its day partition; the sort key pairs it with `createdAt`. */

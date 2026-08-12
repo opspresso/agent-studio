@@ -12,6 +12,7 @@ import {
   IconGitCompare,
   IconHistory,
   IconPlayerPlay,
+  IconPhoto,
   IconRoute,
   IconSparkles,
 } from "@tabler/icons-react";
@@ -48,6 +49,11 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `${base}/versions`, label: "Versions", Icon: IconHistory },
     { href: `${base}/compare`, label: "Compare", Icon: IconGitCompare },
     { href: `${base}/usage`, label: "Usage", Icon: IconChartBar },
+    // Gated like Traces: these hold other people's runtime output, and the
+    // delete here is the only way a Slack or trigger run's artifact is removed.
+    ...(canManage
+      ? [{ href: `${base}/artifacts`, label: "Artifacts", Icon: IconPhoto }]
+      : []),
     ...(canManage ? [{ href: `${base}/traces`, label: "Traces", Icon: IconRoute }] : []),
     { href: `${base}/api-reference`, label: "API Reference", Icon: IconApi },
     ...(canManage ? [{ href: `${base}/settings`, label: "Settings", Icon: IconAdjustments }] : []),

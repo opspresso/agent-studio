@@ -28,6 +28,7 @@ import {
   resolveImageModel,
   runImageSubagent,
 } from "./imageTool";
+import { buildUrlFetcher } from "./urlTool";
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
@@ -74,6 +75,9 @@ export async function buildAgentDeps(
     runSubagent: buildSubagentRunner(deps, version.subagentList, recordUsageFn, origin, signal),
     generateImage: buildImageGenerator(deps, imageModel, projectName, recordUsageFn, signal),
     editImage: buildImageEditor(deps, imageModel, projectName, recordUsageFn, signal),
+    // One line here covers the top-level run, every subagent run, and the
+    // Playground preview: all three come through this function.
+    fetchUrl: buildUrlFetcher(deps, version),
   };
 }
 

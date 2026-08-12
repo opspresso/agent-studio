@@ -198,7 +198,9 @@ describe("teeToRunLog", () => {
    * rather than shown a gap.
    */
   it("keeps a note in place of an image, never its bytes", async () => {
-    const withStorage = recordingDeps({ storeImage: async () => "key" });
+    const withStorage = recordingDeps({
+      artifacts: {} as NonNullable<Parameters<typeof recordingDeps>[0]>["artifacts"],
+    });
     await run(withStorage.deps, [{ image: { b64: "A".repeat(5_000), mimeType: "image/png" } }], {
       leaveAfter: 1,
     });

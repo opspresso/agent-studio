@@ -521,6 +521,7 @@ describe("dispatch_agents is offered only to a top-level run", () => {
       withImageTool: false,
       withEditTool: false,
       withImageTransfer: false,
+      withUrlTool: false,
       canDispatch,
     }).tools.map((tool) => tool.function.name);
 

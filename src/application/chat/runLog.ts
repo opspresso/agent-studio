@@ -100,6 +100,16 @@ function frameBytes(frame: string): number {
  * probably still there.
  */
 function frameFor(chunk: EngineChunk, imagesArePersisted: boolean): string {
+  if (chunk.file) {
+    // Same rule as an image, and the same reason: a megabyte of base64 has no
+    // business in a replay buffer. The file itself is already stored, so the
+    // reader gets it from the conversation rather than from here.
+    return warningFrame(
+      chunk.file.key
+        ? `A file (${chunk.file.name}) was produced here. It appears in the conversation once this run finishes.`
+        : `A file (${chunk.file.name}) was produced here and is not kept.`,
+    );
+  }
   if (chunk.image) {
     return warningFrame(
       imagesArePersisted
@@ -165,7 +175,7 @@ function createWriter(deps: ChatDeps, chatId: string, runId: string) {
   }
 
   function record(chunk: EngineChunk): void {
-    push(frameFor(chunk, deps.storeImage !== undefined));
+    push(frameFor(chunk, deps.artifacts !== undefined));
   }
 
   /** The buffered frames as rows, oldest first, each under the item limit. */

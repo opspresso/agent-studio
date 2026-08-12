@@ -2,7 +2,7 @@ import { isLiveClaim, type Chat, type ChatMessage } from "@/domain/chat/types";
 import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
 import { resolveMessageImages } from "./resolveImages";
-import { VIEW_URL_TTL_SECONDS } from "./imageUrls";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { log } from "@/shared/logger";
 
 export interface ChatWithMessages {
@@ -61,7 +61,7 @@ export async function getChat(
   // object key, never an address that keeps working after this response.
   const resolved = await resolveMessageImages(
     messages.map(forReading),
-    deps.signImageUrl,
+    deps.artifacts?.objects.sign,
     VIEW_URL_TTL_SECONDS,
   );
   if (resolved.dropped > 0) {

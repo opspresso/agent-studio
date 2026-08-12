@@ -205,8 +205,11 @@ One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S)
 and its versions share a partition, a chat and its messages share a partition, so a cascade
 delete is one query. `GSI1` serves the heterogeneous "list by kind" patterns — `TYPE#*`
 catalog listings, `CHATOWNER#{email}` (a user's chats by recency), `USAGEDATE#{date}`
-(cross-project daily cost for the dashboard), `TRACEPROJECT#{name}`. `GSI2` exists solely for
-Better Auth unique-field lookups.
+(cross-project daily cost for the dashboard), `TRACEPROJECT#{name}`,
+`ARTIFACTPROJECT#{name}`. `GSI2` served Better Auth unique-field lookups alone until artifacts
+needed a second axis: `ARTIFACTOWNER#{email}`, written **only** on rows whose actor names a
+mailbox, so a Slack or trigger artifact is simply absent from that index rather than sitting
+under a placeholder (see [Artifacts](#artifacts)).
 
 ### Conventions
 
@@ -223,7 +226,8 @@ Better Auth unique-field lookups.
   item, not a copy.
 - Chat `META` owns an atomic `nextSeq`; message rows use conditionally-created sequence keys.
 - Auth unique fields are claimed transactionally with a dedicated lock item. `GSI2` remains a
-  compatibility lookup for rows created before the locks existed.
+  compatibility lookup for rows created before the locks existed, and now also carries the
+  sparse artifact-owner index.
 - Trace creation transactionally writes a project-partition deletion reference; project
   deletion marks the project first, preventing new versions/traces before child cleanup.
 - **Usage rows use atomic `ADD` per model** — `calls.{model}`, `inputTokens.{model}`,
@@ -837,10 +841,72 @@ than written down, or raising the deadline would silently start failing turns on
 user can see in their own transcript. An image that cannot be signed is dropped from the
 message: on the replay path an unfetchable URL fails the whole turn.
 
-**Nothing in the app deletes an object.** A chat row expires by DynamoDB TTL, which the
-application never observes, so there is no moment at which it could cascade — expiry is the
-bucket's lifecycle rule, on the deployment checklist in
+**A chat never deletes an object.** A chat row expires by DynamoDB TTL, which the application
+never observes, so there is no moment at which it could cascade — expiry is the bucket's
+lifecycle rule, on the deployment checklist in
 [OPERATIONS.md](OPERATIONS.md#operational-checklist-for-a-new-deployment).
+
+Deliberate removal is the artifacts gallery's, not this path's: an artifact row names the
+object, and `artifactUseCases.remove` deletes the object *before* the row so a retry converges
+(see [Artifacts](#artifacts)). A chat message keeps its own copy of the key, so an image
+deleted there renders as unavailable in the transcript — said in the confirmation before the
+fact, because a cascade back into every chat and Slack thread that showed it is not something
+the artifact slice can do without importing them all.
+
+### Artifacts
+
+What a run left behind: one row per stored object, so the bytes can be listed, previewed and
+removed. Before it there was no inventory at all — a generated image went to S3 under a random
+UUID and its key was written into whichever chat message happened to be open, so nothing could
+enumerate one, nothing could delete one, and a picture drawn by a trigger or an A2A call went
+nowhere.
+
+**Captured at the run bracket.** Four functions admit a top-level run and every one can produce
+bytes, so `openRun` builds the recorder with the run's identity already bound — project,
+version, actor, transfer chain, correlation id. Attaching it to `generateImage` instead would
+have covered a quarter of the cases: an image reaches the stream from four producers (an image
+project, the `GenerateImage`/`EditImage` builtins, an image subagent, an MCP tool that returned
+one) and only the first is that use case. `captureRunArtifacts` wraps the engine's stream;
+`generateImage` records its single result directly.
+
+| Chunk | What capture does |
+|---|---|
+| `image` | Stores the bytes, **keeps** them, adds `artifactId`/`key`. A live view still renders from the chunk. |
+| `file` | Stores the bytes and **strips** them, leaving name, size and key. A rendered document has nothing to draw, and pushing megabytes of base64 down an SSE connection to produce a download link is pure cost. |
+
+A write that fails never fails the run: the picture was the expensive part, and losing the copy
+is worth strictly less than losing the answer. The loss is reported once, **after** the stream,
+as the run's true total — warning on the first failure would say "one file" and then absorb
+every later one into the same one-shot flag.
+
+**Two indexes, because each reaches rows the other cannot.**
+
+| | PK | SK | GSI1 | GSI2 (sparse) |
+|---|---|---|---|---|
+| Artifact | `ARTIFACT#{id}` | `META` | `ARTIFACTPROJECT#{project}` / `{createdAt}#{id}` | `ARTIFACTOWNER#{email}` / `{createdAt}#{id}` |
+
+A Slack, A2A, webhook or schedule run names no mailbox — its actor is a channel id or a
+trigger — so those rows are invisible to the owner index, and the project's own tab is the only
+place they are ever listed or deleted. Projects being a shared catalog, the reverse is also
+true: a person cannot find their own work by reading someone else's project. `artifactOwnerEmail`
+decides, and writes no GSI2 attributes when the answer is nobody.
+
+The object key is derived from the row id (`artifacts/{kind}/{id}.{ext}`), which is what lets an
+object and its row find each other; the legacy `images/{uuid}` keys reference nothing, so an
+orphan under that layout can never be identified again. Splitting by kind is for the lifecycle
+rule, which applies to a prefix.
+
+**Deletion is object-first.** That order can only leave a row whose preview is broken — which
+pressing delete again resolves, since S3 answers 204 for a key that is not there — while the
+reverse leaves bytes no inventory names, permanently unreachable. Reading and deleting use one
+predicate (the creator, else `assertProjectWritable`), because a different rule for each
+produces a gallery listing rows whose delete button answers 403. Removing someone else's output
+records `artifact.delete`; tidying up your own does not, since a row per deletion would bury
+the acts the trail exists for.
+
+Rows carry `expiresAt` on `ARTIFACT_RETENTION_DAYS`. That window and the bucket's lifecycle rule
+are two independent settings the app cannot reconcile — see
+[OPERATIONS.md](OPERATIONS.md#row-retention).
 
 ### Skills
 
@@ -1656,8 +1722,9 @@ any one error or warning string.
 /login                sign-in screen; where the page gate sends a signed-out visitor
 /projects             project catalog (cards)
 /projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
-/projects/[name]/versions | usage | traces | api-reference | settings | compare
+/projects/[name]/versions | usage | traces | artifacts | api-reference | settings | compare
 /chats  /chats/[chatId]
+/artifacts            what your runs produced; a project's own tab holds the rest
 /skills  /tools (MCP)  /agents  /plugins  (each + /[name] detail page)
 /dashboard            redirects to `/`, which carries the cost dashboard as its last section
 /members              admin-only workspace member list with join and last-login times

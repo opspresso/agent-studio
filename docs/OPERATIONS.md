@@ -200,12 +200,25 @@ DynamoDB's physical purge is only eventually consistent (up to ~48h), so **reads
 out already-expired rows**. `traceRepository` keeps pulling bounded pages until its `Limit` is
 filled with live rows, because DynamoDB applies `Limit` before the app-side filter.
 
-Generated images live outside the table entirely, and **only the bucket can expire them**. The
-app stores an object key and signs a URL per read, but it never deletes an object — a chat row
-disappears by DynamoDB TTL, which the application never observes, so there is no moment at
-which it could cascade. **Attach a bucket lifecycle rule matching `CHAT_RETENTION_DAYS`**; that
-is the deliberate division of the work, not an omission. See
-[SECURITY.md](SECURITY.md#data-exposure-and-retention).
+What runs produce lives outside the table, and **expiry there is the bucket's job**. An
+artifact row names the object and can delete it deliberately (the gallery's delete button does
+exactly that), but nothing sweeps on expiry: a row disappears by DynamoDB TTL, which the
+application never observes, so there is no moment at which it could cascade.
+
+**Attach a lifecycle rule to each prefix**, matched to the row window:
+
+| Prefix | Window | Holds |
+|---|---|---|
+| `artifacts/image/` | `ARTIFACT_RETENTION_DAYS` | Generated and attached images |
+| `artifacts/document/` | `ARTIFACT_RETENTION_DAYS` | Documents a tool rendered |
+| `images/` | `CHAT_RETENTION_DAYS` | The pre-artifact layout; still read, never written |
+
+The two settings cannot be reconciled by the app, and both mismatches are visible: rows
+expiring first leaves objects nothing names — an invisible leak, since only an inventory could
+find them again — while objects expiring first leaves a gallery listing previews that 404. The
+UI renders that second case as "no longer available" rather than a broken image. Run
+`scripts/backfill-artifacts.ts` once to give pre-artifact objects rows, or leave them to the
+`images/` rule. See [SECURITY.md](SECURITY.md#data-exposure-and-retention).
 
 ## Spend and load guards
 
@@ -364,10 +377,14 @@ liveness is what made this class of failure invisible.
 - [ ] DynamoDB table created with `PK`/`SK`, `GSI1`, `GSI2`, and **TTL enabled on `expiresAt`**
 - [ ] `PUBLIC_BASE_URL` set (Agent Cards, Slack manifests, OAuth callback)
 - [ ] Task/instance role grants DynamoDB, and S3 + SSM if those features are used. The S3 grant
-      needs `s3:GetObject` as well as `s3:PutObject` — read URLs are pre-signed, which signs
-      with the role's own credentials
+      needs `s3:GetObject` and `s3:DeleteObject` as well as `s3:PutObject` — read URLs are
+      pre-signed, which signs with the role's own credentials
 - [ ] If `S3_BUCKET_NAME` is set: the bucket is **private** (public-read is no longer needed),
-      with a lifecycle rule expiring `images/` on the same window as `CHAT_RETENTION_DAYS`
+      with lifecycle rules on `artifacts/image/`, `artifacts/document/` and the legacy
+      `images/` prefix — see [Row retention](#row-retention). A missing rule on a new prefix
+      is a silent leak: the rows expire and the objects do not
+- [ ] If `S3_BUCKET_NAME` is set: the role has `s3:DeleteObject` — the artifacts gallery
+      cannot remove anything without it, and a failed delete leaves the row in place
 - [ ] LB health check → `/api/ready` (or `/api/health` on a scaled fleet), restart check → `/api/health`
 - [ ] Container `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
 - [ ] Prometheus scraping `/api/metrics`; alerts on `agentdure_runs_failed_total`, `agentdure_run_duration_seconds`, `agentdure_unknown_model_calls_total`

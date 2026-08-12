@@ -19,6 +19,7 @@ import { currentRunContext } from "./runContext";
 export type LogScope =
   | "a2a"
   | "api"
+  | "artifact"
   | "audit"
   | "authz"
   | "boot"
@@ -28,6 +29,7 @@ export type LogScope =
   | "config"
   | "cost-guard"
   | "engine"
+  | "fetch"
   | "image"
   | "managed-mcp"
   | "mcp"

@@ -422,6 +422,21 @@ export function VersionEditor({
         </Stack>
       )}
 
+      {(runsTools || value.parameters.urlFetch) && (
+        <Stack gap="xs">
+          <Checkbox
+            label="Read URLs (FetchUrl tool)"
+            checked={value.parameters.urlFetch ?? false}
+            onChange={(e) => patchParams({ urlFetch: e.currentTarget.checked ? true : undefined })}
+          />
+          <Text fz="xs" c="dimmed">
+            Lets the agent read a web address it names — a page, a PDF, a data file or an image.
+            Off by default: every other outbound request goes somewhere an operator registered,
+            while this one goes wherever the model decides.
+          </Text>
+        </Stack>
+      )}
+
       {(runsTools || hasToolBindings) && (
         <Stack gap="sm">
           {!runsTools && (

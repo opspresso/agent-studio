@@ -4,7 +4,7 @@ import { resolveMessageImages } from "@/application/chat/resolveImages";
 import {
   REPLAY_URL_TTL_SECONDS,
   VIEW_URL_TTL_SECONDS,
-} from "@/application/chat/imageUrls";
+} from "@/application/artifact/urlTtl";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 import type { ChatMessage, ChatMessageImage } from "@/domain/chat/types";
 

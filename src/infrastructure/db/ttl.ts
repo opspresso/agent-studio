@@ -49,6 +49,20 @@ export const RETENTION = {
     return retentionDays("A2A_TASK_RETENTION_DAYS", 1);
   },
   /**
+   * Artifact rows — the inventory of what runs produced.
+   *
+   * Matched to chats by default because that is already the effective lifetime
+   * of a generated image: the deployment checklist points the bucket's
+   * lifecycle rule at `CHAT_RETENTION_DAYS`. Shorter than chats and an image
+   * still visible in a conversation disappears from its own gallery first;
+   * longer, and the gallery lists rows whose bytes the bucket already swept.
+   * The row TTL and the bucket rule are two independent settings and the app
+   * cannot enforce agreement — see docs/OPERATIONS.md.
+   */
+  get artifactDays(): number {
+    return retentionDays("ARTIFACT_RETENTION_DAYS", 180);
+  },
+  /**
    * Audit records. As long as usage by default, and the longest here with it:
    * the question these answer — who changed the admin list, who revealed that
    * credential — is asked long after the fact, and unlike a trace the row is

@@ -25,6 +25,7 @@ import { log } from "@/shared/logger";
 import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor";
 import type { Project } from "@/domain/project/types";
 import { openRun } from "@/application/run/runBracket";
+import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { discoveryQueries, recentUserQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
@@ -448,7 +449,10 @@ export async function* executeAgent(
       recorder?.observe(chunk);
       yield chunk;
     }
-    for await (const chunk of engine.runAgent(agentDeps, {
+    // Wraps the engine rather than sitting above the trace recorder: what is
+    // observed and yielded downstream is the chunk that already knows where its
+    // bytes were kept.
+    for await (const chunk of captureRunArtifacts(bracket.artifacts, engine.runAgent(agentDeps, {
       projectName: input.project.name,
       model: input.version.model,
       fallbackModel: input.version.fallbackModel,
@@ -468,7 +472,7 @@ export async function* executeAgent(
       mcpTools: mcp.mcpTools,
       mcpServers: mcp.mcpServers,
       signal: runSignal,
-    })) {
+    }))) {
       recorder?.observe(chunk);
       yield chunk;
     }

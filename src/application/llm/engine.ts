@@ -49,6 +49,7 @@ import {
   callerBlock,
   DISPATCH_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
+  FETCH_URL_TOOL_NAME,
   IMAGE_TOOL_NAME,
   MAX_DISPATCH_TASKS,
   runClockBlock,
@@ -61,6 +62,7 @@ import {
   type SkillInfo,
   type SubagentInfo,
 } from "./agentAssembly";
+import { framedFetchedUrl } from "./documentParts";
 import {
   createToolResultBudget,
   createToolResultEmitter,
@@ -79,6 +81,7 @@ export {
   buildAgentTools,
   DISPATCH_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
+  FETCH_URL_TOOL_NAME,
   IMAGE_TOOL_NAME,
   ImageRegistry,
   imagePromptUses,
@@ -216,6 +219,15 @@ function errorMessage(error: unknown): string {
 
 /** MCP calls of one response that may be in flight at once. */
 const MAX_PARALLEL_TOOL_CALLS = 5;
+
+/**
+ * Addresses one run may read.
+ *
+ * This platform's own policy, beside the loop that enforces it — the same
+ * place `DEFAULT_MAX_TURN` sits. Generous for reading a handful of links, and
+ * low enough that a run talked into sweeping a network runs out.
+ */
+const MAX_URL_FETCHES_PER_RUN = 20;
 
 /** Run `fn` over `items` with at most `limit` in flight; results keep input order. */
 async function mapWithLimit<T, R>(
@@ -1097,6 +1109,10 @@ export async function* runAgent(
   // Reported once, at the first cut: a run that never fills the budget should
   // never mention it.
   let contextTruncationReported = false;
+  // Bounded per run, not per turn. Nothing else caps the *number* of outbound
+  // requests — the turn budgets bound text — and "many requests, all failing"
+  // is the shape an internal-network sweep takes.
+  let urlFetches = 0;
   // Same rule for a turn the provider cut mid-tool-call: the run goes on, so
   // it is a warning rather than an ending, said once.
   let outputCutReported = false;
@@ -1331,19 +1347,77 @@ export async function* runAgent(
     // Failures are settled rather than thrown, so one rejection cannot leave the
     // other in-flight calls' rejections unhandled; each is rethrown in order.
     const mcpDispatch = deps.callMcpTool;
+    const fetchDispatch = deps.fetchUrl;
+    const mcpSettled = new Map<string, { ok: McpToolResult } | { err: unknown }>();
     const mcpCalls = mcpDispatch
       ? prepared.filter((entry) => !entry.builtin && !entry.malformed)
       : [];
-    const mcpSettled = new Map<string, { ok: McpToolResult } | { err: unknown }>();
-    if (mcpDispatch && mcpCalls.length > 0) {
-      const settled = await mapWithLimit(mcpCalls, MAX_PARALLEL_TOOL_CALLS, async (entry) => {
+    // `FetchUrl` joins the concurrent set rather than running in call order with
+    // the other builtins. The order rule exists because a transfer moves the
+    // turn budget and the image tools mutate the registry mid-loop; a fetch does
+    // neither — its bytes are registered below, in order, like an MCP tool's.
+    // Left sequential, three links in one answer would cost three round trips,
+    // which is slower than the server this replaces.
+    const fetchCalls: typeof prepared = [];
+    if (fetchDispatch) {
+      for (const entry of prepared) {
+        if (entry.malformed || !entry.builtin || entry.call.name !== FETCH_URL_TOOL_NAME) {
+          continue;
+        }
+        const url = typeof entry.args.url === "string" ? entry.args.url.trim() : "";
+        if (!url) {
+          // Answered rather than dispatched, and phrased as this engine's own
+          // sentence — the call asked for nothing to read.
+          mcpSettled.set(entry.call.id, {
+            ok: { text: `Error: ${FETCH_URL_TOOL_NAME} requires a url.` },
+          });
+        } else if (urlFetches >= MAX_URL_FETCHES_PER_RUN) {
+          mcpSettled.set(entry.call.id, {
+            ok: {
+              text: `Error: this run has already read ${MAX_URL_FETCHES_PER_RUN} addresses, which is its limit.`,
+            },
+          });
+        } else {
+          urlFetches += 1;
+          fetchCalls.push(entry);
+        }
+      }
+    }
+    // One pool, so the concurrency cap means what it says: two pools would let a
+    // turn run twice the limit.
+    const concurrent = [
+      ...mcpCalls.map((entry) => ({ entry, fetch: false })),
+      ...fetchCalls.map((entry) => ({ entry, fetch: true })),
+    ];
+    if (concurrent.length > 0) {
+      const settled = await mapWithLimit(concurrent, MAX_PARALLEL_TOOL_CALLS, async ({ entry, fetch }) => {
         try {
-          return { ok: await mcpDispatch(entry.call.name, entry.displayArgs) };
+          if (!fetch) {
+            return { ok: await mcpDispatch!(entry.call.name, entry.displayArgs) };
+          }
+          const url = String(entry.args.url);
+          const read = await fetchDispatch!(url);
+          // Normalised onto the MCP result shape on purpose: everything that
+          // happens to a returned picture — the turn's image budget, the `img_N`
+          // registration, the rejection notice for a model that cannot see one —
+          // is already written once, below, and a second copy would drift.
+          return {
+            ok: {
+              text: read.image ? `Image fetched from ${url}.` : framedFetchedUrl(url, read.text, read.note),
+              ...(read.image ? { images: [read.image] } : {}),
+            } satisfies McpToolResult,
+          };
         } catch (err) {
+          // A failed fetch is an ordinary answer, not a broken run: unlike an
+          // MCP dispatcher throwing (a transport fault), this is the tool
+          // reporting that the address did not work.
+          if (fetch) {
+            return { ok: { text: `Error: could not read that address — ${errorMessage(err)}` } };
+          }
           return { err };
         }
       });
-      mcpCalls.forEach((entry, index) => {
+      concurrent.forEach(({ entry }, index) => {
         const result = settled[index];
         if (result) {
           mcpSettled.set(entry.call.id, result);
@@ -1827,6 +1901,14 @@ export async function* runAgent(
         } else {
           input.signal?.throwIfAborted();
           content = settled.ok.text;
+          // Files ride straight out to the surface. Unlike images they never
+          // enter the context — a model cannot read a DOCX, and `content`
+          // already names it — so no budget, fallback rule or follow-up message
+          // is involved, and a consumer that does not know the field is
+          // unaffected.
+          for (const file of settled.ok.files ?? []) {
+            yield { author, file: { ...file, source: `mcp: ${call.name}` } };
+          }
           const produced = settled.ok.images ?? [];
           if (produced.length > 0 && imageInputReject) {
             // Sending parts this model rejects would fail the whole turn, so the

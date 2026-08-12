@@ -101,6 +101,7 @@ export const versionParametersSchema = z.object({
   structuredOutput: z.boolean().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).optional(),
   imageGeneration: z.boolean().optional(),
+  urlFetch: z.boolean().optional(),
   imageModel: z.string().optional(),
   dynamicCapabilities: z.boolean().optional(),
 });

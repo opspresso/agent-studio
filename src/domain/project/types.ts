@@ -102,6 +102,14 @@ export interface VersionParameters {
   imageGeneration?: boolean;
   imageModel?: string;
   /**
+   * Whether this version's runs may read an address the model names.
+   *
+   * Off by default. Every other outbound request goes to a URL an operator
+   * registered; this one goes wherever the model says, and a model is talked
+   * into things by the text it reads.
+   */
+  urlFetch?: boolean;
+  /**
    * Whether a run may reach capabilities this version did not bind, found by
    * searching the global catalog with this version's system prompt and the
    * request being answered.

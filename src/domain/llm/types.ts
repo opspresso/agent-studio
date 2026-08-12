@@ -89,8 +89,46 @@ export interface EngineChunk {
     reasoningContent?: string;
     toolCalls?: ChannelToolCall[];
   };
-  /** Emitted when the builtin GenerateImage tool produced an image. */
-  image?: { b64: string; mimeType: string; prompt?: string };
+  /**
+   * Emitted when a run produced an image — the builtin GenerateImage/EditImage
+   * tools, an image subagent, an image project, or an MCP tool that returned
+   * one.
+   *
+   * `artifactId`/`key` are added once the bytes have been stored, and the bytes
+   * stay: a live view renders them as it always did, and only a consumer that
+   * needs an address later reads the key. Absent means the run was not storing
+   * artifacts (or the write failed, which is reported as a warning).
+   */
+  image?: {
+    b64: string;
+    mimeType: string;
+    prompt?: string;
+    artifactId?: string;
+    key?: string;
+  };
+  /**
+   * A file a tool produced — a rendered document, an export.
+   *
+   * Deliberately not carried on {@link image}: ten consumers know that field and
+   * would upload a DOCX to Slack as a picture, name it `generated.png`, or draw
+   * it in an `<img>`. The asymmetry with images is that these bytes **never
+   * enter the model's context** — a model cannot read them, and the tool result
+   * text is what names the file — so no image budget, fallback rule or context
+   * message is involved.
+   *
+   * `b64` is dropped once the file is stored: a reader gets the key and signs an
+   * address, rather than a ten-megabyte string down the wire.
+   */
+  file?: {
+    b64?: string;
+    mimeType: string;
+    name: string;
+    /** What produced it, for the row's provenance ("mcp: render_document"). */
+    source: string;
+    byteSize?: number;
+    artifactId?: string;
+    key?: string;
+  };
   /** Emitted after a tool (MCP / Skill) finished executing. */
   toolResult?: {
     toolCallId: string;
@@ -266,6 +304,14 @@ export function hasImageParts(message: Pick<ChatMessageInput, "content">): boole
 export interface McpToolResult {
   text: string;
   images?: Array<{ b64: string; mimeType: string }>;
+  /**
+   * Files the tool produced — a rendered document, an export.
+   *
+   * Separate from {@link images} because these never enter the model's context:
+   * a model cannot read a DOCX, and the result text is what names it. They ride
+   * out to the surface, which stores them and hands the reader a link.
+   */
+  files?: Array<{ b64: string; mimeType: string; name: string }>;
 }
 
 /** Result of a single-shot (non-agent) run. */

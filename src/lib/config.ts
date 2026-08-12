@@ -142,8 +142,12 @@ export const config = {
   get awsRegion(): string {
     return process.env.AWS_REGION ?? "ap-northeast-2";
   },
-  /** Public-read S3 bucket for generated images. Unset disables image persistence. */
-  get imageBucketName(): string | undefined {
+  /**
+   * Private S3 bucket holding what runs produce — generated images and stored
+   * documents. Every read address is pre-signed. Unset disables artifact
+   * persistence: a run still draws, the bytes just reach the surface and stop.
+   */
+  get objectBucketName(): string | undefined {
     return optionalEnv(process.env.S3_BUCKET_NAME);
   },
   /**
@@ -152,7 +156,7 @@ export const config = {
    * Unset means this deployment has no catalog: indexing refuses and a run
    * resolves exactly the bindings its version names, which is what every run did
    * before. The feature is off rather than half-configured — the same shape
-   * `imageBucketName` and `managedMcpInstanceId` already use.
+   * `objectBucketName` and `managedMcpInstanceId` already use.
    */
   get vectorBucketName(): string | undefined {
     return optionalEnv(process.env.VECTOR_BUCKET);

@@ -156,6 +156,18 @@ export const keys = {
   }),
   auditDayPartition: (day: string) => `AUDIT#${day}`,
 
+  /**
+   * What a run produced. Two indexes, because each reaches rows the other
+   * cannot: a Slack, A2A or trigger run names no email, so the project index is
+   * the only way those are ever listed or deleted; and projects are a shared
+   * catalog, so the owner index is the only way a person finds their own work
+   * without reading someone else's project.
+   */
+  artifact: (artifactId: string) => ({ PK: `ARTIFACT#${artifactId}`, SK: "META" }),
+  artifactProjectPartition: (projectName: string) => `ARTIFACTPROJECT#${projectName}`,
+  /** Sparse: only rows whose actor names an email carry the GSI2 attributes. */
+  artifactOwnerPartition: (email: string) => `ARTIFACTOWNER#${email}`,
+
   trace: (traceId: string) => ({ PK: `TRACE#${traceId}`, SK: "META" }),
   traceRef: (projectName: string, createdAt: string, traceId: string) => ({
     PK: `PROJECT#${projectName}`,

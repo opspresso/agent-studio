@@ -29,6 +29,20 @@ import { decodeUtf8Text } from "@/shared/utf8Text";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 
+/**
+ * How large a file a tool result may carry.
+ *
+ * Our cap, beside the mechanism that spends it. The real ceiling is above it:
+ * `MAX_MCP_RESPONSE_BYTES` bounds the whole JSON-RPC response and base64 inflates
+ * by 4/3, so a server that wants to hand over something bigger has to say so
+ * itself rather than have the transport cut it — a truncated envelope arrives as
+ * a parse failure, which says nothing about the document being large.
+ */
+const MAX_TOOL_FILE_BYTES = 1_500_000;
+
+/** Files one result may carry. A tool returning a directory is not this. */
+const MAX_TOOL_FILES_PER_RESULT = 4;
+
 export type { McpServerConfig };
 
 export class ToolManager {
@@ -408,6 +422,8 @@ function allocateToolName(
 interface ExtractedBlock {
   text: string;
   image?: ImageBytes;
+  /** Bytes that are not an image and not text — a rendered document, an export. */
+  file?: { b64: string; mimeType: string; name: string };
 }
 
 /**
@@ -429,6 +445,22 @@ function resourceLinkText(link: {
   return detail ? `[resource: ${link.uri} (${detail})]` : `[resource: ${link.uri}]`;
 }
 
+/**
+ * What to call a file the server did not name.
+ *
+ * The URI's last segment is what a browser would use; failing that the mime
+ * type's subtype makes an extension. Never empty — the name is what a person
+ * ends up downloading.
+ */
+function fileNameFor(resource: { uri?: string }, mimeType: string): string {
+  const fromUri = resource.uri?.split("?")[0]?.split("/").filter(Boolean).pop();
+  if (fromUri) {
+    return decodeURIComponent(fromUri);
+  }
+  const subtype = mimeType.split("/")[1]?.split(/[+.]/).pop();
+  return subtype ? `file.${subtype}` : "file";
+}
+
 function imageBlock(data: string | undefined, mimeType: string | undefined): ExtractedBlock {
   if (!data || !mimeType?.startsWith("image/")) {
     return { text: "[image result omitted]" };
@@ -448,7 +480,9 @@ function extractBlock(block: unknown): ExtractedBlock {
     uri?: string;
     name?: string;
     description?: string;
-    resource?: { text?: string; blob?: string; mimeType?: string };
+    // `uri` is required of an embedded resource by the protocol, and it is
+    // what names a file the server handed back.
+    resource?: { uri?: string; text?: string; blob?: string; mimeType?: string };
   };
   if (b.type === "text") {
     return { text: b.text || "No result" };
@@ -484,6 +518,21 @@ function extractBlock(block: unknown): ExtractedBlock {
       if (text !== null) {
         return { text: text || "No result" };
       }
+      if (bytes.byteLength <= MAX_TOOL_FILE_BYTES) {
+        // Not text, but not nothing either: a rendered document is the whole
+        // answer to the call that produced it, and dropping it here is what
+        // used to make "write me a report" end with a file nobody received.
+        //
+        // Every blob within the cap, rather than a mime allowlist: the protocol
+        // has no field that says "this is an artifact", and a list of types
+        // would be wrong the first time a `.xlsx` arrives. This code already
+        // distrusts the declared type — see the comment below.
+        const name = fileNameFor(b.resource, mime);
+        return {
+          text: `[file: ${name}, ${mime}, ${bytes.byteLength} bytes — delivered to the user]`,
+          file: { b64: b.resource.blob, mimeType: mime, name },
+        };
+      }
       // Decided on the bytes, not on `mime`: servers label a real PDF
       // `application/octet-stream` often enough that the declared type cannot
       // carry this, and they label text as octet-stream too.
@@ -518,13 +567,21 @@ function truncateResult(output: string): string {
     : output;
 }
 
-function formatToolResult(content: unknown[]): McpToolResult {
+/** Exported for tests: how a server's content blocks become one tool result. */
+export function formatToolResult(content: unknown[]): McpToolResult {
   const blocks = content.map(extractBlock);
   const data = blocks.map((block) => block.text);
   const images = blocks.flatMap((block) => (block.image ? [block.image] : []));
+  const files = blocks
+    .flatMap((block) => (block.file ? [block.file] : []))
+    .slice(0, MAX_TOOL_FILES_PER_RESULT);
   const first = data[0];
   const output = truncateResult(
     data.length === 1 && first !== undefined ? first : JSON.stringify(data),
   );
-  return images.length > 0 ? { text: output, images } : { text: output };
+  return {
+    text: output,
+    ...(images.length > 0 ? { images } : {}),
+    ...(files.length > 0 ? { files } : {}),
+  };
 }

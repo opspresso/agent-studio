@@ -62,7 +62,7 @@ describe("optional config", () => {
     set("S3_BUCKET_NAME", raw);
     set("PLUGINS_REPO", raw);
     expect(config.a2aApiKey).toBeUndefined();
-    expect(config.imageBucketName).toBeUndefined();
+    expect(config.objectBucketName).toBeUndefined();
     expect(config.pluginsRepo).toBeUndefined();
   });
 
