@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatUsd } from "@/app/_lib/formatUsd";
 import {
   Alert,
   Card,
@@ -37,12 +38,6 @@ import classes from "./Dashboard.module.css";
 
 const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
 
-function formatUsd(value: number, fractionDigits = 2): string {
-  return `$${value.toLocaleString(undefined, {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  })}`;
-}
 
 function StatCard({
   label,

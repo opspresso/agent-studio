@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart, type ChartSeries } from "@mantine/charts";
+import { formatUsd } from "@/app/_lib/formatUsd";
 import { Divider, Group, Paper, Text } from "@mantine/core";
 import { OTHERS_KEY, toChartColumns, toChartData, type DailySeriesPoint } from "../_lib/usage";
 
@@ -15,13 +16,6 @@ const SERIES_COLORS = [
   "var(--chart-8)",
 ];
 
-function formatUsd(value: number): string {
-  const fractionDigits = value !== 0 && Math.abs(value) < 0.01 ? 4 : 2;
-  return `$${value.toLocaleString(undefined, {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  })}`;
-}
 
 function formatAxisUsd(value: number): string {
   return value !== 0 && Math.abs(value) < 0.01 ? `$${value}` : `$${value.toLocaleString()}`;

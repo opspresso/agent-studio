@@ -656,10 +656,22 @@ function asErrorResult(output: string): string {
   return output.startsWith("Error:") ? output : `Error: the tool reported a failure. ${output}`;
 }
 
-/** The per-call ceiling, applied wherever a result becomes text. */
+/**
+ * The per-call ceiling, applied wherever a result becomes text.
+ *
+ * `cutCodePoints`, not `slice`: this is the largest cut in the file and was the
+ * only one that did not use it, while eight others do. A raw slice can land
+ * between the halves of a non-BMP character — an emoji, CJK ext-B — and what
+ * comes back is not well-formed text at all, so it reaches the model's context
+ * and DynamoDB as a lone surrogate.
+ *
+ * The suffix counts characters because that is what the limit counts. It used to
+ * say "100KB", which was never the same number and drifted further with every
+ * Korean character in the result.
+ */
 function truncateResult(output: string): string {
   return output.length > MAX_TOOL_RESULT_LENGTH
-    ? `${output.slice(0, MAX_TOOL_RESULT_LENGTH)}...(truncated after 100KB)`
+    ? `${cutCodePoints(output, MAX_TOOL_RESULT_LENGTH)}...(truncated at ${MAX_TOOL_RESULT_LENGTH.toLocaleString("en-US")} characters)`
     : output;
 }
 

@@ -390,8 +390,11 @@ describe("ToolManager response parsing", () => {
 });
 
 describe("ToolManager result truncation", () => {
-  it("truncates a tool result longer than the 100KB cap", async () => {
-    const suffix = "...(truncated after 100KB)";
+  it("truncates a tool result longer than the cap, in the unit the cap counts", async () => {
+    // The suffix used to say "100KB" for a limit of 100,000 *characters* — never
+    // the same number, and further apart with every multi-byte character in the
+    // result.
+    const suffix = "...(truncated at 100,000 characters)";
     stubMcpFetch({
       "https://big.test/mcp": {
         listTools: [{ name: "dump" }],
@@ -404,6 +407,31 @@ describe("ToolManager result truncation", () => {
     const result = await manager.callTool("dump", {});
     expect(result.text.endsWith(suffix)).toBe(true);
     expect(result.text.length).toBe(100_000 + suffix.length);
+  });
+
+  /**
+   * The largest cut in the file, and the only one that used a raw `slice` while
+   * eight others went through `cutCodePoints`. A cut between the halves of a
+   * non-BMP character leaves a lone surrogate, which is not well-formed text:
+   * DynamoDB will not store it as written and it goes to a provider as an
+   * escape.
+   */
+  it("never cuts through a character", async () => {
+    // Emoji are two UTF-16 units each, so the boundary lands mid-character.
+    stubMcpFetch({
+      "https://emoji.test/mcp": {
+        listTools: [{ name: "dump" }],
+        callContent: [textBlock("\u{1F600}".repeat(80_000))],
+      },
+    });
+    const manager = new ToolManager([server("emoji", "https://emoji.test/mcp")]);
+    await manager.init();
+
+    const result = await manager.callTool("dump", {});
+
+    // A well-formed string survives a UTF-8 round trip; one with a lone
+    // surrogate comes back with U+FFFD where the half was.
+    expect(Buffer.from(result.text, "utf-8").toString("utf-8")).toBe(result.text);
   });
 
   it("marks a result the server flagged as isError", async () => {

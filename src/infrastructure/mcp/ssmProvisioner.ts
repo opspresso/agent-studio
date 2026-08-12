@@ -19,6 +19,7 @@ import {
   GetCommandInvocationCommand,
 } from "@aws-sdk/client-ssm";
 import { MANAGED_NAME } from "@/shared/slug";
+import { MANAGED_ENV_REF, MANAGED_IMAGE, managedPortFor } from "./managedPort";
 import type {
   ManagedWorkload,
   ManagedWorkloadSpec,
@@ -27,16 +28,10 @@ import type {
 
 /** Container/entry names are slugs, the same shape the registry already allows. */
 const NAME = MANAGED_NAME;
-/** `host/path:tag` or `…@sha256:…`. No spaces, quotes, or shell metacharacters. */
-const IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
-/** SSM parameter paths this app is allowed to name. */
-const ENV_REF = /^\/[A-Za-z0-9._\-/]+$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const POLL_INTERVAL_MS = 2_000;
 const COMMAND_TIMEOUT_MS = 300_000;
-/** Ports handed to managed containers. Above the ephemeral range this app uses. */
-const PORT_BASE = 3100;
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\"'\"'`)}'`;
@@ -49,14 +44,6 @@ function assertSafe(value: string, pattern: RegExp, what: string): string {
   return value;
 }
 
-/** Deterministic per name, so a restart re-derives the port it already bound. */
-function portFor(name: string): number {
-  let hash = 0;
-  for (const char of name) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return PORT_BASE + (hash % 400);
-}
 
 export interface SsmProvisionerConfig {
   instanceId: string;
@@ -126,12 +113,12 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
   return {
     async start(spec: ManagedWorkloadSpec): Promise<ManagedWorkload> {
       const name = assertSafe(spec.name, NAME, "name");
-      const image = assertSafe(spec.image, IMAGE, "image");
-      const envRefs = (spec.envRefs ?? []).map((ref) => assertSafe(ref, ENV_REF, "env reference"));
+      const image = assertSafe(spec.image, MANAGED_IMAGE, "image");
+      const envRefs = (spec.envRefs ?? []).map((ref) => assertSafe(ref, MANAGED_ENV_REF, "env reference"));
       const environment = Object.entries(spec.environment ?? {}).map(
         ([key, value]) => [assertSafe(key, ENV_NAME, "environment name"), value] as const,
       );
-      const port = portFor(name);
+      const port = managedPortFor(name);
       const args = (spec.args ?? []).map((arg) =>
         shellQuote(arg.replaceAll("{{PORT}}", String(port))),
       );
@@ -196,7 +183,7 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
       const [identity = "", running = "false", detail] = trimmed.split(/\s+/);
       return {
         name: safe,
-        address: `http://127.0.0.1:${portFor(safe)}`,
+        address: `http://127.0.0.1:${managedPortFor(safe)}`,
         identity,
         running: running === "true",
         ...(detail ? { detail } : {}),
