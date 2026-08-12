@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ColorSchemeScript, MantineProvider, mantineHtmlProps } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { Chakra_Petch, Figtree, JetBrains_Mono } from "next/font/google";
 import { AppLayout } from "@/components/AppLayout";
 import { getSessionUser } from "@/lib/session";
 import { resolveViewer } from "@/lib/viewer";
@@ -17,6 +18,28 @@ export const metadata: Metadata = {
   title: "Agent Studio",
   description: "LLM platform for prompt, agent, and cost management",
 };
+
+/*
+ * The three faces, self-hosted at build time so nothing is fetched from a font
+ * CDN at runtime. They reach the styles as CSS variables rather than class
+ * names because `theme.ts` is a `"use client"` module and cannot import a font
+ * object across that boundary — it reads `var(--font-sans)` instead.
+ *
+ * Neither Figtree nor Chakra Petch carries Hangul, so the system stack stays
+ * behind them in `theme.ts` as the fallback that actually renders Korean.
+ */
+const sans = Figtree({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+
+// The display face: geometric, squared-off, and only used for headings — three
+// weights is the whole range `theme.ts` asks for.
+const display = Chakra_Petch({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 /**
  * The viewer is resolved here, before anything renders, and handed to the chrome
@@ -39,7 +62,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const viewer = user ? await resolveViewer(user) : null;
 
   return (
-    <html lang="en" {...mantineHtmlProps}>
+    <html
+      lang="en"
+      className={`${sans.variable} ${display.variable} ${mono.variable}`}
+      {...mantineHtmlProps}
+    >
       <head>
         {/*
          * Applies the stored colour scheme before first paint. Replaces the

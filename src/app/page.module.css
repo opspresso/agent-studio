@@ -5,9 +5,16 @@
   background: color-mix(in oklab, var(--mantine-color-brand-5) 9%, transparent);
 }
 
+/*
+ * Both ends come off the brand ramp now. They used to be `brand-5 → violet-5`,
+ * which read as a gradient only while brand was blue — the ramp has since moved
+ * to hue 290 and the two ends landed within a few degrees of each other, so the
+ * text was a flat violet wearing a gradient's markup. Dark-to-light on one hue
+ * is the same move `--ai-gradient` makes.
+ */
 .gradientText {
   color: transparent;
-  background: linear-gradient(120deg, var(--mantine-color-brand-5), var(--mantine-color-violet-5));
+  background: linear-gradient(120deg, var(--mantine-color-brand-7), var(--mantine-color-brand-4));
   background-clip: text;
   -webkit-background-clip: text;
 }
@@ -35,12 +42,12 @@
   border-radius: 50%;
   background:
     radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.84), transparent 12%),
-    radial-gradient(circle at 50% 50%, var(--mantine-color-brand-4), var(--mantine-color-violet-7));
+    radial-gradient(circle at 50% 50%, var(--mantine-color-brand-4), var(--mantine-color-brand-8));
   filter: blur(2px);
   opacity: 0.56;
   box-shadow:
     0 0 90px color-mix(in oklab, var(--mantine-color-brand-5) 40%, transparent),
-    inset -30px -30px 70px rgba(30, 20, 100, 0.28);
+    inset -30px -30px 70px rgba(30, 18, 78, 0.3);
 }
 
 .orbit {
@@ -60,7 +67,7 @@
   border-color: color-mix(in oklab, var(--mantine-color-brand-4) 28%, var(--studio-border));
   background-color: color-mix(in oklab, var(--studio-surface) 86%, transparent);
   box-shadow:
-    0 32px 80px rgba(24, 22, 72, 0.24),
+    0 32px 80px rgba(38, 26, 74, 0.22),
     inset 0 1px rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(22px) saturate(1.2);
   transform: perspective(1000px) rotateY(-2deg) rotateX(1deg);
@@ -120,7 +127,7 @@
 .domainCard:hover {
   transform: translateY(-2px);
   border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 28%, transparent);
-  box-shadow: var(--surface-shadow);
+  box-shadow: var(--surface-shadow-lifted);
 }
 
 @media (prefers-reduced-motion: reduce) {

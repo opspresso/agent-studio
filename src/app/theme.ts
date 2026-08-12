@@ -14,23 +14,33 @@ import { createTheme, type MantineColorsTuple } from "@mantine/core";
  */
 
 /**
- * The brand ramp, anchored on the two colours the old Tailwind theme defined:
- * shade 6 is `--color-brand` (oklch(0.59 0.2 259)) and shade 7 is
- * `--color-brand-strong` (oklch(0.51 0.22 263)), which was the hover colour.
- * The rest is that hue stepped through OKLCH and clamped into sRGB, so the
- * lighter shades stay on-hue instead of clipping to pure blue.
+ * The brand ramp: indigo-violet, at OKLCH hue 290.
+ *
+ * It used to sit at hue 259 — a blue inherited from the pre-Mantine Tailwind
+ * theme — and the whole ramp was re-hued rather than re-picked, so every shade
+ * keeps the lightness and chroma it already had and only the hue moved. That
+ * matters because the shades are load-bearing beyond the accent: shade 6 is the
+ * light-mode primary and shade 7 the dark one, both chosen for white-on-brand
+ * contrast, and shifting L would have quietly broken that.
+ *
+ * 290 is not a taste call. It is the measured hue of the accent this palette is
+ * modelled on (#6e43dc → #8051f9, both hue 289.5), and shade 7 lands on #6b3dd8
+ * as a result — the same colour, arrived at from our own lightness curve.
+ *
+ * Clamping into sRGB walks chroma down at fixed hue rather than clipping each
+ * channel, which is what keeps the light shades on-hue instead of drifting.
  */
 const brand: MantineColorsTuple = [
-  "#eff5ff",
-  "#deebfe",
-  "#c0d8fe",
-  "#9ec3fd",
-  "#7aacfd",
-  "#5292fc",
-  "#2477f1",
-  "#1856e1",
-  "#1348c0",
-  "#0f3ca0",
+  "#f4f3fe",
+  "#e9e7fd",
+  "#d5d1fb",
+  "#c0b8f9",
+  "#ab9df8",
+  "#957ef5",
+  "#805fe9",
+  "#6b3dd8",
+  "#5b33b8",
+  "#4b2a99",
 ];
 
 export const theme = createTheme({
@@ -39,16 +49,31 @@ export const theme = createTheme({
   // white-on-brand stays legible against a dark surface, which shade 6 does not.
   primaryShade: { light: 6, dark: 7 },
   colors: { brand },
+  /*
+   * The faces are loaded in `layout.tsx` and reach us as CSS variables, never as
+   * imports — this file is a client module and cannot hold a `next/font` object.
+   *
+   * The system stack stays behind each one and is doing real work, not sitting
+   * there as boilerplate: neither Figtree nor Chakra Petch ships Hangul, so it
+   * is what actually renders Korean.
+   */
   fontFamily:
-    'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    'var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   fontFamilyMonospace:
-    'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+    'var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+  // Mantine's own `xl` is 32px, which reads as a pill on a dense settings card.
+  // 20px is the step above `lg` that the surfaces here actually want.
+  radius: { xl: "20px" },
   defaultRadius: "lg",
   focusRing: "auto",
   headings: {
+    // Chakra Petch is squared-off and wide; it carries a heading and nothing
+    // else, so `--font-sans` follows it for any glyph it lacks.
     fontFamily:
-      'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    fontWeight: "650",
+      'var(--font-display), var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    // 600 rather than the old 650: this face has real weights instead of a
+    // variable axis, so an in-between value would round to one of them anyway.
+    fontWeight: "600",
   },
   components: {
     // The old `buttonClass()` default was `md` = px-3 py-2 text-sm, which is
@@ -56,8 +81,11 @@ export const theme = createTheme({
     // point of the migration.
     Button: { defaultProps: { size: "sm" } },
     ActionIcon: { defaultProps: { variant: "subtle", color: "gray" } },
-    // `cardClass`: rounded-lg border bg-white p-4.
-    Card: { defaultProps: { withBorder: true, radius: "lg", padding: "lg" } },
+    // `cardClass`: rounded-lg border bg-white p-4. The border is still here but
+    // `--studio-border` has stepped back to a hairline — a card is now told
+    // apart by its shadow, so the border only has to stop it bleeding into the
+    // surface behind it.
+    Card: { defaultProps: { withBorder: true, radius: "xl", padding: "lg" } },
     Paper: { defaultProps: { radius: "lg" } },
     // The old `Badge` was neutral; brand-coloured ones passed their own colour.
     Badge: { defaultProps: { variant: "light", color: "gray", radius: "sm" } },

@@ -8,19 +8,52 @@
  * one animation.
  */
 
-:root {
-  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 13%, transparent);
-  --studio-surface: rgba(255, 255, 255, 0.78);
-  --studio-surface-raised: rgba(255, 255, 255, 0.94);
-  --studio-border: color-mix(in oklab, var(--mantine-color-gray-4) 62%, transparent);
-  --studio-grid: color-mix(in oklab, var(--mantine-color-brand-4) 10%, transparent);
-  --ai-gradient: linear-gradient(135deg, var(--mantine-color-brand-6), var(--mantine-color-violet-5));
+/*
+ * The scheme attribute is in the second selector because of
+ * `--mantine-color-body`: Mantine sets it under
+ * `:root[data-mantine-color-scheme="light"]`, which outranks a bare `:root`, so
+ * a plain `:root` override here is simply ignored and the page stays white.
+ * Matching its specificity is what makes the override land. The bare `:root`
+ * stays as the fallback for the frame before the colour-scheme script runs.
+ */
+:root,
+:root[data-mantine-color-scheme="light"] {
+  /*
+   * The grain: a tiled `feTurbulence` desaturated to grey and laid over the
+   * page at a few percent — the texture that keeps a flat lavender field from
+   * reading as a blank div. Inline rather than a PNG on purpose: no extra
+   * request, nothing to 404, and the strength is a number in this file rather
+   * than a property of a binary someone would have to re-export to change.
+   */
+  --studio-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+
+  /*
+   * The page is not white. Mantine's own `--mantine-color-body` is, so it is
+   * overridden here rather than in `theme.ts` — the theme owns the brand ramp,
+   * and this is the surface everything else is measured against.
+   */
+  --mantine-color-body: #f4f5ff;
+
+  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 9%, transparent);
+  --studio-surface: rgba(255, 255, 255, 0.82);
+  --studio-surface-raised: rgba(255, 255, 255, 0.95);
+  /* A hairline. The card is told apart by its shadow now, not by this. */
+  --studio-border: color-mix(in oklab, var(--mantine-color-gray-4) 40%, transparent);
+  --ai-gradient: linear-gradient(135deg, var(--mantine-color-brand-7), var(--mantine-color-brand-5));
   --surface-highlight: color-mix(
     in oklab,
     var(--mantine-color-brand-6) 7%,
     var(--mantine-color-body)
   );
-  --surface-shadow: 0 1px 2px rgba(20, 42, 74, 0.04), 0 10px 28px rgba(20, 42, 74, 0.05);
+  /*
+   * Wider and softer than the old pair, and tinted violet rather than navy.
+   * `--surface-shadow` is what every card rests at; `-lifted` is what it rises
+   * to on hover. They used to be one value that only existed on hover, which
+   * worked while the border did the separating — now that the border is a
+   * hairline, a card with no shadow at rest just dissolves into the page.
+   */
+  --surface-shadow: 0 1px 2px rgba(38, 26, 74, 0.04), 0 10px 26px rgba(38, 26, 74, 0.05);
+  --surface-shadow-lifted: 0 2px 4px rgba(38, 26, 74, 0.05), 0 20px 46px rgba(38, 26, 74, 0.11);
 
   /* Categorical chart palette — validated for CVD/contrast on the light surface. */
   --chart-1: #2a78d6;
@@ -38,18 +71,24 @@
   --chart-cursor: rgba(0, 0, 0, 0.06);
 }
 
-[data-mantine-color-scheme="dark"] {
-  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 17%, transparent);
-  --studio-surface: rgba(21, 23, 29, 0.82);
-  --studio-surface-raised: rgba(29, 32, 40, 0.94);
-  --studio-border: color-mix(in oklab, var(--mantine-color-dark-4) 78%, transparent);
-  --studio-grid: color-mix(in oklab, var(--mantine-color-brand-5) 8%, transparent);
+:root[data-mantine-color-scheme="dark"] {
+  /* Same grain, lifted to white — a dark surface takes light noise, not more shadow. */
+  --studio-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.05' style='mix-blend-mode:screen'/%3E%3C/svg%3E");
+
+  /* The same lavender hue as the light page, carried down to L≈0.19. */
+  --mantine-color-body: #12111a;
+
+  --page-glow: color-mix(in oklab, var(--mantine-color-brand-6) 15%, transparent);
+  --studio-surface: rgba(28, 26, 40, 0.82);
+  --studio-surface-raised: rgba(38, 36, 52, 0.94);
+  --studio-border: color-mix(in oklab, var(--mantine-color-dark-4) 62%, transparent);
   --surface-highlight: color-mix(
     in oklab,
     var(--mantine-color-brand-6) 9%,
     var(--mantine-color-body)
   );
-  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 12px 32px rgba(0, 0, 0, 0.18);
+  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 10px 26px rgba(0, 0, 0, 0.2);
+  --surface-shadow-lifted: 0 2px 6px rgba(0, 0, 0, 0.24), 0 22px 50px rgba(0, 0, 0, 0.32);
 
   /* Same hues re-stepped for the dark surface. */
   --chart-1: #3987e5;
@@ -67,18 +106,22 @@
   --chart-cursor: rgba(255, 255, 255, 0.08);
 }
 
+/*
+ * The backdrop is grain over a tinted field, not a plotting surface. The 32px
+ * blueprint grid that used to be here read as a second layer of UI behind the
+ * real one — every card sat on top of ruled paper, and on a dense page (the
+ * cost dashboard, a chat thread) the lines competed with the content's own.
+ */
 body {
   background-image:
-    linear-gradient(var(--studio-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--studio-grid) 1px, transparent 1px),
-    radial-gradient(circle at 18% -8rem, var(--page-glow), transparent 34rem),
+    var(--studio-noise), radial-gradient(circle at 18% -8rem, var(--page-glow), transparent 38rem),
     radial-gradient(
       circle at 94% 16rem,
-      color-mix(in oklab, var(--mantine-color-violet-5) 10%, transparent),
-      transparent 30rem
+      color-mix(in oklab, var(--mantine-color-brand-4) 8%, transparent),
+      transparent 32rem
     );
-  background-repeat: repeat, repeat, no-repeat, no-repeat;
-  background-size: 32px 32px, 32px 32px, auto, auto;
+  background-repeat: repeat, no-repeat, no-repeat;
+  background-size: 160px 160px, auto, auto;
   background-attachment: fixed;
   min-width: 320px;
 }
@@ -136,6 +179,7 @@ button.mantine-Card-root {
 
 .mantine-Card-root {
   background-color: var(--studio-surface);
+  box-shadow: var(--surface-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -169,7 +213,7 @@ button.mantine-Card-root:hover {
   transform: translateY(-2px);
   border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 42%, transparent);
   background-color: var(--surface-highlight);
-  box-shadow: var(--surface-shadow);
+  box-shadow: var(--surface-shadow-lifted);
 }
 
 .mantine-Card-root[href]:focus-visible,
