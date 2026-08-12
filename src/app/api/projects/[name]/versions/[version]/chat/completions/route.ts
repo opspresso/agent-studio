@@ -4,6 +4,7 @@ import { executeProject, executeProjectStream } from "@/application/execution/ru
 import { chatCompletionsSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { turnBody } from "@/app/api/_lib/body";
 import { toChatCompletion, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
@@ -14,7 +15,11 @@ export const POST = async (request: Request, ctx: RouteContext) => {
   if (principal instanceof Response) {
     return principal;
   }
-  const parsed = chatCompletionsSchema.safeParse(await request.json().catch(() => null));
+  const body = await turnBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = chatCompletionsSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

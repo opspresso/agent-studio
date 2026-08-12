@@ -4,6 +4,7 @@ import { executeAgent } from "@/application/execution/runProject";
 import { agentSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { turnBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
@@ -13,7 +14,11 @@ export const POST = async (request: Request, ctx: RouteContext) => {
   if (principal instanceof Response) {
     return principal;
   }
-  const parsed = agentSchema.safeParse(await request.json().catch(() => null));
+  const body = await turnBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = agentSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

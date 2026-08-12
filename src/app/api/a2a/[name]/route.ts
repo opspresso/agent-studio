@@ -5,6 +5,7 @@ import { resolveExposedProject } from "@/application/a2a/exposure";
 import { authenticateA2a } from "@/app/api/a2a/_lib/auth";
 import { unauthorized } from "@/shared/unauthorized";
 import { sseResponseRaw } from "@/app/api/_lib/sse";
+import { turnBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
@@ -48,7 +49,10 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   );
   const transport = new JsonRpcTransportHandler(requestHandler);
 
-  const body = await request.json().catch(() => null);
+  const body = await turnBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
   const result = await transport.handle(body);
   if (isAsyncGenerator(result)) {
     return await sseResponseRaw(result);

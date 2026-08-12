@@ -2,6 +2,7 @@ import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 import { base64Chars } from "@/domain/llm/imageLimits";
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 import { MAX_DOCUMENT_BYTES, MAX_DOCUMENTS } from "@/domain/llm/documentLimits";
+import { MAX_SKILL_TOTAL_BYTES } from "@/domain/skill/files";
 
 /**
  * Ceiling on a turn body that carries attachments.
@@ -39,6 +40,55 @@ export function bodyTooLarge(error: BodyTooLargeError): Response {
 export async function readTurnBody(request: Request): Promise<unknown> {
   const text = await readBodyText(request, MAX_TURN_BODY_BYTES);
   return JSON.parse(text);
+}
+
+/**
+ * Ceiling on a body that carries no attachments.
+ *
+ * Derived from the largest thing a management route legitimately holds — a
+ * skill's whole file set — with room for the prose and JSON quoting around it.
+ * These routes have their own per-field caps, but every one of them is checked
+ * by zod *after* `JSON.parse` has already allocated the string twice.
+ */
+const EDITOR_ALLOWANCE = MAX_SKILL_TOTAL_BYTES + PROSE_ALLOWANCE;
+
+/**
+ * The body of a registry or version edit, or the response that refuses it.
+ *
+ * Separate from {@link turnBody} because the two bound different things and the
+ * gap between them is three orders of magnitude: a turn may carry four 10MB
+ * attachments, and nothing a person types into the console comes close.
+ */
+export async function editorBody(request: Request): Promise<unknown | Response> {
+  return boundedBody(request, EDITOR_ALLOWANCE);
+}
+
+/**
+ * The body, or the response that refuses it.
+ *
+ * The bound above was worth nothing on the routes that never asked for it, and
+ * for a while that was most of them: the chat surface read its body this way
+ * while `/predict` — the same attachments, the same `attachedImagesSchema` —
+ * called `request.json()` and let zod check the size once the string was already
+ * resident. Every route that parses a turn now goes through here.
+ *
+ * It answers with a `Response` rather than throwing because the eight lines of
+ * try/catch that shape used to need were themselves about to be copied five
+ * times, and a refusal spelled differently on one route is how a caller learns
+ * a limit exists from a 500.
+ */
+export async function turnBody(request: Request): Promise<unknown | Response> {
+  return boundedBody(request, MAX_TURN_BODY_BYTES);
+}
+
+async function boundedBody(request: Request, maxBytes: number): Promise<unknown | Response> {
+  try {
+    return JSON.parse(await readBodyText(request, maxBytes));
+  } catch (error) {
+    return error instanceof BodyTooLargeError
+      ? bodyTooLarge(error)
+      : Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
 }
 
 export { BodyTooLargeError };

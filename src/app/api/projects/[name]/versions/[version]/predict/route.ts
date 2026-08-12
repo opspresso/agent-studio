@@ -6,6 +6,7 @@ import { executeProject, executeProjectStream } from "@/application/execution/ru
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { turnBody } from "@/app/api/_lib/body";
 
 type RouteContext = { params: Promise<{ name: string; version: string }> };
 
@@ -15,7 +16,11 @@ export const POST = async (request: Request, ctx: RouteContext) => {
   if (principal instanceof Response) {
     return principal;
   }
-  const parsed = predictSchema.safeParse(await request.json().catch(() => null));
+  const body = await turnBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = predictSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }
