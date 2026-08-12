@@ -1,5 +1,5 @@
 import { getModelConfig, toImageUsageRecord } from "@/domain/llm/models";
-import { ValidationError } from "@/application/errors";
+import { AppError, UpstreamError, ValidationError } from "@/application/errors";
 import { renderTemplate } from "@/shared/template";
 import { composeImagePrompt } from "./composeImagePrompt";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -208,8 +208,38 @@ export async function generateImage(
   } catch (error) {
     failed = !input.signal?.aborted;
     await finishTrace(recorder, error);
-    throw error;
+    throw providerFailure(error, model);
   } finally {
     await bracket.close({ failed });
   }
+}
+
+/**
+ * A provider's refusal, said out loud.
+ *
+ * This is the one image producer that answers with a body instead of a stream,
+ * so it is the one where a throw becomes an HTTP status. The other three write
+ * the same failure into a tool result the reader gets to read; here it left as
+ * a bare `Error`, which `apiError` is right to reduce to "Internal server
+ * error" — an untyped throw may be carrying anything. The cost was that a
+ * version naming a model its provider does not serve looked exactly like a
+ * crash: xAI answered 404 for `grok-imagine-image` and the console said only
+ * that something had gone wrong, with the sentence explaining it reachable
+ * solely by reading pod logs.
+ *
+ * 502 with the provider's own words separates "the other system refused" from
+ * "this one broke", and the model id names the version to go and fix — the one
+ * fact the log line did not carry either.
+ *
+ * An `AppError` passes through untouched: the guards above already chose their
+ * status, and a 400 for an unusable model must not become a 502. So does an
+ * abort, which is the caller leaving rather than anything failing.
+ */
+function providerFailure(error: unknown, model: string): unknown {
+  if (error instanceof AppError || (error instanceof Error && error.name === "AbortError")) {
+    return error;
+  }
+  return new UpstreamError(
+    `Image generation failed for ${model}: ${error instanceof Error ? error.message : String(error)}`,
+  );
 }

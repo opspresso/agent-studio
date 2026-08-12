@@ -144,11 +144,24 @@ async function xaiImageRequest(
   return toImageResult((await response.json()) as ImagesApiResponse, what);
 }
 
-/** xAI reports failures as `{"code":"400","error":"…"}`; fall back to the raw body. */
+/**
+ * What an xAI failure says, in the two shapes xAI says it in.
+ *
+ * The models answer `{"code":"400","error":"…"}`. The gateway in front of them
+ * answers `{"error":{"code":404,"message":"…"}}`, and that is the one a reader
+ * actually meets: it is what a path xAI does not serve — or a model that
+ * endpoint does not host — comes back as. Only the string form was read, so the
+ * nested one arrived as its own raw JSON, with the single sentence that named
+ * the problem buried inside a blob. Anything else still falls back to the body.
+ */
 function xaiErrorMessage(body: string): string {
   try {
     const parsed = JSON.parse(body) as { error?: unknown };
-    return typeof parsed.error === "string" ? parsed.error : body;
+    if (typeof parsed.error === "string") {
+      return parsed.error;
+    }
+    const nested = (parsed.error as { message?: unknown } | null | undefined)?.message;
+    return typeof nested === "string" ? nested : body;
   } catch {
     return body;
   }

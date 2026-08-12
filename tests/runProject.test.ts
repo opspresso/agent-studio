@@ -16,7 +16,7 @@ import {
   executeVersion,
   streamProjectRun,
 } from "@/application/execution/runProject";
-import { ValidationError } from "@/application/errors";
+import { statusForError, ValidationError } from "@/application/errors";
 import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import { remoteAgentDispatcher } from "@/infrastructure/agent/dispatcher";
 import { mcpSessionFactory } from "@/infrastructure/mcp/sessionFactory";
@@ -1902,6 +1902,22 @@ describe("executeProject non-streaming dispatch", () => {
 
     expect(run.warnings).toEqual(["the run lost something", "the child lost something"]);
     expect(run.content).toBe("answer");
+  });
+
+  /**
+   * A streaming caller reads this sentence off the wire. Thrown untyped, the
+   * collected caller got a 500 and "Internal server error" instead — the same
+   * run, the same failure, and the one surface that could not say what it was.
+   */
+  it("throws a top-level error as an upstream failure, keeping its text", async () => {
+    async function* source(): AsyncGenerator<EngineChunk> {
+      yield { error: "404 The requested resource was not found." };
+    }
+
+    const thrown = await collectRun(source(), "model").catch((error: unknown) => error);
+
+    expect(statusForError(thrown)).toBe(502);
+    expect((thrown as Error).message).toBe("404 The requested resource was not found.");
   });
 });
 

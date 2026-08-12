@@ -17,7 +17,7 @@ import type {
   UsageInfo,
 } from "@/domain/llm/types";
 import { generateImageStream } from "@/application/image/generateImage";
-import { ValidationError } from "@/application/errors";
+import { UpstreamError, ValidationError } from "@/application/errors";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
@@ -300,7 +300,12 @@ export async function collectRun(
       // Same as the streaming path: a subagent failure is a tool error the
       // parent may still answer from, so it does not fail the request.
       if (isTopLevelChunk(chunk)) {
-        throw new Error(chunk.error);
+        // Typed, not bare. The engine wrote this sentence for a reader, and a
+        // streaming caller gets to read it; thrown as a plain `Error` the
+        // collected caller got "Internal server error" instead, because
+        // `apiError` cannot tell an engine's message from a stack trace. The
+        // same text, with the status that says the failure is upstream.
+        throw new UpstreamError(chunk.error);
       }
       continue;
     }

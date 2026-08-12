@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateImage, generateImageStream } from "@/application/image/generateImage";
 import { calculateImageCost } from "@/domain/llm/models";
+import { statusForError, UpstreamError, ValidationError } from "@/application/errors";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { Project, Version } from "@/domain/project/types";
@@ -371,6 +372,70 @@ describe("generateImageStream", () => {
     const { deps } = fakeDeps();
     const stream = generateImageStream(deps, { project, version: version("openai/gpt-5-mini") });
     await expect(stream.next()).rejects.toThrow(/does not support image generation/);
+  });
+});
+
+/**
+ * The predict route answers with a body, so a throw here becomes a status. An
+ * untyped one becomes "Internal server error", which is what hid an xAI 404 for
+ * a model the endpoint does not host behind a message that named nothing.
+ */
+describe("a provider refusal is reported as one", () => {
+  function refusing(error: unknown) {
+    const { deps } = fakeDeps();
+    return {
+      ...deps,
+      imageChannel: {
+        async generateImage(): Promise<never> {
+          throw error;
+        },
+        async editImage(): Promise<never> {
+          throw error;
+        },
+      },
+    };
+  }
+
+  it("keeps the provider's words and names the model that failed", async () => {
+    const deps = refusing(new Error("404 The requested resource was not found."));
+
+    const thrown = await generateImage(deps, {
+      project,
+      version: version("xai/grok-imagine-image"),
+      prompt: "a cat",
+    }).catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(UpstreamError);
+    expect(statusForError(thrown)).toBe(502);
+    expect((thrown as Error).message).toContain("xai/grok-imagine-image");
+    expect((thrown as Error).message).toContain("The requested resource was not found.");
+  });
+
+  it("leaves an AppError's own status alone", async () => {
+    const deps = refusing(new ValidationError("Image prompt is empty"));
+
+    const thrown = await generateImage(deps, {
+      project,
+      version: version("openai/gpt-image-2"),
+      prompt: "a cat",
+    }).catch((error: unknown) => error);
+
+    expect(statusForError(thrown)).toBe(400);
+  });
+
+  it("does not turn the caller walking away into an upstream failure", async () => {
+    const abort = new Error("The operation was aborted");
+    abort.name = "AbortError";
+    const deps = refusing(abort);
+
+    const thrown = await generateImage(deps, {
+      project,
+      version: version("openai/gpt-image-2"),
+      prompt: "a cat",
+    }).catch((error: unknown) => error);
+
+    expect(thrown).not.toBeInstanceOf(UpstreamError);
+    expect(statusForError(thrown)).toBeNull();
   });
 });
 

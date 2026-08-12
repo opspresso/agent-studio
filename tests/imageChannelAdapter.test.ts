@@ -204,6 +204,28 @@ describe("xAI image dialect", () => {
       channel.generateImage({ model: "xai/grok-imagine-image", prompt: "x" }),
     ).rejects.toThrow("400 Argument not supported: size");
   });
+
+  // The shape a model xAI's Images endpoint does not host comes back as, which
+  // is the one an operator actually meets. Read as raw JSON it told a reader
+  // nothing; the sentence inside it tells them everything.
+  it("unwraps the gateway's nested error rather than dumping the body", async () => {
+    stubFetch(
+      { error: { code: 404, message: "The requested resource was not found." } },
+      { status: 404 },
+    );
+
+    await expect(
+      channel.generateImage({ model: "xai/grok-imagine-image", prompt: "x" }),
+    ).rejects.toThrow("404 The requested resource was not found.");
+  });
+
+  it("keeps the raw body when it is neither shape", async () => {
+    stubFetch({ unexpected: true }, { status: 503 });
+
+    await expect(
+      channel.generateImage({ model: "xai/grok-imagine-image", prompt: "x" }),
+    ).rejects.toThrow('503 {"unexpected":true}');
+  });
 });
 
 describe("the OpenAI dialect is unchanged", () => {
