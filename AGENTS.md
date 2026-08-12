@@ -207,6 +207,8 @@ same rule applies to:
 |---|---|
 | Every DynamoDB key string | `src/infrastructure/db/keys.ts` |
 | Detaching a stream from the consumer that walked away | `src/shared/detachOnReturn.ts` |
+| Reading an HTTP body under a byte ceiling | `src/shared/httpBody.ts` |
+| The name and media type a tool's file is carried under | `safeFileName`/`baseMediaType` in `src/infrastructure/mcp/toolManager.ts` |
 | Keeping a background timer from holding the process open | `src/shared/unrefTimer.ts` |
 | Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
 | Which pages are public | `src/proxy.ts` |
