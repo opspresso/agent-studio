@@ -26,6 +26,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
     const project = await projectUseCases.assertWritable(name, user.email);
     const { variables, versionName, message, ...draft } = parsed.data;
     const preview = await previewPrompt(executionDeps, {
+      signal: request.signal,
       project,
       version: {
         ...draft,

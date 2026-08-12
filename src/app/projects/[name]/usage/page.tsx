@@ -6,17 +6,9 @@ import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { DailyCostChart } from "@/app/_components/DailyCostChart";
 import { defaultDateRange } from "@/app/_lib/dateRange";
-import { buildDailySeries } from "@/app/_lib/usage";
+import { buildDailySeries, sumRecord } from "@/app/_lib/usage";
 import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
 import { Alert, Avatar, Card, Group, Stack, Table, Text } from "@mantine/core";
-
-function sumRecord(record: Record<string, number>): number {
-  let total = 0;
-  for (const value of Object.values(record)) {
-    total += value || 0;
-  }
-  return total;
-}
 
 /** One line per caller: the rows arrive per day, and a reader wants the person. */
 interface CallerTotal {

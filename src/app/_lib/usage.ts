@@ -18,7 +18,8 @@ export interface UsageGroup {
   calls: number;
 }
 
-function sumRecord(record: Record<string, number>): number {
+/** Exported because the project usage page totals the same rows. */
+export function sumRecord(record: Record<string, number>): number {
   let total = 0;
   for (const value of Object.values(record)) {
     total += value || 0;
