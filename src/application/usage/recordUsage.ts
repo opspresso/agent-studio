@@ -47,8 +47,15 @@ export async function recordUsage(
 export interface UsageAggregator {
   /** Buffer one call's usage. Never performs I/O, never rejects. */
   record: (input: RecordUsageInput) => Promise<void>;
-  /** Write one atomic increment per (project, date, model). Best-effort. */
-  flush: () => Promise<void>;
+  /**
+   * Write one atomic increment per (project, date, model). Best-effort.
+   *
+   * Returns the distinct projects it wrote for. A run spends on more than
+   * one whenever it transfers, and the caller is the only thing that can
+   * settle a *child* project's thresholds — the run bracket settles the
+   * project it admitted and knows nothing about the rest.
+   */
+  flush: () => Promise<string[]>;
 }
 
 /**
@@ -86,6 +93,7 @@ export function createUsageAggregator(
     async flush() {
       const pending = [...totals.values()];
       totals.clear();
+      const projects = [...new Set(pending.map((total) => total.projectName))];
       for (const total of pending) {
         try {
           await repo.record({
@@ -104,6 +112,7 @@ export function createUsageAggregator(
           log.error("usage", "flush failed", { model: total.model, error });
         }
       }
+      return projects;
     },
   };
 }
