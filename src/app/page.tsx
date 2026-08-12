@@ -28,6 +28,7 @@ import { SignInButton } from "@/components/SignInButton";
 import { getSessionUser } from "@/lib/session";
 import { Overview } from "./_components/Overview";
 import classes from "./page.module.css";
+import { version } from "../../package.json";
 
 const DOMAINS = [
   {
@@ -269,9 +270,14 @@ export default async function Home() {
         </SimpleGrid>
       </section>
 
-      <Text ta="center" fz="xs" c="dimmed">
-        An internal LLM platform for prompt, agent, and cost management.
-      </Text>
+      <Stack gap={6} align="center">
+        <Text ta="center" fz="xs" c="dimmed">
+          An internal LLM platform for prompt, agent, and cost management.
+        </Text>
+        <Text ff="monospace" fz={10} c="dimmed" lts="0.12em">
+          v{version}
+        </Text>
+      </Stack>
     </Stack>
   );
 }
