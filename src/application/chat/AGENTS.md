@@ -103,17 +103,22 @@ into `ChatDeps.runAgent`.
   always survives, even alone over budget) and returns `warnings` describing what it left
   out. `sendMessage` prepends those through `withLeadingWarnings`, so a trimmed context
   reaches the reader on the same channel an unusable binding does — never silently.
-- **Images** (generated `EngineChunk.image`, and the user's attachments) are uploaded
-  through the optional `ChatDeps.storeImage` port (S3, wired when `S3_BUCKET_NAME` is set)
-  by `storeMessageImages` and persisted as `images: [{ key, prompt? }]` on the message —
-  the b64 payload itself is far beyond the DynamoDB item size limit. The stored row holds an
-  object *key*; `resolveImages.ts` signs it per read, with a lifetime the reader chooses
-  (`imageUrls.ts`), and rows written before keys existed carry a public `url` used as-is.
-  A failed upload drops that image, never the message — and says so through the warning
-  channel, because an image that was never stored is indistinguishable from one that was
-  never made. An image that cannot be *addressed* on the way back out is dropped too, and
-  `resolveMessageImages` returns how many, so the replay path can say so as well. Without
-  `storeImage`, images render only during the live stream, which is also reported.
+- **Images reach the message as keys, from two different directions.** A picture the *run*
+  made is already stored by the time this surface sees it — the run bracket keeps what a run
+  produces, which is what finally covered the builtins, an image subagent and an MCP tool's
+  image, none of which this surface ever uploaded — so `collectGeneratedImages` only maps the
+  key onto the message. A picture the *user attached* has no run behind it, so
+  `storeAttachedImages` writes it through `storeArtifact` (`ChatDeps.artifacts`, wired when
+  `S3_BUCKET_NAME` is set); before that it went to the same bucket with no row at all, which
+  made attachments the one class of stored object nothing could list or delete. Either way the
+  message keeps `images: [{ key, prompt? }]` — the b64 payload is far past the DynamoDB item
+  limit — and `resolveImages.ts` signs the key per read with the lifetime the reader chooses
+  (`@/application/artifact/urlTtl`); rows written before keys existed carry a public `url` used
+  as-is. A failure drops that image, never the message, and says so through the warning
+  channel: an image that was never stored is indistinguishable from one that was never made.
+  An image that cannot be *addressed* on the way back out is dropped too, and
+  `resolveMessageImages` returns how many so the replay path can say so as well. With no
+  object storage configured, images render during the live stream only, which is reported.
 - **Files a run produced are references from the moment they arrive.** `EngineChunk.file` is
   a separate axis from `image` because everything that reads `image` *draws* it, and the run
   bracket has already stored the bytes and stripped them by the time this surface sees the

@@ -821,8 +821,8 @@ turned into a 500 that throws the result away.
 
 **Where the bytes go is the consumer's decision, not the engine's.** The same `image` chunk
 reaches every surface — how to read one is in the [EngineChunk contract](#enginechunk-contract)
-— and each does something different with it: chats upload through the optional `storeImage`
-port and persist the **object key**, Slack uploads to the thread once the run ends, the
+— and each does something different with it: a chat persists the **object key** the run
+bracket already stored under, Slack uploads to the thread once the run ends, the
 OpenAI-compatible surface carries an `images` extension, predict returns them beside the text.
 With no object storage configured a chat image renders during the live stream only, and says so
 rather than leaving a gap.

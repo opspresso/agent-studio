@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -95,29 +94,10 @@ export const artifactObjectStore: ArtifactObjectStore = {
   },
 };
 
-/**
- * Upload a chat image and return its **object key**, under the pre-artifact
- * layout.
- *
- * Still here because the chat surface has not moved to artifact rows yet. New
- * bytes should go through `storeArtifact`, which derives its key from the row's
- * id so an object and its row can find each other; a key minted here references
- * nothing.
- */
-export async function storeImage(image: { b64: string; mimeType: string }): Promise<string> {
-  const extension = LEGACY_EXTENSIONS[image.mimeType] ?? "png";
-  const key = `images/${randomUUID()}.${extension}`;
-  await artifactObjectStore.put({
-    key,
-    bytes: Buffer.from(image.b64, "base64"),
-    mimeType: image.mimeType,
-  });
-  return key;
-}
-
-const LEGACY_EXTENSIONS: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
+// `storeImage` used to live here: an upload that minted `images/<uuid>` and
+// returned the key, kept while the chat surface still uploaded for itself. It
+// moved to `storeArtifact` — which derives the key from the row's id, so an
+// object and its row can find each other — and the last caller went with it.
+// Deleted rather than left for "when it is needed again": what it produced is
+// exactly the un-inventoried object the artifact row exists to stop, and an
+// exported function is an invitation to produce one.
