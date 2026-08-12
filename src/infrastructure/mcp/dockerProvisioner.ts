@@ -11,6 +11,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { MANAGED_ENV_REF, MANAGED_IMAGE, managedPortFor } from "./managedPort";
 import { promisify } from "node:util";
 import { MANAGED_NAME } from "@/shared/slug";
 import type {
@@ -22,8 +23,6 @@ import type {
 const run = promisify(execFile);
 
 const NAME = MANAGED_NAME;
-const IMAGE = /^[A-Za-z0-9._\-/]+(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})$/;
-const PORT_BASE = 3100;
 
 function assertSafe(value: string, pattern: RegExp, what: string): string {
   if (!pattern.test(value)) {
@@ -32,14 +31,6 @@ function assertSafe(value: string, pattern: RegExp, what: string): string {
   return value;
 }
 
-/** Deterministic per name, so a restart re-derives the port it already bound. */
-function portFor(name: string): number {
-  let hash = 0;
-  for (const char of name) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return PORT_BASE + (hash % 400);
-}
 
 async function docker(args: string[]): Promise<string> {
   const { stdout } = await run("docker", args, { timeout: 300_000 });
@@ -50,8 +41,8 @@ export function createDockerProvisioner(): McpProvisioner {
   return {
     async start(spec: ManagedWorkloadSpec): Promise<ManagedWorkload> {
       const name = assertSafe(spec.name, NAME, "name");
-      const image = assertSafe(spec.image, IMAGE, "image");
-      const port = portFor(name);
+      const image = assertSafe(spec.image, MANAGED_IMAGE, "image");
+      const port = managedPortFor(name);
       // What the container is expected to listen on. Absent means the entry
       // predates persisting it, and then the only port anyone knows is the one
       // being bound — so the mapping is onto itself.
@@ -79,7 +70,15 @@ export function createDockerProvisioner(): McpProvisioner {
         // and a container that was merely stranded comes back definitively
         // broken. `-e` beats `--env-file`, so an operator who set `PORT` there
         // and a `containerPort` that disagrees gets the one the mapping uses.
-        ...(spec.envRefs ?? []).flatMap((ref) => ["--env-file", ref]),
+        // Checked, like the image and the name beside it. Nothing here can
+        // inject a flag — this is an argv array, not a shell string — but the
+        // SSM adapter has always validated the same field, and two adapters
+        // disagreeing about what a reference may be is a difference neither
+        // of them can justify.
+        ...(spec.envRefs ?? []).flatMap((ref) => [
+          "--env-file",
+          assertSafe(ref, MANAGED_ENV_REF, "env reference"),
+        ]),
         ...Object.entries(spec.environment ?? {}).flatMap(([key, value]) => [
           "-e",
           `${key}=${value}`,
@@ -110,7 +109,7 @@ export function createDockerProvisioner(): McpProvisioner {
         const [identity = "", running = "false", detail] = state.split(/\s+/);
         return {
           name: safe,
-          address: `http://127.0.0.1:${portFor(safe)}`,
+          address: `http://127.0.0.1:${managedPortFor(safe)}`,
           identity,
           running: running === "true",
           ...(detail ? { detail } : {}),
