@@ -54,7 +54,7 @@ describe("fetchPluginsRepoSnapshot", () => {
         blob("plugins/devops/mcp.json"),
         blob("plugins/devops/skills/gitops/SKILL.md"),
         blob("plugins/devops/skills/gitops/references/api.md"),
-        blob("plugins/devops/org.opspresso.agent-studio/mcp/argocd.md"),
+        blob("plugins/devops/org.opspresso.agentdure/mcp/argocd.md"),
         blob("plugins/research/plugin.json"),
         // No mcp.json, no skills — a missing fixed location is not an error.
         blob("README.md"),
@@ -64,7 +64,7 @@ describe("fetchPluginsRepoSnapshot", () => {
         "sha:plugins/devops/mcp.json": '{"mcpServers":{}}',
         "sha:plugins/devops/skills/gitops/SKILL.md": "gitops doc",
         "sha:plugins/devops/skills/gitops/references/api.md": "api reference",
-        "sha:plugins/devops/org.opspresso.agent-studio/mcp/argocd.md": "argocd doc",
+        "sha:plugins/devops/org.opspresso.agentdure/mcp/argocd.md": "argocd doc",
         "sha:plugins/research/plugin.json": '{"name":"research"}',
       },
     );
@@ -89,7 +89,7 @@ describe("fetchPluginsRepoSnapshot", () => {
         mcpDocs: [
           {
             server: "argocd",
-            path: "plugins/devops/org.opspresso.agent-studio/mcp/argocd.md",
+            path: "plugins/devops/org.opspresso.agentdure/mcp/argocd.md",
             content: "argocd doc",
           },
         ],

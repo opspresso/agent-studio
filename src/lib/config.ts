@@ -134,7 +134,7 @@ export const config = {
     return stage;
   },
   get tableName(): string {
-    return process.env.DYNAMODB_TABLE_NAME ?? "agent-studio";
+    return process.env.DYNAMODB_TABLE_NAME ?? "agentdure";
   },
   get dynamodbEndpoint(): string | undefined {
     return optionalEnv(process.env.DYNAMODB_ENDPOINT);
@@ -242,7 +242,7 @@ export const config = {
    * `managedMcpUseCases`, which is what puts it back.
    */
   get managedMcpNetworkContainer(): string {
-    return optionalEnv(process.env.MANAGED_MCP_NETWORK_CONTAINER) ?? "agent-studio";
+    return optionalEnv(process.env.MANAGED_MCP_NETWORK_CONTAINER) ?? "agentdure";
   },
   get llmBaseUrl(): string {
     return required("LLM_BASE_URL");

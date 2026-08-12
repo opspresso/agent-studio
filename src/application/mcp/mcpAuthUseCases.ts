@@ -542,7 +542,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         const scopes = connection?.scopes ?? server.auth.scopesSupported ?? [];
         const registered = await deps.oauth.register({
           registrationEndpoint: server.auth.registrationEndpoint,
-          clientName: `Agent Studio — ${projectName}`,
+          clientName: `AgentDure — ${projectName}`,
           redirectUri: callback,
           scopes,
         });

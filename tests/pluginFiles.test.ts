@@ -114,13 +114,13 @@ describe("selectPluginSkillRoots", () => {
 describe("mcpDocServerName", () => {
   it("names the server an extension document describes", () => {
     expect(
-      mcpDocServerName("plugins/devops/org.opspresso.agent-studio/mcp/argocd.md", DEVOPS),
+      mcpDocServerName("plugins/devops/org.opspresso.agentdure/mcp/argocd.md", DEVOPS),
     ).toBe("argocd");
   });
 
   it("matches at the repository root", () => {
     expect(
-      mcpDocServerName("org.opspresso.agent-studio/mcp/memory.md", {
+      mcpDocServerName("org.opspresso.agentdure/mcp/memory.md", {
         rootPath: "",
         manifestPath: "plugin.json",
       }),
@@ -128,9 +128,9 @@ describe("mcpDocServerName", () => {
   });
 
   it.each([
-    ["another plugin's document", "plugins/research/org.opspresso.agent-studio/mcp/argocd.md"],
-    ["a non-markdown file", "plugins/devops/org.opspresso.agent-studio/mcp/argocd.json"],
-    ["a nested path", "plugins/devops/org.opspresso.agent-studio/mcp/deep/argocd.md"],
+    ["another plugin's document", "plugins/research/org.opspresso.agentdure/mcp/argocd.md"],
+    ["a non-markdown file", "plugins/devops/org.opspresso.agentdure/mcp/argocd.json"],
+    ["a nested path", "plugins/devops/org.opspresso.agentdure/mcp/deep/argocd.md"],
     ["an unrelated directory", "plugins/devops/docs/argocd.md"],
   ])("answers null for %s", (_case, path) => {
     expect(mcpDocServerName(path, DEVOPS)).toBeNull();

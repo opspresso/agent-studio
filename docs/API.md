@@ -1,6 +1,6 @@
 # API Reference
 
-The HTTP contract for Agent Studio: every route, how it authenticates, and the request /
+The HTTP contract for AgentDure: every route, how it authenticates, and the request /
 response shapes and error cases for the non-obvious ones.
 
 Design rationale for *why* a surface looks like this lives in
@@ -577,7 +577,7 @@ row — its components surface individually as orphans, each its own decision.
 
 A write replaces only what the documents own — a skill's description, content and
 attachments; an MCP entry's `url`, `description`, `content` (from the plugin's
-`org.opspresso.agent-studio/mcp/<name>.md` extension document) and `source`. Encrypted
+`org.opspresso.agentdure/mcp/<name>.md` extension document) and `source`. Encrypted
 headers, a discovered OAuth block and a managed entry's provisioned address are never
 touched, and a field the documents do not carry leaves the stored one alone. Moving an MCP
 entry's address drops the OAuth block read from the old one, so Discover has to be re-run.
@@ -629,7 +629,7 @@ Create body:
 ```json
 { "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
   "args": ["--port", "{{PORT}}"]?, "endpointPath": "/mcp"?,
-  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/agent-studio/my-tool/API_KEY"]?,
+  "environment": { "LOG_LEVEL": "info" }?, "envRefs": ["/agentdure/my-tool/API_KEY"]?,
   "description": ""?, "content": ""?, "headers": {}? }
 ```
 
@@ -1087,10 +1087,10 @@ so a downstream blip does not trigger a restart. `/api/ready` is readiness — i
 DynamoDB and the LLM channel (short timeout, details not surfaced) and returns 503 when a
 downstream is unreachable or the instance is draining after SIGTERM.
 
-`/api/metrics` is a Prometheus scrape exposing `agent_studio_active_runs`,
-`agent_studio_runs_{started,finished,failed}_total`, `agent_studio_run_duration_seconds`,
-`agent_studio_unknown_model_calls_total`, `agent_studio_unknown_models` and
-`agent_studio_draining`. No metric is labelled by project, user or model.
+`/api/metrics` is a Prometheus scrape exposing `agentdure_active_runs`,
+`agentdure_runs_{started,finished,failed}_total`, `agentdure_run_duration_seconds`,
+`agentdure_unknown_model_calls_total`, `agentdure_unknown_models` and
+`agentdure_draining`. No metric is labelled by project, user or model.
 
 All three are unauthenticated and dependency-light on purpose — they are probed by
 infrastructure that has no session. See [OPERATIONS.md](OPERATIONS.md#health-probes) for how

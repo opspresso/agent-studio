@@ -13,7 +13,7 @@
       "Action": [
         "ecr:*"
       ],
-      "Resource": "arn:aws:ecr:*:*:repository/opspresso/agent-studio-*"
+      "Resource": "arn:aws:ecr:*:*:repository/agentdure"
     }
   ]
 }

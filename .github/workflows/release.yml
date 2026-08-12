@@ -16,8 +16,8 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  AWS_ROLE_ARN: arn:aws:iam::396608815058:role/github--agent-studio-ecr
-  ECR_REPOSITORY: 396608815058.dkr.ecr.ap-northeast-2.amazonaws.com/agent-studio
+  AWS_ROLE_ARN: arn:aws:iam::396608815058:role/github--agentdure-ecr
+  ECR_REPOSITORY: 396608815058.dkr.ecr.ap-northeast-2.amazonaws.com/agentdure
 
 # amd64 only: the sole deployment target (eks-demo) runs amd64 nodes, and the
 # free arm64 hosted runners are not available on private repositories.
@@ -128,7 +128,7 @@ jobs:
           repositories: argocd-env-demo
 
       # `phase: alpha` is the deployed one, not a staging step: the ApplicationSet
-      # in apps/agent-studio.yaml loads values.yaml + values-alpha.yaml, and
+      # in apps/agentdure.yaml loads values.yaml + values-alpha.yaml, and
       # nothing reads values-prod.yaml. `container: app` is the top-level key in
       # that values file — helm.py matches it by name to find the image tag.
       - name: Trigger GitOps 🚀
@@ -138,7 +138,7 @@ jobs:
           gh api repos/opspresso/argocd-env-demo/dispatches \
             -f event_type=gitops \
             -f client_payload[username]=opspresso \
-            -f client_payload[project]=agent-studio \
+            -f client_payload[project]=agentdure \
             -f client_payload[version]="${GITHUB_REF_NAME}" \
             -f client_payload[container]=app \
             -f client_payload[phase]=alpha \

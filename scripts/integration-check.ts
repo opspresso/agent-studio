@@ -19,7 +19,7 @@ process.env.DYNAMODB_ENDPOINT ??= "http://localhost:8084";
 // instances are shared with the other projects on this machine, so the table
 // name is what separates them, and a mistake about *which* instance still
 // cannot reach the table `pnpm dev` writes to.
-process.env.DYNAMODB_TABLE_NAME ??= "agent-studio-test";
+process.env.DYNAMODB_TABLE_NAME ??= "agentdure-test";
 
 // Refuse anything but the local test instance. This check cascade-deletes what
 // it writes, and `--env-file=.env.local` (which carries the dev endpoint) is an

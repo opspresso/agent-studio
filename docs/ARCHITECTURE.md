@@ -1,6 +1,6 @@
 # Architecture
 
-How Agent Studio is put together, and **why** — the design decisions, their trade-offs, and
+How AgentDure is put together, and **why** — the design decisions, their trade-offs, and
 the invariants that hold them in place. It is the document to read before changing code.
 
 It deliberately does *not* cover: the HTTP contract ([API.md](API.md)), environment variables
@@ -13,7 +13,7 @@ calls, an [image](#images) project excepted — and descends into
 `src/application/llm/engine.ts`, the tool loop. The [Request flow](#request-flow) section is
 the map.
 
-Agent Studio is a single Next.js 16 full-stack application covering the domains **project,
+AgentDure is a single Next.js 16 full-stack application covering the domains **project,
 llm, agents (subagents + external agent registry), skills, mcp, chat, cost/usage**.
 
 ## Stack
@@ -164,7 +164,7 @@ the transactional form — and the image-usage collapse was derived independentl
 
 ## DynamoDB single-table design
 
-One table (`DYNAMODB_TABLE_NAME`, default `agent-studio`), keys `PK` (S) / `SK` (S), with
+One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S), with
 `GSI1` (`GSI1PK`/`GSI1SK`) and `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `entityType`.
 
 | Entity | PK | SK | GSI1PK | GSI1SK |
@@ -905,7 +905,7 @@ servers, and only `type: "streamable-http"` entries are bound — `stdio` would 
 a repository-supplied command on the host, so it is reported and skipped, never run
 (`classifyMcpJsonServer` in `src/domain/plugin/types.ts` is the one transport decision). The
 closed mcp.json schema has no description field, so each server's model-facing description
-and operator notes ride in the plugin's `org.opspresso.agent-studio/mcp/<server>.md`
+and operator notes ride in the plugin's `org.opspresso.agentdure/mcp/<server>.md`
 extension document — the reverse-domain client-extension convention the spec defines. The
 stakes are higher here than for skills: an entry also holds encrypted headers and a
 discovered OAuth block, so headers declared in mcp.json are never imported (the dropped

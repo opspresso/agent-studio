@@ -169,20 +169,20 @@ regeneration.
 
 ### Generated secret prefixes
 
-Secrets Agent Studio issues carry a prefix naming product and kind
+Secrets AgentDure issues carry a prefix naming product and kind
 (`src/shared/generatedSecret.ts`), the way `ghp_`/`gho_` do for GitHub, so a leaked string is
 traceable to what it opens:
 
 | Prefix | Secret |
 |---|---|
-| `asa_` | app-wide A2A key (admin-managed) |
-| `asc_` | named A2A client key (admin-managed) |
-| `ast_` | project API token (owner-managed) |
-| `asw_` | webhook trigger secret (owner-managed) |
+| `ada_` | app-wide A2A key (admin-managed) |
+| `adc_` | named A2A client key (admin-managed) |
+| `adt_` | project API token (owner-managed) |
+| `adw_` | webhook trigger secret (owner-managed) |
 
 The random part is 32 bytes (256 bits), so the prefix costs no entropy that matters.
-Verification never looks at the prefix, so tokens issued under the older `sk_proj_` spelling
-keep working.
+Verification never looks at the prefix, so tokens issued under an older spelling — `as*_`,
+and `sk_proj_` before it — keep working.
 
 A project token's display mask is computed at generation and stored beside the ciphertext, so
 listing a token costs no decryption; the mask carries only the prefix and the edge characters,
@@ -332,7 +332,7 @@ That header is the **only** identity metadata sent automatically, and its value 
 project name — never a user's name or email. What a server can learn beyond it is
 (a) whatever the model writes into tool arguments — see *PII filtering, and where it
 stops* — and (b) for OAuth entries, that the registered client is named
-`Agent Studio — <project>` and that the token carries the grant of whoever connected the
+`AgentDure — <project>` and that the token carries the grant of whoever connected the
 server.
 
 ## MCP OAuth

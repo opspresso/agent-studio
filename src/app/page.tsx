@@ -235,7 +235,7 @@ export default async function Home() {
 
       <section>
         <VisuallyHidden>
-          <Title order={2}>What Agent Studio covers</Title>
+          <Title order={2}>What AgentDure covers</Title>
         </VisuallyHidden>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
           {DOMAINS.map(({ Icon, ...domain }) => (

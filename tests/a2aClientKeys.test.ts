@@ -56,11 +56,11 @@ describe("a2aClientKeyUseCases", () => {
 
     const { key, view } = await useCases.create("partner-batch", "nightly sync", "admin@x.com");
 
-    expect(key).toMatch(/^asc_/);
+    expect(key).toMatch(/^adc_/);
     expect(view).toMatchObject({ name: "partner-batch", description: "nightly sync" });
     expect(view.masked).not.toContain(key.slice(8));
     await expect(useCases.verify(key)).resolves.toBe("partner-batch");
-    await expect(useCases.verify("asc_wrong")).resolves.toBeNull();
+    await expect(useCases.verify("adc_wrong")).resolves.toBeNull();
   });
 
   it("stores the hash the verification row is keyed by", async () => {

@@ -191,7 +191,7 @@ describe("telling a dead grant from a bad moment", () => {
 describe("dynamic client registration", () => {
   const registration = {
     registrationEndpoint: "https://auth.example.com/register",
-    clientName: "Agent Studio — p",
+    clientName: "AgentDure — p",
     redirectUri: "https://studio.example.com/api/mcps/oauth/callback",
     scopes: ["chat:write"],
   };

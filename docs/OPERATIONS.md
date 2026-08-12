@@ -13,7 +13,7 @@ The deployable is a container image. The build is multi-stage and ships Next.js
 carries no `node_modules` install.
 
 ```bash
-docker build -t agent-studio .
+docker build -t agentdure .
 docker compose up --build          # local container + DynamoDB Local
 ```
 
@@ -88,16 +88,16 @@ deployment checklist asks for. A shorter grace period cuts streams that would ha
 
 | Metric | Type | Use |
 |---|---|---|
-| `agent_studio_active_runs` | gauge | **The autoscaling signal.** |
-| `agent_studio_runs_started_total` | counter | Throughput. |
-| `agent_studio_runs_finished_total` | counter | Throughput. |
-| `agent_studio_runs_failed_total` | counter | **Alerting signal.** Cancellations are not failures. |
-| `agent_studio_run_duration_seconds` | histogram | **Alerting signal.** Buckets `0.5 … 600`. |
-| `agent_studio_unknown_model_calls_total` | counter | Correctness signal — see below. |
-| `agent_studio_unknown_models` | gauge | Distinct unregistered model ids seen. |
-| `agent_studio_draining` | gauge | `1` once shutdown began. |
+| `agentdure_active_runs` | gauge | **The autoscaling signal.** |
+| `agentdure_runs_started_total` | counter | Throughput. |
+| `agentdure_runs_finished_total` | counter | Throughput. |
+| `agentdure_runs_failed_total` | counter | **Alerting signal.** Cancellations are not failures. |
+| `agentdure_run_duration_seconds` | histogram | **Alerting signal.** Buckets `0.5 … 600`. |
+| `agentdure_unknown_model_calls_total` | counter | Correctness signal — see below. |
+| `agentdure_unknown_models` | gauge | Distinct unregistered model ids seen. |
+| `agentdure_draining` | gauge | `1` once shutdown began. |
 
-**Autoscale on `agent_studio_active_runs`, not CPU.** Runs are I/O bound — an instance
+**Autoscale on `agentdure_active_runs`, not CPU.** Runs are I/O bound — an instance
 saturated with them still reads as idle CPU.
 
 **A chat run no longer sheds when its reader leaves.** A closed tab means the reader left, not
@@ -116,7 +116,7 @@ through a Stop press. The histogram's top finite bucket is `600` — the run dea
 so anything past it is a run that outlived its own limit, and an abandoned chat run left to
 the deadline lands there as a *failure*.
 
-**Alert on a non-zero `agent_studio_unknown_model_calls_total` rate.** A model id missing from
+**Alert on a non-zero `agentdure_unknown_model_calls_total` rate.** A model id missing from
 `src/domain/llm/models.ts` still runs, but its usage is booked at **$0** — the miss is
 invisible in exactly the cost dashboard it corrupts. Each miss also logs `[cost] unknown model
 id` once.
@@ -370,7 +370,7 @@ liveness is what made this class of failure invisible.
       with a lifecycle rule expiring `images/` on the same window as `CHAT_RETENTION_DAYS`
 - [ ] LB health check → `/api/ready` (or `/api/health` on a scaled fleet), restart check → `/api/health`
 - [ ] Container `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
-- [ ] Prometheus scraping `/api/metrics`; alerts on `agent_studio_runs_failed_total`, `agent_studio_run_duration_seconds`, `agent_studio_unknown_model_calls_total`
+- [ ] Prometheus scraping `/api/metrics`; alerts on `agentdure_runs_failed_total`, `agentdure_run_duration_seconds`, `agentdure_unknown_model_calls_total`
 - [ ] `SCHEDULE_SCAN_TOKEN` provisioned as a secret if any of the three ticks below are used — it authenticates all of them, and one (the plugins sync) writes both registries
 - [ ] If schedule triggers are used: a CronJob ticking `/api/triggers/scan` at most a minute apart
 - [ ] If `VECTOR_BUCKET` is set: a CronJob ticking `/api/catalog/reindex` hourly — a registry write never reindexes, so without this tick the only thing that refreshes the index is a completed plugins sync, and a hand-registered skill or server is never discovered

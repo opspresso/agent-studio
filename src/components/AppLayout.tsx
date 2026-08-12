@@ -115,7 +115,7 @@ export function AppLayout({
               </span>
               <div>
                 <Text fw={650} fz="md" lh={1.1}>
-                  Agent Studio
+                  AgentDure
                 </Text>
                 <Text fz={10} c="dimmed" tt="uppercase" lts="0.12em" visibleFrom="xs">
                   AI workspace

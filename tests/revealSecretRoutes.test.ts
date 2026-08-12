@@ -30,7 +30,7 @@ vi.mock("@/lib/session", () => ({
 const cipher = {
   decrypt: (value: string) => value.replace("enc:v1:", ""),
   encrypt: (value: string) => `enc:v1:${value}`,
-  mask: () => "ast_••••wxyz",
+  mask: () => "adt_••••wxyz",
 };
 vi.mock("@/lib/container", async () => ({
   apiTokenUseCases: (
@@ -49,7 +49,7 @@ vi.mock("@/lib/runtime-settings", () => ({
 vi.mock("@/infrastructure/crypto/secretEncryption", () => ({
   decryptSecret: (value: string) => value.replace("enc:v1:", ""),
   encryptSecret: (value: string) => `enc:v1:${value}`,
-  maskSecret: () => "ast_••••wxyz",
+  maskSecret: () => "adt_••••wxyz",
 }));
 
 const { POST: revealA2aKey } = await import("@/app/api/settings/a2a-key/reveal/route");
@@ -65,21 +65,21 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   state.email = "owner@example.com";
   state.admin = true;
-  state.a2aKey = "asa_realkey";
+  state.a2aKey = "ada_realkey";
 });
 
 describe("POST /api/settings/a2a-key/reveal", () => {
   it("returns the effective key to an admin", async () => {
     const res = await revealA2aKey();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ key: "asa_realkey" });
+    expect(await res.json()).toEqual({ key: "ada_realkey" });
   });
 
   it("refuses a non-admin without returning the key", async () => {
     state.admin = false;
     const res = await revealA2aKey();
     expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).not.toContain("asa_realkey");
+    expect(JSON.stringify(await res.json())).not.toContain("ada_realkey");
   });
 
   it("reports 404 when no key is configured", async () => {
@@ -93,14 +93,14 @@ describe("POST /api/projects/[name]/token/reveal", () => {
   it("returns the token to the project owner", async () => {
     projectRepo.get.mockResolvedValue(project);
     projectRepo.getApiToken.mockResolvedValue({
-      token: "enc:v1:ast_realtoken",
+      token: "enc:v1:adt_realtoken",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
 
     const res = await revealToken(req(), ctx());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      token: "ast_realtoken",
+      token: "adt_realtoken",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
   });
@@ -109,13 +109,13 @@ describe("POST /api/projects/[name]/token/reveal", () => {
     state.email = "someone@example.com";
     projectRepo.get.mockResolvedValue(project);
     projectRepo.getApiToken.mockResolvedValue({
-      token: "enc:v1:ast_realtoken",
+      token: "enc:v1:adt_realtoken",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
 
     const res = await revealToken(req(), ctx());
     expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).not.toContain("ast_realtoken");
+    expect(JSON.stringify(await res.json())).not.toContain("adt_realtoken");
   });
 
   it("explains a legacy hashed token with 400 instead of failing obscurely", async () => {

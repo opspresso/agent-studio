@@ -42,14 +42,14 @@ describe("GET /api/metrics", () => {
 
     expect(response.headers.get("Content-Type")).toContain("text/plain");
     const body = await response.text();
-    expect(body).toContain("# TYPE agent_studio_active_runs gauge");
-    expect(body).toContain("agent_studio_active_runs 1");
-    expect(body).toContain("agent_studio_runs_started_total 1");
+    expect(body).toContain("# TYPE agentdure_active_runs gauge");
+    expect(body).toContain("agentdure_active_runs 1");
+    expect(body).toContain("agentdure_runs_started_total 1");
     expect(body).toMatch(/\n$/);
   });
 
   it("reports whether the instance is draining", async () => {
     const body = await GET().text();
-    expect(body).toContain("agent_studio_draining 0");
+    expect(body).toContain("agentdure_draining 0");
   });
 });

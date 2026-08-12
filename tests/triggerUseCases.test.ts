@@ -70,10 +70,10 @@ describe("trigger secret", () => {
   it("comes back in the clear once on create, and masked afterwards", async () => {
     const { useCases } = fixture();
     const created = await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
-    expect(created.secret).toMatch(/^asw_/);
+    expect(created.secret).toMatch(/^adw_/);
     const [listed] = await useCases.list("p", "owner@example.com");
     expect(listed?.secret).toBeUndefined();
-    expect(listed?.secretMasked).toMatch(/^asw_•+/);
+    expect(listed?.secretMasked).toMatch(/^adw_•+/);
   });
 
   it("is stored encrypted, never in plaintext", async () => {
@@ -118,7 +118,7 @@ describe("trigger secret", () => {
       { rotateSecret: true },
       "owner@example.com",
     );
-    expect(rotated.secret).toMatch(/^asw_/);
+    expect(rotated.secret).toMatch(/^adw_/);
     expect(rotated.secret).not.toBe(created.secret);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect((await useCases.reveal("p", "t1", "owner@example.com")).secret).toBe(rotated.secret);

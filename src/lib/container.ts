@@ -176,7 +176,7 @@ const runTraceRepository = otelEndpoint
           const handle = m.createOtelTraceExport({
             endpoint: otelEndpoint,
             headers: config.otelExporterHeaders,
-            serviceName: "agent-studio",
+            serviceName: "agentdure",
           });
           onShutdown(() => handle.flush());
           return handle;

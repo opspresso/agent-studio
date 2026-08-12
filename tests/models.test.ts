@@ -199,8 +199,8 @@ describe("registry misses", () => {
     }
 
     const body = await GET().text();
-    expect(body).toContain("# TYPE agent_studio_unknown_model_calls_total counter");
-    expect(body).toContain("agent_studio_unknown_model_calls_total 1");
-    expect(body).toContain("agent_studio_unknown_models 1");
+    expect(body).toContain("# TYPE agentdure_unknown_model_calls_total counter");
+    expect(body).toContain("agentdure_unknown_model_calls_total 1");
+    expect(body).toContain("agentdure_unknown_models 1");
   });
 });

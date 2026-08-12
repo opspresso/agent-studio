@@ -28,7 +28,7 @@ const provisioner = createSsmProvisioner({
   instanceId: "i-1",
   region: "ap-northeast-2",
   registry: REGISTRY,
-  networkContainer: "agent-studio",
+  networkContainer: "agentdure",
 });
 
 /**
@@ -52,7 +52,7 @@ describe("ssm provisioner input handling", () => {
     // has its own 127.0.0.1, so a published host port would be unreachable from
     // here — and an unpublished one is reachable from nowhere else.
     const runLine = script.split("\n").find((line) => line.startsWith("docker run")) ?? "";
-    expect(runLine).toContain("--network container:agent-studio");
+    expect(runLine).toContain("--network container:agentdure");
     // no port publishing at all — not to the host, not to any interface
     expect(runLine).not.toMatch(/-p \S+:\S+/);
     expect(runLine).toContain("--memory 512m");

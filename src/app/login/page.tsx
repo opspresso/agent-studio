@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/session";
 import { safeNextPath } from "@/shared/safeNextPath";
 import { signInErrorMessage } from "@/shared/signInError";
 
-export const metadata = { title: "Sign in · Agent Studio" };
+export const metadata = { title: "Sign in · AgentDure" };
 
 /**
  * Where `proxy.ts` sends a signed-out visitor.

@@ -189,7 +189,7 @@ export function resolveProjectSlackRuntime(
 }
 
 function defaultAgentDescription(project: Project): string {
-  return `Agent Studio bot for the ${project.name} project`;
+  return `AgentDure bot for the ${project.name} project`;
 }
 
 /** Slack app manifest for this project's dedicated bot. */

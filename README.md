@@ -1,7 +1,7 @@
-# ✨ Agent Studio
+# ✨ AgentDure
 
-An internal LLM platform for prompt, agent, and cost management — one production-grade
-Next.js full-stack application.
+**Build AI agents that work together.** An internal LLM platform for prompt, agent, and cost
+management — one production-grade Next.js full-stack application.
 
 Build a prompt or an agent as a **project**, iterate on it in **versions**, publish one, and
 call it from anywhere: the console, an OpenAI-compatible endpoint, Slack, a webhook, or
@@ -114,7 +114,7 @@ Register a server once on `/tools` and bind it from any version. A binding may n
 list and layer its own headers over the registry's, so one shared server serves many projects
 under different credentials.
 
-**Managed servers** — Agent Studio can start an MCP server container on its own host through
+**Managed servers** — AgentDure can start an MCP server container on its own host through
 SSM and reach it on loopback, so a server with no public endpoint can still be used. It
 repairs stranded containers automatically at boot, since replacing this app is exactly what
 breaks them. Configure with `MANAGED_MCP_INSTANCE_ID` / `MANAGED_MCP_REGISTRY`; unset means
@@ -206,7 +206,7 @@ guard does and does not bound is in
 The build artifact is a container image.
 
 ```bash
-docker build -t agent-studio .        # multi-stage, Next standalone output
+docker build -t agentdure .        # multi-stage, Next standalone output
 docker compose up --build             # local container + both DynamoDB Local instances
 ```
 

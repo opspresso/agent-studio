@@ -2,7 +2,7 @@
 
 Working rules for coding agents in this repository (`CLAUDE.md` is a symlink to this file).
 
-Agent Studio is a single Next.js 16 full-stack app: an internal LLM platform for
+AgentDure is a single Next.js 16 full-stack app: an internal LLM platform for
 prompt / agent / cost management (projects & versions, an LLM engine, agents
 (subagents + external registry), skills, MCP tools, chats, cost dashboard).
 
@@ -50,7 +50,7 @@ pnpm tsx scripts/mock-llm.ts                             # mock OpenAI-compatibl
 pnpm tsx --env-file=.env.local scripts/dev-session.ts    # print a signed session cookie (bypasses Google OAuth)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts    # seed sample skills
 
-# Integration check — a *separate* instance on :8084 and the `agent-studio-test`
+# Integration check — a *separate* instance on :8084 and the `agentdure-test`
 # table, because it cascade-deletes what it writes. Never point it at :8083 (the
 # script refuses).
 docker compose up -d dynamodb-test

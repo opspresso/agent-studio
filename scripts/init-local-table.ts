@@ -3,7 +3,7 @@
  * Refuses to run against non-local endpoints so alpha/prod are never touched.
  *
  * Defaults to the dev instance and the dev table. `pnpm init-local-table:test`
- * points the same script at 8084 / `agent-studio-test` for the integration
+ * points the same script at 8084 / `agentdure-test` for the integration
  * check. Both instances are shared with the other projects on this machine
  * (compose.yaml), so the table name is what keeps this app's rows apart —
  * nothing here may touch a table it did not name.
@@ -17,7 +17,7 @@ import {
 } from "@aws-sdk/client-dynamodb";
 
 const endpoint = process.env.DYNAMODB_ENDPOINT ?? "http://localhost:8083";
-const tableName = process.env.DYNAMODB_TABLE_NAME ?? "agent-studio";
+const tableName = process.env.DYNAMODB_TABLE_NAME ?? "agentdure";
 
 if (!endpoint.includes("localhost") && !endpoint.includes("127.0.0.1")) {
   console.error(`Refusing to run against non-local endpoint: ${endpoint}`);

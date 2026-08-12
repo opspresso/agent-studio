@@ -2,24 +2,24 @@ import { createHash, randomBytes } from "node:crypto";
 import { timingSafeEqualString } from "./timingSafe";
 
 /**
- * Secrets Agent Studio issues itself, as opposed to credentials an operator
+ * Secrets AgentDure issues itself, as opposed to credentials an operator
  * pastes in from another system.
  *
  * Every one carries a prefix so a leaked string can be traced back to this
  * product and to what it opens, the way `ghp_`/`gho_` do for GitHub: two
- * characters for agent-studio, then one for the kind.
+ * characters for agentdure, then one for the kind.
  *
- *   asa_…   A2A API key       (app-wide, admin-managed)
- *   asc_…   A2A client key    (per client, admin-managed)
- *   ast_…   project API token (per project, owner-managed)
- *   asw_…   webhook trigger secret (per trigger, owner-managed)
+ *   ada_…   A2A API key       (app-wide, admin-managed)
+ *   adc_…   A2A client key    (per client, admin-managed)
+ *   adt_…   project API token (per project, owner-managed)
+ *   adw_…   webhook trigger secret (per trigger, owner-managed)
  *
  * The random part is 32 bytes — 256 bits — so the prefix costs no entropy that
  * matters. Verification compares hashes and never looks at the prefix, so
  * secrets issued under an older one keep working.
  */
 
-const VENDOR = "as";
+const VENDOR = "ad";
 
 export type GeneratedSecretKind =
   | "a2aApiKey"

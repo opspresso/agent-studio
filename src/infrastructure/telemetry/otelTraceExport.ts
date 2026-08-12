@@ -77,7 +77,7 @@ export function createOtelTraceExport(config: OtelExportConfig): OtelTraceExport
       ),
     ],
   });
-  const tracer = provider.getTracer("agent-studio");
+  const tracer = provider.getTracer("agentdure");
 
   const exportTrace = (trace: Trace) => {
     const root = tracer.startSpan(`${trace.projectType} ${trace.projectName}`, {

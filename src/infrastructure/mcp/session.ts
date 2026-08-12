@@ -182,7 +182,7 @@ export class McpSession {
         params: {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: "agent-studio", version: "0.1.0" },
+          clientInfo: { name: "agentdure", version: "0.1.0" },
         },
       }),
       signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),

@@ -15,8 +15,8 @@ import "@mantine/charts/styles.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agent Studio",
-  description: "LLM platform for prompt, agent, and cost management",
+  title: "AgentDure",
+  description: "Build AI agents that work together.",
 };
 
 /*

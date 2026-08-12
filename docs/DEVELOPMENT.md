@@ -1,6 +1,6 @@
 # Development
 
-Setting up, running, and verifying Agent Studio locally.
+Setting up, running, and verifying AgentDure locally.
 
 Related: [CONFIGURATION.md](CONFIGURATION.md) for every variable,
 [ARCHITECTURE.md](ARCHITECTURE.md) for the layer rules the tests enforce, and
@@ -126,7 +126,7 @@ pnpm init-local-table:test
 pnpm test:integration
 ```
 
-It runs against a **separate** instance on `:8084` and the `agent-studio-test` table, because
+It runs against a **separate** instance on `:8084` and the `agentdure-test` table, because
 it writes fixtures and cascade-deletes them. Do not pass `--env-file=.env.local` — the script
 refuses to run against `:8083`, and the table name is the second layer under that guard. The
 `dynamodb-test` container is `-inMemory`, so it is wiped on every start and

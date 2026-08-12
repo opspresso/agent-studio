@@ -1,6 +1,6 @@
 # Configuration
 
-Every value Agent Studio reads from its environment, plus the limits that are fixed in code
+Every value AgentDure reads from its environment, plus the limits that are fixed in code
 and therefore *not* configurable. `.env.example` is the copyable template; this document is
 the reference that explains what each value does and what happens when it is wrong.
 
@@ -64,7 +64,7 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 |---|---|---|---|
 | `STAGE` | `local` | — | `local` \| `alpha` \| `prod`. Any other value throws at boot. Gates the access-control check above. |
 | `AWS_REGION` | `ap-northeast-2` | — | Region for every AWS client. DynamoDB Local namespaces tables by access key **and** region, so the app and `pnpm init-local-table` must agree. |
-| `DYNAMODB_TABLE_NAME` | `agent-studio` | — | The single table. On a shared local DynamoDB this — not the port — is what keeps projects apart. |
+| `DYNAMODB_TABLE_NAME` | `agentdure` | — | The single table. On a shared local DynamoDB this — not the port — is what keeps projects apart. |
 | `DYNAMODB_ENDPOINT` | unset | — | DynamoDB Local only. **Must be empty in alpha/prod**; a leftover value points the app at a localhost that is not there. |
 | `AES_ENCRYPTION_KEY` | — (required) | — | 32-byte base64. Encrypts every stored secret. See [SECURITY.md](SECURITY.md#secrets-at-rest). |
 | `S3_BUCKET_NAME` | unset | — | Bucket for generated images. **Private**: a chat row stores the object key and every read URL is pre-signed, so the role needs `s3:GetObject` as well as `s3:PutObject`. Unset disables persistence — chat images then render only during the live stream. |
@@ -147,7 +147,7 @@ instead would orphan every stored version that referenced the old id.
 
 **A model missing from the registry still runs by default, but its usage is priced at $0** —
 so the gap is invisible in the cost dashboard it corrupts. Each miss logs `[cost] unknown
-model id` once and increments `agent_studio_unknown_model_calls_total`; alert on a non-zero
+model id` once and increments `agentdure_unknown_model_calls_total`; alert on a non-zero
 rate rather than waiting to notice the cost. `pnpm check-models` compares the registry against
 what the configured channels actually serve — see [DEVELOPMENT.md](DEVELOPMENT.md#scripts).
 
@@ -208,7 +208,7 @@ because several of these are read on every row write.
 | `MCP_INTERNAL_HOST_SUFFIXES` | empty | — | Comma-separated DNS suffixes whose hosts an MCP entry may use despite resolving to a private address — typically `<namespace>.svc.cluster.local`. Empty leaves the SSRF guard exactly as it was. See [SECURITY.md](SECURITY.md#declared-internal-hosts). |
 | `MANAGED_MCP_INSTANCE_ID` | unset | — | The host managed MCP containers are started on, through SSM Run Command. The literal value `local` runs Docker on this machine instead — app and container then share a loopback interface directly, which is the only way to exercise this path without EC2. |
 | `MANAGED_MCP_REGISTRY` | unset | — | The registry `docker login` authenticates against, so this account's own images pull without a credential being typed. Images from any other registry the host can pull from are allowed; the login is simply skipped for them. |
-| `MANAGED_MCP_NETWORK_CONTAINER` | `agent-studio` | — | The container managed workloads share a network namespace with — this app's own. Every container has its own `127.0.0.1`, so a loopback address only means anything when both ends are in the same namespace. |
+| `MANAGED_MCP_NETWORK_CONTAINER` | `agentdure` | — | The container managed workloads share a network namespace with — this app's own. Every container has its own `127.0.0.1`, so a loopback address only means anything when both ends are in the same namespace. |
 
 `MANAGED_MCP_INSTANCE_ID` and `MANAGED_MCP_REGISTRY` unset means the managed-MCP routes
 answer `503` rather than half-enabling the feature.
@@ -234,7 +234,7 @@ recovery while a stale success only serves a slightly old tool list.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `PLUGINS_REPO` | unset | **runtime** | `owner/repo` of an [Agent Plugins 1.0.0](https://agent-plugins.org/) repository. Every directory holding a `plugin.json` — the repo root included — is one plugin; a root nested inside another is refused. Per plugin: `skills/<name>/SKILL.md` (Agent Skills spec — frontmatter `name` must match the directory, `description` required), `mcp.json` (only `type: "streamable-http"` servers are bound; `stdio` and `sse` entries are reported and skipped, never executed), and `org.opspresso.agent-studio/mcp/<server>.md` extension documents carrying each server's description (frontmatter) and operator notes (body), which the closed mcp.json schema has no field for. |
+| `PLUGINS_REPO` | unset | **runtime** | `owner/repo` of an [Agent Plugins 1.0.0](https://agent-plugins.org/) repository. Every directory holding a `plugin.json` — the repo root included — is one plugin; a root nested inside another is refused. Per plugin: `skills/<name>/SKILL.md` (Agent Skills spec — frontmatter `name` must match the directory, `description` required), `mcp.json` (only `type: "streamable-http"` servers are bound; `stdio` and `sse` entries are reported and skipped, never executed), and `org.opspresso.agentdure/mcp/<server>.md` extension documents carrying each server's description (frontmatter) and operator notes (body), which the closed mcp.json schema has no field for. |
 | `PLUGINS_REPO_BRANCH` | `main` | **runtime** | |
 | `GITHUB_TOKEN` | unset | **runtime** | Needs contents read access to the plugins repo. |
 
