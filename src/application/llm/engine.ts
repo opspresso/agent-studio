@@ -875,8 +875,21 @@ const MAX_TRANSFER_CONTEXT_CHARS = 8_000;
  */
 const MIN_TRANSFER_LINE_CHARS = 500;
 
-/** The readable text of one message; image parts are named, not inlined. */
-function messageText(content: ChatMessageInput["content"]): string {
+/**
+ * One message as a single transcript line.
+ *
+ * Named apart from `messageText` in `domain/llm/types.ts` on purpose: that one
+ * declares itself the single owner of "the words of a turn" and answers a
+ * different question — it *drops* image parts and joins on newlines, because its
+ * readers are a template, a prompt and a catalog search query.
+ *
+ * A transcript is neither. A turn that carried only a picture is not an empty
+ * turn to the child reading it, so the image is named; and the result is one
+ * line of a line-oriented budget, so it joins on spaces and trims. Sharing an
+ * implementation here would make an image-only turn vanish from the transcript,
+ * and sharing the *name* is what would make that look like a safe edit.
+ */
+function transcriptLine(content: ChatMessageInput["content"]): string {
   if (typeof content === "string") {
     return content;
   }
@@ -920,7 +933,7 @@ export function buildTransferTranscript(
     if (!message || (message.role !== "user" && message.role !== "assistant")) {
       continue;
     }
-    const text = messageText(message.content);
+    const text = transcriptLine(message.content);
     if (!text) {
       continue;
     }
