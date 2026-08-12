@@ -147,6 +147,13 @@ with two standing exemptions: `domain`, which imports nothing and so cannot reac
 the `[cost] unknown model id` warn above is one, and carries no `run=` suffix for exactly that
 reason — and the API-reference page, whose SDK sample merely *displays* a `console.log`.
 
+A failed request reaches the log through `apiError`, at a level that says whose fault it was:
+`error` for a throw it could not account for — the caller gets `Internal server error` and the
+message stays here — and `warn` for a typed `5xx`, whose message the caller already has. A
+`4xx` is logged nowhere: it is the API working, and recording every rejected body would bury
+the two above. This is why an upstream refusal is greppable at all — while `apiError` answered
+typed errors without logging them, giving a failure a type quietly took it out of the record.
+
 ## Tracing
 
 Agent runs are **always** traced. Non-agent and image predict runs are sampled at
