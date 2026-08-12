@@ -376,15 +376,22 @@ liveness is what made this class of failure invisible.
 - [ ] `AES_ENCRYPTION_KEY` provisioned as a secret, and backed up — losing it makes every stored credential unreadable
 - [ ] DynamoDB table created with `PK`/`SK`, `GSI1`, `GSI2`, and **TTL enabled on `expiresAt`**
 - [ ] `PUBLIC_BASE_URL` set (Agent Cards, Slack manifests, OAuth callback)
-- [ ] Task/instance role grants DynamoDB, and S3 + SSM if those features are used. The S3 grant
-      needs `s3:GetObject` and `s3:DeleteObject` as well as `s3:PutObject` — read URLs are
-      pre-signed, which signs with the role's own credentials
+- [ ] Task/instance role grants DynamoDB, and S3 + SSM if those features are used
+- [ ] If `S3_BUCKET_NAME` is set: the role's S3 grant covers **`artifacts/*` as well as
+      `images/*`**, with all three of `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject`.
+      Each half of that has been wrong in production once:
+      - **The prefix.** Runs write `artifacts/<kind>/<id>.<ext>`; `images/` is only the
+        pre-artifact layout, still read and never written. A grant scoped to `images/*`
+        fails every write with `AccessDenied`, and the run *survives* it — the picture is
+        shown and a warning says it was not kept, so nothing is down and nothing is stored.
+      - **The actions.** `GetObject` is not optional: a read URL is pre-signed with the
+        role's own credentials, so without it **every** image 403s — the gallery and the
+        chat transcript alike, including rows written before. `DeleteObject` is what the
+        gallery's delete button needs; without it a delete fails and leaves the row.
 - [ ] If `S3_BUCKET_NAME` is set: the bucket is **private** (public-read is no longer needed),
       with lifecycle rules on `artifacts/image/`, `artifacts/document/` and the legacy
       `images/` prefix — see [Row retention](#row-retention). A missing rule on a new prefix
       is a silent leak: the rows expire and the objects do not
-- [ ] If `S3_BUCKET_NAME` is set: the role has `s3:DeleteObject` — the artifacts gallery
-      cannot remove anything without it, and a failed delete leaves the row in place
 - [ ] LB health check → `/api/ready` (or `/api/health` on a scaled fleet), restart check → `/api/health`
 - [ ] Container `stopTimeout` ≥ `MAX_RUN_DURATION_MS`
 - [ ] Prometheus scraping `/api/metrics`; alerts on `agentdure_runs_failed_total`, `agentdure_run_duration_seconds`, `agentdure_unknown_model_calls_total`

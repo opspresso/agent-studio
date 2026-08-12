@@ -32,12 +32,38 @@ export interface ArtifactRecorder {
   takeWarning(): string | undefined;
 }
 
+/**
+ * Why the write failed, in words safe to hand a reader.
+ *
+ * The provider's own message is not: it names the bucket, the key and often the
+ * role, which is deployment shape nobody in a chat should be shown. But "could
+ * not be stored" alone sent the first real failure — a policy granting
+ * `PutObject` on the old `images/` prefix while the code had moved to
+ * `artifacts/` — to the logs and nowhere else, and it took a log dig to find.
+ * A category is the middle: enough for whoever runs this to know where to look,
+ * nothing about the network or the account.
+ */
+function failureHint(error: unknown): string | undefined {
+  const text = `${error instanceof Error ? error.name : ""} ${
+    error instanceof Error ? error.message : String(error)
+  }`;
+  if (/AccessDenied|not authorized|Forbidden|\b403\b/i.test(text)) {
+    return "this deployment's storage permissions do not allow it";
+  }
+  if (/NoSuchBucket|NotFound|\b404\b/i.test(text)) {
+    return "the configured storage bucket could not be reached";
+  }
+  return undefined;
+}
+
 export function createArtifactRecorder(
   storage: ArtifactStorage,
   context: ArtifactContext,
 ): ArtifactRecorder {
   let failures = 0;
   let reported = false;
+  /** The first failure's category; later ones are almost always the same. */
+  let hint: string | undefined;
   return {
     async record(input) {
       try {
@@ -46,6 +72,7 @@ export function createArtifactRecorder(
         // Never fatal: a run that drew the picture has done the expensive part,
         // and losing the copy is worth strictly less than losing the answer.
         failures += 1;
+        hint ??= failureHint(error);
         log.warn("artifact", "could not store what a run produced", {
           project: context.projectName,
           kind: input.kind,
@@ -59,9 +86,10 @@ export function createArtifactRecorder(
         return undefined;
       }
       reported = true;
+      const because = hint ? ` — ${hint}` : "";
       return failures === 1
-        ? "One file this run produced could not be stored, so it is shown here but not kept."
-        : `${failures} files this run produced could not be stored, so they are shown here but not kept.`;
+        ? `One file this run produced could not be stored${because}, so it is shown here but not kept.`
+        : `${failures} files this run produced could not be stored${because}, so they are shown here but not kept.`;
     },
   };
 }

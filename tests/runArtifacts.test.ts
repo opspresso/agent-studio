@@ -21,7 +21,7 @@ interface Fake extends ArtifactStorage {
   calls: string[];
 }
 
-function fakeStorage(over: { putFails?: boolean; rowFails?: boolean } = {}): Fake {
+function fakeStorage(over: { putFails?: boolean; rowFails?: boolean; error?: Error } = {}): Fake {
   const fake: Fake = {
     puts: [],
     rowsWritten: [],
@@ -30,7 +30,7 @@ function fakeStorage(over: { putFails?: boolean; rowFails?: boolean } = {}): Fak
       async put(input) {
         fake.calls.push("object.put");
         if (over.putFails) {
-          throw new Error("s3 down");
+          throw over.error ?? new Error("s3 down");
         }
         fake.puts.push(input);
       },
@@ -231,6 +231,39 @@ describe("captureRunArtifacts", () => {
     );
     expect(out[0]?.image).toEqual({ b64: PNG, mimeType: "image/png" });
     expect(out[1]?.warning).toContain("could not be stored");
+  });
+
+  it("names the category of failure, so a reader knows where to look", async () => {
+    // The first real failure was a policy granting PutObject on the old prefix
+    // while the code had moved to a new one. "Could not be stored" alone sent
+    // that to the logs and nowhere else.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const denied = Object.assign(new Error("User is not authorized to perform: s3:PutObject"), {
+      name: "AccessDenied",
+    });
+    const storage = fakeStorage({ putFails: true, error: denied });
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    const out = await collect(
+      captureRunArtifacts(recorder, stream({ image: { b64: PNG, mimeType: "image/png" } })),
+    );
+    const warning = out.find((c) => c.warning)?.warning ?? "";
+    expect(warning).toContain("storage permissions do not allow it");
+    // Never the provider's own words: they name the bucket, the key and often
+    // the role, which is deployment shape nobody in a chat should be shown.
+    expect(warning).not.toContain("s3:PutObject");
+    expect(warning).not.toContain("User is not authorized");
+  });
+
+  it("says nothing about the cause when it cannot classify one", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const storage = fakeStorage({ putFails: true, error: new Error("connection reset") });
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+    const out = await collect(
+      captureRunArtifacts(recorder, stream({ image: { b64: PNG, mimeType: "image/png" } })),
+    );
+    const warning = out.find((c) => c.warning)?.warning ?? "";
+    expect(warning).toContain("could not be stored, so it is shown here");
+    expect(warning).not.toContain("connection reset");
   });
 
   it("tells the reader once, with the run's true total", async () => {
