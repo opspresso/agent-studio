@@ -25,7 +25,7 @@ import type { McpToolResult } from "@/domain/llm/types";
 import { getCachedDiscovery, setCachedFailure, setCachedTools } from "./discoveryCache";
 import { isUnauthorized, McpSession, type McpTool } from "./session";
 import { log } from "@/shared/logger";
-import { decodeUtf8Text } from "@/shared/utf8Text";
+import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
 const MAX_TOOL_RESULT_LENGTH = 100_000;
 
@@ -452,13 +452,71 @@ function resourceLinkText(link: {
  * type's subtype makes an extension. Never empty — the name is what a person
  * ends up downloading.
  */
+/**
+ * How much of a name is kept.
+ *
+ * A URI path segment has no length limit, and this name is stored on a chat
+ * message — one DynamoDB item, capped at 400KB — four times over at worst. Long
+ * enough that a real filename is never cut, short enough that a pathological one
+ * costs nothing.
+ */
+const MAX_FILE_NAME_CHARS = 120;
+
+/**
+ * A name that came from somewhere else, made safe to carry.
+ *
+ * The URI belongs to the server, and the name taken out of it travels a long
+ * way: into the tool result the model reads, onto the artifact row, and into the
+ * `Content-Disposition` of the download a person clicks. Each rule here answers
+ * something a server can send today.
+ *
+ * `decodeURIComponent` is the sharp one. It **throws** on a lone `%` — the
+ * segment `report%.pdf` is enough — and this runs while formatting a call that
+ * *succeeded*, inside the `catch` that turns anything thrown into
+ * `Error: tool call failed`. A server that rendered the document correctly was
+ * reported as having failed, and the file went with the report.
+ *
+ * Nothing here is path traversal defence: the object key is derived from a UUID,
+ * so the name never addresses anything. It is that a name is *shown* — a newline
+ * in one reads as two lines everywhere it appears, and a `/` claims a directory
+ * structure that does not exist.
+ */
+function safeFileName(name: string): string {
+  const cleaned = name
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[/\\]/g, "_")
+    .trim();
+  if (cleaned === "" || cleaned === "." || cleaned === "..") {
+    return "";
+  }
+  if (cleaned.length <= MAX_FILE_NAME_CHARS) {
+    return cleaned;
+  }
+  // Keep the extension across the cut: a truncated name that still says what
+  // type it is remains something a reader can open.
+  const dot = cleaned.lastIndexOf(".");
+  const extension = dot > 0 && cleaned.length - dot <= 12 ? cleaned.slice(dot) : "";
+  return cutCodePoints(cleaned, MAX_FILE_NAME_CHARS - extension.length) + extension;
+}
+
 function fileNameFor(resource: { uri?: string }, mimeType: string): string {
-  const fromUri = resource.uri?.split("?")[0]?.split("/").filter(Boolean).pop();
-  if (fromUri) {
-    return decodeURIComponent(fromUri);
+  const segment = resource.uri?.split("?")[0]?.split("/").filter(Boolean).pop();
+  let decoded = "";
+  if (segment) {
+    try {
+      decoded = safeFileName(decodeURIComponent(segment));
+    } catch {
+      // Malformed percent-escapes. The raw segment still names the file better
+      // than the mime fallback does, and failing the call over it is the one
+      // outcome that helps nobody.
+      decoded = safeFileName(segment);
+    }
+  }
+  if (decoded) {
+    return decoded;
   }
   const subtype = mimeType.split("/")[1]?.split(/[+.]/).pop();
-  return subtype ? `file.${subtype}` : "file";
+  return subtype ? `file.${safeFileName(subtype) || "bin"}` : "file";
 }
 
 function imageBlock(data: string | undefined, mimeType: string | undefined): ExtractedBlock {

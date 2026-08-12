@@ -68,6 +68,63 @@ describe("files in a tool result", () => {
     expect(formatToolResult(many).files).toHaveLength(4);
   });
 
+  /**
+   * `decodeURIComponent` throws on a lone `%`, and this runs while formatting a
+   * call that *succeeded* — inside the catch that turns anything thrown into
+   * `Error: tool call failed`. The server rendered the document; the client
+   * reported a failure and dropped it.
+   */
+  it("survives a uri the decoder refuses", () => {
+    const blob = blobOf([0x00, 0xff]);
+    const result = formatToolResult(
+      resource({ uri: "file:///out/report%.docx", mimeType: DOCX, blob }),
+    );
+    expect(result.files?.[0]?.name).toBe("report%.docx");
+    expect(result.text).not.toContain("Error");
+  });
+
+  it("takes control characters out of a name that is going to be shown", () => {
+    const name = `a${String.fromCharCode(10)}b.docx`;
+    const result = formatToolResult(
+      resource({
+        uri: `file:///${encodeURIComponent(name)}`,
+        mimeType: DOCX,
+        blob: blobOf([0x00, 0xff]),
+      }),
+    );
+    expect(result.files?.[0]?.name).toBe("ab.docx");
+  });
+
+  it("does not let a name claim a directory that does not exist", () => {
+    // The object key comes from a UUID, so nothing is traversable — but a name
+    // rendered with slashes in it says otherwise to whoever reads the reply.
+    const result = formatToolResult(
+      resource({
+        uri: `file:///out/${encodeURIComponent("../../etc/passwd")}`,
+        mimeType: DOCX,
+        blob: blobOf([0x00, 0xff]),
+      }),
+    );
+    expect(result.files?.[0]?.name).toBe(".._.._etc_passwd");
+  });
+
+  it("bounds a name's length and keeps the extension across the cut", () => {
+    const long = `${"a".repeat(400)}.docx`;
+    const result = formatToolResult(
+      resource({ uri: `file:///${long}`, mimeType: DOCX, blob: blobOf([0x00, 0xff]) }),
+    );
+    const name = result.files?.[0]?.name ?? "";
+    expect(name.length).toBeLessThanOrEqual(120);
+    expect(name.endsWith(".docx")).toBe(true);
+  });
+
+  it("falls back when the segment sanitises away to nothing", () => {
+    const result = formatToolResult(
+      resource({ uri: "file:///out/../", mimeType: "application/pdf", blob: blobOf([0x00, 0xff]) }),
+    );
+    expect(result.files?.[0]?.name).toBe("file.pdf");
+  });
+
   it("leaves an image an image", () => {
     const blob = blobOf([0x89, 0x50, 0x4e, 0x47]);
     const result = formatToolResult(resource({ uri: "file:///a.png", mimeType: "image/png", blob }));
