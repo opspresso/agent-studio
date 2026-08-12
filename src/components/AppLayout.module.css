@@ -29,11 +29,6 @@
   opacity: 0.78;
 }
 
-.context {
-  padding-left: var(--mantine-spacing-lg);
-  border-left: 1px solid var(--studio-border);
-}
-
 .navbar {
   display: flex;
   flex-direction: column;

@@ -16,7 +16,6 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
-  IconActivity,
   IconBook2,
   IconChartBar,
   IconChevronRight,
@@ -122,14 +121,6 @@ export function AppLayout({
                 </Text>
               </div>
             </UnstyledButton>
-            {showNav && (
-              <Group gap={6} visibleFrom="md" className={classes.context}>
-                <IconActivity size={14} />
-                <Text fz="xs" c="dimmed">
-                  AI operations workspace
-                </Text>
-              </Group>
-            )}
             <Group gap="xs" ml="auto" wrap="nowrap">
               <ThemeToggle />
               <UserMenu email={viewer?.email ?? null} />
