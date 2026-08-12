@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { attachedImageSchema, attachedImagesSchema } from "@/app/api/_lib/attachments";
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
+import { base64ByteLength, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "@/domain/llm/imageLimits";
 
 /** Padded base64 length of a file of exactly `bytes` bytes — deliberately not
  *  the module's own helper, so a wrong formula there cannot pass this test. */
@@ -20,6 +20,17 @@ describe("inbound attachment limits", () => {
     const b64 = "A".repeat(base64Chars(MAX_ATTACHMENT_BYTES + 3 * 1024));
     const result = attachedImageSchema.safeParse({ b64, mimeType: "image/png" });
     expect(result.success).toBe(false);
+  });
+
+  /**
+   * Measured against a real encode rather than against the formula it is the
+   * inverse of, so a wrong exponent cannot agree with itself.
+   */
+  it("weighs a base64 string without decoding it, padding and all", () => {
+    for (const size of [0, 1, 2, 3, 4, 5, 1023, 1024, 5 * 1024 * 1024]) {
+      const encoded = Buffer.alloc(size, 0x41).toString("base64");
+      expect(base64ByteLength(encoded)).toBe(size);
+    }
   });
 
   it("rejects more images than one turn allows", () => {

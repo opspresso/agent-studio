@@ -24,3 +24,16 @@ export const SUPPORTED_IMAGE_TYPES = [
 export function base64Chars(bytes: number): number {
   return 4 * Math.ceil(bytes / 3);
 }
+
+/**
+ * What a base64 string weighs decoded, without decoding it.
+ *
+ * The inverse of {@link base64Chars}, beside it so the two cannot disagree. A
+ * caller checking a cap should not have to allocate ten megabytes to learn it is
+ * over one — which is the whole reason the check was skipped where the bytes
+ * arrive already encoded.
+ */
+export function base64ByteLength(b64: string): number {
+  const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.max(Math.floor((b64.length * 3) / 4) - padding, 0);
+}

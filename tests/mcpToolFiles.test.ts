@@ -160,6 +160,33 @@ describe("files in a tool result", () => {
     expect(result.files?.[0]?.name).toBe("file.pdf");
   });
 
+  /**
+   * The count budget downstream bounds how many images a turn carries and has
+   * never had anything to say about how large one is. Only the upload path
+   * checked the byte cap — which is a bound providers impose, so where the
+   * picture came from cannot change it. The cost of skipping it was the whole
+   * turn: the image rides on the next user message, and a provider refusing it
+   * fails the request rather than the picture.
+   */
+  it("refuses an image no provider would accept, and says so", () => {
+    const blob = Buffer.alloc(5 * 1024 * 1024 + 1, 0x41).toString("base64");
+    const result = formatToolResult(
+      resource({ uri: "file:///huge.png", mimeType: "image/png", blob }),
+    );
+    expect(result.images).toBeUndefined();
+    expect(result.files).toBeUndefined();
+    expect(result.text).toContain("image omitted");
+    expect(result.text).toContain("smaller rendition");
+  });
+
+  it("keeps an image at the limit", () => {
+    const blob = Buffer.alloc(5 * 1024 * 1024, 0x41).toString("base64");
+    const result = formatToolResult(
+      resource({ uri: "file:///big.png", mimeType: "image/png", blob }),
+    );
+    expect(result.images).toHaveLength(1);
+  });
+
   it("leaves an image an image", () => {
     const blob = blobOf([0x89, 0x50, 0x4e, 0x47]);
     const result = formatToolResult(resource({ uri: "file:///a.png", mimeType: "image/png", blob }));

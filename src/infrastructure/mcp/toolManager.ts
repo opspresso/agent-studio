@@ -21,6 +21,7 @@
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
+import { base64ByteLength, MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
 import type { McpToolResult } from "@/domain/llm/types";
 import { getCachedDiscovery, setCachedFailure, setCachedTools } from "./discoveryCache";
 import { isUnauthorized, McpSession, type McpTool } from "./session";
@@ -519,9 +520,31 @@ function fileNameFor(resource: { uri?: string }, mimeType: string): string {
   return subtype ? `file.${safeFileName(subtype) || "bin"}` : "file";
 }
 
+/**
+ * A picture a server returned, if a provider will take it.
+ *
+ * The size check is the same one a person's attachment meets, and it belongs
+ * here for the same reason it belongs there: `MAX_ATTACHMENT_BYTES` is a bound
+ * *providers* impose, so where the bytes came from does not change it. Only the
+ * upload path enforced it, so a tool could hand back a picture no model would
+ * accept — the count budget downstream bounds how many images a turn carries and
+ * has never had anything to say about how large one is. What that cost was the
+ * whole turn: the image rides on the next user message, and a provider refusing
+ * it fails the request rather than the picture.
+ *
+ * Reported rather than dropped, in the shape an oversize blob already uses, so a
+ * model told the picture was too big can ask for a smaller rendition — which it
+ * cannot do about one it never learned existed.
+ */
 function imageBlock(data: string | undefined, mimeType: string | undefined): ExtractedBlock {
   if (!data || !mimeType?.startsWith("image/")) {
     return { text: "[image result omitted]" };
+  }
+  const bytes = base64ByteLength(data);
+  if (bytes > MAX_ATTACHMENT_BYTES) {
+    return {
+      text: `[image omitted: ${mimeType}, ${bytes} bytes — over the ${MAX_ATTACHMENT_BYTES}-byte limit for one image. Ask the server for a smaller rendition.]`,
+    };
   }
   return { text: "[image]", image: { b64: data, mimeType } };
 }
