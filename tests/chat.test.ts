@@ -922,6 +922,47 @@ describe("chat image attachments", () => {
     ]);
   });
 
+  /**
+   * The lease is claimed before the turn is written, so a write that throws
+   * between the two leaves it held. Nothing released it in a test until now, and
+   * the failure is directly visible: the chat reads as "running" for the whole
+   * lease window, refuses new messages, and cannot be freed by the stop button
+   * because there is no run to stop.
+   */
+  it("releases the run lease when setup fails after claiming it", async () => {
+    const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
+    repo.reserveMessageSeq = async () => {
+      throw new Error("dynamo down");
+    };
+
+    await expect(
+      sendMessage(makeDeps(repo, { projects: agentProjects, versions: publishedVersions }), {
+        chatId: "c1",
+        content: "hey",
+        userEmail: "owner@x.com",
+      }),
+    ).rejects.toThrow("dynamo down");
+
+    expect(state.activeRunId).toBeUndefined();
+  });
+
+  it("leaves no lease behind when the turn cannot be appended either", async () => {
+    const { repo, state } = makeChatRepo(chatFixture("owner@x.com"));
+    repo.appendMessage = async () => {
+      throw new Error("item too large");
+    };
+
+    await expect(
+      sendMessage(makeDeps(repo, { projects: agentProjects, versions: publishedVersions }), {
+        chatId: "c1",
+        content: "hey",
+        userEmail: "owner@x.com",
+      }),
+    ).rejects.toThrow("item too large");
+
+    expect(state.activeRunId).toBeUndefined();
+  });
+
   it("replays a stored image to the provider with the run-length lifetime", async () => {
     // The provider fetches this, not the browser, and it may do so at the very
     // end of a run allowed to last MAX_RUN_DURATION_MS.

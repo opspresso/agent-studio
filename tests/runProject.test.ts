@@ -511,6 +511,37 @@ describe("executeAgent image transfer to a subagent", () => {
   ];
 
   /**
+   * The fake channel now throws on an aborted signal, because the real one does
+   * — the SDK raises `APIUserAbortError`. Until it did, the engine's
+   * cancellation checkpoints could all have been deleted with the suite green.
+   */
+  it("stops a run when the caller aborts mid-stream", async () => {
+    const controller = new AbortController();
+    const channel = new FakeChannel([
+      [contentChunk("first"), contentChunk("second"), usageChunk(1, 1)],
+    ]);
+    const { deps } = executionDepsFixture(channel);
+
+    const chunks: EngineChunk[] = [];
+    await expect(
+      (async () => {
+        for await (const chunk of executeAgent(deps, {
+          project: projectFixture(),
+          version: versionFixture({ piiFiltering: false }),
+          messages: [{ role: "user", content: "hi" }],
+          signal: controller.signal,
+        })) {
+          chunks.push(chunk);
+          controller.abort();
+        }
+      })(),
+    ).rejects.toThrow();
+
+    // It stopped where it was told to, rather than draining the script.
+    expect(chunks.filter((chunk) => chunk.delta?.content).length).toBeLessThan(2);
+  });
+
+  /**
    * A transfer is a whole run on another project, with its own thresholds. The
    * bracket settles the project it admitted and knows about no other, and
    * `settleCostLimit` is the only thing that claims the alert — so a project

@@ -560,6 +560,39 @@ async function main() {
     );
     pass("monthly threshold claim: conditional write on its own row");
 
+    // ---------- webhook exactly-once ----------
+    // The only thing standing between a redelivered webhook and a second run,
+    // and it had never been executed against DynamoDB: every test that exercises
+    // delivery uses a `Set`-backed fake, which cannot tell a working condition
+    // expression from one that always succeeds. A typo here fails *open* — the
+    // claim always wins, the trigger runs twice, and 24 passing tests say
+    // nothing about it.
+    const hookTrigger = `it-once-${suffix}`;
+    const deliveryId = `delivery-${suffix}`;
+    assert.equal(
+      await triggerRepository.claimIdempotencyKey(projectName, hookTrigger, deliveryId),
+      true,
+      "the first delivery claims the key",
+    );
+    assert.equal(
+      await triggerRepository.claimIdempotencyKey(projectName, hookTrigger, deliveryId),
+      false,
+      "a redelivery of the same id is refused",
+    );
+    assert.equal(
+      await triggerRepository.claimIdempotencyKey(projectName, hookTrigger, `${deliveryId}-b`),
+      true,
+      "a different delivery is not blocked by it",
+    );
+    // Scoped per trigger, not per project: two triggers can legitimately be
+    // handed the same delivery id by different senders.
+    assert.equal(
+      await triggerRepository.claimIdempotencyKey(projectName, `${hookTrigger}-other`, deliveryId),
+      true,
+      "the claim is scoped to its own trigger",
+    );
+    pass("webhook exactly-once: conditional claim, redelivery refused, scoped per trigger");
+
     // ---------- trigger history (the repair sweep's bounded window) ----------
     // The bound is a sort-key range, not a filter, and a mocked doc client
     // cannot tell a working KeyConditionExpression from a broken one — which is

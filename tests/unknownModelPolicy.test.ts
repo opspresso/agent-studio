@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { openRun } from "@/application/run/runBracket";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import {
@@ -138,12 +138,45 @@ describe("the run bracket enforces it", () => {
       project,
       version({ model: UNKNOWN }),
     );
+
+    // Admitted means a usable bracket, not merely the absence of a throw: with
+    // no assertion at all this passed against a stub that never consulted the
+    // policy — and against one that never ran the guards either.
+    expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
     await bracket.close();
   });
 
   it("admits it when no policy is injected at all", async () => {
     // A deps bag assembled before this existed must behave exactly as it did.
     const bracket = await openRun({ usage }, project, version({ model: UNKNOWN }));
+
+    expect(bracket.runId).toMatch(/[0-9a-f-]{36}/);
+    await bracket.close();
+  });
+
+  /**
+   * The read is a DynamoDB settings lookup, and the cost guard one line below it
+   * fails open through the same outage — "a storage blip must not stop the
+   * platform". This one used to have no `try` at all, so a blip failed the run
+   * with a raw 500 while the guard beside it was deliberately letting runs
+   * through.
+   */
+  it("allows the run when the policy itself cannot be read", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const bracket = await openRun(
+      {
+        usage,
+        unknownModelPolicy: async () => {
+          throw new Error("dynamo down");
+        },
+      },
+      project,
+      version({ model: UNKNOWN }),
+    );
+
+    expect(bracket.runId).toBeTruthy();
+    expect(errors).toHaveBeenCalled();
     await bracket.close();
   });
 });

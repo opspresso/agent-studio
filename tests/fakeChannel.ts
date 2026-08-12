@@ -46,10 +46,21 @@ export class FakeChannel implements LlmChannel {
     };
   }
 
+  /**
+   * Honours `params.signal`, because the real channel does.
+   *
+   * `createChannel` hands the signal to the OpenAI SDK, which throws
+   * `APIUserAbortError` the moment it is aborted. This ignored it entirely, so
+   * every cancellation the engine checks for — six `throwIfAborted()`
+   * checkpoints across the turn loop and the tool dispatch — could be deleted
+   * outright with the suite still green: nothing could tell an engine that stops
+   * on abort from one that runs the script to the end.
+   */
   async *chatCompletionStream(params: ChannelParams): AsyncGenerator<ChannelChunk> {
     this.seenParams.push(params);
     const script = this.scripts[this.calls++] ?? [];
     for (const chunk of script) {
+      params.signal?.throwIfAborted();
       yield chunk;
     }
   }

@@ -33,6 +33,7 @@ import { createArtifactRecorder, type ArtifactRecorder } from "@/application/art
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import { acquireRunSlot, type ConcurrencyGuardDeps } from "./concurrencyGuard";
 import { assertModelsPriceable, type UnknownModelPolicy } from "./modelPolicy";
+import { log } from "@/shared/logger";
 
 export type RunBracketDeps = CostGuardDeps &
   ConcurrencyGuardDeps & {
@@ -108,7 +109,23 @@ export async function openRun(
   // should not be reached by way of a queue for a slot the run would be refused
   // on regardless.
   if (deps.unknownModelPolicy) {
-    assertModelsPriceable(await deps.unknownModelPolicy(), {
+    // Fail open on the *read*, exactly like the cost guard below — and for the
+    // reason it states: the guard exists to bound something, not to be a second
+    // way for a storage blip to take the platform down. This read is a DynamoDB
+    // settings lookup, so an unguarded rejection would have failed the run with
+    // a raw 500 while the guard one line down was deliberately allowing runs
+    // through the same outage.
+    //
+    // "allow" is the fallback because it is the default the policy resolves to
+    // when nothing is configured; refusing every run over a lost read would be
+    // strictly worse than the mispriced usage row the policy exists to prevent.
+    let policy: UnknownModelPolicy = "allow";
+    try {
+      policy = await deps.unknownModelPolicy();
+    } catch (error) {
+      log.error("cost-guard", "could not read the unknown-model policy; allowing the run", error);
+    }
+    assertModelsPriceable(policy, {
       model: version.model,
       ...(version.fallbackModel ? { fallbackModel: version.fallbackModel } : {}),
     });
