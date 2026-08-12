@@ -510,6 +510,49 @@ describe("executeAgent image transfer to a subagent", () => {
     [contentChunk("Done — the image is updated."), usageChunk(1, 1)],
   ];
 
+  /**
+   * A transfer is a whole run on another project, with its own thresholds. The
+   * bracket settles the project it admitted and knows about no other, and
+   * `settleCostLimit` is the only thing that claims the alert — so a project
+   * reached only through transfers accrued spend, began refusing at its limit
+   * (its own admission check sees to that) and told nobody, because the one
+   * announcement its owner could have received was never sent.
+   */
+  it("settles the thresholds of a project it transferred to, not just its own", async () => {
+    const channel = new FakeChannel(
+      transferScript('{"agent_name":"simple-image","message":"a fox"}'),
+    );
+    const fixture = imageProjectDeps(channel);
+    const claims: Array<{ project: string; kind: string }> = [];
+    const guarded = {
+      ...fixture.deps,
+      projects: {
+        get: async (name: string) =>
+          name === "simple-image"
+            ? { ...(await fixture.deps.projects.get(name))!, costLimits: { alertThresholdUsd: 1 } }
+            : fixture.parent,
+      },
+      usage: {
+        ...fixture.deps.usage,
+        getDay: async () => ({ costUsd: { "openai/gpt-image-2": 5 } }),
+        claimAlert: async (project: string, _date: string, kind: string) => {
+          claims.push({ project, kind });
+          return true;
+        },
+      },
+    } as unknown as ExecutionDeps;
+
+    await collect(
+      executeAgent(guarded, {
+        project: fixture.parent,
+        version: parentVersion(),
+        messages: [{ role: "user", content: "draw a fox" }],
+      }),
+    );
+
+    expect(claims).toEqual([{ project: "simple-image", kind: "alert" }]);
+  });
+
   function parentVersion(): Version {
     return {
       ...versionFixture({ piiFiltering: false }),

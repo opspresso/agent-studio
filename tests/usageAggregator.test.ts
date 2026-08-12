@@ -76,9 +76,38 @@ describe("createUsageAggregator", () => {
     });
     const agg = createUsageAggregator(repo);
     await agg.record({ projectName: "p", model: "m", inputTokens: 1, outputTokens: 1, costUsd: 0.01 });
-    await expect(agg.flush()).resolves.toBeUndefined();
+    // Still reports the project it tried to write: the caller settles that
+    // project's thresholds off this list, and a failed write is exactly when
+    // its spend is least well known — dropping it here would make a lost write
+    // silently skip the notification too.
+    await expect(agg.flush()).resolves.toEqual(["p"]);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  /**
+   * A transfer spends on a project the run bracket never admitted, and
+   * `settleCostLimit` — the only thing that claims the block and alert
+   * notifications — is called for the project the bracket opened. Without this
+   * list a project reached only through transfers accrued spend, began refusing
+   * at its threshold, and told nobody.
+   */
+  it("reports every distinct project it wrote for, once each", async () => {
+    const { repo } = fakeUsageRepo();
+    const agg = createUsageAggregator(repo);
+    const call = { model: "m", inputTokens: 1, outputTokens: 1, costUsd: 0.01 };
+
+    await agg.record({ projectName: "parent", ...call });
+    await agg.record({ projectName: "child", ...call });
+    await agg.record({ projectName: "parent", ...call, model: "other" });
+
+    expect((await agg.flush()).sort()).toEqual(["child", "parent"]);
+  });
+
+  it("reports nothing when it wrote nothing", async () => {
+    const { repo } = fakeUsageRepo();
+
+    expect(await createUsageAggregator(repo).flush()).toEqual([]);
   });
 
   it("flush clears buffered totals so a second flush writes nothing", async () => {

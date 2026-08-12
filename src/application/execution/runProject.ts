@@ -18,6 +18,7 @@ import type {
 } from "@/domain/llm/types";
 import { generateImageStream } from "@/application/image/generateImage";
 import { UpstreamError, ValidationError } from "@/application/errors";
+import { settleCostLimit } from "@/application/usage/costGuard";
 import { createUsageAggregator, recordUsage } from "@/application/usage/recordUsage";
 import * as engine from "@/application/llm/engine";
 import { withRunDeadline } from "@/shared/runDeadline";
@@ -282,6 +283,43 @@ export interface CollectedRun extends RunResult {
   termination?: RunTerminationReason;
 }
 
+/**
+ * Settle the thresholds of every project this run spent on but did not open.
+ *
+ * A transfer is not another turn — it is a whole run on another project, with
+ * its own limits and its own usage rows. `bracket.close` settles the project it
+ * admitted and knows about no other, and `settleCostLimit` is the only thing
+ * that claims the block and alert notifications. So a project reached only
+ * through transfers accrued spend, began refusing at its threshold — the child's
+ * own `assertWithinCostLimit` sees to that — and told nobody, because the one
+ * announcement its owner could have received was never sent.
+ *
+ * After the flush, for the reason the flush is before the close: the totals have
+ * to include the run that just spent them.
+ *
+ * Telemetry, like the flush: a settle that cannot read must not turn an answer
+ * already delivered into a failure.
+ */
+async function settleTransferred(
+  deps: ExecutionDeps,
+  spentOn: readonly string[],
+  openedFor: string,
+): Promise<void> {
+  for (const name of spentOn) {
+    if (name === openedFor) {
+      continue;
+    }
+    try {
+      const project = await deps.projects.get(name);
+      if (project) {
+        await settleCostLimit(deps, project);
+      }
+    } catch (error) {
+      log.error("cost-guard", `could not settle spend for transferred project '${name}'`, error);
+    }
+  }
+}
+
 /** Drain an agent stream into a single collected answer. */
 export async function collectRun(
   source: AsyncGenerator<EngineChunk>,
@@ -491,8 +529,9 @@ export async function* executeAgent(
     await closeMcp(closeMcpSessions);
     // The flush comes first: an agent run's usage is buffered until here, so a
     // settle before it would be reading a total that excludes this whole run.
-    await usage.flush();
+    const spentOn = await usage.flush();
     await bracket.close({ failed: thrown !== undefined });
+    await settleTransferred(deps, spentOn, input.project.name);
     await finishTrace(recorder, thrown, !completed && thrown === undefined);
   }
 }
