@@ -38,7 +38,7 @@ const MAX_TOOL_RESULT_LENGTH = 100_000;
  * itself rather than have the transport cut it — a truncated envelope arrives as
  * a parse failure, which says nothing about the document being large.
  */
-const MAX_TOOL_FILE_BYTES = 1_500_000;
+const MAX_TOOL_FILE_BYTES = 10_500_000;
 
 /** Files one result may carry. A tool returning a directory is not this. */
 const MAX_TOOL_FILES_PER_RESULT = 4;

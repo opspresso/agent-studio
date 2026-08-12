@@ -321,14 +321,14 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Bytes one `FetchUrl` may pull | `5 MB` | `src/application/llm/urlContent.ts` |
 | Text kept from one fetched address | `90,000` chars | `src/application/llm/urlContent.ts` |
 | HTML source read through before extracting | `500,000` chars | `src/infrastructure/llm/htmlText.ts` |
-| A file one MCP tool result may carry | `1.5 MB` × 4 | `src/infrastructure/mcp/toolManager.ts` |
+| A file one MCP tool result may carry | `10.5 MB` × 4 | `src/infrastructure/mcp/toolManager.ts` |
 | Prompt excerpt kept on an artifact row | `500` chars | `src/application/artifact/storeArtifact.ts` |
 | Capabilities one catalog search may add to a run (skills / external agents / MCP servers) | `5` / `3` / `3` | `src/application/execution/bindings.ts` |
 | Catalog matches asked of each MCP index, oversampled past that cap — many tool rows collapse to one server, and a candidate the run cannot bind must cost no slot | `4×` (tool index) / `3×` (server index) the MCP server cap | `src/application/execution/bindings.ts` |
 | What a run searches the catalog with (system prompt / newest user turns) | `2,000` chars / `3` turns | `src/application/execution/bindings.ts` |
 | MCP tools declared per run | `120` | `src/domain/llm/toolLimits.ts` |
 | A single MCP tool result | `100,000` chars | `src/infrastructure/mcp/toolManager.ts` |
-| An MCP server's HTTP response | `2MB` | `src/infrastructure/mcp/session.ts` |
+| An MCP server's HTTP response | `14.5MB` | `src/infrastructure/mcp/session.ts` |
 | `tools/list` pages read from one MCP server (the tail past them is dropped, with a warning) | `20` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth metadata / token response | `256KB` each | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery cache entries | `200` | `src/infrastructure/mcp/discoveryCache.ts` |

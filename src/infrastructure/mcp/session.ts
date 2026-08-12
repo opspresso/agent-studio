@@ -33,7 +33,7 @@ const SESSION_END_TIMEOUT_MS = 5_000;
  * past any real catalogue, and a run declares at most 120 tools anyway.
  */
 const MAX_TOOL_PAGES = 20;
-const MAX_MCP_RESPONSE_BYTES = 2_000_000;
+const MAX_MCP_RESPONSE_BYTES = 14_500_000;
 
 interface JsonRpcResponse {
   jsonrpc: string;

@@ -54,7 +54,7 @@ describe("files in a tool result", () => {
   });
 
   it("omits a blob too large to carry, in the shape it always did", () => {
-    const blob = Buffer.alloc(1_500_001, 0xff).toString("base64");
+    const blob = Buffer.alloc(10_500_001, 0xff).toString("base64");
     const result = formatToolResult(resource({ uri: "file:///big.bin", mimeType: DOCX, blob }));
     expect(result.files).toBeUndefined();
     expect(result.text).toContain("binary resource omitted");
