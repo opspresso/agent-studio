@@ -202,7 +202,22 @@ export async function buildMcpTools(
           ]
         : []),
     ],
-    callMcpTool: (name, args) => toolManager.callTool(name, args),
+    // Refused rather than routed. The cap above decides what this run *offers*,
+    // but the alias map inside the manager still holds every discovered tool, so
+    // a name that reaches here having been cut executed anyway and reported a
+    // normal result — which the warning's "were not offered" says did not
+    // happen. The model does not have to invent the name for that to matter: a
+    // chat replays an earlier run's top-level tool calls, and the earlier run
+    // may have had room for a tool this one does not.
+    callMcpTool: async (name, args) =>
+      offered.has(name)
+        ? toolManager.callTool(name, args)
+        : {
+            text:
+              `Error: '${name}' is not available on this run. At most ` +
+              `${MAX_MCP_TOOLS_PER_RUN} MCP tools are offered and this one was past that. ` +
+              `Use one of the tools listed for you.`,
+          },
     close: async () => {
       // Checked again on the way out, because discovery may have been served
       // from cache — in which case the run's first request to that server was a
