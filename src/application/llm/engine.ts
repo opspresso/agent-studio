@@ -57,6 +57,7 @@ import {
   TRANSFER_TOOL_NAME,
   withEngineBlocks,
   type AgentCapabilityDeps,
+  ImageRegistry,
   type ImageHandle,
   type McpServerInfo,
   type SkillInfo,
@@ -985,6 +986,65 @@ export function buildTransferTranscript(
  * are: a plain tool error naming the alternatives, which the model can act on
  * in its next turn.
  */
+/**
+ * A sentence this run says at most once, however many places would say it.
+ *
+ * A closure rather than a `let` beside the text, because the flag is the part
+ * that goes wrong: `transcriptTruncationReported` was set from two branches —
+ * transfer and dispatch — and a third delegation mechanism would have added a
+ * third place to remember to set it. Held here, there is nowhere else to set it
+ * from, and the sentence has one author instead of two copies that were already
+ * byte-identical.
+ */
+function onceWarning(text: string, alreadySaid = false): () => string | undefined {
+  let said = alreadySaid;
+  return () => {
+    if (said) {
+      return undefined;
+    }
+    said = true;
+    return text;
+  };
+}
+
+/**
+ * Whether a delegation has room to run and come back.
+ *
+ * A child runs at `turn + 1` and the parent resumes at `turn + 2`, so two turns
+ * must remain or the resume trips the initial guard. Both delegating builtins
+ * encode that, and both used to encode it themselves.
+ */
+function delegationTurnRefusal(
+  turn: number,
+  maxTurn: number,
+  toolName: string,
+): string | undefined {
+  return turn + 2 >= maxTurn ? `Error: Agent max_turn reached before ${toolName}.` : undefined;
+}
+
+/**
+ * The images a delegation may hand over, or why it may not.
+ *
+ * The refusal is one sentence with one author. It was written twice — the same
+ * string, in the transfer branch and inside the dispatch branch's per-task
+ * validation — and the two were already the kind of copy that drifts on the next
+ * edit to either.
+ */
+function handedImages(
+  images: ImageRegistry,
+  raw: unknown,
+): { childImages: Array<{ b64: string; mimeType: string }> } | { failure: string } {
+  const requestedIds = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+  const handedOver = requestedIds.map((id) => images.get(id)).filter(Boolean) as ImageHandle[];
+  if (handedOver.length < requestedIds.length) {
+    const known = images.list().map((handle) => handle.id);
+    return {
+      failure: `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`,
+    };
+  }
+  return { childImages: handedOver.map(({ b64, mimeType }) => ({ b64, mimeType })) };
+}
+
 function unreachableAgent(agentName: string, subagents: SubagentInfo[]): string | undefined {
   if (subagents.some((agent) => agent.name === agentName)) {
     return undefined;
@@ -1083,7 +1143,14 @@ export async function* runAgent(
     (derivedTranscript?.text
       ? (filter?.mask(derivedTranscript.text) ?? derivedTranscript.text)
       : undefined);
-  let transcriptTruncationReported = (derivedTranscript?.dropped ?? 0) === 0;
+  // Said once per run by whichever mechanism delegates first — and reported the
+  // first time a delegation actually carries a clipped transcript, not at run
+  // start: a run whose model never delegates lost nothing, and saying otherwise
+  // trains readers to ignore the warning.
+  const clippedTranscriptWarning = onceWarning(
+    `Earlier turns were left out of the context handed to other agents: a transfer carries at most ${MAX_TRANSFER_CONTEXT_CHARS} characters of this conversation.`,
+    (derivedTranscript?.dropped ?? 0) === 0,
+  );
 
   const messages: ChannelMessage[] = [];
   if (systemPrompt) {
@@ -1452,10 +1519,9 @@ export async function* runAgent(
         continue;
       }
       if (builtin && call.name === TRANSFER_TOOL_NAME) {
-        // Child runs at turn+1 and the parent resumes at turn+2, so two turns
-        // must remain or the resume would trip the initial guard.
-        if (turn + 2 >= maxTurn) {
-          yield toolResult(call, "Error: Agent max_turn reached before transfer.", { bounded: true });
+        const noRoom = delegationTurnRefusal(turn, maxTurn, "transfer");
+        if (noRoom) {
+          yield toolResult(call, noRoom, { bounded: true });
           continue;
         }
         const agentName = typeof args.agent_name === "string" ? args.agent_name : "";
@@ -1477,29 +1543,15 @@ export async function* runAgent(
         }
         // Named images travel as bytes, so the child edits the real picture
         // instead of a description of it.
-        const requestedIds = Array.isArray(displayArgs.image_ids)
-          ? displayArgs.image_ids.filter((id): id is string => typeof id === "string")
-          : [];
-        const handedOver = requestedIds.map((id) => images.get(id)).filter(Boolean) as ImageHandle[];
-        if (handedOver.length < requestedIds.length) {
-          const known = images.list().map((handle) => handle.id);
-          yield toolResult(
-            call,
-            `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`,
-            { bounded: true },
-          );
+        const handed = handedImages(images, displayArgs.image_ids);
+        if ("failure" in handed) {
+          yield toolResult(call, handed.failure, { bounded: true });
           continue;
         }
-        const childImages = handedOver.map(({ b64, mimeType }) => ({ b64, mimeType }));
-        // Reported the first time a transfer actually carries a clipped
-        // transcript, not at run start: a run whose model never delegates lost
-        // nothing, and saying otherwise trains readers to ignore the warning.
-        if (!transcriptTruncationReported) {
-          transcriptTruncationReported = true;
-          yield {
-            author,
-            warning: `Earlier turns were left out of the context handed to other agents: a transfer carries at most ${MAX_TRANSFER_CONTEXT_CHARS} characters of this conversation.`,
-          };
+        const childImages = handed.childImages;
+        const clipped = clippedTranscriptWarning();
+        if (clipped) {
+          yield { author, warning: clipped };
         }
         // The model-written message plus the conversation it refers to. The
         // runner decides where the transcript goes — a child's own kind governs
@@ -1601,12 +1653,11 @@ export async function* runAgent(
 
       if (builtin && call.name === DISPATCH_TOOL_NAME && deps.runSubagent) {
         const dispatchSubagent = deps.runSubagent;
-        // A group costs the parent exactly what one transfer costs: the children
-        // run at turn+1 and the parent resumes at turn+2 however many there were.
-        if (turn + 2 >= maxTurn) {
-          yield toolResult(call, `Error: Agent max_turn reached before ${DISPATCH_TOOL_NAME}.`, {
-            bounded: true,
-          });
+        // A group costs the parent exactly what one transfer costs, however
+        // many children there were.
+        const noRoomToDispatch = delegationTurnRefusal(turn, maxTurn, DISPATCH_TOOL_NAME);
+        if (noRoomToDispatch) {
+          yield toolResult(call, noRoomToDispatch, { bounded: true });
           continue;
         }
         // From `args`, not `displayArgs`, for the same reason a transfer reads
@@ -1656,36 +1707,20 @@ export async function* runAgent(
           if (unreachable) {
             return { agentName, failure: unreachable };
           }
-          const requestedIds = Array.isArray(task.image_ids)
-            ? task.image_ids.filter((id): id is string => typeof id === "string")
-            : [];
-          const handedOver = requestedIds
-            .map((id) => images.get(id))
-            .filter(Boolean) as ImageHandle[];
-          if (handedOver.length < requestedIds.length) {
-            const known = images.list().map((handle) => handle.id);
-            return {
-              agentName,
-              failure: `Error: unknown image id in image_ids. Available images: ${known.length ? known.join(", ") : "none"}.`,
-            };
+          const handed = handedImages(images, task.image_ids);
+          if ("failure" in handed) {
+            return { agentName, failure: handed.failure };
           }
-          return {
-            agentName,
-            message,
-            childImages: handedOver.map(({ b64, mimeType }) => ({ b64, mimeType })),
-          };
+          return { agentName, message, childImages: handed.childImages };
         });
         const runnable = plans.flatMap((plan, index) =>
           "failure" in plan ? [] : [{ plan, index, outcome: {} as { error?: string } }],
         );
-        // Same clipped-transcript report a transfer makes, and for the same
-        // reason: these children receive the same conversation.
-        if (runnable.length > 0 && !transcriptTruncationReported) {
-          transcriptTruncationReported = true;
-          yield {
-            author,
-            warning: `Earlier turns were left out of the context handed to other agents: a transfer carries at most ${MAX_TRANSFER_CONTEXT_CHARS} characters of this conversation.`,
-          };
+        // Same report a transfer makes, and for the same reason: these children
+        // receive the same conversation.
+        const clippedForDispatch = runnable.length > 0 ? clippedTranscriptWarning() : undefined;
+        if (clippedForDispatch) {
+          yield { author, warning: clippedForDispatch };
         }
         // Every child advances at once; their chunks interleave, which is what
         // `author`/`authorPath` on a subagent chunk is for. The returned texts
