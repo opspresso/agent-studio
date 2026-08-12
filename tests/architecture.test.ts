@@ -825,6 +825,16 @@ interface SingleOwner {
 
 const SINGLE_OWNERS: SingleOwner[] = [
   {
+    // Written once for the artifacts gallery, then wanted verbatim by the chat's
+    // download row the moment files became deliverable — which is how the second
+    // copy of anything starts. Two surfaces looking at the same object have to
+    // report the same number in the same units: `1.5 MB` in a transcript beside
+    // `1,605,516 bytes` in the gallery reads as two different files.
+    what: "a stored object's size, written for a person",
+    pattern: /const units = \["KB", "MB", "GB"\]/,
+    owner: "src/app/_lib/formatBytes.ts",
+  },
+  {
     what: "the shape of an MCP tool",
     pattern: /^export interface McpTool\b/m,
     owner: "src/domain/mcp/types.ts",

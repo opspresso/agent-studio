@@ -28,7 +28,7 @@ function toolResultField(toolResult: unknown, field: string): string | undefined
  * results, and generated images all render live regardless of author.
  */
 export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
-  let { text, toolCalls, tools, images, warnings, authorPaths } = prev;
+  let { text, toolCalls, tools, images, files, warnings, authorPaths } = prev;
   // Follow the stream: an authored chunk names a chain that is running now and
   // joins the set — several children speak at once under `dispatch_agents`, while
   // a chain it is nested with has evidently finished. An unauthored chunk means
@@ -61,9 +61,19 @@ export function reduceChunk(prev: LiveTurn, chunk: StreamChunk): LiveTurn {
   if (chunk.image) {
     images = [...images, chunk.image];
   }
+  if (chunk.file) {
+    files = [
+      ...files,
+      {
+        name: chunk.file.name,
+        mimeType: chunk.file.mimeType,
+        ...(chunk.file.byteSize !== undefined ? { byteSize: chunk.file.byteSize } : {}),
+      },
+    ];
+  }
   const warning = collectedWarning(chunk, warnings);
   if (warning !== undefined) {
     warnings = [...warnings, warning];
   }
-  return { text, toolCalls, tools, images, warnings, authorPaths };
+  return { text, toolCalls, tools, images, files, warnings, authorPaths };
 }

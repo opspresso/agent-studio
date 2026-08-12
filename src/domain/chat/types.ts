@@ -63,6 +63,31 @@ export interface ChatMessageImage {
 }
 
 /**
+ * A file a run produced and stored — a rendered document, an export.
+ *
+ * Its own field rather than another `ChatMessageImage`, for the reason
+ * `EngineChunk.file` is its own axis: everything that reads `images` *draws*
+ * them, and a DOCX is not a picture. What a reader does with this is take it
+ * away, so it carries the two things a download needs and an image does not —
+ * the `name` to save under (the object key is a UUID) and the `byteSize`, since
+ * deciding whether to fetch ten megabytes is the reader's call to make before
+ * they fetch it.
+ *
+ * Stored with the object `key`, read back as a signed `url`, exactly like an
+ * image — but with no legacy form to reconcile: files were never written before
+ * signing existed.
+ */
+export interface ChatMessageFile {
+  /** Object key. What is stored; never what is served. */
+  key?: string;
+  /** A signed download address, put here by the read path. */
+  url?: string;
+  name: string;
+  mimeType: string;
+  byteSize?: number;
+}
+
+/**
  * A document the user attached, stored as the text extracted from it rather than
  * as the file.
  *
@@ -104,6 +129,8 @@ export interface AssistantChatMessage extends ChatMessageBase {
   warnings?: string[];
   /** Present when the run generated images. */
   images?: ChatMessageImage[];
+  /** Present when the run produced files — what the reader downloads. */
+  files?: ChatMessageFile[];
 }
 
 export interface ToolChatMessage extends ChatMessageBase {

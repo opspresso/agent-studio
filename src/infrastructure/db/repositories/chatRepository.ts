@@ -16,6 +16,7 @@ import type {
   Chat,
   ChatMessage,
   ChatMessageDocument,
+  ChatMessageFile,
   ChatMessageImage,
   ChatRole,
 } from "@/domain/chat/types";
@@ -103,6 +104,9 @@ function fromMessageItem(item: DynamoItem): ChatMessage {
       toolCalls: item.toolCalls as ChannelToolCall[] | undefined,
       warnings: item.warnings as string[] | undefined,
       images: item.images as ChatMessageImage[] | undefined,
+      // Same trap as the user turn below: the write spreads the whole message,
+      // so a field missing *here* stores fine and reads back as nothing.
+      files: item.files as ChatMessageFile[] | undefined,
     };
   }
   // A user turn carries what the user attached — images, and the text read out

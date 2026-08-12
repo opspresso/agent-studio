@@ -114,6 +114,22 @@ into `ChatDeps.runAgent`.
   never made. An image that cannot be *addressed* on the way back out is dropped too, and
   `resolveMessageImages` returns how many, so the replay path can say so as well. Without
   `storeImage`, images render only during the live stream, which is also reported.
+- **Files a run produced are references from the moment they arrive.** `EngineChunk.file` is
+  a separate axis from `image` because everything that reads `image` *draws* it, and the run
+  bracket has already stored the bytes and stripped them by the time this surface sees the
+  chunk. So `collectGeneratedFiles` maps the reference onto the assistant message as
+  `files: [{ key, name, mimeType, byteSize? }]`, `resolveFiles.ts` signs it per read, and the
+  address carries the **filename to save as** — the object key is a UUID, and a browser handed
+  one saves `c74d33ff-….pdf`. Three consequences. **Only the view resolves them**: a file's
+  bytes never enter the model's context, so the replay path signs images and deliberately not
+  these. **A file counts toward the turn being worth persisting** — a run whose only output was
+  a document used to write no message at all, which left the document stored and unreachable
+  from the conversation that made it. And the unstored case reads differently from an image's:
+  an image that failed to store was still *seen*, while a file that failed has been nowhere, so
+  the warning says the download does not exist rather than that it is temporary.
+  A live frame carries no address (`LiveFile`) — signing one into every frame would put a
+  credential on the wire for a link most readers never click, and the finished turn is seconds
+  away and carries one.
 - **Attachments are sent twice over, deliberately.** The turn being run carries the
   attachment *bytes* as inline `data:` content parts (`userTurnContent`) — that is what
   gives the engine a handle it can edit. Replayed history carries a *signed URL* resolved

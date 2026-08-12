@@ -1,6 +1,11 @@
 import type { Project, Version } from "@/domain/project/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
-import type { Chat, ChatMessageDocument, ChatMessageImage } from "@/domain/chat/types";
+import type {
+  Chat,
+  ChatMessageDocument,
+  ChatMessageFile,
+  ChatMessageImage,
+} from "@/domain/chat/types";
 import { imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import type { ChannelToolCall, ContentPart, EngineChunk } from "@/domain/llm/types";
 import {
@@ -105,6 +110,49 @@ export function collectGeneratedImages(
       stored,
       warnings: [
         `${missing} image(s) are shown for this turn only: image storage is not configured, so they are not kept with the chat.`,
+      ],
+    };
+  }
+  return { stored, warnings: [] };
+}
+
+/**
+ * Take the references off files a run already stored.
+ *
+ * The sibling of {@link collectGeneratedImages}, with one asymmetry that decides
+ * the wording. An image that failed to store was still *seen* — its bytes rode
+ * the stream, so "shown for this turn only" is the truth. A file's bytes are
+ * stripped at the bracket the moment it is stored, and a file that was not
+ * stored has been nowhere at all: there is no copy on the connection to fall
+ * back to, and the reader is being told the download does not exist rather than
+ * that it is temporary.
+ *
+ * Only the unconfigured case speaks here. When storage *is* configured the
+ * capture already warned, with the provider's reason attached — repeating it
+ * would be the noise.
+ */
+export function collectGeneratedFiles(
+  files: Array<{ name: string; mimeType: string; byteSize?: number; key?: string }>,
+  storageConfigured: boolean,
+): { stored: ChatMessageFile[]; warnings: string[] } {
+  const stored: ChatMessageFile[] = [];
+  for (const file of files) {
+    if (!file.key) {
+      continue;
+    }
+    stored.push({
+      key: file.key,
+      name: file.name,
+      mimeType: file.mimeType,
+      ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}),
+    });
+  }
+  const missing = files.length - stored.length;
+  if (missing > 0 && !storageConfigured) {
+    return {
+      stored,
+      warnings: [
+        `${missing} file(s) this run produced were not kept: file storage is not configured, so there is nothing to download.`,
       ],
     };
   }
@@ -256,6 +304,9 @@ export async function* runAndPersist(
   // never produced.
   const toolCalls: ChannelToolCall[] = [];
   const generatedImages: { b64: string; mimeType: string; prompt?: string; key?: string }[] = [];
+  // No bytes here, unlike the images beside them: the bracket strips a file's
+  // payload as it stores it, so what arrives is already the reference.
+  const generatedFiles: { name: string; mimeType: string; byteSize?: number; key?: string }[] = [];
   // Why the run came out the shape it did — a binding it could not use, history
   // it could not carry. Persisted so reloading the chat still explains it.
   const warnings: string[] = [];
@@ -277,6 +328,7 @@ export async function* runAndPersist(
       !content &&
       toolMessages.length === 0 &&
       generatedImages.length === 0 &&
+      generatedFiles.length === 0 &&
       warnings.length === 0
     ) {
       return;
@@ -284,7 +336,9 @@ export async function* runAndPersist(
     try {
       const uploaded = collectGeneratedImages(generatedImages, deps.artifacts !== undefined);
       const images = uploaded.stored;
-      for (const warning of uploaded.warnings) {
+      const produced = collectGeneratedFiles(generatedFiles, deps.artifacts !== undefined);
+      const files = produced.stored;
+      for (const warning of [...uploaded.warnings, ...produced.warnings]) {
         // Too late to stream — the run is over — but it survives on the message,
         // which is exactly where a reader wonders where the picture went.
         note(warning);
@@ -312,6 +366,7 @@ export async function* runAndPersist(
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
         ...(warnings.length > 0 ? { warnings } : {}),
         ...(images.length > 0 ? { images } : {}),
+        ...(files.length > 0 ? { files } : {}),
         createdAt: now,
       });
       await deps.chats.update({ ...chat, updatedAt: now });
@@ -346,6 +401,9 @@ export async function* runAndPersist(
       }
       if (chunk.image) {
         generatedImages.push(chunk.image);
+      }
+      if (chunk.file) {
+        generatedFiles.push(chunk.file);
       }
       yield chunk;
     }

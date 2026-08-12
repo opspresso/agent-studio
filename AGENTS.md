@@ -215,6 +215,8 @@ same rule applies to:
 | User-image caps | `src/domain/llm/imageLimits.ts` |
 | `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
 | Turning a stored image reference into an address | `resolveImageUrl` in `src/domain/chat/imageRefs.ts` |
+| Turning a stored file reference into a download address | `resolveFileUrl` in `src/domain/chat/fileRefs.ts` |
+| A stored object's size, written for a person | `formatBytes` in `src/app/_lib/formatBytes.ts` |
 | How long a signed image URL lives, per reader | `src/application/chat/imageUrls.ts` |
 | Who releases a chat's run lease | `teeToRunLog` in `src/application/chat/runLog.ts` |
 | How a chat run reaches the browser | `src/app/api/chats/_lib/detachedRun.ts` |

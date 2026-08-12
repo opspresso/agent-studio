@@ -17,6 +17,12 @@ export interface StreamChunk {
   delta?: { content?: string; toolCalls?: unknown[] };
   toolResult?: unknown;
   image?: { b64: string; mimeType: string; prompt?: string };
+  /**
+   * A file the run produced. No `b64`: the bytes are stripped once stored, so
+   * what arrives is the reference — and the address to fetch it by is signed
+   * when the finished turn is read back, not here.
+   */
+  file?: { name: string; mimeType: string; byteSize?: number; key?: string };
   author?: string;
   /** Transfer chain that produced the chunk, outermost first. */
   authorPath?: string[];
@@ -48,12 +54,29 @@ export interface LiveImage {
   prompt?: string;
 }
 
+/**
+ * A file announced mid-run, before the turn it belongs to has been written.
+ *
+ * It has no address yet, and that is not an oversight to fix by signing one
+ * into the stream: a signed URL in every frame of every run would put a
+ * credential on the wire for a link most readers never click, and the run is
+ * seconds from persisting a message that carries one anyway. So the live row
+ * says the file exists and what it weighs, and the download arrives with the
+ * finished turn.
+ */
+export interface LiveFile {
+  name: string;
+  mimeType: string;
+  byteSize?: number;
+}
+
 /** In-progress assistant turn rendered while a stream is active. */
 export interface LiveTurn {
   text: string;
   toolCalls: LiveToolCall[];
   tools: LiveToolResult[];
   images: LiveImage[];
+  files: LiveFile[];
   /** Bindings this run could not use, reported before the answer starts. */
   warnings: string[];
   /**
@@ -78,6 +101,7 @@ export const EMPTY_TURN: LiveTurn = {
   toolCalls: [],
   tools: [],
   images: [],
+  files: [],
   warnings: [],
   authorPaths: [],
 };

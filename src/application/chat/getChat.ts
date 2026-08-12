@@ -2,6 +2,7 @@ import { isLiveClaim, type Chat, type ChatMessage } from "@/domain/chat/types";
 import type { ChatDeps } from "./deps";
 import { ChatNotFoundError } from "./errors";
 import { resolveMessageImages } from "./resolveImages";
+import { resolveMessageFiles } from "./resolveFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { log } from "@/shared/logger";
 
@@ -71,9 +72,19 @@ export async function getChat(
     // picture go" with something other than a guess.
     log.warn("chat", `${resolved.dropped} image(s) of chat ${chatId} could not be addressed`);
   }
+  // Files, signed only here. The replay resolves images and not these on
+  // purpose — see `resolveFiles.ts`.
+  const withFiles = await resolveMessageFiles(
+    resolved.messages,
+    deps.artifacts?.objects.sign,
+    VIEW_URL_TTL_SECONDS,
+  );
+  if (withFiles.dropped > 0) {
+    log.warn("chat", `${withFiles.dropped} file(s) of chat ${chatId} could not be addressed`);
+  }
   return {
     chat,
-    messages: resolved.messages,
+    messages: withFiles.messages,
     ...(running && active ? { activeRun: { runId: active.runId } } : {}),
   };
 }

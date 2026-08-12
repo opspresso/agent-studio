@@ -29,22 +29,8 @@ import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { formatShortDateTime } from "@/shared/date";
+import { formatBytes } from "@/app/_lib/formatBytes";
 import { deleteArtifact, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
-
-/** Human-readable size. A gallery is where "why is my bucket big" gets asked. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
-}
 
 type KindFilter = "all" | "image" | "document";
 

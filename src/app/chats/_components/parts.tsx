@@ -3,9 +3,21 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { memo, useState } from "react";
-import { Alert, Badge, Box, Group, Image, Paper, Stack, Text, Typography } from "@mantine/core";
+import {
+  Alert,
+  Anchor,
+  Badge,
+  Box,
+  Group,
+  Image,
+  Paper,
+  Stack,
+  Text,
+  Typography,
+} from "@mantine/core";
 import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
+import { formatBytes } from "@/app/_lib/formatBytes";
 import { imageDataUrl } from "@/domain/llm/types";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { ToolRow } from "@/app/_components/ToolRow";
@@ -115,6 +127,52 @@ export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
 
 export function liveImageSrc(image: LiveImage): string {
   return imageDataUrl(image);
+}
+
+/**
+ * A file the run produced, offered as a download.
+ *
+ * Not a `GeneratedImage` with a different icon: there is nothing to draw, and
+ * the reader's whole interaction is deciding whether to fetch it — which is why
+ * the size is on the row rather than discovered by clicking.
+ *
+ * Rendered with no `href` while the run is still going, because the address is
+ * signed when the finished turn is read back (`LiveFile`), not put on the wire
+ * frame by frame. The row keeps its shape across that swap, so the reply does
+ * not jump the moment the answer lands.
+ */
+export function ProducedFile({
+  name,
+  byteSize,
+  url,
+}: {
+  name: string;
+  byteSize?: number | undefined;
+  url?: string | undefined;
+}) {
+  const size = byteSize === undefined ? null : formatBytes(byteSize);
+  return (
+    <Paper withBorder radius="md" px="md" py="xs" maw="80%">
+      <Group gap="xs" wrap="nowrap">
+        <IconFileText size={18} />
+        <Stack gap={0} style={{ minWidth: 0 }}>
+          {url ? (
+            <Anchor href={url} download={name} fz="sm" style={{ overflowWrap: "anywhere" }}>
+              {name}
+            </Anchor>
+          ) : (
+            <Text fz="sm" style={{ overflowWrap: "anywhere" }}>
+              {name}
+            </Text>
+          )}
+          <Text fz={11} c="dimmed">
+            {size ? `${size}${url ? "" : " · "}` : ""}
+            {url ? "" : "available when this reply finishes"}
+          </Text>
+        </Stack>
+      </Group>
+    </Paper>
+  );
 }
 
 /**
@@ -233,6 +291,20 @@ export const MessageView = memo(function MessageView({
             ]
           : [],
       )}
+      {/* Same rule as the images above: `url` is set by the read path, which
+          drops whatever it could not sign rather than offering a dead link. */}
+      {(message.files ?? []).flatMap((file, index) =>
+        file.url
+          ? [
+              <ProducedFile
+                key={`file-${index}`}
+                name={file.name}
+                url={file.url}
+                byteSize={file.byteSize}
+              />,
+            ]
+          : [],
+      )}
       <div className={classes.answer}>
         <MarkdownContent content={message.content} />
       </div>
@@ -263,6 +335,9 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
           src={liveImageSrc(image)}
           alt={image.prompt ?? "Generated image"}
         />
+      ))}
+      {turn.files.map((file, index) => (
+        <ProducedFile key={`file-${index}`} name={file.name} byteSize={file.byteSize} />
       ))}
       <div className={classes.answer}>
         {turn.text ? (

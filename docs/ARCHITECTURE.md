@@ -497,6 +497,7 @@ consumers must use it instead of re-deriving author semantics.
 | `toolResult` | engine after each tool finishes | chat tool rows (displayed, and replayed into context for the last N turns), client tool panel |
 | `warning` | anywhere a run loses something: at setup for a binding it could not use (deleted skill/subagent, unreachable or blocked MCP server, tools past the per-run cap), and mid-run for a turn or output limit, a context-budget cut, a truncated transfer transcript, a failed transfer, a dropped document | chat warning banner, Slack warning suffix, `Trace.warnings`; never ends the stream |
 | `image` | GenerateImage / EditImage builtins, and image-project subagents | consumed **regardless of author** (delegating to an image subagent is how an agent draws): chat image persistence (S3), Slack upload, OpenAI `images` extension, client gallery |
+| `file` | a tool that returned bytes which are not a picture — a rendered document, an export | its own axis precisely so the ten consumers of `image` never see it: chat persists the reference and offers it as a download (`files` on the assistant message, signed per read with the filename to save as), the run log substitutes a note. The bytes are stripped by the bracket that stored them and **never enter the model's context** — the tool result text is what names the file. Slack and A2A do not deliver these yet |
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
 | `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | only a **top-level** error ends the stream. An authored one is *dropped* by nearly every consumer (Slack and the trace recorder excepted) because the parent answers past it — so what a failed transfer lost reaches the reader as that transfer's `warning`, and the model as its "For context" turn, not through this field |
 | `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | read through `chunkTermination` (below): OpenAI `finish_reason: "stop"`, client finalize |
@@ -1535,8 +1536,10 @@ that reconnect cleanly, under a lifetime ceiling so a stream that opens and dies
 still ends.
 
 `ChatMessage` is a discriminated union on `role` (`user` | `assistant` | `tool`): a tool row
-always carries `toolCallId`, an assistant row may carry `toolCalls`/`images`, a user row may
-carry `images`/`documents`, and illegal combinations are unrepresentable.
+always carries `toolCallId`, an assistant row may carry `toolCalls`/`images`/`files`, a user row
+may carry `images`/`documents`, and illegal combinations are unrepresentable. `files` are what a
+run produced and a reader downloads; only the view resolves them to addresses, because unlike an
+image a file is never fetched into a replayed turn.
 
 A run persists **one flattened assistant message** holding the accumulated text, the run's
 top-level `toolCalls` and any `warnings` it reported, preceded by its tool rows — including a
