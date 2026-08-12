@@ -69,6 +69,41 @@ describe("files in a tool result", () => {
   });
 
   /**
+   * Each file block writes "delivered to the user" into its own text. Cutting
+   * the list afterwards left those notes standing for files nobody received —
+   * so the model told the reader about six documents and four existed.
+   */
+  it("says which files it dropped rather than leaving their delivery notes standing", () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({
+      type: "resource",
+      resource: { uri: `file:///f${i}.docx`, mimeType: DOCX, blob: blobOf([0x00, 0xff]) },
+    }));
+
+    const result = formatToolResult(many);
+
+    expect(result.text).toContain("file omitted: f4.docx");
+    expect(result.text).toContain("file omitted: f5.docx");
+    // And the four that made it still read as delivered.
+    expect(result.text.match(/delivered to the user/g)).toHaveLength(4);
+  });
+
+  it("keeps a dropped file's note out of the way of the ones that arrived", () => {
+    const many = Array.from({ length: 5 }, (_, i) => ({
+      type: "resource",
+      resource: { uri: `file:///f${i}.docx`, mimeType: DOCX, blob: blobOf([0x00, 0xff]) },
+    }));
+
+    const result = formatToolResult(many);
+
+    expect(result.files?.map((file) => file.name)).toEqual([
+      "f0.docx",
+      "f1.docx",
+      "f2.docx",
+      "f3.docx",
+    ]);
+  });
+
+  /**
    * `decodeURIComponent` throws on a lone `%`, and this runs while formatting a
    * call that *succeeded* — inside the catch that turns anything thrown into
    * `Error: tool call failed`. The server rendered the document; the client

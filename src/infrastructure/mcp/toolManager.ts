@@ -628,11 +628,26 @@ function truncateResult(output: string): string {
 /** Exported for tests: how a server's content blocks become one tool result. */
 export function formatToolResult(content: unknown[]): McpToolResult {
   const blocks = content.map(extractBlock);
-  const data = blocks.map((block) => block.text);
   const images = blocks.flatMap((block) => (block.image ? [block.image] : []));
-  const files = blocks
-    .flatMap((block) => (block.file ? [block.file] : []))
-    .slice(0, MAX_TOOL_FILES_PER_RESULT);
+  // Not a `slice`. Each file block wrote "delivered to the user" into its own
+  // text before the cap was applied, so cutting the list afterwards left the
+  // model reading a delivery note for a file nobody received — and repeating it
+  // to the reader. A dropped file says it was dropped, in its own place, which
+  // is the same rule truncation follows everywhere else here.
+  const files: NonNullable<ExtractedBlock["file"]>[] = [];
+  const data: string[] = [];
+  for (const block of blocks) {
+    if (!block.file) {
+      data.push(block.text);
+    } else if (files.length < MAX_TOOL_FILES_PER_RESULT) {
+      files.push(block.file);
+      data.push(block.text);
+    } else {
+      data.push(
+        `[file omitted: ${block.file.name} — one result may carry ${MAX_TOOL_FILES_PER_RESULT} files and this one is past that. Ask for the rest in another call.]`,
+      );
+    }
+  }
   const first = data[0];
   const output = truncateResult(
     data.length === 1 && first !== undefined ? first : JSON.stringify(data),
