@@ -521,6 +521,20 @@ function fileNameFor(resource: { uri?: string }, mimeType: string): string {
 }
 
 /**
+ * The media type without its parameters, lowercased.
+ *
+ * A server is free to answer `image/png; charset=binary`, and until here the
+ * whole string travelled. It becomes `data:image/png; charset=binary;base64,…`
+ * — not a valid data URL, and the turn it rides on is the thing that fails — and
+ * it becomes the artifact's media type, where nothing matches it and the object
+ * is stored as `.bin`. `documentKind` has always read a declared type this way;
+ * this is the same reading, applied where the value arrives from someone else.
+ */
+function baseMediaType(value: string | undefined): string {
+  return value?.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+/**
  * A picture a server returned, if a provider will take it.
  *
  * The size check is the same one a person's attachment meets, and it belongs
@@ -536,8 +550,9 @@ function fileNameFor(resource: { uri?: string }, mimeType: string): string {
  * model told the picture was too big can ask for a smaller rendition — which it
  * cannot do about one it never learned existed.
  */
-function imageBlock(data: string | undefined, mimeType: string | undefined): ExtractedBlock {
-  if (!data || !mimeType?.startsWith("image/")) {
+function imageBlock(data: string | undefined, declaredType: string | undefined): ExtractedBlock {
+  const mimeType = baseMediaType(declaredType);
+  if (!data || !mimeType.startsWith("image/")) {
     return { text: "[image result omitted]" };
   }
   const bytes = base64ByteLength(data);
@@ -590,7 +605,7 @@ function extractBlock(block: unknown): ExtractedBlock {
       return { text: b.resource.text || "No result" };
     }
     if (b.resource.blob != null) {
-      const mime = b.resource.mimeType ?? "application/octet-stream";
+      const mime = baseMediaType(b.resource.mimeType) || "application/octet-stream";
       if (mime.startsWith("image/")) {
         return imageBlock(b.resource.blob, mime);
       }

@@ -187,6 +187,31 @@ describe("files in a tool result", () => {
     expect(result.images).toHaveLength(1);
   });
 
+  /**
+   * `data:image/png; charset=binary;base64,…` is not a valid data URL, and the
+   * turn the picture rides on is what fails. The same string was also the
+   * artifact's media type, where nothing matched it and the object was stored
+   * as `.bin`.
+   */
+  it("takes a media type's parameters off before anything is built from it", () => {
+    const blob = blobOf([0x89, 0x50, 0x4e, 0x47]);
+    const result = formatToolResult(
+      resource({ uri: "file:///a.png", mimeType: "IMAGE/PNG; charset=binary", blob }),
+    );
+    expect(result.images).toEqual([{ b64: blob, mimeType: "image/png" }]);
+  });
+
+  it("reads a file's declared type the same way", () => {
+    const result = formatToolResult(
+      resource({
+        uri: "file:///a.docx",
+        mimeType: `${DOCX}; charset=binary`,
+        blob: blobOf([0x00, 0xff]),
+      }),
+    );
+    expect(result.files?.[0]?.mimeType).toBe(DOCX);
+  });
+
   it("leaves an image an image", () => {
     const blob = blobOf([0x89, 0x50, 0x4e, 0x47]);
     const result = formatToolResult(resource({ uri: "file:///a.png", mimeType: "image/png", blob }));
