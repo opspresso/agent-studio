@@ -778,8 +778,23 @@ describe("execution deps wiring", () => {
     const container = stripComments(
       SOURCE_FILES.find((file) => file.path === "src/lib/container.ts")?.text ?? "",
     );
-    const unwired = optional.filter(
-      (name) => !seams.has(name) && !new RegExp(`\\b${name}:`).test(container),
+    // Per bag, not per file. Asking whether each name appears *anywhere* in
+    // container.ts passed while `imageDeps` was a second literal missing nothing
+    // yet — and the next policy added to the bracket would have reached one bag
+    // and not the other, silently, with this test green. A bag that is an alias
+    // (`= executionDeps`) declares no fields and is not a bag: only object
+    // literals are checked, which is what makes collapsing the copy the fix
+    // rather than a way around the rule.
+    const bags = [
+      ...container.matchAll(
+        /export const (\w+): (?:ExecutionDeps|ImageGenerationDeps|RunBracketDeps)\s*=\s*\{([\s\S]*?)\n\};/g,
+      ),
+    ].map((match) => ({ name: match[1]!, body: match[2]! }));
+    expect(bags.length).toBeGreaterThan(0);
+    const unwired = bags.flatMap((bag) =>
+      optional
+        .filter((name) => !seams.has(name) && !new RegExp(`\\b${name}:`).test(bag.body))
+        .map((name) => `${bag.name}.${name}`),
     );
     expect(unwired).toEqual([]);
   });

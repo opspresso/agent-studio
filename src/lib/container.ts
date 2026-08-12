@@ -641,18 +641,17 @@ export const executionDeps: ExecutionDeps = {
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 
-/** Dependencies for image-generation projects. */
-export const imageDeps: ImageGenerationDeps = {
-  imageChannel,
-  usage: usageRepository,
-  traces: runTraceRepository,
-  traceSampleRate: config.traceSampleRate,
-  postAlert: postCostAlert,
-  runSlots: runSlotRepository,
-  limits: concurrencyLimits,
-  unknownModelPolicy: getUnknownModelPolicy,
-  ...(artifactStorage ? { artifacts: artifactStorage } : {}),
-};
+/**
+ * Dependencies for image-generation projects.
+ *
+ * The same bag, not a second copy of it. `ExecutionDeps` already satisfies
+ * `ImageGenerationDeps`, and the seven run-bracket fields were written out twice
+ * — which the wiring test could not see, because it asks whether each optional
+ * field is named *anywhere* in this file. So the next policy added to the
+ * bracket would have reached `/predict`'s image path and nothing else, with the
+ * test green. This narrows the declared type without restating the value.
+ */
+export const imageDeps: ImageGenerationDeps = executionDeps;
 
 /**
  * The webhook delivery path. `run` binds the facade's chunk-stream entry point
