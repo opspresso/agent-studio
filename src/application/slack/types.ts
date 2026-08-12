@@ -29,8 +29,15 @@ export interface SlackClientPort {
     token: string,
     args: { channel: string; ts: string; limit?: number },
   ): Promise<SlackMessage[]>;
-  /** Fetch a file shared with the bot (host-checked, bot-token authenticated). */
-  downloadFile(token: string, url: string): Promise<Buffer>;
+  /**
+   * Fetch a file shared with the bot (host-checked, bot-token authenticated).
+   *
+   * `maxBytes` is part of the call because the caller is the one that knows what
+   * it is fetching — an image's ceiling is not a document's — and because the
+   * bound has to be in force *while* the body is read. The pre-check at the call
+   * site reads Slack's declared `size`, which Slack is free to omit.
+   */
+  downloadFile(token: string, url: string, maxBytes: number): Promise<Buffer>;
   startStream(
     token: string,
     args: {

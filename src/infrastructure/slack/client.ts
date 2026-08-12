@@ -3,6 +3,7 @@
 import { callerFrom, type RunCaller } from "@/domain/execution/actor";
 import type { SlackMessage } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
+import { readBodyBytes } from "@/shared/httpBody";
 import { getCachedProfile, rememberProfile } from "./profileCache";
 export type { SlackMessage };
 
@@ -98,7 +99,7 @@ export const slackClient = {
    * bot token, so the host is verified before the token is attached — never send
    * credentials to a host named by an inbound payload.
    */
-  async downloadFile(token: string, url: string): Promise<Buffer> {
+  async downloadFile(token: string, url: string, maxBytes: number): Promise<Buffer> {
     let host: string;
     try {
       host = new URL(url).host;
@@ -112,7 +113,11 @@ export const slackClient = {
     if (!res.ok) {
       throw new Error(`Slack file download failed: ${res.status}`);
     }
-    return Buffer.from(await res.arrayBuffer());
+    // Bounded here, not by the caller. It used to answer `res.arrayBuffer()` and
+    // let the caller compare the size afterwards, which is a check that runs
+    // once the memory is already spent — and the caller's own pre-check reads
+    // `file.size`, which Slack may omit entirely (the call site says so).
+    return Buffer.from(await readBodyBytes(res, maxBytes));
   },
   authTest(token: string): Promise<{ team?: string; user?: string; bot_id?: string }> {
     return slackApi(token, "auth.test", {});

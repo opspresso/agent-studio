@@ -172,8 +172,9 @@ async function collectImageParts(
       continue;
     }
     try {
-      const data = await deps.slack.downloadFile(token, url);
-      // Slack's declared size can be absent; the real byte count is authoritative.
+      const data = await deps.slack.downloadFile(token, url, MAX_IMAGE_BYTES);
+      // Slack's declared size can be absent, so the download is bounded too; this
+      // is the same limit restated where the bytes are finally in hand.
       if (data.byteLength > MAX_IMAGE_BYTES) {
         warnings.push(`Image is larger than 5MB (${label}).`);
         continue;
@@ -231,8 +232,9 @@ async function collectDocuments(
       continue;
     }
     try {
-      const data = await deps.slack.downloadFile(token, url);
-      // Slack's declared size can be absent; the real byte count is authoritative.
+      const data = await deps.slack.downloadFile(token, url, MAX_DOCUMENT_BYTES);
+      // Slack's declared size can be absent, so the download is bounded too; this
+      // is the same limit restated where the bytes are finally in hand.
       if (data.byteLength > MAX_DOCUMENT_BYTES) {
         warnings.push(`Document is larger than 10MB (${label}).`);
         continue;

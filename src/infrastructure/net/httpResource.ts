@@ -27,6 +27,7 @@ import {
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { SsrfError } from "@/infrastructure/net/ssrfGuard";
 import { log } from "@/shared/logger";
+import { BodyTooLargeError, readBodyBytes } from "@/shared/httpBody";
 
 /** Long enough for a slow site, short enough not to hold a turn open. */
 const FETCH_TIMEOUT_MS = 15_000;
@@ -71,43 +72,23 @@ export function charsetFromHtml(bytes: Uint8Array): string | undefined {
  * declared length at all must still be bounded.
  */
 async function readCapped(response: Response, maxBytes: number): Promise<Uint8Array> {
-  const declared = Number(response.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > maxBytes) {
+  try {
+    return await readBodyBytes(response, maxBytes);
+  } catch (error) {
+    if (!(error instanceof BodyTooLargeError)) {
+      throw error;
+    }
+    // Said in this module's own vocabulary, because the sentence reaches the
+    // *model* as the reason its fetch failed. The declared size is worth
+    // repeating when the sender gave one — "it is 50,000,000 bytes" tells the
+    // model not to try again, where "larger than the limit" invites a retry.
+    const limit = maxBytes.toLocaleString("en-US");
     throw new HttpResourceError(
-      `it is ${declared.toLocaleString("en-US")} bytes, over the ${maxBytes.toLocaleString("en-US")} limit`,
+      error.declaredBytes === undefined
+        ? `it is larger than the ${limit} byte limit`
+        : `it is ${error.declaredBytes.toLocaleString("en-US")} bytes, over the ${limit} limit`,
     );
   }
-  const body = response.body;
-  if (!body) {
-    return new Uint8Array(0);
-  }
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  const reader = body.getReader();
-  try {
-    for (;;) {
-      // Destructured on purpose. Reading the flag off a named result object
-      // instead would look, to the single-owner check, exactly like this file
-      // deciding why a *run* ended — which is a question it has no part in.
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      size += value.byteLength;
-      if (size > maxBytes) {
-        throw new HttpResourceError(
-          `it is larger than the ${maxBytes.toLocaleString("en-US")} byte limit`,
-        );
-      }
-      chunks.push(value);
-    }
-  } finally {
-    // Releasing the lock lets the connection be reused; cancelling an
-    // already-finished body is a no-op.
-    reader.releaseLock();
-    await body.cancel().catch(() => {});
-  }
-  return Buffer.concat(chunks);
 }
 
 /** Just the origin. A URL is often itself the credential — a signed query, a

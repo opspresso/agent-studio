@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
+import { BodyTooLargeError } from "@/shared/httpBody";
 import { threadToTurns } from "@/application/slack/handleSlackEvent";
 
 afterEach(() => {
@@ -235,34 +236,72 @@ describe("slackClient agent methods", () => {
 });
 
 describe("slackClient.downloadFile", () => {
+  const CAP = 1024;
+
   it("sends the bot token only to Slack file hosts", async () => {
     const seen: Array<{ url: string; auth: string | undefined }> = [];
     vi.stubGlobal("fetch", async (url: string, init?: { headers?: Record<string, string> }) => {
       seen.push({ url, auth: init?.headers?.Authorization });
-      return { ok: true, arrayBuffer: async () => new TextEncoder().encode("bytes").buffer };
+      return new Response("bytes");
     });
 
-    const data = await slackClient.downloadFile("tok", "https://files.slack.com/f/F1/shot.png");
+    const data = await slackClient.downloadFile(
+      "tok",
+      "https://files.slack.com/f/F1/shot.png",
+      CAP,
+    );
 
     expect(data.toString()).toBe("bytes");
     expect(seen[0]?.auth).toBe("Bearer tok");
+  });
+
+  /**
+   * The caller's own pre-check reads Slack's declared `size`, which Slack is
+   * free to omit — and this used to answer `res.arrayBuffer()`, so a file with
+   * no declared size was fully resident before anything measured it.
+   */
+  it("refuses a declared length over the cap without reading the body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(new Uint8Array(CAP * 4), {
+          headers: { "content-length": String(CAP * 4) },
+        }),
+    );
+
+    const thrown = await slackClient
+      .downloadFile("tok", "https://files.slack.com/f/F1/big.bin", CAP)
+      .catch((error: unknown) => error);
+
+    // `declaredBytes` is only set on the branch that refuses before reading, so
+    // it is what tells the two halves of the rule apart.
+    expect(thrown).toBeInstanceOf(BodyTooLargeError);
+    expect((thrown as BodyTooLargeError).declaredBytes).toBe(CAP * 4);
+  });
+
+  it("cuts a body that never declared its length", async () => {
+    vi.stubGlobal("fetch", async () => new Response(new Uint8Array(CAP * 4)));
+
+    await expect(
+      slackClient.downloadFile("tok", "https://files.slack.com/f/F1/lying.bin", CAP),
+    ).rejects.toThrow(/exceeds/);
   });
 
   it("refuses a foreign host without fetching it", async () => {
     const seen: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {
       seen.push(url);
-      return { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+      return new Response(new Uint8Array(0));
     });
 
-    await expect(slackClient.downloadFile("tok", "https://evil.example.com/x")).rejects.toThrow(
-      "unexpected host",
-    );
+    await expect(
+      slackClient.downloadFile("tok", "https://evil.example.com/x", CAP),
+    ).rejects.toThrow("unexpected host");
     expect(seen).toEqual([]);
   });
 
   it("refuses a non-URL", async () => {
-    await expect(slackClient.downloadFile("tok", "not a url")).rejects.toThrow("not a URL");
+    await expect(slackClient.downloadFile("tok", "not a url", CAP)).rejects.toThrow("not a URL");
   });
 });
 
