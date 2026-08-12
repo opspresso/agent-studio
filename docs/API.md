@@ -828,6 +828,12 @@ mimeType, model, usage }`. `images` are source pictures as inline bytes
 prepended to the prompt as the version's persistent style.
 With `"stream": true`, the response is SSE.
 
+A run this endpoint could not finish answers `502` with what the provider said and the model
+it was asked of — `Image generation failed for xai/grok-imagine-image: 404 The requested
+resource was not found.` A collected body is the one execution surface with no `error` frame
+to carry that, so before it was typed the same failure arrived as `500 Internal server error`
+and a version naming a model its provider does not serve was indistinguishable from a crash.
+
 ### `POST /api/projects/{name}/versions/{version}/chat/completions`
 
 OpenAI Chat Completions-compatible. `agent` projects run the multi-turn tool loop; `llm`
