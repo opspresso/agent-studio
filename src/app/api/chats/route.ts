@@ -1,6 +1,6 @@
 import { withAuth } from "@/lib/session";
 import { sessionCaller } from "@/app/api/_lib/caller";
-import { bodyTooLarge, BodyTooLargeError, readTurnBody } from "@/app/api/_lib/body";
+import { turnBody } from "@/app/api/_lib/body";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { createChat } from "@/application/chat/createChat";
 import { listChats } from "@/application/chat/listChats";
@@ -15,14 +15,9 @@ export const GET = withAuth(async (user) => {
 });
 
 export const POST = withAuth(async (user, request: Request) => {
-  let body: unknown;
-  try {
-    body = await readTurnBody(request);
-  } catch (error) {
-    if (error instanceof BodyTooLargeError) {
-      return bodyTooLarge(error);
-    }
-    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  const body = await turnBody(request);
+  if (body instanceof Response) {
+    return body;
   }
 
   const parsed = createChatSchema.safeParse(body);

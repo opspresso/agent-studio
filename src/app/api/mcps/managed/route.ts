@@ -2,6 +2,7 @@ import { z } from "zod";
 import { managedMcpUseCases } from "@/lib/container";
 import { withAdminAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 import { MANAGED_NAME } from "@/shared/slug";
 import { managedMcpUnavailable } from "./_unavailable";
 
@@ -33,7 +34,11 @@ export const POST = withAdminAuth(async (_user, request: Request) => {
   if (!managedMcpUseCases) {
     return managedMcpUnavailable();
   }
-  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

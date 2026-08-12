@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mcpUseCases } from "@/lib/container";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 import { REPO_OWNED, repoOwnedRefusal } from "@/app/api/_lib/repoOwned";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -23,7 +24,11 @@ export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) 
 });
 
 export const PUT = withAdminAuth(async (_user, request: Request, ctx: RouteContext) => {
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }

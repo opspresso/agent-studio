@@ -3,6 +3,7 @@ import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { skillUseCases } from "@/lib/container";
 import { withAdminAuth, withAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
+import { editorBody } from "@/app/api/_lib/body";
 
 const createSchema = z.object({
   name: z.string().refine(isSlug, `name ${SLUG_RULE}`),
@@ -27,7 +28,11 @@ export const GET = withAuth(async () => {
 });
 
 export const POST = withAdminAuth(async (_user, request: Request) => {
-  const parsed = createSchema.safeParse(await request.json().catch(() => null));
+  const body = await editorBody(request);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
     return invalidRequest(parsed.error);
   }
