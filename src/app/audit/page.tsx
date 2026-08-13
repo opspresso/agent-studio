@@ -10,8 +10,10 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 export default function AuditPage() {
+  const t = useT();
   const viewer = useViewer();
   const [range, setRange] = useState(defaultDateRange);
   const [events, setEvents] = useState<AuditEvent[]>([]);
@@ -44,14 +46,14 @@ export default function AuditPage() {
   }
 
   if (!viewer.isAdmin) {
-    return <Alert color="gray">Audit events are available to admins only.</Alert>;
+    return <Alert color="gray">{t("admin.adminOnlyAudit")}</Alert>;
   }
 
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Audit trail"
-        description="Sensitive administrative actions, newest first."
+        title={t("nav.audit")}
+        description={t("audit.lede")}
         Icon={IconShieldCheck}
       />
 
@@ -62,7 +64,7 @@ export default function AuditPage() {
       ) : loading ? (
         <LoadingText />
       ) : events.length === 0 ? (
-        <EmptyState>No audit events in this range.</EmptyState>
+        <EmptyState>{t("audit.empty")}</EmptyState>
       ) : (
         <Table.ScrollContainer minWidth={760}>
           <Table striped highlightOnHover>

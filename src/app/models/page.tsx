@@ -22,6 +22,7 @@ import { BADGE } from "@/app/_components/badgeColors";
 import { modelPriceLabel } from "@/app/_components/modelOptions";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 interface CatalogProvider {
   name: string;
@@ -68,6 +69,7 @@ function otherRoutes(models: CatalogModel[], model: CatalogModel): string[] {
 }
 
 export default function ModelsPage() {
+  const t = useT();
   const viewer = useViewer();
   const [providers, setProviders] = useState<CatalogProvider[]>([]);
   const [models, setModels] = useState<CatalogModel[]>([]);
@@ -170,13 +172,13 @@ export default function ModelsPage() {
   }
 
   if (viewer === null) return <LoadingText />;
-  if (!viewer.isAdmin) return <Alert color="gray">Models are available to admins only.</Alert>;
+  if (!viewer.isAdmin) return <Alert color="gray">{t("admin.adminOnlyModels")}</Alert>;
 
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Models"
-        description="Which LLM providers this deployment reaches, and which models users may pick for their agents."
+        title={t("nav.models")}
+        description={t("models.lede")}
         Icon={IconCpu}
       />
 
@@ -299,10 +301,10 @@ export default function ModelsPage() {
                                     <IconCheck
                                       size={16}
                                       color="var(--mantine-color-teal-6)"
-                                      aria-label="yes"
+                                      aria-label={t("models.yes")}
                                     />
                                   ) : (
-                                    <Text fz="sm" c="dimmed" component="span" aria-label="no">
+                                    <Text fz="sm" c="dimmed" component="span" aria-label={t("models.no")}>
                                       -
                                     </Text>
                                   )}

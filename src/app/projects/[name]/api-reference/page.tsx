@@ -17,6 +17,7 @@ import {
   type FieldSpec,
 } from "./endpoints";
 import { HTTP_METHOD_COLOR, STREAMING_COLOR } from "@/app/_components/badgeColors";
+import { useT } from "@/app/_i18n/provider";
 
 function FieldRows({ fields, depth = 0 }: { fields: FieldSpec[]; depth?: number }) {
   return (
@@ -116,6 +117,7 @@ function ResponseExample({ code }: { code: string }) {
 }
 
 function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
+  const t = useT();
   return (
     <Card>
       <Stack gap="md">
@@ -167,9 +169,9 @@ function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
           )}
         </Group>
 
-        {endpoint.requestFields && <FieldTable label="Request" fields={endpoint.requestFields} />}
+        {endpoint.requestFields && <FieldTable label={t("apiRef.request")} fields={endpoint.requestFields} />}
         <CodeExamples examples={endpoint.codeExamples} />
-        {endpoint.responseFields && <FieldTable label="Response" fields={endpoint.responseFields} />}
+        {endpoint.responseFields && <FieldTable label={t("apiRef.response")} fields={endpoint.responseFields} />}
         {endpoint.responseExample && <ResponseExample code={endpoint.responseExample} />}
       </Stack>
     </Card>
@@ -177,6 +179,7 @@ function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
 }
 
 export default function ApiReferencePage() {
+  const t = useT();
   const { name } = useParams<{ name: string }>();
   const viewer = useViewer();
   const [endpoints, setEndpoints] = useState<ApiEndpoint[] | null>(null);

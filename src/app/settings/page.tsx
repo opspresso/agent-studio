@@ -23,6 +23,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { BADGE } from "@/app/_components/badgeColors";
 import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { A2aClientKeysSection } from "./A2aClientKeysSection";
+import { useT } from "@/app/_i18n/provider";
 
 
 type SettingSource = "override" | "env" | "default" | "unset";
@@ -120,6 +121,7 @@ const SOURCE_LABELS: Record<SettingSource, { text: string; color: string }> = {
 
 
 export default function SettingsPage() {
+  const t = useT();
   const [view, setView] = useState<SettingsView | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [providers, setProviders] = useState<LlmProviderRow[]>([]);
@@ -283,8 +285,8 @@ export default function SettingsPage() {
   return (
     <Stack gap="lg" maw={1000}>
       <PageHeader
-        title="Settings"
-        description="Overrides are stored in the database and take precedence over environment variables. Masked values keep the stored secret; clear a field to fall back to env."
+        title={t("nav.settings")}
+        description={t("settings.lede")}
         Icon={IconSettings}
       />
       {confirmModal}
@@ -416,7 +418,7 @@ export default function SettingsPage() {
                               prev.map((p, i) => (i === index ? { ...p, name: value ?? "" } : p)),
                             )
                           }
-                          placeholder="provider…"
+                          placeholder={t("settings.providerPlaceholder")}
                           allowDeselect={false}
                           data={[...PROVIDER_OPTIONS]}
                           w={144}
@@ -430,7 +432,7 @@ export default function SettingsPage() {
                               prev.map((p, i) => (i === index ? { ...p, baseUrl } : p)),
                             );
                           }}
-                          placeholder="base URL"
+                          placeholder={t("settings.baseUrlPlaceholder")}
                           miw={192}
                           style={{ flex: 1 }}
                           styles={monoInput}
@@ -469,7 +471,7 @@ export default function SettingsPage() {
                         />
                         <Checkbox
                           size="xs"
-                          label="keep prefix"
+                          label={t("settings.keepPrefix")}
                           checked={provider.keepModelPrefix}
                           onChange={(e) => {
                             const keepModelPrefix = e.currentTarget.checked;

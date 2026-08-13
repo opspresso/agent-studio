@@ -16,6 +16,7 @@ import { buildDailySeries, groupUsage, sumRecord, type GroupBy } from "@/app/_li
 import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
 import { Alert, Avatar, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { IconActivity, IconCoins, IconUsers } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * The axes one project's own rows can still tell apart. Grouping by project
@@ -52,6 +53,7 @@ function totalsByCaller(rows: ActorUsageView[]): CallerTotal[] {
 }
 
 export default function UsagePage() {
+  const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
 
@@ -110,24 +112,24 @@ export default function UsagePage() {
       {loading ? (
         <LoadingText />
       ) : rows.length === 0 ? (
-        <EmptyState>No usage recorded in this range.</EmptyState>
+        <EmptyState>{t("projectUsage.empty")}</EmptyState>
       ) : (
         <>
           <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="md">
             <StatCard
-              label="Total cost"
+              label={t("cost.totalCost")}
               value={formatUsd(totalCost)}
               detail="Selected period"
               Icon={IconCoins}
             />
             <StatCard
-              label="Total calls"
+              label={t("cost.totalCalls")}
               value={totalCalls.toLocaleString()}
               detail="Model invocations"
               Icon={IconActivity}
             />
             <StatCard
-              label="Callers"
+              label={t("projectUsage.callers")}
               value={callers.length.toLocaleString()}
               detail={callers.length === 0 ? "Owner or admin only" : "Distinct identities"}
               Icon={IconUsers}
@@ -136,7 +138,7 @@ export default function UsagePage() {
 
           <Card>
             <Group justify="space-between" mb="md" gap="md" wrap="wrap">
-              <CardHeading title="Daily cost" subtitle={`Stacked by ${groupBy}`} />
+              <CardHeading title={t("cost.dailyCost")} subtitle={`Stacked by ${groupBy}`} />
               <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
             </Group>
             <CostBarChart data={daily.data} keys={daily.keys} />
@@ -147,7 +149,7 @@ export default function UsagePage() {
           {callers.length > 0 && (
             <Card padding={0}>
               <Group px="md" pt="md">
-                <CardHeading title="Who spent it" subtitle="Per caller, this range" />
+                <CardHeading title={t("projectUsage.whoSpent")} subtitle="Per caller, this range" />
               </Group>
               <DataTable>
                 <Table.Thead>

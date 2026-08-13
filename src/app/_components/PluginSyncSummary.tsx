@@ -11,6 +11,7 @@ import type {
   SyncWrite,
 } from "@/domain/plugin/sync";
 import { BADGE } from "@/app/_components/badgeColors";
+import { useT } from "@/app/_i18n/provider";
 
 /** What a skip means, in words an operator can act on. */
 const SKIP_REASONS: Record<SyncSkip["reason"], string> = {
@@ -66,6 +67,7 @@ export function PluginSyncSummary({
   /** Re-runs the sync with the chosen removals. */
   onApply: (selection: PluginSyncSelection) => Promise<void>;
 }) {
+  const t = useT();
   const [removeSkills, setRemoveSkills] = useState<string[]>([]);
   const [removeServers, setRemoveServers] = useState<string[]>([]);
   const [removePlugins, setRemovePlugins] = useState<string[]>([]);
@@ -219,7 +221,7 @@ export function PluginSyncSummary({
 
         {result.orphanedPlugins.length > 0 && (
           <Stack gap={4}>
-            <Divider label="plugins" labelPosition="left" />
+            <Divider label={t("nav.plugins")} labelPosition="left" />
             <Text fz="xs" c="dimmed">
               These plugins are no longer in the repository — ticking one removes only its row;
               its components stay and are offered individually above.

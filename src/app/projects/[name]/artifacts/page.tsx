@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useParams } from "next/navigation";
 import { ArtifactGallery } from "@/app/artifacts/_components/ArtifactGallery";
 import { listProjectArtifacts, type ArtifactQuery } from "@/app/artifacts/api";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * Everything this project produced — not a filtered view of the personal
@@ -12,6 +13,7 @@ import { listProjectArtifacts, type ArtifactQuery } from "@/app/artifacts/api";
  * the only place they can be deleted from.
  */
 export default function ProjectArtifactsPage() {
+  const t = useT();
   const { name } = useParams<{ name: string }>();
   const load = useCallback(
     (query: ArtifactQuery) => listProjectArtifacts(name, query),
@@ -21,7 +23,7 @@ export default function ProjectArtifactsPage() {
     <ArtifactGallery
       load={load}
       showProject={false}
-      emptyText="This project has not produced anything yet."
+      emptyText={t("projectArtifacts.empty")}
     />
   );
 }
