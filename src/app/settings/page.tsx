@@ -273,8 +273,13 @@ export default function SettingsPage() {
     );
   }
 
+  // Wider than the 860 this page used to cap at: an LLM provider row now
+  // carries a name, a base URL, an auth mode, a key, the prefix flag and a
+  // remove button, and at the old width the URL field was squeezed to its
+  // 192px minimum. Still capped, because the fields above it are single-line
+  // text inputs that read badly stretched across a wide monitor.
   return (
-    <Stack gap="lg" maw={860}>
+    <Stack gap="lg" maw={1120}>
       <PageHeader
         title="Settings"
         description="Overrides are stored in the database and take precedence over environment variables. Masked values keep the stored secret; clear a field to fall back to env."
