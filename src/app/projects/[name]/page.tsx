@@ -18,7 +18,9 @@ import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
+import { canEditProject, useViewer } from "@/app/_lib/useViewer";
 import { Alert, Button, Grid, Group, Select, Stack, Text } from "@mantine/core";
+import classes from "./Playground.module.css";
 
 /**
  * Whether the run's model can take the images the panel would attach — vision for
@@ -73,6 +75,7 @@ export default function PlaygroundPage() {
   const params = useParams<{ name: string }>();
   const name = params.name;
 
+  const viewer = useViewer();
   const [project, setProject] = useState<Project | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -204,7 +207,9 @@ export default function PlaygroundPage() {
     }
   }
 
-  if (loading) {
+  // `viewer === null` is still loading, like the settings page: rendering
+  // before it resolves would flash the owner a read-only editor.
+  if (loading || viewer === null) {
     return <LoadingText />;
   }
   if (error || !project) {
@@ -214,6 +219,8 @@ export default function PlaygroundPage() {
       </Alert>
     );
   }
+
+  const canEdit = canEditProject(viewer, project.ownerEmail);
 
   return (
     <Grid gap="lg">
@@ -225,7 +232,7 @@ export default function PlaygroundPage() {
               onChange={(value) => selectVersion(value ?? "")}
               allowDeselect={false}
               data={[
-                { value: "", label: "+ New version" },
+                ...(canEdit ? [{ value: "", label: "+ New version" }] : []),
                 ...versions.map((version) => ({
                   value: version.versionName,
                   label: `v${version.versionName}${
@@ -234,22 +241,28 @@ export default function PlaygroundPage() {
                 })),
               ]}
             />
-            <Group gap="xs" wrap="nowrap">
-              {dirty ? (
-                <Text fz="xs" c="orange">
-                  unsaved
-                </Text>
-              ) : (
-                savedName && (
-                  <Text fz="xs" c="teal">
-                    Saved v{savedName}
+            {canEdit ? (
+              <Group gap="xs" wrap="nowrap">
+                {dirty ? (
+                  <Text fz="xs" c="orange">
+                    unsaved
                   </Text>
-                )
-              )}
-              <Button onClick={save} loading={saving} disabled={!draft.model}>
-                {selectedName === "" ? "Create version" : "Save"}
-              </Button>
-            </Group>
+                ) : (
+                  savedName && (
+                    <Text fz="xs" c="teal">
+                      Saved v{savedName}
+                    </Text>
+                  )
+                )}
+                <Button onClick={save} loading={saving} disabled={!draft.model}>
+                  {selectedName === "" ? "Create version" : "Save"}
+                </Button>
+              </Group>
+            ) : (
+              <Text fz="xs" c="dimmed">
+                Read-only — the owner or an admin can edit
+              </Text>
+            )}
           </Group>
 
           {saveError && (
@@ -258,26 +271,39 @@ export default function PlaygroundPage() {
             </Alert>
           )}
 
-          <VersionEditor
-            projectName={project.name}
-            projectType={project.projectType}
-            models={models.filter((m) =>
-              project.projectType === "image"
-                ? m.capabilities.imageGeneration
-                : !m.capabilities.imageGeneration,
-            )}
-            imageModels={models.filter((m) => m.capabilities.imageGeneration)}
-            value={draft}
-            onChange={setDraft}
-            save={{
-              run: save,
-              saving,
-              disabled: !draft.model,
-              error: saveError,
-              savedName: dirty ? null : savedName,
-              label: selectedName === "" ? "Create version" : "Save",
-            }}
-          />
+          {/*
+           * The save above is gated for a non-editor, and this inerts the form
+           * itself: a disabled fieldset disables every nested native control,
+           * and everything interactive in the editor is one — inputs, selects,
+           * checkboxes, the binding dialogs' and chips' buttons. Run and
+           * Preview live outside it on purpose; both are session surfaces.
+           */}
+          <fieldset
+            disabled={!canEdit}
+            className={canEdit ? undefined : classes.readonlyEditor}
+            style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+          >
+            <VersionEditor
+              projectName={project.name}
+              projectType={project.projectType}
+              models={models.filter((m) =>
+                project.projectType === "image"
+                  ? m.capabilities.imageGeneration
+                  : !m.capabilities.imageGeneration,
+              )}
+              imageModels={models.filter((m) => m.capabilities.imageGeneration)}
+              value={draft}
+              onChange={setDraft}
+              save={{
+                run: save,
+                saving,
+                disabled: !draft.model,
+                error: saveError,
+                savedName: dirty ? null : savedName,
+                label: selectedName === "" ? "Create version" : "Save",
+              }}
+            />
+          </fieldset>
         </Stack>
       </Grid.Col>
 
