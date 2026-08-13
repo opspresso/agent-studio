@@ -15,10 +15,11 @@ import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 
 export default function VersionsPage() {
   const t = useT();
+  const locale = useLocale();
   const params = useParams<{ name: string }>();
   const name = params.name;
 
@@ -127,7 +128,7 @@ export default function VersionsPage() {
                     {isPublished && <Badge color={BADGE.on}>published</Badge>}
                   </Group>
                   <Text fz="xs" c="dimmed" mt={2}>
-                    {version.model} · {formatDateTime(version.createdAt)}
+                    {version.model} · {formatDateTime(version.createdAt, locale)}
                   </Text>
                 </div>
                 {canEditProject(viewer, ownerEmail) && (

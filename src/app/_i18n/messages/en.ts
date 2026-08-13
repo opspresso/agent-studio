@@ -611,6 +611,7 @@ export const en = {
   "members.lede": "People who have signed in to this workspace.",
   "members.empty": "No members yet.",
   "members.lastLogin": "Last login",
+  "members.neverRecorded": "Never recorded",
   "models.lede":
     "Which LLM providers this deployment reaches, and which models users may pick for their agents.",
   "models.yes": "yes",

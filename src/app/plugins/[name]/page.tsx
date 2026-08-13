@@ -20,10 +20,11 @@ import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { listSkills, type SkillSummary } from "@/app/skills/api";
 import { listMcps, type McpServer } from "@/app/tools/api";
 import { getPlugin, type Plugin } from "../api";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 
 export default function PluginDetailPage() {
   const t = useT();
+  const locale = useLocale();
   const params = useParams<{ name: string }>();
   const name = params.name;
 
@@ -113,7 +114,7 @@ export default function PluginDetailPage() {
             {plugin.commitSha.slice(0, 7)}
           </Anchor>
           {" · synced "}
-          {new Date(plugin.syncedAt).toLocaleString()}
+          {new Date(plugin.syncedAt).toLocaleString(locale)}
         </Text>
       </div>
 

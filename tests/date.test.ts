@@ -37,6 +37,35 @@ describe("formatDateTime", () => {
   });
 });
 
+/**
+ * The locale argument is what keeps the server and the browser writing the same
+ * string, and what makes a reader's chosen language decide the date format
+ * rather than their browser's. Asserted through the *difference* between two
+ * locales rather than against a literal, because the exact text is the
+ * platform's ICU data and the timezone is the host's — neither is ours to pin.
+ */
+describe("the locale argument", () => {
+  const iso = "2026-07-23T01:08:42.000Z";
+
+  it("changes what `formatDateTime` writes", () => {
+    expect(formatDateTime(iso, "en-US")).not.toBe(formatDateTime(iso, "ko-KR"));
+  });
+
+  it("is honoured by `formatShortDateTime` too", () => {
+    // Same instant, two languages: at minimum the separators differ.
+    expect(formatShortDateTime(iso, "en-US")).not.toBe(formatShortDateTime(iso, "ko-KR"));
+  });
+
+  it("is stable — the same locale twice gives the same string", () => {
+    expect(formatDateTime(iso, "ko-KR")).toBe(formatDateTime(iso, "ko-KR"));
+  });
+
+  it("still refuses invalid input whatever the locale", () => {
+    expect(formatDateTime("not-a-date", "ko-KR")).toBe("");
+    expect(formatShortDateTime("", "en-US")).toBe("");
+  });
+});
+
 // Unlike the two above, this one is asserted exactly: it is UTC and en-US by
 // construction, so the host's locale and timezone cannot move it.
 describe("formatRunClock", () => {

@@ -3,7 +3,7 @@
 import { BarChart, type ChartSeries } from "@mantine/charts";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { Divider, Group, Paper, Text } from "@mantine/core";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import { OTHERS_KEY, toChartColumns, toChartData, type CostSeriesPoint } from "../_lib/usage";
 
 const SERIES_COLORS = [
@@ -18,8 +18,10 @@ const SERIES_COLORS = [
 ];
 
 
-function formatAxisUsd(value: number): string {
-  return value !== 0 && Math.abs(value) < 0.01 ? `$${value}` : `$${value.toLocaleString()}`;
+function formatAxisUsd(value: number, locale: string): string {
+  return value !== 0 && Math.abs(value) < 0.01
+    ? `$${value}`
+    : `$${value.toLocaleString(locale)}`;
 }
 
 interface TooltipEntry {
@@ -118,6 +120,7 @@ export function CostBarChart({
   empty?: string;
 }) {
   const t = useT();
+  const locale = useLocale();
   if (data.length === 0 || keys.length === 0) {
     return (
       <Text fz="sm" c="dimmed" py="lg">
@@ -149,7 +152,7 @@ export function CostBarChart({
       withXAxis
       withYAxis
       xAxisProps={{ tickFormatter: dayTick, minTickGap: 24 }}
-      yAxisProps={{ tickFormatter: formatAxisUsd, width: 64 }}
+      yAxisProps={{ tickFormatter: (value: number) => formatAxisUsd(value, locale), width: 64 }}
       valueFormatter={formatUsd}
       tooltipProps={{ content: ChartTooltip }}
       tooltipAnimationDuration={0}

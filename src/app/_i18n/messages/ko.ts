@@ -536,6 +536,7 @@ export const ko: Messages = {
   "members.lede": "이 워크스페이스에 로그인한 사람들입니다.",
   "members.empty": "아직 멤버가 없습니다.",
   "members.lastLogin": "마지막 로그인",
+  "members.neverRecorded": "기록 없음",
   "models.lede":
     "이 배포가 연결하는 LLM 프로바이더와, 사용자가 에이전트에 고를 수 있는 모델입니다.",
   "models.yes": "지원",

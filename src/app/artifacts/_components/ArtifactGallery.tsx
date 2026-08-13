@@ -32,7 +32,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { deleteArtifact, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 
 type KindFilter = "all" | "image" | "document";
 
@@ -214,6 +214,7 @@ function ArtifactCard({
   // image icon with no explanation.
   const [gone, setGone] = useState(false);
   const t = useT();
+  const locale = useLocale();
   const available = artifact.url !== undefined && !gone;
 
   return (
@@ -258,7 +259,7 @@ function ArtifactCard({
 
         <Text fz="xs" c="dimmed">
           {showProject && `${artifact.projectName} · `}
-          {formatBytes(artifact.byteSize)} · {formatShortDateTime(artifact.createdAt)}
+          {formatBytes(artifact.byteSize)} · {formatShortDateTime(artifact.createdAt, locale)}
         </Text>
 
         {artifact.producedBy && (

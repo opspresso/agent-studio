@@ -10,10 +10,11 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { formatDate } from "@/app/_lib/formatDate";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 
 export default function MembersPage() {
   const t = useT();
+  const locale = useLocale();
   const viewer = useViewer();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,10 +107,10 @@ export default function MembersPage() {
                       }}
                     />
                   </Table.Td>
-                  <Table.Td><Text fz="sm">{formatDate(member.joinedAt)}</Text></Table.Td>
+                  <Table.Td><Text fz="sm">{formatDate(member.joinedAt, locale)}</Text></Table.Td>
                   <Table.Td>
                     <Text fz="sm" c={member.lastLoginAt ? undefined : "dimmed"}>
-                      {member.lastLoginAt ? formatDate(member.lastLoginAt) : "Never recorded"}
+                      {member.lastLoginAt ? formatDate(member.lastLoginAt, locale) : t("members.neverRecorded")}
                     </Text>
                   </Table.Td>
                 </Table.Tr>

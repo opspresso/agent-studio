@@ -19,7 +19,7 @@ import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { imageDataUrl } from "@/domain/llm/types";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { ToolRow } from "@/app/_components/ToolRow";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
@@ -29,7 +29,8 @@ import classes from "./parts.module.css";
 import { SUBAGENT_COLOR } from "@/app/_components/badgeColors";
 
 function MessageTimestamp({ createdAt }: { createdAt: string }) {
-  const formatted = formatShortDateTime(createdAt);
+  const locale = useLocale();
+  const formatted = formatShortDateTime(createdAt, locale);
   if (!formatted) {
     return null;
   }
