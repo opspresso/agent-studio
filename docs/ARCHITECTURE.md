@@ -921,7 +921,11 @@ are two independent settings the app cannot reconcile — see
 
 A skill is markdown behaviour instructions delivered by **progressive disclosure**: the system
 prompt lists a name + description table only, and the model calls the builtin `Skill` tool to
-load the `SKILL.md` body — or a specific attachment via `file_path`.
+load the `SKILL.md` body — or a specific attachment via `file_path`. The body is served with
+its **attachment paths named after it**, and a `file_path` that cannot be served names them
+too: `file_path` is a free-text guess, so a skill whose SKILL.md happens not to mention
+`references/api.md` had that file stored, indexed and unreachable. That is the same answer an
+unknown agent, an unknown image id and an unknown skill name already get, one level down.
 
 ```ts
 Skill { name, description, content (markdown), files?: { path, content }[],
