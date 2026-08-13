@@ -45,7 +45,7 @@ interface ChatSummary {
 }
 
 const RECENT_PROJECTS = 4;
-const RECENT_CHATS = 5;
+const RECENT_CHATS = 7;
 
 /**
  * The catalogs whose size the summary reports. Each is counted from the list
