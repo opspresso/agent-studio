@@ -1303,11 +1303,11 @@ export async function* runAgent(
     // run without them never sees this — its first turn was always its answer.
     const finalTurn = tools.length > 0 && turn === maxTurn - 1;
     if (finalTurn) {
-      const notice: ChannelMessage = { role: "user", content: finalTurnNotice(maxTurn) };
+      const notice = finalTurnNotice(maxTurn);
       // Charged like everything else the loop inserts. It is the engine's own
       // sentence, so it is charged whole rather than fitted.
-      contextBudget?.chargeText(notice.content as string);
-      messages.push(notice);
+      contextBudget?.chargeText(notice);
+      messages.push({ role: "user", content: notice });
     }
 
     input.signal?.throwIfAborted();
