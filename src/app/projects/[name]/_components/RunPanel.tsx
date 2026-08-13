@@ -14,6 +14,7 @@ import {
   trackActivePath,
 } from "@/app/_lib/authorPaths";
 import { toRequestImages } from "@/app/_lib/imageAttachments";
+import { onModEnter } from "@/app/_lib/modEnter";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
@@ -226,7 +227,14 @@ export function RunPanel({
   }
 
   return (
-    <Stack gap="md">
+    <Stack
+      gap="md"
+      onKeyDown={onModEnter(() => {
+        if (canRun) {
+          void run();
+        }
+      })}
+    >
       {versionName === null ? (
         <Alert color="yellow" variant="light" fz="xs">
           Save a version to run it.

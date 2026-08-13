@@ -20,6 +20,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { onModEnter } from "@/app/_lib/modEnter";
 
 /** The whole assembled prompt as one block, for pasting elsewhere. */
 function promptText(preview: PromptPreview): string {
@@ -107,7 +108,14 @@ export function PromptPreview({
   }
 
   return (
-    <Stack gap="sm">
+    <Stack
+      gap="sm"
+      onKeyDown={onModEnter(() => {
+        if (draft.model && !loading) {
+          void refresh();
+        }
+      })}
+    >
       <Group justify="space-between" gap="xs" wrap="nowrap">
         <Group gap={6} fz="xs" c="dimmed">
           {preview && (
