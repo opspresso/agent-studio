@@ -24,7 +24,12 @@ export function PageHeader({
         <Title order={1} fz="h2">
           {title}
         </Title>
-        <Text fz="sm" c="dimmed" mt={4}>
+        {/*
+          The only prose on these pages, and the only part with a reading
+          width: Members and the audit trail put tables under it that use the
+          whole shell, and a sentence stretched to match them is unreadable.
+        */}
+        <Text fz="sm" c="dimmed" mt={4} maw={720}>
           {description}
         </Text>
       </div>

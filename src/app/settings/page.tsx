@@ -273,13 +273,15 @@ export default function SettingsPage() {
     );
   }
 
-  // Wider than the 860 this page used to cap at: an LLM provider row now
-  // carries a name, a base URL, an auth mode, a key, the prefix flag and a
-  // remove button, and at the old width the URL field was squeezed to its
-  // 192px minimum. Still capped, because the fields above it are single-line
-  // text inputs that read badly stretched across a wide monitor.
+  // A cap in pixels, not a share of the row. A fraction is for a row two
+  // columns divide — the playground's form and preview — and this page has one
+  // column with a floor: the LLM provider row carries six controls and wraps
+  // below roughly 830px, which 8/12 drops under as soon as the window is
+  // narrower than a wide monitor. A cap grows to the window and stops, so the
+  // page is never narrower than it has to be, and the single-line fields never
+  // stretch across a 1500px display.
   return (
-    <Stack gap="lg" maw={1120}>
+    <Stack gap="lg" maw={1000}>
       <PageHeader
         title="Settings"
         description="Overrides are stored in the database and take precedence over environment variables. Masked values keep the stored secret; clear a field to fall back to env."

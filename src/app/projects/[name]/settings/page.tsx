@@ -112,8 +112,12 @@ export default function SettingsPage() {
     );
   }
 
+  // Capped where the playground's form column lands on a wide monitor, so the
+  // two tabs of this project read alike — but in pixels, for the reason the
+  // app-settings page carries: a fraction of the row keeps shrinking after the
+  // content has run out of room, and nothing here is sharing that row.
   return (
-    <Stack gap="xl" maw={640}>
+    <Stack gap="xl" maw={760}>
       <form onSubmit={save}>
         <Stack gap="md">
           {error && (
