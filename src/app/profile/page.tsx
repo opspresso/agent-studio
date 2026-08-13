@@ -1,18 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Alert, Avatar, Badge, Card, Group, Progress, Stack, Table, Text } from "@mantine/core";
-import { IconUser } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Card,
+  Group,
+  Progress,
+  SimpleGrid,
+  Stack,
+  Table,
+  Text,
+} from "@mantine/core";
+import { IconActivity, IconCoins, IconUser } from "@tabler/icons-react";
 import { TIER_LIMITS } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import type { MemberMonthlyUsageRow } from "@/domain/usage/types";
 import { MEMBER_TIER_COLOR } from "@/app/_components/badgeColors";
+import { CardHeading } from "@/app/_components/CardHeading";
+import { CostBarChart } from "@/app/_components/CostBarChart";
+import { DataTable } from "@/app/_components/DataTable";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
+import { StatCard } from "@/app/_components/StatCard";
 import { formatDate } from "@/app/_lib/formatDate";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { readJson } from "@/app/_lib/httpClient";
-import { sumRecord } from "@/app/_lib/usage";
+import { buildPeriodSeries, sumRecord } from "@/app/_lib/usage";
 
 interface Profile {
   member: Member;
@@ -44,18 +59,25 @@ export default function ProfilePage() {
     return () => { cancelled = true; };
   }, []);
 
+  // The server sends the months newest first, zero-filled — the chart wants
+  // them the other way round, which `buildPeriodSeries` owns.
+  const series = useMemo(
+    () => buildPeriodSeries((profile?.months ?? []).map((row) => ({ ...row, period: row.month }))),
+    [profile?.months],
+  );
+
   if (error) return <Alert color="red" variant="light">{error}</Alert>;
   if (profile === null) return <LoadingText />;
 
   const { member, months } = profile;
   const limits = TIER_LIMITS[member.tier];
   const cap = limits.monthlyCostCapUsd;
-  // The server sends the current month first, zero-filled when nothing was
-  // spent — no month arithmetic on this side of a UTC boundary.
+  // The current month is the first row the server sent, so nothing here has to
+  // decide which month that is.
   const current = months[0];
   const spent = current ? sumRecord(current.costUsd) : 0;
+  const calls = current ? sumRecord(current.calls) : 0;
   const rows = current ? modelRows(current) : [];
-  const history = months.slice(1);
 
   return (
     <Stack gap="lg">
@@ -100,80 +122,116 @@ export default function ProfilePage() {
         </Group>
       </Card>
 
+      <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="md">
+        <StatCard
+          label="This month"
+          value={formatUsd(spent)}
+          detail={cap !== undefined ? `of ${formatUsd(cap)}` : "Uncapped"}
+          Icon={IconCoins}
+        />
+        <StatCard
+          label="Calls this month"
+          value={calls.toLocaleString()}
+          detail={current?.month ?? "—"}
+          Icon={IconActivity}
+        />
+      </SimpleGrid>
+
+      {cap !== undefined && cap > 0 && (
+        <Card>
+          <Group justify="space-between" mb="xs">
+            <CardHeading title="Monthly cap" subtitle="Your own runs, across every project" />
+            <Text fz="sm" c="dimmed" ff="monospace">
+              {formatUsd(spent)} / {formatUsd(cap)}
+            </Text>
+          </Group>
+          <Progress color="brand" value={Math.min(100, (spent / cap) * 100)} />
+        </Card>
+      )}
+
       <Card>
-        <Text fz="xs" tt="uppercase" c="dimmed" mb="xs" style={{ letterSpacing: "0.05em" }}>
-          This month{current ? ` (${current.month})` : ""}
-        </Text>
-        <Group justify="space-between" align="baseline">
-          <Text fz="xl" fw={600}>{formatUsd(spent)}</Text>
-          <Text fz="sm" c="dimmed">{cap !== undefined ? `of ${formatUsd(cap)}` : "uncapped"}</Text>
+        <Group justify="space-between" mb="md">
+          <CardHeading title="Monthly cost" subtitle="Stacked by model" />
         </Group>
-        {cap !== undefined && cap > 0 && (
-          <Progress mt="xs" color="brand" value={Math.min(100, (spent / cap) * 100)} />
-        )}
+        <CostBarChart
+          data={series.data}
+          keys={series.keys}
+          formatTick={(period) => period}
+          empty="No usage in the last six months."
+        />
       </Card>
 
       <Card padding={0}>
-        <Text fz="xs" tt="uppercase" c="dimmed" p="md" pb="xs" style={{ letterSpacing: "0.05em" }}>
-          By model, this month
-        </Text>
+        <Group px="md" pt="md">
+          <CardHeading title="By model" subtitle={`This month${current ? ` (${current.month})` : ""}`} />
+        </Group>
         {rows.length === 0 ? (
-          <Text fz="sm" c="dimmed" p="md" pt={0}>No usage this month.</Text>
+          <Text fz="sm" c="dimmed" px="md" pb="md" pt="xs">
+            No usage this month.
+          </Text>
         ) : (
-          <Table.ScrollContainer minWidth={420}>
-            <Table verticalSpacing="xs" horizontalSpacing="md">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Model</Table.Th>
-                  <Table.Th ta="right">Calls</Table.Th>
-                  <Table.Th ta="right">Cost (USD)</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {rows.map((row) => (
-                  <Table.Tr key={row.model}>
-                    <Table.Td ff="monospace">{row.model}</Table.Td>
-                    <Table.Td ta="right">{row.calls.toLocaleString()}</Table.Td>
-                    <Table.Td ta="right">{formatUsd(row.costUsd)}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-              <Table.Tfoot>
-                <Table.Tr fw={500}>
-                  <Table.Td>Total</Table.Td>
-                  <Table.Td ta="right">{current ? sumRecord(current.calls).toLocaleString() : 0}</Table.Td>
-                  <Table.Td ta="right">{formatUsd(spent)}</Table.Td>
-                </Table.Tr>
-              </Table.Tfoot>
-            </Table>
-          </Table.ScrollContainer>
-        )}
-      </Card>
-
-      <Card padding={0}>
-        <Text fz="xs" tt="uppercase" c="dimmed" p="md" pb="xs" style={{ letterSpacing: "0.05em" }}>
-          Previous months
-        </Text>
-        <Table.ScrollContainer minWidth={420}>
-          <Table verticalSpacing="xs" horizontalSpacing="md">
+          <DataTable>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Month</Table.Th>
+                <Table.Th>Model</Table.Th>
                 <Table.Th ta="right">Calls</Table.Th>
-                <Table.Th ta="right">Cost (USD)</Table.Th>
+                <Table.Th ta="right">Cost</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {history.map((row) => (
-                <Table.Tr key={row.month}>
-                  <Table.Td ff="monospace">{row.month}</Table.Td>
-                  <Table.Td ta="right">{sumRecord(row.calls).toLocaleString()}</Table.Td>
-                  <Table.Td ta="right">{formatUsd(sumRecord(row.costUsd))}</Table.Td>
+              {rows.map((row) => (
+                <Table.Tr key={row.model}>
+                  <Table.Td ff="monospace">{row.model}</Table.Td>
+                  <Table.Td ta="right" ff="monospace" c="dimmed">
+                    {row.calls.toLocaleString()}
+                  </Table.Td>
+                  <Table.Td ta="right" ff="monospace">
+                    {formatUsd(row.costUsd)}
+                  </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+            <Table.Tfoot>
+              <Table.Tr fw={500}>
+                <Table.Td>Total</Table.Td>
+                <Table.Td ta="right" ff="monospace">
+                  {calls.toLocaleString()}
+                </Table.Td>
+                <Table.Td ta="right" ff="monospace">
+                  {formatUsd(spent)}
+                </Table.Td>
+              </Table.Tr>
+            </Table.Tfoot>
+          </DataTable>
+        )}
+      </Card>
+
+      <Card padding={0}>
+        <Group px="md" pt="md">
+          <CardHeading title="Previous months" subtitle="Newest first" />
+        </Group>
+        <DataTable>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Month</Table.Th>
+              <Table.Th ta="right">Calls</Table.Th>
+              <Table.Th ta="right">Cost</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {months.slice(1).map((row) => (
+              <Table.Tr key={row.month}>
+                <Table.Td ff="monospace">{row.month}</Table.Td>
+                <Table.Td ta="right" ff="monospace" c="dimmed">
+                  {sumRecord(row.calls).toLocaleString()}
+                </Table.Td>
+                <Table.Td ta="right" ff="monospace">
+                  {formatUsd(sumRecord(row.costUsd))}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </DataTable>
       </Card>
     </Stack>
   );

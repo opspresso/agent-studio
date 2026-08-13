@@ -77,20 +77,62 @@ export function groupUsage(
     .sort((a, b) => b.cost - a.cost);
 }
 
-/** Max stacked series in the daily chart; the rest fold into `OTHERS_KEY`. */
-export const DAILY_SERIES_LIMIT = 8;
+/** Max stacked series in a cost chart; the rest fold into `OTHERS_KEY`. */
+export const MAX_CHART_SERIES = 8;
 export const OTHERS_KEY = "Others";
 
-export interface DailySeriesPoint {
+/**
+ * One column of a stacked cost chart. `period` is a day (`yyyy-MM-dd`) or a
+ * month (`yyyy-MM`) — the chart never parses it, it only labels it, which is
+ * what lets one component draw both.
+ */
+export interface CostSeriesPoint {
   [key: string]: number | string;
-  date: string;
+  period: string;
 }
 
-export interface DailySeries {
-  /** One point per day from `from` to `to` inclusive, ascending, zero-filled. */
-  data: DailySeriesPoint[];
+export interface CostSeries {
+  /** Ascending, zero-filled: one point per period in the window. */
+  data: CostSeriesPoint[];
   /** Series keys sorted by total cost desc; `OTHERS_KEY` last when folded. */
   keys: string[];
+}
+
+/**
+ * The top series by total cost, and whether anything was left over. Shared by
+ * the two builders below so they cannot disagree about how many bars a chart
+ * carries or what the folded one is called.
+ */
+function topSeries(totals: Map<string, number>): { keys: string[]; hasOthers: boolean } {
+  const sorted = [...totals.entries()]
+    .filter(([, cost]) => cost > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key]) => key);
+  return { keys: sorted.slice(0, MAX_CHART_SERIES), hasOthers: sorted.length > MAX_CHART_SERIES };
+}
+
+/** Fills one point's series keys, folding everything outside `keys` into Others. */
+function pointFrom(
+  period: string,
+  bucket: Map<string, number> | undefined,
+  keys: string[],
+  hasOthers: boolean,
+): CostSeriesPoint {
+  const point: CostSeriesPoint = { period };
+  for (const key of keys) {
+    point[key] = bucket?.get(key) ?? 0;
+  }
+  if (hasOthers) {
+    const keySet = new Set(keys);
+    let others = 0;
+    for (const [key, cost] of bucket ?? []) {
+      if (!keySet.has(key)) {
+        others += cost;
+      }
+    }
+    point[OTHERS_KEY] = others;
+  }
+  return point;
 }
 
 export interface ChartColumn {
@@ -111,13 +153,10 @@ export function toChartColumns(keys: string[]): ChartColumn[] {
   return keys.map((label, index) => ({ dataKey: `s${index}`, label }));
 }
 
-/** Re-keys `buildDailySeries` points onto the dot-free keys of `columns`. */
-export function toChartData(
-  data: DailySeriesPoint[],
-  columns: ChartColumn[],
-): DailySeriesPoint[] {
+/** Re-keys series points onto the dot-free keys of `columns`. */
+export function toChartData(data: CostSeriesPoint[], columns: ChartColumn[]): CostSeriesPoint[] {
   return data.map((point) => {
-    const row: DailySeriesPoint = { date: point.date };
+    const row: CostSeriesPoint = { period: point.period };
     for (const column of columns) {
       row[column.dataKey] = point[column.label] ?? 0;
     }
@@ -131,7 +170,7 @@ export function buildDailySeries(
   from: string,
   to: string,
   departments?: ReadonlyMap<string, string>,
-): DailySeries {
+): CostSeries {
   const totals = new Map<string, number>();
   const byDate = new Map<string, Map<string, number>>();
   const add = (date: string, key: string, cost: number) => {
@@ -152,39 +191,49 @@ export function buildDailySeries(
     }
   }
 
-  const sortedKeys = [...totals.entries()]
-    .filter(([, cost]) => cost > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([key]) => key);
-  const keys = sortedKeys.slice(0, DAILY_SERIES_LIMIT);
-  const keySet = new Set(keys);
-  const hasOthers = sortedKeys.length > DAILY_SERIES_LIMIT;
+  const { keys, hasOthers } = topSeries(totals);
+  const seriesKeys = hasOthers ? [...keys, OTHERS_KEY] : keys;
 
-  const data: DailySeriesPoint[] = [];
+  const data: CostSeriesPoint[] = [];
   const cursor = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
   if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime())) {
-    return { data, keys: hasOthers ? [...keys, OTHERS_KEY] : keys };
+    return { data, keys: seriesKeys };
   }
   while (cursor <= end) {
     const date = toISODate(cursor);
-    const bucket = byDate.get(date);
-    const point: DailySeriesPoint = { date };
-    for (const key of keys) {
-      point[key] = bucket?.get(key) ?? 0;
-    }
-    if (hasOthers) {
-      let others = 0;
-      for (const [key, cost] of bucket ?? []) {
-        if (!keySet.has(key)) {
-          others += cost;
-        }
-      }
-      point[OTHERS_KEY] = others;
-    }
-    data.push(point);
+    data.push(pointFrom(date, byDate.get(date), keys, hasOthers));
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  return { data, keys: hasOthers ? [...keys, OTHERS_KEY] : keys };
+  return { data, keys: seriesKeys };
+}
+
+/**
+ * The same series, one point per already-aggregated period — what the profile
+ * page has. Its rows arrive newest-first and zero-filled from the server, so
+ * this only reverses them and folds the models: there is no window to walk,
+ * and re-deriving one here would be a second place that decides which month is
+ * current.
+ */
+export function buildPeriodSeries(
+  rows: readonly { period: string; costUsd: Record<string, number> }[],
+): CostSeries {
+  const totals = new Map<string, number>();
+  const byPeriod = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const bucket = byPeriod.get(row.period) ?? new Map<string, number>();
+    for (const [model, cost] of Object.entries(row.costUsd)) {
+      totals.set(model, (totals.get(model) ?? 0) + (cost || 0));
+      bucket.set(model, (bucket.get(model) ?? 0) + (cost || 0));
+    }
+    byPeriod.set(row.period, bucket);
+  }
+
+  const { keys, hasOthers } = topSeries(totals);
+  const periods = [...byPeriod.keys()].sort();
+  return {
+    data: periods.map((period) => pointFrom(period, byPeriod.get(period), keys, hasOthers)),
+    keys: hasOthers ? [...keys, OTHERS_KEY] : keys,
+  };
 }
