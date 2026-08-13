@@ -299,6 +299,17 @@ export function createSettingsUseCases(
       return toView(cipher, env, parseProviderConfigs, specs, await repo.get());
     },
 
+    /**
+     * Merge semantics, plus one rule about what an override *is*.
+     *
+     * A submitted value equal to the environment's is not stored. The page
+     * posts every field on every save, so without this the first save turned
+     * all ten into overrides — each one a row that reads `override` while
+     * naming the value it was already falling back to, and, worse, one that
+     * keeps naming it after the deployment's env var moves on. "Same as env"
+     * has no way to say "and pin it there", which is the only thing the stored
+     * copy would add.
+     */
     async update(patch, userEmail) {
       const stored = await repo.get();
       const next: AppSettings = { ...(stored ?? { updatedAt: "" }) };
@@ -311,9 +322,15 @@ export function createSettingsUseCases(
         if (value === "") {
           delete next[spec.key];
         } else if (spec.secret) {
-          if (!cipher.isMasked(value)) {
+          if (cipher.isMasked(value)) {
+            // A mask confirms what is stored; it says nothing to compare.
+          } else if (value === spec.env()) {
+            delete next[spec.key];
+          } else {
             next[spec.key] = cipher.encrypt(value);
           }
+        } else if (value === spec.env()) {
+          delete next[spec.key];
         } else {
           next[spec.key] = value;
         }

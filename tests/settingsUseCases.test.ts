@@ -124,6 +124,57 @@ describe("settingsUseCases.update access-control guards", () => {
 });
 
 describe("settingsUseCases.update", () => {
+  /**
+   * The page posts every field on every save, so one save used to turn all ten
+   * into overrides — each reading `override` next to the value it was already
+   * inheriting, and each one shadowing the env var from then on. A value equal
+   * to the environment's is therefore not an override at all.
+   */
+  it("does not store a value the environment already provides", async () => {
+    process.env.ALLOWED_EMAIL_DOMAINS = "nalbam.com";
+    process.env.PLUGINS_REPO = "opspresso/agent-plugins";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    const view = await useCases.update(
+      { allowedEmailDomains: "nalbam.com", pluginsRepo: "opspresso/other" },
+      ADMIN,
+    );
+
+    expect(current()?.allowedEmailDomains).toBeUndefined();
+    expect(view.fields.allowedEmailDomains?.source).toBe("env");
+    expect(view.fields.allowedEmailDomains?.value).toBe("nalbam.com");
+    // The one that differs is still stored, which is what an override is for.
+    expect(current()?.pluginsRepo).toBe("opspresso/other");
+    expect(view.fields.pluginsRepo?.source).toBe("override");
+  });
+
+  /** Resaving the same value is how an override left over from before is cleared. */
+  it("drops an existing override once it matches the environment", async () => {
+    process.env.ALLOWED_EMAIL_DOMAINS = "nalbam.com";
+    const { repo, current } = fakeRepo({
+      allowedEmailDomains: "nalbam.com",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const useCases = createSettingsUseCases(repo);
+
+    const view = await useCases.update({ allowedEmailDomains: "nalbam.com" }, ADMIN);
+
+    expect(current()?.allowedEmailDomains).toBeUndefined();
+    expect(view.fields.allowedEmailDomains?.source).toBe("env");
+  });
+
+  it("does not store a secret the environment already provides", async () => {
+    process.env.A2A_API_KEY = "a2a-from-env";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    const view = await useCases.update({ a2aApiKey: "a2a-from-env" }, ADMIN);
+
+    expect(current()?.a2aApiKey).toBeUndefined();
+    expect(view.fields.a2aApiKey?.source).toBe("env");
+  });
+
   it("encrypts new secrets, keeps masked ones, and removes cleared overrides", async () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);
