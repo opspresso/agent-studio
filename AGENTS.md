@@ -233,6 +233,8 @@ same rule applies to:
 | Pairing a tool call with the result that answered it | `src/app/_lib/toolPairs.ts` |
 | Drawing one tool's traffic as one row | `src/app/_components/ToolRow.tsx` |
 | What a tool call reads as to a person | `describeTool` in `src/app/_lib/toolCalls.ts` |
+| Every string the console shows a person | `src/app/_i18n/messages/en.ts` |
+| Which language a request is served in | `src/app/_i18n/locale.ts` |
 
 ## Subsystem map
 
@@ -472,6 +474,28 @@ One line each — the linked section is the authority.
   `src/app/api/_lib/repoOwned.ts`, the single owner of the 403 a route answers when asked
   to edit or delete a repo-owned entry — a route-layer policy on purpose, because the sync
   reaches the same use cases and must stay able to.
+- **The console speaks English and Korean, and the catalogue is TypeScript for a
+  reason.** `src/app/_i18n/messages/en.ts` is the source of truth; `ko.ts` is typed as
+  `Record<keyof typeof en, string>`, so a key added to one and not the other fails
+  `pnpm typecheck` rather than rendering an English string inside a Korean page — there is
+  no second tool keeping them in step. A client component reads `useT()`, a server one
+  `await getT()`, and both resolve through the same `translator()`. **The language is a
+  cookie, not a route segment**: a `[locale]` prefix would move 29 pages and 14 layouts and
+  rewrite `src/proxy.ts`'s matcher and `PUBLIC_PATHS`, which is the single owner of which
+  pages are public. Two things are deliberately *not* translated. **Error messages stay in
+  English** — `AppError` carries its message as a string through `application` and
+  `domain`, neither of which may import a framework, so translating them means giving every
+  error a code and rewriting 69 throw sites; the console is internal and operators read
+  them. And **product nouns stay in English in both catalogues** — Project, Skill, Agent,
+  Tool, Plugin, Chat, Model, MCP are each an API resource and a URL segment, so a console
+  that renamed its copy would make one thing answer to two words.
+- **A timestamp is formatted with a locale, never without one.** `toLocaleString()` with no
+  argument means the *runtime's* default, so the server writes `8/14/2026` where a Korean
+  browser writes `2026. 8. 14.` — a hydration mismatch wherever a date reaches the first
+  render, and a format that follows the browser rather than the language the reader chose.
+  `formatDateTime`/`formatShortDateTime` (`src/shared/date.ts`) and `formatDate`
+  (`src/app/_lib/formatDate.ts`) take it; call sites pass `useLocale()`. The parameter is
+  optional only so `utcDay` and its neighbours — storage keys, not prose — stay unchanged.
 - **Docs record the current state, not history.** Completed milestones are deleted from
   `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
   accumulate changelogs in comments or docs.
