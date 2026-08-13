@@ -1,4 +1,7 @@
+"use client";
+
 import { Badge, Group, Text } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 import { BADGE } from "./badgeColors";
 
 /** Shared owner line: owner email plus a brand-colored "you" badge for the viewer's own items. */
@@ -14,6 +17,7 @@ export function OwnerLine({
   /** Spacing above, for the callers that need the line to sit under something. */
   mt?: string | number;
 }) {
+  const t = useT();
   return (
     <Group gap={6} wrap="nowrap" mt={mt}>
       <Text fz="xs" c="dimmed" truncate>
@@ -22,7 +26,7 @@ export function OwnerLine({
       </Text>
       {isMine && (
         <Badge size="xs" color={BADGE.owned} variant="light">
-          you
+          {t("common.you")}
         </Badge>
       )}
     </Group>

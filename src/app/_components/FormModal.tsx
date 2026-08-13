@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Group, Modal, Stack, Text } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * The form-modal shell: one owner of how a modal form looks and closes.
@@ -38,6 +39,7 @@ export function FormModal({
   hint?: string;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <Modal opened={opened} onClose={onClose} title={title} size="lg" closeOnClickOutside={false}>
       <form
@@ -67,7 +69,7 @@ export function FormModal({
               </Text>
             )}
             <Button variant="default" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" loading={submitting} disabled={submitDisabled}>
               {submitLabel}

@@ -14,7 +14,7 @@ export function CollapsibleCode({
   title,
   code,
   language,
-  copyLabel = "Copy",
+  copyLabel,
 }: {
   title: string;
   code: string;

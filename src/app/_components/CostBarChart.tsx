@@ -3,6 +3,7 @@
 import { BarChart, type ChartSeries } from "@mantine/charts";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { Divider, Group, Paper, Text } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 import { OTHERS_KEY, toChartColumns, toChartData, type CostSeriesPoint } from "../_lib/usage";
 
 const SERIES_COLORS = [
@@ -40,6 +41,7 @@ function ChartTooltip({
   label?: React.ReactNode;
   payload?: readonly unknown[];
 }) {
+  const t = useT();
   if (!payload || payload.length === 0) {
     return null;
   }
@@ -81,7 +83,7 @@ function ChartTooltip({
           <Group gap={6} wrap="nowrap">
             <div style={{ width: 10, flexShrink: 0 }} />
             <Text fz="xs" fw={500}>
-              Total
+              {t("common.total")}
             </Text>
             <Text fz="xs" fw={500} ml="auto" pl="md" ff="monospace">
               {formatUsd(total)}
@@ -109,16 +111,17 @@ function dayTick(date: string): string {
 export function CostBarChart({
   data,
   keys,
-  empty = "No usage in this range.",
+  empty,
 }: {
   data: CostSeriesPoint[];
   keys: string[];
   empty?: string;
 }) {
+  const t = useT();
   if (data.length === 0 || keys.length === 0) {
     return (
       <Text fz="sm" c="dimmed" py="lg">
-        {empty}
+        {empty ?? t("usage.none")}
       </Text>
     );
   }

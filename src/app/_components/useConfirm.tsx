@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 
 type ConfirmOptions = {
   title: string;
@@ -25,6 +26,7 @@ export function useConfirm() {
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const [typed, setTyped] = useState("");
   const resolver = useRef<((ok: boolean) => void) | null>(null);
+  const t = useT();
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     setTyped("");
@@ -55,7 +57,7 @@ export function useConfirm() {
         <Text fz="sm">{options?.message}</Text>
         {options?.requireText !== undefined && (
           <TextInput
-            label={`Type "${options.requireText}" to confirm`}
+            label={t("confirm.typeToConfirm", { text: options.requireText })}
             value={typed}
             onChange={(e) => setTyped(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -69,7 +71,7 @@ export function useConfirm() {
         )}
         <Group justify="flex-end" gap="sm">
           <Button variant="default" onClick={() => close(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button color={options?.color ?? "red"} disabled={blocked} onClick={() => close(true)}>
             {options?.confirmLabel}
