@@ -250,4 +250,100 @@ export const ko: Messages = {
   "playground.publishConfirm": "v{version} 배포",
   "playground.preview": "미리보기",
   "playground.run": "실행",
+
+  "bindings.mcpServers": "MCP 서버",
+  "bindings.searchServers": "등록된 MCP 서버 검색",
+  "bindings.subagents": "서브에이전트",
+  "bindings.searchSubagents": "프로젝트와 외부 에이전트 검색",
+  "bindings.serverUnreachable": "이 서버에 연결하지 못했습니다",
+  "bindings.serverUnreachableSuffix": " — 서버가 응답하기 전까지 실행은 이 서버의 도구를 하나도 쓰지 않습니다.",
+  "bindings.loadingTools": "도구를 불러오는 중…",
+  "bindings.noTools": "이 서버는 도구를 제공하지 않습니다.",
+  "bindings.allToolsOffered": "모든 도구를 제공합니다. 일부만 골라 모델에게 보일 범위를 좁힐 수 있습니다.",
+  "bindings.someToolsOffered": "도구 {total} 개 중 {chosen} 개를 제공합니다.",
+  "bindings.toolGone": "더 이상 제공되지 않음",
+  "bindings.addHeaderOverride": "+ 헤더 재정의 추가",
+  "bindings.noOverridesNoDefaults":
+    "재정의가 없고, 이 서버의 레지스트리 항목에도 헤더가 없습니다.",
+  "bindings.noOverrides": "재정의가 없습니다 — 이 버전은 위 헤더를 그대로 씁니다.",
+
+  "version.invalidJson": "잘못된 JSON",
+  "version.model": "모델",
+  "version.selectModel": "모델을 고르세요…",
+  "version.modelUnlisted": "카탈로그에 없는 모델입니다. 사용량은 비용 $0 으로 기록됩니다.",
+  "version.fallbackModel": "대체 모델 (선택)",
+  "version.none": "없음",
+  "version.default": "기본값",
+  "version.systemPrompt": "시스템 프롬프트",
+  "version.systemPromptImagePlaceholder": "수채화 스타일, 부드러운 파스텔 톤, 글자 없음.",
+  "version.systemPromptPlaceholder": "당신은 도움이 되는 어시스턴트입니다.",
+  "version.systemPromptImageHint": "모든 이미지 프롬프트 앞에 붙는, 이 버전의 고정 스타일입니다.",
+  "version.userPromptTemplate": "사용자 프롬프트 템플릿",
+  "version.userPromptPlaceholder": "요약: {{input}}",
+  "version.userPromptHint": "{{variable}} 자리표시자를 쓰면 실행 시점에 서버에서 채웁니다.",
+  "version.userPromptAgentHint":
+    "에이전트 실행은 이 템플릿을 쓰지 않습니다 — 사용자 턴은 대화가 채웁니다. 비우면 이 필드가 사라집니다.",
+  "version.temperature": "Temperature",
+  "version.maxTokens": "최대 토큰",
+  "version.defaultPlaceholder": "기본값",
+  "version.reasoningEffort": "추론 강도",
+  "version.maxTurns": "최대 턴",
+  "version.piiFiltering": "PII 필터링",
+  "version.piiImageHint":
+    "이미지 실행에는 적용되지 않습니다 — 프롬프트가 마스킹 없이 프로바이더에 전달됩니다. 체크를 해제하면 이 옵션이 사라집니다.",
+  "version.piiHint":
+    "이메일·전화번호·주민등록번호·카드번호를 되돌릴 수 있는 토큰으로 가린 뒤 전송합니다. MCP 도구가 받는 값은 가려지지 않습니다.",
+  "version.callerContext": "누가 요청했는지 실행에 알려주기 (이름, 타임존)",
+  "version.callerImageHint":
+    "이미지 실행에는 적용되지 않습니다 — 프롬프트에 호출자 블록이 없습니다. 체크를 해제하면 이 옵션이 사라집니다.",
+  "version.callerHint":
+    "사람이 직접 실행하는 모든 경로 — 대화, Playground, 로그인 상태의 API 호출, Slack — 에 적용됩니다. API 토큰·트리거·인바운드 A2A 는 호출자를 담지 않습니다. PII 필터링은 이름을 가리지 않습니다.",
+  "version.structuredOutput": "구조화 출력 (JSON 스키마)",
+  "version.aboutStructuredOutput": "구조화 출력 안내",
+  "version.structuredOutputTitle": "구조화 출력",
+
+  "structured.intro1":
+    "체크박스를 켜고 스키마를 채우면 모델의 응답은 그 스키마에 맞는 JSON 문서 하나가 됩니다. 전송은 ",
+  "structured.intro2":
+    " 로 이뤄집니다. 주변에 산문은 붙지 않으므로, 모델이 써야 할 문장이 있다면 스키마에 필드를 두고 호출하는 쪽에서 응답을 JSON 으로 파싱하세요.",
+  "structured.root1": "루트는 ",
+  "structured.root2": " 여야 합니다. 모든 프로퍼티를 ",
+  "structured.root3": " 로 표시하고 ",
+  "structured.root4": " 를 설정하세요 — 가장 엄격한 프로바이더가 받아들이는 형태가 정확히 이것입니다.",
+  "structured.description1": "각 프로퍼티의 ",
+  "structured.description2":
+    " 은 모델이 그 필드를 채울 때 읽는 지시입니다. 더 긴 안내는 시스템 프롬프트에 두세요.",
+  "structured.empty1": "체크박스만 켜서는 아무 일도 일어나지 않습니다 — 스키마가 비어 있으면 ",
+  "structured.empty2": " 이 전송되지 않고 응답은 평문으로 남습니다.",
+  "structured.sampleSchema": "예시 스키마",
+  "structured.whatReturns": "모델이 돌려주는 값",
+  "version.imageTools": "이미지 (GenerateImage + EditImage 도구)",
+  "version.imageToolsHint":
+    "에이전트가 그림을 그리고, 사용자가 첨부했거나 앞서 그린 이미지를 고칠 수 있게 합니다.",
+  "version.imageModel": "이미지 모델",
+  "version.fetchUrl": "URL 읽기 (FetchUrl 도구)",
+  "version.fetchUrlHint":
+    "에이전트가 스스로 지정한 주소 — 웹 페이지·PDF·데이터 파일·이미지 — 를 읽게 합니다. 기본은 꺼짐입니다. 다른 모든 외부 요청은 운영자가 등록한 곳으로만 가지만, 이것은 모델이 정한 곳으로 갑니다.",
+  "version.bindingsInertImage":
+    "“image” 프로젝트는 프롬프트로 그림을 그릴 뿐 도구를 제공하지 않습니다 — 아래 바인딩은 저장되지만 쓰이지 않습니다. 여기서 지울 수는 있고, 새로 추가할 수는 없습니다.",
+  "version.bindingsInertLlm":
+    "“llm” 프로젝트는 단발 completion 을 실행할 뿐 도구를 제공하지 않습니다 — 아래 바인딩은 저장되지만 쓰이지 않습니다. 여기서 지울 수는 있고, 새로 추가할 수는 없습니다.",
+  "version.skills": "Skills",
+  "version.searchSkills": "등록된 Skill 검색",
+  "version.dynamicCapabilities": "요청마다 필요한 기능 찾기",
+  "version.dynamicCapabilitiesHint":
+    "이 버전의 시스템 프롬프트와 들어온 요청으로 레지스트리를 검색해, 위 바인딩에 더해 찾은 것을 함께 제공합니다. 바인딩은 언제나 전부 제공됩니다. 자체 로그인이 필요한 MCP 서버는 이 프로젝트가 연결한 뒤에만 제공됩니다 — 연결은 그 서버의 설정에서 만들고 모든 버전이 공유하므로, 이 버전이 서버를 바인딩하지 않았어도 포함됩니다.",
+
+  "mcpSettings.tools": "도구",
+  "mcpSettings.toolsNote":
+    "이 버전이 모델에게 제공할 서버 도구를 고릅니다. 버전과 함께 저장됩니다.",
+  "mcpSettings.overrides": "헤더 재정의",
+  "mcpSettings.overridesNote":
+    "이 버전에 한해 레지스트리 항목의 헤더 위에 덮어씁니다. 버전과 함께 저장됩니다.",
+  "mcpSettings.connection": "연결",
+  "mcpSettings.connectionNote":
+    "이 프로젝트가 서버에 쓰는 자격 증명이며 모든 버전이 공유합니다. 버전과 별개로 즉시 저장됩니다.",
+  "mcpSettings.title": "{server} 설정",
+  "mcpSettings.savesWholeVersion": "이 서버만이 아니라 버전 전체를 저장합니다.",
+  "mcpSettings.close": "닫기",
 };

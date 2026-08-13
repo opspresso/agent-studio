@@ -292,6 +292,118 @@ export const en = {
   "playground.publishConfirm": "Publish v{version}",
   "playground.preview": "Preview",
   "playground.run": "Run",
+
+  // What a version binds: MCP servers, their tools, header overrides, subagents.
+  "bindings.mcpServers": "MCP servers",
+  "bindings.searchServers": "Search registered MCP servers",
+  "bindings.subagents": "Subagents",
+  "bindings.searchSubagents": "Search projects and external agents",
+  "bindings.serverUnreachable": "Could not reach this server",
+  "bindings.serverUnreachableSuffix":
+    " — a run would offer none of this server’s tools until it answers.",
+  "bindings.loadingTools": "Loading tools…",
+  "bindings.noTools": "This server exposes no tools.",
+  "bindings.allToolsOffered": "Every tool is offered. Select some to narrow what the model sees.",
+  "bindings.someToolsOffered": "{chosen} of {total} tools offered.",
+  "bindings.toolGone": "no longer exposed",
+  "bindings.addHeaderOverride": "+ Add header override",
+  "bindings.noOverridesNoDefaults":
+    "No overrides, and this server’s registry entry defines no headers either.",
+  "bindings.noOverrides": "No overrides — this version uses the headers above unchanged.",
+
+  // The version editor's form. The example JSON schema in the "Structured
+  // output" dialog is not here: it is a snippet to copy, not prose to read.
+  "version.invalidJson": "Invalid JSON",
+  "version.model": "Model",
+  "version.selectModel": "Select a model…",
+  "version.modelUnlisted": "Model is not in the catalog; usage will be recorded with $0 cost.",
+  "version.fallbackModel": "Fallback model (optional)",
+  "version.none": "None",
+  "version.default": "Default",
+  "version.systemPrompt": "System prompt",
+  "version.systemPromptImagePlaceholder":
+    "Watercolor style, soft pastel tones, no text in the image.",
+  "version.systemPromptPlaceholder": "You are a helpful assistant.",
+  "version.systemPromptImageHint":
+    "Prepended to every image prompt as the version’s persistent style.",
+  "version.userPromptTemplate": "User prompt template",
+  "version.userPromptPlaceholder": "Summarize: {{input}}",
+  // The double braces are the template's own syntax, not a placeholder for the
+  // translator: `interpolate` leaves them alone because `t` is called with no
+  // values here.
+  "version.userPromptHint": "Use {{variable}} placeholders rendered server-side at run time.",
+  "version.userPromptAgentHint":
+    "Agent runs ignore this template — the conversation supplies the user turn. Clear it to remove this field.",
+  "version.temperature": "Temperature",
+  "version.maxTokens": "Max tokens",
+  "version.defaultPlaceholder": "default",
+  "version.reasoningEffort": "Reasoning effort",
+  "version.maxTurns": "Max turns",
+  "version.piiFiltering": "PII filtering",
+  "version.piiImageHint":
+    "Does not apply to an image run — the prompt reaches the provider unmasked. Uncheck to remove this option.",
+  "version.piiHint":
+    "Masks emails, phone numbers, Korean registration numbers and card numbers with reversible tokens before dispatch. What an MCP tool receives is not masked.",
+  "version.callerContext": "Tell the run who is asking (name, timezone)",
+  "version.callerImageHint":
+    "Does not apply to an image run — its prompt has no caller block. Uncheck to remove this option.",
+  "version.callerHint":
+    "Anywhere a person runs it — chat, Playground, a signed-in API call, Slack. An API token, a trigger and inbound A2A carry no caller. PII filtering does not mask a name.",
+  "version.structuredOutput": "Structured output (JSON schema)",
+  "version.aboutStructuredOutput": "About structured output",
+  "version.structuredOutputTitle": "Structured output",
+
+  // The structured-output help dialog. Split into fragments around the inline
+  // `<Code>` tokens rather than kept as whole sentences: the tokens are the
+  // literal field names a reader types, so they must stay set in monospace —
+  // and Korean puts them at different points in the clause, which a fixed
+  // prefix and suffix could not follow. The sample JSON below the prose is not
+  // translated; it is a snippet to copy.
+  "structured.intro1":
+    "With the checkbox on and a schema filled in, the model’s reply is a single JSON document matching the schema — sent as ",
+  "structured.intro2":
+    ". There is no prose around it: give the schema a field for any sentence the model should write, and have your caller parse the reply as JSON.",
+  "structured.root1": "The root must be an ",
+  "structured.root2": ". Mark every property ",
+  "structured.root3": " and set ",
+  "structured.root4": " — the strictest providers accept exactly that shape.",
+  "structured.description1": "Each property’s ",
+  "structured.description2":
+    " is the instruction the model reads for that field; longer guidance belongs in the system prompt.",
+  "structured.empty1": "The checkbox alone does nothing — with an empty schema no ",
+  "structured.empty2": " is sent and the reply stays plain text.",
+  "structured.sampleSchema": "Sample schema",
+  "structured.whatReturns": "What the model returns",
+  "version.imageTools": "Images (GenerateImage + EditImage tools)",
+  "version.imageToolsHint":
+    "Lets the agent draw a picture and change an existing one — an image the user attached, or one it drew earlier.",
+  "version.imageModel": "Image model",
+  "version.fetchUrl": "Read URLs (FetchUrl tool)",
+  "version.fetchUrlHint":
+    "Lets the agent read a web address it names — a page, a PDF, a data file or an image. Off by default: every other outbound request goes somewhere an operator registered, while this one goes wherever the model decides.",
+  "version.bindingsInertImage":
+    "An “image” project draws from a prompt and offers no tools — the bindings below are stored but never used. Remove them here; new ones cannot be added.",
+  "version.bindingsInertLlm":
+    "An “llm” project runs a single completion, which offers no tools — the bindings below are stored but never used. Remove them here; new ones cannot be added.",
+  "version.skills": "Skills",
+  "version.searchSkills": "Search registered skills",
+  "version.dynamicCapabilities": "Find capabilities for each request",
+  "version.dynamicCapabilitiesHint":
+    "Searches the registry with this version’s system prompt and the incoming request, and offers what it finds on top of the bindings above. The bindings are always offered in full. An MCP server that needs its own sign-in is offered only once this project has connected it — a connection is made from that server’s own settings and shared by every version, so it counts here even where this version never bound the server.",
+
+  // The three tabs of one binding's settings dialog.
+  "mcpSettings.tools": "Tools",
+  "mcpSettings.toolsNote":
+    "Which of this server’s tools this version offers the model. Saved with the version.",
+  "mcpSettings.overrides": "Header overrides",
+  "mcpSettings.overridesNote":
+    "Layered over the registry entry’s headers, for this version only. Saved with the version.",
+  "mcpSettings.connection": "Connection",
+  "mcpSettings.connectionNote":
+    "This project’s own credentials for the server, shared by all its versions. Saved immediately, not with the version.",
+  "mcpSettings.title": "{server} settings",
+  "mcpSettings.savesWholeVersion": "Saves the whole version, not just this server.",
+  "mcpSettings.close": "Close",
 } as const;
 
 export type MessageKey = keyof typeof en;

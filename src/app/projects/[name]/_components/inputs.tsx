@@ -16,6 +16,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 import type { McpBinding, SubagentRef } from "../../lib/api";
 import { listProjectMcpTools } from "../../lib/api";
 import { getMcp } from "@/app/tools/api";
@@ -292,6 +293,7 @@ function ToolSelector({
 }) {
   const [tools, setTools] = useState<McpTool[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   useEffect(() => {
     let cancelled = false;
@@ -303,7 +305,7 @@ function ToolSelector({
       },
       (reason: unknown) => {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : "Could not reach this server");
+          setError(reason instanceof Error ? reason.message : t("bindings.serverUnreachable"));
         }
       },
     );
@@ -322,21 +324,21 @@ function ToolSelector({
     return (
       <Text fz="sm" c="dimmed">
         {error}
-        {" — a run would offer none of this server’s tools until it answers."}
+        {t("bindings.serverUnreachableSuffix")}
       </Text>
     );
   }
   if (!tools) {
     return (
       <Text fz="sm" c="dimmed">
-        Loading tools…
+        {t("bindings.loadingTools")}
       </Text>
     );
   }
   if (tools.length === 0) {
     return (
       <Text fz="sm" c="dimmed">
-        This server exposes no tools.
+        {t("bindings.noTools")}
       </Text>
     );
   }
@@ -348,10 +350,10 @@ function ToolSelector({
     <Stack gap={4}>
       <Text fz="sm" c="dimmed">
         {chosen.length === 0
-          ? "Every tool is offered. Select some to narrow what the model sees."
-          : `${chosen.length} of ${tools.length} tools offered.`}
+          ? t("bindings.allToolsOffered")
+          : t("bindings.someToolsOffered", { chosen: chosen.length, total: tools.length })}
       </Text>
-      {[...tools, ...missing.map((name) => ({ name, description: "no longer exposed" }))].map(
+      {[...tools, ...missing.map((name) => ({ name, description: t("bindings.toolGone") }))].map(
         (tool) => (
           <Checkbox
             key={tool.name}
@@ -398,6 +400,7 @@ function OverrideEditor({
   /** The registry entry's own headers, masked, that this version layers over. */
   inherited: Record<string, string>;
 }) {
+  const t = useT();
   // Header names are case-insensitive, and so is the merge at dispatch, so a row
   // for `authorization` already covers an inherited `Authorization`.
   const overridden = new Set(rows.map((row) => row.key.trim().toLowerCase()).filter(Boolean));
@@ -452,12 +455,12 @@ function OverrideEditor({
         rows={rows}
         onChange={onChange}
         caption={null}
-        addLabel="+ Add header override"
+        addLabel={t("bindings.addHeaderOverride")}
         allowRemove
         emptyHint={
           inheritedNames.length === 0
-            ? "No overrides, and this server's registry entry defines no headers either."
-            : "No overrides — this version uses the headers above unchanged."
+            ? t("bindings.noOverridesNoDefaults")
+            : t("bindings.noOverrides")
         }
       />
     </Stack>
@@ -482,6 +485,7 @@ export function McpBindingInput({
   /** The page's version save, for the settings dialog's footer. */
   save: VersionSave;
 }) {
+  const t = useT();
   /** Which binding's settings modal is open; one at a time. */
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   /**
@@ -568,7 +572,7 @@ export function McpBindingInput({
   }
 
   return (
-    <Field label="MCP servers">
+    <Field label={t("bindings.mcpServers")}>
       <Stack gap={6}>
         {values.map((binding) => {
           const count = Object.keys(binding.headers ?? {}).length;
@@ -628,7 +632,7 @@ export function McpBindingInput({
       </Stack>
       <OptionPicker
         options={available}
-        placeholder="Search registered MCP servers"
+        placeholder={t("bindings.searchServers")}
         onPick={(option) => {
           if (!values.some((v) => v.name === option.value)) {
             onChange([...values, { name: option.value }]);
@@ -649,10 +653,11 @@ export function SubagentInput({
   onChange: (values: SubagentRef[]) => void;
   options: Array<PickerOption & { type: "local" | "remote" }>;
 }) {
+  const t = useT();
   const available = options.filter((option) => !values.some((v) => v.name === option.value));
 
   return (
-    <Field label="Subagents">
+    <Field label={t("bindings.subagents")}>
       <Stack gap={6}>
         {values.map((ref) => (
           <PickedChip
@@ -669,7 +674,7 @@ export function SubagentInput({
       </Stack>
       <OptionPicker
         options={available}
-        placeholder="Search projects and external agents"
+        placeholder={t("bindings.searchSubagents")}
         onPick={(option) => {
           if (!values.some((v) => v.name === option.value)) {
             onChange([...values, { name: option.value, type: option.type }]);
