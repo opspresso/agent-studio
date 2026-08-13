@@ -158,7 +158,7 @@ async function main() {
   const artifactFixtures: string[] = [];
   // A member's daily rows are keyed by email in their own partition — outside
   // the cascade, and an atomic ADD, so a leftover would accumulate across runs.
-  const memberDayFixtures: Array<{ email: string; date: string }> = [];
+  const memberDayFixtures: Array<{ email: string; date: string; project: string }> = [];
 
   try {
     // ---------- project + version ----------
@@ -543,18 +543,22 @@ async function main() {
     // register it for cleanup, but assert on a per-run address — the row is an
     // atomic ADD keyed by email alone, so a leftover from an interrupted run
     // would otherwise inflate the count.
-    memberDayFixtures.push({ email: "it@example.com", date: today });
+    memberDayFixtures.push({ email: "it@example.com", date: today, project: projectName });
     const memberEmail = `it-member-${suffix}@example.com`;
-    memberDayFixtures.push({ email: memberEmail, date: today });
+    memberDayFixtures.push({ email: memberEmail, date: today, project: projectName });
     await usageRepository.record({ ...usageDelta, actor: `user:${memberEmail}` });
     await usageRepository.record({ ...usageDelta, actor: `project-token:${memberEmail}` });
+    // The project follows the date in the sort key, so this range only returns
+    // anything if the upper bound reaches past a project name — a plain
+    // `BETWEEN DATE#from AND DATE#to` finds nothing at all.
     const memberDays = await usageRepository.listMemberDays(memberEmail, today, today);
-    assert.equal(memberDays.length, 1, "one row per member per day");
+    assert.equal(memberDays.length, 1, "one row per member per project per day");
     assert.equal(
       memberDays[0]?.calls["openai/gpt-5-mini"],
       1,
       "token spend stays out of the member's own history",
     );
+    assert.equal(memberDays[0]?.projectName, projectName, "the row names where it was spent");
     assert.deepEqual(
       await usageRepository.listMemberDays(`nobody-${suffix}@example.com`, today, today),
       [],
@@ -567,7 +571,7 @@ async function main() {
       today,
     );
     assert.equal(capWindow.length, 1, "the month-to-date window finds the day");
-    pass("member day rows: per-actor filtering, range query");
+    pass("member day rows: per-project split, per-actor filtering, range query");
 
     // ---------- monthly threshold claim (conditional, its own row) ----------
     const month = today.slice(0, 7);
@@ -920,7 +924,7 @@ async function main() {
           .send(
             new DeleteCommand({
               TableName: getTableName(),
-              Key: keys.usageMember(fixture.email, fixture.date),
+              Key: keys.usageMember(fixture.email, fixture.date, fixture.project),
             }),
           )
           .catch(() => {});

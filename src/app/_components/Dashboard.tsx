@@ -2,18 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatUsd } from "@/app/_lib/formatUsd";
-import {
-  Alert,
-  Card,
-  Group,
-  Progress,
-  SegmentedControl,
-  SimpleGrid,
-  Stack,
-  Table,
-  Text,
-  Title,
-} from "@mantine/core";
+import { Alert, Card, Group, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import {
   IconActivity,
   IconChartAreaLine,
@@ -22,8 +11,9 @@ import {
 } from "@tabler/icons-react";
 import type { Project } from "@/domain/project/types";
 import { CardHeading } from "./CardHeading";
-import { DataTable } from "./DataTable";
+import { GroupByControl } from "./GroupByControl";
 import { StatCard } from "./StatCard";
+import { UsageBreakdown } from "./UsageBreakdown";
 import {
   buildDailySeries,
   groupUsage,
@@ -114,7 +104,6 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
   );
   const cost = useMemo(() => totalCost(items), [items]);
   const calls = useMemo(() => totalCalls(items), [items]);
-  const maxCost = groups[0]?.cost ?? 0;
   const averageCost = calls > 0 ? cost / calls : 0;
 
   return (
@@ -173,24 +162,10 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
         />
       </SimpleGrid>
 
-      <Group justify="space-between" gap="md" wrap="wrap" className={classes.sectionHeading}>
-        <div>
-          <Text fw={600}>Breakdown</Text>
-          <Text fz="xs" c="dimmed">
-            Group spend by project, model, provider, or department.
-          </Text>
-        </div>
-        <SegmentedControl
-          size="xs"
-          value={groupBy}
-          onChange={(value) => setGroupBy(value as GroupBy)}
-          data={GROUP_OPTIONS.map((option) => ({ value: option, label: option }))}
-        />
-      </Group>
-
       <Card className={classes.chartCard}>
-        <Group justify="space-between" mb="md">
+        <Group justify="space-between" mb="md" gap="md" wrap="wrap">
           <CardHeading title="Daily cost" subtitle={`Stacked by ${groupBy}`} />
+          <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
         <CostBarChart
           data={daily.data}
@@ -199,53 +174,7 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
         />
       </Card>
 
-      <Card padding={0} className={classes.tableCard}>
-        <DataTable minWidth={520}>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th tt="capitalize">{groupBy}</Table.Th>
-              <Table.Th w={110} ta="right">
-                Calls
-              </Table.Th>
-              <Table.Th w={140} ta="right">
-                Cost
-              </Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {groups.length === 0 && (
-              <Table.Tr>
-                <Table.Td colSpan={3}>
-                  <Text fz="sm" c="dimmed">
-                    {loading ? "Loading…" : "No usage in this range."}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-            {groups.map((group) => (
-              <Table.Tr key={group.key}>
-                <Table.Td>
-                  <Text fz="sm" fw={500} truncate>
-                    {group.key}
-                  </Text>
-                  <Progress
-                    mt={6}
-                    size="sm"
-                    value={maxCost > 0 ? (group.cost / maxCost) * 100 : 0}
-                    color="brand"
-                  />
-                </Table.Td>
-                <Table.Td ta="right" ff="monospace" c="dimmed">
-                  {group.calls.toLocaleString()}
-                </Table.Td>
-                <Table.Td ta="right" ff="monospace" fw={500}>
-                  {formatUsd(group.cost)}
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </DataTable>
-      </Card>
+      <UsageBreakdown groups={groups} label={groupBy} loading={loading} />
     </Stack>
   );
 }

@@ -10,6 +10,7 @@ import {
   toChartData,
   totalCalls,
   totalCost,
+  type DailyCostRow,
 } from "@/app/_lib/usage";
 import { inclusiveDays, summaryQuerySchema } from "@/app/api/usages/summary/validation";
 
@@ -68,6 +69,25 @@ describe("groupUsage", () => {
     expect(groupUsage(rows, "model")).toEqual([
       { key: "openai/gpt-5-mini", cost: 2, calls: 10 },
       { key: "google/gemini-3.1-flash-lite", cost: 0.2, calls: 10 },
+    ]);
+  });
+
+  it("groups a member's own rows the same three ways", () => {
+    // A member row carries no `inputTokens`/`outputTokens` need and no
+    // department, but it names its project — which is the axis the profile
+    // page adds over a project's own usage tab.
+    const mine: DailyCostRow[] = [
+      { projectName: "alpha", date: "2026-01-01", calls: { "openai/gpt-5-mini": 2 }, costUsd: { "openai/gpt-5-mini": 1 } },
+      { projectName: "beta", date: "2026-01-01", calls: { "google/gemini-3.1-flash-lite": 1 }, costUsd: { "google/gemini-3.1-flash-lite": 3 } },
+    ];
+    expect(groupUsage(mine, "project")).toEqual([
+      { key: "beta", cost: 3, calls: 1 },
+      { key: "alpha", cost: 1, calls: 2 },
+    ]);
+    expect(groupUsage(mine, "provider").map((g) => g.key)).toEqual(["google", "openai"]);
+    expect(groupUsage(mine, "model").map((g) => g.key)).toEqual([
+      "google/gemini-3.1-flash-lite",
+      "openai/gpt-5-mini",
     ]);
   });
 });

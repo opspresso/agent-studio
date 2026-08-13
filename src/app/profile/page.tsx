@@ -20,16 +20,23 @@ import type { MemberUsageRow } from "@/domain/usage/types";
 import { MEMBER_TIER_COLOR } from "@/app/_components/badgeColors";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
-import { DataTable } from "@/app/_components/DataTable";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
+import { GroupByControl } from "@/app/_components/GroupByControl";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { StatCard } from "@/app/_components/StatCard";
+import { UsageBreakdown } from "@/app/_components/UsageBreakdown";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { formatDate } from "@/app/_lib/formatDate";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { readJson } from "@/app/_lib/httpClient";
-import { buildDailySeries, sumRecord, totalCalls, totalCost } from "@/app/_lib/usage";
+import { buildDailySeries, groupUsage, totalCalls, totalCost, type GroupBy } from "@/app/_lib/usage";
+
+/**
+ * A person's own rows carry their project and their model, but no department
+ * map — that lives with the project catalog the overview already loads.
+ */
+const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider"];
 
 interface ProfileAccount {
   member: Member;
@@ -40,6 +47,7 @@ interface ProfileAccount {
 export default function ProfilePage() {
   const [account, setAccount] = useState<ProfileAccount | null>(null);
   const [range, setRange] = useState(defaultDateRange);
+  const [groupBy, setGroupBy] = useState<GroupBy>("project");
   const [rows, setRows] = useState<MemberUsageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,9 +83,10 @@ export default function ProfilePage() {
   }, [loadUsage]);
 
   const daily = useMemo(
-    () => buildDailySeries(rows, "model", range.from, range.to),
-    [rows, range.from, range.to],
+    () => buildDailySeries(rows, groupBy, range.from, range.to),
+    [rows, groupBy, range.from, range.to],
   );
+  const groups = useMemo(() => groupUsage(rows, groupBy), [rows, groupBy]);
   const cost = useMemo(() => totalCost(rows), [rows]);
   const calls = useMemo(() => totalCalls(rows), [rows]);
 
@@ -161,8 +170,9 @@ export default function ProfilePage() {
       </SimpleGrid>
 
       <Card>
-        <Group justify="space-between" mb="md">
-          <CardHeading title="Daily cost" subtitle="Stacked by model" />
+        <Group justify="space-between" mb="md" gap="md" wrap="wrap">
+          <CardHeading title="Daily cost" subtitle={`Stacked by ${groupBy}`} />
+          <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
         <CostBarChart
           data={daily.data}
@@ -171,48 +181,7 @@ export default function ProfilePage() {
         />
       </Card>
 
-      <Card padding={0}>
-        <DataTable>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Date</Table.Th>
-              <Table.Th ta="right">Calls</Table.Th>
-              <Table.Th ta="right">Cost</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {rows.length === 0 && (
-              <Table.Tr>
-                <Table.Td colSpan={3}>
-                  <Text fz="sm" c="dimmed">
-                    {loading ? "Loading…" : "No usage in this range."}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            )}
-            {rows.map((row) => (
-              <Table.Tr key={row.date}>
-                <Table.Td ff="monospace">{row.date}</Table.Td>
-                <Table.Td ta="right" ff="monospace" c="dimmed">
-                  {sumRecord(row.calls).toLocaleString()}
-                </Table.Td>
-                <Table.Td ta="right" ff="monospace">
-                  {formatUsd(sumRecord(row.costUsd))}
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-          {rows.length > 0 && (
-            <Table.Tfoot>
-              <Table.Tr fw={500}>
-                <Table.Td>Total</Table.Td>
-                <Table.Td ta="right" ff="monospace">{calls.toLocaleString()}</Table.Td>
-                <Table.Td ta="right" ff="monospace">{formatUsd(cost)}</Table.Td>
-              </Table.Tr>
-            </Table.Tfoot>
-          )}
-        </DataTable>
-      </Card>
+      <UsageBreakdown groups={groups} label={groupBy} loading={loading} />
     </Stack>
   );
 }

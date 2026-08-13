@@ -128,11 +128,18 @@ export const keys = {
    * profile page reads whatever window its date picker names — a month
    * aggregate could only have answered the first, and keeping both would be
    * two running totals of the same spend.
+   *
+   * The project is part of the sort key rather than collapsed into the row,
+   * so a person can be shown *where* their spend went as well as on which
+   * model. Date leads it so a window is still one `BETWEEN`; the cap simply
+   * sums every row the window returns, which it did before this split too.
    */
-  usageMember: (email: string, date: string) => ({
+  usageMember: (email: string, date: string, projectName: string) => ({
     PK: `USAGEMEMBER#${email}`,
-    SK: `DATE#${date}`,
+    SK: `DATE#${date}#${projectName}`,
   }),
+  usageMemberPartition: (email: string) => `USAGEMEMBER#${email}`,
+  usageMemberPrefix: (date: string) => `DATE#${date}`,
   /**
    * Per-caller daily usage, in the project's usage partition. Date leads the
    * sort key so a range query over dates is one `BETWEEN`, and so the rows of

@@ -420,9 +420,11 @@ and neither needs a further gate. `monthToDateUsd` is what the tier cap bounds (
 the first of the UTC month), computed server-side so the page cannot report a total the
 guard would disagree with whatever range its picker is set to.
 
-`/api/me/usage` is the range read behind the profile's chart and table: one row per UTC day,
-metrics as per-model maps, and the same range validation the usage summary uses (`from`/`to`
-required, 184 days maximum). The spend counted is the member's own console runs (`user:`
+`/api/me/usage` is the range read behind the profile's chart and table: one row per UTC day
+*per project*, metrics as per-model maps, and the same range validation the usage summary
+uses (`from`/`to` required, 184 days maximum). The project is on the row so the profile can
+group a person's own spend by project, model or provider — the same control the overview
+and a project's usage tab carry. The spend counted is the member's own console runs (`user:`
 actors) — project-token runs spend against their project, not this budget. What a tier caps
 is `TIER_LIMITS` in `src/domain/member/tiers.ts`, which the client imports directly.
 
