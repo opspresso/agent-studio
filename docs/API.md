@@ -118,6 +118,8 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/artifacts/{artifactId}` | `DELETE` | creator, project owner, or admin |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
+| `/api/models/catalog` | `GET` | admin |
+| `/api/models/test` | `POST` | admin |
 | `/api/me` | `GET` | session |
 | `/api/members` | `GET` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
@@ -346,6 +348,10 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
   currently effective key for that provider name. Provider `name` must be one of
   `openai | google | anthropic | xai`, the list holds at most 50 entries, and a name appearing
   twice is a `400`.
+- `enabledModels` on PUT is also a full replacement list — the model ids `/api/models` may
+  offer, stored sorted and deduplicated. An empty array removes the override (every visible
+  model offered — there is no env fallback); an id the registry does not carry is a `400`. It
+  has no slot in the GET view; `/api/models/catalog` is where it is read back.
 - `source` is `override` (DB) | `env` | `default` | `unset`. Secret values are always masked
   (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); a masked value on
   PUT keeps the stored secret, an empty string removes the override (env fallback). Setting `adminEmails` to a list that excludes
@@ -1075,7 +1081,26 @@ was not a second person's decision.
 `GET /api/models` → `{ "models": [ { id, provider, displayName, pricing, capabilities, … } ] }`
 (the registry from `src/domain/llm/models.ts`, hidden entries excluded). When per-provider
 LLM channels are configured (settings override or `LLM_PROVIDER_*` env), only those
-providers' models are listed; with none configured every model is listed.
+providers' models are listed; with none configured every model is listed. An `enabledModels`
+settings override (managed on the `/models` console page) then narrows the list to the ids it
+names. Enabled is a selection-time filter only: a version already holding a disabled model
+keeps running.
+
+```
+GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
+                                 models: [ { …model, enabled } ],
+                                 source: "override" | "default" }
+POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
+```
+
+- Both admin-only. `catalog` is the unfiltered picture behind `/models`: every visible model
+  with its enabled flag (it lists exactly what `/api/models` hides), and per provider whether
+  this deployment can dispatch to it — `dedicated` means a per-provider channel is configured;
+  with none, every provider is `available` through the default channel.
+- `test` sends one tiny completion (`maxTokens` 16, 15s timeout) through the real channel —
+  provider resolution, base URL, API key and wire-id rewriting included. A failed probe is the
+  `200` body (`ok: false` with the upstream error), not a `5xx`; only an id the registry does
+  not carry is a `400`. The probe runs outside the run bracket, so it records no usage row.
 
 ## A2A (inbound)
 

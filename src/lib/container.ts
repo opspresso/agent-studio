@@ -75,6 +75,7 @@ import {
 import { createTriggerUseCases } from "@/application/trigger/triggerUseCases";
 import type { TriggerRunnerDeps } from "@/application/trigger/runTrigger";
 import { createSettingsUseCases } from "@/application/settings/settingsUseCases";
+import { createTestModel } from "@/application/llm/testModel";
 import type { A2aExposureDeps } from "@/application/a2a/exposure";
 import type { PostCostAlert } from "@/application/usage/costGuard";
 import type { ConcurrencyLimits } from "@/application/run/concurrencyGuard";
@@ -165,6 +166,9 @@ const resolveTarget = async (modelId: string) => {
 
 const channel = createChannel(resolveTarget);
 const imageChannel = createImageChannel(resolveTarget);
+
+/** One-shot model probe for the /models console — the same channel a run uses. */
+export const testModel = createTestModel(channel);
 
 const remoteAgents: RemoteAgentDispatcher = {
   send: async (target, message, signal) =>

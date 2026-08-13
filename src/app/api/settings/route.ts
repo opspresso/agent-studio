@@ -40,6 +40,8 @@ const updateSchema = z.object({
   // field that cannot be cleared would fail the whole save, losing every other
   // edit in the form along with it.
   unknownModelPolicy: z.enum(["allow", "refuse", ""]).optional(),
+  // Full replacement; empty array clears the override (every model offered).
+  enabledModels: z.array(z.string().max(200)).max(200).optional(),
 });
 
 export const GET = withAdminAuth(async () => {

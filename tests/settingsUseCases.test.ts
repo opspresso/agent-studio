@@ -212,6 +212,32 @@ describe("settingsUseCases.update", () => {
     ).rejects.toThrow(/Unsupported LLM provider/);
   });
 
+  it("stores enabledModels sorted and deduplicated, and clears on empty list", async () => {
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    await useCases.update(
+      { enabledModels: ["openai/gpt-5.4", "anthropic/claude-fable-5", "openai/gpt-5.4"] },
+      ADMIN,
+    );
+    expect(current()?.enabledModels).toEqual(["anthropic/claude-fable-5", "openai/gpt-5.4"]);
+
+    await useCases.update({ enabledModels: [] }, ADMIN);
+    expect(current()?.enabledModels).toBeUndefined();
+  });
+
+  it("rejects enabledModels ids the registry does not carry", async () => {
+    const { repo, current } = fakeRepo();
+
+    await expect(
+      createSettingsUseCases(repo).update(
+        { enabledModels: ["openai/gpt-5.4", "openai/not-a-model"] },
+        ADMIN,
+      ),
+    ).rejects.toThrow(/Unknown model ids: openai\/not-a-model/);
+    expect(current()).toBeNull();
+  });
+
   it("rejects an adminEmails override that would lock the caller out", async () => {
     const { repo, current } = fakeRepo();
     const useCases = createSettingsUseCases(repo);

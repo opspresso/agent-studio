@@ -129,6 +129,15 @@ export async function getPublicBaseUrl(): Promise<string | undefined> {
 }
 
 /**
+ * The enabled-model allowlist; `undefined` means no restriction. Read at
+ * selection time only (the /api/models list) — the run bracket never sees it,
+ * so a version already holding a disabled model keeps running.
+ */
+export async function getEnabledModels(): Promise<string[] | undefined> {
+  return (await loadSettings())?.enabledModels;
+}
+
+/**
  * Whether a run may execute a model the registry cannot price. Injected into
  * the run bracket rather than read there — `application` may not import this
  * module. The parsing is the domain's, one layer below both of us.

@@ -30,6 +30,9 @@ function fromItem(item: Record<string, unknown>): AppSettings {
   if (Array.isArray(item.llmProviders)) {
     settings.llmProviders = item.llmProviders as LlmProviderSetting[];
   }
+  if (Array.isArray(item.enabledModels)) {
+    settings.enabledModels = item.enabledModels as string[];
+  }
   return settings;
 }
 

@@ -35,6 +35,13 @@ export interface AppSettings {
    * `toUnknownModelPolicy` is what reads it.
    */
   unknownModelPolicy?: string;
+  /**
+   * When set, only these registry model ids are offered for selection (the
+   * /api/models list and every dropdown it feeds). Absent means every visible
+   * model. Selection-time only — a version already holding a disabled model
+   * keeps running.
+   */
+  enabledModels?: string[];
   updatedAt: string;
 }
 

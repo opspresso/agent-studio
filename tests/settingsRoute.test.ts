@@ -70,6 +70,19 @@ describe("PUT /api/settings", () => {
     expect(useCases.update).not.toHaveBeenCalled();
   });
 
+  it("forwards enabledModels, which the /api/models list reads", async () => {
+    const body = { enabledModels: ["openai/gpt-5.4"] };
+    const res = await put(body);
+    expect(res.status).toBe(200);
+    expect(useCases.update).toHaveBeenCalledWith(body, "admin@example.com");
+  });
+
+  it("400s on an enabledModels that is not a string array", async () => {
+    const res = await put({ enabledModels: "openai/gpt-5.4" });
+    expect(res.status).toBe(400);
+    expect(useCases.update).not.toHaveBeenCalled();
+  });
+
   it("accepts an empty unknownModelPolicy, which is how the page clears an override", async () => {
     // The page submits every field on every save and tells the operator to clear
     // one to fall back to env. Refusing "" here made the only un-clearable field

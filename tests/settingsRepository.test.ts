@@ -19,10 +19,11 @@ const { settingsRepository } = await import(
 );
 
 describe("settingsRepository.get", () => {
-  it("reads back what put writes — unknownModelPolicy included", async () => {
+  it("reads back what put writes — unknownModelPolicy and enabledModels included", async () => {
     const stored = {
       adminEmails: "admin@example.com",
       unknownModelPolicy: "refuse",
+      enabledModels: ["openai/gpt-5.4"],
       llmProviders: [{ name: "openai", baseUrl: "https://llm.example.com/v1", apiKey: "enc:v1:x" }],
       updatedAt: "2026-01-01T00:00:00Z",
     };

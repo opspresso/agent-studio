@@ -5,7 +5,7 @@ import type {
   LlmProviderSetting,
   ProviderChannelConfig,
 } from "@/domain/settings/types";
-import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
+import { getModelConfig, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { parseList } from "@/shared/parseList";
 import { optionalEnv } from "@/shared/env";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
@@ -14,7 +14,7 @@ import type { SecretCipher } from "@/domain/security/secretCipher";
 /** Reads `LLM_PROVIDER_*` env vars into channel configs. Injected. */
 export type ParseProviderConfigs = (env: NodeJS.ProcessEnv) => ProviderChannelConfig[];
 
-export type SettingKey = Exclude<keyof AppSettings, "updatedAt" | "llmProviders">;
+export type SettingKey = Exclude<keyof AppSettings, "updatedAt" | "llmProviders" | "enabledModels">;
 
 interface FieldSpec {
   key: SettingKey;
@@ -105,6 +105,8 @@ export interface LlmProviderInput {
 export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
   /** Full replacement list; empty array removes the override (env fallback). */
   llmProviders?: LlmProviderInput[];
+  /** Full replacement list; empty array removes the override (every model offered). */
+  enabledModels?: string[];
 };
 
 /**
@@ -130,6 +132,9 @@ function changedKeys(specs: FieldSpec[], stored: AppSettings | null, next: AppSe
   // carries one, so identity would report a change for a resubmitted list.
   if (JSON.stringify(stored?.llmProviders) !== JSON.stringify(next.llmProviders)) {
     changed.push("llmProviders");
+  }
+  if (JSON.stringify(stored?.enabledModels) !== JSON.stringify(next.enabledModels)) {
+    changed.push("enabledModels");
   }
   return changed;
 }
@@ -308,6 +313,21 @@ export function createSettingsUseCases(
             throw new ValidationError("LLM provider names must be unique");
           }
           next.llmProviders = providers;
+        }
+      }
+
+      if (patch.enabledModels !== undefined) {
+        if (patch.enabledModels.length === 0) {
+          delete next.enabledModels;
+        } else {
+          // Sorted and deduplicated so a resubmitted selection compares equal
+          // in `changedKeys` regardless of the order the toggles were flipped.
+          const ids = [...new Set(patch.enabledModels.map((id) => id.trim()))].sort();
+          const unknown = ids.filter((id) => getModelConfig(id) === undefined);
+          if (unknown.length > 0) {
+            throw new ValidationError(`Unknown model ids: ${unknown.join(", ")}`);
+          }
+          next.enabledModels = ids;
         }
       }
 
