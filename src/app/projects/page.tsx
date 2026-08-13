@@ -22,6 +22,8 @@ import { useSession } from "@/lib/auth-client";
 import { tierMayCreateProjects } from "@/domain/member/tiers";
 import { useViewer } from "@/app/_lib/useViewer";
 import { toSlug } from "@/shared/slug";
+import type { MessageKey } from "@/app/_i18n/messages/en";
+import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
 import { CardGrid } from "@/app/_components/CardGrid";
@@ -29,13 +31,14 @@ import { PROJECT_TYPE_COLOR } from "@/app/_components/badgeColors";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 
 const TYPE_OPTIONS = [
-  { value: "llm", label: "llm — single-shot prompt" },
-  { value: "agent", label: "agent — multi-turn tool loop" },
-  { value: "image", label: "image — generate or edit images" },
-];
+  { value: "llm", label: "projects.type.llm" },
+  { value: "agent", label: "projects.type.agent" },
+  { value: "image", label: "projects.type.image" },
+] as const satisfies ReadonlyArray<{ value: ProjectType; label: MessageKey }>;
 
 export default function ProjectsPage() {
   const router = useRouter();
+  const t = useT();
   const { data: session } = useSession();
   const viewer = useViewer();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -49,7 +52,7 @@ export default function ProjectsPage() {
     try {
       setProjects(await listProjects());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load projects");
+      setError(e instanceof Error ? e.message : t("projects.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -62,12 +65,12 @@ export default function ProjectsPage() {
   return (
     <Stack gap="lg">
       <CatalogHeader
-        title="Projects"
-        description="Prompt, agent, and image projects — iterate in versions, publish one for callers."
+        title={t("nav.projects")}
+        description={t("projects.lede")}
         Icon={IconFolder}
       >
         {viewer !== null && (viewer.isAdmin || tierMayCreateProjects(viewer.tier)) && (
-          <Button onClick={open}>New project</Button>
+          <Button onClick={open}>{t("projects.new")}</Button>
         )}
       </CatalogHeader>
 
@@ -80,7 +83,7 @@ export default function ProjectsPage() {
       <CardGrid
         loading={loading}
         empty={projects.length === 0}
-        emptyText="No projects yet. Create your first one."
+        emptyText={t("projects.empty")}
       >
         {projects.map((project) => (
           <Card
@@ -108,7 +111,7 @@ export default function ProjectsPage() {
             </Text>
             {project.publishedVersion && (
               <Text fz="xs" c="teal" mt="sm">
-                published: v{project.publishedVersion}
+                {t("projects.published", { version: project.publishedVersion })}
               </Text>
             )}
           </Card>
@@ -145,6 +148,7 @@ function CreateProjectModal({
   const [projectType, setProjectType] = useState<ProjectType>("llm");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   /**
    * The modal is mounted for the life of the page — `opened` is a prop, not a
@@ -173,7 +177,7 @@ function CreateProjectModal({
       reset();
       onCreated(project.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create project");
+      setError(err instanceof Error ? err.message : t("projects.createFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -183,30 +187,30 @@ function CreateProjectModal({
     <FormModal
       opened={opened}
       onClose={onClose}
-      title="New project"
+      title={t("projects.new")}
       error={error}
       onSubmit={submit}
-      submitLabel="Create"
+      submitLabel={t("projects.create")}
       submitting={submitting}
     >
       <TextInput
-        label="Name"
+        label={t("projects.name")}
         value={name}
         onChange={(e) => setName(e.currentTarget.value)}
         onBlur={() => setName(toSlug(name))}
-        placeholder="my-project"
+        placeholder={t("projects.namePlaceholder")}
         required
-        description="Lowercase letters, digits, and hyphens only. Immutable identifier."
+        description={t("projects.nameHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <TextInput
-        label="Display name"
+        label={t("projects.displayName")}
         value={displayName}
         onChange={(e) => setDisplayName(e.currentTarget.value)}
-        placeholder="My Project"
+        placeholder={t("projects.displayNamePlaceholder")}
       />
       <Textarea
-        label="Description"
+        label={t("projects.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
         autosize
@@ -214,17 +218,17 @@ function CreateProjectModal({
         maxRows={12}
       />
       <TextInput
-        label="Department code"
+        label={t("projects.departmentCode")}
         value={departmentCode}
         onChange={(e) => setDepartmentCode(e.currentTarget.value)}
         placeholder="ENG"
-        description="Optional code used to group project ownership and costs."
+        description={t("projects.departmentHint")}
       />
       <Select
-        label="Type"
+        label={t("projects.type")}
         value={projectType}
         onChange={(value) => setProjectType((value ?? "llm") as ProjectType)}
-        data={TYPE_OPTIONS}
+        data={TYPE_OPTIONS.map(({ value, label }) => ({ value, label: t(label) }))}
         allowDeselect={false}
       />
     </FormModal>

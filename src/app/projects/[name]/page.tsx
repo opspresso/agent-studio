@@ -14,6 +14,7 @@ import {
   type Version,
   type VersionInput,
 } from "../lib/api";
+import { useT } from "@/app/_i18n/provider";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
@@ -78,6 +79,7 @@ export default function PlaygroundPage() {
   const name = params.name;
 
   const viewer = useViewer();
+  const t = useT();
   const [project, setProject] = useState<Project | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -149,7 +151,7 @@ export default function PlaygroundPage() {
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load project");
+          setError(e instanceof Error ? e.message : t("playground.loadFailed"));
         }
       } finally {
         if (!cancelled) {
@@ -206,7 +208,7 @@ export default function PlaygroundPage() {
       savedTimer.current = setTimeout(() => setSavedName(null), SAVED_NOTICE_MS);
       savedVersion = saved.versionName;
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save version");
+      setSaveError(e instanceof Error ? e.message : t("playground.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -216,18 +218,19 @@ export default function PlaygroundPage() {
     // rather than a side effect; once anything is published, saves stop asking.
     if (savedVersion && project && !project.publishedVersion) {
       const publish = await confirm({
-        title: "Publish this project?",
-        message:
-          `"${project.displayName || name}" is not published yet. Publish v${savedVersion} ` +
-          "to open it to callers — the API, A2A, triggers, Slack, and other projects' subagents.",
-        confirmLabel: `Publish v${savedVersion}`,
+        title: t("playground.publishTitle"),
+        message: t("playground.publishBody", {
+          project: project.displayName || name,
+          version: savedVersion,
+        }),
+        confirmLabel: t("playground.publishConfirm", { version: savedVersion }),
         color: "teal",
       });
       if (publish) {
         try {
           setProject(await publishVersion(name, savedVersion));
         } catch (e) {
-          setSaveError(e instanceof Error ? e.message : "Failed to publish version");
+          setSaveError(e instanceof Error ? e.message : t("playground.publishFailed"));
         }
       }
     }
@@ -241,7 +244,7 @@ export default function PlaygroundPage() {
   if (error || !project) {
     return (
       <Alert color="red" variant="light">
-        {error ?? "Project not found"}
+        {error ?? t("playground.notFound")}
       </Alert>
     );
   }
@@ -259,12 +262,13 @@ export default function PlaygroundPage() {
               onChange={(value) => selectVersion(value ?? "")}
               allowDeselect={false}
               data={[
-                ...(canEdit ? [{ value: "", label: "+ New version" }] : []),
+                ...(canEdit ? [{ value: "", label: t("playground.newVersion") }] : []),
                 ...versions.map((version) => ({
                   value: version.versionName,
-                  label: `v${version.versionName}${
-                    project.publishedVersion === version.versionName ? " (published)" : ""
-                  }`,
+                  label:
+                    project.publishedVersion === version.versionName
+                      ? t("playground.versionPublished", { version: version.versionName })
+                      : t("playground.version", { version: version.versionName }),
                 })),
               ]}
             />
@@ -272,22 +276,22 @@ export default function PlaygroundPage() {
               <Group gap="xs" wrap="nowrap">
                 {dirty ? (
                   <Text fz="xs" c="orange">
-                    unsaved
+                    {t("playground.unsaved")}
                   </Text>
                 ) : (
                   savedName && (
                     <Text fz="xs" c="teal">
-                      Saved v{savedName}
+                      {t("playground.saved", { version: savedName })}
                     </Text>
                   )
                 )}
                 <Button onClick={save} loading={saving} disabled={!draft.model}>
-                  {selectedName === "" ? "Create version" : "Save"}
+                  {selectedName === "" ? t("playground.createVersion") : t("playground.save")}
                 </Button>
               </Group>
             ) : (
               <Text fz="xs" c="dimmed">
-                Read-only — the owner or an admin can edit
+                {t("playground.readOnly")}
               </Text>
             )}
           </Group>
@@ -327,7 +331,7 @@ export default function PlaygroundPage() {
                 disabled: !draft.model,
                 error: saveError,
                 savedName: dirty ? null : savedName,
-                label: selectedName === "" ? "Create version" : "Save",
+                label: selectedName === "" ? t("playground.createVersion") : t("playground.save"),
               }}
             />
           </fieldset>
@@ -336,7 +340,7 @@ export default function PlaygroundPage() {
 
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
-          <CollapsibleSection title="Preview">
+          <CollapsibleSection title={t("playground.preview")}>
             <PromptPreview
               projectName={name}
               projectType={project.projectType}
@@ -345,7 +349,7 @@ export default function PlaygroundPage() {
             />
           </CollapsibleSection>
 
-          <CollapsibleSection title="Run">
+          <CollapsibleSection title={t("playground.run")}>
             <RunPanel
               projectName={name}
               versionName={dirty && selectedName === "" ? null : selectedName || null}

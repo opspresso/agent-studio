@@ -232,6 +232,66 @@ export const en = {
   "chat.attachedImage": "Attached image",
   "chat.generatedImage": "Generated image",
   "chat.documentRead": "Read {note}",
+
+  // The projects catalog and its create form.
+  //
+  // The fallbacks below ("Failed to load projects") are this page's own words
+  // for a fetch that never reached a server. A message the server *did* send
+  // arrives on the `Error` and is shown as written — English, per the rule at
+  // the top of this file.
+  "projects.lede":
+    "Prompt, agent, and image projects — iterate in versions, publish one for callers.",
+  "projects.new": "New project",
+  "projects.empty": "No projects yet. Create your first one.",
+  "projects.loadFailed": "Failed to load projects",
+  "projects.createFailed": "Failed to create project",
+  "projects.published": "published: v{version}",
+  "projects.create": "Create",
+  "projects.name": "Name",
+  "projects.namePlaceholder": "my-project",
+  "projects.nameHint": "Lowercase letters, digits, and hyphens only. Immutable identifier.",
+  "projects.displayName": "Display name",
+  "projects.displayNamePlaceholder": "My Project",
+  "projects.description": "Description",
+  "projects.departmentCode": "Department code",
+  "projects.departmentHint": "Optional code used to group project ownership and costs.",
+  "projects.type": "Type",
+  "projects.type.llm": "llm — single-shot prompt",
+  "projects.type.agent": "agent — multi-turn tool loop",
+  "projects.type.image": "image — generate or edit images",
+
+  // One project's header and tab strip.
+  "project.badge": "AI project",
+  "project.lede": "Design, test, and observe this project from one workspace.",
+  "project.ownedBy": "Owned by ",
+  "project.tab.playground": "Playground",
+  "project.tab.versions": "Versions",
+  "project.tab.compare": "Compare",
+  "project.tab.usage": "Usage",
+  "project.tab.artifacts": "Artifacts",
+  "project.tab.traces": "Traces",
+  "project.tab.apiReference": "API Reference",
+  "project.tab.settings": "Settings",
+
+  // The playground: version picker, save, and the publish ask.
+  "playground.loadFailed": "Failed to load project",
+  "playground.saveFailed": "Failed to save version",
+  "playground.publishFailed": "Failed to publish version",
+  "playground.notFound": "Project not found",
+  "playground.newVersion": "+ New version",
+  "playground.version": "v{version}",
+  "playground.versionPublished": "v{version} (published)",
+  "playground.unsaved": "unsaved",
+  "playground.saved": "Saved v{version}",
+  "playground.createVersion": "Create version",
+  "playground.save": "Save",
+  "playground.readOnly": "Read-only — the owner or an admin can edit",
+  "playground.publishTitle": "Publish this project?",
+  "playground.publishBody":
+    "“{project}” is not published yet. Publish v{version} to open it to callers — the API, A2A, triggers, Slack, and other projects’ subagents.",
+  "playground.publishConfirm": "Publish v{version}",
+  "playground.preview": "Preview",
+  "playground.run": "Run",
 } as const;
 
 export type MessageKey = keyof typeof en;
