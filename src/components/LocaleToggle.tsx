@@ -13,7 +13,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Menu, ActionIcon } from "@mantine/core";
-import { IconLanguage } from "@tabler/icons-react";
+import { IconWorld } from "@tabler/icons-react";
 import {
   LOCALES,
   LOCALE_COOKIE,
@@ -51,7 +51,7 @@ export function LocaleToggle() {
           title={t("locale.label")}
           loading={pending}
         >
-          <IconLanguage size={18} stroke={1.8} />
+          <IconWorld size={18} stroke={1.8} />
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown>
