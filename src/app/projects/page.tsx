@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -32,6 +33,7 @@ const TYPE_OPTIONS = [
 ];
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,9 +113,11 @@ export default function ProjectsPage() {
       <CreateProjectModal
         opened={opened}
         onClose={close}
-        onCreated={() => {
+        onCreated={(createdName) => {
           close();
-          void refresh();
+          // Straight to the playground: the initial version is already there,
+          // so the next step is writing the prompt, not finding the card.
+          router.push(`/projects/${createdName}`);
         }}
       />
     </Stack>
@@ -127,7 +131,7 @@ function CreateProjectModal({
 }: {
   opened: boolean;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (name: string) => void;
 }) {
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -154,7 +158,7 @@ function CreateProjectModal({
     setSubmitting(true);
     setError(null);
     try {
-      await createProject({
+      const project = await createProject({
         name,
         displayName: displayName || name,
         description,
@@ -162,7 +166,7 @@ function CreateProjectModal({
         departmentCode: departmentCode || undefined,
       });
       reset();
-      onCreated();
+      onCreated(project.name);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {

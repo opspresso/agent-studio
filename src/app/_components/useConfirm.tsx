@@ -6,17 +6,20 @@ import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core";
 type ConfirmOptions = {
   title: string;
   message: string;
-  /** The red action button's label — name the action ("Delete", "Revoke"), never "OK". */
+  /** The action button's label — name the action ("Delete", "Publish"), never "OK". */
   confirmLabel: string;
   /** Require typing this exact text before the action enables (project deletion). */
   requireText?: string;
+  /** Action button colour. Red (destructive) unless the ask is not one — publish passes teal. */
+  color?: string;
 };
 
 /**
- * Modal replacement for `window.confirm`, and the single owner of how a
- * destructive action is confirmed. Call `confirm(options)` and await the
- * boolean; render `confirmModal` anywhere in the component (the Modal
- * portals, so placement does not matter). Dismissing resolves `false`.
+ * Modal replacement for `window.confirm`, and the single owner of how an
+ * action is confirmed — destructive ones (the red default) and the one
+ * deliberate non-destructive ask, publishing. Call `confirm(options)` and
+ * await the boolean; render `confirmModal` anywhere in the component (the
+ * Modal portals, so placement does not matter). Dismissing resolves `false`.
  */
 export function useConfirm() {
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
@@ -68,7 +71,7 @@ export function useConfirm() {
           <Button variant="default" onClick={() => close(false)}>
             Cancel
           </Button>
-          <Button color="red" disabled={blocked} onClick={() => close(true)}>
+          <Button color={options?.color ?? "red"} disabled={blocked} onClick={() => close(true)}>
             {options?.confirmLabel}
           </Button>
         </Group>

@@ -7,12 +7,14 @@ import {
   getProject,
   listModels,
   listVersions,
+  publishVersion,
   updateVersion,
   type ModelConfig,
   type Project,
   type Version,
   type VersionInput,
 } from "../lib/api";
+import { useConfirm } from "@/app/_components/useConfirm";
 import { VersionEditor } from "./_components/VersionEditor";
 import { RunPanel } from "./_components/RunPanel";
 import { PromptPreview } from "./_components/PromptPreview";
@@ -95,6 +97,7 @@ export default function PlaygroundPage() {
    */
   const [savedName, setSavedName] = useState<string | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { confirm, confirmModal } = useConfirm();
 
   useEffect(() => {
     return () => {
@@ -183,6 +186,7 @@ export default function PlaygroundPage() {
     setSaving(true);
     setSaveError(null);
     clearSaved();
+    let savedVersion: string | null = null;
     try {
       const saved =
         selectedName === ""
@@ -200,10 +204,32 @@ export default function PlaygroundPage() {
       setSnapshot(JSON.stringify(input));
       setSavedName(saved.versionName);
       savedTimer.current = setTimeout(() => setSavedName(null), SAVED_NOTICE_MS);
+      savedVersion = saved.versionName;
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Failed to save version");
     } finally {
       setSaving(false);
+    }
+    // A save on a never-published project is the natural moment to ask whether
+    // it is ready for callers. Publish is what turns the external surfaces on
+    // (API, A2A, triggers, Slack, the subagent picker), so it stays a question
+    // rather than a side effect; once anything is published, saves stop asking.
+    if (savedVersion && project && !project.publishedVersion) {
+      const publish = await confirm({
+        title: "Publish this project?",
+        message:
+          `"${project.displayName || name}" is not published yet. Publish v${savedVersion} ` +
+          "to open it to callers — the API, A2A, triggers, Slack, and other projects' subagents.",
+        confirmLabel: `Publish v${savedVersion}`,
+        color: "teal",
+      });
+      if (publish) {
+        try {
+          setProject(await publishVersion(name, savedVersion));
+        } catch (e) {
+          setSaveError(e instanceof Error ? e.message : "Failed to publish version");
+        }
+      }
     }
   }
 
@@ -224,6 +250,7 @@ export default function PlaygroundPage() {
 
   return (
     <Grid gap="lg">
+      {confirmModal}
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
           <Group justify="space-between" gap="xs" wrap="nowrap">
