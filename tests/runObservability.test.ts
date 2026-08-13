@@ -40,6 +40,7 @@ const version: Version = {
 const usage: UsageRepository = {
   record: async () => {},
   getDay: async () => null,
+  getMemberMonth: async () => null,
   claimAlert: async () => false,
   claimMonthAlert: async () => false,
   listActorsByProject: async () => [],

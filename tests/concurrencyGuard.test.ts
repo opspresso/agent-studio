@@ -9,6 +9,7 @@ import {
 import { openRun } from "@/application/run/runBracket";
 import { resetRunMetrics, runMetricsSnapshot } from "@/lib/runMetrics";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
+import { TIER_LIMITS } from "@/domain/member/tiers";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 import type { Project, Version } from "@/domain/project/types";
@@ -43,6 +44,7 @@ const version: Version = {
 const usage: UsageRepository = {
   record: async () => {},
   getDay: async () => null,
+  getMemberMonth: async () => null,
   claimAlert: async () => false,
   claimMonthAlert: async () => false,
   listActorsByProject: async () => [],
@@ -210,6 +212,65 @@ describe("acquireRunSlot", () => {
     const slot = await acquireRunSlot(d, user);
     await expect(slot.release()).resolves.toBeUndefined();
     warn.mockRestore();
+  });
+});
+
+describe("acquireRunSlot with a member tier", () => {
+  const roomy = () => ({ runSlots: memorySlots().repo, limits: { perActor: 10, a2a: 10 } });
+  // Derived, not restated: the number is TIER_LIMITS's to change.
+  const guestCeiling = TIER_LIMITS.guest.maxConcurrentRuns!;
+
+  it("applies the tier's own ceiling under the deployment limit", async () => {
+    const d = roomy();
+    for (let i = 0; i < guestCeiling; i++) {
+      await acquireRunSlot(d, user, "guest");
+    }
+    await expect(acquireRunSlot(d, user, "guest")).rejects.toBeInstanceOf(ConcurrencyLimitError);
+  });
+
+  it("lets a tier without its own ceiling inherit the deployment limit", async () => {
+    const d = roomy();
+    await acquireRunSlot(d, user, "member");
+    await acquireRunSlot(d, user, "member");
+    await expect(acquireRunSlot(d, user, "member")).resolves.toBeDefined();
+  });
+});
+
+describe("openRun with a tier resolver", () => {
+  it("refuses a guest's run past the tier ceiling", async () => {
+    const d = {
+      usage,
+      runSlots: memorySlots().repo,
+      limits: { perActor: 10, a2a: 10 },
+      resolveActorTier: async () => "guest" as const,
+    };
+    const admitted = [];
+    for (let i = 0; i < TIER_LIMITS.guest.maxConcurrentRuns!; i++) {
+      admitted.push(await openRun(d, project, version, user));
+    }
+    await expect(openRun(d, project, version, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    for (const bracket of admitted) {
+      await bracket.close();
+    }
+  });
+
+  it("falls back to the deployment limits when the resolver fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = {
+      usage,
+      runSlots: memorySlots().repo,
+      limits: { perActor: 10, a2a: 10 },
+      resolveActorTier: async () => {
+        throw new Error("member store down");
+      },
+    };
+    const first = await openRun(d, project, version, user);
+    const second = await openRun(d, project, version, user);
+    const third = await openRun(d, project, version, user);
+    await first.close();
+    await second.close();
+    await third.close();
+    error.mockRestore();
   });
 });
 

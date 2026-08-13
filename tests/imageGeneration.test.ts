@@ -62,6 +62,9 @@ function fakeDeps() {
     async getDay() {
       return null;
     },
+    async getMemberMonth() {
+      return null;
+    },
     async claimAlert() {
       return false;
     },
@@ -217,6 +220,9 @@ describe("generateImage", () => {
     const usage: UsageRepository = {
       async record() {},
       async getDay() {
+        return null;
+      },
+      async getMemberMonth() {
         return null;
       },
       async claimAlert() {

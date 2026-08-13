@@ -1,4 +1,5 @@
 import type { AgentProtocol } from "@/domain/agent/types";
+import type { MemberTier } from "@/domain/member/tiers";
 import type { McpRuntime } from "@/domain/mcp/types";
 import type { ProjectType } from "@/domain/project/types";
 
@@ -78,6 +79,13 @@ export const MCP_RUNTIME_COLOR: Record<McpRuntime, string> = {
  * teal/yellow), and its other use (`POST`) never shares a page with these.
  */
 export const PLUGIN_COLOR = "blue";
+
+/** A member's tier — a kind, not a state. Shown on the profile page. */
+export const MEMBER_TIER_COLOR: Record<MemberTier, string> = {
+  admin: "grape",
+  member: "blue",
+  guest: "cyan",
+};
 
 /** Local project vs. registered external agent, in the subagent picker. */
 export const SUBAGENT_KIND_COLOR: Record<"local" | "remote", string> = {

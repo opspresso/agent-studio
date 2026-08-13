@@ -1,4 +1,4 @@
-import type { ActorUsageRow, UsageDelta, UsageRow } from "./types";
+import type { ActorUsageRow, MemberMonthlyUsageRow, UsageDelta, UsageRow } from "./types";
 
 /** Which threshold a once-per-day notification belongs to. */
 export type CostAlertKind = "alert" | "block";
@@ -19,6 +19,12 @@ export interface UsageRepository {
    * not become a query.
    */
   getDay(projectName: string, date: string): Promise<UsageRow | null>;
+  /**
+   * One member's cross-project month row, or null when nothing was spent. The
+   * same contract as `getDay`: the member cost guard runs it on every run, so
+   * it must stay a single primary-key read.
+   */
+  getMemberMonth(email: string, month: string): Promise<MemberMonthlyUsageRow | null>;
   /**
    * Claim the once-per-day notification for `kind`. Returns true for exactly one
    * caller per (project, date, kind) and false for every later one, including

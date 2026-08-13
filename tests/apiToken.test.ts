@@ -157,6 +157,41 @@ describe("generateApiToken", () => {
     );
     expect(stored()).toBeNull();
   });
+
+  describe("with a tier lookup injected", () => {
+    it("refuses an owner whose tier may not use API tokens", async () => {
+      const { repo, stored } = makeRepo(project());
+      await expect(
+        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => "guest"),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      expect(stored()).toBeNull();
+    });
+
+    it("gates on the owner's tier even when an admin asks", async () => {
+      // The token would authenticate as the owner; a caller-scoped check
+      // would let an admin mint a credential the execution gate refuses.
+      const { repo, stored } = makeRepo(project());
+      const asked: string[] = [];
+      await expect(
+        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async (email) => {
+          asked.push(email);
+          return "guest";
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      expect(asked).toEqual([OWNER]);
+      expect(stored()).toBeNull();
+    });
+
+    it("allows a member owner, and fails open on an unknown tier", async () => {
+      const { repo } = makeRepo(project());
+      await expect(
+        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => "member"),
+      ).resolves.toBeTruthy();
+      await expect(
+        generateApiTokenImpl(repo, "my-bot", OWNER, secretCipher, async () => null),
+      ).resolves.toBeTruthy();
+    });
+  });
 });
 
 describe("verifyProjectApiToken", () => {

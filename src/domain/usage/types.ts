@@ -31,6 +31,21 @@ export interface ActorUsageRow {
   costUsd: Record<string, number>;
 }
 
+/**
+ * One member's own spend for one UTC month, summed across every project.
+ * Only `user` actors land here — a project token spends against its project,
+ * not its owner; see `memberEmailFromActorKey` in `domain/execution/actor.ts`.
+ */
+export interface MemberMonthlyUsageRow {
+  email: string;
+  /** yyyy-MM */
+  month: string;
+  calls: Record<string, number>;
+  inputTokens: Record<string, number>;
+  outputTokens: Record<string, number>;
+  costUsd: Record<string, number>;
+}
+
 export interface UsageDelta {
   projectName: string;
   date: string;

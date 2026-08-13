@@ -119,9 +119,10 @@ export function TokenSection({ projectName }: { projectName: string }) {
         <Text fz="xs" c="dimmed" lh={1.6}>
           A token lets external callers run this project&apos;s execution APIs (predict, chat
           completions, agent) with an <Code>Authorization: Bearer</Code> header instead of a
-          browser session. It authenticates as the project owner — every run it makes is
-          attributed and billed to them. It is scoped to this project and stored encrypted, so
-          you can read it back here.
+          browser session. It authenticates as the project owner — its runs are attributed to
+          the token, spend against this project&apos;s cost limits, and stay out of anyone&apos;s
+          personal budget. It is scoped to this project and stored encrypted, so you can read
+          it back here.
         </Text>
 
         {rawToken && (

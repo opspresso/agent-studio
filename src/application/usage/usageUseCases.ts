@@ -1,7 +1,8 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
-import type { UsageRow } from "@/domain/usage/types";
+import type { MemberMonthlyUsageRow, UsageRow } from "@/domain/usage/types";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
+import { recentUtcMonths } from "@/shared/date";
 import { listProjectActors, type ActorUsageView, type ListActorsDeps } from "./listActors";
 
 /**
@@ -23,6 +24,35 @@ export function listUsageSummary(
 
 export interface UsageReadDeps extends ListActorsDeps {
   projects: ProjectRepository;
+}
+
+/**
+ * One member's own cross-project spend, newest month first — the profile read.
+ * Always the caller's own email (the route passes the session user), which is
+ * why this needs no gate: `memberCostGuard` owns enforcing the cap, this only
+ * reports the same rows. Absent months come back zero-filled in order, so the
+ * client renders `months[0]` as the current month without re-deriving month
+ * keys — its clock can disagree with the server's across a UTC boundary.
+ */
+export async function listMemberMonths(
+  usage: UsageRepository,
+  email: string,
+  months: number,
+  now: Date = new Date(),
+): Promise<MemberMonthlyUsageRow[]> {
+  const keys = recentUtcMonths(now, months);
+  const rows = await Promise.all(keys.map((month) => usage.getMemberMonth(email, month)));
+  return rows.map(
+    (row, index) =>
+      row ?? {
+        email,
+        month: keys[index]!,
+        calls: {},
+        inputTokens: {},
+        outputTokens: {},
+        costUsd: {},
+      },
+  );
 }
 
 /**
@@ -50,6 +80,7 @@ export async function listProjectActorsFor(
 export interface UsageUseCases {
   summary(from: string, to: string, projectName?: string): Promise<UsageRow[]>;
   actors(projectName: string, userEmail: string, from: string, to: string): Promise<ActorUsageView[]>;
+  memberMonths(email: string, months: number, now?: Date): Promise<MemberMonthlyUsageRow[]>;
 }
 
 export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
@@ -57,5 +88,6 @@ export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
     summary: (from, to, projectName) => listUsageSummary(deps.usage, from, to, projectName),
     actors: (projectName, userEmail, from, to) =>
       listProjectActorsFor(deps, projectName, userEmail, from, to),
+    memberMonths: (email, months, now) => listMemberMonths(deps.usage, email, months, now),
   };
 }

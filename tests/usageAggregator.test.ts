@@ -13,6 +13,9 @@ function fakeUsageRepo(onRecord?: (delta: UsageDelta) => void) {
     async getDay() {
       return null;
     },
+    async getMemberMonth() {
+      return null;
+    },
     async claimAlert() {
       return false;
     },

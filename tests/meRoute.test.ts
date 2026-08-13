@@ -32,7 +32,14 @@ function signedInAs(email: string) {
   });
 }
 
-async function me(): Promise<{ email: string; isAdmin: boolean; isConfiguredAdmin: boolean }> {
+// The mocked session carries no `tier`, which normalizes to the default —
+// so every case below also pins that a pre-tier row reads as the default.
+async function me(): Promise<{
+  email: string;
+  isAdmin: boolean;
+  isConfiguredAdmin: boolean;
+  tier: string;
+}> {
   return (await GET()).json();
 }
 
@@ -59,16 +66,31 @@ describe("GET /api/me", () => {
     signedInAs(USER);
 
     // The whole point: unrestricted registries, no ownership override.
-    expect(await me()).toEqual({ email: USER, isAdmin: true, isConfiguredAdmin: false });
+    expect(await me()).toEqual({
+      email: USER,
+      isAdmin: true,
+      isConfiguredAdmin: false,
+      tier: "guest",
+    });
   });
 
   it("gives a listed admin both, and an unlisted user neither", async () => {
     process.env.ADMIN_EMAILS = ADMIN;
 
     signedInAs(ADMIN);
-    expect(await me()).toEqual({ email: ADMIN, isAdmin: true, isConfiguredAdmin: true });
+    expect(await me()).toEqual({
+      email: ADMIN,
+      isAdmin: true,
+      isConfiguredAdmin: true,
+      tier: "guest",
+    });
 
     signedInAs(USER);
-    expect(await me()).toEqual({ email: USER, isAdmin: false, isConfiguredAdmin: false });
+    expect(await me()).toEqual({
+      email: USER,
+      isAdmin: false,
+      isConfiguredAdmin: false,
+      tier: "guest",
+    });
   });
 });

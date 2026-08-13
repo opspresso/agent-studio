@@ -1,13 +1,16 @@
+import { toMemberTier, type MemberTier } from "@/domain/member/tiers";
 import { unauthorized } from "@/shared/unauthorized";
 import { headers } from "next/headers";
 import { auth } from "./auth";
-import { isAdminEmail } from "./runtime-settings";
+import { isEffectiveAdmin } from "./memberAccess";
 
 export interface SessionUser {
   id: string;
   email: string;
   name: string;
   image: string | null;
+  /** Fresh every request — `getSession` reads the user row, tier included. */
+  tier: MemberTier;
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
@@ -16,7 +19,13 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     return null;
   }
   const { user } = session;
-  return { id: user.id, email: user.email, name: user.name, image: user.image ?? null };
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    image: user.image ?? null,
+    tier: toMemberTier((user as { tier?: unknown }).tier),
+  };
 }
 
 /**
@@ -35,9 +44,12 @@ export function withAuth<T extends unknown[]>(
   };
 }
 
-/** True when the effective admin list contains this user, or is empty (no restriction). */
+/**
+ * True when the member's tier grants admin, or the effective admin list
+ * contains this user, or the list is empty (no restriction).
+ */
 export function isAdmin(user: SessionUser): Promise<boolean> {
-  return isAdminEmail(user.email);
+  return isEffectiveAdmin(user);
 }
 
 /**

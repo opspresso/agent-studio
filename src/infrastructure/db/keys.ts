@@ -116,6 +116,17 @@ export const keys = {
   }),
   usageDatePartition: (date: string) => `USAGEDATE#${date}`,
   /**
+   * One member's cross-project spend for one UTC month — their own console
+   * runs (`user:` actors), which is what the tier cost cap bounds. A project
+   * token's spend deliberately stays out (it is bounded by the project's own
+   * limits; see `memberEmailFromActorKey`). Its own partition because no
+   * project's cascade delete may take a person's month with it.
+   */
+  usageMemberMonth: (email: string, month: string) => ({
+    PK: `USAGEMEMBER#${email}`,
+    SK: `MONTH#${month}`,
+  }),
+  /**
    * Per-caller daily usage, in the project's usage partition. Date leads the
    * sort key so a range query over dates is one `BETWEEN`, and so the rows of
    * one day sit together; `DATE#` and `ACTOR#` are distinct prefixes, so the

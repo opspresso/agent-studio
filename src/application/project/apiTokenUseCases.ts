@@ -1,10 +1,19 @@
 import type { ProjectRepository } from "@/domain/project/repository";
-import { NotFoundError, ValidationError } from "@/application/errors";
+import { tierMayUseApiTokens, type MemberTier } from "@/domain/member/tiers";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { generateSecretValue, hashSecret, secretHashEquals } from "@/shared/generatedSecret";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { assertProjectWritable, getProject } from "./projectUseCases";
 import { log } from "@/shared/logger";
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
+
+/**
+ * How this slice learns a member's tier — injected by the composition root,
+ * like the admin check in `projectUseCases`. `null` means unknown (no row, or
+ * the read failed) and the gate fails open: the lookup failing must not take
+ * token issuance down with it.
+ */
+export type MemberTierLookup = (email: string) => Promise<MemberTier | null>;
 
 export interface ApiTokenStatus {
   configured: boolean;
@@ -27,8 +36,21 @@ export async function generateApiToken(
   name: string,
   userEmail: string,
   cipher: SecretCipher,
+  memberTier?: MemberTierLookup,
 ): Promise<{ token: string; masked: string; createdAt: string }> {
-  await assertProjectWritable(repo, name, userEmail);
+  const project = await assertProjectWritable(repo, name, userEmail);
+  if (memberTier) {
+    // Owner-scoped, not caller-scoped: the token would authenticate as the
+    // owner, so the owner's tier decides whether the credential may exist —
+    // an admin minting one for a guest-owned project would mint a token the
+    // execution gate refuses anyway.
+    const ownerTier = await memberTier(project.ownerEmail);
+    if (ownerTier && !tierMayUseApiTokens(ownerTier)) {
+      throw new ForbiddenError(
+        `The project owner's tier ("${ownerTier}") does not allow API tokens`,
+      );
+    }
+  }
   const token = generateSecretValue("projectApiToken");
   const masked = cipher.mask(token);
   const createdAt = new Date().toISOString();
@@ -194,9 +216,10 @@ export interface ApiTokenUseCases {
 export function createApiTokenUseCases(
   projects: ProjectRepository,
   cipher: SecretCipher,
+  memberTier?: MemberTierLookup,
 ): ApiTokenUseCases {
   return {
-    generate: (name, userEmail) => generateApiToken(projects, name, userEmail, cipher),
+    generate: (name, userEmail) => generateApiToken(projects, name, userEmail, cipher, memberTier),
     status: (name, userEmail) => getApiTokenStatus(projects, name, userEmail),
     reveal: (name, userEmail) => revealApiToken(projects, name, userEmail, cipher),
     revoke: (name, userEmail) => revokeApiToken(projects, name, userEmail),
