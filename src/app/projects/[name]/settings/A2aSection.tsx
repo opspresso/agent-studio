@@ -8,8 +8,10 @@ import { getProjectA2a } from "../../lib/api";
 import type { ProjectA2aView } from "../../lib/api";
 import { Badge, Code, Stack, Text } from "@mantine/core";
 import { stateColor } from "@/app/_components/badgeColors";
+import { useT } from "@/app/_i18n/provider";
 
 export function A2aSection({ projectName }: { projectName: string }) {
+  const t = useT();
   const [view, setView] = useState<ProjectA2aView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +37,7 @@ export function A2aSection({ projectName }: { projectName: string }) {
 
   return (
     <CollapsibleSection
-      title="A2A"
+      title={t("pset.a2a")}
       badge={
         <Badge color={stateColor(ready)} radius="xl">
           {ready ? "exposed" : view.enabled ? "not published" : "disabled"}
@@ -63,7 +65,7 @@ export function A2aSection({ projectName }: { projectName: string }) {
 
         {view.card && (
           <CollapsibleCode
-            title="Agent Card"
+            title={t("pset.agentCard")}
             language="json"
             code={JSON.stringify(view.card, null, 2)}
             copyLabel="Copy card"

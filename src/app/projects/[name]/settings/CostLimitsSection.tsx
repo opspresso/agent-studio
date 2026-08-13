@@ -5,6 +5,7 @@ import { Alert, Badge, Button, Group, NumberInput, Stack, Text, TextInput } from
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
 import { getProject, updateProject, type CostLimits } from "../../lib/api";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * Daily and monthly (UTC) spend guards. Four independent thresholds and the
@@ -14,6 +15,7 @@ import { getProject, updateProject, type CostLimits } from "../../lib/api";
  * would refuse every run, which is never what clearing a box is meant to say.
  */
 export function CostLimitsSection({ projectName }: { projectName: string }) {
+  const t = useT();
   const [alertUsd, setAlertUsd] = useState<number | "">("");
   const [blockUsd, setBlockUsd] = useState<number | "">("");
   const [monthlyAlertUsd, setMonthlyAlertUsd] = useState<number | "">("");
@@ -97,7 +99,7 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
 
   return (
     <CollapsibleSection
-      title="Cost limits"
+      title={t("pset.costLimits")}
       badge={
         loading ? undefined : (
           <Badge color={stateColor(configured)} radius="xl">
@@ -120,8 +122,8 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
         )}
         <Group grow align="flex-start">
           <NumberInput
-            label="Alert threshold (USD)"
-            description="Notify once a day, keep running"
+            label={t("pset.alertThreshold")}
+            description={t("pset.alertThresholdHint")}
             value={alertUsd}
             onChange={(value) => setAlertUsd(value === "" ? "" : Number(value))}
             min={0}
@@ -130,8 +132,8 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             disabled={loading}
           />
           <NumberInput
-            label="Block threshold (USD)"
-            description="Refuse runs for the rest of the day"
+            label={t("pset.blockThreshold")}
+            description={t("pset.blockThresholdHint")}
             value={blockUsd}
             onChange={(value) => setBlockUsd(value === "" ? "" : Number(value))}
             min={0}
@@ -142,8 +144,8 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
         </Group>
         <Group grow align="flex-start">
           <NumberInput
-            label="Monthly alert threshold (USD)"
-            description="Notify once a month, keep running"
+            label={t("pset.monthlyAlert")}
+            description={t("pset.monthlyAlertHint")}
             value={monthlyAlertUsd}
             onChange={(value) => setMonthlyAlertUsd(value === "" ? "" : Number(value))}
             min={0}
@@ -152,8 +154,8 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
             disabled={loading}
           />
           <NumberInput
-            label="Monthly block threshold (USD)"
-            description="Refuse runs for the rest of the month"
+            label={t("pset.monthlyBlock")}
+            description={t("pset.monthlyBlockHint")}
             value={monthlyBlockUsd}
             onChange={(value) => setMonthlyBlockUsd(value === "" ? "" : Number(value))}
             min={0}
@@ -163,8 +165,8 @@ export function CostLimitsSection({ projectName }: { projectName: string }) {
           />
         </Group>
         <TextInput
-          label="Slack channel id"
-          description="Where notifications are posted, using this project's own bot. Without it the thresholds still block."
+          label={t("pset.slackChannel")}
+          description={t("pset.slackChannelHint")}
           placeholder="C0123456789"
           value={channel}
           onChange={(e) => setChannel(e.currentTarget.value)}

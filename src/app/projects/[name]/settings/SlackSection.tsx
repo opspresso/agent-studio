@@ -16,6 +16,7 @@ import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * A fixed grid of empty rows rather than add/remove buttons: Slack takes at
@@ -36,6 +37,7 @@ export function SlackSection({
   projectName: string;
   projectType: ProjectType;
 }) {
+  const t = useT();
   const [view, setView] = useState<ProjectSlackView | null>(null);
   const [botToken, setBotToken] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
@@ -145,7 +147,7 @@ export function SlackSection({
 
   return (
     <CollapsibleSection
-      title="Slack bot"
+      title={t("pset.slackBot")}
       badge={
         <Badge color={stateColor(view.enabled)} radius="xl">
           {view.enabled ? "enabled" : view.configured ? "configured (off)" : "not connected"}
@@ -166,30 +168,30 @@ export function SlackSection({
         </Text>
 
         <CollapsibleCode
-          title="App manifest"
+          title={t("pset.appManifest")}
           language="json"
           code={JSON.stringify(view.manifest, null, 2)}
           copyLabel="Copy manifest"
         />
 
         <TextInput
-          label="Bot token"
+          label={t("pset.botToken")}
           value={botToken}
           onChange={(e) => setBotToken(e.currentTarget.value)}
           placeholder="xoxb-…"
           styles={monoInput}
         />
         <TextInput
-          label="Signing secret"
+          label={t("pset.signingSecret")}
           value={signingSecret}
           onChange={(e) => setSigningSecret(e.currentTarget.value)}
-          placeholder="Signing secret from Basic Information"
+          placeholder={t("pset.signingSecretPlaceholder")}
           styles={monoInput}
         />
         <Stack gap="xs">
           {confirmModal}
           <Checkbox
-            label="Enable event handling at this URL"
+            label={t("pset.enableEvents")}
             checked={enabled}
             onChange={(e) => setEnabled(e.currentTarget.checked)}
           />
@@ -210,7 +212,7 @@ export function SlackSection({
             <Group key={index} gap="xs" wrap="nowrap" align="flex-start">
               <TextInput
                 aria-label={`Prompt ${index + 1} label`}
-                placeholder="Label"
+                placeholder={t("pset.shortcutLabel")}
                 w={180}
                 value={prompt.title}
                 onChange={(e) => {
@@ -222,7 +224,7 @@ export function SlackSection({
               />
               <TextInput
                 aria-label={`Prompt ${index + 1} message`}
-                placeholder="What clicking it sends"
+                placeholder={t("pset.shortcutSends")}
                 style={{ flex: 1 }}
                 value={prompt.message}
                 onChange={(e) => {

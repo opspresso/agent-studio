@@ -13,8 +13,10 @@ import { SlackSection } from "./SlackSection";
 import { TriggersSection } from "./TriggersSection";
 import { TokenSection } from "./TokenSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 
 export default function SettingsPage() {
+  const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
@@ -126,12 +128,12 @@ export default function SettingsPage() {
             </Alert>
           )}
           <TextInput
-            label="Display name"
+            label={t("projects.displayName")}
             value={displayName}
             onChange={(e) => setDisplayName(e.currentTarget.value)}
           />
           <Textarea
-            label="Description"
+            label={t("registry.description")}
             value={description}
             onChange={(e) => setDescription(e.currentTarget.value)}
             autosize
@@ -139,10 +141,10 @@ export default function SettingsPage() {
             maxRows={20}
           />
           <TextInput
-            label="Department code"
+            label={t("projects.departmentCode")}
             value={departmentCode}
             onChange={(e) => setDepartmentCode(e.currentTarget.value)}
-            description="Optional code used to group project ownership and costs."
+            description={t("projects.departmentHint")}
           />
           <Group gap="sm">
             <Button type="submit" loading={saving}>
@@ -167,7 +169,7 @@ export default function SettingsPage() {
 
       <A2aSection projectName={name} />
 
-      <CollapsibleSection title="Danger zone" danger>
+      <CollapsibleSection title={t("pset.dangerZone")} danger>
         <Stack gap="sm" align="flex-start">
           <Text fz="sm" c="dimmed">
             Deleting a project removes all its versions and usage records.

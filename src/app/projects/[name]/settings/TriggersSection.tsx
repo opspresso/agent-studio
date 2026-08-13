@@ -21,6 +21,7 @@ import { CopyButton } from "@/app/_components/CopyButton";
 import { stateColor } from "@/app/_components/badgeColors";
 import { toSlug } from "@/shared/slug";
 import { formatDateTime } from "@/shared/date";
+import { useT } from "@/app/_i18n/provider";
 import {
   createTrigger,
   deleteTrigger,
@@ -46,6 +47,7 @@ const STATUS_COLOR: Record<TriggerRun["status"], string> = {
  * state until the page is left.
  */
 export function TriggersSection({ projectName }: { projectName: string }) {
+  const t = useT();
   const [triggers, setTriggers] = useState<TriggerView[]>([]);
   const [runs, setRuns] = useState<Record<string, TriggerRun[]>>({});
   const [newId, setNewId] = useState("");
@@ -127,7 +129,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
 
   return (
     <CollapsibleSection
-      title="Triggers"
+      title={t("trigger.section")}
       // Readable while collapsed, like the token's set/none: how many triggers
       // exist, before anyone opens the section.
       badge={
@@ -154,15 +156,15 @@ export function TriggersSection({ projectName }: { projectName: string }) {
         <Stack gap="sm">
           <Group align="flex-end" gap="sm">
             <TextInput
-              label="New trigger id"
-              placeholder="nightly-report"
+              label={t("trigger.newId")}
+              placeholder={t("trigger.newIdPlaceholder")}
               value={newId}
               onChange={(e) => setNewId(e.currentTarget.value)}
               // Same rule and same moment as a project name: normalised on blur so
               // typing stays unsurprising, and the id that reaches the slug-only
               // API is always one it accepts.
               onBlur={() => setNewId(toSlug(newId))}
-              description="Lowercase letters, digits, and hyphens only."
+              description={t("registry.nameHint")}
               // Description above the input, so in this `flex-end` row the input
               // box itself is the wrapper's bottom edge and lines up with the
               // description-less fields and buttons beside it.
@@ -170,7 +172,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
               disabled={loading}
             />
             <Select
-              label="Kind"
+              label={t("trigger.kind")}
               data={[
                 { value: "webhook", label: "Webhook" },
                 { value: "schedule", label: "Schedule" },
@@ -210,24 +212,24 @@ export function TriggersSection({ projectName }: { projectName: string }) {
           {newKind === "schedule" && (
             <Group align="flex-end" gap="sm">
               <TextInput
-                label="Cron"
-                placeholder="30 9 * * 1-5"
-                description="minute hour day-of-month month day-of-week"
+                label={t("trigger.cron")}
+                placeholder={t("trigger.cronPlaceholder")}
+                description={t("trigger.cronHint")}
                 inputWrapperOrder={["label", "description", "input", "error"]}
                 value={newCron}
                 onChange={(e) => setNewCron(e.currentTarget.value)}
                 w={180}
               />
               <TextInput
-                label="Timezone"
-                placeholder="Asia/Seoul"
+                label={t("trigger.timezone")}
+                placeholder={t("trigger.timezonePlaceholder")}
                 value={newTimezone}
                 onChange={(e) => setNewTimezone(e.currentTarget.value)}
                 w={180}
               />
               <TextInput
-                label="Message"
-                placeholder="What each firing asks the project"
+                label={t("trigger.message")}
+                placeholder={t("trigger.messagePlaceholder")}
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.currentTarget.value)}
                 style={{ flex: 1 }}
@@ -305,7 +307,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
             )}
             <Group gap="md" align="center">
               <Switch
-                label="Enabled"
+                label={t("trigger.enabled")}
                 checked={trigger.enabled}
                 disabled={busy}
                 onChange={(e) =>
@@ -317,7 +319,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                 }
               />
               <Switch
-                label="Allow overlapping runs"
+                label={t("trigger.allowOverlap")}
                 checked={trigger.allowConcurrent}
                 disabled={busy}
                 onChange={(e) =>
@@ -330,7 +332,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
               />
               {trigger.kind === "webhook" && (
                 <Select
-                  label="Payload"
+                  label={t("trigger.payload")}
                   data={[
                     { value: "message", label: "User message (agent)" },
                     { value: "variables", label: "Template variables (prompt)" },
@@ -497,6 +499,7 @@ function ScheduleFields({
   busy: boolean;
   onSave: (input: { cron: string; timezone: string; message: string }) => void;
 }) {
+  const t = useT();
   const server = {
     cron: trigger.cron ?? "",
     timezone: trigger.timezone ?? "",
@@ -521,22 +524,22 @@ function ScheduleFields({
   return (
     <Group align="flex-end" gap="sm">
       <TextInput
-        label="Cron"
-        description="minute hour day-of-month month day-of-week"
+        label={t("trigger.cron")}
+        description={t("trigger.cronHint")}
         inputWrapperOrder={["label", "description", "input", "error"]}
         value={cron}
         onChange={(e) => setCron(e.currentTarget.value)}
         w={180}
       />
       <TextInput
-        label="Timezone"
+        label={t("trigger.timezone")}
         value={timezone}
         onChange={(e) => setTimezone(e.currentTarget.value)}
         w={180}
       />
       <TextInput
-        label="Message"
-        placeholder="What each firing asks the project"
+        label={t("trigger.message")}
+        placeholder={t("trigger.messagePlaceholder")}
         value={message}
         onChange={(e) => setMessage(e.currentTarget.value)}
         style={{ flex: 1 }}
