@@ -16,6 +16,7 @@ const FIELDS = [
   "githubToken",
   "a2aApiKey",
   "publicBaseUrl",
+  "unknownModelPolicy",
 ] as const;
 
 function fromItem(item: Record<string, unknown>): AppSettings {
