@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { ActionIcon, Badge, Box, FileButton, Group, Image, Stack, Text } from "@mantine/core";
 import { IconFileText, IconPaperclip, IconX } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 import {
   ACCEPTED_IMAGE_TYPES,
   attachmentSrc,
@@ -31,6 +32,7 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [documents, setDocuments] = useState<DocumentAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const t = useT();
 
   const addFiles = useCallback(
     async (files: File[]) => {
@@ -51,17 +53,22 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
             added.push(await readAttachment(file));
           }
         } catch (error) {
-          failures.push(error instanceof Error ? error.message : `${file.name}: unreadable`);
+          // A thrown `Error` carries the reader's own message (a size or type
+          // refusal) and stays as written; the fallback is the only part this
+          // component words itself.
+          failures.push(
+            error instanceof Error ? error.message : t("attach.unreadable", { name: file.name }),
+          );
         }
       }
       // Reported from here, not from inside the updater: the updater runs after
       // the checks below, so a message pushed there would never be shown — what
       // is over the cap would just disappear.
       if (added.length > Math.max(MAX_ATTACHMENTS - attachments.length, 0)) {
-        failures.push(`At most ${MAX_ATTACHMENTS} images per message`);
+        failures.push(t("attach.tooManyImages", { count: MAX_ATTACHMENTS }));
       }
       if (addedDocuments.length > Math.max(MAX_DOCUMENTS - documents.length, 0)) {
-        failures.push(`At most ${MAX_DOCUMENTS} documents per message`);
+        failures.push(t("attach.tooManyDocuments", { count: MAX_DOCUMENTS }));
       }
       setAttachments((prev) => [
         ...prev,
@@ -75,7 +82,7 @@ export function useAttachments({ documents: allowDocuments = false } = {}) {
         setAttachError(failures.join(" · "));
       }
     },
-    [allowDocuments, attachments.length, documents.length],
+    [allowDocuments, attachments.length, documents.length, t],
   );
 
   const removeAt = useCallback((index: number) => {
@@ -116,6 +123,7 @@ export function AttachmentBar({
   onRemove: (index: number) => void;
   onRemoveDocument?: (index: number) => void;
 }) {
+  const t = useT();
   if (attachments.length === 0 && documents.length === 0 && !attachError) {
     return null;
   }
@@ -136,7 +144,7 @@ export function AttachmentBar({
                     color="gray"
                     size="xs"
                     onClick={() => onRemoveDocument(index)}
-                    aria-label={`Remove ${document.name}`}
+                    aria-label={t("attach.remove", { name: document.name })}
                   >
                     <IconX size={12} />
                   </ActionIcon>
@@ -169,7 +177,7 @@ export function AttachmentBar({
                 top={-6}
                 right={-6}
                 onClick={() => onRemove(index)}
-                aria-label={`Remove ${attachment.name}`}
+                aria-label={t("attach.remove", { name: attachment.name })}
               >
                 <IconX size={12} />
               </ActionIcon>
@@ -199,6 +207,8 @@ export function AttachButton({
   // Clears the underlying input after each pick, so choosing the same file
   // again still fires a change event.
   const reset = useRef<() => void>(null);
+  const t = useT();
+  const label = documents ? t("attach.imagesOrDocuments") : t("attach.images");
 
   return (
     <FileButton
@@ -216,8 +226,8 @@ export function AttachButton({
           variant="default"
           size="input-sm"
           disabled={disabled}
-          aria-label={documents ? "Attach images or documents" : "Attach images"}
-          title={documents ? "Attach images or documents" : "Attach images"}
+          aria-label={label}
+          title={label}
         >
           <IconPaperclip size={18} />
         </ActionIcon>

@@ -10,8 +10,9 @@ import {
   IconLayersIntersect,
 } from "@tabler/icons-react";
 import type { Project } from "@/domain/project/types";
+import { useT } from "@/app/_i18n/provider";
 import { CardHeading } from "./CardHeading";
-import { GroupByControl } from "./GroupByControl";
+import { GROUP_BY_LABEL, GroupByControl } from "./GroupByControl";
 import { StatCard } from "./StatCard";
 import { UsageBreakdown } from "./UsageBreakdown";
 import {
@@ -40,6 +41,7 @@ const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
  * exactly the false claim that view exists to avoid.
  */
 export function Dashboard({ projects }: { projects: Project[] | null }) {
+  const t = useT();
   const initial = useMemo(() => presetRange(30), []);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
@@ -111,11 +113,10 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
       <Group justify="space-between" align="flex-end" gap="md" wrap="wrap">
         <div>
           <Title order={2} fz={{ base: 22, md: 26 }} lts="-0.03em">
-            Cost
+            {t("cost.title")}
           </Title>
           <Text c="dimmed" fz="sm" mt={4} maw={620}>
-            What every project spends, priced per call from the model registry — with daily and
-            monthly limits that warn, then refuse.
+            {t("cost.lede")}
           </Text>
         </div>
         <DateRangePicker
@@ -135,42 +136,49 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
 
       {groupBy === "department" && projects === null && (
         <Alert color="yellow" variant="light">
-          Project departments could not be loaded, so every project is shown under “(none)”.
-          Reload to attribute this spend.
+          {t("cost.departmentsFailed")}
         </Alert>
       )}
 
       <SimpleGrid cols={{ base: 1, xs: 2, xl: 4 }} spacing="md">
-        <StatCard label="Total cost" value={formatUsd(cost)} detail="Selected period" Icon={IconCoins} />
         <StatCard
-          label="Total calls"
+          label={t("cost.totalCost")}
+          value={formatUsd(cost)}
+          detail={t("cost.selectedPeriod")}
+          Icon={IconCoins}
+        />
+        <StatCard
+          label={t("cost.totalCalls")}
           value={calls.toLocaleString()}
-          detail="Model invocations"
+          detail={t("cost.modelInvocations")}
           Icon={IconActivity}
         />
         <StatCard
-          label="Average cost"
+          label={t("cost.averageCost")}
           value={formatUsd(averageCost, 4)}
-          detail="Per invocation"
+          detail={t("cost.perInvocation")}
           Icon={IconChartAreaLine}
         />
         <StatCard
-          label="Active groups"
+          label={t("cost.activeGroups")}
           value={groups.length.toLocaleString()}
-          detail={`Grouped by ${groupBy}`}
+          detail={t("usage.groupedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
           Icon={IconLayersIntersect}
         />
       </SimpleGrid>
 
       <Card className={classes.chartCard}>
         <Group justify="space-between" mb="md" gap="md" wrap="wrap">
-          <CardHeading title="Daily cost" subtitle={`Stacked by ${groupBy}`} />
+          <CardHeading
+            title={t("cost.dailyCost")}
+            subtitle={t("usage.stackedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
+          />
           <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
         <CostBarChart
           data={daily.data}
           keys={daily.keys}
-          empty={loading ? "Loading…" : "No usage in this range."}
+          empty={loading ? t("common.loading") : t("usage.none")}
         />
       </Card>
 

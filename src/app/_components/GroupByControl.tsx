@@ -1,5 +1,24 @@
+"use client";
+
 import { SegmentedControl } from "@mantine/core";
 import type { GroupBy } from "@/app/_lib/usage";
+import type { MessageKey } from "@/app/_i18n/messages/en";
+import { useT } from "@/app/_i18n/provider";
+
+/**
+ * What each axis is called, in one place.
+ *
+ * Three components read it — this control, the breakdown table's column
+ * header, and the "Grouped by …" / "Stacked by …" captions — and an axis that
+ * reads as `model` in the control and `모델` in the caption above it is the
+ * same drift the control itself exists to prevent.
+ */
+export const GROUP_BY_LABEL: Record<GroupBy, MessageKey> = {
+  project: "usage.groupBy.project",
+  model: "usage.groupBy.model",
+  provider: "usage.groupBy.provider",
+  department: "usage.groupBy.department",
+};
 
 /**
  * Which axis a cost chart and its breakdown are grouped by.
@@ -20,12 +39,13 @@ export function GroupByControl({
   onChange: (value: GroupBy) => void;
   options: readonly GroupBy[];
 }) {
+  const t = useT();
   return (
     <SegmentedControl
       size="xs"
       value={value}
       onChange={(next) => onChange(next as GroupBy)}
-      data={options.map((option) => ({ value: option, label: option }))}
+      data={options.map((option) => ({ value: option, label: t(GROUP_BY_LABEL[option]) }))}
     />
   );
 }

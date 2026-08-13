@@ -31,6 +31,8 @@ import {
 import { readJson } from "@/app/_lib/httpClient";
 import { recentProjects } from "@/app/_lib/overview";
 import { listProjects, type Project } from "@/app/projects/lib/api";
+import type { MessageKey } from "@/app/_i18n/messages/en";
+import { useT } from "@/app/_i18n/provider";
 import { PROJECT_TYPE_COLOR } from "./badgeColors";
 import { OwnerLine } from "./OwnerLine";
 import { Dashboard } from "./Dashboard";
@@ -53,10 +55,16 @@ const RECENT_CHATS = 7;
  * are bounded registries rather than growing tables.
  */
 const CATALOGS = [
-  { key: "skills", href: "/skills", label: "Skills", url: "/api/skills", Icon: IconBook2 },
-  { key: "tools", href: "/tools", label: "Tools", url: "/api/mcps", Icon: IconTool },
-  { key: "agents", href: "/agents", label: "Agents", url: "/api/agents", Icon: IconRobot },
-] as const;
+  { key: "skills", href: "/skills", label: "nav.skills", url: "/api/skills", Icon: IconBook2 },
+  { key: "tools", href: "/tools", label: "nav.tools", url: "/api/mcps", Icon: IconTool },
+  { key: "agents", href: "/agents", label: "nav.agents", url: "/api/agents", Icon: IconRobot },
+] as const satisfies ReadonlyArray<{
+  key: string;
+  href: string;
+  label: MessageKey;
+  url: string;
+  Icon: typeof IconBook2;
+}>;
 
 type CatalogKey = (typeof CATALOGS)[number]["key"];
 
@@ -77,6 +85,7 @@ export function Overview({
   userEmail: string;
 }) {
   const viewerEmail = userEmail;
+  const t = useT();
 
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -166,16 +175,15 @@ export function Overview({
       <Group justify="space-between" align="flex-end" gap="md" wrap="wrap">
         <div>
           <Title order={1} fz={{ base: 28, md: 36 }} lts="-0.035em">
-            {firstName ? `Welcome back, ${firstName}` : "Welcome back"}
+            {firstName ? t("overview.welcome", { name: firstName }) : t("overview.welcomeAnon")}
           </Title>
           <Text c="dimmed" mt={6} maw={620}>
-            Build a prompt, an agent, or an image project; publish a version and call it from
-            anywhere.
+            {t("overview.lede")}
           </Text>
         </div>
         <Group gap="xs" wrap="wrap">
           <Button component={Link} href="/projects" leftSection={<IconPlus size={16} />}>
-            New project
+            {t("overview.newProject")}
           </Button>
           <Button
             component={Link}
@@ -183,7 +191,7 @@ export function Overview({
             variant="default"
             leftSection={<IconMessageCircle size={16} />}
           >
-            New chat
+            {t("overview.newChat")}
           </Button>
         </Group>
       </Group>
@@ -191,12 +199,12 @@ export function Overview({
       <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
         <CountTile
           href="/projects"
-          label="Projects"
+          label={t("nav.projects")}
           count={projects?.length}
           Icon={IconFolder}
         />
         {CATALOGS.map(({ key, href, label, Icon }) => (
-          <CountTile key={key} href={href} label={label} count={counts[key]} Icon={Icon} />
+          <CountTile key={key} href={href} label={t(label)} count={counts[key]} Icon={Icon} />
         ))}
       </SimpleGrid>
 
@@ -205,19 +213,19 @@ export function Overview({
       ) : (
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
           <Section
-            title="Recent projects"
-            description="Recently updated across the workspace — yours first."
+            title={t("overview.recentProjects")}
+            description={t("overview.recentProjectsNote")}
             href="/projects"
-            linkLabel="All projects"
+            linkLabel={t("overview.allProjects")}
           >
             {!projectsLoaded && <RowSkeleton rows={3} />}
             {projectsLoaded && projects === null && (
               <Alert color="red" variant="light">
-                Projects could not be loaded.
+                {t("overview.projectsFailed")}
               </Alert>
             )}
             {projectsLoaded && projects !== null && recent.length === 0 && (
-              <EmptyLine>No projects yet.</EmptyLine>
+              <EmptyLine>{t("overview.noProjects")}</EmptyLine>
             )}
             <Stack gap="sm">
               {recent.map((project) => (
@@ -249,13 +257,13 @@ export function Overview({
           </Section>
 
           <Section
-            title="Recent chats"
-            description="Pick a conversation back up where it stopped."
+            title={t("overview.recentChats")}
+            description={t("overview.recentChatsNote")}
             href="/chats"
-            linkLabel="All chats"
+            linkLabel={t("overview.allChats")}
           >
             {!chatsLoaded && <RowSkeleton rows={3} />}
-            {chatsLoaded && chats.length === 0 && <EmptyLine>No chats yet.</EmptyLine>}
+            {chatsLoaded && chats.length === 0 && <EmptyLine>{t("overview.noChats")}</EmptyLine>}
             <Stack gap={2}>
               {chats.slice(0, RECENT_CHATS).map((chat) => (
                 <UnstyledButton
@@ -357,8 +365,9 @@ function EmptyLine({ children }: { children: React.ReactNode }) {
 }
 
 function RowSkeleton({ rows }: { rows: number }) {
+  const t = useT();
   return (
-    <Stack gap="sm" aria-label="Loading">
+    <Stack gap="sm" aria-label={t("common.loading")}>
       {Array.from({ length: rows }, (_, index) => (
         <Skeleton key={index} height={54} radius="lg" />
       ))}
@@ -372,6 +381,7 @@ function RowSkeleton({ rows }: { rows: number }) {
  * what to do about it.
  */
 function GetStarted() {
+  const t = useT();
   return (
     <Paper withBorder p="xl" className={classes.getStarted}>
       <Group gap="md" align="flex-start" wrap="nowrap">
@@ -379,18 +389,16 @@ function GetStarted() {
           <IconSparkles size={22} stroke={1.7} />
         </ThemeIcon>
         <Stack gap="xs">
-          <Text fw={600}>Start with a project</Text>
+          <Text fw={600}>{t("overview.getStarted")}</Text>
           <Text fz="sm" c="dimmed" maw={560} lh={1.6}>
-            A project holds a prompt, an agent, or an image workload, saved as versions you can
-            publish. Create one, attach skills and MCP tools to a version, then try it in the
-            Playground — or in a chat, for an agent project.
+            {t("overview.getStartedBody")}
           </Text>
           <Group gap="xs" mt={4}>
             <Button component={Link} href="/projects" leftSection={<IconPlus size={16} />}>
-              New project
+              {t("overview.newProject")}
             </Button>
             <Button component={Link} href="/skills" variant="default">
-              Browse skills
+              {t("overview.browseSkills")}
             </Button>
           </Group>
         </Stack>

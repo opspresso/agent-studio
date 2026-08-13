@@ -117,6 +117,95 @@ export const en = {
   "home.dure":
     "— a Korean village work cooperative, where neighbors pool their labor to finish what no one could alone. Agents here work the same way.",
   "home.product": "An internal LLM platform for prompt, agent, and cost management.",
+
+  // Vocabulary more than one page uses. A word here is one a reader meets on
+  // several screens and should not have to re-learn.
+  "common.loading": "Loading…",
+  "common.cancel": "Cancel",
+  "common.copy": "Copy",
+  "common.copied": "Copied",
+  "common.backTo": "← Back to {label}",
+  "common.you": "you",
+  "common.total": "Total",
+  "common.workspaceCatalog": "Workspace catalog",
+
+  // The From/To range over every cost and trace list.
+  "dateRange.from": "From",
+  "dateRange.to": "To",
+
+  // `useConfirm`. The action button's label is the caller's — it names the
+  // action ("Delete", "Publish"), which only the caller knows.
+  "confirm.typeToConfirm": "Type “{text}” to confirm",
+
+  // The secret key/value editor, shared by the MCP registry and version bindings.
+  "headers.caption": "Headers",
+  "headers.empty": "No headers. Add one if the server needs auth.",
+  "headers.add": "+ Add header",
+  "headers.keyPlaceholder": "Header-Name",
+  "headers.valuePlaceholder": "value",
+  "headers.removed": "(removed)",
+  "headers.remove": "remove",
+  "headers.removeHint": "Drop this header from the inherited defaults",
+  "headers.secret": "secret",
+  "headers.secretHint": "Stored encrypted at rest",
+  "headers.deleteRow": "Delete header row",
+
+  // Cost and usage, on all three surfaces that draw it: the overview, a
+  // project's usage tab, and a member's profile.
+  "usage.calls": "Calls",
+  "usage.cached": "Cached",
+  "usage.cost": "Cost",
+  "usage.none": "No usage in this range.",
+  "usage.groupBy.project": "project",
+  "usage.groupBy.model": "model",
+  "usage.groupBy.provider": "provider",
+  "usage.groupBy.department": "department",
+  "usage.groupedBy": "Grouped by {axis}",
+  "usage.stackedBy": "Stacked by {axis}",
+
+  // The cost dashboard on the overview.
+  "cost.title": "Cost",
+  "cost.lede":
+    "What every project spends, priced per call from the model registry — with daily and monthly limits that warn, then refuse.",
+  "cost.departmentsFailed":
+    "Project departments could not be loaded, so every project is shown under “(none)”. Reload to attribute this spend.",
+  "cost.totalCost": "Total cost",
+  "cost.selectedPeriod": "Selected period",
+  "cost.totalCalls": "Total calls",
+  "cost.modelInvocations": "Model invocations",
+  "cost.averageCost": "Average cost",
+  "cost.perInvocation": "Per invocation",
+  "cost.activeGroups": "Active groups",
+  "cost.dailyCost": "Daily cost",
+
+  // Staged attachments, shared by the chat composers and the run panel.
+  "attach.images": "Attach images",
+  "attach.imagesOrDocuments": "Attach images or documents",
+  "attach.remove": "Remove {name}",
+  "attach.tooManyImages": "At most {count} images per message",
+  "attach.tooManyDocuments": "At most {count} documents per message",
+  "attach.unreadable": "{name}: unreadable",
+
+  // The signed-in home.
+  "overview.welcome": "Welcome back, {name}",
+  "overview.welcomeAnon": "Welcome back",
+  "overview.lede":
+    "Build a prompt, an agent, or an image project; publish a version and call it from anywhere.",
+  "overview.newProject": "New project",
+  "overview.newChat": "New chat",
+  "overview.recentProjects": "Recent projects",
+  "overview.recentProjectsNote": "Recently updated across the workspace — yours first.",
+  "overview.allProjects": "All projects",
+  "overview.projectsFailed": "Projects could not be loaded.",
+  "overview.noProjects": "No projects yet.",
+  "overview.recentChats": "Recent chats",
+  "overview.recentChatsNote": "Pick a conversation back up where it stopped.",
+  "overview.allChats": "All chats",
+  "overview.noChats": "No chats yet.",
+  "overview.getStarted": "Start with a project",
+  "overview.getStartedBody":
+    "A project holds a prompt, an agent, or an image workload, saved as versions you can publish. Create one, attach skills and MCP tools to a version, then try it in the Playground — or in a chat, for an agent project.",
+  "overview.browseSkills": "Browse skills",
 } as const;
 
 export type MessageKey = keyof typeof en;

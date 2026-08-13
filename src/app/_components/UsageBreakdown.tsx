@@ -1,7 +1,11 @@
+"use client";
+
 import { Card, Progress, Table, Text } from "@mantine/core";
-import type { UsageGroup } from "@/app/_lib/usage";
+import type { GroupBy, UsageGroup } from "@/app/_lib/usage";
 import { formatUsd } from "@/app/_lib/formatUsd";
+import { useT } from "@/app/_i18n/provider";
 import { DataTable } from "./DataTable";
+import { GROUP_BY_LABEL } from "./GroupByControl";
 
 /**
  * How much of a group's prompt the provider had cached, for a reader.
@@ -33,10 +37,15 @@ export function UsageBreakdown({
   loading = false,
 }: {
   groups: UsageGroup[];
-  /** The axis, as the column header — `project`, `model`, `provider`. */
-  label: string;
+  /**
+   * The axis, as the column header. The `GroupBy` itself rather than a
+   * pre-rendered word, so the header is translated from the same map the
+   * control above it reads.
+   */
+  label: GroupBy;
   loading?: boolean;
 }) {
+  const t = useT();
   const largest = groups[0]?.cost ?? 0;
 
   return (
@@ -44,15 +53,15 @@ export function UsageBreakdown({
       <DataTable minWidth={520}>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th tt="capitalize">{label}</Table.Th>
+            <Table.Th tt="capitalize">{t(GROUP_BY_LABEL[label])}</Table.Th>
             <Table.Th w={110} ta="right">
-              Calls
+              {t("usage.calls")}
             </Table.Th>
             <Table.Th w={110} ta="right">
-              Cached
+              {t("usage.cached")}
             </Table.Th>
             <Table.Th w={140} ta="right">
-              Cost
+              {t("usage.cost")}
             </Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -61,7 +70,7 @@ export function UsageBreakdown({
             <Table.Tr>
               <Table.Td colSpan={4}>
                 <Text fz="sm" c="dimmed">
-                  {loading ? "Loading…" : "No usage in this range."}
+                  {loading ? t("common.loading") : t("usage.none")}
                 </Text>
               </Table.Td>
             </Table.Tr>

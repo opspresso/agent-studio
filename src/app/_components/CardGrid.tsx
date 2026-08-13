@@ -8,8 +8,11 @@
  * pages for the section to look like one thing.
  */
 
+"use client";
+
 import { Center, Paper, SimpleGrid, Skeleton, Stack, Text, ThemeIcon } from "@mantine/core";
 import { IconSparkles } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 
 /** The grid alone, for a section that has already decided it has something to show. */
 export function CardList({ children }: { children: React.ReactNode }) {
@@ -31,9 +34,10 @@ export function CardGrid({
   emptyText: string;
   children: React.ReactNode;
 }) {
+  const t = useT();
   if (loading) {
     return (
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" aria-label="Loading">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" aria-label={t("common.loading")}>
         {Array.from({ length: 3 }, (_, index) => (
           <Paper key={index} withBorder p="md">
             <Skeleton height={16} width="48%" />

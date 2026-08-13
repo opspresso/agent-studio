@@ -1,5 +1,8 @@
+"use client";
+
 import { Group, Text, ThemeIcon, Title } from "@mantine/core";
 import type { TablerIcon } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 import classes from "./CatalogHeader.module.css";
 
 export function CatalogHeader({
@@ -13,6 +16,7 @@ export function CatalogHeader({
   Icon: TablerIcon;
   children?: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <div className={classes.header}>
       <Group justify="space-between" align="flex-end" gap="xl" wrap="wrap">
@@ -27,7 +31,7 @@ export function CatalogHeader({
           </ThemeIcon>
           <div>
             <Text fz={10} fw={650} c="brand" tt="uppercase" lts="0.13em" mb={4}>
-              Workspace catalog
+              {t("common.workspaceCatalog")}
             </Text>
             <Title order={1} fz={{ base: 28, md: 36 }} lts="-0.035em">
               {title}

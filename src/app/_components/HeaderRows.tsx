@@ -2,6 +2,7 @@
 
 import { ActionIcon, Anchor, Badge, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 import { BADGE } from "./badgeColors";
 
 export interface HeaderRow {
@@ -43,17 +44,22 @@ export function rowsToRecord(rows: HeaderRow[]): Record<string, string> {
 export function HeaderRowsEditor({
   rows,
   onChange,
-  emptyHint = "No headers. Add one if the server needs auth.",
-  caption = "Headers",
-  addLabel = "+ Add header",
-  keyPlaceholder = "Header-Name",
-  valuePlaceholder = "value",
+  emptyHint,
+  caption,
+  addLabel,
+  keyPlaceholder,
+  valuePlaceholder,
   allowRemove = false,
 }: {
   rows: HeaderRow[];
   onChange: (rows: HeaderRow[]) => void;
   emptyHint?: string;
-  /** `null` where the surrounding section already names these rows. */
+  /**
+   * `null` where the surrounding section already names these rows; omitted for
+   * the translated default. The two are distinct, which is why the default is
+   * resolved in the body rather than in the signature — `caption = t(…)` would
+   * have made "no caption" unsayable.
+   */
   caption?: string | null;
   addLabel?: string;
   keyPlaceholder?: string;
@@ -61,6 +67,9 @@ export function HeaderRowsEditor({
   /** Offer "remove", for rows that layer over a set of inherited headers. */
   allowRemove?: boolean;
 }) {
+  const t = useT();
+  const captionText = caption === undefined ? t("headers.caption") : caption;
+
   function update(index: number, patch: Partial<HeaderRow>) {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
@@ -73,14 +82,14 @@ export function HeaderRowsEditor({
 
   return (
     <Stack gap="xs">
-      {caption !== null && (
+      {captionText !== null && (
         <Text fz="sm" fw={500}>
-          {caption}
+          {captionText}
         </Text>
       )}
       {rows.length === 0 && (
         <Text fz="xs" c="dimmed">
-          {emptyHint}
+          {emptyHint ?? t("headers.empty")}
         </Text>
       )}
       {rows.map((row, index) => (
@@ -88,41 +97,43 @@ export function HeaderRowsEditor({
           <TextInput
             value={row.key}
             onChange={(event) => update(index, { key: event.currentTarget.value })}
-            placeholder={keyPlaceholder}
+            placeholder={keyPlaceholder ?? t("headers.keyPlaceholder")}
             w="40%"
           />
           <TextInput
             value={row.remove ? "" : row.value}
             onChange={(event) => update(index, { value: event.currentTarget.value })}
             disabled={row.remove === true}
-            placeholder={row.remove ? "(removed)" : valuePlaceholder}
+            placeholder={
+              row.remove ? t("headers.removed") : (valuePlaceholder ?? t("headers.valuePlaceholder"))
+            }
             style={{ flex: 1 }}
           />
           {allowRemove ? (
             <Checkbox
               size="xs"
-              label="remove"
-              title="Drop this header from the inherited defaults"
+              label={t("headers.remove")}
+              title={t("headers.removeHint")}
               checked={row.remove === true}
               onChange={(event) => update(index, { remove: event.currentTarget.checked })}
               styles={{ label: { fontSize: "var(--mantine-font-size-xs)" } }}
             />
           ) : (
-            <Badge color={BADGE.attention} title="Stored encrypted at rest">
-              secret
+            <Badge color={BADGE.attention} title={t("headers.secretHint")}>
+              {t("headers.secret")}
             </Badge>
           )}
           <ActionIcon
             variant="default"
             onClick={() => remove(index)}
-            aria-label="Delete header row"
+            aria-label={t("headers.deleteRow")}
           >
             <IconX size={16} />
           </ActionIcon>
         </Group>
       ))}
       <Anchor component="button" type="button" fz="sm" onClick={add} style={{ alignSelf: "start" }}>
-        {addLabel}
+        {addLabel ?? t("headers.add")}
       </Anchor>
     </Stack>
   );

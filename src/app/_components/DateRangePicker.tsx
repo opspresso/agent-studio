@@ -2,6 +2,7 @@
 
 import { Button, Group, TextInput } from "@mantine/core";
 import { DATE_PRESETS, presetRange, type DateRange } from "@/app/_lib/dateRange";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * Shared From/To date range picker with quick-select preset buttons. Used by the
@@ -21,11 +22,12 @@ export function DateRangePicker({
   onChange: (range: DateRange) => void;
   presets?: readonly number[];
 }) {
+  const t = useT();
   return (
     <Group gap="xs" align="flex-end">
       <TextInput
         type="date"
-        label="From"
+        label={t("dateRange.from")}
         size="xs"
         value={value.from}
         max={value.to}
@@ -33,7 +35,7 @@ export function DateRangePicker({
       />
       <TextInput
         type="date"
-        label="To"
+        label={t("dateRange.to")}
         size="xs"
         value={value.to}
         min={value.from}
