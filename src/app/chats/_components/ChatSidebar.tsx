@@ -16,6 +16,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconMessages, IconPlus, IconX } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 import type { Chat } from "../_lib/types";
 import { useRunningKeys } from "../_lib/runHooks";
 import { runStore } from "../_lib/runStore";
@@ -35,6 +36,7 @@ export function onNewChat(handler: () => void): () => void {
 export function ChatSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const t = useT();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [drawerOpen, drawer] = useDisclosure(false);
@@ -88,7 +90,7 @@ export function ChatSidebar() {
       radius="xl"
       leftSection={<IconPlus size={16} />}
     >
-      New chat
+      {t("chat.new")}
     </Button>
   );
 
@@ -97,7 +99,7 @@ export function ChatSidebar() {
       <Stack gap={2}>
         {loaded && chats.length === 0 && (
           <Text fz="xs" c="dimmed" px="xs" py="md">
-            No chats yet.
+            {t("chat.none")}
           </Text>
         )}
         {chats.map((chat) => (
@@ -121,7 +123,7 @@ export function ChatSidebar() {
               color="red"
               className={classes.delete}
               onClick={() => void handleDelete(chat.chatId)}
-              aria-label="Delete chat"
+              aria-label={t("chat.delete")}
             >
               <IconX size={14} />
             </ActionIcon>
@@ -151,12 +153,12 @@ export function ChatSidebar() {
           leftSection={<IconMessages size={16} />}
           onClick={drawer.open}
         >
-          Chats
+          {t("chat.list")}
         </Button>
         {newChat}
       </Group>
       {/* No `hiddenFrom` needed: the only thing that opens it is hidden there. */}
-      <Drawer opened={drawerOpen} onClose={drawer.close} title="Chats" size="80%">
+      <Drawer opened={drawerOpen} onClose={drawer.close} title={t("chat.list")} size="80%">
         <Stack gap="sm" h="100%">
           {list}
         </Stack>

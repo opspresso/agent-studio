@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ActionIcon, Group, Stack, Textarea } from "@mantine/core";
 import { IconPlayerStopFilled, IconSend } from "@tabler/icons-react";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import { useT } from "@/app/_i18n/provider";
 import type { Attachment } from "@/app/_lib/imageAttachments";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 
@@ -57,6 +58,7 @@ export function Composer({
   status?: React.ReactNode;
 }) {
   const [value, setValue] = useState("");
+  const t = useT();
   const { attachments, documents, attachError, addFiles, removeAt, removeDocumentAt, clear } =
     useAttachments({ documents: true });
 
@@ -105,7 +107,7 @@ export function Composer({
             minRows={1}
             maxRows={8}
             radius="xl"
-            placeholder={placeholder ?? "Send a message…"}
+            placeholder={placeholder ?? t("chat.placeholder")}
             style={{ flex: 1 }}
           />
           {onStop ? (
@@ -116,7 +118,7 @@ export function Composer({
               size="input-sm"
               radius="xl"
               onClick={onStop}
-              aria-label="Stop"
+              aria-label={t("chat.stop")}
             >
               <IconPlayerStopFilled size={16} />
             </ActionIcon>
@@ -128,7 +130,7 @@ export function Composer({
               radius="xl"
               loading={disabled}
               disabled={disabled || empty}
-              aria-label="Send"
+              aria-label={t("chat.send")}
             >
               <IconSend size={18} />
             </ActionIcon>
