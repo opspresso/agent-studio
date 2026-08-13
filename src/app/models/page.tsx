@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Card, Group, Stack, Switch, Table, Text } from "@mantine/core";
-import { IconCpu } from "@tabler/icons-react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Group,
+  Stack,
+  Switch,
+  Table,
+  Text,
+  Tooltip,
+} from "@mantine/core";
+import { IconCheck, IconCpu } from "@tabler/icons-react";
 import type { ModelConfig } from "@/domain/llm/models";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { BADGE } from "@/app/_components/badgeColors";
+import { formatUsd } from "@/app/_lib/formatUsd";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
-import { TestModelModal } from "./TestModelModal";
 
 interface CatalogProvider {
   name: string;
@@ -25,12 +36,27 @@ interface Catalog {
   source: "override" | "default";
 }
 
-const CAPABILITY_LABELS = [
-  ["tools", "tools"],
-  ["imageInput", "vision"],
-  ["reasoning", "reasoning"],
-  ["imageGeneration", "image"],
+interface ModelTestResult {
+  ok: boolean;
+  latencyMs: number;
+  error?: string;
+}
+
+type TestState = { running: boolean; result?: ModelTestResult };
+
+const CAPABILITY_COLUMNS = [
+  ["tools", "Tools"],
+  ["imageInput", "Vision"],
+  ["reasoning", "Reasoning"],
+  ["imageGeneration", "Image"],
 ] as const;
+
+function priceLabel(pricing: ModelConfig["pricing"]): string {
+  if (pricing.perImage !== undefined) {
+    return `${formatUsd(pricing.perImage)} / image`;
+  }
+  return `${formatUsd(pricing.inputPer1M)} in · ${formatUsd(pricing.outputPer1M)} out per 1M`;
+}
 
 export default function ModelsPage() {
   const viewer = useViewer();
@@ -40,7 +66,7 @@ export default function ModelsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [testing, setTesting] = useState<string | null>(null);
+  const [tests, setTests] = useState<Record<string, TestState>>({});
 
   useEffect(() => {
     if (!viewer?.isAdmin) return;
@@ -100,10 +126,28 @@ export default function ModelsPage() {
     void saveEnabled(allOn ? [] : enabledIds, nextModels, allOn ? "default" : "override");
   }
 
+  async function runTest(id: string) {
+    setTests((prev) => ({ ...prev, [id]: { running: true } }));
+    let result: ModelTestResult;
+    try {
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ model: id }),
+      });
+      result = await readJson<ModelTestResult>(res);
+    } catch (testError) {
+      result = {
+        ok: false,
+        latencyMs: 0,
+        error: testError instanceof Error ? testError.message : "Test request failed",
+      };
+    }
+    setTests((prev) => ({ ...prev, [id]: { running: false, result } }));
+  }
+
   if (viewer === null) return <LoadingText />;
   if (!viewer.isAdmin) return <Alert color="gray">Models are available to admins only.</Alert>;
-
-  const testedModel = models.find((model) => model.id === testing);
 
   return (
     <Stack gap="lg">
@@ -175,12 +219,17 @@ export default function ModelsPage() {
                     </Badge>
                   )}
                 </Group>
-                <Table.ScrollContainer minWidth={720}>
+                <Table.ScrollContainer minWidth={860}>
                   <Table highlightOnHover>
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Model</Table.Th>
-                        <Table.Th>Capabilities</Table.Th>
+                        {CAPABILITY_COLUMNS.map(([key, label]) => (
+                          <Table.Th key={key} ta="center">
+                            {label}
+                          </Table.Th>
+                        ))}
+                        <Table.Th>Pricing</Table.Th>
                         <Table.Th>Enabled</Table.Th>
                         <Table.Th />
                       </Table.Tr>
@@ -196,16 +245,23 @@ export default function ModelsPage() {
                               {model.id}
                             </Text>
                           </Table.Td>
-                          <Table.Td>
-                            <Group gap={4}>
-                              {CAPABILITY_LABELS.filter(([key]) => model.capabilities[key]).map(
-                                ([key, label]) => (
-                                  <Badge key={key} size="sm">
-                                    {label}
-                                  </Badge>
-                                ),
+                          {CAPABILITY_COLUMNS.map(([key]) => (
+                            <Table.Td key={key} ta="center">
+                              {model.capabilities[key] ? (
+                                <IconCheck
+                                  size={16}
+                                  color="var(--mantine-color-teal-6)"
+                                  aria-label="yes"
+                                />
+                              ) : (
+                                <Text fz="sm" c="dimmed" component="span" aria-label="no">
+                                  -
+                                </Text>
                               )}
-                            </Group>
+                            </Table.Td>
+                          ))}
+                          <Table.Td>
+                            <Text fz="sm">{priceLabel(model.pricing)}</Text>
                           </Table.Td>
                           <Table.Td>
                             <Switch
@@ -218,13 +274,30 @@ export default function ModelsPage() {
                             />
                           </Table.Td>
                           <Table.Td>
-                            <Button
-                              size="compact-xs"
-                              variant="default"
-                              onClick={() => setTesting(model.id)}
-                            >
-                              Test
-                            </Button>
+                            <Group gap="xs" wrap="nowrap">
+                              <Button
+                                size="compact-xs"
+                                variant="default"
+                                loading={tests[model.id]?.running}
+                                onClick={() => void runTest(model.id)}
+                              >
+                                Test
+                              </Button>
+                              {tests[model.id]?.result &&
+                                (tests[model.id]?.result?.ok ? (
+                                  <Badge color={BADGE.on}>
+                                    {tests[model.id]?.result?.latencyMs} ms
+                                  </Badge>
+                                ) : (
+                                  <Tooltip
+                                    label={tests[model.id]?.result?.error ?? "failed"}
+                                    multiline
+                                    maw={360}
+                                  >
+                                    <Badge color={BADGE.broken}>failed</Badge>
+                                  </Tooltip>
+                                ))}
+                            </Group>
                           </Table.Td>
                         </Table.Tr>
                       ))}
@@ -235,12 +308,6 @@ export default function ModelsPage() {
             ))}
         </>
       )}
-
-      <TestModelModal
-        model={testedModel?.id ?? null}
-        opened={testing !== null}
-        onClose={() => setTesting(null)}
-      />
     </Stack>
   );
 }
