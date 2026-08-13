@@ -1330,6 +1330,122 @@ describe("provider output cut (finish_reason: length)", () => {
   });
 });
 
+/**
+ * A run that spends its whole budget calling tools used to end with a warning
+ * where the answer should be — every turn paid for, nothing to show. The last
+ * turn is offered no tools and told so, which is the only way the wrap-up can
+ * be relied on: a model that is still looping at the ceiling is exactly the one
+ * that ignores an instruction to stop.
+ */
+describe("the final turn", () => {
+  const toolDef = { type: "function" as const, function: { name: "loop", parameters: {} } };
+  const loopingInput = (maxTurn: number): RunAgentInput => ({
+    projectName: "looper",
+    model: MODEL,
+    messages: [{ role: "user", content: "go" }],
+    maxTurn,
+    mcpTools: [toolDef],
+  });
+
+  it("offers no tools on the last turn and answers with what it has", async () => {
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_a", "loop", "{}"), usageChunk(1, 1)],
+      [toolCallChunk(0, "call_b", "loop", "{}"), usageChunk(1, 1)],
+      [contentChunk("Here is what I found so far."), usageChunk(2, 2)],
+    ]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "ok" }),
+    };
+
+    const chunks = await collect(runAgent(deps, loopingInput(3)));
+
+    // Turns 0 and 1 carry the tool set; the last one carries none, so the
+    // provider cannot answer with another call.
+    expect(channel.seenParams[0]?.tools).toBeDefined();
+    expect(channel.seenParams[1]?.tools).toBeDefined();
+    expect(channel.seenParams[2]?.tools).toBeUndefined();
+    // And the model is told why, rather than left to guess at a silently
+    // shrunken tool set.
+    const lastTurnMessages = channel.seenParams[2]?.messages ?? [];
+    expect(lastTurnMessages.at(-1)).toMatchObject({ role: "user" });
+    expect(String(lastTurnMessages.at(-1)?.content)).toContain("final turn");
+
+    expect(chunks.some((c) => c.delta?.content === "Here is what I found so far.")).toBe(true);
+    // The answer is real, but it is not a finish: it is what the run could say
+    // with its budget spent, and a consumer reading `done` could not tell.
+    expect(chunks.some((c) => c.done)).toBe(false);
+    expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
+    expect(chunks.find((c) => c.warning)?.warning).toContain("reached its turn limit (3 turns)");
+  });
+
+  it("never appears in a run that finishes inside its budget", async () => {
+    const channel = new FakeChannel([[contentChunk("done in one."), usageChunk(1, 1)]]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "ok" }),
+    };
+
+    const chunks = await collect(runAgent(deps, loopingInput(50)));
+
+    expect(channel.seenParams[0]?.tools).toBeDefined();
+    expect(channel.seenParams[0]?.messages.some((m) => String(m.content).includes("final turn"))).toBe(
+      false,
+    );
+    expect(chunks.some((c) => c.warning)).toBe(false);
+    expect(chunks.at(-1)).toEqual({ author: undefined, done: true });
+  });
+
+  it("does not run tools a last turn asked for anyway", async () => {
+    // Nothing will read the results — the money would buy nothing — and the
+    // wording must not claim an answer that was never written.
+    const channel = new FakeChannel([
+      [toolCallChunk(0, "call_a", "loop", "{}"), usageChunk(1, 1)],
+      [toolCallChunk(0, "call_b", "loop", "{}"), usageChunk(1, 1)],
+    ]);
+    const callMcpTool = vi.fn(async () => ({ text: "ok" }));
+    const deps: AgentDeps = { channel, recordUsage: async () => {}, callMcpTool };
+
+    const chunks = await collect(runAgent(deps, loopingInput(2)));
+
+    expect(callMcpTool).toHaveBeenCalledTimes(1);
+    expect(chunks.find((c) => c.warning)?.warning).toContain(
+      "stopped at its turn limit (2 turns) before the model finished answering",
+    );
+    expect(chunks.at(-1)).toEqual({ author: undefined, finishReason: "turn-limit" });
+  });
+
+  it("gives a subagent the same wrap-up, named as its own", async () => {
+    // A child that comes back empty leaves the parent answering "the agent
+    // returned no answer"; one that wrapped up hands over what it learned.
+    const channel = new FakeChannel([[contentChunk("partial findings"), usageChunk(1, 1)]]);
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "ok" }),
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "child-proj",
+        model: MODEL,
+        messages: [{ role: "user", content: "go" }],
+        maxTurn: 4,
+        startTurn: 3,
+        mcpTools: [toolDef],
+      }),
+    );
+
+    expect(channel.seenParams[0]?.tools).toBeUndefined();
+    expect(chunks.some((c) => c.delta?.content === "partial findings")).toBe(true);
+    expect(chunks.find((c) => c.warning)?.warning).toContain(
+      "Subagent 'child-proj' reached its turn limit",
+    );
+  });
+});
+
 describe("subagent turn guard wording", () => {
   it("names the subagent instead of claiming the run stopped", async () => {
     const channel = new FakeChannel([]);
