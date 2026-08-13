@@ -20,6 +20,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { CopyButton } from "@/app/_components/CopyButton";
+import { JsonHighlight } from "@/app/_components/JsonHighlight";
 import { onModEnter } from "@/app/_lib/modEnter";
 
 /** The whole assembled prompt as one block, for pasting elsewhere. */
@@ -236,7 +237,7 @@ export function PromptPreview({
           fz="xs"
         >
           <Code block fz="xs" mt={4} mah={384} style={{ overflow: "auto" }}>
-            {JSON.stringify(preview.tools, null, 2)}
+            <JsonHighlight text={JSON.stringify(preview.tools, null, 2)} />
           </Code>
         </Spoiler>
       )}

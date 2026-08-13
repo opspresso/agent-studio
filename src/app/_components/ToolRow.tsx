@@ -6,6 +6,7 @@ import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { describeTool, type ToolKind } from "@/app/_lib/toolCalls";
 import type { ToolPair } from "@/app/_lib/toolPairs";
 import { SUBAGENT_COLOR } from "./badgeColors";
+import { JsonHighlight } from "./JsonHighlight";
 import classes from "./ToolRow.module.css";
 
 /** What each kind of tool row is called and coloured, for the badge on it. */
@@ -65,12 +66,12 @@ export function ToolRow({ pair }: { pair: ToolPair }) {
         <Stack gap={0}>
           {pair.args !== undefined && (
             <Code block fz="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {pair.args}
+              <JsonHighlight text={pair.args} />
             </Code>
           )}
-          {done && (
+          {pair.content !== undefined && (
             <Code block fz="xs" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {pair.content}
+              <JsonHighlight text={pair.content} />
             </Code>
           )}
         </Stack>
