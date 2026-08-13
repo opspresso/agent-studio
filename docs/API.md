@@ -462,10 +462,12 @@ the user message, which is what lets a follow-up question still have the documen
 reported as a `warning`, as is a document that could not be read at all (a scan with no text
 layer, a password-protected PDF).
 
-A turn needs text or at least one attachment of either kind (all empty → `400`). Both chat
-routes cap the request body at the largest a legitimate turn can be — every attachment at its
-own limit plus room for prose — and answer `413` above it, checked against the declared length
-before the body is read rather than after it is in memory.
+A turn needs text or at least one attachment of either kind (all empty → `400`). Every route
+that carries a turn — both chat routes, `predict`, `agent`, `chat/completions` and A2A — caps
+the request body at the largest a legitimate turn can be (every attachment at its own limit
+plus room for prose) and answers `413` above it, checked against the declared length before the
+body is read rather than after it is in memory. Registry and version edits are bounded far more
+tightly, by what a skill's whole file set weighs.
 
 The chat read (`GET /api/chats/{chatId}`) returns each document's `name` and `note` with an
 empty `text`: the extracted text is what a *later turn* replays, read server-side, and

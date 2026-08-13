@@ -395,6 +395,13 @@ leaks exactly as much as an unpriced parent, and the **child project's** daily c
 because a transfer is a whole run on another project with its own tool loop and its own usage
 rows — and its parent's admission said nothing about that project's budget.
 
+Admission alone was not enough. `settleCostLimit` is what claims the block and alert
+notifications, and it ran only for the project the bracket opened — so a project reached only
+through transfers accrued spend, began refusing at its threshold, and told nobody. The parent
+settles every project its run spent on, after the usage flush (`flush` reports which they
+were), for the same reason the flush precedes the close: the totals have to include the run
+that just spent them.
+
 The two guards fail in opposite directions, on purpose:
 
 - The **cost guard** protects money, so a storage blip must not stop the platform: it fails

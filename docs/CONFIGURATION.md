@@ -338,7 +338,8 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | Documents per turn / bytes each | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
-| Chat request body (derived from the attachment caps) | ~`84MB` | `src/app/api/_lib/body.ts` |
+| Request body carrying a turn (derived from the attachment caps) | ~`80MB` | `src/app/api/_lib/body.ts` |
+| Request body of a registry or version edit (derived from the skill file caps) | `456KB` | `src/app/api/_lib/body.ts` |
 | Transfer transcript line kept when a turn overflows | `500` chars minimum | `src/application/llm/engine.ts` |
 | Context-budget estimate (ASCII / other / image part / headroom) | `3` chars per token / `1.5` tokens per char / `2,500` tokens / `2,000` tokens | `src/application/llm/contextBudget.ts` |
 | Tool result kept when the run's context budget cuts it | `500` chars minimum | `src/application/llm/toolResultBudget.ts` |

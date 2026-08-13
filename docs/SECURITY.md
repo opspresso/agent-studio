@@ -223,6 +223,21 @@ Replay protection: Slack events are deduplicated exactly-once by `event_id` (con
 leaves a reclaimable claim rather than an event recorded as handled by nobody. Webhook
 deliveries claim their `Idempotency-Key` the same way.
 
+## Response headers
+
+Set in `next.config.ts` for every path. `frame-ancestors 'none'` and `X-Frame-Options: DENY`
+because the console has buttons that delete an artifact and rotate a key, and a framed page is
+how a click on one gets collected. `X-Content-Type-Options: nosniff` because one route answers
+`text/html` and puts an authorization server's words on it. `Referrer-Policy:
+strict-origin-when-cross-origin` because a URL here is often itself the credential — a signed
+object address, a webhook path — and a full referrer hands it to whatever the reader clicks
+next.
+
+**No Content-Security-Policy yet.** Mantine and Next both emit inline styles, so a useful
+policy needs a nonce pipeline; a wrong one breaks the console silently, which is worse than
+the absence. Until then nothing here is a second line of defence against an injected script —
+the escaping at each sink is the only one.
+
 ## Outbound requests (SSRF)
 
 Operator-registered URLs — MCP servers and external agents — are validated by

@@ -157,8 +157,11 @@ surface, so callers keep one import path.
   enters as a `postContextMessages` user turn, which no budget bounds at all.
   - Offered to **top-level runs only** (`input.canDispatch`, set by `executeAgent`). A child
     that could dispatch would multiply concurrent runs by transfer depth, and a subagent run
-    does not pass through the run bracket — these children are outside the concurrency and
-    cost guards, so `MAX_DISPATCH_TASKS` and that asymmetry are the only bounds on them.
+    does not pass through the run bracket — so the **concurrency** guard does not reach these
+    children, and `MAX_DISPATCH_TASKS` plus that asymmetry are the only bounds on how many run.
+    Spend is bounded: `subagentRunner` checks the child project's own cost limit where the
+    child's version resolves, and the parent settles that project's thresholds after its usage
+    flush (see [ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#the-run-bracket)).
   - Turn accounting is a transfer's: children start at `turn + 1`, the parent resumes at
     `turn + 2` however many ran, guarded by the same `turn + 2 >= maxTurn`.
   - Children advance through `mergeGenerators` (`src/shared/`), which keeps each one's return
