@@ -30,8 +30,8 @@ interface TooltipEntry {
 /**
  * Kept rather than left to Mantine's default tooltip for one reason: the stack
  * total. On a stacked cost chart the per-series numbers are not the question
- * anyone is asking — "what did that period cost" is — and the default renders
- * the segments only.
+ * anyone is asking — "what did that day cost" is — and the default renders the
+ * segments only.
  */
 function ChartTooltip({
   label,
@@ -93,20 +93,14 @@ function ChartTooltip({
   );
 }
 
-/** A day point reads as `MM-DD`; the year is already in the range picker. */
-function dayTick(period: string): string {
-  return period.slice(5);
+/** A day reads as `MM-DD`; the year is already in the range picker. */
+function dayTick(date: string): string {
+  return date.slice(5);
 }
 
 /**
- * Stacked spend over a series of periods — the one cost chart, on all three
- * surfaces that draw one.
- *
- * The period is a string the caller keys its points by, so a day series and a
- * month series differ in nothing but their tick labels. That is the whole
- * reason this is not `DailyCostChart` any more: the profile page reports a
- * member's own spend by UTC month, and a chart that could only speak days left
- * that page with tables while the other two had a picture.
+ * Stacked daily spend — the one cost chart, on all three surfaces that draw
+ * one: the overview, a project's usage tab, and a member's own profile.
  *
  * The empty state lives here rather than at each caller, because it is the
  * same sentence every time and one of the three had been rendering nothing
@@ -116,12 +110,10 @@ export function CostBarChart({
   data,
   keys,
   empty = "No usage in this range.",
-  formatTick = dayTick,
 }: {
   data: CostSeriesPoint[];
   keys: string[];
   empty?: string;
-  formatTick?: (period: string) => string;
 }) {
   if (data.length === 0 || keys.length === 0) {
     return (
@@ -145,7 +137,7 @@ export function CostBarChart({
     <BarChart
       h={288}
       data={toChartData(data, columns)}
-      dataKey="period"
+      dataKey="date"
       type="stacked"
       series={series}
       withLegend={keys.length > 1}
@@ -153,7 +145,7 @@ export function CostBarChart({
       gridAxis="y"
       withXAxis
       withYAxis
-      xAxisProps={{ tickFormatter: formatTick, minTickGap: 24 }}
+      xAxisProps={{ tickFormatter: dayTick, minTickGap: 24 }}
       yAxisProps={{ tickFormatter: formatAxisUsd, width: 64 }}
       valueFormatter={formatUsd}
       tooltipProps={{ content: ChartTooltip }}

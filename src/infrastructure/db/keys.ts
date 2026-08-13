@@ -116,15 +116,22 @@ export const keys = {
   }),
   usageDatePartition: (date: string) => `USAGEDATE#${date}`,
   /**
-   * One member's cross-project spend for one UTC month — their own console
-   * runs (`user:` actors), which is what the tier cost cap bounds. A project
+   * One member's cross-project spend for one UTC day — their own console runs
+   * (`user:` actors), which is what the tier cost cap bounds. A project
    * token's spend deliberately stays out (it is bounded by the project's own
    * limits; see `memberEmailFromActorKey`). Its own partition because no
-   * project's cascade delete may take a person's month with it.
+   * project's cascade delete may take a person's history with it.
+   *
+   * Daily rather than monthly, and for the same reason the project rows are:
+   * one shape answers both readers. The cap sums the month from `MONTH-01` to
+   * today, exactly as the project guard does over `USAGE#{project}`, and the
+   * profile page reads whatever window its date picker names — a month
+   * aggregate could only have answered the first, and keeping both would be
+   * two running totals of the same spend.
    */
-  usageMemberMonth: (email: string, month: string) => ({
+  usageMember: (email: string, date: string) => ({
     PK: `USAGEMEMBER#${email}`,
-    SK: `MONTH#${month}`,
+    SK: `DATE#${date}`,
   }),
   /**
    * Per-caller daily usage, in the project's usage partition. Date leads the

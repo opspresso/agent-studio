@@ -14,7 +14,7 @@ function fakeUsage() {
       writes.push(delta);
     },
     getDay: async () => null,
-    getMemberMonth: async () => null,
+    listMemberDays: async () => [],
     claimAlert: async () => false,
     claimMonthAlert: async () => false,
     listActorsByProject: async () => [],

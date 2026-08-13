@@ -52,23 +52,6 @@ export function utcMonth(date: Date): string {
   return date.toISOString().slice(0, 7);
 }
 
-/** The month a `YYYY-MM-DD` usage-row key belongs to. */
-export function utcMonthOfDay(day: string): string {
-  return day.slice(0, 7);
-}
-
-/**
- * The `count` most recent UTC months, newest first, starting at `now`'s month.
- * Anchored to the first of each month so stepping back from a day-31 date can
- * never clamp into the wrong month.
- */
-export function recentUtcMonths(now: Date, count: number): string[] {
-  const months: string[] = [];
-  for (let i = 0; i < count; i++) {
-    months.push(utcMonth(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))));
-  }
-  return months;
-}
 
 /**
  * A run's wall clock for a system prompt — `2026-07-30 (Thursday) 06:12 UTC`.

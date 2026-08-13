@@ -122,6 +122,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/models/test` | `POST` | admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
+| `/api/me/usage` | `GET` | session |
 | `/api/members` | `GET` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
@@ -408,16 +409,22 @@ what once offered every signed-in user an edit form that 403'd on save. See
 ```
 GET /api/me/profile
   → 200 { member: { id, name, email, image, tier, joinedAt, lastLoginAt },
-          months: [ { email, month, calls, inputTokens, outputTokens, costUsd } ] }
+          monthToDateUsd }
+
+GET /api/me/usage?from=2026-08-01&to=2026-08-13
+  → 200 { items: [ { email, date, calls, inputTokens, outputTokens, costUsd } ] }
 ```
 
-The signed-in user's own member row and cross-project spend — always the session user, no
-parameters. `months` is the six most recent UTC months, newest first; a month with no spend
-(including months past the usage retention window) comes back zero-filled, so `months[0]` is
-always the current month. Each metric is a map keyed by model id. The spend counted is the
-member's own console runs (`user:` actors) — project-token runs spend against their project,
-not this budget. What a tier caps is `TIER_LIMITS` in `src/domain/member/tiers.ts`, which
-the client imports directly.
+The signed-in user's own row and spend — always the session user, so neither takes an email
+and neither needs a further gate. `monthToDateUsd` is what the tier cap bounds (spend since
+the first of the UTC month), computed server-side so the page cannot report a total the
+guard would disagree with whatever range its picker is set to.
+
+`/api/me/usage` is the range read behind the profile's chart and table: one row per UTC day,
+metrics as per-model maps, and the same range validation the usage summary uses (`from`/`to`
+required, 184 days maximum). The spend counted is the member's own console runs (`user:`
+actors) — project-token runs spend against their project, not this budget. What a tier caps
+is `TIER_LIMITS` in `src/domain/member/tiers.ts`, which the client imports directly.
 
 ## Members
 

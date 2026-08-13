@@ -62,8 +62,8 @@ function fakeDeps() {
     async getDay() {
       return null;
     },
-    async getMemberMonth() {
-      return null;
+    async listMemberDays() {
+      return [];
     },
     async claimAlert() {
       return false;
@@ -222,8 +222,8 @@ describe("generateImage", () => {
       async getDay() {
         return null;
       },
-      async getMemberMonth() {
-        return null;
+      async listMemberDays() {
+        return [];
       },
       async claimAlert() {
         return false;

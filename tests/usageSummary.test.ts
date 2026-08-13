@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { UsageRow } from "@/domain/usage/types";
 import {
   buildDailySeries,
-  buildPeriodSeries,
   MAX_CHART_SERIES,
   groupUsage,
   OTHERS_KEY,
@@ -78,21 +77,21 @@ describe("buildDailySeries", () => {
     const series = buildDailySeries(rows, "project", "2026-01-01", "2026-01-02");
     expect(series.keys).toEqual(["beta", "alpha"]);
     expect(series.data).toEqual([
-      { period: "2026-01-01", beta: 1.2, alpha: 1 },
-      { period: "2026-01-02", beta: 0, alpha: 0 },
+      { date: "2026-01-01", beta: 1.2, alpha: 1 },
+      { date: "2026-01-02", beta: 0, alpha: 0 },
     ]);
   });
 
   it("groups by provider, folding model ids by prefix", () => {
     const series = buildDailySeries(rows, "provider", "2026-01-01", "2026-01-01");
     expect(series.keys).toEqual(["openai", "google"]);
-    expect(series.data).toEqual([{ period: "2026-01-01", openai: 2, google: 0.2 }]);
+    expect(series.data).toEqual([{ date: "2026-01-01", openai: 2, google: 0.2 }]);
   });
 
   it("fills every date in range with zeros when there are no items", () => {
     const series = buildDailySeries([], "project", "2026-01-01", "2026-01-03");
     expect(series.keys).toEqual([]);
-    expect(series.data.map((point) => point.period)).toEqual([
+    expect(series.data.map((point) => point.date)).toEqual([
       "2026-01-01",
       "2026-01-02",
       "2026-01-03",
@@ -136,52 +135,9 @@ describe("toChartColumns / toChartData", () => {
 
   it("zero-fills a key the point does not carry", () => {
     const columns = toChartColumns(["a", "b"]);
-    expect(toChartData([{ period: "2026-01-01", a: 3 }], columns)).toEqual([
-      { period: "2026-01-01", s0: 3, s1: 0 },
+    expect(toChartData([{ date: "2026-01-01", a: 3 }], columns)).toEqual([
+      { date: "2026-01-01", s0: 3, s1: 0 },
     ]);
-  });
-});
-
-describe("buildPeriodSeries", () => {
-  const months: { period: string; costUsd: Record<string, number> }[] = [
-    { period: "2026-03", costUsd: { "openai/gpt-5-mini": 2, "google/gemini-3.1-flash-lite": 1 } },
-    { period: "2026-02", costUsd: {} },
-    { period: "2026-01", costUsd: { "openai/gpt-5-mini": 0.5 } },
-  ];
-
-  it("sorts periods ascending and keeps the zero months", () => {
-    const series = buildPeriodSeries(months);
-    expect(series.data.map((point) => point.period)).toEqual(["2026-01", "2026-02", "2026-03"]);
-    expect(series.data[1]).toEqual({
-      period: "2026-02",
-      "openai/gpt-5-mini": 0,
-      "google/gemini-3.1-flash-lite": 0,
-    });
-  });
-
-  it("orders series by total cost across every period", () => {
-    expect(buildPeriodSeries(months).keys).toEqual([
-      "openai/gpt-5-mini",
-      "google/gemini-3.1-flash-lite",
-    ]);
-  });
-
-  it("folds models beyond the limit into Others", () => {
-    const costUsd = Object.fromEntries(
-      Array.from({ length: MAX_CHART_SERIES + 2 }, (_, i) => [`m${i}`, i + 1]),
-    );
-    const series = buildPeriodSeries([{ period: "2026-01", costUsd }]);
-    expect(series.keys).toHaveLength(MAX_CHART_SERIES + 1);
-    expect(series.keys.at(-1)).toBe(OTHERS_KEY);
-    // The two cheapest (1 + 2) fold together.
-    expect(series.data[0]?.[OTHERS_KEY]).toBeCloseTo(3, 6);
-  });
-
-  it("has no series when nothing was spent", () => {
-    expect(buildPeriodSeries([{ period: "2026-01", costUsd: {} }])).toEqual({
-      data: [{ period: "2026-01" }],
-      keys: [],
-    });
   });
 });
 
