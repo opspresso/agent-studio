@@ -16,6 +16,7 @@ import {
   IconRoute,
   IconSparkles,
 } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { getProject } from "../lib/api";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
@@ -31,6 +32,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   // same viewer, and a second hook answering it is a second round trip and a
   // second thing to keep in step.
   const viewer = useViewer();
+  const t = useT();
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,18 +60,22 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
   const canManage = canEditProject(viewer, ownerEmail);
   const tabs = [
-    { href: base, label: "Playground", Icon: IconPlayerPlay },
-    { href: `${base}/versions`, label: "Versions", Icon: IconHistory },
-    { href: `${base}/compare`, label: "Compare", Icon: IconGitCompare },
-    { href: `${base}/usage`, label: "Usage", Icon: IconChartBar },
+    { href: base, label: t("project.tab.playground"), Icon: IconPlayerPlay },
+    { href: `${base}/versions`, label: t("project.tab.versions"), Icon: IconHistory },
+    { href: `${base}/compare`, label: t("project.tab.compare"), Icon: IconGitCompare },
+    { href: `${base}/usage`, label: t("project.tab.usage"), Icon: IconChartBar },
     // Gated like Traces: these hold other people's runtime output, and the
     // delete here is the only way a Slack or trigger run's artifact is removed.
     ...(canManage
-      ? [{ href: `${base}/artifacts`, label: "Artifacts", Icon: IconPhoto }]
+      ? [{ href: `${base}/artifacts`, label: t("project.tab.artifacts"), Icon: IconPhoto }]
       : []),
-    ...(canManage ? [{ href: `${base}/traces`, label: "Traces", Icon: IconRoute }] : []),
-    { href: `${base}/api-reference`, label: "API Reference", Icon: IconApi },
-    ...(canManage ? [{ href: `${base}/settings`, label: "Settings", Icon: IconAdjustments }] : []),
+    ...(canManage
+      ? [{ href: `${base}/traces`, label: t("project.tab.traces"), Icon: IconRoute }]
+      : []),
+    { href: `${base}/api-reference`, label: t("project.tab.apiReference"), Icon: IconApi },
+    ...(canManage
+      ? [{ href: `${base}/settings`, label: t("project.tab.settings"), Icon: IconAdjustments }]
+      : []),
   ];
 
   return (
@@ -77,7 +83,13 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
       <div className={classes.workspaceHeader}>
         <Group justify="space-between" align="flex-start" gap="lg" wrap="wrap">
           <Group gap="md" wrap="nowrap">
-            <ActionIcon component={Link} href="/projects" variant="default" size="lg" aria-label="Projects">
+            <ActionIcon
+              component={Link}
+              href="/projects"
+              variant="default"
+              size="lg"
+              aria-label={t("nav.projects")}
+            >
               <IconArrowLeft size={17} />
             </ActionIcon>
             <ThemeIcon
@@ -94,11 +106,11 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
                   {name}
                 </Title>
                 <Badge variant="light" color="brand" radius="xl">
-                  AI project
+                  {t("project.badge")}
                 </Badge>
               </Group>
               <Text fz="sm" c="dimmed" mt={2}>
-                Design, test, and observe this project from one workspace.
+                {t("project.lede")}
               </Text>
             </div>
           </Group>
@@ -106,7 +118,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
             <OwnerLine
               ownerEmail={ownerEmail}
               isMine={viewer?.email === ownerEmail}
-              prefix="Owned by "
+              prefix={t("project.ownedBy")}
             />
           )}
         </Group>
