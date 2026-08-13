@@ -534,6 +534,31 @@ export const en = {
   "artifacts.all": "All",
   "artifacts.images": "Images",
   "artifacts.documents": "Documents",
+
+  // Managed MCP: a container this host runs. The start dialog and the server's
+  // own settings edit the same fields, so the wording is shared.
+  "managed.title": "Run a managed MCP server",
+  "managed.start": "Start",
+  "managed.hint": "Starts a container on this host, reachable only from it.",
+  "managed.namePlaceholder": "image-fetch",
+  "managed.nameHint": "Also the container’s name, so the two stay findable together.",
+  "managed.image": "Image",
+  "managed.imagePlaceholder": "…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1",
+  "managed.imageHint": "Any registry the host can pull from — its own ECR needs no credentials.",
+  "managed.port": "Container port",
+  "managed.envRefs": "Environment references",
+  "managed.envRefsPlaceholder": "/env/prod/mcp-image-fetch",
+  "managed.envRefsHint":
+    "SSM parameter names, not values — the secrets never pass through here.",
+  "managed.envVars": "Environment variables",
+  "managed.envVarsEmpty": "No direct environment variables.",
+  "managed.addVariable": "+ Add variable",
+  "managed.args": "Arguments",
+  "managed.argsHint":
+    "One container entrypoint argument per line. {{PORT}} becomes the effective listen port; arguments are not run through a shell.",
+  "managed.path": "Endpoint path",
+  "managed.pathPlaceholder": "/mcp",
+  "managed.urlSetByRuntime": "Set by the managed runtime.",
 } as const;
 
 export type MessageKey = keyof typeof en;
