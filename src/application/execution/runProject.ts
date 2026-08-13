@@ -425,6 +425,11 @@ export async function* executeAgent(
   const origin: RunOrigin = {
     ancestry: [input.project.name],
     ...(input.actor ? { actor: input.actor } : {}),
+    // Carried unconditionally, like the actor: a child is answering the same
+    // person as its parent. Whether a *prompt* names them stays a per-version
+    // question that `callerFor` answers at each engine-input boundary — this
+    // run's own opt-in decides nothing for the project it transfers to.
+    ...(input.caller ? { caller: input.caller } : {}),
   };
   const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
   const bracket = await openRun(deps, input.project, input.version, input.actor);
