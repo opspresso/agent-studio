@@ -504,6 +504,7 @@ async function main() {
       calls: 1,
       inputTokens: 100,
       outputTokens: 50,
+      cachedTokens: 80,
       costUsd: 0.001,
     };
     await usageRepository.record(usageDelta);
@@ -512,6 +513,13 @@ async function main() {
     assert.equal(rows.length, 1, "usage row exists");
     assert.equal(rows[0]?.calls["openai/gpt-5-mini"], 2, "usage calls accumulated");
     assert.equal(rows[0]?.inputTokens["openai/gpt-5-mini"], 200, "usage tokens accumulated");
+    // A map added after the row shape existed: `if_not_exists` is per attribute,
+    // so it materialises on the next write rather than needing a migration.
+    assert.equal(
+      rows[0]?.cachedTokens?.["openai/gpt-5-mini"],
+      160,
+      "the cached share accumulates in its own map",
+    );
     const rangeRows = await usageRepository.listByDateRange(today, today);
     assert.ok(
       rangeRows.some((r) => r.projectName === projectName),
