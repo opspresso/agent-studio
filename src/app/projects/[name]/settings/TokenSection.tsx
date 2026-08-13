@@ -13,8 +13,10 @@ import {
 } from "../../lib/api";
 import { Alert, Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { stateColor } from "@/app/_components/badgeColors";
+import { useT } from "@/app/_i18n/provider";
 
 export function TokenSection({ projectName }: { projectName: string }) {
+  const t = useT();
   const [status, setStatus] = useState<ProjectTokenStatus | null>(null);
   // The plaintext token, either just generated or read back on request. Held in
   // component state only, so leaving the page hides it again.
@@ -107,7 +109,7 @@ export function TokenSection({ projectName }: { projectName: string }) {
 
   return (
     <CollapsibleSection
-      title="API token"
+      title={t("pset.apiToken")}
       badge={
         <Badge color={stateColor(status.configured)} radius="xl">
           {status.configured ? "set" : "none"}

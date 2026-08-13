@@ -559,6 +559,48 @@ export const en = {
   "managed.path": "Endpoint path",
   "managed.pathPlaceholder": "/mcp",
   "managed.urlSetByRuntime": "Set by the managed runtime.",
+
+  // A project's settings tab: the sections and their forms.
+  "pset.dangerZone": "Danger zone",
+  "pset.a2a": "A2A",
+  "pset.agentCard": "Agent Card",
+  "pset.apiToken": "API token",
+  "pset.costLimits": "Cost limits",
+  "pset.alertThreshold": "Alert threshold (USD)",
+  "pset.alertThresholdHint": "Notify once a day, keep running",
+  "pset.blockThreshold": "Block threshold (USD)",
+  "pset.blockThresholdHint": "Refuse runs for the rest of the day",
+  "pset.monthlyAlert": "Monthly alert threshold (USD)",
+  "pset.monthlyAlertHint": "Notify once a month, keep running",
+  "pset.monthlyBlock": "Monthly block threshold (USD)",
+  "pset.monthlyBlockHint": "Refuse runs for the rest of the month",
+  "pset.slackChannel": "Slack channel id",
+  "pset.slackChannelHint":
+    "Where notifications are posted, using this project’s own bot. Without it the thresholds still block.",
+  "pset.slackBot": "Slack bot",
+  "pset.appManifest": "App manifest",
+  "pset.botToken": "Bot token",
+  "pset.signingSecret": "Signing secret",
+  "pset.signingSecretPlaceholder": "Signing secret from Basic Information",
+  "pset.enableEvents": "Enable event handling at this URL",
+  "pset.shortcutLabel": "Label",
+  "pset.shortcutSends": "What clicking it sends",
+
+  // Triggers: schedules and webhooks.
+  "trigger.section": "Triggers",
+  "trigger.newId": "New trigger id",
+  "trigger.newIdPlaceholder": "nightly-report",
+  "trigger.kind": "Kind",
+  "trigger.cron": "Cron",
+  "trigger.cronPlaceholder": "30 9 * * 1-5",
+  "trigger.cronHint": "minute hour day-of-month month day-of-week",
+  "trigger.timezone": "Timezone",
+  "trigger.timezonePlaceholder": "Asia/Seoul",
+  "trigger.message": "Message",
+  "trigger.messagePlaceholder": "What each firing asks the project",
+  "trigger.enabled": "Enabled",
+  "trigger.allowOverlap": "Allow overlapping runs",
+  "trigger.payload": "Payload",
 } as const;
 
 export type MessageKey = keyof typeof en;
