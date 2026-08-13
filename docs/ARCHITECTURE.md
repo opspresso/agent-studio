@@ -1067,9 +1067,12 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
   look at a server behaving exactly as its protocol says it should. This client does not answer
   those requests. A result omitting the field is an ordinary one, as the spec requires.
 - A tool's **image** results (`image` blocks, and `resource` blobs with an image mime type)
-  come back as bytes rather than being dropped: the engine registers them, streams them to the
-  user, and attaches them to the turn as a follow-up user message — only when the model
-  accepts image input, since a text-only model would reject the parts and fail the turn.
+  come back as bytes rather than being dropped: the engine registers them and streams them to
+  the user, and attaches them to the turn as a follow-up user message — that last step only
+  when the model accepts image input, since a text-only model would reject the parts and fail
+  the turn. Delivery does not depend on the model: the person who asked for the screenshot is
+  not the model, and the result text says the picture went to them and not into the
+  conversation.
 - **Every other content type is read as the protocol defines it.** A `resource_link` becomes
   its URI plus whatever identifies it — it is a pointer the model can ask for, not a payload.
   An `audio` block is named and stops there, because a turn carries only text and images, so
