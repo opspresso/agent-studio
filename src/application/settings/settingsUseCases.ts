@@ -2,6 +2,7 @@ import { ValidationError } from "@/application/errors";
 import type { SettingsRepository } from "@/domain/settings/repository";
 import type {
   AppSettings,
+  ChannelAuth,
   LlmProviderSetting,
   ProviderChannelConfig,
 } from "@/domain/settings/types";
@@ -85,6 +86,7 @@ export interface LlmProviderView {
   /** Masked (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4). */
   apiKey: string;
   keepModelPrefix: boolean;
+  auth: ChannelAuth;
 }
 
 export interface SettingsView {
@@ -100,6 +102,8 @@ export interface LlmProviderInput {
   /** Masked keeps the currently effective key for this provider name. */
   apiKey: string;
   keepModelPrefix?: boolean;
+  /** Absent means `bearer`; `sigv4` rows carry no key at all. */
+  auth?: ChannelAuth;
 }
 
 export type SettingsUpdate = Partial<Record<SettingKey, string>> & {
@@ -154,6 +158,7 @@ function toProviderViews(
         baseUrl: provider.baseUrl,
         apiKey: cipher.mask(provider.apiKey),
         keepModelPrefix: provider.keepModelPrefix ?? false,
+        auth: provider.auth ?? "bearer",
       })),
     };
   }
@@ -164,6 +169,7 @@ function toProviderViews(
       baseUrl: provider.baseUrl,
       apiKey: cipher.mask(provider.apiKey),
       keepModelPrefix: provider.keepModelPrefix,
+      auth: provider.auth,
     })),
   };
 }
@@ -229,6 +235,18 @@ function toProviderSetting(
     throw new ValidationError(
       `Unsupported LLM provider "${name}" — supported: ${SUPPORTED_PROVIDERS.join(", ")}`,
     );
+  }
+  // A signed channel has no key, so every key rule below is skipped rather than
+  // satisfied with a placeholder — a stored blank is what "this row carries no
+  // credential" means, and the mask/keep dance has nothing to keep.
+  if (input.auth === "sigv4") {
+    return {
+      name,
+      baseUrl,
+      apiKey: "",
+      auth: "sigv4",
+      ...(input.keepModelPrefix ? { keepModelPrefix: true } : {}),
+    };
   }
   const apiKey = input.apiKey.trim();
   let storedKey: string;

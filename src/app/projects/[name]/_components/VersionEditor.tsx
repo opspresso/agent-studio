@@ -23,6 +23,12 @@ import {
 import { IconHelp } from "@tabler/icons-react";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { CopyButton } from "@/app/_components/CopyButton";
+import {
+  modelSelectData,
+  modelSummary,
+  renderModelOption,
+  selectOnFocus,
+} from "@/app/_components/modelOptions";
 import { monoInput } from "@/app/_components/monoInput";
 import { listProjects } from "../../lib/api";
 import type { ModelConfig, ProjectType, VersionInput, VersionParameters } from "../../lib/api";
@@ -120,6 +126,8 @@ export function VersionEditor({
   const [schemaHelpOpen, setSchemaHelpOpen] = useState(false);
 
   const selectedModel = models.find((m) => m.id === value.model);
+  const fallbackModelConfig = models.find((m) => m.id === value.fallbackModel);
+  const selectedImageModel = imageModels.find((m) => m.id === value.parameters.imageModel);
   const supportsReasoning = selectedModel?.capabilities.reasoning ?? true;
   const supportsStructured = selectedModel?.capabilities.structuredOutput ?? true;
 
@@ -155,15 +163,15 @@ export function VersionEditor({
           onChange={(model) => patch({ model: model ?? "" })}
           placeholder="Select a model…"
           searchable
-          data={[
+          data={modelSelectData(
+            models,
             // A stored model missing from the catalog stays selectable so a
             // version can be saved without silently losing it.
-            ...(value.model && !selectedModel ? [{ value: value.model, label: value.model }] : []),
-            ...models.map((model) => ({
-              value: model.id,
-              label: `${model.displayName} (${model.id})`,
-            })),
-          ]}
+            value.model && !selectedModel ? [{ value: value.model, label: value.model }] : [],
+          )}
+          renderOption={renderModelOption(models)}
+          {...selectOnFocus}
+          description={selectedModel ? modelSummary(selectedModel) : undefined}
           error={
             value.model && !selectedModel
               ? "Model is not in the catalog; usage will be recorded with $0 cost."
@@ -189,7 +197,10 @@ export function VersionEditor({
             placeholder="None"
             clearable
             searchable
-            data={models.map((model) => ({ value: model.id, label: model.displayName }))}
+            data={modelSelectData(models)}
+            renderOption={renderModelOption(models)}
+            {...selectOnFocus}
+            description={fallbackModelConfig ? modelSummary(fallbackModelConfig) : undefined}
           />
         ) : (
           <TextInput
@@ -410,13 +421,9 @@ export function VersionEditor({
               value={value.parameters.imageModel ?? ""}
               onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
               allowDeselect={false}
-              data={[
-                { value: "", label: "Default" },
-                ...imageModels.map((model) => ({
-                  value: model.id,
-                  label: `${model.displayName} (${model.id})`,
-                })),
-              ]}
+              data={modelSelectData(imageModels, [{ value: "", label: "Default" }])}
+              renderOption={renderModelOption(imageModels)}
+              description={selectedImageModel ? modelSummary(selectedImageModel) : undefined}
             />
           )}
         </Stack>

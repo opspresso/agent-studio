@@ -162,6 +162,8 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Whether a configured value is blank | `src/shared/env.ts` |
 | Asking a provider for an embedding | `src/infrastructure/llm/embeddings.ts` |
 | Reaching Bedrock | `src/infrastructure/llm/bedrockClient.ts` |
+| Signing an outbound request for AWS | `src/infrastructure/llm/awsSigner.ts` |
+| What a model is, and which routes serve it | `MODEL_FAMILIES`/`MODEL_OFFERINGS` in `src/domain/llm/models.ts` |
 | Talking to the vector store | `src/infrastructure/vector/s3VectorsStore.ts` |
 | The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
 | What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |

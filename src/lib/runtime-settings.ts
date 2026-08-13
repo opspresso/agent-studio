@@ -99,8 +99,11 @@ export async function getLlmProviderConfigs(): Promise<ProviderChannelConfig[]> 
     return stored.map((provider) => ({
       name: provider.name,
       baseUrl: provider.baseUrl,
-      apiKey: decryptSecret(provider.apiKey),
+      // A `sigv4` row stores an empty key, which is not ciphertext — decrypting
+      // it would be asking the cipher to answer a question it was never given.
+      apiKey: provider.apiKey === "" ? "" : decryptSecret(provider.apiKey),
       keepModelPrefix: provider.keepModelPrefix ?? false,
+      auth: provider.auth ?? "bearer",
     }));
   }
   return parseProviderConfigs(process.env);

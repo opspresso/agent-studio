@@ -26,12 +26,19 @@ const channel = createImageChannel(async (modelId) =>
   resolveProviderTarget(
     modelId,
     [
-      { name: "xai", baseUrl: "https://xai.example/v1", apiKey: "xai-key", keepModelPrefix: false },
+      {
+        name: "xai",
+        baseUrl: "https://xai.example/v1",
+        apiKey: "xai-key",
+        keepModelPrefix: false,
+        auth: "bearer",
+      },
       {
         name: "openai",
         baseUrl: runtime.openaiBaseUrl,
         apiKey: "openai-key",
         keepModelPrefix: false,
+        auth: "bearer",
       },
     ],
     { baseUrl: "https://router.example/v1", apiKey: "router-key" },

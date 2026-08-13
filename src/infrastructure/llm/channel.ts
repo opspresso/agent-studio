@@ -6,9 +6,14 @@
  * always OpenAI Chat
  * Completions — the SDK shapes are mapped onto the domain port so the engine
  * stays SDK-agnostic.
+ *
+ * A channel authenticates one of two ways, and only the transport differs: a
+ * bearer key, or AWS SigV4 (`awsSigner.ts`) for the endpoints AWS serves in
+ * this same protocol.
  */
 
 import OpenAI from "openai";
+import { AWS_SIGNING_SERVICE, createSignedFetch } from "./awsSigner";
 import type { ResolvedTarget, TargetResolver } from "./providers";
 import type {
   ChannelChunk,
@@ -21,12 +26,25 @@ import type {
 
 const clients = new Map<string, OpenAI>();
 
-/** Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client. */
+/**
+ * Keyed by baseUrl|auth|apiKey so a runtime settings change gets a fresh client.
+ *
+ * A `sigv4` target carries no key, so its per-request credential is the signing
+ * `fetch` rather than anything in the constructor — the SDK still wants an
+ * `apiKey`, and the placeholder below never reaches the wire because the signer
+ * rewrites the headers.
+ */
 function getClient(target: ResolvedTarget): OpenAI {
-  const key = `${target.baseUrl}|${target.apiKey}`;
+  const key = `${target.baseUrl}|${target.auth}|${target.apiKey}`;
   let client = clients.get(key);
   if (!client) {
-    client = new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
+    client = target.auth === "sigv4"
+      ? new OpenAI({
+          baseURL: target.baseUrl,
+          apiKey: "sigv4",
+          fetch: createSignedFetch(AWS_SIGNING_SERVICE),
+        })
+      : new OpenAI({ baseURL: target.baseUrl, apiKey: target.apiKey });
     clients.set(key, client);
   }
   return client;
@@ -64,12 +82,32 @@ function toChannelUsage(usage: unknown): ChannelUsage | null {
     prompt_tokens?: number;
     completion_tokens?: number;
     prompt_tokens_details?: { cached_tokens?: number } | null;
+    cost?: number;
   };
   return {
     prompt_tokens: u.prompt_tokens ?? 0,
     completion_tokens: u.completion_tokens ?? 0,
     prompt_tokens_details: u.prompt_tokens_details ?? null,
+    // OpenRouter reports what the call cost in `usage.cost`, in USD. Carried
+    // only when it is a usable number: a channel that does not report it leaves
+    // the field off entirely, which is what makes registry pricing the fallback
+    // rather than a $0 that reads like a free call.
+    ...(typeof u.cost === "number" && Number.isFinite(u.cost) ? { cost_usd: u.cost } : {}),
   };
+}
+
+/**
+ * The model's thinking, under whichever name the channel gave it.
+ *
+ * `reasoning_content` is the spelling this app was built against, and Bedrock's
+ * open-weight models answer with `reasoning` instead — same field, and a run
+ * that reads only the first name shows an empty reply while the tokens are
+ * billed, because on those models the whole answer can arrive as reasoning.
+ */
+function toReasoning(
+  part: { reasoning_content?: string | null; reasoning?: string | null } | undefined,
+): string | null {
+  return part?.reasoning_content ?? part?.reasoning ?? null;
 }
 
 function toChannelToolCalls(toolCalls: unknown): ChannelToolCall[] | undefined {
@@ -114,6 +152,7 @@ export function createChannel(resolveTarget: TargetResolver): LlmChannel {
             role?: string;
             content?: string | null;
             reasoning_content?: string | null;
+            reasoning?: string | null;
             tool_calls?: unknown;
           };
         }>;
@@ -128,7 +167,7 @@ export function createChannel(resolveTarget: TargetResolver): LlmChannel {
           message: {
             role: choice.message?.role ?? "assistant",
             content: choice.message?.content ?? null,
-            reasoning_content: choice.message?.reasoning_content ?? null,
+            reasoning_content: toReasoning(choice.message),
             tool_calls: toChannelToolCalls(choice.message?.tool_calls),
           },
         })),
@@ -147,6 +186,7 @@ export function createChannel(resolveTarget: TargetResolver): LlmChannel {
           delta?: {
             content?: string | null;
             reasoning_content?: string | null;
+            reasoning?: string | null;
             tool_calls?: unknown;
           };
         }>;
@@ -160,7 +200,7 @@ export function createChannel(resolveTarget: TargetResolver): LlmChannel {
             finish_reason: choice.finish_reason ?? null,
             delta: {
               content: choice.delta?.content ?? null,
-              reasoning_content: choice.delta?.reasoning_content ?? null,
+              reasoning_content: toReasoning(choice.delta),
               tool_calls: toChannelToolCalls(choice.delta?.tool_calls),
             },
           })),

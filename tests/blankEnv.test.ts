@@ -132,6 +132,7 @@ describe("parseProviderConfigs", () => {
         baseUrl: "https://api.openai.com/v1",
         apiKey: "sk-1",
         keepModelPrefix: true,
+        auth: "bearer",
       },
     ]);
   });

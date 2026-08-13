@@ -16,7 +16,7 @@
 
 import { wireModelId } from "@/domain/llm/models";
 import { optionalEnv } from "@/shared/env";
-import type { ProviderChannelConfig } from "@/domain/settings/types";
+import type { ChannelAuth, ProviderChannelConfig } from "@/domain/settings/types";
 export type { ProviderChannelConfig };
 
 /** Resolves a model id to the channel that serves it. Injected into the adapters. */
@@ -26,7 +26,9 @@ export interface ResolvedTarget {
   /** null means the default channel. */
   providerName: string | null;
   baseUrl: string;
+  /** Empty when `auth` is `sigv4`. */
   apiKey: string;
+  auth: ChannelAuth;
   /** Model id to send to the channel. */
   model: string;
 }
@@ -43,13 +45,23 @@ export function parseProviderConfigs(env: Record<string, string | undefined>): P
     }
     const upperName = match[1];
     const apiKey = optionalEnv(env[`LLM_PROVIDER_${upperName}_API_KEY`]);
-    if (!apiKey) {
+    // Anything other than the one recognised value reads as `bearer`, so a
+    // typo cannot turn a keyed channel into an unsigned one — it fails the
+    // key check below instead, which says what is missing.
+    const auth: ChannelAuth =
+      optionalEnv(env[`LLM_PROVIDER_${upperName}_AUTH`]) === "sigv4" ? "sigv4" : "bearer";
+    // A `sigv4` channel has no key to require: AWS signs with the pod's own
+    // credentials. Demanding one here is what kept Bedrock from registering at
+    // all — silently, since an unregistered provider just falls through to the
+    // default channel and 404s there.
+    if (auth === "bearer" && !apiKey) {
       continue;
     }
     configs.push({
       name: upperName.toLowerCase(),
       baseUrl,
-      apiKey,
+      apiKey: apiKey ?? "",
+      auth,
       // Trimmed like the pair above: a value mounted from a file arrives with a
       // trailing newline, and `"true\n" === "true"` is false — which would read
       // as an operator asking for the prefix to be stripped.
@@ -73,6 +85,7 @@ export function resolveProviderTarget(
         providerName: provider.name,
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
+        auth: provider.auth,
         model: provider.keepModelPrefix ? modelId : wireModelId(modelId),
       };
     }
@@ -81,6 +94,9 @@ export function resolveProviderTarget(
     providerName: null,
     baseUrl: defaultChannel.baseUrl,
     apiKey: defaultChannel.apiKey,
+    // The default channel is a URL and a key by definition — there is no env
+    // pair that would make it anything else.
+    auth: "bearer",
     model: modelId,
   };
 }

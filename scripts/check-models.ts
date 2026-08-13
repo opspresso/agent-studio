@@ -32,7 +32,8 @@
  * channel would read as missing. Ids outside `SUPPORTED_PROVIDERS` are ignored.
  */
 import { MODEL_CONFIGS, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
-import type { ProviderChannelConfig } from "@/domain/settings/types";
+import { AWS_SIGNING_SERVICE, createSignedFetch } from "@/infrastructure/llm/awsSigner";
+import type { ChannelAuth, ProviderChannelConfig } from "@/domain/settings/types";
 
 /** Anthropic requires an explicit API version on every request. */
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -44,6 +45,7 @@ interface Channel {
   /** Provider whose bare ids need re-prefixing; null for the default channel. */
   provider: string | null;
   keepModelPrefix: boolean;
+  auth: ChannelAuth;
 }
 
 /** A model a channel serves, in registry id form. */
@@ -78,13 +80,21 @@ async function resolveChannels(): Promise<Channel[]> {
   }
 
   return [
-    { label: "default", baseUrl: base.baseUrl, apiKey: base.apiKey, provider: null, keepModelPrefix: true },
+    {
+      label: "default",
+      baseUrl: base.baseUrl,
+      apiKey: base.apiKey,
+      provider: null,
+      keepModelPrefix: true,
+      auth: "bearer",
+    },
     ...providers.map((provider) => ({
       label: provider.name,
       baseUrl: provider.baseUrl,
       apiKey: provider.apiKey,
       provider: provider.name,
       keepModelPrefix: provider.keepModelPrefix === true,
+      auth: provider.auth,
     })),
   ];
 }
@@ -104,6 +114,10 @@ async function resolveChannels(): Promise<Channel[]> {
  * stripped — exactly where dispatch would be talking to Anthropic directly.
  */
 function authHeaders(channel: Channel): Record<string, string> {
+  if (channel.auth === "sigv4") {
+    // The signer sets the header; anything put here would be overwritten by it.
+    return {};
+  }
   if (channel.provider === "anthropic" && !channel.keepModelPrefix) {
     return { "x-api-key": channel.apiKey, "anthropic-version": ANTHROPIC_VERSION };
   }
@@ -141,9 +155,15 @@ async function fetchModels(channel: Channel): Promise<ServedModel[]> {
   const endpoint = `${channel.baseUrl.replace(/\/+$/, "")}/models`;
   const collected: ServedModel[] = [];
   let cursor: string | undefined;
+  // A signed channel has no key to put in a header; the same signer the runtime
+  // dispatches through is what makes this readable. Without it the channel
+  // answers 403 and gets reported as dead, which under `--strict` fails the run
+  // on a healthy configuration.
+  const request =
+    channel.auth === "sigv4" ? createSignedFetch(AWS_SIGNING_SERVICE) : globalThis.fetch;
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const url = cursor ? `${endpoint}?after_id=${encodeURIComponent(cursor)}` : endpoint;
-    const response = await fetch(url, { headers: authHeaders(channel) });
+    const response = await request(url, { headers: authHeaders(channel) });
     if (!response.ok) {
       throw new Error(`GET ${url} → ${response.status} ${response.statusText}`);
     }

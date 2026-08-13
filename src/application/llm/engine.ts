@@ -305,7 +305,13 @@ function toUsageInfo(model: string, usage: ChannelUsage | null | undefined): Usa
   const inputTokens = usage?.prompt_tokens ?? 0;
   const outputTokens = usage?.completion_tokens ?? 0;
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
-  const costUsd = calculateCost(model, { inputTokens, outputTokens, cachedTokens });
+  // What the channel charged beats what the registry predicts. A router prices
+  // the same model differently from its vendor and can change upstream between
+  // calls, so its own figure is the only one that matches the invoice — and
+  // taking it also means an unpriced model on that route is recorded correctly
+  // rather than counted as a registry miss it is not.
+  const costUsd =
+    usage?.cost_usd ?? calculateCost(model, { inputTokens, outputTokens, cachedTokens });
   // Kept rather than consumed by the pricing above: see `UsageInfo`. Omitted
   // when there is none, so a channel that never reports the field produces
   // exactly the usage it always did.

@@ -87,13 +87,25 @@ describe("runtime settings precedence", () => {
     });
 
     expect(await getLlmProviderConfigs()).toEqual([
-      { name: "google", baseUrl: "https://g.example.com/v1", apiKey: "sk-db", keepModelPrefix: false },
+      {
+        name: "google",
+        baseUrl: "https://g.example.com/v1",
+        apiKey: "sk-db",
+        keepModelPrefix: false,
+        auth: "bearer",
+      },
     ]);
 
     invalidateSettingsCache();
     stub(null);
     expect(await getLlmProviderConfigs()).toEqual([
-      { name: "openai", baseUrl: "https://env.example.com/v1", apiKey: "sk-env", keepModelPrefix: false },
+      {
+        name: "openai",
+        baseUrl: "https://env.example.com/v1",
+        apiKey: "sk-env",
+        keepModelPrefix: false,
+        auth: "bearer",
+      },
     ]);
   });
 

@@ -17,6 +17,7 @@ const updateSchema = z.object({
         baseUrl: z.string().max(4000),
         apiKey: z.string().max(4000),
         keepModelPrefix: z.boolean().optional(),
+        auth: z.enum(["bearer", "sigv4"]).optional(),
       }),
     )
     .max(50)

@@ -118,6 +118,11 @@ app's curated selection (embeddings, realtime, internal codenames), so gating on
 an exit code that can never be green. Adding `--since` makes newly released models count,
 which is the form worth putting in CI.
 
+It reads a `sigv4` channel through the same signer the runtime dispatches with, so a Bedrock
+channel needs AWS credentials in the environment (`AWS_PROFILE=opspresso` locally) — without
+them it reports as a failed channel. A router channel makes the unregistered list long by
+nature: OpenRouter serves hundreds of ids, so use `--since` when reading that half.
+
 ## Integration check
 
 ```bash

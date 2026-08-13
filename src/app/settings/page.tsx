@@ -21,6 +21,7 @@ import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
 import { BADGE } from "@/app/_components/badgeColors";
+import { SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { A2aClientKeysSection } from "./A2aClientKeysSection";
 
 
@@ -37,6 +38,7 @@ interface LlmProviderRow {
   baseUrl: string;
   apiKey: string;
   keepModelPrefix: boolean;
+  auth: "bearer" | "sigv4";
 }
 
 interface SettingsView {
@@ -96,7 +98,17 @@ const SECTIONS: SectionDef[] = [
   },
 ];
 
-const PROVIDER_OPTIONS = ["openai", "anthropic", "google", "xai"] as const;
+/**
+ * The picker reads the registry's provider list rather than restating it: this
+ * was a second copy, and it was already the stale one — a provider the API
+ * accepts but the console cannot offer is a channel nobody can configure here.
+ * `domain/` is pure TS and safe in a client bundle, which is what makes the
+ * single owner reachable from a `"use client"` file at all.
+ */
+const PROVIDER_OPTIONS = SUPPORTED_PROVIDERS;
+
+/** SigV4 carries no key — the row's key field goes away when it is picked. */
+const AUTH_OPTIONS = ["bearer", "sigv4"] as const;
 
 /** Where a value came from — the owned colour marks the one the DB owns. */
 const SOURCE_LABELS: Record<SettingSource, { text: string; color: string }> = {
@@ -416,15 +428,35 @@ export default function SettingsPage() {
                           style={{ flex: 1 }}
                           styles={monoInput}
                         />
+                        <Select
+                          value={provider.auth}
+                          onChange={(value) =>
+                            editProviders((prev) =>
+                              prev.map((p, i) =>
+                                i === index
+                                  ? { ...p, auth: value === "sigv4" ? "sigv4" : "bearer" }
+                                  : p,
+                              ),
+                            )
+                          }
+                          allowDeselect={false}
+                          data={[...AUTH_OPTIONS]}
+                          w={112}
+                          styles={monoInput}
+                        />
                         <TextInput
-                          value={provider.apiKey}
+                          value={provider.auth === "sigv4" ? "" : provider.apiKey}
                           onChange={(e) => {
                             const apiKey = e.currentTarget.value;
                             editProviders((prev) =>
                               prev.map((p, i) => (i === index ? { ...p, apiKey } : p)),
                             );
                           }}
-                          placeholder="API key"
+                          // A signed channel has no key to hold: AWS credentials
+                          // come from the pod's own identity, so the field says
+                          // so rather than accepting a value nothing would send.
+                          disabled={provider.auth === "sigv4"}
+                          placeholder={provider.auth === "sigv4" ? "AWS credentials" : "API key"}
                           w={176}
                           styles={monoInput}
                         />
@@ -457,7 +489,7 @@ export default function SettingsPage() {
                       onClick={() =>
                         editProviders((prev) => [
                           ...prev,
-                          { name: "", baseUrl: "", apiKey: "", keepModelPrefix: false },
+                          { name: "", baseUrl: "", apiKey: "", keepModelPrefix: false, auth: "bearer" },
                         ])
                       }
                     >

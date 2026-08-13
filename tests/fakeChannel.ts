@@ -135,6 +135,8 @@ export function usageChunk(
   completionTokens: number,
   /** Prompt tokens the provider served from its cache, when it reports any. */
   cachedTokens?: number,
+  /** USD the channel says the call cost, for the routers that report it. */
+  costUsd?: number,
 ): ChannelChunk {
   return {
     choices: [],
@@ -145,6 +147,7 @@ export function usageChunk(
       // reports the field is the common case and must stay distinguishable
       // from one reporting a cold cache.
       ...(cachedTokens === undefined ? {} : { prompt_tokens_details: { cached_tokens: cachedTokens } }),
+      ...(costUsd === undefined ? {} : { cost_usd: costUsd }),
     },
   };
 }

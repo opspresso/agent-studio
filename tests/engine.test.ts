@@ -72,6 +72,50 @@ describe("runAgent tool loop", () => {
   });
 
   /**
+   * A router knows what it charged; the registry only predicts it. When the
+   * channel reports a cost, that is what gets recorded — otherwise a route
+   * whose price differs from its vendor's is billed at the vendor's rate
+   * forever, and nothing in the dashboard says the number is a guess.
+   */
+  it("records the cost the channel reported, in preference to the registry's", async () => {
+    const channel = new FakeChannel([[contentChunk("Answered."), usageChunk(1_000_000, 0, 0, 0.42)]]);
+    const recorded: Array<{ costUsd: number }> = [];
+    const chunks = await collect(
+      runAgent(
+        { channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
+        {
+          projectName: "router-bot",
+          model: MODEL,
+          systemPrompt: "You are helpful.",
+          messages: [{ role: "user", content: "hi" }],
+        },
+      ),
+    );
+
+    // The registry would price a million input tokens of this model at $0.30.
+    expect(recorded[0]?.costUsd).toBeCloseTo(0.42, 10);
+    expect(chunks.find((c) => c.usage)?.usage?.costUsd).toBeCloseTo(0.42, 10);
+  });
+
+  it("falls back to registry pricing when the channel reports no cost", async () => {
+    const channel = new FakeChannel([[contentChunk("Answered."), usageChunk(1_000_000, 0)]]);
+    const recorded: Array<{ costUsd: number }> = [];
+    await collect(
+      runAgent(
+        { channel, recordUsage: async (r) => void recorded.push(r as { costUsd: number }) },
+        {
+          projectName: "direct-bot",
+          model: MODEL,
+          systemPrompt: "You are helpful.",
+          messages: [{ role: "user", content: "hi" }],
+        },
+      ),
+    );
+
+    expect(recorded[0]?.costUsd).toBeCloseTo(0.3, 10);
+  });
+
+  /**
    * An MCP tool's name is the server's own — `aws___search_documentation` — and
    * says nothing about which connection answered it once a version has several
    * attached. It rides on the display name, the way a skill's and a transfer's

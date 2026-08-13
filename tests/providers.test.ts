@@ -31,6 +31,42 @@ describe("parseProviderConfigs", () => {
     expect(configs).toHaveLength(0);
   });
 
+  it("registers a sigv4 channel with no API key", () => {
+    const configs = parseProviderConfigs({
+      LLM_PROVIDER_BEDROCK_BASE_URL: "https://bedrock-mantle.us-east-1.api.aws/v1",
+      LLM_PROVIDER_BEDROCK_AUTH: "sigv4",
+    });
+    expect(configs).toEqual([
+      {
+        name: "bedrock",
+        baseUrl: "https://bedrock-mantle.us-east-1.api.aws/v1",
+        apiKey: "",
+        keepModelPrefix: false,
+        auth: "sigv4",
+      },
+    ]);
+  });
+
+  /**
+   * A typo in the auth value must not register an unsigned, unkeyed channel —
+   * every request on it would 401 with nothing naming the misspelling.
+   */
+  it("treats an unrecognised auth value as bearer, so a keyless channel is skipped", () => {
+    const configs = parseProviderConfigs({
+      LLM_PROVIDER_BEDROCK_BASE_URL: "https://bedrock-mantle.us-east-1.api.aws/v1",
+      LLM_PROVIDER_BEDROCK_AUTH: "sigv-4",
+    });
+    expect(configs).toHaveLength(0);
+  });
+
+  it("defaults a keyed channel to bearer", () => {
+    const configs = parseProviderConfigs({
+      LLM_PROVIDER_OPENAI_BASE_URL: "https://api.openai.com/v1",
+      LLM_PROVIDER_OPENAI_API_KEY: "sk-1",
+    });
+    expect(configs[0]?.auth).toBe("bearer");
+  });
+
   it("ignores unrelated env vars", () => {
     const configs = parseProviderConfigs({
       LLM_BASE_URL: "https://router.example/v1",

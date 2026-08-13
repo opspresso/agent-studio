@@ -4,14 +4,26 @@
  * env". Values are kept in their raw env string form (comma-separated lists
  * stay comma-separated). Secret fields hold `enc:v1:` ciphertext at rest.
  */
+/**
+ * How a channel proves who it is.
+ *
+ * `bearer` is every OpenAI-compatible endpoint: a key in an `Authorization`
+ * header. `sigv4` is AWS's request signing, which carries no key at all — the
+ * pod's own identity is the credential, so a `sigv4` channel is configured
+ * with a base URL and nothing else.
+ */
+export type ChannelAuth = "bearer" | "sigv4";
+
 /** One per-provider LLM channel override (replaces the LLM_PROVIDER_* env set). */
 export interface LlmProviderSetting {
   /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
   name: string;
   baseUrl: string;
-  /** Secret (enc:v1: at rest). */
+  /** Secret (enc:v1: at rest). Empty for `sigv4`, which has no key. */
   apiKey: string;
   keepModelPrefix?: boolean;
+  /** Absent means `bearer` — the form every stored row predating this had. */
+  auth?: ChannelAuth;
 }
 
 export interface AppSettings {
@@ -50,6 +62,8 @@ export interface ProviderChannelConfig {
   /** Lowercase provider key matching the model id prefix (e.g. "openai"). */
   name: string;
   baseUrl: string;
+  /** Empty when `auth` is `sigv4`. */
   apiKey: string;
   keepModelPrefix: boolean;
+  auth: ChannelAuth;
 }

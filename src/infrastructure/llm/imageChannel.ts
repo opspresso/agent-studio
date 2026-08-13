@@ -27,8 +27,21 @@ import type {
 
 const clients = new Map<string, OpenAI>();
 
-/** Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client. */
+/**
+ * Keyed by baseUrl|apiKey so a runtime settings change gets a fresh client.
+ *
+ * A SigV4 channel is refused here rather than sent unsigned. The text channel
+ * signs a JSON body; this one posts multipart for an edit, which cannot be
+ * signed without draining the stream first — and an AWS channel serves no image
+ * model this app registers, so the case is a misconfiguration, not a gap. Said
+ * plainly, because the alternative is a 403 with nothing pointing at the cause.
+ */
 function getClient(target: ResolvedTarget): OpenAI {
+  if (target.auth === "sigv4") {
+    throw new Error(
+      `Image channel "${target.providerName ?? "default"}" is configured for SigV4, which the images API does not support`,
+    );
+  }
   const key = `${target.baseUrl}|${target.apiKey}`;
   let client = clients.get(key);
   if (!client) {

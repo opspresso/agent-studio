@@ -116,8 +116,9 @@ All traffic speaks the OpenAI Chat Completions protocol. Model ids are `provider
 |---|---|---|---|
 | `LLM_BASE_URL` | — (required) | **runtime** | The default channel — a router such as OpenRouter or LiteLLM. Every model id goes here unless a provider channel claims it. |
 | `LLM_API_KEY` | — (required) | **runtime** | Credential for that channel. |
-| `LLM_PROVIDER_<NAME>_BASE_URL` | unset | **runtime** | Registers a per-provider channel. `<NAME>` is the model id's provider prefix, upper-cased. The registry's providers are `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`; the env parser accepts any `[A-Z0-9_]+` name, but a channel outside that list can never match a model id — the `/settings` override path refuses one outright. |
-| `LLM_PROVIDER_<NAME>_API_KEY` | unset | **runtime** | Credential for that channel. |
+| `LLM_PROVIDER_<NAME>_BASE_URL` | unset | **runtime** | Registers a per-provider channel. `<NAME>` is the model id's provider prefix, upper-cased. The registry's providers are `OPENAI`, `ANTHROPIC`, `GOOGLE`, `XAI`, `BEDROCK`, `OPENROUTER`; the env parser accepts any `[A-Z0-9_]+` name, but a channel outside that list can never match a model id — the `/settings` override path refuses one outright. |
+| `LLM_PROVIDER_<NAME>_API_KEY` | unset | **runtime** | Credential for that channel. Required unless `_AUTH=sigv4`: a channel with no key is **skipped silently**, and its models then fall through to the default channel. |
+| `LLM_PROVIDER_<NAME>_AUTH` | `bearer` | **runtime** | `bearer` \| `sigv4`. `sigv4` signs each request with the process's AWS credentials (Pod Identity in the cluster, `AWS_PROFILE` locally) and takes **no API key**. Anything other than the literal `sigv4` reads as `bearer`, so a typo cannot produce an unsigned keyless channel. |
 | `LLM_PROVIDER_<NAME>_KEEP_MODEL_PREFIX` | `false` | **runtime** | Provider channels receive the bare model name (the `provider/` prefix stripped). Set this when the channel is itself a router that expects full ids. |
 
 > A base URL must include the API version path the provider serves from — the adapters append
@@ -133,17 +134,49 @@ A stored `llmProviders` override on `/settings` **replaces the entire `LLM_PROVI
 set** rather than merging with it — a partial merge would make "remove this provider" an
 unexpressible edit.
 
-### Model registry and `wireId`
+### Model registry: families and offerings
 
-The selectable models — pricing, context window, capability flags — live in
-`src/domain/llm/models.ts` and are hand-maintained, because those numbers exist only in each
-provider's documentation.
+The selectable models live in `src/domain/llm/models.ts` and are hand-maintained, because
+pricing, context windows and capability flags exist only in each provider's documentation.
+
+The file holds two lists. A **family** states the model once — display name, price, window,
+capabilities. An **offering** says a provider serves that family, under which wire name, and
+what the route changes; `MODEL_CONFIGS` is derived from the pair, with id `provider/family`.
+The same model reached three ways is therefore one set of numbers and three one-line routes:
+
+```ts
+{ family: "claude-opus-4.8", provider: "anthropic",  wireId: "claude-opus-4-8" },
+{ family: "claude-opus-4.8", provider: "openrouter", wireId: "anthropic/claude-opus-4.8" },
+```
+
+An offering may override `pricing`, `capabilities`, `contextWindow`, `maxTokens` and
+`hidden` — shallow merges, so it names only what differs. Overriding is for what the *route*
+changes (a router's own rate, a gateway that cannot do structured output), never for what
+the model is: `tests/models.test.ts` fails if two routes disagree about the name, the window
+or whether the thing generates images.
 
 Registry ids follow the router convention (`anthropic/claude-opus-4.8`), which is also what
-stored project versions hold. When a provider's own API spells the same model differently —
-Anthropic serves `claude-opus-4-8` and 404s on the dotted form — set `wireId` on that entry;
-it is what gets sent once a provider-direct channel strips the prefix. Renaming the entry
-instead would orphan every stored version that referenced the old id.
+stored project versions hold. When a route spells the model differently — Anthropic serves
+`claude-opus-4-8` and 404s on the dotted form; OpenRouter serves
+`anthropic/claude-opus-4.8`; Bedrock serves `openai.gpt-oss-120b` — set `wireId`; it is what
+gets sent once the channel strips the prefix. Renaming an entry instead would orphan every
+stored version that referenced the old id.
+
+**Bedrock's model list is not a list of models this protocol can reach.** Its
+OpenAI-compatible endpoint is `bedrock-mantle`
+(`https://bedrock-mantle.<region>.api.aws/v1`, `_AUTH=sigv4`), and `GET /v1/models` there
+returns models that `POST /v1/chat/completions` then refuses: every `anthropic.*` model
+(they take the Anthropic Messages API, which this app does not speak) and `xai.grok-4.3`
+(`isn't supported on this route`), both of which AWS also publishes prices for. So a
+Bedrock offering is added only after a real call to it returns — the registry's are
+open-weight models, each one smoke-tested. Note also that `bedrock-mantle` does not exist in
+`ap-northeast-2`, so its base URL names a different region than the rest of the deployment;
+the signer reads the region from that URL rather than from `AWS_REGION`.
+
+**A channel that reports its own cost is believed.** OpenRouter returns `usage.cost` (USD)
+on every call, and that figure — not the registry's rate — is what the usage row records.
+Registry pricing stays the estimate shown before a run and the fallback for every channel
+that reports tokens only.
 
 **A model missing from the registry still runs by default, but its usage is priced at $0** —
 so the gap is invisible in the cost dashboard it corrupts. Each miss logs `[cost] unknown

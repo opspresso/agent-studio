@@ -557,7 +557,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(67);
+    expect(entries.length).toBe(68);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1197,6 +1197,11 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "deriving a run's context budget from the model's window",
     pattern: /\.contextWindow\b/,
     owner: "src/application/llm/contextBudget.ts",
+    // The registry reads the field to *assemble* it: a model's window is stated
+    // by its family and may be narrowed by one route, so deriving an entry
+    // touches the name. That is the value's origin, not a second budget — the
+    // thing this rule exists to keep single is the chars-per-token derivation.
+    alsoAllowedUnder: ["src/domain/llm/models.ts"],
   },
   {
     // The wrapper a model reads around an attachment. A chat replays a stored

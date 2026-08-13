@@ -40,6 +40,15 @@ export interface ChannelUsage {
   prompt_tokens_details?: {
     cached_tokens?: number;
   } | null;
+  /**
+   * USD the channel says the call actually cost, when it says so at all.
+   *
+   * A router bills its own rate for a model whose vendor publishes another, and
+   * it may route the same id to a different upstream from one call to the next —
+   * so the registry's price is an estimate there, and this is the invoice.
+   * Absent for every channel that reports only tokens, which is most of them.
+   */
+  cost_usd?: number;
 }
 
 export interface ChannelDelta {

@@ -51,6 +51,49 @@ describe("model registry invariants", () => {
     }
   });
 
+  /**
+   * The point of the family/offering split: one model reached three ways is one
+   * name and one window, not three that drift. Derivation makes that true by
+   * construction — this fails only if an offering starts overriding the fields
+   * that identify *which model it is*, which is how the three-copies problem
+   * would come back wearing a different hat.
+   */
+  it("says the same thing about a model however it is reached", () => {
+    const byFamily = new Map<string, typeof MODEL_CONFIGS>();
+    for (const model of MODEL_CONFIGS) {
+      byFamily.set(model.family, [...(byFamily.get(model.family) ?? []), model]);
+    }
+    for (const [family, routes] of byFamily) {
+      if (routes.length < 2) {
+        continue;
+      }
+      const [first] = routes;
+      for (const route of routes) {
+        expect(route.displayName, `${family}: routes disagree on the name`).toBe(
+          first?.displayName,
+        );
+        expect(route.contextWindow, `${family}: routes disagree on the window`).toBe(
+          first?.contextWindow,
+        );
+        expect(route.capabilities.imageGeneration ?? false, `${family}: routes disagree on kind`)
+          .toBe(first?.capabilities.imageGeneration ?? false);
+      }
+    }
+  });
+
+  /**
+   * A router names models `vendor/model`, and its wire id is the only place
+   * that vendor appears — the registry id says `openrouter`. One missing prefix
+   * dispatches `claude-opus-4.8`, which OpenRouter answers with a 404 for a
+   * model it very much serves.
+   */
+  it("gives every router route a vendor-qualified wire id", () => {
+    for (const model of MODEL_CONFIGS.filter((m) => m.provider === "openrouter")) {
+      expect(model.wireId, `${model.id}: router route needs a wireId`).toBeDefined();
+      expect(model.wireId, `${model.id}: wireId names no vendor`).toContain("/");
+    }
+  });
+
   it("keeps the output cap within the context window", () => {
     for (const model of MODEL_CONFIGS) {
       expect(model.maxTokens, `${model.id}: non-positive maxTokens`).toBeGreaterThan(0);
@@ -99,16 +142,24 @@ describe("model registry invariants", () => {
   });
 
   /**
-   * A `wireId` exists only to name a model the way its own provider does. One
-   * that carries a prefix would be double-prefixed on dispatch, and one that
-   * equals the bare id is a copy of information already in `id` — the kind that
-   * drifts.
+   * A `wireId` exists only to name a model the way the route it belongs to
+   * does. One that equals the bare id is a copy of information already in `id` —
+   * the kind that drifts — and one that repeats its *own* provider prefix would
+   * arrive double-prefixed.
+   *
+   * A slash is not itself the problem, and the rule used to say it was: a router
+   * names models `vendor/model`, so `openrouter/claude-opus-4.8` reaches
+   * OpenRouter as `anthropic/claude-opus-4.8` and the prefix belongs to the
+   * vendor behind the route, not to the route.
    */
   it("only carries a wireId that says something the id does not", () => {
     for (const model of MODEL_CONFIGS.filter((m) => m.wireId !== undefined)) {
       const wireId = model.wireId as string;
       expect(wireId.trim(), `${model.id}: empty wireId`).not.toBe("");
-      expect(wireId, `${model.id}: wireId must not carry a provider prefix`).not.toContain("/");
+      expect(
+        wireId.startsWith(`${model.provider}/`),
+        `${model.id}: wireId repeats its own provider prefix`,
+      ).toBe(false);
       expect(wireId, `${model.id}: wireId repeats the bare id`).not.toBe(
         model.id.slice(model.id.indexOf("/") + 1),
       );
