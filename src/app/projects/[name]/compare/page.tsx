@@ -15,6 +15,7 @@ import {
   type Version,
 } from "../../lib/api";
 import { findTemplateVariables } from "@/shared/template";
+import { formatUsd } from "@/app/_lib/formatUsd";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   Alert,
@@ -309,7 +310,7 @@ export default function ComparePage() {
                   <Group gap="xs">
                     {side.costUsd !== null && (
                       <Badge variant="light" color="teal">
-                        ${side.costUsd.toFixed(4)}
+                        {formatUsd(side.costUsd, 4)}
                       </Badge>
                     )}
                     {side.durationMs !== null && (

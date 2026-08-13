@@ -1372,6 +1372,39 @@ describe("single owners", () => {
 });
 
 /**
+ * The other half of `formatUsd`'s single-owner claim, which the check above
+ * cannot make: a copy does not repeat the *definition*, it hand-rolls a
+ * different one. `$${value.toFixed(4)}` is what three cost tables and a compare
+ * badge actually wrote, and it disagrees with the owner in two ways at once —
+ * no thousands separator, and a fixed width that reports `$0.00` for the
+ * sub-cent amounts a cost page exists to show. So the rule is spelled as the
+ * shape of the mistake rather than the shape of the definition.
+ *
+ * Scoped to `app` because that is exactly where the owner is reachable. The
+ * cost guards format dollars into a 429 message and a Slack alert, and they
+ * live in `application`, which may not import `@/app` — their amounts are
+ * sentences for a caller, not columns for a reader, and the dependency rule is
+ * what keeps the two apart.
+ *
+ * `formatBytes` is exempt by name rather than by pattern: the two `_lib`
+ * formatters are each the owner of their own format, and a byte count's
+ * `toFixed(1)` is indistinguishable from a dollar's in source text — the `${`
+ * of a template literal and the `$` + `{expr}` of JSX read the same.
+ */
+describe("a dollar amount is never written by hand", () => {
+  it("has no `$` followed by a rounded number in app outside formatUsd", () => {
+    const formatters = ["src/app/_lib/formatUsd.ts", "src/app/_lib/formatBytes.ts"];
+    const handRolled = SOURCE_FILES.filter(
+      (file) =>
+        layerOf(file.path) === "app" &&
+        !formatters.includes(file.path) &&
+        /\$\{[^}]*\.toFixed\(/.test(stripComments(file.text)),
+    ).map((file) => file.path);
+    expect(handRolled).toEqual([]);
+  });
+});
+
+/**
  * Who may start an image run.
  *
  * The image use case is the one execution path the facade deliberately does not

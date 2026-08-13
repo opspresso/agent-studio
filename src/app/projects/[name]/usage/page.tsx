@@ -6,6 +6,7 @@ import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { DailyCostChart } from "@/app/_components/DailyCostChart";
 import { defaultDateRange } from "@/app/_lib/dateRange";
+import { formatUsd } from "@/app/_lib/formatUsd";
 import { buildDailySeries, sumRecord } from "@/app/_lib/usage";
 import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
 import { Alert, Avatar, Card, Group, Stack, Table, Text } from "@mantine/core";
@@ -119,7 +120,7 @@ export default function UsagePage() {
                     <Table.Tr key={row.date}>
                       <Table.Td ff="monospace">{row.date}</Table.Td>
                       <Table.Td ta="right">{sumRecord(row.calls).toLocaleString()}</Table.Td>
-                      <Table.Td ta="right">${sumRecord(row.costUsd).toFixed(4)}</Table.Td>
+                      <Table.Td ta="right">{formatUsd(sumRecord(row.costUsd), 4)}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -127,7 +128,7 @@ export default function UsagePage() {
                   <Table.Tr fw={500}>
                     <Table.Td>Total</Table.Td>
                     <Table.Td ta="right">{totalCalls.toLocaleString()}</Table.Td>
-                    <Table.Td ta="right">${totalCost.toFixed(4)}</Table.Td>
+                    <Table.Td ta="right">{formatUsd(totalCost, 4)}</Table.Td>
                   </Table.Tr>
                 </Table.Tfoot>
               </Table>
@@ -168,7 +169,7 @@ export default function UsagePage() {
                           </Group>
                         </Table.Td>
                         <Table.Td ta="right">{caller.calls.toLocaleString()}</Table.Td>
-                        <Table.Td ta="right">${caller.costUsd.toFixed(4)}</Table.Td>
+                        <Table.Td ta="right">{formatUsd(caller.costUsd, 4)}</Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>

@@ -6,6 +6,7 @@ import { predictImage, readSse, streamAgent, streamPredict } from "../../lib/api
 import { parseWireToolCall } from "@/app/_lib/toolCalls";
 import { findTemplateVariables } from "@/shared/template";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
+import { formatUsd } from "@/app/_lib/formatUsd";
 import { ToolRow } from "@/app/_components/ToolRow";
 import {
   chunkAuthorPath,
@@ -443,7 +444,7 @@ export function RunPanel({
 
       {cost !== null && (
         <Text fz="xs" c="dimmed">
-          est. cost: ${cost.toFixed(6)}
+          est. cost: {formatUsd(cost, 6)}
         </Text>
       )}
     </Stack>
