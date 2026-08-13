@@ -225,22 +225,21 @@ export function buildProjectSlackManifest(
       redirect_urls: [`${baseUrl}${MCP_OAUTH_CALLBACK_PATH}`],
       scopes: {
         bot: [
-          "emoji:read",
           "app_mentions:read",
           "assistant:write",
           "channels:history",
           "chat:write",
-          "groups:history",
-          "im:history",
+          "emoji:read",
           "files:read",
           "files:write",
+          "groups:history",
           "groups:read",
+          "im:history",
+          "incoming-webhook",
           "reactions:read",
-          // `users.info` needs this and nothing more. `users.profile:read` and
-          // `users:read.email` used to be requested here and were never called:
-          // the caller block carries a name and a timezone, deliberately not an
-          // email, so neither has anything left to buy.
+          "users:read.email",
           "users:read",
+          "users.profile:read",
         ],
       },
       pkce_enabled: false,
