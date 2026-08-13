@@ -66,7 +66,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/projects/{name}/versions` | `GET` `POST` | session / owner |
 | `/api/projects/{name}/versions/{version}` | `GET` `PUT` `DELETE` | session / owner |
 | `/api/projects/{name}/publish` | `POST` | owner |
-| `/api/projects/{name}/preview` | `POST` | owner |
+| `/api/projects/{name}/preview` | `POST` | session |
 | `/api/projects/{name}/versions/{version}/predict` | `POST` | session or project token |
 | `/api/projects/{name}/versions/{version}/chat/completions` | `POST` | session or project token |
 | `/api/projects/{name}/versions/{version}/agent` | `POST` | session or project token |
@@ -310,10 +310,13 @@ POST /api/projects/{name}/preview
 Assembles what the draft in the editor **would** send — system prompt, skill table, connected
 MCP server table, rendered template — without running it.
 
-Owner/admin, unlike reading or running a project: the body is an unsaved version, and its MCP
-bindings may override the outbound headers a request carries to a registered server — the same
-authority saving a version has. The URL always comes from the registry, so the SSRF surface is
-a run's.
+Session-gated, like running a project. The draft's MCP bindings can attach chosen headers to a
+registered server, but that is not an authority the gate could reserve — any signed-in user
+binds the same registry server with the same headers from a project of their own. A masked
+header resolves only against this project's stored binding for the same server name, so a
+non-owner's preview sends nothing a run they may already start would not; and the assembled
+text is composed of what `GET /versions` already answers with a session. The URL always comes
+from the registry, so the SSRF surface is a run's.
 
 ## App settings
 

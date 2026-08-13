@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Route-handler test: `withAuth` is stubbed to inject a controllable user so the
-// real owner gate runs. The preview accepts an unsaved version body whose MCP
-// bindings can override the headers sent to a registered server, so it must sit
-// behind the same gate as saving one.
+// Route-handler test: `withAuth` is stubbed to inject a controllable user. The
+// preview is session-gated like running a project — the route says why saving's
+// owner gate is deliberately not applied — so a non-owner assembling someone
+// else's project is the contract, not a leak.
 const { state, projectRepo, calls } = vi.hoisted(() => ({
   state: { email: "owner@example.com" },
   projectRepo: { get: vi.fn() },
@@ -79,12 +79,21 @@ describe("POST /api/projects/[name]/preview", () => {
     expect(calls).toEqual([{ versionName: "draft", variables: { a: "b" } }]);
   });
 
-  it("refuses a caller who does not own the project", async () => {
+  it("assembles for a session caller who does not own the project, like a run", async () => {
     state.email = "someone@example.com";
 
     const res = await POST(body(), ctx());
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ versionName: "draft", variables: undefined }]);
+  });
+
+  it("404s on a project that does not exist", async () => {
+    projectRepo.get.mockResolvedValue(null);
+
+    const res = await POST(body(), ctx());
+
+    expect(res.status).toBe(404);
     expect(calls).toEqual([]);
   });
 

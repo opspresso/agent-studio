@@ -10,10 +10,16 @@ type RouteContext = { params: Promise<{ name: string }> };
 /**
  * Assemble what the draft in the editor would send, without running it.
  *
- * Owner or admin, unlike reading or running a project: the body is an unsaved
- * version, and its MCP bindings may override the outbound headers a request
- * carries to a registered server — the same authority saving a version has.
- * The URL always comes from the registry, so the SSRF surface is a run's.
+ * Session-gated like running a project, not owner-gated like saving one. This
+ * used to be the owner's, on the argument that the draft's MCP bindings attach
+ * chosen headers to a registered server — but that is not an authority the gate
+ * can reserve: any signed-in user binds the same registry server with the same
+ * headers from a project of their own. A masked header resolves only against
+ * this project's stored binding for the same server name, so the most a
+ * non-owner's preview sends anywhere is what any run they may already start
+ * sends; and the assembled text — system prompt, skill table, tool names — is
+ * composed of what `GET /versions` already answers with a session. The URL
+ * always comes from the registry, so the SSRF surface is a run's.
  */
 export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
@@ -23,7 +29,7 @@ export const POST = withAuth(async (user, request: Request, ctx: RouteContext) =
   }
   const caller = sessionCaller(user);
   try {
-    const project = await projectUseCases.assertWritable(name, user.email);
+    const project = await projectUseCases.get(name);
     const { variables, versionName, message, ...draft } = parsed.data;
     const preview = await previewPrompt(executionDeps, {
       signal: request.signal,
