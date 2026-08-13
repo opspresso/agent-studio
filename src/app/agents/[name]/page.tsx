@@ -29,8 +29,10 @@ import {
 } from "@mantine/core";
 import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 export default function AgentDetailPage() {
+  const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
@@ -85,7 +87,7 @@ export default function AgentDetailPage() {
   if (error && !agent) {
     return (
       <Stack gap="md">
-        <BackLink href="/agents" label="agents" />
+        <BackLink href="/agents" label={t("nav.agents")} />
         <Alert color="red" variant="light">
           {error}
         </Alert>
@@ -102,7 +104,7 @@ export default function AgentDetailPage() {
   return (
     <Stack gap="lg">
       {confirmModal}
-      <BackLink href="/agents" label="agents" />
+      <BackLink href="/agents" label={t("nav.agents")} />
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
@@ -192,6 +194,7 @@ export default function AgentDetailPage() {
   );
 }
 function MessageTester({ name }: { name: string }) {
+  const t = useT();
   const [message, setMessage] = useState("");
   const [reply, setReply] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -225,7 +228,7 @@ function MessageTester({ name }: { name: string }) {
             minRows={3}
             maxRows={12}
             required
-            placeholder="Send one message to the agent…"
+            placeholder={t("agents.sendPlaceholder")}
             w="100%"
           />
           <Button type="submit" variant="default" loading={sending}>
@@ -269,6 +272,7 @@ function EditAgentForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const [url, setUrl] = useState(agent.url);
   const [protocol, setProtocol] = useState<AgentProtocol>(agent.protocol ?? "openai");
   const [description, setDescription] = useState(agent.description);
@@ -294,7 +298,7 @@ function EditAgentForm({
     <form onSubmit={submit}>
       <Stack gap="md">
         <Select
-          label="Protocol"
+          label={t("agents.protocol")}
           value={protocol}
           onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
           allowDeselect={false}
@@ -311,7 +315,7 @@ function EditAgentForm({
           required
         />
         <TextInput
-          label="Description"
+          label={t("registry.description")}
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           required
@@ -320,7 +324,7 @@ function EditAgentForm({
         <HeaderRowsEditor
           rows={rows}
           onChange={setRows}
-          emptyHint="No headers. Add one if the endpoint needs auth."
+          emptyHint={t("registry.headersEmpty")}
         />
         <Text fz="xs" c="dimmed">
           Masked values keep the stored secret. Type a new value to replace it.

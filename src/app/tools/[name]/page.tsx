@@ -41,6 +41,7 @@ import { MCP_RUNTIME_COLOR, PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { CredentialBadges } from "../_components/CredentialBadges";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * How long the console watches a restart, and how often it asks.
@@ -54,6 +55,7 @@ const RESTART_WATCH_MS = 6 * 60_000;
 const RESTART_POLL_INTERVAL_MS = 5_000;
 
 export default function McpDetailPage() {
+  const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
@@ -206,7 +208,7 @@ export default function McpDetailPage() {
   if (error && !server) {
     return (
       <Stack gap="md">
-        <BackLink href="/tools" label="tools" />
+        <BackLink href="/tools" label={t("nav.tools")} />
         <Alert color="red" variant="light">
           {error}
         </Alert>
@@ -224,7 +226,7 @@ export default function McpDetailPage() {
   return (
     <Stack gap="lg">
       {confirmModal}
-      <BackLink href="/tools" label="tools" />
+      <BackLink href="/tools" label={t("nav.tools")} />
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
@@ -603,6 +605,7 @@ function EditMcpForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const [url, setUrl] = useState(server.url);
   const [image, setImage] = useState(server.image ?? "");
   const [containerPort, setContainerPort] = useState(String(server.containerPort ?? 3000));
@@ -670,16 +673,16 @@ function EditMcpForm({
       <Stack gap="md">
         {server.runtime === "managed" ? (
           <>
-            <TextInput label="URL" value={url} readOnly description="Set by the managed runtime." />
+            <TextInput label={t("registry.url")} value={url} readOnly description={t("managed.urlSetByRuntime")} />
             <TextInput
-              label="Image"
+              label={t("managed.image")}
               value={image}
               onChange={(e) => setImage(e.currentTarget.value)}
               required
               styles={monoInput}
             />
             <NumberInput
-              label="Container port"
+              label={t("managed.port")}
               value={containerPort}
               onChange={(value) => setContainerPort(String(value))}
               min={1}
@@ -687,25 +690,25 @@ function EditMcpForm({
               required
             />
             <TextInput
-              label="Environment references"
+              label={t("managed.envRefs")}
               value={envRefs}
               onChange={(e) => setEnvRefs(e.currentTarget.value)}
-              placeholder="/env/prod/mcp-image-fetch"
-              description="SSM parameter names, not values — the secrets never pass through here."
+              placeholder={t("managed.envRefsPlaceholder")}
+              description={t("managed.envRefsHint")}
               inputWrapperOrder={["label", "input", "description", "error"]}
               styles={monoInput}
             />
             <HeaderRowsEditor
               rows={environmentRows}
               onChange={setEnvironmentRows}
-              caption="Environment variables"
-              emptyHint="No direct environment variables."
-              addLabel="+ Add variable"
+              caption={t("managed.envVars")}
+              emptyHint={t("managed.envVarsEmpty")}
+              addLabel={t("managed.addVariable")}
               keyPlaceholder="VARIABLE_NAME"
               valuePlaceholder="value"
             />
             <Textarea
-              label="Arguments"
+              label={t("managed.args")}
               value={args}
               onChange={(e) => setArgs(e.currentTarget.value)}
               placeholder={
@@ -713,15 +716,15 @@ function EditMcpForm({
               }
               autosize
               minRows={3}
-              description="One container entrypoint argument per line. {{PORT}} becomes the effective listen port; arguments are not run through a shell."
+              description={t("managed.argsHint")}
               inputWrapperOrder={["label", "input", "description", "error"]}
               styles={monoInput}
             />
             <TextInput
-              label="Endpoint path"
+              label={t("managed.path")}
               value={endpointPath}
               onChange={(e) => setEndpointPath(e.currentTarget.value)}
-              placeholder="/mcp"
+              placeholder={t("managed.pathPlaceholder")}
               required
               styles={monoInput}
             />
@@ -732,7 +735,7 @@ function EditMcpForm({
           </>
         ) : (
           <TextInput
-            label="URL"
+            label={t("registry.url")}
             value={url}
             onChange={(e) => setUrl(e.currentTarget.value)}
             type="url"
@@ -747,19 +750,19 @@ function EditMcpForm({
           />
         )}
         <TextInput
-          label="Description"
+          label={t("registry.description")}
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
-          placeholder="One-line summary shown to the model"
+          placeholder={t("registry.modelSummary")}
           disabled={documentLocked}
           {...(documentLocked ? { description: "Owned by the plugin repository." } : {})}
           inputWrapperOrder={["label", "input", "description", "error"]}
         />
         <Textarea
-          label="Content (markdown)"
+          label={t("registry.content")}
           value={content}
           onChange={(e) => setContent(e.currentTarget.value)}
-          placeholder="Setup steps, caveats, links…"
+          placeholder={t("tools.contentPlaceholder")}
           autosize
           minRows={documentLocked ? 3 : 8}
           maxRows={30}

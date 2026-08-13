@@ -17,6 +17,7 @@ import { monoInput } from "@/app/_components/monoInput";
 import { HeaderRowsEditor, rowsToRecord, type HeaderRow } from "@/app/_components/HeaderRows";
 import { createManagedMcp } from "../api";
 import { MANAGED_NAME } from "@/shared/slug";
+import { useT } from "@/app/_i18n/provider";
 
 
 export function ManagedMcpModal({
@@ -28,6 +29,7 @@ export function ManagedMcpModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
   const [containerPort, setContainerPort] = useState("3000");
@@ -96,36 +98,36 @@ export function ManagedMcpModal({
     <FormModal
       opened={opened}
       onClose={onClose}
-      title="Run a managed MCP server"
+      title={t("managed.title")}
       error={error}
       onSubmit={submit}
-      submitLabel="Start"
+      submitLabel={t("managed.start")}
       submitting={submitting}
       submitDisabled={!name || !image}
-      hint="Starts a container on this host, reachable only from it."
+      hint={t("managed.hint")}
     >
       <TextInput
-        label="Name"
+        label={t("registry.nameLabel")}
         value={name}
         onChange={(e) => setName(e.currentTarget.value)}
-        placeholder="image-fetch"
+        placeholder={t("managed.namePlaceholder")}
         pattern={MANAGED_NAME.source}
         required
-        description="Also the container's name, so the two stay findable together."
+        description={t("managed.nameHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <TextInput
-        label="Image"
+        label={t("managed.image")}
         value={image}
         onChange={(e) => setImage(e.currentTarget.value)}
-        placeholder="…dkr.ecr.ap-northeast-2.amazonaws.com/mcp-image-fetch:v1.0.1"
+        placeholder={t("managed.imagePlaceholder")}
         required
-        description="Any registry the host can pull from — its own ECR needs no credentials."
+        description={t("managed.imageHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
         styles={monoInput}
       />
       <NumberInput
-        label="Container port"
+        label={t("managed.port")}
         value={containerPort}
         onChange={(value) => setContainerPort(String(value))}
         min={1}
@@ -141,25 +143,25 @@ export function ManagedMcpModal({
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <TextInput
-        label="Environment references"
+        label={t("managed.envRefs")}
         value={envRefs}
         onChange={(e) => setEnvRefs(e.currentTarget.value)}
-        placeholder="/env/prod/mcp-image-fetch"
-        description="SSM parameter names, not values — the secrets never pass through here."
+        placeholder={t("managed.envRefsPlaceholder")}
+        description={t("managed.envRefsHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
         styles={monoInput}
       />
       <HeaderRowsEditor
         rows={environmentRows}
         onChange={setEnvironmentRows}
-        caption="Environment variables"
-        emptyHint="No direct environment variables."
-        addLabel="+ Add variable"
+        caption={t("managed.envVars")}
+        emptyHint={t("managed.envVarsEmpty")}
+        addLabel={t("managed.addVariable")}
         keyPlaceholder="VARIABLE_NAME"
         valuePlaceholder="value"
       />
       <Textarea
-        label="Arguments"
+        label={t("managed.args")}
         value={args}
         onChange={(e) => setArgs(e.currentTarget.value)}
         placeholder={
@@ -167,33 +169,33 @@ export function ManagedMcpModal({
         }
         autosize
         minRows={3}
-        description="One container entrypoint argument per line. {{PORT}} becomes the effective listen port; arguments are not run through a shell."
+        description={t("managed.argsHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
         styles={monoInput}
       />
       <TextInput
-        label="Endpoint path"
+        label={t("managed.path")}
         value={endpointPath}
         onChange={(e) => setEndpointPath(e.currentTarget.value)}
-        placeholder="/mcp"
+        placeholder={t("managed.pathPlaceholder")}
         required
         styles={monoInput}
       />
       <TextInput
-        label="Description"
+        label={t("registry.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
-        placeholder="Fetches an image URL and returns its bytes"
+        placeholder={t("tools.descriptionPlaceholder")}
       />
       <Textarea
-        label="Content (markdown)"
+        label={t("registry.content")}
         value={content}
         onChange={(e) => setContent(e.currentTarget.value)}
-        placeholder="Setup steps, caveats, links…"
+        placeholder={t("tools.contentPlaceholder")}
         autosize
         minRows={6}
         maxRows={24}
-        description="Operator notes for the console. Not sent to the model — only the description is."
+        description={t("registry.operatorNotes")}
         inputWrapperOrder={["label", "input", "description", "error"]}
         styles={monoInput}
       />
