@@ -310,7 +310,7 @@ export default function ComparePage() {
                   <Group gap="xs">
                     {side.costUsd !== null && (
                       <Badge variant="light" color="teal">
-                        {formatUsd(side.costUsd, 4)}
+                        {formatUsd(side.costUsd)}
                       </Badge>
                     )}
                     {side.durationMs !== null && (

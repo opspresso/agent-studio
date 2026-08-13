@@ -1,0 +1,15 @@
+.statCard {
+  position: relative;
+  overflow: hidden;
+}
+
+.statCard::after {
+  content: "";
+  position: absolute;
+  right: -30px;
+  bottom: -48px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--mantine-color-brand-5) 7%, transparent);
+}
