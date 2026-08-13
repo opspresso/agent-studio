@@ -32,41 +32,61 @@ import {
   IconUser,
   IconUsers,
 } from "@tabler/icons-react";
+import type { MessageKey } from "@/app/_i18n/messages/en";
+import { useT } from "@/app/_i18n/provider";
 import type { Viewer } from "@/lib/viewer";
+import { LocaleToggle } from "./LocaleToggle";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 import classes from "./AppLayout.module.css";
 
+/*
+ * Labels are message keys, resolved at render. `key` is separate from `label`
+ * because the admin-only filter below keys on the group's identity, and a
+ * translated string is not one — matching on `"System"` would have stopped
+ * matching the moment the sidebar spoke Korean, silently showing every reader
+ * the admin section.
+ *
+ * `satisfies` rather than a bare `as const`: it is what makes a mistyped key a
+ * compile error here instead of an English fallback at render.
+ */
 const NAV_GROUPS = [
   {
-    label: "Workspace",
+    key: "workspace",
+    label: "nav.group.workspace",
     items: [
-      { href: "/", label: "Overview", Icon: IconChartBar },
-      { href: "/projects", label: "Projects", Icon: IconFolder },
-      { href: "/chats", label: "Chats", Icon: IconMessageCircle },
-      { href: "/artifacts", label: "Artifacts", Icon: IconPhoto },
-      { href: "/profile", label: "Profile", Icon: IconUser },
+      { href: "/", label: "nav.overview", Icon: IconChartBar },
+      { href: "/projects", label: "nav.projects", Icon: IconFolder },
+      { href: "/chats", label: "nav.chats", Icon: IconMessageCircle },
+      { href: "/artifacts", label: "nav.artifacts", Icon: IconPhoto },
+      { href: "/profile", label: "nav.profile", Icon: IconUser },
     ],
   },
   {
-    label: "Intelligence",
+    key: "intelligence",
+    label: "nav.group.intelligence",
     items: [
-      { href: "/plugins", label: "Plugins", Icon: IconPackage },
-      { href: "/skills", label: "Skills", Icon: IconBook2 },
-      { href: "/tools", label: "Tools", Icon: IconTool },
-      { href: "/agents", label: "Agents", Icon: IconRobot },
+      { href: "/plugins", label: "nav.plugins", Icon: IconPackage },
+      { href: "/skills", label: "nav.skills", Icon: IconBook2 },
+      { href: "/tools", label: "nav.tools", Icon: IconTool },
+      { href: "/agents", label: "nav.agents", Icon: IconRobot },
     ],
   },
   {
-    label: "System",
+    key: "system",
+    label: "nav.group.system",
     items: [
-      { href: "/members", label: "Members", Icon: IconUsers },
-      { href: "/audit", label: "Audit trail", Icon: IconShieldCheck },
-      { href: "/models", label: "Models", Icon: IconCpu },
-      { href: "/settings", label: "Settings", Icon: IconSettings },
+      { href: "/members", label: "nav.members", Icon: IconUsers },
+      { href: "/audit", label: "nav.audit", Icon: IconShieldCheck },
+      { href: "/models", label: "nav.models", Icon: IconCpu },
+      { href: "/settings", label: "nav.settings", Icon: IconSettings },
     ],
   },
-] as const;
+] as const satisfies ReadonlyArray<{
+  key: string;
+  label: MessageKey;
+  items: ReadonlyArray<{ href: string; label: MessageKey; Icon: typeof IconChartBar }>;
+}>;
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") {
@@ -86,6 +106,7 @@ export function AppLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const t = useT();
   const [opened, { toggle, close }] = useDisclosure(false);
 
   /*
@@ -123,11 +144,12 @@ export function AppLayout({
                   AgentDure
                 </Text>
                 <Text fz={10} c="dimmed" tt="uppercase" lts="0.12em" visibleFrom="xs">
-                  Agents that work together
+                  {t("chrome.tagline")}
                 </Text>
               </div>
             </UnstyledButton>
             <Group gap="xs" ml="auto" wrap="nowrap">
+              <LocaleToggle />
               <ThemeToggle />
               <UserMenu email={viewer?.email ?? null} />
             </Group>
@@ -145,7 +167,7 @@ export function AppLayout({
         <>
         <Group justify="space-between" mb="lg">
           <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.14em">
-            Workspace navigation
+            {t("chrome.navLabel")}
           </Text>
           <ActionIcon
             component={Link}
@@ -153,7 +175,7 @@ export function AppLayout({
             variant="light"
             color="brand"
             size="sm"
-            aria-label="Open projects"
+            aria-label={t("chrome.openProjects")}
             onClick={close}
           >
             <IconPlus size={14} />
@@ -161,10 +183,10 @@ export function AppLayout({
         </Group>
         <ScrollArea style={{ flex: 1 }} scrollbarSize={4}>
           <Stack gap="xl">
-            {NAV_GROUPS.filter((group) => group.label !== "System" || viewer?.isAdmin).map((group) => (
-              <Stack key={group.label} gap={6}>
+            {NAV_GROUPS.filter((group) => group.key !== "system" || viewer?.isAdmin).map((group) => (
+              <Stack key={group.key} gap={6}>
                 <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.12em" px="sm">
-                  {group.label}
+                  {t(group.label)}
                 </Text>
                 {group.items.map(({ href, label, Icon }) => {
                   const active = isActive(pathname, href);
@@ -188,7 +210,7 @@ export function AppLayout({
                         <Icon size={17} stroke={1.8} />
                       </ThemeIcon>
                       <Text fz="sm" fw={active ? 600 : 450}>
-                        {label}
+                        {t(label)}
                       </Text>
                       <IconChevronRight className={classes.navArrow} size={14} />
                     </UnstyledButton>
@@ -201,7 +223,7 @@ export function AppLayout({
         <div className={classes.navFooter}>
           <span className={classes.statusDot} />
           <Text fz="xs" c="dimmed">
-            Workspace online · v{version}
+            {t("chrome.status", { version })}
           </Text>
         </div>
         </>

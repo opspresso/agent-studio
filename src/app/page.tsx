@@ -26,66 +26,78 @@ import {
 } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
 import { getSessionUser } from "@/lib/session";
+import type { MessageKey } from "./_i18n/messages/en";
+import { getT } from "./_i18n/server";
 import { Overview } from "./_components/Overview";
 import classes from "./page.module.css";
 import { version } from "../../package.json";
 
+/*
+ * `label` is the monospace tag over each card — a lowercase technical token
+ * that reads the same in both languages, and is not a message key. The title
+ * and body are.
+ */
 const DOMAINS = [
   {
     label: "projects",
-    title: "Projects & versions",
-    body: "Author prompts, agents, and image projects as immutable versions. Publish one; callers pin it or follow the pointer.",
+    title: "home.domain.projects",
+    body: "home.domain.projectsBody",
     Icon: IconFolder,
   },
   {
     label: "agent",
-    title: "Agent loop",
-    body: "A multi-turn tool loop with turn budgets, on-demand skills, and subagent transfers — streamed end to end.",
+    title: "home.domain.agent",
+    body: "home.domain.agentBody",
     Icon: IconRobot,
   },
   {
     label: "mcp",
-    title: "MCP tools",
-    body: "Register a server once; versions bind it, narrow its tools, and override headers — with per-project OAuth, secrets encrypted at rest.",
+    title: "home.domain.mcp",
+    body: "home.domain.mcpBody",
     Icon: IconTool,
   },
   {
     label: "skills",
-    title: "Skills",
-    body: "Markdown behavior packs, listed to the model and loaded only when it asks.",
+    title: "home.domain.skills",
+    body: "home.domain.skillsBody",
     Icon: IconBook2,
   },
   {
     label: "plugins",
-    title: "Agent Plugins",
-    body: "Skills and MCP servers sync from one plugins repo — the source of truth for every name it declares.",
+    title: "home.domain.plugins",
+    body: "home.domain.pluginsBody",
     Icon: IconPackage,
   },
   {
     label: "chats",
-    title: "Chats",
-    body: "Talk to any agent project — replies stream, tool traffic stays inline, and a run outlives the tab that started it.",
+    title: "home.domain.chats",
+    body: "home.domain.chatsBody",
     Icon: IconMessageCircle,
   },
   {
     label: "images",
-    title: "Images",
-    body: "Draw or edit from a prompt — as a project type, agent builtins, or an image subagent; an edit can address any image the run has seen.",
+    title: "home.domain.images",
+    body: "home.domain.imagesBody",
     Icon: IconPhoto,
   },
   {
     label: "surfaces",
-    title: "Slack, A2A & webhooks",
-    body: "Per-project Slack bots, A2A in both directions, webhook and schedule triggers — every entry point runs the same engine.",
+    title: "home.domain.surfaces",
+    body: "home.domain.surfacesBody",
     Icon: IconArrowsShuffle,
   },
   {
     label: "cost",
-    title: "Cost & guards",
-    body: "Every call priced from the model registry and rolled up per project, per caller, per day — daily and monthly thresholds warn, then refuse.",
+    title: "home.domain.cost",
+    body: "home.domain.costBody",
     Icon: IconChartBar,
   },
-] as const;
+] as const satisfies ReadonlyArray<{
+  label: string;
+  title: MessageKey;
+  body: MessageKey;
+  Icon: typeof IconFolder;
+}>;
 
 const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: string }> = [
   { kind: "meta", text: 'POST /api/projects/support-triage/versions/published/agent' },
@@ -125,6 +137,8 @@ export default async function Home() {
     return <Overview userName={user.name} userEmail={user.email} />;
   }
 
+  const t = await getT();
+
   return (
     <Stack gap={80} py={{ base: "md", md: 48 }}>
       {/*
@@ -142,40 +156,38 @@ export default async function Home() {
             leftSection={<IconBolt size={14} />}
             className={classes.eyebrow}
           >
-            Version · publish · run
+            {t("home.eyebrow")}
           </Badge>
           <Title order={1} mt="lg" fz={{ base: 42, md: 60 }} lh={1.04} lts="-0.045em">
-            Build an agent once,
-            <span className={classes.gradientText}> call it from anywhere.</span>
+            {t("home.headline")}
+            <span className={classes.gradientText}>{t("home.headlineAccent")}</span>
           </Title>
           <Text mt="xl" maw={580} c="dimmed" lh={1.7} fz={{ base: "md", md: "lg" }}>
-            Author a prompt or an agent as a project, iterate in versions, publish one — then call
-            it from the console, an OpenAI-compatible API, Slack, a webhook, or another agent.
-            Every run attributed, priced, and bounded.
+            {t("home.lede")}
           </Text>
           <Group mt="xl" gap="md" wrap="wrap">
             <SignInButton />
             <Text fz="sm" c="dimmed">
-              Your Google account, on one of this deployment&rsquo;s allowed domains.
+              {t("home.signInHint")}
             </Text>
           </Group>
           <Group mt={32} gap="xl" wrap="wrap" className={classes.proofRow}>
             <div>
-              <Text fw={650}>One engine</Text>
+              <Text fw={650}>{t("home.proof.engine")}</Text>
               <Text fz="xs" c="dimmed">
-                Every model, every surface
+                {t("home.proof.engineNote")}
               </Text>
             </div>
             <div>
-              <Text fw={650}>Live traces</Text>
+              <Text fw={650}>{t("home.proof.traces")}</Text>
               <Text fz="xs" c="dimmed">
-                Every agent handoff
+                {t("home.proof.tracesNote")}
               </Text>
             </div>
             <div>
-              <Text fw={650}>Exact cost</Text>
+              <Text fw={650}>{t("home.proof.cost")}</Text>
               <Text fz="xs" c="dimmed">
-                Every call attributed
+                {t("home.proof.costNote")}
               </Text>
             </div>
           </Group>
@@ -191,7 +203,7 @@ export default async function Home() {
               m={0}
               w="100%"
               className={classes.console}
-              aria-label="Example agent run stream"
+              aria-label={t("home.streamLabel")}
             >
               <Group
                 component="figcaption"
@@ -201,7 +213,7 @@ export default async function Home() {
                 className={classes.consoleHeader}
               >
                 <Text ff="monospace" fz="xs" c="dimmed">
-                  agent run · text/event-stream
+                  {t("home.streamCaption")}
                 </Text>
                 <Text
                   ff="monospace"
@@ -212,7 +224,7 @@ export default async function Home() {
                   py={2}
                   className={classes.liveBadge}
                 >
-                  live
+                  {t("home.streamLive")}
                 </Text>
               </Group>
               <pre className={classes.trace}>
@@ -228,7 +240,7 @@ export default async function Home() {
               </pre>
             </Paper>
             <Badge className={classes.floatingBadge} color="teal" variant="light" radius="xl">
-              ● agent online
+              {t("home.agentOnline")}
             </Badge>
           </div>
         </GridCol>
@@ -236,7 +248,7 @@ export default async function Home() {
 
       <section>
         <VisuallyHidden>
-          <Title order={2}>What AgentDure covers</Title>
+          <Title order={2}>{t("home.coverage")}</Title>
         </VisuallyHidden>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
           {DOMAINS.map(({ Icon, ...domain }) => (
@@ -260,10 +272,10 @@ export default async function Home() {
                 {domain.label}
               </Text>
               <Text fz="sm" fw={600} mt="xs">
-                {domain.title}
+                {t(domain.title)}
               </Text>
               <Text fz="sm" c="dimmed" mt={6} lh={1.6}>
-                {domain.body}
+                {t(domain.body)}
               </Text>
             </Card>
           ))}
@@ -272,11 +284,10 @@ export default async function Home() {
 
       <Stack gap={6} align="center">
         <Text ta="center" fz="sm" c="dimmed" maw={560} lh={1.7}>
-          <strong>Dure (두레)</strong> — a Korean village work cooperative, where neighbors
-          pool their labor to finish what no one could alone. Agents here work the same way.
+          <strong>{t("home.dureName")}</strong> {t("home.dure")}
         </Text>
         <Text ta="center" fz="xs" c="dimmed">
-          An internal LLM platform for prompt, agent, and cost management.
+          {t("home.product")}
         </Text>
         <Text ff="monospace" fz={10} c="dimmed" lts="0.12em">
           v{version}

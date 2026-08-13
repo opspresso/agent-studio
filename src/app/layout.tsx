@@ -5,6 +5,8 @@ import { Chakra_Petch, Figtree, JetBrains_Mono } from "next/font/google";
 import { AppLayout } from "@/components/AppLayout";
 import { getSessionUser } from "@/lib/session";
 import { resolveViewer } from "@/lib/viewer";
+import { I18nProvider } from "./_i18n/provider";
+import { resolveLocale } from "./_i18n/server";
 import { theme } from "./theme";
 import { version } from "../../package.json";
 
@@ -71,10 +73,17 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", displ
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
   const viewer = user ? await resolveViewer(user) : null;
+  /*
+   * Resolved here rather than per page so `lang` and every translated string
+   * come from one read of the cookie. `lang` is not decoration: it is what a
+   * screen reader picks a voice from, and what tells the browser which
+   * line-breaking rules to apply to Hangul.
+   */
+  const locale = await resolveLocale();
 
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${sans.variable} ${display.variable} ${mono.variable}`}
       {...mantineHtmlProps}
     >
@@ -88,10 +97,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <MantineProvider theme={theme} defaultColorScheme="auto">
-          <Notifications position="top-right" />
-          <AppLayout version={version} viewer={viewer}>
-            {children}
-          </AppLayout>
+          <I18nProvider locale={locale}>
+            <Notifications position="top-right" />
+            <AppLayout version={version} viewer={viewer}>
+              {children}
+            </AppLayout>
+          </I18nProvider>
         </MantineProvider>
       </body>
     </html>

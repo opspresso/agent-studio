@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Anchor, Button, Group } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 import { signOut } from "@/lib/auth-client";
 import { SignInButton } from "./SignInButton";
 
@@ -14,6 +15,7 @@ import { SignInButton } from "./SignInButton";
  */
 export function UserMenu({ email }: { email: string | null }) {
   const [signingOut, setSigningOut] = useState(false);
+  const t = useT();
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -49,7 +51,7 @@ export function UserMenu({ email }: { email: string | null }) {
         onClick={() => void handleSignOut()}
         loading={signingOut}
       >
-        Sign out
+        {t("auth.signOut")}
       </Button>
     </Group>
   );

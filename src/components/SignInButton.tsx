@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { Button } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 import { signIn } from "@/lib/auth-client";
 
 export function SignInButton({
-  label = "Sign in with Google",
+  label,
   compact = false,
   callbackURL = "/",
 }: {
+  /** Overrides the default wording; falls back to the translated label. */
   label?: string;
   compact?: boolean;
   /**
@@ -19,6 +21,7 @@ export function SignInButton({
   callbackURL?: string;
 }) {
   const [pending, setPending] = useState(false);
+  const t = useT();
 
   async function handleSignIn() {
     setPending(true);
@@ -35,7 +38,7 @@ export function SignInButton({
       loading={pending}
       size={compact ? "xs" : "md"}
     >
-      {label}
+      {label ?? t("auth.signIn")}
     </Button>
   );
 }

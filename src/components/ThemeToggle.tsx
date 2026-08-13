@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Menu, ActionIcon, useMantineColorScheme, type MantineColorScheme } from "@mantine/core";
 import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
+import type { MessageKey } from "@/app/_i18n/messages/en";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * Colour scheme picker. The scheme itself, its persistence, and the
@@ -11,17 +13,18 @@ import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
  */
 
 const OPTIONS = [
-  { value: "auto", label: "System", Icon: IconDeviceDesktop },
-  { value: "light", label: "Light", Icon: IconSun },
-  { value: "dark", label: "Dark", Icon: IconMoon },
+  { value: "auto", label: "theme.system", Icon: IconDeviceDesktop },
+  { value: "light", label: "theme.light", Icon: IconSun },
+  { value: "dark", label: "theme.dark", Icon: IconMoon },
 ] as const satisfies ReadonlyArray<{
   value: MantineColorScheme;
-  label: string;
+  label: MessageKey;
   Icon: typeof IconSun;
 }>;
 
 export function ThemeToggle() {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
+  const t = useT();
 
   /**
    * The stored preference exists only in the browser, so the server always
@@ -43,8 +46,8 @@ export function ThemeToggle() {
         <ActionIcon
           variant="default"
           size="lg"
-          aria-label={`Theme: ${current.label}`}
-          title={current.label}
+          aria-label={t("theme.current", { name: t(current.label) })}
+          title={t(current.label)}
         >
           <CurrentIcon size={18} stroke={1.8} />
         </ActionIcon>
@@ -57,7 +60,7 @@ export function ThemeToggle() {
             onClick={() => setColorScheme(value)}
             data-active={colorScheme === value || undefined}
           >
-            {label}
+            {t(label)}
           </Menu.Item>
         ))}
       </Menu.Dropdown>
