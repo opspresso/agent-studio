@@ -12,6 +12,7 @@
  */
 
 import { Button, Group, Modal, Stack, Text } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 import { McpConnectionCard } from "./McpConnectionCard";
 
 /**
@@ -54,33 +55,25 @@ export function McpBindingSettings({
   /** Header-override editor for this binding, likewise. */
   headers: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <Modal
       opened
       onClose={onClose}
-      title={`${serverName} settings`}
+      title={t("mcpSettings.title", { server: serverName })}
       size="xl"
       // A form that vanished because the pointer drifted over the edge would
       // lose whatever was typed.
       closeOnClickOutside={false}
     >
       <Stack gap="lg">
-        <Section
-          title="Tools"
-          note="Which of this server's tools this version offers the model. Saved with the version."
-        >
+        <Section title={t("mcpSettings.tools")} note={t("mcpSettings.toolsNote")}>
           {tools}
         </Section>
-        <Section
-          title="Header overrides"
-          note="Layered over the registry entry's headers, for this version only. Saved with the version."
-        >
+        <Section title={t("mcpSettings.overrides")} note={t("mcpSettings.overridesNote")}>
           {headers}
         </Section>
-        <Section
-          title="Connection"
-          note="This project's own credentials for the server, shared by all its versions. Saved immediately, not with the version."
-        >
+        <Section title={t("mcpSettings.connection")} note={t("mcpSettings.connectionNote")}>
           <McpConnectionCard projectName={projectName} serverName={serverName} />
         </Section>
 
@@ -96,15 +89,15 @@ export function McpBindingSettings({
             </Text>
           ) : save.savedName ? (
             <Text fz="xs" c="teal" mr="auto">
-              Saved v{save.savedName}
+              {t("playground.saved", { version: save.savedName })}
             </Text>
           ) : (
             <Text fz="xs" c="dimmed" mr="auto">
-              Saves the whole version, not just this server.
+              {t("mcpSettings.savesWholeVersion")}
             </Text>
           )}
           <Button variant="subtle" color="gray" onClick={onClose}>
-            Close
+            {t("mcpSettings.close")}
           </Button>
           <Button onClick={save.run} loading={save.saving} disabled={save.disabled}>
             {save.label}

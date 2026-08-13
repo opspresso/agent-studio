@@ -21,6 +21,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { IconHelp } from "@tabler/icons-react";
+import { useT } from "@/app/_i18n/provider";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { CopyButton } from "@/app/_components/CopyButton";
 import {
@@ -63,6 +64,7 @@ export function VersionEditor({
   /** Passed through to the MCP settings dialog, which covers the page's Save. */
   save: VersionSave;
 }) {
+  const t = useT();
   const [mcpOptions, setMcpOptions] = useState<PickerOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<PickerOption[]>([]);
   const [subagentOptions, setSubagentOptions] = useState<SubagentOption[]>([]);
@@ -150,7 +152,7 @@ export function VersionEditor({
       setSchemaError(null);
       patchParams({ jsonSchema: parsed });
     } catch {
-      setSchemaError("Invalid JSON");
+      setSchemaError(t("version.invalidJson"));
     }
   }
 
@@ -158,10 +160,10 @@ export function VersionEditor({
     <Stack gap="md">
       {models.length > 0 ? (
         <Select
-          label="Model"
+          label={t("version.model")}
           value={value.model}
           onChange={(model) => patch({ model: model ?? "" })}
-          placeholder="Select a model…"
+          placeholder={t("version.selectModel")}
           searchable
           data={modelSelectData(
             models,
@@ -174,13 +176,13 @@ export function VersionEditor({
           description={selectedModel ? modelSummary(selectedModel) : undefined}
           error={
             value.model && !selectedModel
-              ? "Model is not in the catalog; usage will be recorded with $0 cost."
+              ? t("version.modelUnlisted")
               : undefined
           }
         />
       ) : (
         <TextInput
-          label="Model"
+          label={t("version.model")}
           value={value.model}
           onChange={(e) => patch({ model: e.currentTarget.value })}
           placeholder="openai/gpt-5-mini"
@@ -191,10 +193,10 @@ export function VersionEditor({
       {projectType !== "image" &&
         (models.length > 0 ? (
           <Select
-            label="Fallback model (optional)"
+            label={t("version.fallbackModel")}
             value={value.fallbackModel ?? null}
             onChange={(fallbackModel) => patch({ fallbackModel: fallbackModel ?? undefined })}
-            placeholder="None"
+            placeholder={t("version.none")}
             clearable
             searchable
             data={modelSelectData(models)}
@@ -204,25 +206,23 @@ export function VersionEditor({
           />
         ) : (
           <TextInput
-            label="Fallback model (optional)"
+            label={t("version.fallbackModel")}
             value={value.fallbackModel ?? ""}
             onChange={(e) => patch({ fallbackModel: e.currentTarget.value || undefined })}
           />
         ))}
 
       <Textarea
-        label="System prompt"
+        label={t("version.systemPrompt")}
         value={value.systemPrompt}
         onChange={(e) => patch({ systemPrompt: e.currentTarget.value })}
         placeholder={
           projectType === "image"
-            ? "Watercolor style, soft pastel tones, no text in the image."
-            : "You are a helpful assistant."
+            ? t("version.systemPromptImagePlaceholder")
+            : t("version.systemPromptPlaceholder")
         }
         description={
-          projectType === "image"
-            ? "Prepended to every image prompt as the version's persistent style."
-            : undefined
+          projectType === "image" ? t("version.systemPromptImageHint") : undefined
         }
         autosize
         minRows={8}
@@ -239,10 +239,10 @@ export function VersionEditor({
       {(projectType !== "agent" || value.userPromptTemplate !== "") && (
         <div>
           <Textarea
-            label="User prompt template"
+            label={t("version.userPromptTemplate")}
             value={value.userPromptTemplate}
             onChange={(e) => patch({ userPromptTemplate: e.currentTarget.value })}
-            placeholder="Summarize: {{input}}"
+            placeholder={t("version.userPromptPlaceholder")}
             autosize
             minRows={4}
             maxRows={20}
@@ -250,11 +250,9 @@ export function VersionEditor({
           />
           <Group justify="space-between" gap="xs" mt={4} wrap="nowrap">
             <Text fz="xs" c="dimmed">
-              {projectType === "agent" ? (
-                "Agent runs ignore this template — the conversation supplies the user turn. Clear it to remove this field."
-              ) : (
-                <>Use {"{{variable}}"} placeholders rendered server-side at run time.</>
-              )}
+              {projectType === "agent"
+                ? t("version.userPromptAgentHint")
+                : t("version.userPromptHint")}
             </Text>
             {projectType !== "agent" && (
               <Button
@@ -284,28 +282,28 @@ export function VersionEditor({
       {projectType !== "image" && (
         <SimpleGrid cols={2} spacing="sm">
           <NumberField
-            label="Temperature"
+            label={t("version.temperature")}
             value={value.parameters.temperature}
             onChange={(temperature) => patchParams({ temperature })}
             step={0.1}
             min={0}
             max={2}
-            placeholder="default"
+            placeholder={t("version.defaultPlaceholder")}
           />
           <NumberField
-            label="Max tokens"
+            label={t("version.maxTokens")}
             value={value.parameters.maxTokens}
             onChange={(maxTokens) => patchParams({ maxTokens })}
             step={1}
             min={1}
-            placeholder="default"
+            placeholder={t("version.defaultPlaceholder")}
           />
         </SimpleGrid>
       )}
 
       {projectType !== "image" && supportsReasoning && (
         <Select
-          label="Reasoning effort"
+          label={t("version.reasoningEffort")}
           value={value.parameters.reasoningEffort ?? ""}
           onChange={(effort) =>
             patchParams({
@@ -314,7 +312,7 @@ export function VersionEditor({
           }
           allowDeselect={false}
           data={[
-            { value: "", label: "Default" },
+            { value: "", label: t("version.default") },
             { value: "low", label: "low" },
             { value: "medium", label: "medium" },
             { value: "high", label: "high" },
@@ -324,7 +322,7 @@ export function VersionEditor({
 
       {projectType === "agent" && (
         <NumberField
-          label="Max turns"
+          label={t("version.maxTurns")}
           value={value.maxTurn}
           onChange={(maxTurn) => patch({ maxTurn })}
           step={1}
@@ -339,11 +337,9 @@ export function VersionEditor({
       */}
       {(projectType !== "image" || value.parameters.piiFiltering) && (
         <Checkbox
-          label="PII filtering"
+          label={t("version.piiFiltering")}
           description={
-            projectType === "image"
-              ? "Does not apply to an image run — the prompt reaches the provider unmasked. Uncheck to remove this option."
-              : "Masks emails, phone numbers, Korean registration numbers and card numbers with reversible tokens before dispatch. What an MCP tool receives is not masked."
+            projectType === "image" ? t("version.piiImageHint") : t("version.piiHint")
           }
           checked={value.parameters.piiFiltering}
           onChange={(e) => patchParams({ piiFiltering: e.currentTarget.checked })}
@@ -352,11 +348,9 @@ export function VersionEditor({
 
       {(projectType !== "image" || value.parameters.callerContext) && (
         <Checkbox
-          label="Tell the run who is asking (name, timezone)"
+          label={t("version.callerContext")}
           description={
-            projectType === "image"
-              ? "Does not apply to an image run — its prompt has no caller block. Uncheck to remove this option."
-              : "Anywhere a person runs it — chat, Playground, a signed-in API call, Slack. An API token, a trigger and inbound A2A carry no caller. PII filtering does not mask a name."
+            projectType === "image" ? t("version.callerImageHint") : t("version.callerHint")
           }
           checked={value.parameters.callerContext ?? false}
           onChange={(e) => patchParams({ callerContext: e.currentTarget.checked })}
@@ -367,13 +361,13 @@ export function VersionEditor({
         <Stack gap="xs">
           <Group gap={6} wrap="nowrap">
             <Checkbox
-              label="Structured output (JSON schema)"
+              label={t("version.structuredOutput")}
               checked={value.parameters.structuredOutput ?? false}
               onChange={(e) => patchParams({ structuredOutput: e.currentTarget.checked })}
             />
             <ActionIcon
               size="sm"
-              aria-label="About structured output"
+              aria-label={t("version.aboutStructuredOutput")}
               onClick={() => setSchemaHelpOpen(true)}
             >
               <IconHelp size={15} stroke={1.7} />
@@ -401,7 +395,7 @@ export function VersionEditor({
       {(runsTools || value.parameters.imageGeneration) && (
         <Stack gap="xs">
           <Checkbox
-            label="Images (GenerateImage + EditImage tools)"
+            label={t("version.imageTools")}
             checked={value.parameters.imageGeneration ?? false}
             onChange={(e) =>
               patchParams(
@@ -412,16 +406,15 @@ export function VersionEditor({
             }
           />
           <Text fz="xs" c="dimmed">
-            Lets the agent draw a picture and change an existing one — an image the user attached,
-            or one it drew earlier.
+            {t("version.imageToolsHint")}
           </Text>
           {value.parameters.imageGeneration && (
             <Select
-              label="Image model"
+              label={t("version.imageModel")}
               value={value.parameters.imageModel ?? ""}
               onChange={(imageModel) => patchParams({ imageModel: imageModel || undefined })}
               allowDeselect={false}
-              data={modelSelectData(imageModels, [{ value: "", label: "Default" }])}
+              data={modelSelectData(imageModels, [{ value: "", label: t("version.default") }])}
               renderOption={renderModelOption(imageModels)}
               description={selectedImageModel ? modelSummary(selectedImageModel) : undefined}
             />
@@ -432,14 +425,12 @@ export function VersionEditor({
       {(runsTools || value.parameters.urlFetch) && (
         <Stack gap="xs">
           <Checkbox
-            label="Read URLs (FetchUrl tool)"
+            label={t("version.fetchUrl")}
             checked={value.parameters.urlFetch ?? false}
             onChange={(e) => patchParams({ urlFetch: e.currentTarget.checked ? true : undefined })}
           />
           <Text fz="xs" c="dimmed">
-            Lets the agent read a web address it names — a page, a PDF, a data file or an image.
-            Off by default: every other outbound request goes somewhere an operator registered,
-            while this one goes wherever the model decides.
+            {t("version.fetchUrlHint")}
           </Text>
         </Stack>
       )}
@@ -449,8 +440,8 @@ export function VersionEditor({
           {!runsTools && (
             <Alert color="yellow" variant="light" fz="xs">
               {projectType === "image"
-                ? "An \"image\" project draws from a prompt and offers no tools — the bindings below are stored but never used. Remove them here; new ones cannot be added."
-                : "An \"llm\" project runs a single completion, which offers no tools — the bindings below are stored but never used. Remove them here; new ones cannot be added."}
+                ? t("version.bindingsInertImage")
+                : t("version.bindingsInertLlm")}
             </Alert>
           )}
           <McpBindingInput
@@ -461,11 +452,11 @@ export function VersionEditor({
             save={save}
           />
           <SearchSelectInput
-            label="Skills"
+            label={t("version.skills")}
             values={value.skillList}
             onChange={(skillList) => patch({ skillList })}
             options={skillOptions}
-            placeholder="Search registered skills"
+            placeholder={t("version.searchSkills")}
           />
           <SubagentInput
             values={value.subagentList}
@@ -474,8 +465,8 @@ export function VersionEditor({
           />
           {runsTools && (
             <Checkbox
-              label="Find capabilities for each request"
-              description="Searches the registry with this version's system prompt and the incoming request, and offers what it finds on top of the bindings above. The bindings are always offered in full. An MCP server that needs its own sign-in is offered only once this project has connected it — a connection is made from that server's own settings and shared by every version, so it counts here even where this version never bound the server."
+              label={t("version.dynamicCapabilities")}
+              description={t("version.dynamicCapabilitiesHint")}
               checked={value.parameters.dynamicCapabilities ?? false}
               onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
             />
@@ -512,39 +503,45 @@ const SAMPLE_REPLY = JSON.stringify(
 );
 
 function StructuredOutputHelp({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  const t = useT();
   return (
-    <Modal opened={opened} onClose={onClose} title="Structured output" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t("version.structuredOutputTitle")} size="lg">
       <Stack gap="sm">
         <Text fz="sm" lh={1.6}>
-          With the checkbox on and a schema filled in, the model&apos;s reply is a single JSON
-          document matching the schema — sent as <Code>response_format: json_schema</Code>. There
-          is no prose around it: give the schema a field for any sentence the model should write,
-          and have your caller parse the reply as JSON.
+          {t("structured.intro1")}
+          <Code>response_format: json_schema</Code>
+          {t("structured.intro2")}
         </Text>
         <List spacing={4} fz="sm">
           <List.Item>
-            The root must be an <Code>object</Code>. Mark every property <Code>required</Code> and
-            set <Code>additionalProperties: false</Code> — the strictest providers accept exactly
-            that shape.
+            {t("structured.root1")}
+            <Code>object</Code>
+            {t("structured.root2")}
+            <Code>required</Code>
+            {t("structured.root3")}
+            <Code>additionalProperties: false</Code>
+            {t("structured.root4")}
           </List.Item>
           <List.Item>
-            Each property&apos;s <Code>description</Code> is the instruction the model reads for
-            that field; longer guidance belongs in the system prompt.
+            {t("structured.description1")}
+            <Code>description</Code>
+            {t("structured.description2")}
           </List.Item>
           <List.Item>
-            The checkbox alone does nothing — with an empty schema no{" "}
-            <Code>response_format</Code> is sent and the reply stays plain text.
+            {t("structured.empty1")}
+            <Code>response_format</Code>
+            {t("structured.empty2")}
           </List.Item>
         </List>
         <Group justify="space-between" gap="xs">
           <Text fz="xs" fw={600} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
-            Sample schema
+            {t("structured.sampleSchema")}
           </Text>
           <CopyButton text={SAMPLE_SCHEMA} />
         </Group>
         <CodeBlock language="json" code={SAMPLE_SCHEMA} />
         <Text fz="xs" fw={600} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
-          What the model returns
+          {t("structured.whatReturns")}
         </Text>
         <CodeBlock language="json" code={SAMPLE_REPLY} />
       </Stack>
