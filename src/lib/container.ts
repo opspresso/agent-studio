@@ -102,6 +102,7 @@ import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import { createMemberUseCases } from "@/application/member/memberUseCases";
 import { createArtifactUseCases } from "@/application/artifact/artifactUseCases";
 import {
+  getEnabledModels,
   getLlmChannelConfig,
   getLlmProviderConfigs,
   getPluginsRepoConfig,
@@ -109,6 +110,8 @@ import {
   getUnknownModelPolicy,
   isConfiguredAdmin,
 } from "./runtime-settings";
+import { offeredModels } from "@/domain/llm/models";
+import { composeCreateProjectWithInitialVersion } from "@/application/project/createProjectFlow";
 
 // The write override's admin list is pushed into the use case here rather than
 // imported by it — a static import would drag the settings store (and its
@@ -567,6 +570,22 @@ export const versionUseCases = createVersionUseCases({
   projects: projectRepository,
   refs: versionRefRepos,
   cipher: secretCipher,
+});
+
+export const createProjectWithInitialVersion = composeCreateProjectWithInitialVersion({
+  versions: versionRepository,
+  projects: projectRepository,
+  refs: versionRefRepos,
+  cipher: secretCipher,
+  // Which model fits which project type is the flow's policy; this only feeds
+  // it the runtime settings the application layer may not read.
+  offered: async () => {
+    const [providers, enabled] = await Promise.all([getLlmProviderConfigs(), getEnabledModels()]);
+    return offeredModels(
+      providers.map((provider) => provider.name),
+      enabled,
+    );
+  },
 });
 
 /**

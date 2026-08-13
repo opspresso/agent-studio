@@ -5,6 +5,7 @@ import {
   calculateCost,
   calculateImageCost,
   getVisibleModels,
+  offeredModels,
   resetUnknownModelMetrics,
   unknownModelSnapshot,
   wireModelId,
@@ -138,6 +139,32 @@ describe("model registry invariants", () => {
     expect(getVisibleModels().map((m) => m.id)).toEqual(
       MODEL_CONFIGS.filter((m) => !m.hidden).map((m) => m.id),
     );
+  });
+});
+
+describe("offeredModels", () => {
+  it("offers every visible model with no provider channels and no enabled override", () => {
+    expect(offeredModels([], undefined)).toEqual(getVisibleModels());
+  });
+
+  it("narrows to the configured providers", () => {
+    const offered = offeredModels(["anthropic"], undefined);
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((model) => model.provider === "anthropic")).toBe(true);
+  });
+
+  it("narrows to the enabled override, ignoring a stale id", () => {
+    expect(offeredModels([], ["openai/gpt-5.4", "openai/retired-model"]).map((m) => m.id)).toEqual([
+      "openai/gpt-5.4",
+    ]);
+  });
+
+  it("intersects the provider filter with the enabled override", () => {
+    expect(
+      offeredModels(["anthropic"], ["openai/gpt-5.4", "anthropic/claude-fable-5"]).map(
+        (m) => m.id,
+      ),
+    ).toEqual(["anthropic/claude-fable-5"]);
   });
 });
 

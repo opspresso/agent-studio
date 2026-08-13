@@ -547,6 +547,27 @@ export function getVisibleModels(): ModelConfig[] {
 }
 
 /**
+ * The models this deployment offers for selection: visible entries, narrowed
+ * by the configured provider channels (none configured = the default channel
+ * dispatches every id), then by the enabled-models override (absent = no
+ * restriction; a stale id simply matches nothing). One owner because the
+ * /api/models list and the model a fresh project's initial version starts
+ * with must answer identically.
+ */
+export function offeredModels(
+  providerNames: string[],
+  enabledIds: string[] | undefined,
+): ModelConfig[] {
+  const providers = new Set(providerNames);
+  const enabled = enabledIds === undefined ? undefined : new Set(enabledIds);
+  return getVisibleModels().filter(
+    (model) =>
+      (providers.size === 0 || providers.has(model.provider)) &&
+      (enabled === undefined || enabled.has(model.id)),
+  );
+}
+
+/**
  * The model name to send to a provider's own API, for a `provider/model` id
  * whose prefix is being stripped for a provider-direct channel. Defaults to the
  * bare id, which is also what an id missing from the registry gets — a model

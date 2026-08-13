@@ -1,5 +1,5 @@
 import { withAuth } from "@/lib/session";
-import { projectUseCases } from "@/lib/container";
+import { createProjectWithInitialVersion, projectUseCases } from "@/lib/container";
 import { createProjectSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { sanitizeProject } from "@/app/api/projects/_lib/http";
@@ -14,7 +14,12 @@ export const POST = withAuth(async (user, request: Request) => {
     return invalidRequest(parsed.error);
   }
   try {
-    const project = await projectUseCases.create({ ...parsed.data, ownerEmail: user.email });
+    // Project plus its initial version "1" — see createProjectFlow.ts for why
+    // the version is created and deliberately not published.
+    const project = await createProjectWithInitialVersion({
+      ...parsed.data,
+      ownerEmail: user.email,
+    });
     return Response.json(sanitizeProject(project), { status: 201 });
   } catch (error) {
     return apiError(error);

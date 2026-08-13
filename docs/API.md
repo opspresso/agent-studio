@@ -191,6 +191,12 @@ DELETE /api/skills/{name}     → 204                     | 404
   "projectType": "llm | agent | image", "departmentCode": "OPT-optional" }
 ```
 
+  Creation also writes the project's initial version `"1"` — empty prompts, the deployment's
+  first offered model that fits the project type — so chat and the playground work from the
+  first minute. The initial version is **not published**: publishing stays a deliberate act
+  (the console offers it after a save while the project is unpublished). With no offered
+  model that fits, the project is created without a version, exactly as before.
+
 #### Cost limits
 
 `PUT /api/projects/{name}` also carries the project's spend guards:
