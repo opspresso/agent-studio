@@ -190,9 +190,21 @@ surface, so callers keep one import path.
     task came back empty; a child never throws, it yields an `error` chunk and returns `""`.
   - The message a task carries comes from `args`, **not** `displayArgs` — see the PII
     boundaries below. A child is on the far side of that boundary, like a transfer's.
+- **The last turn is a wrap-up**: at `turn === maxTurn - 1` a run that has tools is offered
+  none and told why (`finalTurnNotice`, carried as a `user` turn like every other statement
+  the loop inserts). Withholding them is the mechanism, not the notice — a model still
+  looping at the ceiling is exactly the one that ignores an instruction to stop, and the
+  guard below would then end the run with a warning where the answer should be, every turn
+  paid for and nothing to show. Calls that arrive anyway are **not dispatched**: no turn will
+  read their results. Either outcome ends `turn-limit` — the answer is what the run could say
+  with its budget spent, not the one it would have written with turns left, and `done` would
+  erase that difference. `turnLimitWarning` owns all four wordings (answered or not, run or
+  subagent).
 - Turn guard: `turn >= maxTurn` (default 50) ends the loop, and it announces itself: a
   `warning` chunk names the limit for the user, then a `finishReason: "turn-limit"` chunk
-  names it for consumers. A subagent run's warning names its agent instead of "the run" —
+  names it for consumers. It is reached only by a run that never got a wrap-up turn — a
+  subagent handed `startTurn >= maxTurn`, or a delegation that moved the counter past the
+  last turn. A subagent run's warning names its agent instead of "the run" —
   warnings surface without author labels everywhere, so the generic wording next to the
   parent's finished answer read as the parent's ending — and it says "subagent", not which
   mechanism started it: the continued turn counter cannot tell a transfer from a dispatch.

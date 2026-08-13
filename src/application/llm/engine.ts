@@ -1008,6 +1008,56 @@ function onceWarning(text: string, alreadySaid = false): () => string | undefine
 }
 
 /**
+ * What the run tells the model on the one turn it has left.
+ *
+ * A run that spends its budget calling tools is cut at the guard with no answer
+ * at all: the user pays for every turn and reads a warning where the answer
+ * should be. The last turn is therefore offered no tools and told why, so the
+ * run ends with what the model could say rather than with silence.
+ *
+ * Carried as a `user` turn, the same route the engine's other in-loop
+ * statements take (a transfer's "For context" answer, the message the returned
+ * pictures ride on): the tool protocol has no slot for a mid-conversation
+ * notice, and a second system message is not a shape every OpenAI-compatible
+ * gateway accepts.
+ */
+function finalTurnNotice(maxTurn: number): string {
+  return (
+    `This is the final turn of this run: its turn limit (${maxTurn} turns) leaves no turn after ` +
+    `this one, so no tools are offered and no further tool call will run. Answer now from what ` +
+    `you already have, and say plainly what you could not finish.`
+  );
+}
+
+/**
+ * Why a run ended at its turn ceiling, for the user.
+ *
+ * Four wordings, because two facts vary and both matter to whoever reads it. A
+ * subagent names itself — warnings surface without author labels on every
+ * consumer, so the generic wording next to the parent's finished answer read as
+ * the parent's ending — and it says "subagent" rather than which mechanism
+ * started it, because the continued turn counter cannot tell a transfer from a
+ * dispatch. And a run that used its last turn to wrap up did not stop
+ * *before* answering: saying it did would send the reader looking for an answer
+ * that is right there, under a limit that shaped it.
+ */
+function turnLimitWarning(
+  isSubagentRun: boolean,
+  projectName: string,
+  maxTurn: number,
+  answered: boolean,
+): string {
+  if (answered) {
+    return isSubagentRun
+      ? `Subagent '${projectName}' reached its turn limit (${maxTurn} turns); its last turn was answered from what it already had, with no tools offered.`
+      : `The run reached its turn limit (${maxTurn} turns); the last turn was answered from what it already had, with no tools offered.`;
+  }
+  return isSubagentRun
+    ? `Subagent '${projectName}' stopped at its turn limit (${maxTurn} turns) before finishing; the main run continues.`
+    : `The run stopped at its turn limit (${maxTurn} turns) before the model finished answering.`;
+}
+
+/**
  * Whether a delegation has room to run and come back.
  *
  * A child runs at `turn + 1` and the parent resumes at `turn + 2`, so two turns
@@ -1216,6 +1266,9 @@ export async function* runAgent(
    * re-derive.
    */
   let saidSomething = false;
+  // A child is recognisable by its continued turn counter, which is what every
+  // turn-ceiling wording keys on. Read once: it cannot change inside the loop.
+  const isSubagentRun = (input.startTurn ?? 0) > 0;
   while (true) {
     if (turn >= maxTurn) {
       // The turn guard is the largest thing a run can lose — its own ending —
@@ -1224,25 +1277,41 @@ export async function* runAgent(
       // why the stream ended instead of leaving them to infer it from the
       // absence of `done`.
       //
-      // The warning names its run: warnings surface without author labels on
-      // every consumer, so a subagent's guard saying "the run stopped" reads
-      // as the parent's ending next to the parent's finished answer. A child
-      // is recognisable here by its continued turn counter — which cannot say
-      // whether a transfer or a dispatch started it, so the wording claims
-      // neither mechanism.
-      const isSubagentRun = (input.startTurn ?? 0) > 0;
+      // Reached only by a run that never got a final turn to wrap up in: one
+      // whose ceiling was already spent when it started (a subagent handed
+      // `startTurn >= maxTurn`), or a delegation that moved the counter past
+      // the last turn. Everything else ends below, having answered.
       yield {
         author,
-        warning: isSubagentRun
-          ? `Subagent '${input.projectName}' stopped at its turn limit (${maxTurn} turns) before finishing; the main run continues.`
-          : `The run stopped at its turn limit (${maxTurn} turns) before the model finished answering.`,
+        warning: turnLimitWarning(isSubagentRun, input.projectName, maxTurn, false),
       };
       yield { author, finishReason: "turn-limit" };
       return;
     }
 
+    // The last turn this run will take, and the one thing that has to be
+    // different about it: with tools still offered, a model mid-plan calls
+    // them, the results come back, and the guard above ends the run with
+    // nothing to show for the whole budget. Offered none and told why, the
+    // same turn becomes the answer. Only a run that *has* tools can loop, so a
+    // run without them never sees this — its first turn was always its answer.
+    const finalTurn = tools.length > 0 && turn === maxTurn - 1;
+    if (finalTurn) {
+      const notice: ChannelMessage = { role: "user", content: finalTurnNotice(maxTurn) };
+      // Charged like everything else the loop inserts. It is the engine's own
+      // sentence, so it is charged whole rather than fitted.
+      contextBudget?.chargeText(notice.content as string);
+      messages.push(notice);
+    }
+
     input.signal?.throwIfAborted();
-    const params = buildChannelParams(input.model, messages, input.parameters, tools, input.signal);
+    const params = buildChannelParams(
+      input.model,
+      messages,
+      input.parameters,
+      finalTurn ? [] : tools,
+      input.signal,
+    );
     const state = { model: input.model };
     let assistantText = "";
     let reasoningText = "";
@@ -1335,18 +1404,43 @@ export async function* runAgent(
     yield { author, usage: usageInfo };
 
     const calls = accumulator.finalize();
+    if (calls.length === 0 && outputCut) {
+      // The turn that would have been the answer was cut at the provider's
+      // output cap — announced like the turn guard's ending, because a
+      // truncated answer reported as a finish is the same silence. Ahead of the
+      // final-turn ending below: a cut says something the reader can act on
+      // (raise `maxTokens`), while "it was the last turn" is already true of
+      // every run that reaches here.
+      yield {
+        author,
+        warning: "The answer was cut at the model's output limit before it finished.",
+      };
+      yield { author, finishReason: "output-limit" };
+      return;
+    }
+    if (finalTurn) {
+      // The wrap-up the notice asked for, or — for a model that asked for tools
+      // that were not offered — nothing. Either way the run is over: the calls
+      // are not dispatched, because no turn will read their results and the
+      // money would buy nothing.
+      //
+      // Reported as the turn limit rather than as a finish even when the model
+      // answered: this is what the run could say with its budget spent, not the
+      // answer it would have written with turns left, and a consumer that reads
+      // `done` has no way to tell those apart.
+      yield {
+        author,
+        warning: turnLimitWarning(
+          isSubagentRun,
+          input.projectName,
+          maxTurn,
+          assistantText.trim() !== "",
+        ),
+      };
+      yield { author, finishReason: "turn-limit" };
+      return;
+    }
     if (calls.length === 0) {
-      if (outputCut) {
-        // The turn that would have been the answer was cut at the provider's
-        // output cap — announced like the turn guard's ending, because a
-        // truncated answer reported as a finish is the same silence.
-        yield {
-          author,
-          warning: "The answer was cut at the model's output limit before it finished.",
-        };
-        yield { author, finishReason: "output-limit" };
-        return;
-      }
       yield { author, done: true };
       return;
     }

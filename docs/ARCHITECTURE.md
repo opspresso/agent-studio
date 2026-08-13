@@ -649,6 +649,8 @@ flowchart TB
   start["turn start"]
   guard{"turn ≥ maxTurn?"}
   turnlimit["warning +<br/>finishReason: turn-limit"]
+  final{"turn = maxTurn − 1<br/>and this run has tools?"}
+  wrapup["no tools offered,<br/>the model is told why"]
   call["model call — stream<br/>retryable failure before the first chunk:<br/>one fallback retry"]
   miderr["mid-stream failure:<br/>error chunk, no retry — stream ends"]
   hascalls{"tool calls?"}
@@ -661,7 +663,9 @@ flowchart TB
 
   start --> guard
   guard -->|yes| turnlimit
-  guard -->|no| call
+  guard -->|no| final
+  final -->|yes| wrapup --> call
+  final -->|no| call
   call -.-> miderr
   call --> hascalls
   hascalls -->|no| cut
@@ -669,6 +673,10 @@ flowchart TB
   cut -->|no| finished
   hascalls -->|yes| dispatch --> budget --> append -->|"turn + 1<br/>(a transfer: + 2)"| start
 ```
+
+On the **wrap-up turn** every path ends in `turn-limit`: whatever the model wrote is the
+run's answer, calls it made anyway are not dispatched, and the warning says whether the run
+answered or stopped without one.
 
 Every exit is announced — `done` for a finish, `finishReason` for a limit, an `error` chunk
 for a failure — which is what lets consumers read the ending instead of inferring it.
@@ -682,6 +690,9 @@ for a failure — which is what lets consumers read the ending instead of inferr
   - A turn guard (`turn >= maxTurn`, default 50) stops the loop — announced, not
     silent: a `warning` names the limit for the reader and a `finishReason: "turn-limit"`
     chunk names it for consumers (see the termination note under the EngineChunk contract).
+    The **last turn before it is offered no tools and told so**, so a run that spent its
+    budget on tool calls ends with what the model could say rather than with a warning where
+    the answer should be. Both endings are `turn-limit`; the warning says which happened.
   - **All `tool_calls` of one response aggregate into ONE assistant message**, then tool
     results append, then the loop recurses with `turn + 1`.
   - A builtin serves a call only when that builtin was **offered** this run — the offered
@@ -1721,9 +1732,11 @@ called from instrumentation points scattered through the loop, so a new tool or 
 traced without anything having to remember it. It reads the ending through `runTermination`,
 which is what keeps a child's turn limit from marking its parent's trace.
 
-**`turn-limit` is a status of its own** because a run the turn guard stopped never produced a
-final answer. Recording it as `completed` made the one run worth investigating read as normal
-on the traces page.
+**`turn-limit` is a status of its own** because a run that reached its ceiling is not a run
+that finished. Recording it as `completed` made the one run worth investigating read as
+normal on the traces page — and that stays true now that the last turn wraps up rather than
+falling silent: the answer exists, but it was written with the budget spent and without the
+tools the plan was still using.
 
 **One transfer is one span, whatever depth it reached.** A subagent entry is keyed by the
 direct child *and* its trace id, so a deeper hop rolls into the transfer that started it while
