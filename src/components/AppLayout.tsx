@@ -123,7 +123,7 @@ export function AppLayout({
                   AgentDure
                 </Text>
                 <Text fz={10} c="dimmed" tt="uppercase" lts="0.12em" visibleFrom="xs">
-                  AI workspace
+                  Agents that work together
                 </Text>
               </div>
             </UnstyledButton>
@@ -145,7 +145,7 @@ export function AppLayout({
         <>
         <Group justify="space-between" mb="lg">
           <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.14em">
-            Studio navigation
+            Workspace navigation
           </Text>
           <ActionIcon
             component={Link}
@@ -201,7 +201,7 @@ export function AppLayout({
         <div className={classes.navFooter}>
           <span className={classes.statusDot} />
           <Text fz="xs" c="dimmed">
-            Studio online · v{version}
+            Workspace online · v{version}
           </Text>
         </div>
         </>

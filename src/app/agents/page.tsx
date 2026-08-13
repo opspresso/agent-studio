@@ -124,7 +124,7 @@ export default function AgentsPage() {
         <Stack component="section" gap="sm">
           <div>
             <Title order={2} fz="h4">
-              Studio projects (A2A)
+              Workspace projects (A2A)
             </Title>
             <Text fz="sm" c="dimmed" mt={4}>
               {a2aProjects.enabled

@@ -45,8 +45,11 @@ export default async function LoginPage({
           <Title order={1} fz="h3">
             Sign in to continue
           </Title>
+          <Text fz="sm" lh={1.6}>
+            AgentDure — an internal LLM platform for prompt, agent, and cost management.
+          </Text>
           <Text fz="sm" c="dimmed" lh={1.6}>
-            Sign in with your Google account on one of this deployment&rsquo;s allowed domains.
+            Use your Google account on one of this deployment&rsquo;s allowed domains.
           </Text>
           <SignInButton callbackURL={next} />
         </Stack>

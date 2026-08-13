@@ -273,7 +273,7 @@ export default async function Home() {
       <Stack gap={6} align="center">
         <Text ta="center" fz="sm" c="dimmed" maw={560} lh={1.7}>
           <strong>Dure (두레)</strong> — a Korean village work cooperative, where neighbors
-          pool their labor to finish what no one could alone.
+          pool their labor to finish what no one could alone. Agents here work the same way.
         </Text>
         <Text ta="center" fz="xs" c="dimmed">
           An internal LLM platform for prompt, agent, and cost management.
