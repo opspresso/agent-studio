@@ -10,8 +10,10 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { formatDate } from "@/app/_lib/formatDate";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 export default function MembersPage() {
+  const t = useT();
   const viewer = useViewer();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,13 +51,13 @@ export default function MembersPage() {
   }, [viewer?.isAdmin]);
 
   if (viewer === null) return <LoadingText />;
-  if (!viewer.isAdmin) return <Alert color="gray">Members are available to admins only.</Alert>;
+  if (!viewer.isAdmin) return <Alert color="gray">{t("admin.adminOnlyMembers")}</Alert>;
 
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Members"
-        description="People who have signed in to this workspace."
+        title={t("nav.members")}
+        description={t("members.lede")}
         Icon={IconUsers}
       />
 
@@ -64,7 +66,7 @@ export default function MembersPage() {
       ) : loading ? (
         <LoadingText />
       ) : members.length === 0 ? (
-        <EmptyState>No members yet.</EmptyState>
+        <EmptyState>{t("members.empty")}</EmptyState>
       ) : (
         <Table.ScrollContainer minWidth={780}>
           <Table striped highlightOnHover>
@@ -73,7 +75,7 @@ export default function MembersPage() {
                 <Table.Th>Member</Table.Th>
                 <Table.Th>Tier</Table.Th>
                 <Table.Th>Joined</Table.Th>
-                <Table.Th>Last login</Table.Th>
+                <Table.Th>{t("members.lastLogin")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>

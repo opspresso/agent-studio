@@ -15,8 +15,10 @@ import { Alert, Badge, Button, Card, Group, Stack, Text } from "@mantine/core";
 import { BADGE } from "@/app/_components/badgeColors";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
+import { useT } from "@/app/_i18n/provider";
 
 export default function VersionsPage() {
+  const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
 
@@ -98,7 +100,7 @@ export default function VersionsPage() {
       )}
 
       {versions.length === 0 ? (
-        <EmptyState>No versions yet. Create one in the Playground tab.</EmptyState>
+        <EmptyState>{t("versions.empty")}</EmptyState>
       ) : (
         <Card padding={0}>
           {versions.map((version, index) => {

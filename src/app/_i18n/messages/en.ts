@@ -601,6 +601,38 @@ export const en = {
   "trigger.enabled": "Enabled",
   "trigger.allowOverlap": "Allow overlapping runs",
   "trigger.payload": "Payload",
+
+  // The admin pages, the profile, and the per-project usage tab.
+  "admin.adminOnlyAudit": "Audit events are available to admins only.",
+  "admin.adminOnlyMembers": "Members are available to admins only.",
+  "admin.adminOnlyModels": "Models are available to admins only.",
+  "audit.lede": "Sensitive administrative actions, newest first.",
+  "audit.empty": "No audit events in this range.",
+  "members.lede": "People who have signed in to this workspace.",
+  "members.empty": "No members yet.",
+  "members.lastLogin": "Last login",
+  "models.lede":
+    "Which LLM providers this deployment reaches, and which models users may pick for their agents.",
+  "models.yes": "yes",
+  "models.no": "no",
+  "profile.lede": "Your account, and your own usage across every project.",
+  "profile.tierLimits": "Tier limits",
+  "profile.monthlyCap": "Monthly cap",
+  "settings.lede":
+    "Overrides are stored in the database and take precedence over environment variables. Masked values keep the stored secret; clear a field to fall back to env.",
+  "settings.keepPrefix": "keep prefix",
+  "settings.providerPlaceholder": "provider…",
+  "settings.baseUrlPlaceholder": "base URL",
+  "settings.clientName": "Client name",
+  "settings.clientNamePlaceholder": "partner-batch",
+  "settings.optional": "optional",
+  "apiRef.request": "Request",
+  "apiRef.response": "Response",
+  "projectArtifacts.empty": "This project has not produced anything yet.",
+  "projectUsage.empty": "No usage recorded in this range.",
+  "projectUsage.callers": "Callers",
+  "projectUsage.whoSpent": "Who spent it",
+  "versions.empty": "No versions yet. Create one in the Playground tab.",
 } as const;
 
 export type MessageKey = keyof typeof en;

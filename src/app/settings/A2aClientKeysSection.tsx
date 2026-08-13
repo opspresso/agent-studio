@@ -7,6 +7,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { monoInput } from "@/app/_components/monoInput";
 import { BADGE } from "@/app/_components/badgeColors";
 import { toSlug } from "@/shared/slug";
+import { useT } from "@/app/_i18n/provider";
 
 interface ClientKeyView {
   name: string;
@@ -21,6 +22,7 @@ interface ClientKeyView {
  * and one client can be revoked without rotating everyone else.
  */
 export function A2aClientKeysSection() {
+  const t = useT();
   const [items, setItems] = useState<ClientKeyView[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -189,16 +191,16 @@ export function A2aClientKeysSection() {
       )}
       <Group gap="xs" align="flex-end" wrap="wrap">
         <TextInput
-          label="Client name"
-          placeholder="partner-batch"
+          label={t("settings.clientName")}
+          placeholder={t("settings.clientNamePlaceholder")}
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
           styles={monoInput}
           size="xs"
         />
         <TextInput
-          label="Description"
-          placeholder="optional"
+          label={t("registry.description")}
+          placeholder={t("settings.optional")}
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           size="xs"

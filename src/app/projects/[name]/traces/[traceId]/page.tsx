@@ -7,8 +7,10 @@ import { BackLink } from "@/app/_components/BackLink";
 import { LoadingText } from "@/app/_components/PageState";
 import { getTrace, type Trace } from "../../../lib/api";
 import { TraceContent } from "../TraceContent";
+import { useT } from "@/app/_i18n/provider";
 
 export default function TraceDetailPage() {
+  const t = useT();
   const { name, traceId } = useParams<{ name: string; traceId: string }>();
   const [trace, setTrace] = useState<Trace | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export default function TraceDetailPage() {
 
   return (
     <Stack gap="md">
-      <BackLink href={`/projects/${name}/traces`} label="traces" />
+      <BackLink href={`/projects/${name}/traces`} label={t("project.tab.traces")} />
       {error ? (
         <Alert color="red" variant="light">{error}</Alert>
       ) : !trace ? (

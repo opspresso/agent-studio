@@ -31,6 +31,7 @@ import { formatDate } from "@/app/_lib/formatDate";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { readJson } from "@/app/_lib/httpClient";
 import { buildDailySeries, groupUsage, totalCalls, totalCost, type GroupBy } from "@/app/_lib/usage";
+import { useT } from "@/app/_i18n/provider";
 
 /**
  * A person's own rows carry their project and their model, but no department
@@ -45,6 +46,7 @@ interface ProfileAccount {
 }
 
 export default function ProfilePage() {
+  const t = useT();
   const [account, setAccount] = useState<ProfileAccount | null>(null);
   const [range, setRange] = useState(defaultDateRange);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
@@ -100,8 +102,8 @@ export default function ProfilePage() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Profile"
-        description="Your account, and your own usage across every project."
+        title={t("nav.profile")}
+        description={t("profile.lede")}
         Icon={IconUser}
       />
 
@@ -120,13 +122,13 @@ export default function ProfilePage() {
                 <Text fz="sm">{formatDate(member.joinedAt)}</Text>
               </div>
               <div>
-                <Text fz="xs" c="dimmed">Last login</Text>
+                <Text fz="xs" c="dimmed">{t("members.lastLogin")}</Text>
                 <Text fz="sm" c={member.lastLoginAt ? undefined : "dimmed"}>
                   {member.lastLoginAt ? formatDate(member.lastLoginAt) : "Never recorded"}
                 </Text>
               </div>
               <div>
-                <Text fz="xs" c="dimmed">Tier limits</Text>
+                <Text fz="xs" c="dimmed">{t("profile.tierLimits")}</Text>
                 <Text fz="sm">
                   {limits.maxConcurrentRuns !== undefined
                     ? `${limits.maxConcurrentRuns} concurrent ${limits.maxConcurrentRuns === 1 ? "run" : "runs"}`
@@ -143,7 +145,7 @@ export default function ProfilePage() {
       {cap !== undefined && cap > 0 && (
         <Card>
           <Group justify="space-between" mb="xs">
-            <CardHeading title="Monthly cap" subtitle="This UTC month, whatever the range below" />
+            <CardHeading title={t("profile.monthlyCap")} subtitle="This UTC month, whatever the range below" />
             <Text fz="sm" c="dimmed" ff="monospace">
               {formatUsd(monthToDateUsd)} / {formatUsd(cap)}
             </Text>
@@ -156,13 +158,13 @@ export default function ProfilePage() {
 
       <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="md">
         <StatCard
-          label="Total cost"
+          label={t("cost.totalCost")}
           value={formatUsd(cost)}
           detail="Selected period"
           Icon={IconCoins}
         />
         <StatCard
-          label="Total calls"
+          label={t("cost.totalCalls")}
           value={calls.toLocaleString()}
           detail="Model invocations"
           Icon={IconActivity}
@@ -171,7 +173,7 @@ export default function ProfilePage() {
 
       <Card>
         <Group justify="space-between" mb="md" gap="md" wrap="wrap">
-          <CardHeading title="Daily cost" subtitle={`Stacked by ${groupBy}`} />
+          <CardHeading title={t("cost.dailyCost")} subtitle={`Stacked by ${groupBy}`} />
           <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
         </Group>
         <CostBarChart
