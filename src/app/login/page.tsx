@@ -4,6 +4,7 @@ import { SignInButton } from "@/components/SignInButton";
 import { getSessionUser } from "@/lib/session";
 import { safeNextPath } from "@/shared/safeNextPath";
 import { signInErrorMessage } from "@/shared/signInError";
+import { getT } from "../_i18n/server";
 
 export const metadata = { title: "Sign in" };
 
@@ -31,7 +32,10 @@ export default async function LoginPage({
     redirect(next);
   }
 
+  // The refusal itself stays in English: it is an `AppError`-shaped string from
+  // `shared/signInError.ts`, which the console does not translate.
   const error = signInErrorMessage(params.error);
+  const t = await getT();
 
   return (
     <Center mih="60vh">
@@ -43,13 +47,13 @@ export default async function LoginPage({
             </Alert>
           ) : null}
           <Title order={1} fz="h3">
-            Sign in to continue
+            {t("login.title")}
           </Title>
           <Text fz="sm" lh={1.6}>
-            AgentDure — an internal LLM platform for prompt, agent, and cost management.
+            {t("login.product")}
           </Text>
           <Text fz="sm" c="dimmed" lh={1.6}>
-            Use your Google account on one of this deployment&rsquo;s allowed domains.
+            {t("login.domains")}
           </Text>
           <SignInButton callbackURL={next} />
         </Stack>
