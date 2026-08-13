@@ -404,6 +404,68 @@ export const en = {
   "mcpSettings.title": "{server} settings",
   "mcpSettings.savesWholeVersion": "Saves the whole version, not just this server.",
   "mcpSettings.close": "Close",
+
+  // The playground's Run panel.
+  "run.failed": "Run failed",
+  "run.variables": "Variables",
+  "run.noVariables": "No template variables detected.",
+  "run.messageLabel": "Message",
+  "run.editLabel": "Edit instruction",
+  "run.imagePromptLabel": "Image prompt",
+  "run.askPlaceholder": "Ask the agent…",
+  "run.editPlaceholder": "Describe the edited result…",
+  "run.generatePlaceholder": "Describe the image to generate…",
+  "run.images": "Images",
+  "run.sourceImages": "Source images",
+  "run.attachHintEdits": "The prompt edits these images.",
+  "run.attachHintGenerate": "Attach an image to edit it instead of generating a new one.",
+  "run.attachHintLook": "Attached images are sent with the run for the model to look at.",
+  "run.cannotEdit": "This model cannot edit images; the run will be rejected.",
+  "run.noImageInput": "This model does not accept image input; the run will be rejected.",
+  "run.size": "Size",
+  "run.quality": "Quality",
+  "run.generating": "Generating image… this can take a minute.",
+  "run.imageWillAppear": "Generated image will appear here.",
+  "run.outputWillStream": "Output will stream here.",
+  "run.running": "running:",
+  "run.ran": "ran:",
+  "run.agentsInvolved": "agents involved: {agents}",
+
+  // The playground's Preview pane.
+  "preview.failed": "Failed to build the preview",
+  "preview.refresh": "Refresh",
+  "preview.build": "Build preview",
+  "preview.request": "Request",
+  "preview.requestHint":
+    "Searched against the registry alongside the system prompt. Leave it empty to see what every run starts with.",
+  "preview.requestPlaceholder": "e.g. what is the latest EKS version?",
+  "preview.hideTools": "Hide tools",
+  "preview.chars": "{count} chars",
+  "preview.tools": "· {count} tools",
+  "preview.stale": "· stale",
+  "preview.discovered": "Found for this request, on top of the bindings: {names}",
+  "preview.noPrompt":
+    "This version sends no prompt of its own; the conversation supplies everything.",
+  "preview.toolsOffered": "Tools offered ({count})",
+  "preview.blurb":
+    "Builds the system prompt the way a run does — skill table, connected MCP servers and their tool names, transfer instructions — by contacting the bound MCP servers.",
+
+  // A project's own credentials for one MCP server.
+  "mcpConn.connected": "Connected",
+  "mcpConn.needsAuth": "Not authorized",
+  "mcpConn.needsReauth": "Reconnect required",
+  "mcpConn.readFailed": "Could not read this server’s registry entry.",
+  "mcpConn.clientId": "Client ID",
+  "mcpConn.clientSecret": "Client secret",
+  "mcpConn.connect": "Connect",
+  "mcpConn.reauthorize": "Reauthorize",
+  "mcpConn.noAuthNeeded":
+    "This server does not require authorization. Whatever credentials it needs come from the registry entry’s own headers, plus any override above.",
+  "mcpConn.noDynamicRegistration":
+    "This provider does not offer dynamic registration. Register an app with it, then save its client ID and secret here.",
+  "mcpConn.authorizedBy": "Authorized by {who} on {when}",
+  "mcpConn.saveCredentials": "Save credentials",
+  "mcpConn.disconnect": "Disconnect",
 } as const;
 
 export type MessageKey = keyof typeof en;

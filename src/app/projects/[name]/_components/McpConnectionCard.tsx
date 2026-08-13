@@ -20,11 +20,13 @@ import {
 import { getMcp, type McpServer } from "@/app/tools/api";
 import { Button, Group, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
+import type { MessageKey } from "@/app/_i18n/messages/en";
+import { useT } from "@/app/_i18n/provider";
 
-const STATUS_LABEL: Record<McpConnectionView["status"], string> = {
-  connected: "Connected",
-  needs_auth: "Not authorized",
-  needs_reauth: "Reconnect required",
+const STATUS_LABEL: Record<McpConnectionView["status"], MessageKey> = {
+  connected: "mcpConn.connected",
+  needs_auth: "mcpConn.needsAuth",
+  needs_reauth: "mcpConn.needsReauth",
 };
 
 const STATUS_COLOR: Record<McpConnectionView["status"], string> = {
@@ -47,6 +49,7 @@ export function McpConnectionCard({
   const [busy, setBusy] = useState(false);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const t = useT();
 
   const refresh = useCallback(async () => {
     // Settled independently on purpose. Only the registry entry can say whether
@@ -131,15 +134,14 @@ export function McpConnectionCard({
     // Nothing was read about the server, so nothing may be claimed about it.
     return (
       <Text fz="xs" c="red">
-        {error ?? "Could not read this server's registry entry."}
+        {error ?? t("mcpConn.readFailed")}
       </Text>
     );
   }
   if (!server.auth) {
     return (
       <Text fz="xs" c="dimmed">
-        This server does not require authorization. Whatever credentials it needs come from the
-        registry entry&apos;s own headers, plus any override above.
+        {t("mcpConn.noAuthNeeded")}
       </Text>
     );
   }
@@ -155,7 +157,7 @@ export function McpConnectionCard({
           {server.auth.resource}
         </Text>
         <Text fz="xs" c={STATUS_COLOR[status]} style={{ flexShrink: 0 }}>
-          {STATUS_LABEL[status]}
+          {t(STATUS_LABEL[status])}
         </Text>
       </Group>
 
@@ -167,8 +169,7 @@ export function McpConnectionCard({
 
       {needsManualClient && (
         <Text fz="xs" c="dimmed">
-          This provider does not offer dynamic registration. Register an app with it, then save its
-          client ID and secret here.
+          {t("mcpConn.noDynamicRegistration")}
         </Text>
       )}
 
@@ -177,12 +178,12 @@ export function McpConnectionCard({
           <TextInput
             value={clientId}
             onChange={(e) => setClientId(e.currentTarget.value)}
-            placeholder="Client ID"
+            placeholder={t("mcpConn.clientId")}
           />
           <TextInput
             value={clientSecret}
             onChange={(e) => setClientSecret(e.currentTarget.value)}
-            placeholder="Client secret"
+            placeholder={t("mcpConn.clientSecret")}
             styles={monoInput}
           />
         </SimpleGrid>
@@ -193,8 +194,12 @@ export function McpConnectionCard({
         // provider: one long token with nothing to break on must fold rather
         // than push the dialog off the viewport.
         <Text fz="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-          Authorized by {connection.connectedBy} on{" "}
-          {new Date(connection.connectedAt).toLocaleString()}
+          {t("mcpConn.authorizedBy", {
+            // Optional on the view; an absent one renders as it did before —
+            // the sentence without a name, rather than the word "undefined".
+            who: connection.connectedBy ?? "",
+            when: new Date(connection.connectedAt).toLocaleString(),
+          })}
           {connection.scopes.length > 0 ? ` · ${connection.scopes.join(", ")}` : ""}
         </Text>
       )}
@@ -215,7 +220,7 @@ export function McpConnectionCard({
               })
             }
           >
-            Save credentials
+            {t("mcpConn.saveCredentials")}
           </Button>
         )}
         <Button
@@ -229,7 +234,7 @@ export function McpConnectionCard({
             })
           }
         >
-          {status === "connected" ? "Reauthorize" : "Connect"}
+          {status === "connected" ? t("mcpConn.reauthorize") : t("mcpConn.connect")}
         </Button>
         {connection && (
           <Button
@@ -238,7 +243,7 @@ export function McpConnectionCard({
             disabled={busy}
             onClick={() => run(async () => disconnectMcp(projectName, serverName))}
           >
-            Disconnect
+            {t("mcpConn.disconnect")}
           </Button>
         )}
       </Group>

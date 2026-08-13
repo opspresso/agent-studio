@@ -19,6 +19,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
+import { useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { JsonHighlight } from "@/app/_components/JsonHighlight";
 import { onModEnter } from "@/app/_lib/modEnter";
@@ -73,6 +74,7 @@ export function PromptPreview({
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   // Only the user prompt template is rendered with variables — a {{var}} in
   // the system prompt reaches the model as literal text, and an agent run
@@ -102,7 +104,7 @@ export function PromptPreview({
       setPreview(result);
       setPreviewOf(JSON.stringify({ draft, variables, message }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to build the preview");
+      setError(e instanceof Error ? e.message : t("preview.failed"));
     } finally {
       setLoading(false);
     }
@@ -122,18 +124,18 @@ export function PromptPreview({
           {preview && (
             <>
               <Text fz="xs" c="dimmed">
-                {charCount(preview).toLocaleString()} chars
+                {t("preview.chars", { count: charCount(preview).toLocaleString() })}
               </Text>
               {preview.toolNames.length > 0 && (
                 <Text fz="xs" c="dimmed">
-                  · {preview.toolNames.length} tools
+                  {t("preview.tools", { count: preview.toolNames.length })}
                 </Text>
               )}
             </>
           )}
           {stale && (
             <Text fz="xs" c="orange">
-              · stale
+              {t("preview.stale")}
             </Text>
           )}
         </Group>
@@ -145,13 +147,13 @@ export function PromptPreview({
             loading={loading}
             disabled={!draft.model}
           >
-            {preview ? "Refresh" : "Build preview"}
+            {preview ? t("preview.refresh") : t("preview.build")}
           </Button>
         </Group>
       </Group>
 
       {varNames.length > 0 && (
-        <Input.Wrapper label="Variables" labelElement="div">
+        <Input.Wrapper label={t("run.variables")} labelElement="div">
           <Stack gap="xs" mt={4}>
             {varNames.map((name) => (
               <TextInput
@@ -178,9 +180,9 @@ export function PromptPreview({
 
       {usesRequest && (
         <TextInput
-          label="Request"
-          description="Searched against the registry alongside the system prompt. Leave it empty to see what every run starts with."
-          placeholder="e.g. aws eks 최신 버전 알려줘"
+          label={t("preview.request")}
+          description={t("preview.requestHint")}
+          placeholder={t("preview.requestPlaceholder")}
           value={message}
           onChange={(e) => setMessage(e.currentTarget.value)}
         />
@@ -196,7 +198,7 @@ export function PromptPreview({
         // Blue, not yellow: these were *found*, and the prompt above already
         // includes them without saying which rows the version never bound.
         <Alert color="blue" variant="light" fz="xs">
-          Found for this request, on top of the bindings: {preview.discovered.join(", ")}
+          {t("preview.discovered", { names: preview.discovered.join(", ") })}
         </Alert>
       )}
 
@@ -225,15 +227,15 @@ export function PromptPreview({
 
       {preview && preview.messages.length === 0 && (
         <Text fz="xs" c="dimmed">
-          This version sends no prompt of its own; the conversation supplies everything.
+          {t("preview.noPrompt")}
         </Text>
       )}
 
       {preview && preview.toolNames.length > 0 && (
         <Spoiler
           maxHeight={0}
-          showLabel={`Tools offered (${preview.toolNames.length})`}
-          hideLabel="Hide tools"
+          showLabel={t("preview.toolsOffered", { count: preview.toolNames.length })}
+          hideLabel={t("preview.hideTools")}
           fz="xs"
         >
           <Code block fz="xs" mt={4} mah={384} style={{ overflow: "auto" }}>
@@ -244,8 +246,7 @@ export function PromptPreview({
 
       {!preview && !error && (
         <Text fz="xs" c="dimmed">
-          Builds the system prompt the way a run does — skill table, connected MCP servers and
-          their tool names, transfer instructions — by contacting the bound MCP servers.
+          {t("preview.blurb")}
         </Text>
       )}
     </Stack>

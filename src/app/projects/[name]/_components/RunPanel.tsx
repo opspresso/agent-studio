@@ -17,6 +17,7 @@ import {
 import { toRequestImages } from "@/app/_lib/imageAttachments";
 import { onModEnter } from "@/app/_lib/modEnter";
 import { AttachButton, AttachmentBar, useAttachments } from "@/app/_components/ImageAttachments";
+import { useT } from "@/app/_i18n/provider";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
 import {
   Alert,
@@ -97,6 +98,7 @@ export function RunPanel({
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("medium");
   const { attachments, attachError, addFiles, removeAt } = useAttachments();
+  const t = useT();
 
   const needsMessage = projectType === "agent" || projectType === "image";
   // An image-only turn is a legitimate run: "what is in this picture?" needs no words.
@@ -107,9 +109,9 @@ export function RunPanel({
   const attachHint =
     projectType === "image"
       ? attachments.length > 0
-        ? "The prompt edits these images."
-        : "Attach an image to edit it instead of generating a new one."
-      : "Attached images are sent with the run for the model to look at.";
+        ? t("run.attachHintEdits")
+        : t("run.attachHintGenerate")
+      : t("run.attachHintLook");
 
   async function run() {
     if (versionName === null) {
@@ -221,7 +223,7 @@ export function RunPanel({
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Run failed");
+      setError(e instanceof Error ? e.message : t("run.failed"));
     } finally {
       setRunning(false);
     }
@@ -254,9 +256,9 @@ export function RunPanel({
           label={
             projectType === "image"
               ? attachments.length > 0
-                ? "Edit instruction"
-                : "Image prompt"
-              : "Message"
+                ? t("run.editLabel")
+                : t("run.imagePromptLabel")
+              : t("run.messageLabel")
           }
           value={message}
           onChange={(e) => setMessage(e.currentTarget.value)}
@@ -266,13 +268,13 @@ export function RunPanel({
           placeholder={
             projectType === "image"
               ? attachments.length > 0
-                ? "Describe the edited result…"
-                : "Describe the image to generate…"
-              : "Ask the agent…"
+                ? t("run.editPlaceholder")
+                : t("run.generatePlaceholder")
+              : t("run.askPlaceholder")
           }
         />
       ) : varNames.length > 0 ? (
-        <Input.Wrapper label="Variables" labelElement="div">
+        <Input.Wrapper label={t("run.variables")} labelElement="div">
           <Stack gap="xs" mt={4}>
             {varNames.map((name) => (
               <TextInput
@@ -297,12 +299,12 @@ export function RunPanel({
         </Input.Wrapper>
       ) : (
         <Text fz="xs" c="dimmed">
-          No template variables detected.
+          {t("run.noVariables")}
         </Text>
       )}
 
       <Input.Wrapper
-        label={projectType === "image" ? "Source images" : "Images"}
+        label={projectType === "image" ? t("run.sourceImages") : t("run.images")}
         labelElement="div"
         description={attachHint}
         inputWrapperOrder={["label", "description", "input"]}
@@ -314,9 +316,7 @@ export function RunPanel({
           </Group>
           {modelAcceptsImages === false && attachments.length > 0 && (
             <Text fz="xs" c="red">
-              {projectType === "image"
-                ? "This model cannot edit images; the run will be rejected."
-                : "This model does not accept image input; the run will be rejected."}
+              {projectType === "image" ? t("run.cannotEdit") : t("run.noImageInput")}
             </Text>
           )}
         </Stack>
@@ -325,14 +325,14 @@ export function RunPanel({
       {projectType === "image" && (
         <Group gap="sm" align="flex-end">
           <Select
-            label="Size"
+            label={t("run.size")}
             value={size}
             onChange={(value) => setSize(value ?? "1024x1024")}
             allowDeselect={false}
             data={["1024x1024", "1536x1024", "1024x1536"]}
           />
           <Select
-            label="Quality"
+            label={t("run.quality")}
             value={quality}
             onChange={(value) => setQuality(value ?? "medium")}
             allowDeselect={false}
@@ -343,7 +343,7 @@ export function RunPanel({
 
       <Group>
         <Button onClick={run} loading={running} disabled={!canRun}>
-          Run
+          {t("playground.run")}
         </Button>
       </Group>
 
@@ -369,7 +369,7 @@ export function RunPanel({
         <Stack gap={4}>
           <Group gap={6} wrap="wrap">
             <Text fz="xs" c="dimmed">
-              {running ? "running:" : "ran:"}
+              {running ? t("run.running") : t("run.ran")}
             </Text>
             <Badge color={BADGE.owned} ff="monospace">
               {projectName}
@@ -389,7 +389,9 @@ export function RunPanel({
           </Group>
           {visitedPaths.length > 0 && (
             <Text fz="xs" c="dimmed">
-              agents involved: {visitedPaths.map((path) => path.join(" → ")).join(", ")}
+              {t("run.agentsInvolved", {
+                agents: visitedPaths.map((path) => path.join(" → ")).join(", "),
+              })}
             </Text>
           )}
         </Stack>
@@ -400,14 +402,12 @@ export function RunPanel({
           {image ? (
             <Image
               src={imageDataUrl({ b64: image.imageBase64, mimeType: image.mimeType })}
-              alt="Generated image"
+              alt={t("chat.generatedImage")}
               radius="sm"
             />
           ) : (
             <Text fz="sm" c="dimmed">
-              {running
-                ? "Generating image… this can take a minute."
-                : "Generated image will appear here."}
+              {running ? t("run.generating") : t("run.imageWillAppear")}
             </Text>
           )}
         </Paper>
@@ -415,7 +415,7 @@ export function RunPanel({
         <Paper withBorder p="sm" mih={96} style={{ whiteSpace: "pre-wrap" }}>
           {text || (
             <Text fz="sm" c="dimmed">
-              Output will stream here.
+              {t("run.outputWillStream")}
             </Text>
           )}
         </Paper>
@@ -425,7 +425,7 @@ export function RunPanel({
         <Image
           key={`image-${i}`}
           src={imageDataUrl(img)}
-          alt={img.prompt ?? "Generated image"}
+          alt={img.prompt ?? t("chat.generatedImage")}
           radius="md"
         />
       ))}
