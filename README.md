@@ -1,5 +1,8 @@
 # ✨ AgentDure
 
+> **Dure (두레)** — a Korean village work cooperative, where neighbors pool their labor to
+> finish what no one could alone.
+
 **Build AI agents that work together.** An internal LLM platform for prompt, agent, and cost
 management — one production-grade Next.js full-stack application.
 
