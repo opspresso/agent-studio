@@ -372,8 +372,12 @@ describe("images an MCP tool returns", () => {
     expect(toolResult).toContain("attached");
   });
 
-  it("tells the model the pictures were dropped when it cannot read images", async () => {
-    // Sending image parts to a text-only model fails the whole turn.
+  it("delivers a picture the model cannot read, and says so", async () => {
+    // Sending image parts to a text-only model fails the whole turn — but the
+    // person who asked for the screenshot is not the model. Losing both at once
+    // meant the picture was never streamed, never stored and never part of the
+    // finished conversation; `EngineChunk.file` already draws the line in the
+    // right place.
     const channel = screenshotChannel();
     const deps: AgentDeps = {
       channel,
@@ -390,12 +394,41 @@ describe("images an MCP tool returns", () => {
       }),
     );
 
-    expect(chunks.some((c) => c.image)).toBe(false);
-    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toContain("dropped");
+    expect(chunks.filter((c) => c.image).map((c) => c.image?.b64)).toEqual([PIXEL]);
+    const toolResult = chunks.find((c) => c.toolResult)?.toolResult?.content ?? "";
+    expect(toolResult).toContain("delivered to the user");
+    expect(toolResult).toContain("but not to you");
+    // The context is what the model's capability decides, and it stays empty.
     const hasImagePart = followUpMessages(channel).some(
       (m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"),
     );
     expect(hasImagePart).toBe(false);
+  });
+
+  it("hands a text-only model an id for a picture it cannot see", async () => {
+    // The model cannot look at it, but it can pass it to an agent that can —
+    // which is the whole of what an id is for.
+    const channel = screenshotChannel();
+    const deps: AgentDeps = {
+      channel,
+      recordUsage: async () => {},
+      callMcpTool: async () => ({ text: "captured", images: [{ b64: PIXEL, mimeType: "image/png" }] }),
+      runSubagent: async function* () {
+        return "";
+      },
+    };
+
+    const chunks = await collect(
+      runAgent(deps, {
+        projectName: "p",
+        model: "openai/gpt-5-mini-text-only-not-in-catalog",
+        messages: [{ role: "user", content: "what is on screen?" }],
+        mcpTools: screenshotTools,
+        subagents: [{ name: "looker", description: "reads images", type: "local" }],
+      }),
+    );
+
+    expect(chunks.find((c) => c.toolResult)?.toolResult?.content).toContain("img_1");
   });
 
   it("caps how many pictures one turn may take in", async () => {

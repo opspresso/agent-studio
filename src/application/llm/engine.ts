@@ -2052,29 +2052,45 @@ export async function* runAgent(
             yield { author, file: { ...file, source: `mcp: ${call.name}` } };
           }
           const produced = settled.ok.images ?? [];
-          if (produced.length > 0 && imageInputReject) {
-            // Sending parts this model rejects would fail the whole turn, so the
-            // model is told the pictures existed instead of silently losing them.
-            content += `\n\n(${produced.length} image(s) from this tool were dropped: ${imageInputReject})`;
-          } else if (produced.length > 0) {
+          if (produced.length > 0) {
+            // A picture the tool produced reaches the person who asked for it,
+            // and *whether it also enters the context* is the only thing the
+            // model's capability decides. A text-only model used to lose both
+            // at once: the screenshot the user asked for was never yielded, so
+            // it was never streamed, never stored as an artifact, and never
+            // part of the finished conversation — while the tool result told
+            // the model it had been "dropped", which by then it had. The rule
+            // `EngineChunk.file` already follows says it plainly: bytes that
+            // cannot enter the context are still the run's output.
+            //
+            // The per-turn cap bounds delivery either way. Nothing else bounds
+            // how many pictures one tool call returns, and a run that streams
+            // and stores fifty of them is the shape that cap exists for.
             const accepted = produced.slice(0, imageBudget);
             imageBudget -= accepted.length;
             const ids: string[] = [];
             for (const image of accepted) {
-              // An id is only worth handing over when something can act on it.
+              // An id is only worth handing over when something can act on it —
+              // and a model that cannot *see* a picture can still hand it to an
+              // agent that can, or ask for an edit to it.
               const handle = canEdit || canTransfer ? images.add(image, `returned by ${call.name}`) : undefined;
               if (handle) {
                 ids.push(handle.id);
               }
-              attachedImages.push(image);
+              if (!imageInputReject) {
+                // Sending parts this model rejects would fail the whole turn.
+                attachedImages.push(image);
+              }
               yield { author, image: { ...image, prompt: `Returned by ${call.name}` } };
             }
+            const idNote =
+              ids.length > 0 ? ` (image id${ids.length > 1 ? "s" : ""}: ${ids.join(", ")})` : "";
             if (accepted.length > 0) {
               // A tool message carries text only, so the bytes ride on the
               // follow-up user message appended after this turn's tool results.
-              content += `\n\n${accepted.length} image(s) returned by this tool are attached to the next message${
-                ids.length > 0 ? ` (image id${ids.length > 1 ? "s" : ""}: ${ids.join(", ")})` : ""
-              }.`;
+              content += imageInputReject
+                ? `\n\n${accepted.length} image(s) returned by this tool were delivered to the user${idNote}, but not to you: ${imageInputReject}`
+                : `\n\n${accepted.length} image(s) returned by this tool are attached to the next message${idNote}.`;
             }
             const dropped = produced.length - accepted.length;
             if (dropped > 0) {
