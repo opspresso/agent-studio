@@ -10,7 +10,7 @@ import {
   IconLayersIntersect,
 } from "@tabler/icons-react";
 import type { Project } from "@/domain/project/types";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import { CardHeading } from "./CardHeading";
 import { GROUP_BY_LABEL, GroupByControl } from "./GroupByControl";
 import { StatCard } from "./StatCard";
@@ -42,6 +42,7 @@ const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
  */
 export function Dashboard({ projects }: { projects: Project[] | null }) {
   const t = useT();
+  const locale = useLocale();
   const initial = useMemo(() => presetRange(30), []);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
@@ -149,7 +150,7 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
         />
         <StatCard
           label={t("cost.totalCalls")}
-          value={calls.toLocaleString()}
+          value={calls.toLocaleString(locale)}
           detail={t("cost.modelInvocations")}
           Icon={IconActivity}
         />
@@ -161,7 +162,7 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
         />
         <StatCard
           label={t("cost.activeGroups")}
-          value={groups.length.toLocaleString()}
+          value={groups.length.toLocaleString(locale)}
           detail={t("usage.groupedBy", { axis: t(GROUP_BY_LABEL[groupBy]) })}
           Icon={IconLayersIntersect}
         />

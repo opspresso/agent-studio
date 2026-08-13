@@ -16,7 +16,7 @@ import { buildDailySeries, groupUsage, sumRecord, type GroupBy } from "@/app/_li
 import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
 import { Alert, Avatar, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { IconActivity, IconCoins, IconUsers } from "@tabler/icons-react";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 
 /**
  * The axes one project's own rows can still tell apart. Grouping by project
@@ -54,6 +54,7 @@ function totalsByCaller(rows: ActorUsageView[]): CallerTotal[] {
 
 export default function UsagePage() {
   const t = useT();
+  const locale = useLocale();
   const params = useParams<{ name: string }>();
   const name = params.name;
 
@@ -124,13 +125,13 @@ export default function UsagePage() {
             />
             <StatCard
               label={t("cost.totalCalls")}
-              value={totalCalls.toLocaleString()}
+              value={totalCalls.toLocaleString(locale)}
               detail="Model invocations"
               Icon={IconActivity}
             />
             <StatCard
               label={t("projectUsage.callers")}
-              value={callers.length.toLocaleString()}
+              value={callers.length.toLocaleString(locale)}
               detail={callers.length === 0 ? "Owner or admin only" : "Distinct identities"}
               Icon={IconUsers}
             />
@@ -173,7 +174,7 @@ export default function UsagePage() {
                         </Group>
                       </Table.Td>
                       <Table.Td ta="right" ff="monospace" c="dimmed">
-                        {caller.calls.toLocaleString()}
+                        {caller.calls.toLocaleString(locale)}
                       </Table.Td>
                       <Table.Td ta="right" ff="monospace">
                         {formatUsd(caller.costUsd)}

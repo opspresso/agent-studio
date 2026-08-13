@@ -9,7 +9,7 @@ import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   getPluginsSyncConfig,
   listPlugins,
@@ -22,6 +22,7 @@ import {
 
 export default function PluginsPage() {
   const t = useT();
+  const locale = useLocale();
   const viewer = useViewer();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +91,7 @@ export default function PluginsPage() {
             ? `GitHub source: ${syncConfig.repo} · ${syncConfig.branch}`
             : "Plugin sync is not configured. Add the repository and token in Settings."}
           {syncConfig.last &&
-            ` · last synced ${new Date(syncConfig.last.finishedAt).toLocaleString()} by ${syncConfig.last.actorEmail}`}
+            ` · last synced ${new Date(syncConfig.last.finishedAt).toLocaleString(locale)} by ${syncConfig.last.actorEmail}`}
         </Text>
       )}
 
@@ -146,7 +147,7 @@ export default function PluginsPage() {
               <Text fz="xs" c="dimmed" mt={8}>
                 {plugin.skills.length} skill{plugin.skills.length === 1 ? "" : "s"} ·{" "}
                 {plugin.mcpServers.length} server{plugin.mcpServers.length === 1 ? "" : "s"} ·
-                synced {new Date(plugin.syncedAt).toLocaleDateString()} · {plugin.commitSha.slice(0, 7)}
+                synced {new Date(plugin.syncedAt).toLocaleDateString(locale)} · {plugin.commitSha.slice(0, 7)}
               </Text>
             </Card>
           ))}

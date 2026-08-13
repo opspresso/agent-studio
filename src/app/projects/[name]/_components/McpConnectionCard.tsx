@@ -21,7 +21,7 @@ import { getMcp, type McpServer } from "@/app/tools/api";
 import { Button, Group, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { monoInput } from "@/app/_components/monoInput";
 import type { MessageKey } from "@/app/_i18n/messages/en";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 
 const STATUS_LABEL: Record<McpConnectionView["status"], MessageKey> = {
   connected: "mcpConn.connected",
@@ -50,6 +50,7 @@ export function McpConnectionCard({
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const t = useT();
+  const locale = useLocale();
 
   const refresh = useCallback(async () => {
     // Settled independently on purpose. Only the registry entry can say whether
@@ -198,7 +199,7 @@ export function McpConnectionCard({
             // Optional on the view; an absent one renders as it did before —
             // the sentence without a name, rather than the word "undefined".
             who: connection.connectedBy ?? "",
-            when: new Date(connection.connectedAt).toLocaleString(),
+            when: new Date(connection.connectedAt).toLocaleString(locale),
           })}
           {connection.scopes.length > 0 ? ` · ${connection.scopes.join(", ")}` : ""}
         </Text>

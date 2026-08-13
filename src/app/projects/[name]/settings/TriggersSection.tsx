@@ -21,7 +21,7 @@ import { CopyButton } from "@/app/_components/CopyButton";
 import { stateColor } from "@/app/_components/badgeColors";
 import { toSlug } from "@/shared/slug";
 import { formatDateTime } from "@/shared/date";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import {
   createTrigger,
   deleteTrigger,
@@ -48,6 +48,7 @@ const STATUS_COLOR: Record<TriggerRun["status"], string> = {
  */
 export function TriggersSection({ projectName }: { projectName: string }) {
   const t = useT();
+  const locale = useLocale();
   const [triggers, setTriggers] = useState<TriggerView[]>([]);
   const [runs, setRuns] = useState<Record<string, TriggerRun[]>>({});
   const [newId, setNewId] = useState("");
@@ -432,7 +433,7 @@ export function TriggersSection({ projectName }: { projectName: string }) {
                             the status badge into "SUCCEE…" — a status column you
                             cannot read defeats the table. */}
                         <Table.Td style={{ whiteSpace: "nowrap" }}>
-                          {formatDateTime(run.startedAt)}
+                          {formatDateTime(run.startedAt, locale)}
                         </Table.Td>
                         <Table.Td style={{ whiteSpace: "nowrap" }}>
                           {/* Badge clamps its own label independently of the cell,

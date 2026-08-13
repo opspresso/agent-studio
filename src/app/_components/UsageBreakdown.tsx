@@ -3,7 +3,7 @@
 import { Card, Progress, Table, Text } from "@mantine/core";
 import type { GroupBy, UsageGroup } from "@/app/_lib/usage";
 import { formatUsd } from "@/app/_lib/formatUsd";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import { DataTable } from "./DataTable";
 import { GROUP_BY_LABEL } from "./GroupByControl";
 
@@ -47,6 +47,7 @@ export function UsageBreakdown({
 }) {
   const t = useT();
   const largest = groups[0]?.cost ?? 0;
+  const locale = useLocale();
 
   return (
     <Card padding={0}>
@@ -89,7 +90,7 @@ export function UsageBreakdown({
                 />
               </Table.Td>
               <Table.Td ta="right" ff="monospace" c="dimmed">
-                {group.calls.toLocaleString()}
+                {group.calls.toLocaleString(locale)}
               </Table.Td>
               <Table.Td ta="right" ff="monospace" c="dimmed">
                 {cachedShare(group)}

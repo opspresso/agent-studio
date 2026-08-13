@@ -31,7 +31,7 @@ import { formatDate } from "@/app/_lib/formatDate";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { readJson } from "@/app/_lib/httpClient";
 import { buildDailySeries, groupUsage, totalCalls, totalCost, type GroupBy } from "@/app/_lib/usage";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 
 /**
  * A person's own rows carry their project and their model, but no department
@@ -47,6 +47,7 @@ interface ProfileAccount {
 
 export default function ProfilePage() {
   const t = useT();
+  const locale = useLocale();
   const [account, setAccount] = useState<ProfileAccount | null>(null);
   const [range, setRange] = useState(defaultDateRange);
   const [groupBy, setGroupBy] = useState<GroupBy>("project");
@@ -119,12 +120,12 @@ export default function ProfilePage() {
             <Group gap="xl" mt="sm">
               <div>
                 <Text fz="xs" c="dimmed">Joined</Text>
-                <Text fz="sm">{formatDate(member.joinedAt)}</Text>
+                <Text fz="sm">{formatDate(member.joinedAt, locale)}</Text>
               </div>
               <div>
                 <Text fz="xs" c="dimmed">{t("members.lastLogin")}</Text>
                 <Text fz="sm" c={member.lastLoginAt ? undefined : "dimmed"}>
-                  {member.lastLoginAt ? formatDate(member.lastLoginAt) : "Never recorded"}
+                  {member.lastLoginAt ? formatDate(member.lastLoginAt, locale) : t("members.neverRecorded")}
                 </Text>
               </div>
               <div>
@@ -165,7 +166,7 @@ export default function ProfilePage() {
         />
         <StatCard
           label={t("cost.totalCalls")}
-          value={calls.toLocaleString()}
+          value={calls.toLocaleString(locale)}
           detail="Model invocations"
           Icon={IconActivity}
         />

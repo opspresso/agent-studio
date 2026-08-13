@@ -1,10 +1,24 @@
+/**
+ * The language a timestamp is written in.
+ *
+ * Passing it is what makes the server and the browser agree: left to the
+ * runtime's own default, Node writes `8/14/2026` while a Korean browser writes
+ * `2026. 8. 14.` for the same instant, and React throws away the tree it
+ * hydrated. It also means a reader who chose Korean gets Korean dates whatever
+ * their browser is set to — which is the point of the choice.
+ *
+ * Optional because the non-UI callers here (`utcDay` and friends) have no
+ * locale and want none; omitting it keeps the old runtime-default behaviour.
+ */
+type DateLocale = Intl.LocalesArgument;
+
 /** Compact date-time for chat bubbles (e.g. "7/23 14:32"). Empty string for missing/invalid input. */
-export function formatShortDateTime(iso: string): string {
+export function formatShortDateTime(iso: string, locale?: DateLocale): string {
   const date = new Date(iso);
   if (!iso || Number.isNaN(date.getTime())) {
     return "";
   }
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(locale, {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -13,12 +27,12 @@ export function formatShortDateTime(iso: string): string {
 }
 
 /** Full locale date-time (year included). Empty string for missing/invalid input. */
-export function formatDateTime(iso: string): string {
+export function formatDateTime(iso: string, locale?: DateLocale): string {
   const date = new Date(iso);
   if (!iso || Number.isNaN(date.getTime())) {
     return "";
   }
-  return date.toLocaleString();
+  return date.toLocaleString(locale);
 }
 
 /**

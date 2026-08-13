@@ -19,7 +19,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { JsonHighlight } from "@/app/_components/JsonHighlight";
 import { onModEnter } from "@/app/_lib/modEnter";
@@ -75,6 +75,7 @@ export function PromptPreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = useT();
+  const locale = useLocale();
 
   // Only the user prompt template is rendered with variables — a {{var}} in
   // the system prompt reaches the model as literal text, and an agent run
@@ -124,7 +125,7 @@ export function PromptPreview({
           {preview && (
             <>
               <Text fz="xs" c="dimmed">
-                {t("preview.chars", { count: charCount(preview).toLocaleString() })}
+                {t("preview.chars", { count: charCount(preview).toLocaleString(locale) })}
               </Text>
               {preview.toolNames.length > 0 && (
                 <Text fz="xs" c="dimmed">
