@@ -1,6 +1,8 @@
 import { Box, Flex } from "@mantine/core";
 import { ChatSidebar } from "./_components/ChatSidebar";
 
+export const metadata = { title: "Chats" };
+
 export default function ChatsLayout({ children }: { children: React.ReactNode }) {
   return (
     <Flex
