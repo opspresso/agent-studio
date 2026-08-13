@@ -404,4 +404,48 @@ export const ko: Messages = {
   "mcpConn.authorizedBy": "{who} 님이 {when} 에 인증함",
   "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",
+
+  "registry.nameLabel": "이름",
+  "registry.nameHint": "소문자·숫자·하이픈만 쓸 수 있습니다.",
+  "registry.description": "설명",
+  "registry.modelSummary": "모델에게 보여줄 한 줄 요약",
+  "registry.content": "본문 (마크다운)",
+  "registry.operatorNotes":
+    "콘솔에 표시할 운영자 메모입니다. 모델에게는 전달되지 않고, 설명만 전달됩니다.",
+  "registry.register": "등록",
+  "registry.create": "만들기",
+  "registry.url": "URL",
+  "registry.headersEmpty": "헤더가 없습니다. 엔드포인트에 인증이 필요하면 추가하세요.",
+
+  "skills.lede":
+    "에이전트 엔진이 필요할 때 불러오는 마크다운 행동 지침입니다. 동기화된 Skill 은 Agent Plugins 를 통해 들어옵니다.",
+  "skills.new": "새 Skill",
+  "skills.filter": "Skill 검색…",
+  "skills.empty": "아직 Skill 이 없습니다. 플러그인 저장소를 동기화하거나 여기서 만드세요.",
+  "skills.namePlaceholder": "my-skill",
+  "skills.contentPlaceholder": "# 지침…",
+  "skills.noContent": "본문이 없습니다.",
+
+  "agents.lede":
+    "프로젝트 버전이 원격 서브에이전트로 바인딩할 수 있는 외부 OpenAI 호환·A2A 엔드포인트입니다.",
+  "agents.register": "에이전트 등록",
+  "agents.registerTitle": "외부 에이전트 등록",
+  "agents.filter": "에이전트 검색…",
+  "agents.empty":
+    "아직 외부 에이전트가 없습니다. OpenAI 호환 또는 A2A 엔드포인트를 등록하면 원격 서브에이전트로 쓸 수 있습니다.",
+  "agents.namePlaceholder": "my-agent",
+  "agents.protocol": "프로토콜",
+  "agents.cardUrl": "Agent Card URL",
+  "agents.sendPlaceholder": "에이전트에게 메시지 하나를 보내보세요…",
+
+  "tools.lede":
+    "streamable HTTP 로 에이전트에게 도구를 제공하는 MCP 서버입니다. 한 번 등록하면 버전마다 바인딩합니다.",
+  "tools.register": "MCP 등록",
+  "tools.runManaged": "관리형으로 실행",
+  "tools.registerTitle": "MCP 서버 등록",
+  "tools.filter": "서버 검색…",
+  "tools.empty": "아직 MCP 서버가 없습니다. 플러그인 저장소를 동기화하거나 여기서 등록하세요.",
+  "tools.namePlaceholder": "my-mcp",
+  "tools.contentPlaceholder": "설치 단계, 주의사항, 링크…",
+  "tools.descriptionPlaceholder": "이미지 URL 을 가져와 바이트를 돌려줍니다",
 };

@@ -38,8 +38,10 @@ import { AGENT_PROTOCOL_COLOR, AGENT_PROTOCOL_LABEL, BADGE } from "@/app/_compon
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 export default function AgentsPage() {
+  const t = useT();
   const viewer = useViewer();
   const [agents, setAgents] = useState<ExternalAgent[]>([]);
   const [a2aProjects, setA2aProjects] = useState<A2aProjectListView | null>(null);
@@ -70,11 +72,11 @@ export default function AgentsPage() {
   return (
     <Stack gap="lg">
       <CatalogHeader
-        title="Agents"
-        description="External OpenAI-compatible and A2A endpoints a project version can bind as remote subagents."
+        title={t("nav.agents")}
+        description={t("agents.lede")}
         Icon={IconRobot}
       >
-        {viewer?.isAdmin && <Button onClick={open}>Register agent</Button>}
+        {viewer?.isAdmin && <Button onClick={open}>{t("agents.register")}</Button>}
       </CatalogHeader>
 
       {error && (
@@ -84,13 +86,13 @@ export default function AgentsPage() {
       )}
 
       {agents.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter agents…" />
+        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("agents.filter")} />
       )}
 
       <CardGrid
         loading={loading}
         empty={agents.length === 0}
-        emptyText="No external agents yet. Register an OpenAI-compatible or A2A endpoint to use it as a remote subagent."
+        emptyText={t("agents.empty")}
       >
         {agents
           .filter((agent) => matchesFilter(filter, agent.name, agent.description))
@@ -244,6 +246,7 @@ function RegisterAgentModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [protocol, setProtocol] = useState<AgentProtocol>("openai");
@@ -283,24 +286,24 @@ function RegisterAgentModal({
     <FormModal
       opened={opened}
       onClose={onClose}
-      title="Register external agent"
+      title={t("agents.registerTitle")}
       error={error}
       onSubmit={submit}
-      submitLabel="Register"
+      submitLabel={t("registry.register")}
       submitting={submitting}
     >
       <TextInput
-        label="Name"
+        label={t("registry.nameLabel")}
         value={name}
         onChange={(e) => setName(e.currentTarget.value)}
         onBlur={() => setName(toSlug(name))}
-        placeholder="my-agent"
+        placeholder={t("agents.namePlaceholder")}
         required
-        description="Lowercase letters, digits, and hyphens only."
+        description={t("registry.nameHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <Select
-        label="Protocol"
+        label={t("agents.protocol")}
         value={protocol}
         onChange={(value) => setProtocol((value ?? "openai") as AgentProtocol)}
         allowDeselect={false}
@@ -310,7 +313,7 @@ function RegisterAgentModal({
         ]}
       />
       <TextInput
-        label={protocol === "a2a" ? "Agent Card URL" : "URL"}
+        label={protocol === "a2a" ? t("agents.cardUrl") : t("registry.url")}
         value={url}
         onChange={(e) => setUrl(e.currentTarget.value)}
         placeholder={
@@ -322,7 +325,7 @@ function RegisterAgentModal({
         required
       />
       <TextInput
-        label="Description"
+        label={t("registry.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
         required
@@ -331,7 +334,7 @@ function RegisterAgentModal({
       <HeaderRowsEditor
         rows={rows}
         onChange={setRows}
-        emptyHint="No headers. Add one if the endpoint needs auth."
+        emptyHint={t("registry.headersEmpty")}
       />
     </FormModal>
   );

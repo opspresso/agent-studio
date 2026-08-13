@@ -28,8 +28,10 @@ import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 export default function ToolsPage() {
+  const t = useT();
   const viewer = useViewer();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,15 +59,15 @@ export default function ToolsPage() {
   return (
     <Stack gap="lg">
       <CatalogHeader
-        title="Tools"
-        description="MCP servers that expose tools to agents over streamable HTTP — registered once, bound per version. Synced servers arrive through Plugins."
+        title={t("nav.tools")}
+        description={t("tools.lede")}
         Icon={IconTool}
       >
         {viewer?.isAdmin && <Group gap="xs">
           <Button variant="default" onClick={managed.open}>
-            Run managed
+            {t("tools.runManaged")}
           </Button>
-          <Button onClick={register.open}>Register MCP</Button>
+          <Button onClick={register.open}>{t("tools.register")}</Button>
         </Group>}
       </CatalogHeader>
 
@@ -76,13 +78,13 @@ export default function ToolsPage() {
       )}
 
       {servers.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter servers…" />
+        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("tools.filter")} />
       )}
 
       <CardGrid
         loading={loading}
         empty={servers.length === 0}
-        emptyText="No MCP servers yet. Sync a plugins repo, or register one here."
+        emptyText={t("tools.empty")}
       >
         {servers
           .filter((server) => matchesFilter(filter, server.name, server.description))
@@ -139,6 +141,7 @@ function RegisterMcpModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
@@ -184,24 +187,24 @@ function RegisterMcpModal({
     <FormModal
       opened={opened}
       onClose={onClose}
-      title="Register MCP server"
+      title={t("tools.registerTitle")}
       error={error}
       onSubmit={submit}
-      submitLabel="Register"
+      submitLabel={t("registry.register")}
       submitting={submitting}
     >
       <TextInput
-        label="Name"
+        label={t("registry.nameLabel")}
         value={name}
         onChange={(e) => setName(e.currentTarget.value)}
         onBlur={() => setName(toSlug(name))}
-        placeholder="my-mcp"
+        placeholder={t("tools.namePlaceholder")}
         required
-        description="Lowercase letters, digits, and hyphens only."
+        description={t("registry.nameHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <TextInput
-        label="URL"
+        label={t("registry.url")}
         value={url}
         onChange={(e) => setUrl(e.currentTarget.value)}
         placeholder="https://example.com/mcp"
@@ -209,20 +212,20 @@ function RegisterMcpModal({
         required
       />
       <TextInput
-        label="Description"
+        label={t("registry.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
-        placeholder="One-line summary shown to the model"
+        placeholder={t("registry.modelSummary")}
       />
       <Textarea
-        label="Content (markdown)"
+        label={t("registry.content")}
         value={content}
         onChange={(e) => setContent(e.currentTarget.value)}
-        placeholder="Setup steps, caveats, links…"
+        placeholder={t("tools.contentPlaceholder")}
         autosize
         minRows={6}
         maxRows={24}
-        description="Operator notes for the console. Not sent to the model — only the description is."
+        description={t("registry.operatorNotes")}
         inputWrapperOrder={["label", "input", "description", "error"]}
         styles={monoInput}
       />
