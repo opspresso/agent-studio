@@ -32,12 +32,12 @@ beforeEach(() => {
 });
 
 describe("the member day row", () => {
-  it("is written third, keyed by email and UTC day, for a user actor", async () => {
+  it("is written third, keyed by email, UTC day and project, for a user actor", async () => {
     await new DynamoUsageRepository().record(delta("user:a@x.com"));
 
     const memberWrites = sentInputs().filter((input) => input.Key?.PK === "USAGEMEMBER#a@x.com");
     expect(memberWrites).toHaveLength(2);
-    expect(memberWrites[0]?.Key).toEqual({ PK: "USAGEMEMBER#a@x.com", SK: "DATE#2026-08-13" });
+    expect(memberWrites[0]?.Key).toEqual({ PK: "USAGEMEMBER#a@x.com", SK: "DATE#2026-08-13#p" });
     expect(memberWrites[0]?.UpdateExpression).toContain("if_not_exists(costUsd");
     expect(memberWrites[1]?.UpdateExpression).toContain("ADD calls.#model");
     expect(memberWrites[1]?.ExpressionAttributeValues).toMatchObject({ ":cost": 0.5 });
@@ -57,7 +57,13 @@ describe("the member day row", () => {
 describe("listMemberDays", () => {
   it("queries the member's own partition across the day range", async () => {
     queryAll.mockResolvedValue([
-      { email: "a@x.com", date: "2026-08-13", costUsd: { m: 3 }, calls: { m: 2 } },
+      {
+        email: "a@x.com",
+        projectName: "p",
+        date: "2026-08-13",
+        costUsd: { m: 3 },
+        calls: { m: 2 },
+      },
     ]);
 
     await expect(
@@ -65,6 +71,7 @@ describe("listMemberDays", () => {
     ).resolves.toEqual([
       {
         email: "a@x.com",
+        projectName: "p",
         date: "2026-08-13",
         calls: { m: 2 },
         inputTokens: {},
@@ -79,7 +86,8 @@ describe("listMemberDays", () => {
         ExpressionAttributeValues: {
           ":pk": "USAGEMEMBER#a@x.com",
           ":from": "DATE#2026-08-01",
-          ":to": "DATE#2026-08-13",
+          // Past every project name on the last day.
+          ":to": "DATE#2026-08-13\uffff",
         },
       }),
     );

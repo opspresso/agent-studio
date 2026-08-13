@@ -14,8 +14,9 @@ const user: RunActor = { kind: "user", id: "a@x.com" };
 
 const guestCap = TIER_LIMITS.guest.monthlyCostCapUsd!;
 
-const day = (date: string, cost: number): MemberUsageRow => ({
+const day = (date: string, cost: number, projectName = "p"): MemberUsageRow => ({
   email: "a@x.com",
+  projectName,
   date,
   calls: { m: 1 },
   inputTokens: {},

@@ -5,6 +5,7 @@ import type { MemberUsageRow } from "@/domain/usage/types";
 
 const row: MemberUsageRow = {
   email: "u@x.com",
+  projectName: "p",
   date: "2026-02-10",
   calls: { m: 3 },
   inputTokens: { m: 30 },

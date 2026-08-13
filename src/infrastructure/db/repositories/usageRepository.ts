@@ -193,7 +193,7 @@ export class DynamoUsageRepository implements UsageRepository {
   private async addToMemberDay(email: string, delta: UsageDelta): Promise<void> {
     const doc = getDocumentClient();
     const table = getTableName();
-    const key = keys.usageMember(email, delta.date);
+    const key = keys.usageMember(email, delta.date, delta.projectName);
     await doc.send(
       new UpdateCommand({
         TableName: table,
@@ -204,6 +204,7 @@ export class DynamoUsageRepository implements UsageRepository {
           "outputTokens = if_not_exists(outputTokens, :empty), " +
           "costUsd = if_not_exists(costUsd, :empty), " +
           "email = if_not_exists(email, :email), " +
+          "projectName = if_not_exists(projectName, :pn), " +
           "#date = if_not_exists(#date, :date), " +
           "entityType = if_not_exists(entityType, :et), " +
           "expiresAt = if_not_exists(expiresAt, :exp)",
@@ -211,6 +212,7 @@ export class DynamoUsageRepository implements UsageRepository {
         ExpressionAttributeValues: {
           ":empty": {},
           ":email": email,
+          ":pn": delta.projectName,
           ":date": delta.date,
           ":et": "UsageMember",
           // Retention runs from the usage date, exactly as the project rows'
@@ -242,13 +244,17 @@ export class DynamoUsageRepository implements UsageRepository {
       TableName: getTableName(),
       KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
       ExpressionAttributeValues: {
-        ":pk": keys.usageMember(email, from).PK,
-        ":from": keys.usageMember(email, from).SK,
-        ":to": keys.usageMember(email, to).SK,
+        ":pk": keys.usageMemberPartition(email),
+        ":from": keys.usageMemberPrefix(from),
+        // The project follows the date in the sort key, so the upper bound has
+        // to sort after every project on `to` — bound by the prefix rather
+        // than by any project name guessed for it.
+        ":to": `${keys.usageMemberPrefix(to)}￿`,
       },
     });
     return notExpired(items, Date.now()).map((item) => ({
       email: String(item.email ?? email),
+      projectName: String(item.projectName ?? ""),
       date: String(item.date ?? ""),
       calls: (item.calls as Record<string, number>) ?? {},
       inputTokens: (item.inputTokens as Record<string, number>) ?? {},

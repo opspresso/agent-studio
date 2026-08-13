@@ -7,13 +7,21 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { CardHeading } from "@/app/_components/CardHeading";
 import { CostBarChart } from "@/app/_components/CostBarChart";
 import { DataTable } from "@/app/_components/DataTable";
+import { GroupByControl } from "@/app/_components/GroupByControl";
 import { StatCard } from "@/app/_components/StatCard";
+import { UsageBreakdown } from "@/app/_components/UsageBreakdown";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { formatUsd } from "@/app/_lib/formatUsd";
-import { buildDailySeries, sumRecord } from "@/app/_lib/usage";
+import { buildDailySeries, groupUsage, sumRecord, type GroupBy } from "@/app/_lib/usage";
 import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
 import { Alert, Avatar, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { IconActivity, IconCoins, IconUsers } from "@tabler/icons-react";
+
+/**
+ * The axes one project's own rows can still tell apart. Grouping by project
+ * here would draw a single bar — the page is already scoped to one.
+ */
+const GROUP_OPTIONS: GroupBy[] = ["model", "provider"];
 
 /** One line per caller: the rows arrive per day, and a reader wants the person. */
 interface CallerTotal {
@@ -48,6 +56,7 @@ export default function UsagePage() {
   const name = params.name;
 
   const [range, setRange] = useState(defaultDateRange);
+  const [groupBy, setGroupBy] = useState<GroupBy>("model");
   const [rows, setRows] = useState<UsageRow[]>([]);
   const [actorRows, setActorRows] = useState<ActorUsageView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,9 +89,10 @@ export default function UsagePage() {
   }, [load]);
 
   const daily = useMemo(
-    () => buildDailySeries(rows, "model", range.from, range.to),
-    [rows, range.from, range.to],
+    () => buildDailySeries(rows, groupBy, range.from, range.to),
+    [rows, groupBy, range.from, range.to],
   );
+  const groups = useMemo(() => groupUsage(rows, groupBy), [rows, groupBy]);
   const totalCalls = rows.reduce((sum, row) => sum + sumRecord(row.calls), 0);
   const totalCost = rows.reduce((sum, row) => sum + sumRecord(row.costUsd), 0);
   const callers = useMemo(() => totalsByCaller(actorRows), [actorRows]);
@@ -125,47 +135,14 @@ export default function UsagePage() {
           </SimpleGrid>
 
           <Card>
-            <Group justify="space-between" mb="md">
-              <CardHeading title="Daily cost" subtitle="Stacked by model" />
+            <Group justify="space-between" mb="md" gap="md" wrap="wrap">
+              <CardHeading title="Daily cost" subtitle={`Stacked by ${groupBy}`} />
+              <GroupByControl value={groupBy} onChange={setGroupBy} options={GROUP_OPTIONS} />
             </Group>
             <CostBarChart data={daily.data} keys={daily.keys} />
           </Card>
 
-          <Card padding={0}>
-            <DataTable>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Date</Table.Th>
-                  <Table.Th ta="right">Calls</Table.Th>
-                  <Table.Th ta="right">Cost</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {rows.map((row) => (
-                  <Table.Tr key={row.date}>
-                    <Table.Td ff="monospace">{row.date}</Table.Td>
-                    <Table.Td ta="right" ff="monospace" c="dimmed">
-                      {sumRecord(row.calls).toLocaleString()}
-                    </Table.Td>
-                    <Table.Td ta="right" ff="monospace">
-                      {formatUsd(sumRecord(row.costUsd))}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-              <Table.Tfoot>
-                <Table.Tr fw={500}>
-                  <Table.Td>Total</Table.Td>
-                  <Table.Td ta="right" ff="monospace">
-                    {totalCalls.toLocaleString()}
-                  </Table.Td>
-                  <Table.Td ta="right" ff="monospace">
-                    {formatUsd(totalCost)}
-                  </Table.Td>
-                </Table.Tr>
-              </Table.Tfoot>
-            </DataTable>
-          </Card>
+          <UsageBreakdown groups={groups} label={groupBy} />
 
           {callers.length > 0 && (
             <Card padding={0}>
