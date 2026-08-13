@@ -7,13 +7,11 @@ import {
   Card,
   Group,
   Progress,
-  ScrollArea,
   SegmentedControl,
   SimpleGrid,
   Stack,
   Table,
   Text,
-  ThemeIcon,
   Title,
 } from "@mantine/core";
 import {
@@ -23,6 +21,9 @@ import {
   IconLayersIntersect,
 } from "@tabler/icons-react";
 import type { Project } from "@/domain/project/types";
+import { CardHeading } from "./CardHeading";
+import { DataTable } from "./DataTable";
+import { StatCard } from "./StatCard";
 import {
   buildDailySeries,
   groupUsage,
@@ -33,44 +34,10 @@ import {
 } from "../_lib/usage";
 import { presetRange } from "../_lib/dateRange";
 import { DateRangePicker } from "./DateRangePicker";
-import { DailyCostChart } from "./DailyCostChart";
+import { CostBarChart } from "./CostBarChart";
 import classes from "./Dashboard.module.css";
 
 const GROUP_OPTIONS: GroupBy[] = ["project", "model", "provider", "department"];
-
-
-function StatCard({
-  label,
-  value,
-  detail,
-  Icon,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  Icon: typeof IconCoins;
-}) {
-  return (
-    <Card className={classes.statCard}>
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <div>
-          <Text fz={10} fw={600} tt="uppercase" c="dimmed" lts="0.1em">
-            {label}
-          </Text>
-          <Text fz={30} fw={650} mt={6} lts="-0.035em">
-            {value}
-          </Text>
-          <Text fz="xs" c="dimmed" mt={2}>
-            {detail}
-          </Text>
-        </div>
-        <ThemeIcon variant="light" color="brand" size={38} radius="lg">
-          <Icon size={19} stroke={1.7} />
-        </ThemeIcon>
-      </Group>
-    </Card>
-  );
-}
 
 /**
  * The cost section of the overview.
@@ -223,25 +190,17 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
 
       <Card className={classes.chartCard}>
         <Group justify="space-between" mb="md">
-          <div>
-            <Text fw={600}>Daily cost</Text>
-            <Text fz="xs" c="dimmed">
-              Stacked by {groupBy}
-            </Text>
-          </div>
+          <CardHeading title="Daily cost" subtitle={`Stacked by ${groupBy}`} />
         </Group>
-        {items.length === 0 ? (
-          <Text fz="sm" c="dimmed" py="lg">
-            {loading ? "Loading…" : "No usage in this range."}
-          </Text>
-        ) : (
-          <DailyCostChart data={daily.data} keys={daily.keys} />
-        )}
+        <CostBarChart
+          data={daily.data}
+          keys={daily.keys}
+          empty={loading ? "Loading…" : "No usage in this range."}
+        />
       </Card>
 
       <Card padding={0} className={classes.tableCard}>
-        <ScrollArea>
-        <Table verticalSpacing="sm" horizontalSpacing="lg" miw={520}>
+        <DataTable minWidth={520}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th tt="capitalize">{groupBy}</Table.Th>
@@ -257,7 +216,7 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
             {groups.length === 0 && (
               <Table.Tr>
                 <Table.Td colSpan={3}>
-                  <Text fz="sm" c="dimmed" py="md">
+                  <Text fz="sm" c="dimmed">
                     {loading ? "Loading…" : "No usage in this range."}
                   </Text>
                 </Table.Td>
@@ -276,21 +235,16 @@ export function Dashboard({ projects }: { projects: Project[] | null }) {
                     color="brand"
                   />
                 </Table.Td>
-                <Table.Td ta="right">
-                  <Text fz="sm" c="dimmed" ff="monospace">
-                    {group.calls.toLocaleString()}
-                  </Text>
+                <Table.Td ta="right" ff="monospace" c="dimmed">
+                  {group.calls.toLocaleString()}
                 </Table.Td>
-                <Table.Td ta="right">
-                  <Text fz="sm" fw={500} ff="monospace">
-                    {formatUsd(group.cost, 4)}
-                  </Text>
+                <Table.Td ta="right" ff="monospace" fw={500}>
+                  {formatUsd(group.cost)}
                 </Table.Td>
               </Table.Tr>
             ))}
           </Table.Tbody>
-        </Table>
-        </ScrollArea>
+        </DataTable>
       </Card>
     </Stack>
   );

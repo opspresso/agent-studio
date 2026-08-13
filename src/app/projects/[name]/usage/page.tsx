@@ -4,12 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { DateRangePicker } from "@/app/_components/DateRangePicker";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
-import { DailyCostChart } from "@/app/_components/DailyCostChart";
+import { CardHeading } from "@/app/_components/CardHeading";
+import { CostBarChart } from "@/app/_components/CostBarChart";
+import { DataTable } from "@/app/_components/DataTable";
+import { StatCard } from "@/app/_components/StatCard";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { buildDailySeries, sumRecord } from "@/app/_lib/usage";
 import { usageActors, usageSummary, type ActorUsageView, type UsageRow } from "../../lib/api";
-import { Alert, Avatar, Card, Group, Stack, Table, Text } from "@mantine/core";
+import { Alert, Avatar, Card, Group, SimpleGrid, Stack, Table, Text } from "@mantine/core";
+import { IconActivity, IconCoins, IconUsers } from "@tabler/icons-react";
 
 /** One line per caller: the rows arrive per day, and a reader wants the person. */
 interface CallerTotal {
@@ -99,82 +103,106 @@ export default function UsagePage() {
         <EmptyState>No usage recorded in this range.</EmptyState>
       ) : (
         <>
+          <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="md">
+            <StatCard
+              label="Total cost"
+              value={formatUsd(totalCost)}
+              detail="Selected period"
+              Icon={IconCoins}
+            />
+            <StatCard
+              label="Total calls"
+              value={totalCalls.toLocaleString()}
+              detail="Model invocations"
+              Icon={IconActivity}
+            />
+            <StatCard
+              label="Callers"
+              value={callers.length.toLocaleString()}
+              detail={callers.length === 0 ? "Owner or admin only" : "Distinct identities"}
+              Icon={IconUsers}
+            />
+          </SimpleGrid>
+
           <Card>
-            <Text fz="xs" tt="uppercase" c="dimmed" mb="xs" style={{ letterSpacing: "0.05em" }}>
-              Daily cost
-            </Text>
-            <DailyCostChart data={daily.data} keys={daily.keys} />
+            <Group justify="space-between" mb="md">
+              <CardHeading title="Daily cost" subtitle="Stacked by model" />
+            </Group>
+            <CostBarChart data={daily.data} keys={daily.keys} />
           </Card>
+
           <Card padding={0}>
-            <Table.ScrollContainer minWidth={420}>
-              <Table verticalSpacing="xs" horizontalSpacing="md">
+            <DataTable>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Date</Table.Th>
+                  <Table.Th ta="right">Calls</Table.Th>
+                  <Table.Th ta="right">Cost</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {rows.map((row) => (
+                  <Table.Tr key={row.date}>
+                    <Table.Td ff="monospace">{row.date}</Table.Td>
+                    <Table.Td ta="right" ff="monospace" c="dimmed">
+                      {sumRecord(row.calls).toLocaleString()}
+                    </Table.Td>
+                    <Table.Td ta="right" ff="monospace">
+                      {formatUsd(sumRecord(row.costUsd))}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+              <Table.Tfoot>
+                <Table.Tr fw={500}>
+                  <Table.Td>Total</Table.Td>
+                  <Table.Td ta="right" ff="monospace">
+                    {totalCalls.toLocaleString()}
+                  </Table.Td>
+                  <Table.Td ta="right" ff="monospace">
+                    {formatUsd(totalCost)}
+                  </Table.Td>
+                </Table.Tr>
+              </Table.Tfoot>
+            </DataTable>
+          </Card>
+
+          {callers.length > 0 && (
+            <Card padding={0}>
+              <Group px="md" pt="md">
+                <CardHeading title="Who spent it" subtitle="Per caller, this range" />
+              </Group>
+              <DataTable>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Date</Table.Th>
+                    <Table.Th>Caller</Table.Th>
                     <Table.Th ta="right">Calls</Table.Th>
-                    <Table.Th ta="right">Cost (USD)</Table.Th>
+                    <Table.Th ta="right">Cost</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {rows.map((row) => (
-                    <Table.Tr key={row.date}>
-                      <Table.Td ff="monospace">{row.date}</Table.Td>
-                      <Table.Td ta="right">{sumRecord(row.calls).toLocaleString()}</Table.Td>
-                      <Table.Td ta="right">{formatUsd(sumRecord(row.costUsd), 4)}</Table.Td>
+                  {callers.map((caller) => (
+                    <Table.Tr key={caller.actor}>
+                      <Table.Td>
+                        <Group gap="xs" wrap="nowrap">
+                          <Avatar src={caller.avatarUrl ?? null} size={24} radius="xl">
+                            {caller.name.slice(0, 1).toUpperCase()}
+                          </Avatar>
+                          <Text fz="sm" ff={caller.avatarUrl ? undefined : "monospace"}>
+                            {caller.name}
+                          </Text>
+                        </Group>
+                      </Table.Td>
+                      <Table.Td ta="right" ff="monospace" c="dimmed">
+                        {caller.calls.toLocaleString()}
+                      </Table.Td>
+                      <Table.Td ta="right" ff="monospace">
+                        {formatUsd(caller.costUsd)}
+                      </Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
-                <Table.Tfoot>
-                  <Table.Tr fw={500}>
-                    <Table.Td>Total</Table.Td>
-                    <Table.Td ta="right">{totalCalls.toLocaleString()}</Table.Td>
-                    <Table.Td ta="right">{formatUsd(totalCost, 4)}</Table.Td>
-                  </Table.Tr>
-                </Table.Tfoot>
-              </Table>
-            </Table.ScrollContainer>
-          </Card>
-          {callers.length > 0 && (
-            <Card padding={0}>
-              <Text
-                fz="xs"
-                tt="uppercase"
-                c="dimmed"
-                px="md"
-                pt="md"
-                style={{ letterSpacing: "0.05em" }}
-              >
-                Who spent it
-              </Text>
-              <Table.ScrollContainer minWidth={420}>
-                <Table verticalSpacing="xs" horizontalSpacing="md">
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Caller</Table.Th>
-                      <Table.Th ta="right">Calls</Table.Th>
-                      <Table.Th ta="right">Cost (USD)</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {callers.map((caller) => (
-                      <Table.Tr key={caller.actor}>
-                        <Table.Td>
-                          <Group gap="xs" wrap="nowrap">
-                            <Avatar src={caller.avatarUrl ?? null} size={24} radius="xl">
-                              {caller.name.slice(0, 1).toUpperCase()}
-                            </Avatar>
-                            <Text fz="sm" ff={caller.avatarUrl ? undefined : "monospace"}>
-                              {caller.name}
-                            </Text>
-                          </Group>
-                        </Table.Td>
-                        <Table.Td ta="right">{caller.calls.toLocaleString()}</Table.Td>
-                        <Table.Td ta="right">{formatUsd(caller.costUsd, 4)}</Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              </Table.ScrollContainer>
+              </DataTable>
             </Card>
           )}
         </>
