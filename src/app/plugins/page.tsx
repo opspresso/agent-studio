@@ -9,6 +9,7 @@ import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 import {
   getPluginsSyncConfig,
   listPlugins,
@@ -20,6 +21,7 @@ import {
 } from "./api";
 
 export default function PluginsPage() {
+  const t = useT();
   const viewer = useViewer();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,8 +57,8 @@ export default function PluginsPage() {
   return (
     <Stack gap="lg">
       <CatalogHeader
-        title="Plugins"
-        description="Agent Plugins packages synced from GitHub — each bundles skills and MCP servers, and the repo owns every name it declares."
+        title={t("nav.plugins")}
+        description={t("plugins.lede")}
         Icon={IconPackage}
       >
         {viewer?.isAdmin && (
@@ -114,13 +116,13 @@ export default function PluginsPage() {
       )}
 
       {plugins.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter plugins…" />
+        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("plugins.filter")} />
       )}
 
       <CardGrid
         loading={loading}
         empty={plugins.length === 0}
-        emptyText="No plugins yet. Add the repository and token in Settings, then sync."
+        emptyText={t("plugins.empty")}
       >
         {plugins
           .filter((plugin) => matchesFilter(filter, plugin.name, plugin.description))

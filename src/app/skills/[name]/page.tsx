@@ -23,8 +23,10 @@ import { monoInput } from "@/app/_components/monoInput";
 import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { parsePluginSource } from "@/domain/plugin/types";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 export default function SkillDetailPage() {
+  const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
   const router = useRouter();
@@ -79,7 +81,7 @@ export default function SkillDetailPage() {
   if (error && !skill) {
     return (
       <Stack gap="md">
-        <BackLink href="/skills" label="skills" />
+        <BackLink href="/skills" label={t("nav.skills")} />
         <Alert color="red" variant="light">
           {error}
         </Alert>
@@ -96,7 +98,7 @@ export default function SkillDetailPage() {
   return (
     <Stack gap="lg">
       {confirmModal}
-      <BackLink href="/skills" label="skills" />
+      <BackLink href="/skills" label={t("nav.skills")} />
 
       <Group justify="space-between" align="flex-start" gap="md">
         <div>
@@ -157,10 +159,10 @@ export default function SkillDetailPage() {
       ) : (
         <>
           <section>
-            <Text fz="sm" fw={500} c="dimmed" mb="xs">Content</Text>
+            <Text fz="sm" fw={500} c="dimmed" mb="xs">{t("registry.contentHeading")}</Text>
             <Card>
               <Text ff="monospace" fz="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {skill.content || <Text component="span" c="dimmed">No content.</Text>}
+                {skill.content || <Text component="span" c="dimmed">{t("skills.noContent")}</Text>}
               </Text>
             </Card>
           </section>
@@ -195,6 +197,7 @@ function EditSkillForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const [description, setDescription] = useState(skill.description);
   const [content, setContent] = useState(skill.content);
   const [submitting, setSubmitting] = useState(false);
@@ -218,13 +221,13 @@ function EditSkillForm({
     <form onSubmit={submit}>
       <Stack gap="md">
         <TextInput
-          label="Description"
+          label={t("registry.description")}
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           required
         />
         <Textarea
-          label="Content (markdown)"
+          label={t("registry.content")}
           value={content}
           onChange={(e) => setContent(e.currentTarget.value)}
           autosize

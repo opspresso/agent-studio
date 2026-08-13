@@ -20,8 +20,10 @@ import { MCP_RUNTIME_COLOR } from "@/app/_components/badgeColors";
 import { listSkills, type SkillSummary } from "@/app/skills/api";
 import { listMcps, type McpServer } from "@/app/tools/api";
 import { getPlugin, type Plugin } from "../api";
+import { useT } from "@/app/_i18n/provider";
 
 export default function PluginDetailPage() {
+  const t = useT();
   const params = useParams<{ name: string }>();
   const name = params.name;
 
@@ -70,7 +72,7 @@ export default function PluginDetailPage() {
   if (error || !plugin) {
     return (
       <Stack gap="md">
-        <BackLink href="/plugins" label="plugins" />
+        <BackLink href="/plugins" label={t("nav.plugins")} />
         <Alert color="red" variant="light">
           {error ?? "Plugin not found"}
         </Alert>
@@ -83,7 +85,7 @@ export default function PluginDetailPage() {
 
   return (
     <Stack gap="lg">
-      <BackLink href="/plugins" label="plugins" />
+      <BackLink href="/plugins" label={t("nav.plugins")} />
 
       <div>
         <Group gap="xs" wrap="nowrap">
@@ -118,7 +120,7 @@ export default function PluginDetailPage() {
       <ComponentSection
         title={`Skills (${plugin.skills.length})`}
         names={plugin.skills}
-        emptyText="This plugin declares no skills."
+        emptyText={t("plugins.noSkills")}
         render={(componentName) => {
           const skill = skills.get(componentName);
           return skill ? (
@@ -142,7 +144,7 @@ export default function PluginDetailPage() {
       <ComponentSection
         title={`MCP servers (${plugin.mcpServers.length})`}
         names={plugin.mcpServers}
-        emptyText="This plugin declares no MCP servers."
+        emptyText={t("plugins.noServers")}
         render={(componentName) => {
           const server = servers.get(componentName);
           return server ? (

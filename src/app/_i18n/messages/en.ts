@@ -474,6 +474,7 @@ export const en = {
   "registry.description": "Description",
   "registry.modelSummary": "One-line summary shown to the model",
   "registry.content": "Content (markdown)",
+  "registry.contentHeading": "Content",
   "registry.operatorNotes":
     "Operator notes for the console. Not sent to the model — only the description is.",
   "registry.register": "Register",
@@ -515,6 +516,24 @@ export const en = {
   "tools.namePlaceholder": "my-mcp",
   "tools.contentPlaceholder": "Setup steps, caveats, links…",
   "tools.descriptionPlaceholder": "Fetches an image URL and returns its bytes",
+
+  // Agent Plugins.
+  "plugins.lede":
+    "Agent Plugins packages synced from GitHub — each bundles skills and MCP servers, and the repo owns every name it declares.",
+  "plugins.filter": "Filter plugins…",
+  "plugins.empty": "No plugins yet. Add the repository and token in Settings, then sync.",
+  "plugins.noSkills": "This plugin declares no skills.",
+  "plugins.noServers": "This plugin declares no MCP servers.",
+
+  // Artifacts.
+  "artifacts.lede":
+    "Images and documents your runs produced. A run started by Slack, a trigger or an A2A call belongs to its project — those are on the project’s own tab.",
+  "artifacts.empty": "Nothing kept yet. Images and documents your runs produce show up here.",
+  "artifacts.filter": "Filter…",
+  "artifacts.delete": "Delete",
+  "artifacts.all": "All",
+  "artifacts.images": "Images",
+  "artifacts.documents": "Documents",
 } as const;
 
 export type MessageKey = keyof typeof en;
