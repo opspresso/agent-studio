@@ -108,15 +108,18 @@ import {
   getPluginsRepoConfig,
   getPublicBaseUrl,
   getUnknownModelPolicy,
-  isConfiguredAdmin,
 } from "./runtime-settings";
+import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
+import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
+import { DEFAULT_MEMBER_TIER, type MemberTier } from "@/domain/member/tiers";
 import { offeredModels } from "@/domain/llm/models";
 import { composeCreateProjectWithInitialVersion } from "@/application/project/createProjectFlow";
 
 // The write override's admin list is pushed into the use case here rather than
 // imported by it — a static import would drag the settings store (and its
-// DynamoDB client) into the application layer.
-setAdminCheck(isConfiguredAdmin);
+// DynamoDB client) into the application layer. The effective form, so a
+// tier-admin may override a project write exactly as a listed admin does.
+setAdminCheck(isEffectiveConfiguredAdminByEmail);
 
 // Same shape, same reason: the audit store is pushed into the writer rather
 // than threaded through every act that records one, because a call site that
@@ -357,7 +360,10 @@ export const pluginUseCases = createPluginUseCases(pluginRepository);
  * back to a use case. Composed once now, like every other slice.
  */
 export const projectUseCases = createProjectUseCases(projectRepository);
-export const apiTokenUseCases = createApiTokenUseCases(projectRepository, secretCipher);
+// `getMemberTier` is the issuance gate's tier source: a token may only exist
+// for an owner whose tier allows one, and the same resolver answers the
+// authentication-time check in `executionAuth.ts`.
+export const apiTokenUseCases = createApiTokenUseCases(projectRepository, secretCipher, getMemberTier);
 export const a2aClientKeyUseCases = createA2aClientKeyUseCases(
   a2aClientKeyRepository,
   secretCipher,
@@ -615,6 +621,23 @@ const concurrencyLimits: ConcurrencyLimits = {
 };
 
 /**
+ * The member tier behind an actor, for the run bracket's tier policies. Only
+ * a `user` actor resolves one — machine callers *and project tokens* answer
+ * `undefined` and keep the deployment-wide limits: a token is a service
+ * credential bounded by its project, and whether a tier may hold one at all
+ * is decided where the bearer token authenticates. A missing row still
+ * answers the default tier rather than none: a `user` email exists by signing
+ * in, so "no row" is the degenerate case, not the machine one.
+ */
+const actorTierResolver = async (actor: RunActor): Promise<MemberTier | undefined> => {
+  const email = memberEmailFromActorKey(actorKey(actor));
+  if (!email) {
+    return undefined;
+  }
+  return (await getMemberTier(email)) ?? DEFAULT_MEMBER_TIER;
+};
+
+/**
  * The cost guard's threshold notification, token resolution included — the
  * guard takes one closure so the usage slice never imports the slack slice's
  * resolver. The client stays deferred, like every other Slack use here, so a
@@ -661,6 +684,7 @@ export const executionDeps: ExecutionDeps = {
   runSlots: runSlotRepository,
   limits: concurrencyLimits,
   unknownModelPolicy: getUnknownModelPolicy,
+  resolveActorTier: actorTierResolver,
   ...(artifactStorage ? { artifacts: artifactStorage } : {}),
 };
 

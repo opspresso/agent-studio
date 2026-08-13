@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { DEFAULT_MEMBER_TIER } from "@/domain/member/tiers";
 import { dynamodbAdapter } from "@/infrastructure/db/authAdapter";
 import { log } from "@/shared/logger";
 import { EMAIL_DOMAIN_NOT_ALLOWED } from "@/shared/signInError";
@@ -37,6 +38,10 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       lastLoginAt: { type: "date", required: false, input: false },
+      // `input: false` is the security property: no Better Auth API surface
+      // lets a user set their own tier. Admin changes go through
+      // `memberRepository.setTier`, never the adapter's whole-item update.
+      tier: { type: "string", required: false, input: false, defaultValue: DEFAULT_MEMBER_TIER },
     },
   },
   socialProviders: {

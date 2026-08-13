@@ -75,7 +75,7 @@ mutations are gated.
 | Project usage totals | any signed-in user | — |
 | Skills / MCP servers / external agents | any signed-in user | admin (`withAdminAuth`) |
 | App settings | admin | admin |
-| Member directory | admin | — |
+| Member directory | admin | admin (tier changes, audited as `member.set-tier`) |
 | Chats | owner only (non-owner reads 404) | owner only |
 
 Traces and the Slack config are gated on *read* as well because they expose other users'
@@ -97,6 +97,33 @@ project on a deployment that never set `ADMIN_EMAILS`. Both flags are sent to th
 `GET /api/me` — as `isAdmin` and `isConfiguredAdmin` — because the console gate for "may I
 edit this project" must mirror `assertProjectWritable` exactly: reading `isAdmin` there once
 offered every user an edit form for every project, and every save 403'd.
+
+**Member tiers add a second source, never a second predicate.** A member whose stored `tier`
+is `admin` gets what *both* predicates grant; the composition is `src/lib/memberAccess.ts`'s
+alone (`isEffectiveAdmin` / `isEffectiveConfiguredAdmin`), and the two list predicates above
+keep their empty-list semantics byte-for-byte — `ADMIN_EMAILS` stays the bootstrap and the
+backstop, which is also why a tier self-demotion needs no guard: a tier change alone can
+never lock the console. The tier lives on the Better Auth user row (`input: false`, so no
+auth API lets a user set their own), is written only by `memberRepository.setTier`'s
+single-attribute conditional update, and reaches route handlers on the session — fresh every
+request. The seams that never see a session (the project-write override, the run bracket's
+guards) resolve email → tier through a 30-second per-instance cache, invalidated on the
+instance that served a tier change. What each tier may hold in flight, spend per UTC month,
+and do (create projects, use API tokens) is `TIER_LIMITS` in `src/domain/member/tiers.ts` —
+gates go through its `tierMay*` predicates, never tier-name comparisons. Project creation
+additionally passes for an effective admin whatever their stored tier reads as — tier is
+additive to permissions, and the `ADMIN_EMAILS` bootstrap admin's row defaults like
+everyone else's.
+
+The person-shaped limits bind `user` actors only. Machine callers (Slack, A2A, webhook,
+schedule) have no member; a **project token** carries its owner's email but deliberately
+spends against its *project's* limits, not the owner's personal budget — a token is a
+service credential. What keeps that from being a bypass is the token gate: a tier without
+API-token rights can neither issue a token (owner-scoped, admin included) nor authenticate
+with an existing one — `authenticateExecution` re-checks the owner's current tier on every
+bearer request and answers 403, so a demotion stops the owner's tokens immediately. Both
+checks fail open when the tier cannot be read: a storage blip must not take every token
+down, the same posture as every other guard's own read.
 
 The admin override is checked *inside* `assertProjectWritable` rather than threaded in by its
 twenty-odd callers: the rule is "owner or admin", and a flag one caller forgot to pass would

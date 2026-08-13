@@ -1,5 +1,6 @@
+import type { MemberTier } from "@/domain/member/tiers";
 import type { SessionUser } from "./session";
-import { isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
+import { isEffectiveAdmin, isEffectiveConfiguredAdmin } from "./memberAccess";
 
 /**
  * Who the console is being drawn for, as the UI needs to know it.
@@ -15,7 +16,10 @@ import { isAdminEmail, isConfiguredAdmin } from "./runtime-settings";
  * restriction" but `assertProjectWritable` gates on `isConfiguredAdmin` — every
  * signed-in user was offered the editable form for every project and then got a
  * 403 on save. The two predicates are split on purpose in `runtime-settings.ts`;
- * they have to stay split across the wire too.
+ * they have to stay split across the wire too. A member whose *tier* is `admin`
+ * gets both — the composition is `memberAccess.ts`'s — but the split survives
+ * that: on a no-`ADMIN_EMAILS` deployment a non-admin tier still reads as
+ * `isAdmin` without `isConfiguredAdmin`.
  *
  * Server-side authorization is unchanged by this; the flags only decide what the
  * UI offers.
@@ -26,6 +30,11 @@ export interface Viewer {
   isAdmin: boolean;
   /** May write a project owned by someone else. Empty list = nobody. */
   isConfiguredAdmin: boolean;
+  /**
+   * The member's tier, so the UI can gate what a tier may do through the same
+   * `tierMay*` predicates the routes enforce — never by re-deriving the rule.
+   */
+  tier: MemberTier;
 }
 
 /**
@@ -39,7 +48,8 @@ export interface Viewer {
 export async function resolveViewer(user: SessionUser): Promise<Viewer> {
   return {
     email: user.email,
-    isAdmin: await isAdminEmail(user.email),
-    isConfiguredAdmin: await isConfiguredAdmin(user.email),
+    isAdmin: await isEffectiveAdmin(user),
+    isConfiguredAdmin: await isEffectiveConfiguredAdmin(user),
+    tier: user.tier,
   };
 }

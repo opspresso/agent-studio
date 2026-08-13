@@ -16,8 +16,9 @@ import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
-import { utcDay } from "@/shared/date";
-import type { ActorUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
+import { memberEmailFromActorKey } from "@/domain/execution/actor";
+import { utcDay, utcMonthOfDay } from "@/shared/date";
+import type { ActorUsageRow, MemberMonthlyUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
 
 /**
  * Attribute the once-per-day notification claim is written to. One per kind, so
@@ -71,6 +72,14 @@ export class DynamoUsageRepository implements UsageRepository {
         delta,
         { actor: delta.actor },
       );
+      // Third and last, same additive reasoning: the member's cross-project
+      // month row, which the tier cost cap reads. Only a `user` actor writes
+      // one — a machine caller has no monthly budget, and a project token
+      // deliberately spends against its project's limits, not its owner's.
+      const email = memberEmailFromActorKey(delta.actor);
+      if (email) {
+        await this.addToMemberMonth(email, utcMonthOfDay(delta.date), delta);
+      }
     }
   }
 
@@ -170,6 +179,79 @@ export class DynamoUsageRepository implements UsageRepository {
         ],
       }),
     );
+  }
+
+  /**
+   * The member-month counterpart of {@link addTo}: the same two-step atomic
+   * ADD, but plain updates rather than a transaction. The project-row
+   * ConditionCheck up there keeps usage rows out of a partition being cascade
+   * deleted; this row is a *person's* budget in its own partition, which no
+   * project deletion touches, so tying the write to the project's fate would
+   * only drop spend the cap should have counted.
+   */
+  private async addToMemberMonth(email: string, month: string, delta: UsageDelta): Promise<void> {
+    const doc = getDocumentClient();
+    const table = getTableName();
+    const key = keys.usageMemberMonth(email, month);
+    await doc.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: key,
+        UpdateExpression:
+          "SET calls = if_not_exists(calls, :empty), " +
+          "inputTokens = if_not_exists(inputTokens, :empty), " +
+          "outputTokens = if_not_exists(outputTokens, :empty), " +
+          "costUsd = if_not_exists(costUsd, :empty), " +
+          "email = if_not_exists(email, :email), " +
+          "#month = if_not_exists(#month, :month), " +
+          "entityType = if_not_exists(entityType, :et), " +
+          "expiresAt = if_not_exists(expiresAt, :exp)",
+        ExpressionAttributeNames: { "#month": "month" },
+        ExpressionAttributeValues: {
+          ":empty": {},
+          ":email": email,
+          ":month": month,
+          ":et": "UsageMemberMonth",
+          // Retention runs from the month's start; the floor of 31 days in
+          // RETENTION keeps the row alive past the window it bounds.
+          ":exp": expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays),
+        },
+      }),
+    );
+    await doc.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: key,
+        UpdateExpression:
+          "ADD calls.#model :calls, inputTokens.#model :in, " +
+          "outputTokens.#model :out, costUsd.#model :cost",
+        ExpressionAttributeNames: { "#model": delta.model },
+        ExpressionAttributeValues: {
+          ":calls": delta.calls,
+          ":in": delta.inputTokens,
+          ":out": delta.outputTokens,
+          ":cost": delta.costUsd,
+        },
+      }),
+    );
+  }
+
+  async getMemberMonth(email: string, month: string): Promise<MemberMonthlyUsageRow | null> {
+    const result = await getDocumentClient().send(
+      new GetCommand({ TableName: getTableName(), Key: keys.usageMemberMonth(email, month) }),
+    );
+    const item = result.Item;
+    if (!item || notExpired([item], Date.now()).length === 0) {
+      return null;
+    }
+    return {
+      email: String(item.email ?? email),
+      month: String(item.month ?? month),
+      calls: (item.calls as Record<string, number>) ?? {},
+      inputTokens: (item.inputTokens as Record<string, number>) ?? {},
+      outputTokens: (item.outputTokens as Record<string, number>) ?? {},
+      costUsd: (item.costUsd as Record<string, number>) ?? {},
+    };
   }
 
   async listActorsByProject(

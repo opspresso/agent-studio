@@ -79,6 +79,7 @@ function fixture(
       }
       return opts.day ?? null;
     },
+    getMemberMonth: async () => null,
     async claimAlert(_projectName, date, kind) {
       claims.push({ kind, date });
       return opts.claimable ?? true;
@@ -364,6 +365,7 @@ describe("settleCostLimit", () => {
       usage: {
         record: async () => {},
         getDay: async () => row({ m: 5 }),
+        getMemberMonth: async () => null,
         claimAlert: async () => true,
         claimMonthAlert: async () => true,
         listActorsByProject: async () => [],

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatRunClock, formatShortDateTime, isUtcDay } from "@/shared/date";
+import {
+  formatDateTime,
+  formatRunClock,
+  formatShortDateTime,
+  isUtcDay,
+  recentUtcMonths,
+} from "@/shared/date";
 
 // Rendered output is locale/timezone dependent, so assert shape, not exact strings.
 describe("formatShortDateTime", () => {
@@ -46,6 +52,25 @@ describe("formatRunClock", () => {
       "2026-07-30 (Thursday) 23:59 UTC",
     );
     expect(formatRunClock(new Date("2026-07-31T00:01:00Z"))).toBe("2026-07-31 (Friday) 00:01 UTC");
+  });
+});
+
+describe("recentUtcMonths", () => {
+  it("walks backwards across a year boundary, newest first", () => {
+    expect(recentUtcMonths(new Date("2026-01-15T12:00:00Z"), 3)).toEqual([
+      "2026-01",
+      "2025-12",
+      "2025-11",
+    ]);
+  });
+
+  it("keeps a late-in-month UTC date in its own month", () => {
+    // Stepping back from Jan 31 must not clamp Feb/Mar; the anchor is day 1.
+    expect(recentUtcMonths(new Date("2026-03-31T23:59:59Z"), 2)).toEqual(["2026-03", "2026-02"]);
+  });
+
+  it("respects the count", () => {
+    expect(recentUtcMonths(new Date("2026-08-13T00:00:00Z"), 1)).toEqual(["2026-08"]);
   });
 });
 

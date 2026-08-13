@@ -355,8 +355,15 @@ const RULES: Rule[] = [
     name: "lib imports no infrastructure outside its wiring modules",
     from: "lib",
     banned: (spec) => targetLayer(spec) === "infrastructure",
+    // `memberAccess` fronts the member repository behind a cache, the same
+    // shape `runtime-settings` has with the settings repository.
     exempt: (relPath) =>
-      ["src/lib/container.ts", "src/lib/auth.ts", "src/lib/runtime-settings.ts"].includes(relPath),
+      [
+        "src/lib/container.ts",
+        "src/lib/auth.ts",
+        "src/lib/runtime-settings.ts",
+        "src/lib/memberAccess.ts",
+      ].includes(relPath),
     allow: [],
   },
   {
@@ -550,7 +557,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(66);
+    expect(entries.length).toBe(67);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1059,6 +1066,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "the per-run MCP tool cap",
     pattern: /MAX_MCP_TOOLS_PER_RUN\s*=/,
     owner: "src/domain/llm/toolLimits.ts",
+  },
+  {
+    // Two mechanisms spend these — the concurrency guard in `run` and the
+    // member cost guard in `usage` — and the Members console displays them, so
+    // the table lives in domain where all three may import it. A copy beside
+    // either guard would recreate the drift the table exists to prevent.
+    what: "what each member tier may spend",
+    pattern: /TIER_LIMITS\s*:\s*Record<MemberTier/,
+    owner: "src/domain/member/tiers.ts",
   },
   {
     what: "how many agents one dispatch may run",

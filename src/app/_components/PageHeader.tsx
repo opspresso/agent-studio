@@ -3,8 +3,8 @@ import type { TablerIcon } from "@tabler/icons-react";
 
 /**
  * The light page header — icon beside title and description — shared by the
- * admin pages (Settings, Members, Audit trail). Catalog pages use the heavier
- * `CatalogHeader`. `wrap="nowrap"` is load-bearing: a Group wraps before it
+ * admin pages (Settings, Members, Audit trail) and the profile page. Catalog
+ * pages use the heavier `CatalogHeader`. `wrap="nowrap"` is load-bearing: a Group wraps before it
  * shrinks, so a long description would otherwise push the whole text block
  * onto the next line, leaving the icon alone on top.
  */

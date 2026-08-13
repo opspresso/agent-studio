@@ -29,6 +29,7 @@ import {
   IconSettings,
   IconShieldCheck,
   IconTool,
+  IconUser,
   IconUsers,
 } from "@tabler/icons-react";
 import type { Viewer } from "@/lib/viewer";
@@ -44,6 +45,7 @@ const NAV_GROUPS = [
       { href: "/projects", label: "Projects", Icon: IconFolder },
       { href: "/chats", label: "Chats", Icon: IconMessageCircle },
       { href: "/artifacts", label: "Artifacts", Icon: IconPhoto },
+      { href: "/profile", label: "Profile", Icon: IconUser },
     ],
   },
   {

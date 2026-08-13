@@ -170,6 +170,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
 | The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
+| What each member tier may spend | `TIER_LIMITS` in `src/domain/member/tiers.ts` |
 | What a 401 from an MCP server means | `src/infrastructure/mcp/session.ts` |
 | The name a provider will accept for an MCP tool | `src/infrastructure/mcp/toolManager.ts` |
 | The header that names the calling project to an MCP server | `TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts` |

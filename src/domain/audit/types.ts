@@ -37,7 +37,9 @@ export type AuditAction =
    * this trail exists for, and reaching into another run's output is the part
    * worth keeping.
    */
-  | "artifact.delete";
+  | "artifact.delete"
+  /** An admin changed a member's tier; `detail` records old → new. */
+  | "member.set-tier";
 
 export interface AuditEvent {
   /** Unique within its day partition; the sort key pairs it with `createdAt`. */

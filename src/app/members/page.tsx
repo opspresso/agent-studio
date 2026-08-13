@@ -1,26 +1,41 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Avatar, Card, Group, Stack, Table, Text } from "@mantine/core";
+import { Alert, Avatar, Card, Group, Select, Stack, Table, Text } from "@mantine/core";
 import { IconUsers } from "@tabler/icons-react";
+import { MEMBER_TIERS, type MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
+import { formatDate } from "@/app/_lib/formatDate";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
 
 export default function MembersPage() {
   const viewer = useViewer();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  async function changeTier(member: Member, tier: MemberTier) {
+    setSavingId(member.id);
+    setError(null);
+    try {
+      const updated = await readJson<Member>(
+        await fetch(`/api/members/${member.id}/tier`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tier }),
+        }),
+      );
+      setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to update tier");
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   useEffect(() => {
     if (!viewer?.isAdmin) return;
@@ -51,11 +66,12 @@ export default function MembersPage() {
       ) : members.length === 0 ? (
         <EmptyState>No members yet.</EmptyState>
       ) : (
-        <Table.ScrollContainer minWidth={680}>
+        <Table.ScrollContainer minWidth={780}>
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Member</Table.Th>
+                <Table.Th>Tier</Table.Th>
                 <Table.Th>Joined</Table.Th>
                 <Table.Th>Last login</Table.Th>
               </Table.Tr>
@@ -71,6 +87,22 @@ export default function MembersPage() {
                         <Text fz="xs" c="dimmed">{member.email}</Text>
                       </div>
                     </Group>
+                  </Table.Td>
+                  <Table.Td>
+                    <Select
+                      size="xs"
+                      w={110}
+                      data={[...MEMBER_TIERS]}
+                      value={member.tier}
+                      disabled={savingId === member.id}
+                      allowDeselect={false}
+                      aria-label={`Tier of ${member.email}`}
+                      onChange={(value) => {
+                        if (value && value !== member.tier) {
+                          void changeTier(member, value as MemberTier);
+                        }
+                      }}
+                    />
                   </Table.Td>
                   <Table.Td><Text fz="sm">{formatDate(member.joinedAt)}</Text></Table.Td>
                   <Table.Td>

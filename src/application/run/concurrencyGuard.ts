@@ -14,6 +14,7 @@
 
 import { A2A_ACTOR_ID, actorKey, type RunActor } from "@/domain/execution/actor";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
+import { TIER_LIMITS, type MemberTier } from "@/domain/member/tiers";
 import { RateLimitedError } from "@/application/errors";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
@@ -85,6 +86,7 @@ const UNLIMITED: AcquiredSlot = { release: async () => {} };
 export async function acquireRunSlot(
   deps: ConcurrencyGuardDeps,
   actor: RunActor | undefined,
+  tier?: MemberTier,
 ): Promise<AcquiredSlot> {
   // No repository, no limits, or a run with no identifiable caller: there is
   // nothing to count against. An unattributed run is rare (every current entry
@@ -92,7 +94,12 @@ export async function acquireRunSlot(
   if (!deps.runSlots || !deps.limits || !actor) {
     return UNLIMITED;
   }
-  const limit = limitFor(deps.limits, actor);
+  // A tier's own ceiling wins over the deployment-wide number; a tier without
+  // one inherits it. Only a `user` actor ever arrives with a tier — the
+  // bracket's resolver answers `undefined` for machine callers and project
+  // tokens alike, so the A2A surface keeps its own limit and a token stays a
+  // service credential bounded by the env number.
+  const limit = (tier ? TIER_LIMITS[tier].maxConcurrentRuns : undefined) ?? limitFor(deps.limits, actor);
   if (limit <= 0) {
     return UNLIMITED;
   }

@@ -175,7 +175,7 @@ setting bounds is spending money under an id nothing can price.
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
 | `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. The Slack path additionally applies the fixed 3-minute interactive deadline (below), which can only shorten a run. Two derived values move with this one: the run-slot lease (this value plus 60s) and the MCP OAuth token refresh margin (this value plus 5 min). |
-| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | Runs one caller may have in flight. `0` disables the limit. |
+| `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | Runs one caller may have in flight. `0` disables the limit. A member tier with its own `maxConcurrentRuns` (see *Limits fixed in code*) overrides this for that member's own runs — the default `guest` tier carries one; `admin`/`member`, project tokens, and every machine caller inherit this value. |
 | `MAX_CONCURRENT_RUNS_A2A` | `50` | — | Separate ceiling for calls made with the **shared** A2A key, whose actor id is a constant: one identity stands for every machine caller there, and the per-caller limit would otherwise cap the whole A2A surface. A named client key is one caller and sits under `MAX_CONCURRENT_RUNS_PER_ACTOR` like a person. |
 | `SCHEDULE_SCAN_TOKEN` | unset | — | The one credential every ticker presents (`X-Scan-Token`), shared by the three endpoints a CronJob POSTs: `/api/triggers/scan` (schedules), `/api/plugins/sync/scan` (the plugins repo) and `/api/catalog/reindex` (the capability catalog). Unset means this deployment has no ticker: all three answer 503 and schedule triggers never fire — off rather than open. |
 
@@ -313,6 +313,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Limit | Value | Owner |
 |---|---|---|
 | Turns per agent run (version `maxTurn` default) | `50` | `src/application/llm/engine.ts` |
+| Member tier limits — concurrent runs / monthly USD cap per member (`admin` —/—, `member` —/`20`, `guest` `1`/`2`; "—" inherits the env limit or is uncapped). `guest` additionally may not create projects or use project API tokens | `TIER_LIMITS` | `src/domain/member/tiers.ts` |
 | Agents one `dispatch_agents` call may run | `4` | `src/application/llm/agentAssembly.ts` |
 | Tool-result text per turn | `200,000` chars | `src/application/llm/toolResultBudget.ts` |
 | Transfer transcript carried to a subagent | `8,000` chars | `src/application/llm/engine.ts` |

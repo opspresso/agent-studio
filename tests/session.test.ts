@@ -17,7 +17,9 @@ vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: authMock.getSession } 
 const { withAuth, withAdminAuth, isAdmin } = await import("@/lib/session");
 
 const okHandler = vi.fn(async () => Response.json({ ok: true }));
-const session = (email: string) => ({ user: { id: "u1", email, name: "U", image: null } });
+const session = (email: string, tier?: string) => ({
+  user: { id: "u1", email, name: "U", image: null, ...(tier ? { tier } : {}) },
+});
 
 const adminEmails = {
   set value(emails: string[]) {
@@ -86,10 +88,22 @@ describe("withAdminAuth", () => {
     authMock.getSession.mockResolvedValue(null);
     expect((await withAdminAuth(okHandler)()).status).toBe(401);
   });
+
+  it("allows a tier admin the list does not contain", async () => {
+    adminEmails.value = ["admin@x.com"];
+    authMock.getSession.mockResolvedValue(session("promoted@x.com", "admin"));
+    expect((await withAdminAuth(okHandler)()).status).toBe(200);
+  });
+
+  it("403s a guest not on the configured list", async () => {
+    adminEmails.value = ["admin@x.com"];
+    authMock.getSession.mockResolvedValue(session("guest@x.com", "guest"));
+    expect((await withAdminAuth(okHandler)()).status).toBe(403);
+  });
 });
 
 describe("isAdmin", () => {
-  const user = { id: "u", email: "Admin@X.com", name: "U", image: null };
+  const user = { id: "u", email: "Admin@X.com", name: "U", image: null, tier: "member" as const };
 
   it("is true when the admin list is empty (no restriction)", async () => {
     adminEmails.value = [];
@@ -104,5 +118,10 @@ describe("isAdmin", () => {
   it("is false for a user not on a configured list", async () => {
     adminEmails.value = ["someone@x.com"];
     expect(await isAdmin(user)).toBe(false);
+  });
+
+  it("is true for a tier admin the list does not contain", async () => {
+    adminEmails.value = ["someone@x.com"];
+    expect(await isAdmin({ ...user, tier: "admin" })).toBe(true);
   });
 });

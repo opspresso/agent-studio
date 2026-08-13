@@ -156,6 +156,9 @@ async function main() {
   // Artifacts are not in the project partition either — they outlive the project
   // the way chats do — so the cascade never reaches them.
   const artifactFixtures: string[] = [];
+  // A member's month row is keyed by email in its own partition — outside the
+  // cascade, and an atomic ADD, so a leftover would accumulate across runs.
+  const memberMonthFixtures: Array<{ email: string; month: string }> = [];
 
   try {
     // ---------- project + version ----------
@@ -535,6 +538,29 @@ async function main() {
     );
     pass("usage attribution: per-caller rows, project totals unaffected");
 
+    // ---------- member month row (one budget per email, across actor kinds) ----------
+    // The attribution block above also wrote month rows for its fixed address;
+    // register it for cleanup, but assert on a per-run address — the row is an
+    // atomic ADD keyed by email alone, so a leftover from an interrupted run
+    // would otherwise inflate the count.
+    memberMonthFixtures.push({ email: "it@example.com", month: today.slice(0, 7) });
+    const memberEmail = `it-member-${suffix}@example.com`;
+    memberMonthFixtures.push({ email: memberEmail, month: today.slice(0, 7) });
+    await usageRepository.record({ ...usageDelta, actor: `user:${memberEmail}` });
+    await usageRepository.record({ ...usageDelta, actor: `project-token:${memberEmail}` });
+    const memberMonth = await usageRepository.getMemberMonth(memberEmail, today.slice(0, 7));
+    assert.equal(
+      memberMonth?.calls["openai/gpt-5-mini"],
+      1,
+      "token spend stays out of the member month",
+    );
+    assert.equal(
+      await usageRepository.getMemberMonth(`nobody-${suffix}@example.com`, today.slice(0, 7)),
+      null,
+      "an unknown member has no month row",
+    );
+    pass("member month aggregation across actor kinds");
+
     // ---------- monthly threshold claim (conditional, its own row) ----------
     const month = today.slice(0, 7);
     assert.equal(
@@ -867,7 +893,7 @@ async function main() {
     for (const artifactId of artifactFixtures) {
       await artifactRepository.delete(artifactId).catch(() => {});
     }
-    if (auditFixtures.length > 0) {
+    if (auditFixtures.length > 0 || memberMonthFixtures.length > 0) {
       const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
       const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
       const { keys } = await import("@/infrastructure/db/keys");
@@ -877,6 +903,16 @@ async function main() {
             new DeleteCommand({
               TableName: getTableName(),
               Key: keys.auditEvent(fixture.day, fixture.createdAt, fixture.eventId),
+            }),
+          )
+          .catch(() => {});
+      }
+      for (const fixture of memberMonthFixtures) {
+        await getDocumentClient()
+          .send(
+            new DeleteCommand({
+              TableName: getTableName(),
+              Key: keys.usageMemberMonth(fixture.email, fixture.month),
             }),
           )
           .catch(() => {});

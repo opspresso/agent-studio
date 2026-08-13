@@ -191,6 +191,7 @@ One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S)
 | Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
 | Usage (daily per caller) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
 | Usage monthly-threshold claim | `USAGE#{projectName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
+| Usage (member per month, cross-project) | `USAGEMEMBER#{email}` | `MONTH#{yyyy-MM}` | — | — |
 | Run concurrency slot | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
@@ -1670,7 +1671,7 @@ spender. `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names one:
 | Kind | Id | Why |
 |---|---|---|
 | `user` | email | — |
-| `project-token` | the **owner's** email | A token authenticates as them; the *kind* is what keeps a machine's spend apart from that person's own runs |
+| `project-token` | the **owner's** email | A token authenticates as them; the *kind* is what keeps a machine's spend apart from that person's own runs — and out of their personal tier budget, which only `user` rows feed |
 | `slack` | Slack user id | Slack hands over no email, and guessing a mapping would bill the wrong person |
 | `a2a` | the constant `shared-key`, or the client key's name | The shared key names nobody; a named client key names its holder, so their runs are attributed and bounded per client |
 | `webhook` | `{project}:{triggerId}` | — |

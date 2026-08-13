@@ -121,6 +121,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/models/catalog` | `GET` | admin |
 | `/api/models/test` | `POST` | admin |
 | `/api/me` | `GET` | session |
+| `/api/me/profile` | `GET` | session |
 | `/api/members` | `GET` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
@@ -392,26 +393,53 @@ GET /api/audit?from=2026-08-01&to=2026-08-03
 ## Viewer
 
 ```
-GET /api/me → 200 { email, isAdmin, isConfiguredAdmin }
+GET /api/me → 200 { email, isAdmin, isConfiguredAdmin, tier }
 ```
 
-Both flags are sent because they answer different questions and the console needs both:
+`tier` is the member's tier, so the console gates tier-scoped actions (creating a project)
+through the same `tierMay*` predicates the routes enforce. Both flags are sent because they
+answer different questions and the console needs both:
 `isAdmin` (may mutate shared registries and app settings — an empty `ADMIN_EMAILS` means *no
 restriction*) and `isConfiguredAdmin` (may write a project owned by someone else — an empty
 list means *nobody*). Neither is derivable in the browser, and inferring one from the other is
 what once offered every signed-in user an edit form that 403'd on save. See
 [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
 
+```
+GET /api/me/profile
+  → 200 { member: { id, name, email, image, tier, joinedAt, lastLoginAt },
+          months: [ { email, month, calls, inputTokens, outputTokens, costUsd } ] }
+```
+
+The signed-in user's own member row and cross-project spend — always the session user, no
+parameters. `months` is the six most recent UTC months, newest first; a month with no spend
+(including months past the usage retention window) comes back zero-filled, so `months[0]` is
+always the current month. Each metric is a map keyed by model id. The spend counted is the
+member's own console runs (`user:` actors) — project-token runs spend against their project,
+not this budget. What a tier caps is `TIER_LIMITS` in `src/domain/member/tiers.ts`, which
+the client imports directly.
+
 ## Members
 
 ```
 GET /api/members
-  → 200 { members: [ { id, name, email, image, joinedAt, lastLoginAt } ] }
+  → 200 { members: [ { id, name, email, image, tier, joinedAt, lastLoginAt } ] }
+
+PUT /api/members/{id}/tier
+  { tier: "admin" | "member" | "guest" }
+  → 200 { id, name, email, image, tier, joinedAt, lastLoginAt }
+  → 400 unknown tier · 404 no such member
 ```
 
 Admin-only. Members are Better Auth users who have signed in to the workspace, ordered by
 `joinedAt` newest first. `lastLoginAt` is updated when a new session is created. It is `null`
 for users created before login tracking was introduced until their next successful sign-in.
+
+`tier` defaults to `guest` for every sign-up (rows written before tiers existed read as
+`guest` too). A tier change writes a `member.set-tier` audit row recording old → new. What a
+tier grants and caps is `TIER_LIMITS` in `src/domain/member/tiers.ts`; how tier `admin`
+composes with `ADMIN_EMAILS` is in
+[SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
 
 ## Chats
 
@@ -795,6 +823,11 @@ All four are limited to the owner and to configured admins (403 for anyone else)
 regeneration overwrites the previous one, which stops working immediately. The token is
 scoped to its project (validated against the `{name}` in the request path).
 
+Generation is additionally gated on the **owner's tier**: a tier that may not use API
+tokens (`TIER_LIMITS` in `src/domain/member/tiers.ts` — today `guest`) answers `403`
+whoever asks, admin included, because the token would authenticate as that owner. The
+matching gate at authentication time is on the execution endpoints below.
+
 `/reveal` is a POST although it reads: the body is a live credential, so it stays out of
 caches, history and prefetches. `revealable` is `false` for a token issued before encrypted
 storage — only its hash exists, so `/reveal` answers `400` with instructions to regenerate.
@@ -804,10 +837,15 @@ for a legacy token). Every reveal is logged server-side with the caller's email.
 ## Execution
 
 The three endpoints below authenticate with either the session cookie or a project API
-token (`Authorization: Bearer <token>`). A token authenticates as the project owner.
+token (`Authorization: Bearer <token>`). A token authenticates as the project owner; a
+valid token whose owner's *current* tier may not use API tokens answers `403` (not `401` —
+the credential is valid, the policy refuses it), so demoting an owner immediately stops
+their tokens.
 
 All three are bounded by `MAX_RUN_DURATION_MS`, the per-caller concurrency guard, and the
-project's daily cost guard — any of which answers `429` with `Retry-After`.
+project's daily cost guard — any of which answers `429` with `Retry-After`. A session run
+is additionally bounded by the caller's tier (concurrency and monthly cost cap); a token
+run is not — token spend belongs to the project, never to a personal budget.
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 
@@ -922,7 +960,8 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 
 `actor` is `{kind}:{id}` — `user:a@example.com`, `project-token:owner@example.com` (a token
 authenticates as its owner, so the kind is what keeps a machine's spend apart from that
-person's own runs), `slack:U123`, `a2a:shared-key`, and for a trigger firing
+person's own runs — and only the `user:` rows count toward a personal tier budget),
+`slack:U123`, `a2a:shared-key`, and for a trigger firing
 `webhook:{project}:{triggerId}` or `schedule:{project}:{triggerId}`. The metric fields are
 per-model maps, exactly as in the summary above.
 

@@ -25,10 +25,12 @@
  */
 
 import type { RunActor } from "@/domain/execution/actor";
+import type { MemberTier } from "@/domain/member/tiers";
 import type { Project, Version } from "@/domain/project/types";
 import { beginRun, endRun } from "@/lib/runMetrics";
 import { enterRunContext } from "@/shared/runContext";
 import { assertWithinCostLimit, settleCostLimit, type CostGuardDeps } from "@/application/usage/costGuard";
+import { assertWithinMemberCostLimit } from "@/application/usage/memberCostGuard";
 import { createArtifactRecorder, type ArtifactRecorder } from "@/application/artifact/runArtifacts";
 import type { ArtifactStorage } from "@/application/artifact/storeArtifact";
 import { acquireRunSlot, type ConcurrencyGuardDeps } from "./concurrencyGuard";
@@ -51,6 +53,13 @@ export type RunBracketDeps = CostGuardDeps &
      * surface and stop there.
      */
     artifacts?: ArtifactStorage;
+    /**
+     * The tier of the member behind this actor, or `undefined` for the kinds
+     * no member backs (slack, a2a, webhook, schedule) — those keep the
+     * deployment-wide limits. Injected rather than read, like every other
+     * runtime lookup here; absent means no tier policy at all.
+     */
+    resolveActorTier?: (actor: RunActor) => Promise<MemberTier | undefined>;
   };
 
 export interface RunBracket {
@@ -81,9 +90,11 @@ export interface RunBracket {
  *
  * Throws `ValidationError` when the version names a model this deployment
  * refuses to price, `CostLimitExceededError` when the project is over its daily
- * block threshold, or `ConcurrencyLimitError` when the caller already has every
- * slot in flight. The last two are 429s carrying `Retry-After`; nothing has been
- * counted or recorded when any of them is thrown.
+ * block threshold, `MemberCostLimitExceededError` when the member behind the
+ * actor has spent their tier's monthly cap, or `ConcurrencyLimitError` when the
+ * caller already has every slot in flight. All but the first are 429s carrying
+ * `Retry-After`; nothing has been counted or recorded when any of them is
+ * thrown.
  *
  * The version is a required argument rather than an optional one on purpose: a
  * fifth entry point that has to supply it cannot quietly opt out of the policies
@@ -131,7 +142,21 @@ export async function openRun(
     });
   }
   await assertWithinCostLimit(deps, project);
-  const slot = await acquireRunSlot(deps, actor);
+  // Resolved once, for both tier policies below. Fail open on the read like
+  // the policy above: `undefined` degrades to the deployment-wide limits.
+  let tier: MemberTier | undefined;
+  if (deps.resolveActorTier && actor) {
+    try {
+      tier = await deps.resolveActorTier(actor);
+    } catch (error) {
+      log.error("cost-guard", "could not resolve the caller's tier; using the deployment limits", error);
+    }
+  }
+  // Before the slot for the same reason cost precedes concurrency: a member
+  // over budget should be told so rather than queue for a slot the run would
+  // be refused on anyway.
+  await assertWithinMemberCostLimit(deps, actor, tier);
+  const slot = await acquireRunSlot(deps, actor, tier);
   const startedAt = Date.now();
   beginRun();
   let closed = false;

@@ -19,6 +19,8 @@ import { IconFolder } from "@tabler/icons-react";
 import { FormModal } from "@/app/_components/FormModal";
 import { useDisclosure } from "@mantine/hooks";
 import { useSession } from "@/lib/auth-client";
+import { tierMayCreateProjects } from "@/domain/member/tiers";
+import { useViewer } from "@/app/_lib/useViewer";
 import { toSlug } from "@/shared/slug";
 import { OwnerLine } from "@/app/_components/OwnerLine";
 import { createProject, listProjects, type Project, type ProjectType } from "./lib/api";
@@ -35,6 +37,7 @@ const TYPE_OPTIONS = [
 export default function ProjectsPage() {
   const router = useRouter();
   const { data: session } = useSession();
+  const viewer = useViewer();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +66,9 @@ export default function ProjectsPage() {
         description="Prompt, agent, and image projects — iterate in versions, publish one for callers."
         Icon={IconFolder}
       >
-        <Button onClick={open}>New project</Button>
+        {viewer !== null && (viewer.isAdmin || tierMayCreateProjects(viewer.tier)) && (
+          <Button onClick={open}>New project</Button>
+        )}
       </CatalogHeader>
 
       {error && (
