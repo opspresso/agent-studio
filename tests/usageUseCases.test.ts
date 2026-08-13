@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { listMemberMonths } from "@/application/usage/usageUseCases";
+import { listMemberUsage } from "@/application/usage/usageUseCases";
 import type { UsageRepository } from "@/domain/usage/repository";
-import type { MemberMonthlyUsageRow } from "@/domain/usage/types";
+import type { MemberUsageRow } from "@/domain/usage/types";
 
-const now = new Date("2026-02-10T12:00:00Z");
+const row: MemberUsageRow = {
+  email: "u@x.com",
+  date: "2026-02-10",
+  calls: { m: 3 },
+  inputTokens: { m: 30 },
+  outputTokens: { m: 15 },
+  costUsd: { m: 1.5 },
+};
 
-function usageWith(rows: Record<string, MemberMonthlyUsageRow>, asked: string[]): UsageRepository {
+function usageWith(asked: Array<[string, string, string]>): UsageRepository {
   return {
     record: async () => {},
     getDay: async () => null,
-    async getMemberMonth(_email, month) {
-      asked.push(month);
-      return rows[month] ?? null;
+    async listMemberDays(email, from, to) {
+      asked.push([email, from, to]);
+      return [row];
     },
     claimAlert: async () => false,
     claimMonthAlert: async () => false,
@@ -21,35 +28,13 @@ function usageWith(rows: Record<string, MemberMonthlyUsageRow>, asked: string[])
   };
 }
 
-describe("listMemberMonths", () => {
-  it("asks for exactly the recent months, newest first, and zero-fills the gaps", async () => {
-    const asked: string[] = [];
-    const january: MemberMonthlyUsageRow = {
-      email: "u@x.com",
-      month: "2026-01",
-      calls: { m: 3 },
-      inputTokens: { m: 30 },
-      outputTokens: { m: 15 },
-      costUsd: { m: 1.5 },
-    };
-    const usage = usageWith({ "2026-01": january }, asked);
+describe("listMemberUsage", () => {
+  it("passes the caller's own email and window straight through", async () => {
+    const asked: Array<[string, string, string]> = [];
 
-    const months = await listMemberMonths(usage, "u@x.com", 3, now);
-
-    expect(asked).toEqual(["2026-02", "2026-01", "2025-12"]);
-    expect(months.map((row) => row.month)).toEqual(["2026-02", "2026-01", "2025-12"]);
-    expect(months[1]).toEqual(january);
-    // Absent months come back as the member's own zero row, never null: the
-    // client renders months[0] as the current month without date arithmetic.
-    expect(months[0]).toEqual({
-      email: "u@x.com",
-      month: "2026-02",
-      calls: {},
-      inputTokens: {},
-      outputTokens: {},
-      costUsd: {},
-    });
-    expect(months[2]?.month).toBe("2025-12");
-    expect(months[2]?.costUsd).toEqual({});
+    await expect(
+      listMemberUsage(usageWith(asked), "u@x.com", "2026-02-01", "2026-02-28"),
+    ).resolves.toEqual([row]);
+    expect(asked).toEqual([["u@x.com", "2026-02-01", "2026-02-28"]]);
   });
 });

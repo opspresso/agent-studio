@@ -17,8 +17,8 @@ import { keys } from "@/infrastructure/db/keys";
 import { expiresAtSeconds, notExpired, RETENTION } from "@/infrastructure/db/ttl";
 import type { CostAlertKind, UsageRepository } from "@/domain/usage/repository";
 import { memberEmailFromActorKey } from "@/domain/execution/actor";
-import { utcDay, utcMonthOfDay } from "@/shared/date";
-import type { ActorUsageRow, MemberMonthlyUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
+import { utcDay } from "@/shared/date";
+import type { ActorUsageRow, MemberUsageRow, UsageDelta, UsageRow } from "@/domain/usage/types";
 
 /**
  * Attribute the once-per-day notification claim is written to. One per kind, so
@@ -72,13 +72,14 @@ export class DynamoUsageRepository implements UsageRepository {
         delta,
         { actor: delta.actor },
       );
-      // Third and last, same additive reasoning: the member's cross-project
-      // month row, which the tier cost cap reads. Only a `user` actor writes
-      // one — a machine caller has no monthly budget, and a project token
-      // deliberately spends against its project's limits, not its owner's.
+      // Third and last, same additive reasoning: the member's own daily row,
+      // which the tier cap and the profile page both read. Only a `user` actor
+      // writes one — a machine caller has no personal budget, and a project
+      // token deliberately spends against its project's limits, not its
+      // owner's.
       const email = memberEmailFromActorKey(delta.actor);
       if (email) {
-        await this.addToMemberMonth(email, utcMonthOfDay(delta.date), delta);
+        await this.addToMemberDay(email, delta);
       }
     }
   }
@@ -182,17 +183,17 @@ export class DynamoUsageRepository implements UsageRepository {
   }
 
   /**
-   * The member-month counterpart of {@link addTo}: the same two-step atomic
-   * ADD, but plain updates rather than a transaction. The project-row
-   * ConditionCheck up there keeps usage rows out of a partition being cascade
-   * deleted; this row is a *person's* budget in its own partition, which no
-   * project deletion touches, so tying the write to the project's fate would
-   * only drop spend the cap should have counted.
+   * The member counterpart of {@link addTo}: the same two-step atomic ADD, but
+   * plain updates rather than a transaction. The project-row ConditionCheck up
+   * there keeps usage rows out of a partition being cascade deleted; this row
+   * is a *person's* spend in their own partition, which no project deletion
+   * touches, so tying the write to the project's fate would only drop spend
+   * the cap should have counted.
    */
-  private async addToMemberMonth(email: string, month: string, delta: UsageDelta): Promise<void> {
+  private async addToMemberDay(email: string, delta: UsageDelta): Promise<void> {
     const doc = getDocumentClient();
     const table = getTableName();
-    const key = keys.usageMemberMonth(email, month);
+    const key = keys.usageMember(email, delta.date);
     await doc.send(
       new UpdateCommand({
         TableName: table,
@@ -203,18 +204,18 @@ export class DynamoUsageRepository implements UsageRepository {
           "outputTokens = if_not_exists(outputTokens, :empty), " +
           "costUsd = if_not_exists(costUsd, :empty), " +
           "email = if_not_exists(email, :email), " +
-          "#month = if_not_exists(#month, :month), " +
+          "#date = if_not_exists(#date, :date), " +
           "entityType = if_not_exists(entityType, :et), " +
           "expiresAt = if_not_exists(expiresAt, :exp)",
-        ExpressionAttributeNames: { "#month": "month" },
+        ExpressionAttributeNames: { "#date": "date" },
         ExpressionAttributeValues: {
           ":empty": {},
           ":email": email,
-          ":month": month,
-          ":et": "UsageMemberMonth",
-          // Retention runs from the month's start; the floor of 31 days in
-          // RETENTION keeps the row alive past the window it bounds.
-          ":exp": expiresAtSeconds(`${month}-01T00:00:00Z`, RETENTION.usageDays),
+          ":date": delta.date,
+          ":et": "UsageMember",
+          // Retention runs from the usage date, exactly as the project rows'
+          // does, so a person's history and their projects' expire together.
+          ":exp": expiresAtSeconds(`${delta.date}T00:00:00Z`, RETENTION.usageDays),
         },
       }),
     );
@@ -236,22 +237,24 @@ export class DynamoUsageRepository implements UsageRepository {
     );
   }
 
-  async getMemberMonth(email: string, month: string): Promise<MemberMonthlyUsageRow | null> {
-    const result = await getDocumentClient().send(
-      new GetCommand({ TableName: getTableName(), Key: keys.usageMemberMonth(email, month) }),
-    );
-    const item = result.Item;
-    if (!item || notExpired([item], Date.now()).length === 0) {
-      return null;
-    }
-    return {
+  async listMemberDays(email: string, from: string, to: string): Promise<MemberUsageRow[]> {
+    const items = await queryAll({
+      TableName: getTableName(),
+      KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
+      ExpressionAttributeValues: {
+        ":pk": keys.usageMember(email, from).PK,
+        ":from": keys.usageMember(email, from).SK,
+        ":to": keys.usageMember(email, to).SK,
+      },
+    });
+    return notExpired(items, Date.now()).map((item) => ({
       email: String(item.email ?? email),
-      month: String(item.month ?? month),
+      date: String(item.date ?? ""),
       calls: (item.calls as Record<string, number>) ?? {},
       inputTokens: (item.inputTokens as Record<string, number>) ?? {},
       outputTokens: (item.outputTokens as Record<string, number>) ?? {},
       costUsd: (item.costUsd as Record<string, number>) ?? {},
-    };
+    }));
   }
 
   async listActorsByProject(

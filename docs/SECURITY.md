@@ -115,7 +115,9 @@ additionally passes for an effective admin whatever their stored tier reads as �
 additive to permissions, and the `ADMIN_EMAILS` bootstrap admin's row defaults like
 everyone else's.
 
-The person-shaped limits bind `user` actors only. Machine callers (Slack, A2A, webhook,
+The monthly cap sums the member's own daily rows from the first of the UTC month, the same
+window and the same rows the profile page reads — one aggregate, so a page cannot report a
+total the guard would disagree with. The person-shaped limits bind `user` actors only. Machine callers (Slack, A2A, webhook,
 schedule) have no member; a **project token** carries its owner's email but deliberately
 spends against its *project's* limits, not the owner's personal budget — a token is a
 service credential. What keeps that from being a bypass is the token gate: a tier without

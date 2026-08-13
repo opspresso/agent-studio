@@ -1,8 +1,8 @@
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { UsageRepository } from "@/domain/usage/repository";
-import type { MemberMonthlyUsageRow, UsageRow } from "@/domain/usage/types";
+import type { MemberUsageRow, UsageRow } from "@/domain/usage/types";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
-import { recentUtcMonths } from "@/shared/date";
+import { memberMonthToDate } from "./memberCostGuard";
 import { listProjectActors, type ActorUsageView, type ListActorsDeps } from "./listActors";
 
 /**
@@ -27,32 +27,19 @@ export interface UsageReadDeps extends ListActorsDeps {
 }
 
 /**
- * One member's own cross-project spend, newest month first — the profile read.
- * Always the caller's own email (the route passes the session user), which is
- * why this needs no gate: `memberCostGuard` owns enforcing the cap, this only
- * reports the same rows. Absent months come back zero-filled in order, so the
- * client renders `months[0]` as the current month without re-deriving month
- * keys — its clock can disagree with the server's across a UTC boundary.
+ * One member's own daily spend over a range — the profile read, and the same
+ * rows in the same shape the project usage page gets for a project. Always the
+ * caller's own email (the route passes the session user), which is why this
+ * needs no gate: `memberCostGuard` owns enforcing the cap, this only reports
+ * the rows it counts.
  */
-export async function listMemberMonths(
+export function listMemberUsage(
   usage: UsageRepository,
   email: string,
-  months: number,
-  now: Date = new Date(),
-): Promise<MemberMonthlyUsageRow[]> {
-  const keys = recentUtcMonths(now, months);
-  const rows = await Promise.all(keys.map((month) => usage.getMemberMonth(email, month)));
-  return rows.map(
-    (row, index) =>
-      row ?? {
-        email,
-        month: keys[index]!,
-        calls: {},
-        inputTokens: {},
-        outputTokens: {},
-        costUsd: {},
-      },
-  );
+  from: string,
+  to: string,
+): Promise<MemberUsageRow[]> {
+  return usage.listMemberDays(email, from, to);
 }
 
 /**
@@ -80,7 +67,9 @@ export async function listProjectActorsFor(
 export interface UsageUseCases {
   summary(from: string, to: string, projectName?: string): Promise<UsageRow[]>;
   actors(projectName: string, userEmail: string, from: string, to: string): Promise<ActorUsageView[]>;
-  memberMonths(email: string, months: number, now?: Date): Promise<MemberMonthlyUsageRow[]>;
+  memberUsage(email: string, from: string, to: string): Promise<MemberUsageRow[]>;
+  /** This member's spend since the first of the UTC month — what the cap bounds. */
+  memberMonthToDate(email: string, now?: Date): Promise<number>;
 }
 
 export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
@@ -88,6 +77,7 @@ export function createUsageUseCases(deps: UsageReadDeps): UsageUseCases {
     summary: (from, to, projectName) => listUsageSummary(deps.usage, from, to, projectName),
     actors: (projectName, userEmail, from, to) =>
       listProjectActorsFor(deps, projectName, userEmail, from, to),
-    memberMonths: (email, months, now) => listMemberMonths(deps.usage, email, months, now),
+    memberUsage: (email, from, to) => listMemberUsage(deps.usage, email, from, to),
+    memberMonthToDate: (email, now) => memberMonthToDate(deps, email, now),
   };
 }

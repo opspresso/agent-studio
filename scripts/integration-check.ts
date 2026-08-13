@@ -156,9 +156,9 @@ async function main() {
   // Artifacts are not in the project partition either — they outlive the project
   // the way chats do — so the cascade never reaches them.
   const artifactFixtures: string[] = [];
-  // A member's month row is keyed by email in its own partition — outside the
-  // cascade, and an atomic ADD, so a leftover would accumulate across runs.
-  const memberMonthFixtures: Array<{ email: string; month: string }> = [];
+  // A member's daily rows are keyed by email in their own partition — outside
+  // the cascade, and an atomic ADD, so a leftover would accumulate across runs.
+  const memberDayFixtures: Array<{ email: string; date: string }> = [];
 
   try {
     // ---------- project + version ----------
@@ -538,28 +538,36 @@ async function main() {
     );
     pass("usage attribution: per-caller rows, project totals unaffected");
 
-    // ---------- member month row (one budget per email, across actor kinds) ----------
-    // The attribution block above also wrote month rows for its fixed address;
+    // ---------- member day rows (one history per email, across actor kinds) ----------
+    // The attribution block above also wrote member rows for its fixed address;
     // register it for cleanup, but assert on a per-run address — the row is an
     // atomic ADD keyed by email alone, so a leftover from an interrupted run
     // would otherwise inflate the count.
-    memberMonthFixtures.push({ email: "it@example.com", month: today.slice(0, 7) });
+    memberDayFixtures.push({ email: "it@example.com", date: today });
     const memberEmail = `it-member-${suffix}@example.com`;
-    memberMonthFixtures.push({ email: memberEmail, month: today.slice(0, 7) });
+    memberDayFixtures.push({ email: memberEmail, date: today });
     await usageRepository.record({ ...usageDelta, actor: `user:${memberEmail}` });
     await usageRepository.record({ ...usageDelta, actor: `project-token:${memberEmail}` });
-    const memberMonth = await usageRepository.getMemberMonth(memberEmail, today.slice(0, 7));
+    const memberDays = await usageRepository.listMemberDays(memberEmail, today, today);
+    assert.equal(memberDays.length, 1, "one row per member per day");
     assert.equal(
-      memberMonth?.calls["openai/gpt-5-mini"],
+      memberDays[0]?.calls["openai/gpt-5-mini"],
       1,
-      "token spend stays out of the member month",
+      "token spend stays out of the member's own history",
     );
-    assert.equal(
-      await usageRepository.getMemberMonth(`nobody-${suffix}@example.com`, today.slice(0, 7)),
-      null,
-      "an unknown member has no month row",
+    assert.deepEqual(
+      await usageRepository.listMemberDays(`nobody-${suffix}@example.com`, today, today),
+      [],
+      "an unknown member has no rows",
     );
-    pass("member month aggregation across actor kinds");
+    // The window the tier cap reads: month start through today.
+    const capWindow = await usageRepository.listMemberDays(
+      memberEmail,
+      `${today.slice(0, 7)}-01`,
+      today,
+    );
+    assert.equal(capWindow.length, 1, "the month-to-date window finds the day");
+    pass("member day rows: per-actor filtering, range query");
 
     // ---------- monthly threshold claim (conditional, its own row) ----------
     const month = today.slice(0, 7);
@@ -893,7 +901,7 @@ async function main() {
     for (const artifactId of artifactFixtures) {
       await artifactRepository.delete(artifactId).catch(() => {});
     }
-    if (auditFixtures.length > 0 || memberMonthFixtures.length > 0) {
+    if (auditFixtures.length > 0 || memberDayFixtures.length > 0) {
       const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
       const { DeleteCommand } = await import("@aws-sdk/lib-dynamodb");
       const { keys } = await import("@/infrastructure/db/keys");
@@ -907,12 +915,12 @@ async function main() {
           )
           .catch(() => {});
       }
-      for (const fixture of memberMonthFixtures) {
+      for (const fixture of memberDayFixtures) {
         await getDocumentClient()
           .send(
             new DeleteCommand({
               TableName: getTableName(),
-              Key: keys.usageMemberMonth(fixture.email, fixture.month),
+              Key: keys.usageMember(fixture.email, fixture.date),
             }),
           )
           .catch(() => {});

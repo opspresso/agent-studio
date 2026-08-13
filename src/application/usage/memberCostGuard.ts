@@ -4,8 +4,9 @@
  * The project guard beside it bounds what a *project* may cost; nothing
  * bounded what one *person* could spend across the shared catalog, which is
  * the axis a tier prices. The cap comes from `TIER_LIMITS` and the spend from
- * the member's cross-project month row, so the read is one GetItem on every
- * run, like the project guard's day read.
+ * the member's own daily rows, summed from the first of the UTC month — the
+ * same bounded query over one partition that the project guard's monthly
+ * window already runs, and the same rows the profile page reads.
  *
  * Same contract as the project guard, deliberately: **a backstop, not an
  * exact cap** (usage flushes at run end, so runs that start together all pass
@@ -18,7 +19,7 @@ import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execu
 import { TIER_LIMITS, type MemberTier } from "@/domain/member/tiers";
 import type { UsageRepository } from "@/domain/usage/repository";
 import { RateLimitedError } from "@/application/errors";
-import { utcMonth } from "@/shared/date";
+import { utcDay, utcMonth } from "@/shared/date";
 import { log } from "@/shared/logger";
 import { secondsUntilNextUtcMonth } from "./costGuard";
 
@@ -68,10 +69,7 @@ export async function assertWithinMemberCostLimit(
   }
   let spent: number;
   try {
-    const row = await deps.usage.getMemberMonth(email, utcMonth(now));
-    spent = row
-      ? Object.values(row.costUsd).reduce((sum, value) => sum + (value || 0), 0)
-      : 0;
+    spent = await memberMonthToDate(deps, email, now);
   } catch (error) {
     log.error("cost-guard", `could not read month spend for ${email}; allowing the run`, error);
     return;
@@ -79,4 +77,22 @@ export async function assertWithinMemberCostLimit(
   if (spent >= cap) {
     throw new MemberCostLimitExceededError(email, spent, cap, secondsUntilNextUtcMonth(now));
   }
+}
+
+/**
+ * What this member has spent since the first of the UTC month — the number the
+ * cap is compared against, and the one the profile page shows beside it. One
+ * function so the page cannot report a total the guard would disagree with,
+ * whatever window the page's own date picker is set to.
+ */
+export async function memberMonthToDate(
+  deps: MemberCostGuardDeps,
+  email: string,
+  now: Date = new Date(),
+): Promise<number> {
+  const rows = await deps.usage.listMemberDays(email, `${utcMonth(now)}-01`, utcDay(now));
+  return rows.reduce(
+    (total, row) => total + Object.values(row.costUsd).reduce((sum, v) => sum + (v || 0), 0),
+    0,
+  );
 }

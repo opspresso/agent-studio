@@ -6,6 +6,22 @@ export type { UsageRow };
 export type GroupBy = "project" | "model" | "provider" | "department";
 
 /**
+ * What every helper here actually reads: a day, and the per-model maps for it.
+ *
+ * Narrower than `UsageRow` so a member's own rows — which carry an email
+ * instead of a project — go through the same grouping, totalling and series
+ * code as a project's. `projectName` is required only by the two groupings
+ * that name one; a row without it buckets as `NO_DEPARTMENT_KEY`, which is
+ * what those groupings already do for a project with no department.
+ */
+export interface DailyCostRow {
+  date: string;
+  calls: Record<string, number>;
+  costUsd: Record<string, number>;
+  projectName?: string;
+}
+
+/**
  * The bucket for projects with no `departmentCode`. A visible key rather than a
  * dropped row: unattributed spend hidden from a chargeback view reads as "the
  * departments cover everything", which is exactly the claim it cannot make.
@@ -34,22 +50,29 @@ export function providerOf(model: string): string {
 }
 
 /** The per-project grouping key — the project itself, or its department. */
-function rowKey(row: UsageRow, by: GroupBy, departments?: ReadonlyMap<string, string>): string {
+function rowKey(
+  row: DailyCostRow,
+  by: GroupBy,
+  departments?: ReadonlyMap<string, string>,
+): string {
+  if (!row.projectName) {
+    return NO_DEPARTMENT_KEY;
+  }
   return by === "department"
     ? departments?.get(row.projectName) || NO_DEPARTMENT_KEY
     : row.projectName;
 }
 
-export function totalCost(items: UsageRow[]): number {
+export function totalCost(items: readonly DailyCostRow[]): number {
   return items.reduce((sum, row) => sum + sumRecord(row.costUsd), 0);
 }
 
-export function totalCalls(items: UsageRow[]): number {
+export function totalCalls(items: readonly DailyCostRow[]): number {
   return items.reduce((sum, row) => sum + sumRecord(row.calls), 0);
 }
 
 export function groupUsage(
-  items: UsageRow[],
+  items: readonly DailyCostRow[],
   by: GroupBy,
   departments?: ReadonlyMap<string, string>,
 ): UsageGroup[] {
@@ -81,18 +104,14 @@ export function groupUsage(
 export const MAX_CHART_SERIES = 8;
 export const OTHERS_KEY = "Others";
 
-/**
- * One column of a stacked cost chart. `period` is a day (`yyyy-MM-dd`) or a
- * month (`yyyy-MM`) — the chart never parses it, it only labels it, which is
- * what lets one component draw both.
- */
+/** One column of a stacked cost chart: a UTC day, and what each series cost. */
 export interface CostSeriesPoint {
   [key: string]: number | string;
-  period: string;
+  date: string;
 }
 
 export interface CostSeries {
-  /** Ascending, zero-filled: one point per period in the window. */
+  /** Ascending, zero-filled: one point per day in the window. */
   data: CostSeriesPoint[];
   /** Series keys sorted by total cost desc; `OTHERS_KEY` last when folded. */
   keys: string[];
@@ -113,12 +132,12 @@ function topSeries(totals: Map<string, number>): { keys: string[]; hasOthers: bo
 
 /** Fills one point's series keys, folding everything outside `keys` into Others. */
 function pointFrom(
-  period: string,
+  date: string,
   bucket: Map<string, number> | undefined,
   keys: string[],
   hasOthers: boolean,
 ): CostSeriesPoint {
-  const point: CostSeriesPoint = { period };
+  const point: CostSeriesPoint = { date };
   for (const key of keys) {
     point[key] = bucket?.get(key) ?? 0;
   }
@@ -156,7 +175,7 @@ export function toChartColumns(keys: string[]): ChartColumn[] {
 /** Re-keys series points onto the dot-free keys of `columns`. */
 export function toChartData(data: CostSeriesPoint[], columns: ChartColumn[]): CostSeriesPoint[] {
   return data.map((point) => {
-    const row: CostSeriesPoint = { period: point.period };
+    const row: CostSeriesPoint = { date: point.date };
     for (const column of columns) {
       row[column.dataKey] = point[column.label] ?? 0;
     }
@@ -165,7 +184,7 @@ export function toChartData(data: CostSeriesPoint[], columns: ChartColumn[]): Co
 }
 
 export function buildDailySeries(
-  items: UsageRow[],
+  items: readonly DailyCostRow[],
   by: GroupBy,
   from: string,
   to: string,
@@ -207,33 +226,4 @@ export function buildDailySeries(
   }
 
   return { data, keys: seriesKeys };
-}
-
-/**
- * The same series, one point per already-aggregated period — what the profile
- * page has. Its rows arrive newest-first and zero-filled from the server, so
- * this only reverses them and folds the models: there is no window to walk,
- * and re-deriving one here would be a second place that decides which month is
- * current.
- */
-export function buildPeriodSeries(
-  rows: readonly { period: string; costUsd: Record<string, number> }[],
-): CostSeries {
-  const totals = new Map<string, number>();
-  const byPeriod = new Map<string, Map<string, number>>();
-  for (const row of rows) {
-    const bucket = byPeriod.get(row.period) ?? new Map<string, number>();
-    for (const [model, cost] of Object.entries(row.costUsd)) {
-      totals.set(model, (totals.get(model) ?? 0) + (cost || 0));
-      bucket.set(model, (bucket.get(model) ?? 0) + (cost || 0));
-    }
-    byPeriod.set(row.period, bucket);
-  }
-
-  const { keys, hasOthers } = topSeries(totals);
-  const periods = [...byPeriod.keys()].sort();
-  return {
-    data: periods.map((period) => pointFrom(period, byPeriod.get(period), keys, hasOthers)),
-    keys: hasOthers ? [...keys, OTHERS_KEY] : keys,
-  };
 }
