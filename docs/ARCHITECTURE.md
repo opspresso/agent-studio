@@ -232,8 +232,10 @@ under a placeholder (see [Artifacts](#artifacts)).
 - Trace creation transactionally writes a project-partition deletion reference; project
   deletion marks the project first, preventing new versions/traces before child cleanup.
 - **Usage rows use atomic `ADD` per model** — `calls.{model}`, `inputTokens.{model}`,
-  `outputTokens.{model}`, `costUsd.{model}` — in two steps: `SET … if_not_exists` to
-  materialise the maps, then `ADD` on the nested number attributes. They also carry the cost
+  `outputTokens.{model}`, `cachedTokens.{model}`, `costUsd.{model}` — in two steps:
+  `SET … if_not_exists` to materialise the maps, then `ADD` on the nested number attributes.
+  A map added after rows exist materialises on each row's next write, so older days read as
+  `{}` and are not backfilled. They also carry the cost
   guard's once-per-day notification claims (`alertedAt`, `blockedAt`), taken with a
   conditional write. Those claims live here rather than on the project item because that
   item's `updatedAt` is the optimistic-concurrency condition for every project write — a
@@ -1681,6 +1683,16 @@ cascade takes every other row that knew.
 Daily per-project per-model aggregates (see the [key map](#dynamodb-single-table-design)). The
 dashboard reads `USAGEDATE#{date}` GSI partitions across a range and regroups client-side by
 project / provider / model.
+
+**The cached share of the prompt is one of the metrics**, not something inferred from the
+bill. `calculateCost` has always read `prompt_tokens_details.cached_tokens` to price the
+input, and then dropped the count — so a prompt that stopped being cacheable cost more per
+turn while calls, tokens and the answer all looked exactly as they had. It now rides on
+`UsageInfo` (and therefore the `usage` chunk), into the daily rows as `cachedTokens.{model}`,
+and onto each model span of a trace, where a cache regression is legible per turn: the first
+turn of a run is cold by definition, and a broken cache is every later turn being cold too.
+The breakdown table renders a **blank** where nothing reported one — `0%` would claim a cold
+cache for a channel that simply does not report the field.
 
 **Who spent it is a second row, not another dimension on the first.** Projects are a shared
 catalog — any signed-in user may run any project — so the project name does not identify the

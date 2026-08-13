@@ -136,6 +136,12 @@ export class TraceRecorder {
           input: {
             messages: this.context.messageCount,
             inputTokens: chunk.usage.inputTokens,
+            // Per turn, which is where a cache regression is legible: the first
+            // turn of a run is cold by definition, and a prompt that stopped
+            // being cacheable shows up as every later turn being cold too.
+            // Omitted when the provider reported none, so a span from a channel
+            // that does not report the field is what it always was.
+            ...(chunk.usage.cachedTokens ? { cachedTokens: chunk.usage.cachedTokens } : {}),
           },
           output: {
             outputTokens: chunk.usage.outputTokens,

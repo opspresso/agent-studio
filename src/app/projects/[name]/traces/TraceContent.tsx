@@ -28,7 +28,12 @@ function spanTokens(span: Trace["spans"][number]): string {
   const input = span.input?.inputTokens ?? span.output?.inputTokens;
   const output = span.output?.outputTokens;
   if (typeof input !== "number" && typeof output !== "number") return "";
-  return `${typeof input === "number" ? input : 0} in / ${typeof output === "number" ? output : 0} out`;
+  // The cached share is named only where a provider reported one: "0 cached" on
+  // a channel that never reports the field would read as a cache that is not
+  // working, which is a different claim from "nobody said".
+  const cached = span.input?.cachedTokens;
+  const cachedNote = typeof cached === "number" && cached > 0 ? ` (${cached} cached)` : "";
+  return `${typeof input === "number" ? input : 0} in${cachedNote} / ${typeof output === "number" ? output : 0} out`;
 }
 
 export function TraceContent({ trace }: { trace: Trace }) {

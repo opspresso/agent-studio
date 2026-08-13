@@ -18,6 +18,13 @@ export interface DailyCostRow {
   date: string;
   calls: Record<string, number>;
   costUsd: Record<string, number>;
+  inputTokens?: Record<string, number>;
+  /**
+   * Of `inputTokens`, what the provider served from its cache. Optional for the
+   * same reason it is on the row: days recorded before it existed have none,
+   * and so does a channel that never reports it.
+   */
+  cachedTokens?: Record<string, number>;
   projectName?: string;
 }
 
@@ -32,6 +39,9 @@ export interface UsageGroup {
   key: string;
   cost: number;
   calls: number;
+  /** Prompt tokens sent, and how many of them the provider had cached. */
+  inputTokens: number;
+  cachedTokens: number;
 }
 
 /** Exported because the project usage page totals the same rows. */
@@ -76,27 +86,47 @@ export function groupUsage(
   by: GroupBy,
   departments?: ReadonlyMap<string, string>,
 ): UsageGroup[] {
-  const map = new Map<string, { cost: number; calls: number }>();
-  const add = (key: string, cost: number, calls: number) => {
-    const current = map.get(key) ?? { cost: 0, calls: 0 };
+  const map = new Map<string, { cost: number; calls: number; input: number; cached: number }>();
+  const add = (key: string, cost: number, calls: number, input: number, cached: number) => {
+    const current = map.get(key) ?? { cost: 0, calls: 0, input: 0, cached: 0 };
     current.cost += cost;
     current.calls += calls;
+    current.input += input;
+    current.cached += cached;
     map.set(key, current);
   };
 
   for (const row of items) {
     if (by === "project" || by === "department") {
-      add(rowKey(row, by, departments), sumRecord(row.costUsd), sumRecord(row.calls));
+      add(
+        rowKey(row, by, departments),
+        sumRecord(row.costUsd),
+        sumRecord(row.calls),
+        sumRecord(row.inputTokens ?? {}),
+        sumRecord(row.cachedTokens ?? {}),
+      );
       continue;
     }
     for (const model of Object.keys(row.calls)) {
       const key = by === "model" ? model : providerOf(model);
-      add(key, row.costUsd[model] ?? 0, row.calls[model] ?? 0);
+      add(
+        key,
+        row.costUsd[model] ?? 0,
+        row.calls[model] ?? 0,
+        row.inputTokens?.[model] ?? 0,
+        row.cachedTokens?.[model] ?? 0,
+      );
     }
   }
 
   return [...map.entries()]
-    .map(([key, value]) => ({ key, cost: value.cost, calls: value.calls }))
+    .map(([key, value]) => ({
+      key,
+      cost: value.cost,
+      calls: value.calls,
+      inputTokens: value.input,
+      cachedTokens: value.cached,
+    }))
     .sort((a, b) => b.cost - a.cost);
 }
 

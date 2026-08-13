@@ -43,6 +43,28 @@ describe("createUsageAggregator", () => {
     expect(writes).toHaveLength(0);
   });
 
+  it("sums the cached share of the prompt, and defaults a call that reported none", async () => {
+    // The cache is the largest lever on an agent run's bill and the only one
+    // invisible in every other number: tokens, calls and the answer look the
+    // same whether the prompt was cacheable or not.
+    const { repo, writes } = fakeUsageRepo();
+    const agg = createUsageAggregator(repo);
+    const date = "2026-01-01";
+    await agg.record({ projectName: "p", model: "m", inputTokens: 10, outputTokens: 5, costUsd: 0.01, date });
+    await agg.record({
+      projectName: "p",
+      model: "m",
+      inputTokens: 20,
+      outputTokens: 5,
+      cachedTokens: 16,
+      costUsd: 0.01,
+      date,
+    });
+    await agg.flush();
+
+    expect(writes[0]).toMatchObject({ inputTokens: 30, cachedTokens: 16 });
+  });
+
   it("collapses repeated same-model records into one summed write", async () => {
     const { repo, writes } = fakeUsageRepo();
     const agg = createUsageAggregator(repo);

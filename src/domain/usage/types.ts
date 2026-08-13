@@ -6,6 +6,15 @@ export interface UsageRow {
   calls: Record<string, number>;
   inputTokens: Record<string, number>;
   outputTokens: Record<string, number>;
+  /**
+   * Of `inputTokens`, how many the provider served from its cache, per model.
+   *
+   * Optional because a row written before the field existed does not carry it,
+   * and because only a provider that reports `prompt_tokens_details` can fill
+   * it — the repository always writes the map, so absent means "nothing here
+   * ever reported one", not "unknown".
+   */
+  cachedTokens?: Record<string, number>;
   costUsd: Record<string, number>;
 }
 
@@ -28,6 +37,8 @@ export interface ActorUsageRow {
   calls: Record<string, number>;
   inputTokens: Record<string, number>;
   outputTokens: Record<string, number>;
+  /** See {@link UsageRow.cachedTokens}. */
+  cachedTokens?: Record<string, number>;
   costUsd: Record<string, number>;
 }
 
@@ -49,6 +60,8 @@ export interface MemberUsageRow {
   calls: Record<string, number>;
   inputTokens: Record<string, number>;
   outputTokens: Record<string, number>;
+  /** See {@link UsageRow.cachedTokens}. */
+  cachedTokens?: Record<string, number>;
   costUsd: Record<string, number>;
 }
 
@@ -59,6 +72,8 @@ export interface UsageDelta {
   calls: number;
   inputTokens: number;
   outputTokens: number;
+  /** Of `inputTokens`, how many the provider served from its cache. */
+  cachedTokens?: number;
   costUsd: number;
   /**
    * Who to bill it to, as `kind:id`. Absent means the run had no identifiable

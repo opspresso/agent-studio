@@ -439,6 +439,7 @@ describe("usageRepository.record two-step ADD", () => {
       calls: 1,
       inputTokens: 10,
       outputTokens: 5,
+      cachedTokens: 4,
       costUsd: 0.001,
     });
 
@@ -457,6 +458,9 @@ describe("usageRepository.record two-step ADD", () => {
       ":calls": 1,
       ":in": 10,
       ":out": 5,
+      // Of the 10 input tokens, 4 came from the provider's cache — the one
+      // number that says whether the prompt is still cacheable.
+      ":cached": 4,
       ":cost": 0.001,
     });
   });
@@ -468,7 +472,9 @@ describe("usageRepository.record two-step ADD", () => {
       projectName: "p2",
       date: "2026-01-02",
       calls: { "openai/gpt-5-mini": 2 },
-      // inputTokens/outputTokens/costUsd absent: must default to {}.
+      // inputTokens/outputTokens/cachedTokens/costUsd absent: must default to
+      // {} — which is also what every row written before cachedTokens existed
+      // reads as.
     });
     const rows = await usageRepository.listByProject("p2", "2026-01-01", "2026-01-03");
     expect(rows).toHaveLength(1);
@@ -478,6 +484,7 @@ describe("usageRepository.record two-step ADD", () => {
       calls: { "openai/gpt-5-mini": 2 },
       inputTokens: {},
       outputTokens: {},
+      cachedTokens: {},
       costUsd: {},
     });
   });

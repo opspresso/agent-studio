@@ -412,7 +412,7 @@ GET /api/me/profile
           monthToDateUsd }
 
 GET /api/me/usage?from=2026-08-01&to=2026-08-13
-  → 200 { items: [ { email, date, calls, inputTokens, outputTokens, costUsd } ] }
+  → 200 { items: [ { email, date, calls, inputTokens, outputTokens, cachedTokens, costUsd } ] }
 ```
 
 The signed-in user's own row and spend — always the session user, so neither takes an email
@@ -954,17 +954,23 @@ nesting, is refused as an authored error chunk rather than recursing.
 
 ```
 GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
-→ 200 { "items": [ { projectName, date, calls, inputTokens, outputTokens, costUsd }, … ] }
-      (calls/inputTokens/outputTokens/costUsd are per-model maps: { "provider/model": number })
+→ 200 { "items": [ { projectName, date, calls, inputTokens, outputTokens, cachedTokens,
+                     costUsd }, … ] }
+      (every metric is a per-model map: { "provider/model": number })
 → 400 { "error": "…" }   (bad/oversized range: max 184 days, from ≤ to)
 ```
+
+`cachedTokens` is the part of `inputTokens` the provider served from its own prompt cache,
+already priced at the cached rate. It is `{}` for a day recorded before the field existed and
+for a channel that does not report `prompt_tokens_details` — which is why the console renders
+a blank rather than `0%`: a cache nobody reports on is not a cold one.
 
 ### Per-caller spend
 
 ```
 GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
-→ 200 { "items": [ { projectName, date, actor, calls, inputTokens, outputTokens, costUsd,
-                     display?: { name, avatarUrl? } }, … ] }
+→ 200 { "items": [ { projectName, date, actor, calls, inputTokens, outputTokens, cachedTokens,
+                     costUsd, display?: { name, avatarUrl? } }, … ] }
 ```
 
 `actor` is `{kind}:{id}` — `user:a@example.com`, `project-token:owner@example.com` (a token

@@ -76,6 +76,7 @@ describe("listMemberDays", () => {
         calls: { m: 2 },
         inputTokens: {},
         outputTokens: {},
+        cachedTokens: {},
         costUsd: { m: 3 },
       },
     ]);

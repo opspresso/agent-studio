@@ -1,13 +1,18 @@
 /**
  * DynamoDB usage repository. Daily per-project rows hold per-model maps
- * (`calls`, `inputTokens`, `outputTokens`, `costUsd`) incremented with atomic
- * `ADD`.
+ * (`calls`, `inputTokens`, `outputTokens`, `cachedTokens`, `costUsd`)
+ * incremented with atomic `ADD`.
  *
  * DynamoDB cannot `ADD` into a nested attribute of a map that does not exist
  * yet, so `record()` is a two-step: first `SET ... = if_not_exists(...)` to
  * materialise the maps + metadata, then a second `UpdateItem` that `ADD`s into
  * the now-guaranteed maps. `date` is a reserved word and goes through
  * `ExpressionAttributeNames`.
+ *
+ * A map added after rows already existed materialises on the row's next write
+ * — `if_not_exists` is per attribute, not per item — so a day that saw one
+ * more call carries it and an older day reads as `{}`. No backfill: the
+ * question `cachedTokens` answers is "is the cache working *now*".
  */
 
 import { GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
@@ -46,6 +51,9 @@ function toUsageRow(item: Record<string, unknown>): UsageRow {
     calls: (item.calls as Record<string, number>) ?? {},
     inputTokens: (item.inputTokens as Record<string, number>) ?? {},
     outputTokens: (item.outputTokens as Record<string, number>) ?? {},
+    // Always present on a row this repository wrote; `{}` is what a row from
+    // before the field existed reads as.
+    cachedTokens: (item.cachedTokens as Record<string, number>) ?? {},
     costUsd: (item.costUsd as Record<string, number>) ?? {},
   };
 }
@@ -127,6 +135,7 @@ export class DynamoUsageRepository implements UsageRepository {
                 "SET calls = if_not_exists(calls, :empty), " +
                 "inputTokens = if_not_exists(inputTokens, :empty), " +
                 "outputTokens = if_not_exists(outputTokens, :empty), " +
+                "cachedTokens = if_not_exists(cachedTokens, :empty), " +
                 "costUsd = if_not_exists(costUsd, :empty), " +
                 "projectName = if_not_exists(projectName, :pn), " +
                 "#date = if_not_exists(#date, :date), " +
@@ -167,12 +176,13 @@ export class DynamoUsageRepository implements UsageRepository {
               Key: key,
               UpdateExpression:
                 "ADD calls.#model :calls, inputTokens.#model :in, " +
-                "outputTokens.#model :out, costUsd.#model :cost",
+                "outputTokens.#model :out, cachedTokens.#model :cached, costUsd.#model :cost",
               ExpressionAttributeNames: { "#model": delta.model },
               ExpressionAttributeValues: {
                 ":calls": delta.calls,
                 ":in": delta.inputTokens,
                 ":out": delta.outputTokens,
+                ":cached": delta.cachedTokens ?? 0,
                 ":cost": delta.costUsd,
               },
             },
@@ -202,6 +212,7 @@ export class DynamoUsageRepository implements UsageRepository {
           "SET calls = if_not_exists(calls, :empty), " +
           "inputTokens = if_not_exists(inputTokens, :empty), " +
           "outputTokens = if_not_exists(outputTokens, :empty), " +
+          "cachedTokens = if_not_exists(cachedTokens, :empty), " +
           "costUsd = if_not_exists(costUsd, :empty), " +
           "email = if_not_exists(email, :email), " +
           "projectName = if_not_exists(projectName, :pn), " +
@@ -227,12 +238,13 @@ export class DynamoUsageRepository implements UsageRepository {
         Key: key,
         UpdateExpression:
           "ADD calls.#model :calls, inputTokens.#model :in, " +
-          "outputTokens.#model :out, costUsd.#model :cost",
+          "outputTokens.#model :out, cachedTokens.#model :cached, costUsd.#model :cost",
         ExpressionAttributeNames: { "#model": delta.model },
         ExpressionAttributeValues: {
           ":calls": delta.calls,
           ":in": delta.inputTokens,
           ":out": delta.outputTokens,
+          ":cached": delta.cachedTokens ?? 0,
           ":cost": delta.costUsd,
         },
       }),
@@ -259,6 +271,7 @@ export class DynamoUsageRepository implements UsageRepository {
       calls: (item.calls as Record<string, number>) ?? {},
       inputTokens: (item.inputTokens as Record<string, number>) ?? {},
       outputTokens: (item.outputTokens as Record<string, number>) ?? {},
+      cachedTokens: (item.cachedTokens as Record<string, number>) ?? {},
       costUsd: (item.costUsd as Record<string, number>) ?? {},
     }));
   }

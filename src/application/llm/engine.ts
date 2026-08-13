@@ -131,6 +131,8 @@ export type RecordUsageFn = (record: {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /** Cached prompt tokens, when the provider reported any (see `UsageInfo`). */
+  cachedTokens?: number;
 }) => Promise<void>;
 
 export interface EngineDeps {
@@ -304,7 +306,10 @@ function toUsageInfo(model: string, usage: ChannelUsage | null | undefined): Usa
   const outputTokens = usage?.completion_tokens ?? 0;
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
   const costUsd = calculateCost(model, { inputTokens, outputTokens, cachedTokens });
-  return { inputTokens, outputTokens, costUsd };
+  // Kept rather than consumed by the pricing above: see `UsageInfo`. Omitted
+  // when there is none, so a channel that never reports the field produces
+  // exactly the usage it always did.
+  return { inputTokens, outputTokens, costUsd, ...(cachedTokens > 0 ? { cachedTokens } : {}) };
 }
 
 function buildChannelParams(
@@ -402,6 +407,7 @@ async function recordUsageIfPossible(
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       costUsd: usage.costUsd,
+      ...(usage.cachedTokens ? { cachedTokens: usage.cachedTokens } : {}),
     });
   } catch (error) {
     // Usage recording is telemetry: a write failure must not turn a successful
