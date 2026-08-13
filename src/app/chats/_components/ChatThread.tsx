@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
+import { useT } from "@/app/_i18n/provider";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import type { ChatMessageImage } from "@/domain/chat/types";
 import { useRunEntry } from "../_lib/runHooks";
@@ -48,6 +49,7 @@ function delay(ms: number): Promise<void> {
 }
 
 export function ChatThread({ chatId }: { chatId: string }) {
+  const t = useT();
   // The turn in flight lives in the store, above the router — a navigation away
   // and back finds it still going rather than losing it.
   const entry = useRunEntry(chatId);
@@ -240,7 +242,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
         }
         if (attempt >= RETIRE_RETRIES) {
           consuming.current = null;
-          setError("This reply is saved, but the conversation could not be reloaded.");
+          setError(t("chat.reloadFailed"));
           return;
         }
         await delay(RETIRE_RETRY_MS);
@@ -298,7 +300,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
     return (
       <Flex h="100%" align="center" justify="center">
         <Text fz="sm" c="dimmed">
-          Chat not found.
+          {t("chat.notFound")}
         </Text>
       </Flex>
     );
@@ -342,7 +344,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
             <Stack gap="sm" className={classes.column}>
               {status === "loading" && !shown && (
                 <Text fz="sm" c="dimmed">
-                  Loading…
+                  {t("common.loading")}
                 </Text>
               )}
               {drawn.map((message) => (
@@ -388,7 +390,7 @@ export function ChatThread({ chatId }: { chatId: string }) {
             radius="xl"
             size="lg"
             onClick={() => void scrollToBottom()}
-            aria-label="Jump to the latest message"
+            aria-label={t("chat.jumpToLatest")}
             className={classes.jump}
           >
             <IconArrowDown size={18} />

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { attachmentSrc, type Attachment } from "@/app/_lib/imageAttachments";
+import { useT } from "@/app/_i18n/provider";
 import type { DocumentAttachment } from "@/app/_lib/documentAttachments";
 import { EMPTY_TURN, type AgentProject } from "../_lib/types";
 import { useRunEntry } from "../_lib/runHooks";
@@ -17,6 +18,7 @@ import classes from "./ChatThread.module.css";
 const PROJECT_KEY = "agentdure-chat-project";
 
 export function NewChatPanel() {
+  const t = useT();
   const [projects, setProjects] = useState<AgentProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   // The project a new chat runs against, remembered per browser so the next one
@@ -123,9 +125,9 @@ export function NewChatPanel() {
     return (
       <Flex h="100%" align="center" justify="center">
         <Stack gap="xs" maw={420} ta="center">
-          <Text fw={500}>No agent projects yet</Text>
+          <Text fw={500}>{t("chat.noAgentProjects")}</Text>
           <Text fz="sm" c="dimmed">
-            Chats run against an <b>agent</b> project. Create one from Projects to start chatting.
+            {t("chat.noAgentProjectsBody")}
           </Text>
         </Stack>
       </Flex>
@@ -140,7 +142,7 @@ export function NewChatPanel() {
         {entry?.pendingUser === undefined ? (
           <Flex h="100%" align="center" justify="center" py="xl">
             <Text fz="sm" c="dimmed">
-              Pick an agent project and send your first message.
+              {t("chat.pickProject")}
             </Text>
           </Flex>
         ) : (
@@ -180,12 +182,12 @@ export function NewChatPanel() {
             key={composerKey}
             onSend={start}
             disabled={starting}
-            placeholder="Send your first message…"
+            placeholder={t("chat.firstPlaceholder")}
             status={<RunningAgents paths={entry?.live.authorPaths ?? []} />}
             leading={
               <Group gap="xs" align="center">
                 <Text fz="xs" fw={500} c="dimmed">
-                  Project
+                  {t("chat.project")}
                 </Text>
                 <Select
                   value={projectName}

@@ -206,6 +206,32 @@ export const en = {
   "overview.getStartedBody":
     "A project holds a prompt, an agent, or an image workload, saved as versions you can publish. Create one, attach skills and MCP tools to a version, then try it in the Playground — or in a chat, for an agent project.",
   "overview.browseSkills": "Browse skills",
+
+  // Chats: the sidebar, the thread, the composer and the parts a turn is drawn
+  // from.
+  "chat.new": "New chat",
+  "chat.list": "Chats",
+  "chat.none": "No chats yet.",
+  "chat.delete": "Delete chat",
+  "chat.notFound": "Chat not found.",
+  "chat.reloadFailed": "This reply is saved, but the conversation could not be reloaded.",
+  "chat.jumpToLatest": "Jump to the latest message",
+  "chat.send": "Send",
+  "chat.stop": "Stop",
+  "chat.placeholder": "Send a message…",
+  "chat.firstPlaceholder": "Send your first message…",
+  "chat.pickProject": "Pick an agent project and send your first message.",
+  "chat.project": "Project",
+  "chat.noAgentProjects": "No agent projects yet",
+  "chat.noAgentProjectsBody":
+    "Chats run against an agent project. Create one from Projects to start chatting.",
+  "chat.thinking": "Thinking…",
+  "chat.via": "via {path}",
+  "chat.imageGone": "This image is no longer available.",
+  "chat.fileWhenDone": "available when this reply finishes",
+  "chat.attachedImage": "Attached image",
+  "chat.generatedImage": "Generated image",
+  "chat.documentRead": "Read {note}",
 } as const;
 
 export type MessageKey = keyof typeof en;

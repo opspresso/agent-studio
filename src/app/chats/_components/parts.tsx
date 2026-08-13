@@ -19,6 +19,7 @@ import { IconFileText } from "@tabler/icons-react";
 import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { imageDataUrl } from "@/domain/llm/types";
+import { useT } from "@/app/_i18n/provider";
 import { CopyButton } from "@/app/_components/CopyButton";
 import { ToolRow } from "@/app/_components/ToolRow";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
@@ -95,6 +96,7 @@ function StoredToolRow({
  */
 export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
   const [gone, setGone] = useState(false);
+  const t = useT();
   return (
     <Box maw="80%" w="100%" style={{ aspectRatio: "1 / 1" }}>
       {gone ? (
@@ -107,7 +109,7 @@ export function GeneratedImage({ src, alt }: { src: string; alt: string }) {
           style={{ display: "grid", placeItems: "center" }}
         >
           <Text size="sm" c="dimmed" ta="center">
-            This image is no longer available.
+            {t("chat.imageGone")}
           </Text>
         </Paper>
       ) : (
@@ -150,6 +152,7 @@ export function ProducedFile({
   byteSize?: number | undefined;
   url?: string | undefined;
 }) {
+  const t = useT();
   const size = byteSize === undefined ? null : formatBytes(byteSize);
   return (
     <Paper withBorder radius="md" px="md" py="xs" maw="80%">
@@ -167,7 +170,7 @@ export function ProducedFile({
           )}
           <Text fz={11} c="dimmed">
             {size ? `${size}${url ? "" : " · "}` : ""}
-            {url ? "" : "available when this reply finishes"}
+            {url ? "" : t("chat.fileWhenDone")}
           </Text>
         </Stack>
       </Group>
@@ -181,6 +184,7 @@ export function ProducedFile({
  * disappears inside the scroll container shoves the reply while it is being read.
  */
 export function RunningAgents({ paths }: { paths: string[][] }) {
+  const t = useT();
   if (paths.length === 0) {
     return null;
   }
@@ -188,7 +192,7 @@ export function RunningAgents({ paths }: { paths: string[][] }) {
     <Group gap={4}>
       {paths.map((path) => (
         <Badge key={path.join(">")} color={SUBAGENT_COLOR} radius="xl">
-          via {path.join(" → ")}
+          {t("chat.via", { path: path.join(" → ") })}
         </Badge>
       ))}
     </Group>
@@ -223,6 +227,11 @@ export const MessageView = memo(function MessageView({
   /** For a tool row: the arguments its call carried — see `storedToolArgs`. */
   callArgs?: string | undefined;
 }) {
+  // `memo` compares props, and the locale is not one — but a context change
+  // re-renders a consumer regardless of the memo, so switching language still
+  // redraws every message.
+  const t = useT();
+
   if (message.role === "user") {
     return (
       <Stack gap={4} align="flex-end">
@@ -238,7 +247,9 @@ export const MessageView = memo(function MessageView({
                 variant="light"
                 size="lg"
                 leftSection={<IconFileText size={14} />}
-                title={document.note ? `Read ${document.note}` : undefined}
+                title={
+                  document.note ? t("chat.documentRead", { note: document.note }) : undefined
+                }
               >
                 {document.name}
                 {document.note ? ` · ${document.note}` : ""}
@@ -254,7 +265,7 @@ export const MessageView = memo(function MessageView({
                 <GeneratedImage
                   key={`attached-${index}`}
                   src={image.url}
-                  alt="Attached image"
+                  alt={t("chat.attachedImage")}
                 />,
               ]
             : [],
@@ -286,7 +297,7 @@ export const MessageView = memo(function MessageView({
               <GeneratedImage
                 key={`image-${index}`}
                 src={image.url}
-                alt={image.prompt ?? "Generated image"}
+                alt={image.prompt ?? t("chat.generatedImage")}
               />,
             ]
           : [],
@@ -321,6 +332,7 @@ export const MessageView = memo(function MessageView({
 });
 
 export function LiveAssistant({ turn }: { turn: LiveTurn }) {
+  const t = useT();
   return (
     <Stack gap={4} align="flex-start">
       {turn.warnings.map((warning, index) => (
@@ -333,7 +345,7 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
         <GeneratedImage
           key={`image-${index}`}
           src={liveImageSrc(image)}
-          alt={image.prompt ?? "Generated image"}
+          alt={image.prompt ?? t("chat.generatedImage")}
         />
       ))}
       {turn.files.map((file, index) => (
@@ -344,7 +356,7 @@ export function LiveAssistant({ turn }: { turn: LiveTurn }) {
           <MarkdownContent content={turn.text} />
         ) : (
           <Text fz="sm" c="dimmed">
-            Thinking…
+            {t("chat.thinking")}
           </Text>
         )}
       </div>

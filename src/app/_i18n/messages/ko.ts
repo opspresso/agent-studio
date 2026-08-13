@@ -174,4 +174,28 @@ export const ko: Messages = {
   "overview.getStartedBody":
     "프로젝트는 프롬프트·에이전트·이미지 작업을 담고, 배포할 수 있는 버전으로 저장합니다. 하나를 만들어 버전에 Skill 과 MCP 도구를 붙인 뒤 Playground 에서, 에이전트 프로젝트라면 대화에서 시험해 보세요.",
   "overview.browseSkills": "Skills 둘러보기",
+
+  "chat.new": "새 대화",
+  "chat.list": "대화 목록",
+  "chat.none": "아직 대화가 없습니다.",
+  "chat.delete": "대화 삭제",
+  "chat.notFound": "대화를 찾을 수 없습니다.",
+  "chat.reloadFailed": "답변은 저장됐지만 대화를 다시 불러오지 못했습니다.",
+  "chat.jumpToLatest": "최신 메시지로 이동",
+  "chat.send": "보내기",
+  "chat.stop": "중지",
+  "chat.placeholder": "메시지를 입력하세요…",
+  "chat.firstPlaceholder": "첫 메시지를 입력하세요…",
+  "chat.pickProject": "에이전트 프로젝트를 고르고 첫 메시지를 보내세요.",
+  "chat.project": "프로젝트",
+  "chat.noAgentProjects": "에이전트 프로젝트가 없습니다",
+  "chat.noAgentProjectsBody":
+    "대화는 agent 프로젝트에서 실행됩니다. Projects 에서 하나 만들면 대화를 시작할 수 있습니다.",
+  "chat.thinking": "생각하는 중…",
+  "chat.via": "{path} 경유",
+  "chat.imageGone": "이 이미지는 더 이상 볼 수 없습니다.",
+  "chat.fileWhenDone": "답변이 끝나면 받을 수 있습니다",
+  "chat.attachedImage": "첨부한 이미지",
+  "chat.generatedImage": "생성된 이미지",
+  "chat.documentRead": "{note} 읽음",
 };
