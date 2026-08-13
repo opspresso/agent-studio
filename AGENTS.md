@@ -347,6 +347,11 @@ One line each — the linked section is the authority.
   forwards the caller unconditionally through `toRunInput`. Two dispatch points rebuilding
   the executor's input per branch is how it got dropped for `/predict` and
   `/chat/completions` while working on every surface that calls `executeAgent` directly.
+  **A transfer carries it too**, on `RunOrigin` beside the actor — a child is answering the
+  same person as its parent — and the child's own `callerContext` decides its own prompt. The
+  field said so from the day it was written while nothing populated or read it, so a child
+  that opted in ran anonymously: the checkbox on, the block missing, nothing saying so. Both
+  child prompt assemblies (`runLocalSubagent`, `runPromptSubagent`) go through `callerFor`.
 - **Stream author contract.** Top-level chunks are unauthored; only subagent chunks carry
   `author`. Filter with `isTopLevelChunk()` — never re-derive.
 - **Chat persistence is flattened but tool traffic *is* replayed**, and the replay has three

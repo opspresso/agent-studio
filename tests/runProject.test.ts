@@ -2211,3 +2211,105 @@ describe("executeProject dispatch carries the caller", () => {
     expect(prompt).not.toContain("Bruce");
   });
 });
+
+/**
+ * A transfer is not a second person's request — `RunOrigin` has said the caller
+ * travels the chain since it was written. Nothing populated or read the field,
+ * so a child version that had asked to be told who is asking ran anonymously:
+ * the checkbox on, the block missing, and nothing anywhere saying so.
+ */
+describe("a transfer carries who is asking", () => {
+  const CALLER = { displayName: "Bruce", timezone: "Asia/Seoul" };
+
+  /** A parent that transfers to `child`, whose version this test decides. */
+  function transferDeps(
+    channel: FakeChannel,
+    childParameters: VersionParameters,
+    childType: "agent" | "llm" = "agent",
+  ) {
+    const { deps } = executionDepsFixture(channel);
+    deps.projects.get = (async (name: string) => ({
+      ...projectFixture(),
+      name,
+      ...(name === "child" ? { projectType: childType } : {}),
+    })) as ExecutionDeps["projects"]["get"];
+    deps.versions.get = (async (projectName: string) =>
+      projectName === "child"
+        ? {
+            ...versionFixture(childParameters),
+            projectName: "child",
+            model: "gpt-child",
+          }
+        : null) as ExecutionDeps["versions"]["get"];
+    return deps;
+  }
+
+  const script = () =>
+    new FakeChannel([
+      [
+        toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"child","message":"go"}'),
+        usageChunk(1, 1),
+      ],
+      [contentChunk("child answer"), usageChunk(1, 1)],
+      [contentChunk("parent answer"), usageChunk(1, 1)],
+    ]);
+
+  async function childPrompt(channel: FakeChannel, deps: ExecutionDeps, parentOptedIn: boolean) {
+    await collect(
+      executeAgent(deps, {
+        project: projectFixture(),
+        version: {
+          ...versionFixture({ piiFiltering: false, callerContext: parentOptedIn }),
+          subagentList: [{ name: "child", type: "local" }],
+          maxTurn: 50,
+        },
+        messages: [{ role: "user", content: "delegate" }],
+        caller: CALLER,
+      }),
+    );
+    const childCall = channel.seenParams.find((params) => params.model === "gpt-child");
+    return String(childCall?.messages[0]?.content ?? "");
+  }
+
+  it("names the caller to a child that asked for one", async () => {
+    const channel = script();
+    const deps = transferDeps(channel, { piiFiltering: false, callerContext: true });
+
+    const prompt = await childPrompt(channel, deps, true);
+
+    expect(prompt).toContain("You are answering Bruce.");
+    expect(prompt).toContain("Asia/Seoul");
+  });
+
+  it("names it through a prompt child too, which runs by another path", async () => {
+    // A prompt project answers a transfer through `runPromptSubagent`, not the
+    // tool loop — the second of the two places a child's prompt is assembled,
+    // and the one a fix applied to the first would silently miss.
+    const channel = script();
+    const deps = transferDeps(channel, { piiFiltering: false, callerContext: true }, "llm");
+
+    const prompt = await childPrompt(channel, deps, true);
+
+    expect(prompt).toContain("You are answering Bruce.");
+  });
+
+  it("leaves a child that did not ask anonymous", async () => {
+    const channel = script();
+    const deps = transferDeps(channel, { piiFiltering: false });
+
+    const prompt = await childPrompt(channel, deps, true);
+
+    expect(prompt).not.toContain("Bruce");
+  });
+
+  it("lets the child's own opt-in decide, not its parent's", async () => {
+    // Each version's `callerContext` governs its own prompt. A parent that does
+    // not name the caller is not a statement about the project it transfers to.
+    const channel = script();
+    const deps = transferDeps(channel, { piiFiltering: false, callerContext: true });
+
+    const prompt = await childPrompt(channel, deps, false);
+
+    expect(prompt).toContain("You are answering Bruce.");
+  });
+});

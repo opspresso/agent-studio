@@ -527,7 +527,9 @@ people's names into prompts and into whatever the provider logs.
 
 The opt-in gates the lookup as well as the prompt. A version with it off causes no `users.info`
 call at all, so a project that has not opted in never sends a member's id to Slack's profile
-API. Resolved profiles are cached in memory per workspace (an hour; a failure, a minute), bounded
+API. A **transfer carries the caller** to the child (`RunOrigin`), where the child version's
+own opt-in decides again — so a name reaches only versions that asked for one, however many
+hops away, and a project whose owner never opted in never sees it. Resolved profiles are cached in memory per workspace (an hour; a failure, a minute), bounded
 in size, and never persisted.
 
 **A display name is attacker-controlled.** Anyone can set their own to anything, and it lands in

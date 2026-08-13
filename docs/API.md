@@ -257,7 +257,9 @@ profile). A project **API token** carries no caller — it acts on the owner's b
 is at the other end — and neither do trigger firings or inbound A2A. An image project is
 unaffected: its prompt is the rendered template, with no system prompt for the block to live
 in. `POST /api/projects/{name}/preview` shows the block exactly when a run from that page
-would carry it.
+would carry it. The caller **travels a transfer chain** — a subagent is answering the same
+person as its parent — and each version's own opt-in decides its own prompt: a parent that
+does not name the caller is not a statement about the project it transfers to.
 
 `POST /api/projects/{name}/preview` takes an optional `message` — the request to preview
 against, at most 8,000 characters. Only discovery reads it (an agent run's user turn comes from

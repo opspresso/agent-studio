@@ -21,7 +21,7 @@ import { descend, type RunOrigin } from "@/domain/execution/actor";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
-import { runClock, runStrategyFor, toEngineParameters } from "./deps";
+import { callerFor, runClock, runStrategyFor, toEngineParameters } from "./deps";
 import {
   buildImageEditor,
   buildImageGenerator,
@@ -288,6 +288,12 @@ export async function* runPromptSubagent(
         parameters: toEngineParameters(version),
         // The parent pinned this — a child must not say a different "now".
         now: runClock(deps),
+        // On this version's own opt-in, from the caller the origin carried down
+        // the chain. `RunOrigin` has said the caller travels since it was
+        // written; nothing populated or read it, so a child that asked to be
+        // told who is asking ran anonymously — the checkbox on, the block
+        // missing, and nothing anywhere saying so.
+        ...callerFor({ version, ...(origin.caller ? { caller: origin.caller } : {}) }),
         signal,
       },
     )) {
@@ -482,6 +488,9 @@ export async function* runLocalSubagent(
       parameters: toEngineParameters(version),
       // The parent pinned this — a child must not say a different "now".
       now: runClock(deps),
+      // See `runPromptSubagent`: this version's own `callerContext` decides,
+      // and the caller comes off the origin that descended the chain.
+      ...callerFor({ version, ...(origin.caller ? { caller: origin.caller } : {}) }),
       // Clamped to the parent's ceiling: the child continues the parent's turn
       // counter (`startTurn`), so a child version configured with a larger
       // maxTurn would raise the limit the whole run was started under.
