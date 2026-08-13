@@ -8,6 +8,19 @@ export interface UsageInfo {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /**
+   * Prompt tokens the provider served from its cache — a **subset** of
+   * {@link inputTokens}, already priced at the cached rate by `calculateCost`.
+   *
+   * Absent when the provider reported none, which keeps a usage chunk
+   * byte-identical to what it was for every channel that does not report the
+   * field at all. It is carried rather than dropped after pricing because the
+   * cache is the largest lever on an agent run's bill and the only one whose
+   * effect is invisible in every other number: a system prompt that stopped
+   * being cacheable costs more per turn while tokens, calls and the answer all
+   * look exactly as they did.
+   */
+  cachedTokens?: number;
 }
 
 /** One OpenAI-shaped tool call as it appears on assistant messages and deltas. */

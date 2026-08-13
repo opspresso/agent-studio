@@ -130,10 +130,22 @@ export function mergedDeltaChunk(
   };
 }
 
-export function usageChunk(promptTokens: number, completionTokens: number): ChannelChunk {
+export function usageChunk(
+  promptTokens: number,
+  completionTokens: number,
+  /** Prompt tokens the provider served from its cache, when it reports any. */
+  cachedTokens?: number,
+): ChannelChunk {
   return {
     choices: [],
-    usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens },
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      // Absent, not zero, unless a test asks for it: a channel that never
+      // reports the field is the common case and must stay distinguishable
+      // from one reporting a cold cache.
+      ...(cachedTokens === undefined ? {} : { prompt_tokens_details: { cached_tokens: cachedTokens } }),
+    },
   };
 }
 

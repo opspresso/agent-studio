@@ -29,6 +29,7 @@ const rows: UsageRow[] = [
     calls: { "openai/gpt-5-mini": 6 },
     inputTokens: { "openai/gpt-5-mini": 600 },
     outputTokens: { "openai/gpt-5-mini": 300 },
+    cachedTokens: { "openai/gpt-5-mini": 480 },
     costUsd: { "openai/gpt-5-mini": 1.2 },
   },
 ];
@@ -53,22 +54,39 @@ describe("totals", () => {
 describe("groupUsage", () => {
   it("groups by project, sorted by cost desc", () => {
     expect(groupUsage(rows, "project")).toEqual([
-      { key: "beta", cost: 1.2, calls: 6 },
-      { key: "alpha", cost: 1, calls: 14 },
+      { key: "beta", cost: 1.2, calls: 6, inputTokens: 600, cachedTokens: 480 },
+      { key: "alpha", cost: 1, calls: 14, inputTokens: 1400, cachedTokens: 0 },
     ]);
   });
 
   it("groups by provider, folding model ids by prefix", () => {
     expect(groupUsage(rows, "provider")).toEqual([
-      { key: "openai", cost: 2, calls: 10 },
-      { key: "google", cost: 0.2, calls: 10 },
+      { key: "openai", cost: 2, calls: 10, inputTokens: 1000, cachedTokens: 480 },
+      { key: "google", cost: 0.2, calls: 10, inputTokens: 1000, cachedTokens: 0 },
     ]);
   });
 
   it("groups by model across rows", () => {
     expect(groupUsage(rows, "model")).toEqual([
-      { key: "openai/gpt-5-mini", cost: 2, calls: 10 },
-      { key: "google/gemini-3.1-flash-lite", cost: 0.2, calls: 10 },
+      { key: "openai/gpt-5-mini", cost: 2, calls: 10, inputTokens: 1000, cachedTokens: 480 },
+      {
+        key: "google/gemini-3.1-flash-lite",
+        cost: 0.2,
+        calls: 10,
+        inputTokens: 1000,
+        cachedTokens: 0,
+      },
+    ]);
+  });
+
+  it("reads a day recorded before cached tokens existed as none, not as a cold cache", () => {
+    // Rows written before the field carry no map at all, and a row summing to
+    // zero cached tokens is what the breakdown renders as blank rather than 0%.
+    const legacy: DailyCostRow[] = [
+      { projectName: "alpha", date: "2026-01-01", calls: { m: 1 }, costUsd: { m: 1 } },
+    ];
+    expect(groupUsage(legacy, "project")).toEqual([
+      { key: "alpha", cost: 1, calls: 1, inputTokens: 0, cachedTokens: 0 },
     ]);
   });
 
@@ -81,8 +99,8 @@ describe("groupUsage", () => {
       { projectName: "beta", date: "2026-01-01", calls: { "google/gemini-3.1-flash-lite": 1 }, costUsd: { "google/gemini-3.1-flash-lite": 3 } },
     ];
     expect(groupUsage(mine, "project")).toEqual([
-      { key: "beta", cost: 3, calls: 1 },
-      { key: "alpha", cost: 1, calls: 2 },
+      { key: "beta", cost: 3, calls: 1, inputTokens: 0, cachedTokens: 0 },
+      { key: "alpha", cost: 1, calls: 2, inputTokens: 0, cachedTokens: 0 },
     ]);
     expect(groupUsage(mine, "provider").map((g) => g.key)).toEqual(["google", "openai"]);
     expect(groupUsage(mine, "model").map((g) => g.key)).toEqual([

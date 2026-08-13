@@ -14,6 +14,12 @@ export interface RecordUsageInput {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /**
+   * Of `inputTokens`, how many the provider served from its cache. Absent
+   * where nothing reported any — the field is additive, so a channel that
+   * never fills it records exactly what it always did.
+   */
+  cachedTokens?: number;
   /** yyyy-MM-dd; defaults to today (UTC). */
   date?: string;
   /**
@@ -39,6 +45,7 @@ export async function recordUsage(
     calls: 1,
     inputTokens: input.inputTokens,
     outputTokens: input.outputTokens,
+    cachedTokens: input.cachedTokens ?? 0,
     costUsd: input.costUsd,
     ...(input.actor ? { actor: input.actor } : {}),
   });
@@ -70,7 +77,10 @@ export function createUsageAggregator(
   /** Attributed to this caller; one run has exactly one, for all of its turns. */
   actor?: string,
 ): UsageAggregator {
-  const totals = new Map<string, RecordUsageInput & { date: string; calls: number }>();
+  const totals = new Map<
+    string,
+    RecordUsageInput & { date: string; calls: number; cachedTokens: number }
+  >();
   return {
     async record(input) {
       const date = input.date ?? todayUtc();
@@ -84,10 +94,13 @@ export function createUsageAggregator(
       if (existing) {
         existing.inputTokens += input.inputTokens;
         existing.outputTokens += input.outputTokens;
+        existing.cachedTokens += input.cachedTokens ?? 0;
         existing.costUsd += input.costUsd;
         existing.calls += 1;
       } else {
-        totals.set(key, { ...input, date, calls: 1 });
+        // Normalised on the way in, so the sum above never has to ask whether
+        // the first call of a (project, date, model) happened to report one.
+        totals.set(key, { ...input, date, calls: 1, cachedTokens: input.cachedTokens ?? 0 });
       }
     },
     async flush() {
@@ -103,6 +116,7 @@ export function createUsageAggregator(
             calls: total.calls,
             inputTokens: total.inputTokens,
             outputTokens: total.outputTokens,
+            cachedTokens: total.cachedTokens,
             costUsd: total.costUsd,
             // The run's actor, not the buffered record's: a subagent transfer
             // spends on a different project but is still the same person's run.

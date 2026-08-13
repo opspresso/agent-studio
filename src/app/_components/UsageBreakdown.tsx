@@ -4,6 +4,22 @@ import { formatUsd } from "@/app/_lib/formatUsd";
 import { DataTable } from "./DataTable";
 
 /**
+ * How much of a group's prompt the provider had cached, for a reader.
+ *
+ * A share rather than a token count: what a cache is worth is the proportion,
+ * and a row's absolute input tokens already scale with its calls. Blank — not
+ * `0%` — where nothing reported one, because "no provider on this row reports
+ * cached tokens" and "the cache is cold" are different facts, and printing the
+ * second for the first is how a chart lies about a lever nobody pulled.
+ */
+function cachedShare(group: UsageGroup): string {
+  if (group.cachedTokens <= 0 || group.inputTokens <= 0) {
+    return "";
+  }
+  return `${Math.round((group.cachedTokens / group.inputTokens) * 100)}%`;
+}
+
+/**
  * What the selected axis cost, largest first — the table under every cost
  * chart.
  *
@@ -32,6 +48,9 @@ export function UsageBreakdown({
             <Table.Th w={110} ta="right">
               Calls
             </Table.Th>
+            <Table.Th w={110} ta="right">
+              Cached
+            </Table.Th>
             <Table.Th w={140} ta="right">
               Cost
             </Table.Th>
@@ -40,7 +59,7 @@ export function UsageBreakdown({
         <Table.Tbody>
           {groups.length === 0 && (
             <Table.Tr>
-              <Table.Td colSpan={3}>
+              <Table.Td colSpan={4}>
                 <Text fz="sm" c="dimmed">
                   {loading ? "Loading…" : "No usage in this range."}
                 </Text>
@@ -62,6 +81,9 @@ export function UsageBreakdown({
               </Table.Td>
               <Table.Td ta="right" ff="monospace" c="dimmed">
                 {group.calls.toLocaleString()}
+              </Table.Td>
+              <Table.Td ta="right" ff="monospace" c="dimmed">
+                {cachedShare(group)}
               </Table.Td>
               <Table.Td ta="right" ff="monospace" fw={500}>
                 {formatUsd(group.cost)}
