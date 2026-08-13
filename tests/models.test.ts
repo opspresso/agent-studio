@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MODEL_CONFIGS,
   SUPPORTED_PROVIDERS,
+  applyModelConstraints,
   calculateCost,
   calculateImageCost,
   getVisibleModels,
@@ -229,5 +230,57 @@ describe("registry misses", () => {
     expect(body).toContain("# TYPE agentdure_unknown_model_calls_total counter");
     expect(body).toContain("agentdure_unknown_model_calls_total 1");
     expect(body).toContain("agentdure_unknown_models 1");
+  });
+});
+
+/**
+ * The registry's one behavioural rule, and the one that fails loudest when the
+ * data behind it is wrong: an agent run on a model missing the flag reaches the
+ * provider with a server-side reasoning default and is refused outright.
+ */
+describe("applyModelConstraints", () => {
+  const tools = [
+    { type: "function" as const, function: { name: "t", description: "", parameters: {} } },
+  ];
+
+  it("forces an explicit none for a reasoning-with-tools model, however the effort arrived", () => {
+    // Undefined is the case that bit: omitting the field lets the provider
+    // apply its own reasoning default, which still rejects the tools.
+    for (const reasoningEffort of [undefined, "low", "medium", "high"] as const) {
+      const params = {
+        model: "openai/gpt-5.6-luna",
+        messages: [],
+        tools,
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      };
+      expect(applyModelConstraints(params).reasoningEffort).toBe("none");
+    }
+  });
+
+  it("leaves a run with no tools alone", () => {
+    const params = { model: "openai/gpt-5.6-luna", messages: [], reasoningEffort: "high" as const };
+    expect(applyModelConstraints(params).reasoningEffort).toBe("high");
+  });
+
+  it("leaves a model without the restriction alone", () => {
+    const params = {
+      model: "openai/gpt-5.4",
+      messages: [],
+      tools,
+      reasoningEffort: "high" as const,
+    };
+    expect(applyModelConstraints(params).reasoningEffort).toBe("high");
+  });
+
+  it("carries the restriction across the whole GPT-5.6 generation", () => {
+    // Flagging only the model someone had tried is how `luna` shipped broken.
+    const family = MODEL_CONFIGS.filter((m) => m.id.startsWith("openai/gpt-5.6-"));
+    expect(family.length).toBeGreaterThan(1);
+    for (const model of family) {
+      expect({ id: model.id, flag: model.capabilities.reasoningWithTools }).toEqual({
+        id: model.id,
+        flag: false,
+      });
+    }
   });
 });

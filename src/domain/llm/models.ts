@@ -43,6 +43,12 @@ export interface ModelCapabilities {
    * False when the provider rejects `tools` together with `reasoning_effort`
    * on chat/completions (the provider's remedy is an explicit effort of
    * "none"). Absent means the combination is allowed.
+   *
+   * It is a property of the *generation*, not of one model: every GPT-5.6
+   * carries it. Flagging only the one that had been observed left the others
+   * failing the same way — an agent project on `luna` 400'd on every run,
+   * with no version setting that could avoid it, because the console offers
+   * no "none" effort and omitting the field is what the provider rejects.
    */
   reasoningWithTools?: boolean;
 }
@@ -113,7 +119,13 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     displayName: "GPT-5.6 Terra",
     // OpenAI's 2026-07-30 cut; the launch rate was 2.5 / 15.0 / 0.25.
     pricing: { inputPer1M: 2.0, outputPer1M: 12.0, cachedInputPer1M: 0.2 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    capabilities: {
+      tools: true,
+      structuredOutput: true,
+      imageInput: true,
+      reasoning: true,
+      reasoningWithTools: false,
+    },
     contextWindow: OPENAI_56_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
   },
@@ -123,7 +135,13 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     displayName: "GPT-5.6 Luna",
     // OpenAI's 2026-07-30 cut; the launch rate was 1.0 / 6.0 / 0.1.
     pricing: { inputPer1M: 0.2, outputPer1M: 1.2, cachedInputPer1M: 0.02 },
-    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    capabilities: {
+      tools: true,
+      structuredOutput: true,
+      imageInput: true,
+      reasoning: true,
+      reasoningWithTools: false,
+    },
     contextWindow: OPENAI_56_CONTEXT,
     maxTokens: OPENAI_MAX_OUTPUT,
   },
