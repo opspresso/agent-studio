@@ -6,19 +6,21 @@ import { IconPhoto } from "@tabler/icons-react";
 import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { ArtifactGallery } from "./_components/ArtifactGallery";
 import { listMyArtifacts, type ArtifactQuery } from "./api";
+import { useT } from "@/app/_i18n/provider";
 
 export default function ArtifactsPage() {
+  const t = useT();
   const load = useCallback((query: ArtifactQuery) => listMyArtifacts(query), []);
   return (
     <Stack gap="lg">
       <CatalogHeader
-        title="Artifacts"
-        description="Images and documents your runs produced. A run started by Slack, a trigger or an A2A call belongs to its project — those are on the project's own tab."
+        title={t("nav.artifacts")}
+        description={t("artifacts.lede")}
         Icon={IconPhoto}
       />
       <ArtifactGallery
         load={load}
-        emptyText="Nothing kept yet. Images and documents your runs produce show up here."
+        emptyText={t("artifacts.empty")}
       />
     </Stack>
   );

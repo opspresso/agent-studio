@@ -32,6 +32,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { deleteArtifact, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
+import { useT } from "@/app/_i18n/provider";
 
 type KindFilter = "all" | "image" | "document";
 
@@ -45,6 +46,7 @@ export function ArtifactGallery({
   /** A project's own tab already knows whose these are. */
   showProject?: boolean;
 }) {
+  const t = useT();
   const [artifacts, setArtifacts] = useState<ArtifactView[]>([]);
   const [nextBefore, setNextBefore] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -162,13 +164,13 @@ export function ArtifactGallery({
           value={kind}
           onChange={(value) => setKind(value as KindFilter)}
           data={[
-            { label: "All", value: "all" },
-            { label: "Images", value: "image" },
-            { label: "Documents", value: "document" },
+            { label: t("artifacts.all"), value: "all" },
+            { label: t("artifacts.images"), value: "image" },
+            { label: t("artifacts.documents"), value: "document" },
           ]}
         />
         {artifacts.length > 0 && (
-          <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter…" />
+          <CatalogSearch value={filter} onChange={setFilter} placeholder={t("artifacts.filter")} />
         )}
       </Group>
 
@@ -211,6 +213,7 @@ function ArtifactCard({
   // expired or already-deleted one fails at fetch time. Saying so beats a broken
   // image icon with no explanation.
   const [gone, setGone] = useState(false);
+  const t = useT();
   const available = artifact.url !== undefined && !gone;
 
   return (
@@ -286,7 +289,7 @@ function ArtifactCard({
               </Group>
             </Anchor>
           )}
-          <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label="Delete">
+          <ActionIcon variant="subtle" color="red" onClick={onDelete} aria-label={t("artifacts.delete")}>
             <IconTrash size={16} />
           </ActionIcon>
         </Group>

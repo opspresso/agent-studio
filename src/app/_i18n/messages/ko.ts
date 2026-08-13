@@ -410,6 +410,7 @@ export const ko: Messages = {
   "registry.description": "설명",
   "registry.modelSummary": "모델에게 보여줄 한 줄 요약",
   "registry.content": "본문 (마크다운)",
+  "registry.contentHeading": "본문",
   "registry.operatorNotes":
     "콘솔에 표시할 운영자 메모입니다. 모델에게는 전달되지 않고, 설명만 전달됩니다.",
   "registry.register": "등록",
@@ -448,4 +449,20 @@ export const ko: Messages = {
   "tools.namePlaceholder": "my-mcp",
   "tools.contentPlaceholder": "설치 단계, 주의사항, 링크…",
   "tools.descriptionPlaceholder": "이미지 URL 을 가져와 바이트를 돌려줍니다",
+
+  "plugins.lede":
+    "GitHub 에서 동기화한 Agent Plugins 패키지입니다. 각 패키지는 Skill 과 MCP 서버를 묶으며, 패키지가 선언한 모든 이름은 저장소가 소유합니다.",
+  "plugins.filter": "플러그인 검색…",
+  "plugins.empty": "아직 플러그인이 없습니다. 설정에서 저장소와 토큰을 등록한 뒤 동기화하세요.",
+  "plugins.noSkills": "이 플러그인은 Skill 을 선언하지 않습니다.",
+  "plugins.noServers": "이 플러그인은 MCP 서버를 선언하지 않습니다.",
+
+  "artifacts.lede":
+    "실행이 만들어 낸 이미지와 문서입니다. Slack·트리거·A2A 호출로 시작된 실행의 결과물은 해당 프로젝트에 속하며, 프로젝트 탭에서 볼 수 있습니다.",
+  "artifacts.empty": "아직 보관된 것이 없습니다. 실행이 만든 이미지와 문서가 여기에 표시됩니다.",
+  "artifacts.filter": "검색…",
+  "artifacts.delete": "삭제",
+  "artifacts.all": "전체",
+  "artifacts.images": "이미지",
+  "artifacts.documents": "문서",
 };
