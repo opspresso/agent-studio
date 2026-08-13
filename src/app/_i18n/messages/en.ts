@@ -466,6 +466,55 @@ export const en = {
   "mcpConn.authorizedBy": "Authorized by {who} on {when}",
   "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",
+
+  // Wording the four registry catalogs (skills, tools, agents, plugins) share.
+  // Each page had its own copy of these; a reader meets them on all four.
+  "registry.nameLabel": "Name",
+  "registry.nameHint": "Lowercase letters, digits, and hyphens only.",
+  "registry.description": "Description",
+  "registry.modelSummary": "One-line summary shown to the model",
+  "registry.content": "Content (markdown)",
+  "registry.operatorNotes":
+    "Operator notes for the console. Not sent to the model — only the description is.",
+  "registry.register": "Register",
+  "registry.create": "Create",
+  "registry.url": "URL",
+  "registry.headersEmpty": "No headers. Add one if the endpoint needs auth.",
+
+  // Skills.
+  "skills.lede":
+    "Markdown behavior instructions loaded on demand by the agent engine. Synced skills arrive through Plugins.",
+  "skills.new": "New skill",
+  "skills.filter": "Filter skills…",
+  "skills.empty": "No skills yet. Sync a plugins repo, or create one here.",
+  "skills.namePlaceholder": "my-skill",
+  "skills.contentPlaceholder": "# Instructions…",
+  "skills.noContent": "No content.",
+
+  // External agents.
+  "agents.lede":
+    "External OpenAI-compatible and A2A endpoints a project version can bind as remote subagents.",
+  "agents.register": "Register agent",
+  "agents.registerTitle": "Register external agent",
+  "agents.filter": "Filter agents…",
+  "agents.empty":
+    "No external agents yet. Register an OpenAI-compatible or A2A endpoint to use it as a remote subagent.",
+  "agents.namePlaceholder": "my-agent",
+  "agents.protocol": "Protocol",
+  "agents.cardUrl": "Agent Card URL",
+  "agents.sendPlaceholder": "Send one message to the agent…",
+
+  // MCP servers.
+  "tools.lede":
+    "MCP servers that expose tools to agents over streamable HTTP — registered once, bound per version.",
+  "tools.register": "Register MCP",
+  "tools.runManaged": "Run managed",
+  "tools.registerTitle": "Register MCP server",
+  "tools.filter": "Filter servers…",
+  "tools.empty": "No MCP servers yet. Sync a plugins repo, or register one here.",
+  "tools.namePlaceholder": "my-mcp",
+  "tools.contentPlaceholder": "Setup steps, caveats, links…",
+  "tools.descriptionPlaceholder": "Fetches an image URL and returns its bytes",
 } as const;
 
 export type MessageKey = keyof typeof en;

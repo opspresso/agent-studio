@@ -25,8 +25,10 @@ import { CatalogHeader } from "@/app/_components/CatalogHeader";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { PLUGIN_COLOR } from "@/app/_components/badgeColors";
 import { useViewer } from "@/app/_lib/useViewer";
+import { useT } from "@/app/_i18n/provider";
 
 export default function SkillsPage() {
+  const t = useT();
   const viewer = useViewer();
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,11 +55,11 @@ export default function SkillsPage() {
   return (
     <Stack gap="lg">
       <CatalogHeader
-        title="Skills"
-        description="Markdown behavior instructions loaded on demand by the agent engine. Synced skills arrive through Plugins."
+        title={t("nav.skills")}
+        description={t("skills.lede")}
         Icon={IconBook2}
       >
-        {viewer?.isAdmin && <Button onClick={open}>New skill</Button>}
+        {viewer?.isAdmin && <Button onClick={open}>{t("skills.new")}</Button>}
       </CatalogHeader>
 
       {error && (
@@ -67,13 +69,13 @@ export default function SkillsPage() {
       )}
 
       {skills.length > 0 && (
-        <CatalogSearch value={filter} onChange={setFilter} placeholder="Filter skills…" />
+        <CatalogSearch value={filter} onChange={setFilter} placeholder={t("skills.filter")} />
       )}
 
       <CardGrid
         loading={loading}
         empty={skills.length === 0}
-        emptyText="No skills yet. Sync a plugins repo, or create one here."
+        emptyText={t("skills.empty")}
       >
         {skills
           .filter((skill) => matchesFilter(filter, skill.name, skill.description))
@@ -122,6 +124,7 @@ function CreateSkillModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
@@ -157,34 +160,34 @@ function CreateSkillModal({
     <FormModal
       opened={opened}
       onClose={onClose}
-      title="New skill"
+      title={t("skills.new")}
       error={error}
       onSubmit={submit}
-      submitLabel="Create"
+      submitLabel={t("registry.create")}
       submitting={submitting}
     >
       <TextInput
-        label="Name"
+        label={t("registry.nameLabel")}
         value={name}
         onChange={(e) => setName(e.currentTarget.value)}
         onBlur={() => setName(toSlug(name))}
-        placeholder="my-skill"
+        placeholder={t("skills.namePlaceholder")}
         required
-        description="Lowercase letters, digits, and hyphens only."
+        description={t("registry.nameHint")}
         inputWrapperOrder={["label", "input", "description", "error"]}
       />
       <TextInput
-        label="Description"
+        label={t("registry.description")}
         value={description}
         onChange={(e) => setDescription(e.currentTarget.value)}
-        placeholder="One-line summary shown to the model"
+        placeholder={t("registry.modelSummary")}
         required
       />
       <Textarea
-        label="Content (markdown)"
+        label={t("registry.content")}
         value={content}
         onChange={(e) => setContent(e.currentTarget.value)}
-        placeholder="# Instructions…"
+        placeholder={t("skills.contentPlaceholder")}
         autosize
         minRows={8}
         maxRows={30}
