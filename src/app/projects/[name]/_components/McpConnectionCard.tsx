@@ -9,7 +9,7 @@
  * Save — which is why the modal it sits in says so.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   beginMcpAuthorization,
   disconnectMcp,
@@ -38,9 +38,18 @@ const STATUS_COLOR: Record<McpConnectionView["status"], string> = {
 export function McpConnectionCard({
   projectName,
   serverName,
+  onConnectionChanged,
 }: {
   projectName: string;
   serverName: string;
+  /**
+   * Called whenever the project's credentials for this server change — an
+   * authorization finishing, credentials saved, a disconnect. What the server
+   * offers depends on them, so anything showing that has to be told; the card
+   * cannot know who is listening, which is why this is a signal rather than a
+   * refresh of something it owns.
+   */
+  onConnectionChanged?: () => void;
 }) {
   const [server, setServer] = useState<McpServer | null>(null);
   const [connection, setConnection] = useState<McpConnectionView | undefined>();
@@ -51,6 +60,11 @@ export function McpConnectionCard({
   const [clientSecret, setClientSecret] = useState("");
   const t = useT();
   const locale = useLocale();
+  // Held in a ref so the listener below does not depend on the callback's
+  // identity: callers pass an inline arrow, and re-registering the popup
+  // listener every render opens a window where the message lands on nothing.
+  const changed = useRef(onConnectionChanged);
+  changed.current = onConnectionChanged;
 
   const refresh = useCallback(async () => {
     // Settled independently on purpose. Only the registry entry can say whether
@@ -100,6 +114,7 @@ export function McpConnectionCard({
         const outcome = JSON.parse(event.data) as { ok?: boolean; error?: string };
         if (outcome.ok === true) {
           void refresh();
+          changed.current?.();
         } else if (outcome.ok === false && outcome.error) {
           setError(outcome.error);
         }
@@ -111,12 +126,22 @@ export function McpConnectionCard({
     return () => window.removeEventListener("message", onMessage);
   }, [refresh]);
 
-  async function run(action: () => Promise<void>) {
+  /**
+   * `changesCredentials` is false for the Connect button, which only opens the
+   * popup — the authorization finishes later, and the callback above is what
+   * says so. Signalling here instead would reload a tool list against
+   * credentials that have not changed yet, and on *Reauthorize* would replace a
+   * working list with a failure while the reader is still in the popup.
+   */
+  async function run(action: () => Promise<void>, changesCredentials = false) {
     setBusy(true);
     setError(null);
     try {
       await action();
       await refresh();
+      if (changesCredentials) {
+        changed.current?.();
+      }
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : String(actionError));
     } finally {
@@ -228,7 +253,7 @@ export function McpConnectionCard({
                   // so an empty one means "clear it", not "I typed nothing".
                   clientSecret,
                 });
-              })
+              }, true)
             }
           >
             {t("mcpConn.saveCredentials")}
@@ -252,7 +277,7 @@ export function McpConnectionCard({
             variant="default"
             color="red"
             disabled={busy}
-            onClick={() => run(async () => disconnectMcp(projectName, serverName))}
+            onClick={() => run(async () => disconnectMcp(projectName, serverName), true)}
           >
             {t("mcpConn.disconnect")}
           </Button>

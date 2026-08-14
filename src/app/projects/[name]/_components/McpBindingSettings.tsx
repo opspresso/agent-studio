@@ -45,11 +45,18 @@ export function McpBindingSettings({
   save,
   tools,
   headers,
+  onConnectionChanged,
 }: {
   projectName: string;
   serverName: string;
   onClose: () => void;
   save: VersionSave;
+  /**
+   * Forwarded to the connection card. The tool list above it is what a changed
+   * connection invalidates, and the caller owns that list — this dialog only
+   * puts the two in the same place.
+   */
+  onConnectionChanged?: () => void;
   /** Tool selector for this binding, rendered by the caller that owns the value. */
   tools: React.ReactNode;
   /** Header-override editor for this binding, likewise. */
@@ -74,7 +81,11 @@ export function McpBindingSettings({
           {headers}
         </Section>
         <Section title={t("mcpSettings.connection")} note={t("mcpSettings.connectionNote")}>
-          <McpConnectionCard projectName={projectName} serverName={serverName} />
+          <McpConnectionCard
+            projectName={projectName}
+            serverName={serverName}
+            onConnectionChanged={onConnectionChanged}
+          />
         </Section>
 
         <Group

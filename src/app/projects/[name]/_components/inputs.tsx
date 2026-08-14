@@ -286,10 +286,19 @@ function ToolSelector({
   selected,
   onChange,
   load,
+  reloadOn = 0,
 }: {
   selected: string[] | undefined;
   onChange: (tools: string[]) => void;
   load: () => Promise<McpTool[]>;
+  /**
+   * Bumped when the project's connection to this server changes. An OAuth
+   * server answers `401` until the project has authorized, and the connection
+   * card that authorizes it is in the same dialog as this list — so without a
+   * signal the reader authorizes, watches the card go green, and the tools
+   * above it stay on the failure they were loaded with.
+   */
+  reloadOn?: number;
 }) {
   const [tools, setTools] = useState<McpTool[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -297,6 +306,11 @@ function ToolSelector({
 
   useEffect(() => {
     let cancelled = false;
+    // Back to loading, not "keep the old answer until the new one lands": a
+    // stale error is what this reload exists to clear, and a stale *list* would
+    // be the tools of the credentials the project no longer uses.
+    setTools(null);
+    setError(null);
     load().then(
       (fetched) => {
         if (!cancelled) {
@@ -312,10 +326,12 @@ function ToolSelector({
     return () => {
       cancelled = true;
     };
-    // The loader closes over a stable binding name; refetching per render would
-    // hammer the MCP server on every keystroke elsewhere in the form.
+    // `load` is deliberately not a dependency: it closes over a stable binding
+    // name but is rebuilt every render, so depending on it would refetch on
+    // every keystroke elsewhere in the form. `reloadOn` is the explicit signal
+    // that something the answer depends on actually changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reloadOn]);
 
   if (error) {
     // Deliberately not "leaving this unset offers every tool": a run that cannot
@@ -489,6 +505,12 @@ export function McpBindingInput({
   /** Which binding's settings modal is open; one at a time. */
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   /**
+   * Bumped when the open binding's connection changes, which re-runs its tool
+   * load. Held here rather than in the dialog because the tool selector is
+   * built here — the dialog takes it as a node and has nothing to reload.
+   */
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
+  /**
    * Rows being edited, per server. The saved binding cannot hold them: a row
    * whose header name is still blank has no place in an override map, so
    * deriving rows from the binding would delete a freshly added row before it
@@ -607,10 +629,12 @@ export function McpBindingInput({
             serverName={settingsFor}
             onClose={() => setSettingsFor(null)}
             save={save}
+            onConnectionChanged={() => setConnectionEpoch((epoch) => epoch + 1)}
             tools={
               <ToolSelector
                 selected={values.find((v) => v.name === settingsFor)?.tools}
                 onChange={(tools) => setTools(settingsFor, tools)}
+                reloadOn={connectionEpoch}
                 load={() =>
                   listProjectMcpTools(
                     projectName,
