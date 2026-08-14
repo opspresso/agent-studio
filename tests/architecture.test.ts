@@ -862,6 +862,18 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/domain/mcp/types.ts",
   },
   {
+    // The one place drift is fatal by specification rather than by consequence:
+    // an authorization server rejects the authorization outright when the
+    // `client_id` *inside* a metadata document differs from the URL it fetched
+    // the document from. Three sites want to build that address — the document
+    // route, the connection that presents it, and whatever renders it next — so
+    // the source comment already argues the rule; without this it was argued and
+    // not fixed, which is the failure the convention names.
+    what: "the address a project's client ID metadata document is served at",
+    pattern: /MCP_CLIENT_METADATA_PATH\}\/\$\{projectName\}/,
+    owner: "src/application/mcp/mcpAuthUseCases.ts",
+  },
+  {
     // The two ways an MCP entry reaches an address the SSRF guard rejects:
     // provenance (we started the container) and declaration (an operator put the
     // host's suffix in this deployment's configuration). Six call sites ask —

@@ -136,14 +136,16 @@ describe("ToolManager discovery over the cache", () => {
   it("serves a warm tool list without any request, and connects only when a tool is called", async () => {
     const first = stubMcpServer();
     await new ToolManager([server()]).init();
-    // The probe, then the catalogue. Nothing else: no handshake, no standalone
-    // stream, no session.
+    // The probe, then the catalogue, and nothing else — because this stub
+    // answers the probe. The handshake, the standalone stream and the session
+    // belong to the other era, which the same client reaches when a server
+    // needs it.
     expect(first).toEqual(["server/discover", "tools/list"]);
     vi.unstubAllGlobals();
 
     // Second run, same server and credentials: nothing on the wire. This is the
-    // whole point — every chat turn used to pay the handshake even when the
-    // model called no tool at all.
+    // whole point — every chat turn used to pay a connect even when the model
+    // called no tool at all.
     const second = stubMcpServer();
     const manager = new ToolManager([server()]);
     await manager.init();

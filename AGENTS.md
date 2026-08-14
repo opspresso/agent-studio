@@ -149,6 +149,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 |---|---|
 | The shape of an MCP tool | `src/domain/mcp/types.ts` |
 | Which hosts may skip the outbound URL guard | `src/domain/mcp/types.ts` |
+| The address a project's client ID metadata document is served at | `clientMetadataUrl` in `src/application/mcp/mcpAuthUseCases.ts` — drift here is fatal by specification: an authorization server refuses when the document's own `client_id` differs from the URL it fetched |
 | Interpreting `plugin.json`/`mcp.json`, and which MCP transports a plugin may bind | `src/domain/plugin/types.ts` |
 | The Agent Plugins name rule | `isPluginName` in `src/domain/plugin/types.ts` |
 | Which storage errors mean a lost conditional write | `src/application/errors.ts` |
@@ -290,7 +291,13 @@ One line each — the linked section is the authority.
   registration breaks a working entry for a reason its owner cannot fix. Discovery cached per
   `url + headers`, managed servers on loopback by provenance, per-project OAuth connections.
   The SSRF guard, the response byte ceiling, the lazy connect and the expired-session retry
-  are the session's own; the SDK supplies none of them. →
+  are the session's own; the SDK supplies none of them. **The SDK is pinned to an exact
+  version** — `2.0.0`, no caret, beside `next` and `react` — because four of its behaviours
+  are load-bearing here and none is covered by semver: which revision
+  `LATEST_PROTOCOL_VERSION` names (a bump into the 2026 era makes the handshake fallback
+  useless), what `mode: "auto"` falls back to, that `listMaxPages` throws rather than
+  truncating, and the `SdkErrorCode` values `unusableServerReason` reads. Widening it to `^`
+  is a protocol change, not a dependency update. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp)
 - **Capability catalog** — one global index (skills, MCP servers *and* their tools, external
   agents) rebuilt by a CronJob tick, never on a registry write. A version opting into
