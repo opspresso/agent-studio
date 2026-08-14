@@ -1580,6 +1580,62 @@ Events are deduplicated exactly-once via `slackEventRepository.claim` (a conditi
 claim is a **lease** settled by `settle` — an instance that dies mid-processing leaves a
 reclaimable claim rather than an event recorded as handled by nobody.
 
+#### Which events are for the bot
+
+The app subscribes to `message.channels` and `message.groups`, so it receives **every message in
+every channel it was invited to** — not the workspace, but far more than is for it. Deciding
+which of those to answer is one function, `classifySlackEvent`
+(`src/application/slack/engagement.ts`), and **it runs in the route ahead of the dedup claim**.
+That ordering is the cost contract: a message nobody addressed costs a signature check and
+nothing else — no write, no run, and no reply that would have to be taken back. It is also what
+answers *a run that decides not to answer*: a channel run opens its reply as a progress note the
+moment it starts, so a decision made inside the run could only ever retract something already on
+screen. Made here it is not a run at all.
+
+The funnel, in order:
+
+1. **the bot's own message** — first, because everything below can start a run, and with
+   `message.channels` subscribed the bot's own reply lands in a thread it is engaged in, which is
+   the one shape that answers itself forever. `bot_id` is not enough on its own (a file shared
+   through the external upload flow is attributed to the bot *user*), so the app's own id from
+   `authorizations` is checked too;
+2. **an `app_mention`** — always answered;
+3. **a DM** — every message in one is addressed to the bot, mention or not;
+4. **a thread the bot already answered in** — the only branch that needs storage;
+5. **a keyword the project named** (`SlackIntegration.channelKeywords`, case-insensitive
+   substring — substring because Korean glues particles onto nouns and a word-boundary rule would
+   never fire);
+6. otherwise nothing.
+
+Only step 4 costs a read, and only a *reply* reaches it: ordinary channel traffic carries no
+`thread_ts` and is dropped by step 6 without touching the database. Engagement is a row per
+channel thread (`slackThreadRepository`) with a day-long window
+(`SLACK_ENGAGEMENT_TTL_SECONDS`) refreshed on every reply, written after the reply because that
+is what makes it true. A DM writes none — every message in one already qualifies.
+
+**A channel mention arrives twice**, once as `app_mention` and once as the `message.channels` the
+same text produces, under two event ids the claim cannot join. The mention is the canonical
+delivery, so the `message` copy is dropped. This is applied to channels only: whether
+`app_mention` also fires in a DM is not something the gate depends on.
+
+#### Reading the workspace
+
+A version may opt into four read-only tools (`parameters.slackWorkspace`): `SlackHistory`,
+`SlackThread`, `SlackUser` and `SlackChannels`. The bot already holds the scopes; what was
+missing was a way for a *run* to spend them. `SlackChannels` exists because every other Slack
+call takes an id while a person names a channel.
+
+The engine routes all four names to one injected reader
+(`AgentCapabilityDeps.readSlack`), which holds the bot token — so *which* workspace is read is
+never the model's to choose. The composition root binds it: resolving a project's token is the
+Slack slice's knowledge, and reaching for it from execution makes the two slices mutually
+dependent, which `tests/architecture.test.ts` refuses. `SlackReaderPort`
+(`src/domain/slack/reader.ts`) is the read half both sides can name, and `SlackClientPort`
+extends it rather than restating it.
+
+What the tools may hand back is bounded twice over — see
+[SECURITY.md](SECURITY.md#reading-the-slack-workspace).
+
 ### A2A
 
 **Inbound**: every project with a published version serves a public Agent Card and a JSON-RPC

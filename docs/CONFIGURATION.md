@@ -299,6 +299,16 @@ snapshot entirely while the branch head matches the last clean report.
 |---|---|---|---|
 | `SLACK_LOADING_INDICATOR` | `:hourglass_flowing_sand:` | — | Appended to a Slack reply while it is still being written, then dropped by the final edit. **Only on the edit-in-place fallback** — a streamed reply is marked as still arriving by Slack itself. A workspace with its own spinner emoji names it here; the default is built in, because a custom name a workspace has not defined renders as literal text. |
 
+Per-project Slack settings — the bot token, signing secret, suggested prompts and the **channel
+keywords** that wake the bot without a mention — live on the project, not in the environment
+(`/projects/{name}/settings`). Whether a version's runs may *read* the workspace is a version
+parameter (`slackWorkspace`), off by default.
+
+**The generated manifest changes with a release.** It now subscribes to `message.channels` and
+`message.groups` and asks for `channels:read`; an app installed before that keeps the scopes and
+events it was installed with, so a channel follow-up and the `SlackChannels` tool stay inert
+until the manifest is applied again and the app reinstalled.
+
 ## A2A
 
 | Variable | Default | Runtime | Notes |
@@ -384,6 +394,11 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Slack thread title / history image lookback | `60` chars / `10` messages | `src/application/slack/handleSlackEvent.ts` |
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |
 | Slack prompt title / message / agent description | `80` / `500` / `300` chars | `src/domain/slack/types.ts` |
+| Slack channel keywords per project / length each | `20` / `2`–`50` chars | `src/domain/slack/types.ts` |
+| How long the bot stays engaged in a channel thread it answered in (refreshed on every reply) | `24h` | `src/infrastructure/db/ttl.ts` |
+| Messages one `SlackHistory`/`SlackThread` read returns (default / ceiling) | `20` / `100` | `src/application/slack/workspaceRead.ts` |
+| Channels one `SlackChannels` listing returns | `200` | `src/application/slack/workspaceRead.ts` |
+| People one Slack transcript resolves to names | `25` | `src/application/slack/workspaceRead.ts` |
 | Slack reply write cadence (stream / edit) | `1s` / `3s` | `src/application/slack/replyStream.ts` |
 | Slack status refresh (Slack expires it at `2m`) | `45s` | `src/application/slack/replyStream.ts` |
 | Slack profile cache (success / failure / entries) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |

@@ -198,6 +198,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | What a tool result has to do, and in what order | `createToolResultEmitter` in `src/application/llm/toolResultBudget.ts` |
 | How the execution facade dispatches an agent project | `src/application/execution/deps.ts` |
 | How a Slack reply is delivered, progress included | `src/application/slack/replyStream.ts` — one report, rendered by whichever mechanism the surface has: a DM's status line or a channel stream's `task_update` axis. Neither is the definition of the other |
+| Which delivered Slack events are for the bot, the loop guard included | `src/application/slack/engagement.ts` |
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts`; the streaming chunk shapes it passes are `SlackChunk` in `src/domain/slack/types.ts`, which is where the adapter can also reach them |
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
 | User-document caps | `src/domain/llm/documentLimits.ts` |
@@ -314,6 +315,14 @@ One line each — the linked section is the authority.
 - **Slack / A2A / triggers** — per-project bots, both A2A directions, published-only webhook
   and schedule runs deduplicated by conditional claims; a CronJob ticks the schedule scan. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#slack)
+- **Slack engagement** — the bot receives every message in every channel it belongs to, and
+  `classifySlackEvent` decides which are for it **ahead of the dedup claim**, so an ignored one
+  costs no write and opens no reply. Own message → mention → DM → a thread it answered in
+  (a day-long window) → a project keyword → nothing. →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#which-events-are-for-the-bot)
+- **Slack workspace reads** — four read-only tools behind a version opt-in, all routed to one
+  injected reader that holds the token. No writes and no email, by construction rather than
+  omission. → [SECURITY.md](docs/SECURITY.md#reading-the-slack-workspace)
 - **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it
   plus the transfer chain down every subagent hop. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#usage-and-cost-attribution)

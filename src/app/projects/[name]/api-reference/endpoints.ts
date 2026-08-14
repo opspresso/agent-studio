@@ -499,7 +499,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: eventsPath,
       title: "Slack events webhook",
       description:
-        "Slack delivers app_mention and message.im events here. Requests are verified with this project's Slack signing secret (HMAC) — it is not called manually.",
+        "Slack delivers app_mention, message.im and message.channels/message.groups events here. Requests are verified with this project's Slack signing secret (HMAC) — it is not called manually. Most channel messages are answered with ok and nothing else: only a mention, a DM, a follow-up in a thread the bot answered in, or a project keyword starts a run.",
       auth: "slack-signature",
       streaming: false,
       errorCodes: [401],
