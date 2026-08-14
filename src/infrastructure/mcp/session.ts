@@ -6,17 +6,29 @@
  * "Test connection" probe. A second implementation had already drifted from
  * this one on headers, framing and timeouts.
  *
- * **This client speaks revision `2026-07-28` and nothing else.** No probe, no
- * `initialize` fallback: every connection states the pinned revision and a
- * server that does not offer it is refused, with the reason said out loud. The
- * revision it drops was not a small one to keep — a handshake, a session id, the
- * expiry recovery around it, and a whole second shape for every request — and
- * carrying both is what makes a client quietly wrong in the seams between them.
+ * **This client speaks both protocol eras**, and which one a connection uses is
+ * the server's answer rather than this deployment's choice. Revision
+ * `2026-07-28` removed the `initialize` handshake, so every connection opens
+ * with the `server/discover` probe and falls back to the handshake for a server
+ * that does not recognise it. Pinning the new revision instead was tried and
+ * reverted: an MCP server is somebody else's deployment on somebody else's
+ * release schedule, and refusing every one that has not moved yet turns a
+ * working registry entry into a broken one for a reason its owner cannot fix.
+ *
+ * The cost of carrying both is real and lives in this file: a legacy connection
+ * mints a server-side session that has to be recovered when it expires
+ * ({@link McpSession.withSessionRecovery}) and released when the run ends, and
+ * neither exists on a modern one. That is the trade — a seam kept here so that
+ * no registry entry has to be upgraded in step with this app.
  *
  * **Why an SDK here, when `application` may name none.** This is the adapter
- * layer, where a protocol client belongs, and this revision is not small either:
- * the per-request `_meta` envelope, `Mcp-Param-*` mirroring from a tool's own
- * schema, `server/discover`, multi round-trip results.
+ * layer, where a protocol client belongs, and the protocol stopped being small:
+ * a client now has to detect which era a server implements and speak either the
+ * handshake or the per-request `_meta` envelope — with `Mcp-Param-*` mirroring,
+ * `server/discover` and multi round-trip results behind it. Hand-rolling that
+ * over `fetch` was tractable while the protocol was one handshake and two verbs;
+ * it is not now, and the era detection is the part that is easiest to get subtly
+ * wrong.
  *
  * What this file keeps is everything the SDK has no opinion about, and each of
  * these was a defect once: the SSRF guard the deployment requires
@@ -43,14 +55,21 @@ import { cutCodePoints } from "@/shared/utf8Text";
 import { withTimeout } from "@/shared/withTimeout";
 
 /**
- * The revision this client speaks. Pinned, not proposed: a server offering
- * anything else is refused rather than met half-way.
+ * The revision this client probes with — the newest it can speak. Not a version
+ * it insists on: the SDK adopts whatever the server turns out to speak.
  *
- * Written here rather than taken from the SDK, whose `LATEST_PROTOCOL_VERSION`
- * names the newest *legacy* revision — the one it would offer in a handshake
- * this client no longer performs.
+ * Written here rather than re-exported, because the SDK's
+ * `LATEST_PROTOCOL_VERSION` names something else — the newest *legacy* revision,
+ * which is what it proposes in the `initialize` handshake once the probe has
+ * found a 2025-era server. Both travel, on different requests, so exporting one
+ * under this name would make the other look like a bug when it appeared on the
+ * wire. Kept in step with the SDK by {@link ../../../tests/toolManager.test.ts},
+ * which asserts the probe actually states it.
  */
 export const PROTOCOL_VERSION = "2026-07-28";
+
+/** The revision proposed to a server that predates the probe. */
+export { LATEST_PROTOCOL_VERSION as LEGACY_PROTOCOL_VERSION } from "@modelcontextprotocol/client";
 
 /** A tool may legitimately take minutes; the model is waiting on its answer. */
 export const MCP_CALL_TIMEOUT_MS = 120_000;
@@ -150,10 +169,11 @@ function boundedFetch(loopback: boolean, runSignal: () => AbortSignal | undefine
 /**
  * The request, cancelled by the run as well as by whatever the SDK asked for.
  *
- * The SDK forwards a caller's `signal` to the transport only where the
- * connection has a per-request stream, and never to the era probe that opens
- * one. Merging it here is what makes a cancelled run stop talking rather than
- * hold a socket until the server answers or the deadline passes.
+ * The SDK forwards a caller's `signal` to the transport only on a modern
+ * connection with a per-request stream; on a 2025-era server it rejects the
+ * promise and leaves the POST running, holding a socket until the server answers
+ * or the call deadline passes. Merging it here is what makes a cancelled run
+ * actually stop talking.
  */
 function withSignal(init: RequestInit | undefined, signal: AbortSignal | undefined): RequestInit {
   if (!signal) {
@@ -170,6 +190,12 @@ export class McpSession {
   private connecting: Promise<Client> | undefined;
   /** Name, version and negotiated protocol from the connection; "" until then. */
   private serverDescription = "";
+  /**
+   * Set once {@link end} starts, so teardown is not cancelled by the very signal
+   * that caused it. A run aborted mid-flight still has a server-side session to
+   * release, and releasing it is the one request that must outlive the run.
+   */
+  private tearingDown = false;
 
   constructor(
     private readonly url: string,
@@ -217,19 +243,19 @@ export class McpSession {
 
   private async connect(): Promise<Client> {
     const transport = new StreamableHTTPClientTransport(new URL(this.url), {
-      fetch: boundedFetch(this.loopback, () => this.signal),
+      fetch: boundedFetch(this.loopback, () => (this.tearingDown ? undefined : this.signal)),
       // The registry entry's own headers — a bearer token, a tenant id. Applied
       // as transport defaults so every request carries them, including the
       // era probe, which is the first request a server ever sees from us.
       requestInit: { headers: this.headers },
     });
     const client = new Client(CLIENT_INFO, {
-      // Pinned rather than negotiated: this deployment speaks one revision, so a
-      // server that does not offer it is a server this client cannot use, and
-      // saying that is worth more than falling back to a shape the rest of this
-      // file no longer accounts for. `mode: 'legacy'` is the SDK's default,
-      // which would make this a 2025-era client without a word.
-      versionNegotiation: { mode: { pin: PROTOCOL_VERSION } },
+      // Probe first, handshake if the probe is not recognised — which is what
+      // lets one registry hold servers on either era. Neither of the SDK's
+      // other modes will do: `'legacy'` is the default and would make this a
+      // 2025-era client without a word, and `{ pin }` refuses every server that
+      // has not moved yet.
+      versionNegotiation: { mode: "auto" },
       // This client answers no elicitation, sampling or roots request: it has
       // no user to ask mid-run. Auto-fulfilment would try the handlers that are
       // not registered; refusing instead lets `callTool` report the one thing
@@ -274,6 +300,75 @@ export class McpSession {
   }
 
   /**
+   * Run one request, retried once behind a fresh connection if the server says
+   * the session is gone.
+   *
+   * The SDK does not do this, and a legacy server's session outliving neither
+   * the run nor its own TTL is not hypothetical: runs here last up to ten
+   * minutes. Streamable HTTP answers a request carrying an unknown
+   * `Mcp-Session-Id` with 404 and requires the client to start a new session
+   * rather than treat it as a dead server — without the retry, a run that
+   * crosses that boundary loses every tool for the rest of the run, the model
+   * keeps calling, and every call reads `HTTP 404` with no path back.
+   *
+   * Retrying is safe precisely because the 404 is a session-lookup failure: the
+   * server rejected the message before running anything, so a `tools/call` that
+   * gets one had no effect to repeat. Bounded at one attempt, because a server
+   * answering 404 to everything — the endpoint itself is gone — would otherwise
+   * be reconnected to forever, and the second failure is the one that says so.
+   *
+   * Protocol `2026-07-28` has no sessions at all, so on a modern connection
+   * `sessionId` is undefined and this is exactly one attempt.
+   */
+  private async withSessionRecovery<T>(
+    method: string,
+    work: (client: Client) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.ensureConnected();
+    // Captured before the attempt: it is what decides whether a 404 means *this*
+    // session expired, and whether another caller has already replaced it.
+    const attemptedSession = this.transport?.sessionId;
+    try {
+      return await work(client);
+    } catch (error) {
+      const failure = asMcpError(error, method);
+      if (
+        !(failure instanceof McpHttpError) ||
+        failure.status !== 404 ||
+        // No session id means the 404 is about the endpoint, not a session.
+        attemptedSession === undefined
+      ) {
+        throw failure;
+      }
+      // Only the caller whose session is still the current one discards it. The
+      // MCP calls of one model response are dispatched concurrently, so several
+      // can hold the same expired id — and each reconnecting in turn would
+      // abandon a connection another had already started, minting one
+      // server-side session per caller and leaking all but the last. The rest
+      // simply wait on the connection the winner started.
+      if (this.transport?.sessionId === attemptedSession) {
+        await this.discard();
+      }
+      try {
+        return await work(await this.ensureConnected());
+      } catch (retryError) {
+        throw asMcpError(retryError, method);
+      }
+    }
+  }
+
+  /** Drop the dead connection so the next caller opens a fresh one. */
+  private async discard(): Promise<void> {
+    const client = this.client;
+    this.client = undefined;
+    this.transport = undefined;
+    this.connecting = undefined;
+    // No session release: the server has already forgotten it, which is what
+    // the 404 said.
+    await client?.close().catch(() => {});
+  }
+
+  /**
    * Every page of the server's catalogue, not just the first — the SDK walks the
    * `nextCursor` chain, bounded by {@link MAX_TOOL_PAGES}.
    *
@@ -288,13 +383,9 @@ export class McpSession {
    * own lifetime is not a shape any server here produces.
    */
   async listTools(): Promise<McpDiscovery> {
-    const client = await this.ensureConnected();
-    let result;
-    try {
-      result = await client.listTools(undefined, this.requestOptions(MCP_DISCOVERY_TIMEOUT_MS));
-    } catch (error) {
-      throw asMcpError(error, "tools/list");
-    }
+    const result = await this.withSessionRecovery("tools/list", (client) =>
+      client.listTools(undefined, this.requestOptions(MCP_DISCOVERY_TIMEOUT_MS)),
+    );
     const ttlMs = result.ttlMs;
     return {
       tools: result.tools as McpTool[],
@@ -320,9 +411,8 @@ export class McpSession {
     args: Record<string, unknown>,
     definition?: McpTool,
   ): Promise<unknown> {
-    const client = await this.ensureConnected();
-    try {
-      return await client.callTool(
+    return this.withSessionRecovery("tools/call", (client) =>
+      client.callTool(
         { name, arguments: args },
         {
           ...this.requestOptions(MCP_CALL_TIMEOUT_MS),
@@ -333,17 +423,15 @@ export class McpSession {
           allowInputRequired: true,
           ...(definition ? { toolDefinition: definition as Tool } : {}),
         },
-      );
-    } catch (error) {
-      throw asMcpError(error, "tools/call");
-    }
+      ),
+    );
   }
 
   /**
-   * Close the connection. Best-effort, and quiet: this revision has no
-   * server-side session, so there is nothing to release and nothing leaves for
-   * the network — closing is local. A session that never connected returns at
-   * once.
+   * Release the server-side session and close the connection. Best-effort:
+   * servers may not implement the release, protocol `2026-07-28` has no session
+   * to release at all, and a run must never fail on cleanup. A session that
+   * never connected has nothing to close and returns at once.
    */
   async end(): Promise<void> {
     const client = this.client;
@@ -351,15 +439,27 @@ export class McpSession {
     this.client = undefined;
     this.transport = undefined;
     this.connecting = undefined;
+    this.tearingDown = true;
     if (!transport) {
       return;
+    }
+    try {
+      // `close()` does not send it; on a legacy connection the DELETE is what
+      // frees the server's session, and without it each run leaks one. Protocol
+      // `2026-07-28` mints no session, so there is nothing to release and this
+      // is skipped.
+      if (transport.sessionId) {
+        await withTimeout(transport.terminateSession(), SESSION_END_TIMEOUT_MS);
+      }
+    } catch {
+      // Session teardown is best-effort.
     }
     try {
       // Whichever end got as far as existing: a connect that threw leaves the
       // transport open with no client above it.
       await withTimeout(client ? client.close() : transport.close(), SESSION_END_TIMEOUT_MS);
     } catch {
-      // Closing is best-effort: the run is already over.
+      // Closing is best-effort too: the run is already over.
     }
   }
 }
@@ -485,24 +585,6 @@ export function unusableServerReason(error: unknown): string | undefined {
   }
   if (error instanceof SdkError && error.code === SdkErrorCode.InvalidResult) {
     return `It answered with something this client could not read (${error.message}).`;
-  }
-  if (error instanceof SdkError && error.code === SdkErrorCode.EraNegotiationFailed) {
-    // Two very different failures share this code, and the difference is
-    // whether anything underneath went wrong: a probe that could not be *sent*
-    // carries the cause, and a server that is down or unroutable must keep
-    // being reported as one. Only a probe the server answered — declining the
-    // pinned revision — belongs here.
-    if ((error as { data?: { cause?: unknown } }).data?.cause !== undefined) {
-      return undefined;
-    }
-    // The common one now: a server still speaking a 2025-era revision, which
-    // answers the probe with "no such method". It is running and correct — for
-    // the revision it implements — so what this asks for is that server being
-    // upgraded, not an operator checking whether it is up.
-    return (
-      `It does not offer MCP ${PROTOCOL_VERSION}, which is the only revision this client ` +
-      `speaks (${error.message}).`
-    );
   }
   if (error instanceof SdkError && error.code === SdkErrorCode.ListPaginationExceeded) {
     return (

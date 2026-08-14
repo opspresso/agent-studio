@@ -1,13 +1,18 @@
 /**
  * The parts of an MCP server every scripted stub has to get right, in one place.
  *
- * The client speaks protocol `2026-07-28` and only that: it opens with
- * `server/discover`, never handshakes, and validates everything that comes back.
- * So a stub is not "answer `initialize`, then return some tools" — it answers the
- * probe with what it supports, and every result carries `resultType` (plus the
- * caching hint on the list verbs, which this revision requires rather than
- * offers). Getting any of that wrong scripts a server that does not exist, which
- * was a whole test file's worth of failures each time.
+ * The client speaks **both** protocol eras, so a stub has to pick one and be it
+ * consistently. A modern stub answers `server/discover` with what it supports
+ * and carries `resultType` on every result (plus the caching hint on the list
+ * verbs, which revision `2026-07-28` requires rather than offers). A legacy stub
+ * answers the probe with "no such method", then completes the `initialize`
+ * handshake, hands back a session id and omits both of those fields. Mixing the
+ * two scripts a server that does not exist, which was a whole test file's worth
+ * of failures each time.
+ *
+ * Most stubs here are modern, because that is what the deployment's own servers
+ * are; the legacy ones exist because a registry entry may point at anybody's
+ * server, and that is exactly what must not silently stop working.
  */
 
 /** A tool as a script gives it: everything but what the spec insists on. */
@@ -27,8 +32,9 @@ function jsonResponse(payload: unknown, status = 200): Response {
 
 /**
  * How a server still speaking a 2025-era revision answers the probe: it has no
- * such method. This client has no fallback, so that server is refused — which is
- * what a stub scripts when it wants to test the refusal.
+ * such method. The client reads that as "this one predates the probe" and falls
+ * back to the `initialize` handshake, so a stub answering this must go on to
+ * serve {@link handshakeResult}.
  */
 export function probeMiss(id: number | undefined): Response {
   return jsonResponse(
@@ -37,10 +43,7 @@ export function probeMiss(id: number | undefined): Response {
   );
 }
 
-/**
- * The result a 2025-era handshake returns, for the one test that scripts a
- * server this client refuses to talk to.
- */
+/** The result a 2025-era handshake returns. */
 export function handshakeResult(
   name = "test-server",
   overrides: Record<string, unknown> = {},
@@ -51,6 +54,18 @@ export function handshakeResult(
     serverInfo: { name, version: "1.0" },
     ...overrides,
   };
+}
+
+/**
+ * What a legacy server answers `notifications/initialized` with.
+ *
+ * A notification carries no id and expects no result, so the response is a
+ * bodyless 202 — and it has to be one: the SDK reads a JSON-RPC error body here
+ * as the handshake failing, which is what an over-helpful stub answering
+ * "method not found" turns a perfectly good connection into.
+ */
+export function accepted(): Response {
+  return new Response("", { status: 202 });
 }
 
 /**
@@ -86,9 +101,10 @@ export function conforming(tools: StubTool[]): StubTool[] {
 }
 
 /**
- * The answer to a request carrying no JSON-RPC body. This revision has neither a
- * standalone GET stream nor a session to DELETE, so nothing should arrive here —
- * 405 is what a server says to a client that tries anyway.
+ * The answer to a request carrying no JSON-RPC body: the session DELETE a
+ * legacy connection sends on teardown, or the standalone GET stream — which
+ * this client never opens, and 405 is what a server says to one that tries.
+ * Revision `2026-07-28` has neither, so on a modern stub nothing arrives here.
  */
 export function bodylessResponse(httpMethod: string | undefined): Response {
   return httpMethod === "DELETE"
@@ -129,4 +145,20 @@ export function modernResult(
   const cacheable =
     method === "tools/list" ? { ttlMs: 60_000, cacheScope: "private" } : {};
   return { resultType: "complete", ...cacheable, ...result };
+}
+
+/**
+ * The same result, framed for whichever era the stub is being.
+ *
+ * A legacy result carries neither `resultType` nor the caching hint — they were
+ * introduced by the revision that removed the handshake — so a stub that reached
+ * for {@link modernResult} while answering `initialize` would be describing a
+ * server that cannot exist.
+ */
+export function eraResult(
+  legacy: boolean | undefined,
+  method: string | undefined,
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  return legacy ? result : modernResult(method, result);
 }
