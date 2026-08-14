@@ -560,8 +560,8 @@ export function isUnauthorized(error: unknown): boolean {
  * Is this server answering, but in a way this client cannot use?
  *
  * The distinction the caller needs, because "unreachable" sends an operator to
- * check a host that is up and replying. Two failures are of this kind, and
- * neither is fixed by looking at the network:
+ * check a host that is up and replying. Three failures are of this kind, and
+ * none of them is fixed by looking at the network:
  *
  * - a server supporting only revisions newer than this client, which answers
  *   `-32022` naming what it does speak. The probe cannot rescue this one — the
@@ -571,6 +571,13 @@ export function isUnauthorized(error: unknown): boolean {
  *   entire catalogue. Strictly a behaviour change from the hand-rolled client,
  *   which read what it could and dropped the rest; the trade is that a
  *   malformed answer is now named instead of silently thinned.
+ * - a catalogue that does not finish inside {@link MAX_TOOL_PAGES}. The SDK
+ *   throws on the cap rather than returning the pages it walked, so the whole
+ *   catalogue is lost and the server is not at fault in a way pinging it shows.
+ *
+ * A 2025-era server is deliberately **not** one of them: the probe falls back to
+ * the handshake, so it is an ordinary working server rather than one this client
+ * cannot use.
  *
  * Returns the sentence to report, or `undefined` for an ordinary failure.
  */

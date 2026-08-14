@@ -227,7 +227,13 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         {
           jsonrpc: "2.0",
           id: body.id,
+          // Every script field the probe branch honours, honoured here too: a
+          // stub that dropped `capabilities` would answer "I have tools" for a
+          // script written to say it has none, which is a server that does not
+          // exist — the one failure this helper exists to prevent.
           result: handshakeResult(script.serverInfo?.name, {
+            capabilities: script.capabilities ?? { tools: {} },
+            ...(script.serverInfo ? { serverInfo: script.serverInfo } : {}),
             ...(script.protocolVersion ? { protocolVersion: script.protocolVersion } : {}),
           }),
         },
@@ -757,6 +763,26 @@ describe("ToolManager era negotiation", () => {
     ).toBe("sess-1");
   });
 
+  it("says a legacy server never declared tools, rather than showing it as empty", async () => {
+    // The same reading as on a modern server, and it has to be reached through
+    // the handshake's capabilities rather than the probe's. Left silent, a
+    // server whose tools were never requested is indistinguishable from one
+    // that genuinely has none.
+    stubMcpFetch({
+      "https://old.test/mcp": {
+        legacy: true,
+        capabilities: {},
+        listTools: [{ name: "search" }],
+      },
+    });
+    const manager = new ToolManager([server("old", "https://old.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools).toHaveLength(0);
+    expect(manager.warnings[0]).toContain("did not declare the 'tools' capability");
+  });
+
   it("puts no routing header on a 2025-era exchange", async () => {
     // Not an omission: the SEP-2243 headers are a `2026-07-28` requirement, and
     // an intermediary is told to reject values it cannot check against a version
@@ -765,18 +791,30 @@ describe("ToolManager era negotiation", () => {
     const calls = stubMcpFetch({
       "https://old.test/mcp": {
         legacy: true,
-        listTools: [{ name: "search" }],
+        // The tool has to *declare* a mirrored parameter, or the absence of
+        // `Mcp-Param-*` below would hold on a modern connection too and the
+        // assertion would be about nothing.
+        listTools: [
+          {
+            name: "search",
+            inputSchema: {
+              type: "object",
+              properties: { region: { type: "string", "x-mcp-header": "Region" } },
+            },
+          },
+        ],
         callContent: [textBlock("ok")],
       },
     });
     const manager = new ToolManager([server("old", "https://old.test/mcp")]);
     await manager.init();
-    await manager.callTool("search", {});
+    await manager.callTool("search", { region: "us-west1" });
 
     const call = calls.find((entry) => entry.method === "tools/call");
+    expect(call?.params).toMatchObject({ arguments: { region: "us-west1" } });
+    expect(call?.paramHeaders).toBeUndefined();
     expect(call?.mcpMethod).toBeUndefined();
     expect(call?.mcpName).toBeUndefined();
-    expect(call?.paramHeaders).toBeUndefined();
     // The probe that decided the era is the one request that states ours.
     expect(calls[0]?.method).toBe("server/discover");
     expect(calls[0]?.protocolVersion).toBe(PROTOCOL_VERSION);

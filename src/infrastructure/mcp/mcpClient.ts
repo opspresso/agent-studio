@@ -1,8 +1,9 @@
 /**
  * Tool discovery for the registry's "Test connection" flow. A thin probe over
- * {@link McpSession}, which owns the protocol — the same handshake, headers and
- * timeouts a run uses, so a server that passes this test behaves the same when
- * an agent actually calls it. The session is always released.
+ * {@link McpSession}, which owns the protocol — the same connect, headers and
+ * timeouts a run uses, including the era negotiation, so a server that passes
+ * this test behaves the same when an agent actually calls it. The session is
+ * always released.
  */
 
 import type { McpTool } from "@/domain/mcp/types";
