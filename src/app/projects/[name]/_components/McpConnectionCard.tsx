@@ -148,8 +148,11 @@ export function McpConnectionCard({
   }
 
   const status = connection?.status ?? "needs_auth";
-  const canRegister = Boolean(server.auth.registrationEndpoint);
-  const needsManualClient = !canRegister && !connection?.clientId;
+  // A client comes from a metadata document this deployment publishes, or from
+  // the owner. There is no third way: dynamic registration is deprecated and no
+  // longer used.
+  const canSelfIdentify = Boolean(server.auth.clientIdMetadataDocumentSupported);
+  const needsManualClient = !canSelfIdentify && !connection?.clientId;
 
   return (
     <Stack gap="sm">
@@ -170,11 +173,11 @@ export function McpConnectionCard({
 
       {needsManualClient && (
         <Text fz="xs" c="dimmed">
-          {t("mcpConn.noDynamicRegistration")}
+          {t("mcpConn.noClientDocument")}
         </Text>
       )}
 
-      {!canRegister && (
+      {!canSelfIdentify && (
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
           <TextInput
             value={clientId}
@@ -206,7 +209,7 @@ export function McpConnectionCard({
       )}
 
       <Group gap="xs" wrap="wrap">
-        {!canRegister && (
+        {!canSelfIdentify && (
           <Button
             variant="default"
             disabled={busy || !clientId.trim()}

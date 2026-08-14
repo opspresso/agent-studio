@@ -24,8 +24,6 @@ export interface McpConnection {
   clientId: string;
   /** Encrypted. Absent for a public client (`token_endpoint_auth_method: "none"`). */
   clientSecret?: string;
-  /** True when RFC 7591 issued the credentials, so they can be re-registered. */
-  clientRegistered?: boolean;
   /**
    * True when `clientId` is this deployment's own Client ID Metadata Document
    * URL rather than something an authorization server issued.

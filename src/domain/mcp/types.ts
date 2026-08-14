@@ -44,8 +44,6 @@ export interface McpServerAuth {
   issParameterSupported?: boolean;
   authorizationEndpoint: string;
   tokenEndpoint: string;
-  /** RFC 7591. Absent means the provider requires a manually registered app. */
-  registrationEndpoint?: string;
   /**
    * Does this server resolve a `client_id` that is an HTTPS URL by fetching the
    * document it points at? See the metadata field of the same meaning.

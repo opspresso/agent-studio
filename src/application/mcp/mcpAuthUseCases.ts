@@ -235,7 +235,6 @@ export interface McpConnectionView {
   clientId: string;
   /** Masked; absent for a public client that has none. */
   clientSecret?: string;
-  clientRegistered: boolean;
   scopes: string[];
   connectedBy?: string;
   connectedAt?: string;
@@ -248,7 +247,6 @@ function toConnectionView(cipher: SecretCipher, connection: McpConnection): McpC
     status: connection.status,
     clientId: connection.clientId,
     ...(connection.clientSecret ? { clientSecret: cipher.mask(connection.clientSecret) } : {}),
-    clientRegistered: connection.clientRegistered === true,
     scopes: connection.scopes,
     ...(connection.connectedBy ? { connectedBy: connection.connectedBy } : {}),
     ...(connection.connectedAt ? { connectedAt: connection.connectedAt } : {}),
@@ -467,13 +465,6 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         "Authorization endpoint",
       );
       await assertAuthEndpoint(deps.urlPolicy, asMetadata.tokenEndpoint, "Token endpoint");
-      if (asMetadata.registrationEndpoint) {
-        await assertAuthEndpoint(
-          deps.urlPolicy,
-          asMetadata.registrationEndpoint,
-          "Registration endpoint",
-        );
-      }
       // Only when the server states its methods and S256 is absent: many
       // servers support PKCE without advertising it, and refusing those would
       // block working configurations over a missing field.
@@ -496,9 +487,6 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...(asMetadata.issParameterSupported ? { issParameterSupported: true } : {}),
         authorizationEndpoint: asMetadata.authorizationEndpoint,
         tokenEndpoint: asMetadata.tokenEndpoint,
-        ...(asMetadata.registrationEndpoint
-          ? { registrationEndpoint: asMetadata.registrationEndpoint }
-          : {}),
         ...(asMetadata.clientIdMetadataDocumentSupported
           ? { clientIdMetadataDocumentSupported: true }
           : {}),
@@ -561,7 +549,6 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         serverName,
         clientId: input.clientId,
         ...(clientSecret ? { clientSecret } : {}),
-        clientRegistered: false,
         // Whatever the owner just typed was registered with the server this
         // entry points at now; that is what makes it re-checkable later.
         issuer,
@@ -601,59 +588,38 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // have.
         connection.clientFromMetadataDocument !== true &&
         (connection.issuer ?? issuer) !== issuer;
-      if (staleCredentials && connection?.clientRegistered !== true) {
-        // Hand-entered credentials cannot be re-issued on the owner's behalf.
+      if (staleCredentials) {
+        // Nothing here can be re-issued on the owner's behalf: a stored client
+        // is one they typed in, and only they can replace it.
         throw new ValidationError(
           `The client credentials stored for "${serverName}" were registered with a different authorization server (${connection?.issuer}). Register an app with ${issuer} and save its client ID and secret before connecting.`,
         );
       }
 
-      // No client yet, or one that belongs to a server this entry has moved off.
-      // The order is the spec's: credentials already held (hand-entered ones
-      // reach here as `connection.clientId`), then a metadata document, then
-      // registration, then nothing this app can do on the owner's behalf.
-      if (!connection?.clientId || staleCredentials) {
-        const scopes = connection?.scopes ?? server.auth.scopesSupported ?? [];
-        // Rebuilt rather than merged in either branch: whatever the previous
-        // client authorized was granted by a different server, and must not
-        // survive into this one.
-        const base = {
-          projectName,
-          serverName,
-          issuer,
-          scopes,
-          status: "needs_auth" as const,
-          updatedAt: new Date().toISOString(),
-        };
-        if (server.auth.clientIdMetadataDocumentSupported) {
-          // Nothing is requested and nothing is issued: the `client_id` is the
-          // address of a document this deployment already serves, and the
-          // server fetches it when the authorization arrives.
-          connection = {
-            ...base,
-            clientId: clientMetadataUrl(await publicBase(), projectName),
-            clientFromMetadataDocument: true,
-          };
-        } else if (server.auth.registrationEndpoint) {
-          const registered = await deps.oauth.register({
-            registrationEndpoint: server.auth.registrationEndpoint,
-            clientName: `AgentDure — ${projectName}`,
-            redirectUri: callback,
-            scopes,
-          });
-          connection = {
-            ...base,
-            clientId: registered.clientId,
-            ...(registered.clientSecret
-              ? { clientSecret: deps.cipher.encrypt(registered.clientSecret) }
-              : {}),
-            clientRegistered: true,
-          };
-        } else {
+      // No client yet. Two ways to have one, in the spec's order: credentials
+      // already held (which reached here as `connection.clientId`), then a
+      // metadata document. Dynamic registration was the third and is gone — the
+      // revision deprecates it, and what it automated is a one-time step an
+      // owner can do by hand.
+      if (!connection?.clientId) {
+        if (!server.auth.clientIdMetadataDocumentSupported) {
           throw new ValidationError(
-            `MCP server "${serverName}" supports neither client ID metadata documents nor dynamic client registration. Register an app with the provider and save its client ID and secret first.`,
+            `MCP server "${serverName}" does not accept client ID metadata documents. Register an app with the provider and save its client ID and secret first.`,
           );
         }
+        // Nothing is requested and nothing is issued: the `client_id` is the
+        // address of a document this deployment already serves, and the server
+        // fetches it when the authorization arrives.
+        connection = {
+          projectName,
+          serverName,
+          clientId: clientMetadataUrl(await publicBase(), projectName),
+          clientFromMetadataDocument: true,
+          issuer,
+          scopes: connection?.scopes ?? server.auth.scopesSupported ?? [],
+          status: "needs_auth",
+          updatedAt: new Date().toISOString(),
+        };
         await deps.connections.put(connection);
       }
 

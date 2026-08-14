@@ -23,7 +23,11 @@ vi.mock("@/infrastructure/db/client", () => ({
 }));
 
 const { mcpRepository } = await import("@/infrastructure/db/repositories/mcpRepository");
+const { mcpConnectionRepository } = await import(
+  "@/infrastructure/db/repositories/mcpConnectionRepository"
+);
 import type { McpServer } from "@/domain/mcp/types";
+import type { McpConnection } from "@/domain/mcp/connection";
 
 /**
  * The mapper names its fields one by one, so a field added to the entity is
@@ -74,5 +78,46 @@ describe("mcp repository mapping", () => {
     };
     const read = await mcpRepository.get("github");
     expect(read?.runtime).toBeUndefined();
+  });
+});
+
+describe("mcp connection mapping", () => {
+  it("round-trips the flag that decides whether the issuer check applies", async () => {
+    // The write spreads the whole connection while the read names its fields, so
+    // a field added to the type and not to the reader is stored and then lost on
+    // the way back. This one is the difference between a metadata-document
+    // client surviving a move to another authorization server and being refused
+    // as belonging to the old one.
+    const connection: McpConnection = {
+      projectName: "p",
+      serverName: "slack",
+      clientId: "https://studio.example.com/api/mcps/oauth/client-metadata/p",
+      clientFromMetadataDocument: true,
+      issuer: "https://auth.example.com",
+      resource: "https://mcp.slack.com",
+      scopes: ["chat:write"],
+      status: "connected",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    await mcpConnectionRepository.put(connection);
+    const read = await mcpConnectionRepository.get("p", "slack");
+
+    expect(read?.clientFromMetadataDocument).toBe(true);
+    expect(read?.clientId).toBe(connection.clientId);
+    expect(read?.issuer).toBe(connection.issuer);
+  });
+
+  it("leaves the flag absent for a client the owner entered", async () => {
+    await mcpConnectionRepository.put({
+      projectName: "p",
+      serverName: "slack",
+      clientId: "typed-by-hand",
+      scopes: [],
+      status: "needs_auth",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect((await mcpConnectionRepository.get("p", "slack"))?.clientFromMetadataDocument).toBeUndefined();
   });
 });

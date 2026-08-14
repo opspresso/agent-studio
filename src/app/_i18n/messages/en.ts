@@ -461,8 +461,8 @@ export const en = {
   "mcpConn.reauthorize": "Reauthorize",
   "mcpConn.noAuthNeeded":
     "This server does not require authorization. Whatever credentials it needs come from the registry entry’s own headers, plus any override above.",
-  "mcpConn.noDynamicRegistration":
-    "This provider does not offer dynamic registration. Register an app with it, then save its client ID and secret here.",
+  "mcpConn.noClientDocument":
+    "This provider does not accept client ID metadata documents. Register an app with it, then save its client ID and secret here.",
   "mcpConn.authorizedBy": "Authorized by {who} on {when}",
   "mcpConn.saveCredentials": "Save credentials",
   "mcpConn.disconnect": "Disconnect",

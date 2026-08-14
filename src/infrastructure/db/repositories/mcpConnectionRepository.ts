@@ -38,7 +38,11 @@ function fromItem(item: Record<string, unknown>): McpConnection {
     serverName: item.serverName as string,
     clientId: item.clientId as string,
     clientSecret: optionalString(item.clientSecret),
-    clientRegistered: item.clientRegistered === true,
+    // Read back explicitly, unlike the write, which spreads the whole
+    // connection: a field added to the type and not to this list is stored and
+    // then silently lost, and this one decides whether the issuer check applies
+    // to the row at all.
+    ...(item.clientFromMetadataDocument === true ? { clientFromMetadataDocument: true } : {}),
     issuer: optionalString(item.issuer),
     resource: optionalString(item.resource),
     scopes: (item.scopes as string[] | undefined) ?? [],

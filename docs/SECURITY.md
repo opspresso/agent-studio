@@ -466,13 +466,10 @@ Enforced properties:
   the old server. Deleting and recreating an entry under the same name is caught the same way
   — which matters, because the registry is admin-owned while connections are owner-owned and
   the only thing joining them is the name.
-- **How a client is obtained, in the spec's own order**: credentials already held (registered
-  once, or entered by hand), then a Client ID Metadata Document, then dynamic registration,
-  then an error naming what the owner has to do. Registration is deprecated from protocol
-  `2026-07-28` in favour of the documents, so a server advertising
-  `client_id_metadata_document_supported` is never registered with.
-- Dynamic registration (RFC 7591) declares `application_type: "web"` (SEP-837) rather than
-  leaving the OpenID Connect default to apply. A public client with no secret sends `none`
+- **How a client is obtained**: credentials already held (entered by hand), then a Client ID
+  Metadata Document, then an error naming what the owner has to do. **Dynamic registration
+  (RFC 7591) is not implemented** — the revision deprecates it, and what it automated is a
+  one-time step an owner can do themselves. A public client with no secret sends `none`
   whatever the server's metadata preferred.
 - **A Client ID Metadata Document is served publicly, per project**, at
   `/api/mcps/oauth/client-metadata/{project}` — the one MCP route with no session check, and
@@ -490,11 +487,12 @@ Enforced properties:
 - **Such a client is public by construction**, so the flow's defence is PKCE plus that fixed
   redirect URI rather than a shared secret: an authorization anyone else starts still delivers
   its code to this deployment's callback, where it is useless without the verifier.
-- **The issuer-binding rule above inverts for it.** A registered or hand-entered `client_id`
-  is meaningless away from the server that issued it, which is why it is keyed by issuer and
-  re-registered when that changes. A metadata-document `client_id` is self-hosted and resolved
-  on demand by whichever server is asked, so it survives the entry moving — refusing it would
-  break a working connection over credentials it does not have.
+- **The issuer-binding rule above inverts for it.** A hand-entered `client_id` is meaningless
+  away from the server that issued it, which is why it is keyed by issuer — and, since nothing
+  re-issues one now, an entry that moves to another authorization server is refused with the
+  server the owner has to register with named. A metadata-document `client_id` is self-hosted
+  and resolved on demand by whichever server is asked, so it survives the move — refusing it
+  would break a working connection over credentials it does not have.
 - The callback **re-checks project ownership**, because it can change while the user is at the
   provider.
 

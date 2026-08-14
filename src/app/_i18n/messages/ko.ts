@@ -399,8 +399,8 @@ export const ko: Messages = {
   "mcpConn.reauthorize": "다시 인증",
   "mcpConn.noAuthNeeded":
     "이 서버는 인증이 필요 없습니다. 필요한 자격 증명은 레지스트리 항목의 헤더와 위의 재정의에서 옵니다.",
-  "mcpConn.noDynamicRegistration":
-    "이 프로바이더는 동적 등록을 지원하지 않습니다. 앱을 직접 등록한 뒤 client ID 와 secret 을 여기에 저장하세요.",
+  "mcpConn.noClientDocument":
+    "이 프로바이더는 client ID 메타데이터 문서를 받지 않습니다. 앱을 직접 등록한 뒤 client ID 와 secret 을 여기에 저장하세요.",
   "mcpConn.authorizedBy": "{who} 님이 {when} 에 인증함",
   "mcpConn.saveCredentials": "자격 증명 저장",
   "mcpConn.disconnect": "연결 해제",
