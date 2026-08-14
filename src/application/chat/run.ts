@@ -15,6 +15,7 @@ import {
 } from "@/application/llm/documentParts";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { storeArtifact, type ArtifactContext } from "@/application/artifact/storeArtifact";
+import { filesNotKeptWarning } from "@/application/artifact/producedFiles";
 import { endNoticeFor } from "./cancelRun";
 import { log } from "@/shared/logger";
 import { cutUtf8Bytes } from "@/shared/utf8Text";
@@ -149,12 +150,11 @@ export function collectGeneratedFiles(
   }
   const missing = files.length - stored.length;
   if (missing > 0 && !storageConfigured) {
-    return {
-      stored,
-      warnings: [
-        `${missing} file(s) this run produced were not kept: file storage is not configured, so there is nothing to download.`,
-      ],
-    };
+    // The sentence is shared with every other surface that answers with a file:
+    // an API caller, an A2A task and a Slack thread all reach the same state,
+    // and six spellings of it is how one of them ends up saying something
+    // subtly different about the same deployment.
+    return { stored, warnings: [filesNotKeptWarning(missing)] };
   }
   return { stored, warnings: [] };
 }

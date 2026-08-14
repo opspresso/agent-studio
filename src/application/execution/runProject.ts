@@ -27,6 +27,7 @@ import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor
 import type { Project } from "@/domain/project/types";
 import { openRun } from "@/application/run/runBracket";
 import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
+import type { ProducedFileRef } from "@/application/artifact/producedFiles";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { discoveryQueries, recentUserQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
@@ -275,9 +276,18 @@ export interface RunImage {
  * child that came back empty), and a collected surface has no later frame to
  * say any of it in. Carrying it here is the same judgement `termination`
  * already made: without it, a degraded run and a clean one are the same JSON.
+ *
+ * `files` is the same judgement again, arrived at later and the hard way. A
+ * document a tool rendered was stored as an artifact and then dropped from
+ * every collected answer — the caller received prose about a report with no
+ * report attached, while the picture beside it came back inline. The reference
+ * is carried here; the surface turns it into an address, because how long a
+ * signature lives is the surface's question and not this one's.
  */
 export interface CollectedRun extends RunResult {
   images: RunImage[];
+  /** References to what the run produced as files; bytes are stripped at the bracket. */
+  files: ProducedFileRef[];
   /** What the run lost, in the order it was reported, deduplicated. */
   warnings: string[];
   termination?: RunTerminationReason;
@@ -327,6 +337,7 @@ export async function collectRun(
 ): Promise<CollectedRun> {
   let content = "";
   const images: RunImage[] = [];
+  const files: ProducedFileRef[] = [];
   const warnings: string[] = [];
   const usage: UsageInfo = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
   // Why the run ended, as the engine announced it. Only the top level speaks
@@ -366,6 +377,14 @@ export async function collectRun(
     if (chunk.image) {
       images.push(chunk.image);
     }
+    // Files the same way, and for the same reason a child's are the run's: a
+    // transferred-to agent rendering the document is how the work gets done.
+    // The bytes are already gone — the bracket kept them — so this is the
+    // reference a surface turns into a download.
+    if (chunk.file) {
+      const { b64: _stripped, source: _provenance, artifactId: _row, ...ref } = chunk.file;
+      files.push(ref);
+    }
     // Usage counts every chunk, subagent turns included, so the reported
     // usage matches what the run actually billed.
     if (chunk.usage) {
@@ -374,7 +393,7 @@ export async function collectRun(
       usage.costUsd += chunk.usage.costUsd;
     }
   }
-  return { content, model, usage, images, warnings, ...(termination ? { termination } : {}) };
+  return { content, model, usage, images, files, warnings, ...(termination ? { termination } : {}) };
 }
 
 /**
@@ -402,8 +421,9 @@ export async function executeProject(
   // finish_reason, so a response cut at the output cap is not stamped
   // "completed" here — that stamp is what once erased the difference.
   // A single-shot run accumulates nothing and resolves no bindings, so it has
-  // nothing to have lost; the empty array keeps one shape for both branches.
-  return { ...result, images: [], warnings: [] };
+  // nothing to have lost and no tool to have produced anything; the empty
+  // arrays keep one shape for both branches.
+  return { ...result, images: [], files: [], warnings: [] };
 }
 
 // --- Agent execution --------------------------------------------------------

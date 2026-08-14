@@ -21,6 +21,12 @@ import type { ChatMessageFile } from "./types";
 /**
  * Resolve one reference. `undefined` when there is no key or no signer —
  * callers drop the file rather than offer a link that goes nowhere.
+ *
+ * Named for the row it was written against, used by every surface that answers
+ * with a file — an API response, an A2A artifact, a Slack reply. Those hold a
+ * reference off the run's stream rather than a chat row, and it is the same two
+ * fields either way; reaching the one owner beats each of them signing a key
+ * for itself.
  */
 export async function resolveFileUrl(
   file: ChatMessageFile,

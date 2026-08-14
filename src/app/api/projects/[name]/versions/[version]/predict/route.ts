@@ -1,6 +1,14 @@
 import { runStrategyFor } from "@/application/execution/runProject";
 import { sseResponse } from "@/app/api/_lib/sse";
-import { executionDeps, imageDeps, projectUseCases, versionUseCases } from "@/lib/container";
+import {
+  artifactStorage,
+  executionDeps,
+  imageDeps,
+  projectUseCases,
+  versionUseCases,
+} from "@/lib/container";
+import { resolveProducedFiles } from "@/application/artifact/producedFiles";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { generateImage } from "@/application/image/generateImage";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
@@ -62,6 +70,16 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       );
     }
     const run = await executeProject(executionDeps, { ...params, signal: request.signal });
+    // Files carry a reference, not bytes — the bracket kept those — so the
+    // address is minted here, where the reader is known. A file that cannot be
+    // addressed joins the warnings rather than being dropped in silence: prose
+    // about a report with no report attached is what this endpoint used to send.
+    const produced = await resolveProducedFiles(
+      run.files,
+      artifactStorage?.objects.sign,
+      VIEW_URL_TTL_SECONDS,
+    );
+    const warnings = [...run.warnings, ...produced.warnings];
     return Response.json({
       result: run.content,
       model: run.model,
@@ -72,8 +90,11 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       ...(run.termination ? { finishReason: run.termination } : {}),
       // What the run lost on the way to that answer, for the same reason: a
       // stream says it in a `warning` frame, and a collected body had nowhere.
-      ...(run.warnings.length > 0 ? { warnings: run.warnings } : {}),
+      ...(warnings.length > 0 ? { warnings } : {}),
       ...(run.images.length > 0 ? { images: run.images } : {}),
+      // What it produced beside the answer. Images ride inline because a caller
+      // renders them; a document is taken away, so it travels as an address.
+      ...(produced.files.length > 0 ? { files: produced.files } : {}),
     });
   } catch (error) {
     return apiError(error);
