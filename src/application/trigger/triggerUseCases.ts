@@ -8,13 +8,14 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { isValidTimezone, parseCron } from "@/domain/trigger/cron";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type {
-  ScheduleTrigger,
-  Trigger,
-  TriggerKind,
-  TriggerRun,
-  TriggerPayloadMode,
-  WebhookTrigger,
+import {
+  PROJECT_WEBHOOK_ID,
+  type ScheduleTrigger,
+  type Trigger,
+  type TriggerKind,
+  type TriggerRun,
+  type TriggerPayloadMode,
+  type WebhookTrigger,
 } from "@/domain/trigger/types";
 import {
   ConflictError,
@@ -138,6 +139,20 @@ export function createTriggerUseCases(deps: TriggerDeps) {
       userEmail: string,
     ): Promise<TriggerView> {
       await assertProjectWritable(deps.projects, projectName, userEmail);
+      // A project has exactly one webhook and it answers at `/api/webhook/{project}`,
+      // which resolves this id and nothing else. Both halves of that are enforced
+      // here, at the only place a row is minted: a webhook under any other name
+      // would be a secret with no door, and a schedule under this one would make
+      // the delivery endpoint 404 for a project whose console shows a webhook.
+      if ((input.kind ?? "webhook") === "webhook") {
+        if (input.triggerId !== PROJECT_WEBHOOK_ID) {
+          throw new ValidationError(
+            `A project's webhook is always "${PROJECT_WEBHOOK_ID}" — it is addressed by the project name`,
+          );
+        }
+      } else if (input.triggerId === PROJECT_WEBHOOK_ID) {
+        throw new ValidationError(`"${PROJECT_WEBHOOK_ID}" is reserved for the project's webhook`);
+      }
       const now = new Date().toISOString();
       const base = {
         projectName,

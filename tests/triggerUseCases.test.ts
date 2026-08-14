@@ -7,7 +7,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from "@/application/er
 import type { ProjectRepository } from "@/domain/project/repository";
 import type { Project } from "@/domain/project/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type { Trigger, WebhookTrigger } from "@/domain/trigger/types";
+import { PROJECT_WEBHOOK_ID, type Trigger, type WebhookTrigger } from "@/domain/trigger/types";
 
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
 
@@ -66,10 +66,33 @@ describe("trigger ids follow the project-name rule", () => {
   });
 });
 
+describe("a project has exactly one webhook", () => {
+  it("refuses a webhook under any name but the project's own", async () => {
+    // `/api/webhook/{project}` is the only delivery address there is, and it
+    // resolves `PROJECT_WEBHOOK_ID`. A webhook created under another name would
+    // be a minted secret with no door to open.
+    const { useCases } = fixture();
+    await expect(
+      useCases.create("p", { triggerId: "nightly" }, "owner@example.com"),
+    ).rejects.toBeInstanceOf(ValidationError);
+    const created = await useCases.create(
+      "p",
+      { triggerId: PROJECT_WEBHOOK_ID },
+      "owner@example.com",
+    );
+    expect(created.kind).toBe("webhook");
+    expect(created.secret).toBeTruthy();
+  });
+});
+
 describe("trigger secret", () => {
   it("comes back in the clear once on create, and masked afterwards", async () => {
     const { useCases } = fixture();
-    const created = await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
+    const created = await useCases.create(
+      "p",
+      { triggerId: PROJECT_WEBHOOK_ID },
+      "owner@example.com",
+    );
     expect(created.secret).toMatch(/^adw_/);
     const [listed] = await useCases.list("p", "owner@example.com");
     expect(listed?.secret).toBeUndefined();
@@ -78,16 +101,24 @@ describe("trigger secret", () => {
 
   it("is stored encrypted, never in plaintext", async () => {
     const { storedWebhook, useCases } = fixture();
-    const created = await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
-    expect(storedWebhook("t1").secret).not.toBe(created.secret);
-    expect(storedWebhook("t1").secret.startsWith("enc:")).toBe(true);
+    const created = await useCases.create(
+      "p",
+      { triggerId: PROJECT_WEBHOOK_ID },
+      "owner@example.com",
+    );
+    expect(storedWebhook(PROJECT_WEBHOOK_ID).secret).not.toBe(created.secret);
+    expect(storedWebhook(PROJECT_WEBHOOK_ID).secret.startsWith("enc:")).toBe(true);
   });
 
   it("can be read back, like a project API token", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { useCases } = fixture();
-    const created = await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
-    const revealed = await useCases.reveal("p", "t1", "owner@example.com");
+    const created = await useCases.create(
+      "p",
+      { triggerId: PROJECT_WEBHOOK_ID },
+      "owner@example.com",
+    );
+    const revealed = await useCases.reveal("p", PROJECT_WEBHOOK_ID, "owner@example.com");
     expect(revealed.secret).toBe(created.secret);
     // Secret access leaves a trail even when it is authorized.
     expect(warn.mock.calls.some(([line]) => String(line).includes("revealed by"))).toBe(true);
@@ -96,10 +127,10 @@ describe("trigger secret", () => {
 
   it("refuses a reveal to anyone but the owner or an admin", async () => {
     const { useCases } = fixture();
-    await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
-    await expect(useCases.reveal("p", "t1", "someone@example.com")).rejects.toBeInstanceOf(
-      ForbiddenError,
-    );
+    await useCases.create("p", { triggerId: PROJECT_WEBHOOK_ID }, "owner@example.com");
+    await expect(
+      useCases.reveal("p", PROJECT_WEBHOOK_ID, "someone@example.com"),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("404s a reveal for a trigger that does not exist", async () => {
@@ -111,27 +142,44 @@ describe("trigger secret", () => {
 
   it("regenerating returns the new secret once and invalidates the old", async () => {
     const { useCases } = fixture();
-    const created = await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
+    const created = await useCases.create(
+      "p",
+      { triggerId: PROJECT_WEBHOOK_ID },
+      "owner@example.com",
+    );
     const rotated = await useCases.update(
       "p",
-      "t1",
+      PROJECT_WEBHOOK_ID,
       { rotateSecret: true },
       "owner@example.com",
     );
     expect(rotated.secret).toMatch(/^adw_/);
     expect(rotated.secret).not.toBe(created.secret);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect((await useCases.reveal("p", "t1", "owner@example.com")).secret).toBe(rotated.secret);
+    expect((await useCases.reveal("p", PROJECT_WEBHOOK_ID, "owner@example.com")).secret).toBe(
+      rotated.secret,
+    );
     warn.mockRestore();
   });
 
   it("an ordinary update leaves the secret alone", async () => {
     const { useCases } = fixture();
-    const created = await useCases.create("p", { triggerId: "t1" }, "owner@example.com");
-    const updated = await useCases.update("p", "t1", { enabled: false }, "owner@example.com");
+    const created = await useCases.create(
+      "p",
+      { triggerId: PROJECT_WEBHOOK_ID },
+      "owner@example.com",
+    );
+    const updated = await useCases.update(
+      "p",
+      PROJECT_WEBHOOK_ID,
+      { enabled: false },
+      "owner@example.com",
+    );
     expect(updated.secret).toBeUndefined();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect((await useCases.reveal("p", "t1", "owner@example.com")).secret).toBe(created.secret);
+    expect((await useCases.reveal("p", PROJECT_WEBHOOK_ID, "owner@example.com")).secret).toBe(
+      created.secret,
+    );
     warn.mockRestore();
   });
 });
@@ -196,11 +244,20 @@ describe("schedule triggers", () => {
     );
   });
 
+  it("may not take the id the project's own webhook is addressed by", async () => {
+    // `/api/webhook/{project}` resolves that id and expects a webhook. A schedule
+    // sitting on it would 404 a project whose console shows a webhook.
+    const { useCases } = fixture();
+    await expect(
+      useCases.create("p", { ...schedule, triggerId: PROJECT_WEBHOOK_ID }, "owner@example.com"),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
   it("refuses schedule fields on a webhook", async () => {
     const { useCases } = fixture();
-    await useCases.create("p", { triggerId: "hook" }, "owner@example.com");
+    await useCases.create("p", { triggerId: PROJECT_WEBHOOK_ID }, "owner@example.com");
     await expect(
-      useCases.update("p", "hook", { cron: "0 9 * * *" }, "owner@example.com"),
+      useCases.update("p", PROJECT_WEBHOOK_ID, { cron: "0 9 * * *" }, "owner@example.com"),
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
@@ -209,7 +266,11 @@ describe("schedule triggers", () => {
     // cron without kind is a caller who meant kind: "schedule" — silently
     // minting a webhook would leave a schedule that never fires.
     await expect(
-      useCases.create("p", { triggerId: "t", cron: "0 9 * * *" }, "owner@example.com"),
+      useCases.create(
+        "p",
+        { triggerId: PROJECT_WEBHOOK_ID, cron: "0 9 * * *" },
+        "owner@example.com",
+      ),
     ).rejects.toBeInstanceOf(ValidationError);
     await expect(
       useCases.create(

@@ -5,24 +5,31 @@ import { readBodyText, BodyTooLargeError } from "@/shared/httpBody";
 import { unauthorized } from "@/shared/unauthorized";
 import { withRunContext } from "@/shared/runContext";
 
-type RouteContext = { params: Promise<{ project: string; trigger: string }> };
+type RouteContext = { params: Promise<{ project: string }> };
 
 /** A payload larger than this is not a webhook event, it is a file upload. */
 const MAX_BODY_BYTES = 1_000_000;
 
 /**
- * Webhook delivery endpoint. Authentication IS the trigger's secret — no
- * session is involved, exactly like the Slack endpoint's signature.
+ * A project's webhook: `POST /api/webhook/{project}`.
+ *
+ * The project name is the whole address, because a project has exactly one
+ * webhook — the console turns it on and off rather than naming it. This is the
+ * only way a delivery reaches the platform; `admitDelivery` resolves the row it
+ * belongs to, so there is no id here to get wrong.
+ *
+ * Authentication IS the webhook's secret — no session is involved, exactly like
+ * the Slack endpoint's signature.
  *
  * It answers 202 and runs in the background. A run here can last ten minutes
  * and no webhook sender waits that long; the delivery's outcome goes on its
  * history row, which the console reads. An instance lost mid-delivery therefore
  * leaves a row stuck in `running`; `repairLostRuns` finishes it, driven both by
- * the schedule tick and by the next delivery this trigger takes, so a deployment
+ * the schedule tick and by the next delivery this webhook takes, so a deployment
  * with no ticker configured is covered too.
  */
 export async function POST(request: Request, ctx: RouteContext): Promise<Response> {
-  const { project, trigger } = await ctx.params;
+  const { project } = await ctx.params;
   let body: string;
   try {
     body = await readBodyText(request, MAX_BODY_BYTES);
@@ -44,7 +51,6 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
   const admitted = await admitDelivery(
     triggerRunnerDeps,
     project,
-    trigger,
     request.headers.get("x-trigger-secret"),
     request.headers.get("idempotency-key"),
   );
@@ -55,10 +61,10 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       // or token caller does.
       return unauthorized();
     case "not-configured":
-      // Deliberately the same answer a wrong secret would get for a trigger
-      // that does exist would not be — but an unknown project/trigger is not a
-      // secret, and 404 is what a misconfigured URL needs to say.
-      return Response.json({ error: "Trigger not found" }, { status: 404 });
+      // Deliberately the same answer a wrong secret would get for a project that
+      // does have a webhook would not be — but a project with no webhook at all
+      // is not a secret, and 404 is what a misconfigured URL needs to say.
+      return Response.json({ error: "Webhook not found" }, { status: 404 });
     case "disabled":
       return Response.json({ ok: true, status: "disabled" }, { status: 202 });
     case "duplicate":
@@ -82,5 +88,5 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
       await executeDelivery(triggerRunnerDeps, admitted, payload);
     }),
   );
-  return Response.json({ ok: true, status: "accepted", runId: admitted.runId }, { status: 202 });
+  return Response.json({ ok: true, status: "accepted", runId }, { status: 202 });
 }

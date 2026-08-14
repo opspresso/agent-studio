@@ -557,7 +557,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(78);
+    expect(entries.length).toBe(80);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1253,6 +1253,17 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "evaluating when a schedule fires",
     pattern: /formatToParts\(/,
     owner: "src/domain/trigger/cron.ts",
+  },
+  {
+    // The console shows it, the API reference documents it, and the route
+    // serves it. A URL a person copies out of one surface and a URL another
+    // surface built by hand are the same string right up until one of them
+    // moves, and the failure is a sender that 404s with nothing to read.
+    what: "where a project's webhook is delivered",
+    // The interpolation, not the prose: several files name the path in a
+    // comment, and only one may *build* it.
+    pattern: /`\/api\/webhook\/\$\{/,
+    owner: "src/domain/trigger/types.ts",
   },
   {
     // Three call sites used to ask this for themselves, so a new project type

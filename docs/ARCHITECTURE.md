@@ -274,7 +274,7 @@ dispatch. To trace a request, start at the dispatch tier.
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent`) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
-| Webhook trigger | `POST /api/triggers/[project]/[trigger]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it; a firing's row records that it drew, since the row carries text |
+| Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it; a firing's row records that it drew, since the row carries text |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (same `triggerRunnerDeps.run`) |
 
 ```mermaid
@@ -1176,6 +1176,17 @@ WebhookTrigger  { projectName, triggerId (slug), kind: "webhook", description, e
 ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), message? }
 ```
 
+- **A project has one webhook and any number of schedules.** The webhook is the trigger row
+  under the reserved id `PROJECT_WEBHOOK_ID`, delivered at `POST /api/webhook/{project}` —
+  the project name is the whole address, so nobody names it and the console is a switch that
+  writes the row the first time it goes on. It stays a trigger row because everything a
+  delivery needs already lives there: the secret, the firing history, the idempotency claim,
+  the overlap lease, the project cascade delete. A second entity would have re-derived each
+  of them. The "one webhook" part is structural rather than conventional: `admitDelivery`
+  takes a project name and resolves the id itself, so no caller can address another row, and
+  `create` refuses a webhook under any other id (which would mint a secret with no door) as
+  well as a schedule under this one. `projectWebhookPath` in `src/domain/trigger/types.ts` is
+  the only place the address is built.
 - Triggers and their delivery history both live in the **project partition**, so the project
   cascade delete already removes them and a trigger's runs are one `begins_with`. Run rows
   carry a TTL, because a delivery log is not a record to keep.

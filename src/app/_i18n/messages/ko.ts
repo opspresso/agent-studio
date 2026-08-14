@@ -513,10 +513,14 @@ export const ko: Messages = {
   "pset.shortcutLabel": "라벨",
   "pset.shortcutSends": "눌렀을 때 보낼 내용",
 
-  "trigger.section": "트리거",
-  "trigger.newId": "새 트리거 ID",
+  "webhook.section": "Webhook",
+  "webhook.intro":
+    "프로젝트마다 주소 하나가 있고, 켜기 전까지는 꺼져 있습니다. 외부 시스템은 X-Trigger-Secret 헤더에 시크릿을 담아 JSON 을 POST 해 실행을 시작합니다. 전달은 즉시 응답되고 결과는 아래 이력에 남습니다. Webhook 은 항상 프로젝트의 published 버전을 실행합니다.",
+  "schedule.section": "스케줄",
+  "schedule.intro":
+    "타임존과 함께 지정한 cron 식으로 스스로 발화합니다. 스케줄도 항상 프로젝트의 published 버전을 실행하며, 결과는 각 스케줄 아래에 표시됩니다.",
+  "trigger.newId": "새 스케줄 ID",
   "trigger.newIdPlaceholder": "nightly-report",
-  "trigger.kind": "종류",
   "trigger.cron": "Cron",
   "trigger.cronPlaceholder": "30 9 * * 1-5",
   "trigger.cronHint": "분 시 일 월 요일",

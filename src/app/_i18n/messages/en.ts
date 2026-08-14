@@ -586,11 +586,16 @@ export const en = {
   "pset.shortcutLabel": "Label",
   "pset.shortcutSends": "What clicking it sends",
 
-  // Triggers: schedules and webhooks.
-  "trigger.section": "Triggers",
-  "trigger.newId": "New trigger id",
+  // The project webhook and schedules — the two ways something outside the
+  // console starts a run.
+  "webhook.section": "Webhook",
+  "webhook.intro":
+    "One address per project, off until you turn it on. An outside system starts a run by posting JSON to it with the secret in the X-Trigger-Secret header; the delivery is acknowledged immediately and its outcome lands in the history below. The webhook always runs the project's published version.",
+  "schedule.section": "Schedules",
+  "schedule.intro":
+    "A cron expression in a timezone, fired without anyone asking. Schedules always run the project's published version, and their outcomes show up under each one.",
+  "trigger.newId": "New schedule id",
   "trigger.newIdPlaceholder": "nightly-report",
-  "trigger.kind": "Kind",
   "trigger.cron": "Cron",
   "trigger.cronPlaceholder": "30 9 * * 1-5",
   "trigger.cronHint": "minute hour day-of-month month day-of-week",

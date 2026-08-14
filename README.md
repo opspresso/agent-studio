@@ -143,13 +143,14 @@ the user sent and what the run drew, so "now make it night" works on either — 
 handles travel through a subagent transfer, so an agent can hand a picture to a dedicated
 image project and get it *edited* rather than redrawn.
 
-### Webhook triggers
+### Webhook
 
-An outside system starts a run by posting to a trigger's URL with its secret.
+Every project has one webhook, off until **Project Settings → Webhook** turns it on. An
+outside system starts a run by posting JSON to it with the secret.
 
 ```bash
-curl -X POST https://<host>/api/triggers/my-project/nightly \
-  -H "X-Trigger-Secret: $TRIGGER_SECRET" \
+curl -X POST https://<host>/api/webhook/my-project \
+  -H "X-Trigger-Secret: $WEBHOOK_SECRET" \
   -H "Idempotency-Key: $EVENT_ID" \
   -d '{"event":"nightly-report"}'
 ```

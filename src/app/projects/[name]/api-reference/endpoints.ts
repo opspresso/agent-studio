@@ -1,4 +1,5 @@
 import type { ProjectType } from "@/domain/project/types";
+import { projectWebhookPath } from "@/domain/trigger/types";
 
 /**
  * Builds the API Reference tab's endpoint descriptors from a project's public
@@ -8,11 +9,12 @@ import type { ProjectType } from "@/domain/project/types";
  * session cookie, A2A key, or Slack secret.
  */
 
-export type AuthKind = "token" | "a2a-key" | "slack-signature" | "public";
+export type AuthKind = "token" | "a2a-key" | "trigger-secret" | "slack-signature" | "public";
 
 export const AUTH_LABEL: Record<AuthKind, string> = {
   token: "Bearer token",
   "a2a-key": "X-A2A-Key header",
+  "trigger-secret": "X-Trigger-Secret header",
   "slack-signature": "Slack signature",
   public: "Public",
 };
@@ -21,6 +23,7 @@ export const AUTH_LABEL: Record<AuthKind, string> = {
 export const PLACEHOLDERS = {
   token: "$PROJECT_API_TOKEN",
   a2aKey: "$A2A_API_KEY",
+  webhookSecret: "$WEBHOOK_SECRET",
   slackSignature: "$SLACK_SIGNATURE",
   slackTimestamp: "$SLACK_TIMESTAMP",
 } as const;
@@ -66,6 +69,12 @@ export interface ApiReferenceContext {
   origin: string;
   /** A2A exposure status, or null when unknown. */
   a2a: { enabled: boolean; published: boolean } | null;
+  /**
+   * The project webhook's switch, or null when not visible to the viewer — the
+   * secret it is authenticated with is owner-readable, so a viewer who cannot
+   * see the switch has nothing to call this endpoint with.
+   */
+  webhook: { enabled: boolean } | null;
   /** Slack integration status (owner or admin), or null when not visible to the viewer. */
   slack: { configured: boolean } | null;
 }
@@ -80,6 +89,8 @@ function curlExample(opts: {
   auth: AuthKind;
   body?: unknown;
   streaming?: boolean;
+  /** Headers beyond the auth one — an optional protocol header, not a credential. */
+  extraHeaders?: Record<string, string>;
 }): CodeExample {
   const lines: string[] = [`curl -X ${opts.method}${opts.streaming ? " -N" : ""} '${opts.url}'`];
   if (opts.body !== undefined) {
@@ -92,12 +103,18 @@ function curlExample(opts: {
     case "a2a-key":
       lines.push(`  -H 'X-A2A-Key: ${PLACEHOLDERS.a2aKey}'`);
       break;
+    case "trigger-secret":
+      lines.push(`  -H 'X-Trigger-Secret: ${PLACEHOLDERS.webhookSecret}'`);
+      break;
     case "slack-signature":
       lines.push(`  -H 'X-Slack-Signature: ${PLACEHOLDERS.slackSignature}'`);
       lines.push(`  -H 'X-Slack-Request-Timestamp: ${PLACEHOLDERS.slackTimestamp}'`);
       break;
     case "public":
       break;
+  }
+  for (const [name, value] of Object.entries(opts.extraHeaders ?? {})) {
+    lines.push(`  -H '${name}: ${value}'`);
   }
   if (opts.body !== undefined) {
     lines.push(`  -d '${JSON.stringify(opts.body)}'`);
@@ -175,7 +192,7 @@ const USAGE_FIELDS: FieldSpec[] = [
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
-  const { projectName, projectType, publishedVersion, origin, a2a, slack } = ctx;
+  const { projectName, projectType, publishedVersion, origin, a2a, slack, webhook } = ctx;
   const abs = (path: string): string => `${origin}${path}`;
   const endpoints: ApiEndpoint[] = [];
 
@@ -380,6 +397,51 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         });
       }
     }
+  }
+
+  // The project webhook: shown once it is switched on, and deliberately not
+  // gated on a published version — the address is live either way, and what it
+  // answers without one is the `no-published-version` status documented below.
+  if (webhook && webhook.enabled) {
+    const webhookPath = projectWebhookPath(projectName);
+    const webhookBody = { event: "build.finished", status: "ok" };
+    endpoints.push({
+      id: "webhook",
+      method: "POST",
+      path: webhookPath,
+      title: "Project webhook",
+      description:
+        "Starts a run of the published version from outside. The secret goes in X-Trigger-Secret; the JSON body (up to 1MB) becomes the run's input — serialised into the user message, or turned into template variables when the webhook's payload mode says so. " +
+        "It answers 202 immediately and runs in the background, because a run can take minutes and no sender waits that long: the answer lands on the delivery's history row under Settings → Webhook, not in this response. " +
+        "Send an Idempotency-Key header to make a redelivery safe — a repeat within 24 hours is acknowledged as duplicate without running.",
+      auth: "trigger-secret",
+      streaming: false,
+      responseFields: [
+        { name: "ok", type: "boolean", description: "Always true — the delivery was understood." },
+        {
+          name: "status",
+          type: "string",
+          description:
+            '"accepted" when a run started; "disabled", "duplicate", "busy" (a run from this webhook was still going and overlap is off) or "no-published-version" when it deliberately did not. All four are 202: the delivery was fine, the run is what did not happen.',
+        },
+        {
+          name: "runId",
+          type: "string",
+          description: 'Present on "accepted" — the id of the history row this delivery opened.',
+        },
+      ],
+      responseExample: pretty({ ok: true, status: "accepted", runId: "9f1c…" }),
+      errorCodes: [400, 401, 404, 413],
+      codeExamples: [
+        curlExample({
+          method: "POST",
+          url: abs(webhookPath),
+          auth: "trigger-secret",
+          extraHeaders: { "Idempotency-Key": "$DELIVERY_ID" },
+          body: webhookBody,
+        }),
+      ],
+    });
   }
 
   // A2A endpoints appear only when the key is configured and a version is published.

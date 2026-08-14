@@ -10,7 +10,8 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { A2aSection } from "./A2aSection";
 import { CostLimitsSection } from "./CostLimitsSection";
 import { SlackSection } from "./SlackSection";
-import { TriggersSection } from "./TriggersSection";
+import { SchedulesSection } from "./SchedulesSection";
+import { WebhookSection } from "./WebhookSection";
 import { TokenSection } from "./TokenSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
@@ -163,7 +164,9 @@ export default function SettingsPage() {
 
       <TokenSection projectName={name} />
 
-      <TriggersSection projectName={name} />
+      <WebhookSection projectName={name} />
+
+      <SchedulesSection projectName={name} />
 
       <SlackSection projectName={name} projectType={projectType} />
 

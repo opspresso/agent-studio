@@ -181,6 +181,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |
 | Whether a run's trace is sampled | `src/application/run/traceLifecycle.ts` |
 | Evaluating when a schedule fires | `src/domain/trigger/cron.ts` |
+| Where a project's webhook is delivered | `projectWebhookPath` in `src/domain/trigger/types.ts` |
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
