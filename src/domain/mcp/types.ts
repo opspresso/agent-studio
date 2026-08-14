@@ -47,6 +47,16 @@ export interface McpServerAuth {
   authorizationEndpoint: string;
   tokenEndpoint: string;
   /**
+   * RFC 7591. Absent means the provider requires a manually registered app.
+   *
+   * Deprecated by the revision that introduced metadata documents, and tried
+   * once as removed — but a server on a 2025-era release advertises this and
+   * nothing else, so dropping it makes a working entry unconnectable for a
+   * reason its owner cannot fix. It is the last resort, behind both a stored
+   * client and a metadata document.
+   */
+  registrationEndpoint?: string;
+  /**
    * Does this server resolve a `client_id` that is an HTTPS URL by fetching the
    * document it points at? See the metadata field of the same meaning.
    *

@@ -108,7 +108,28 @@ describe("mcp connection mapping", () => {
     expect(read?.issuer).toBe(connection.issuer);
   });
 
-  it("leaves the flag absent for a client the owner entered", async () => {
+  it("survives the round trip for a dynamically registered client too", async () => {
+    // The other exemption on the same axis, and the same failure mode: lost on
+    // the way back, a registered client cannot be re-registered when its entry
+    // moves, so the owner is told to go and register an app by hand for
+    // credentials this app issued itself.
+    await mcpConnectionRepository.put({
+      projectName: "p",
+      serverName: "slack",
+      clientId: "dcr-1",
+      clientSecret: "enc:s",
+      clientRegistered: true,
+      issuer: "https://auth.example.com",
+      resource: "https://mcp.slack.com",
+      scopes: [],
+      status: "needs_auth",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect((await mcpConnectionRepository.get("p", "slack"))?.clientRegistered).toBe(true);
+  });
+
+  it("leaves both flags absent for a client the owner entered", async () => {
     await mcpConnectionRepository.put({
       projectName: "p",
       serverName: "slack",
@@ -120,7 +141,9 @@ describe("mcp connection mapping", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
-    expect((await mcpConnectionRepository.get("p", "slack"))?.clientFromMetadataDocument).toBeUndefined();
+    const read = await mcpConnectionRepository.get("p", "slack");
+    expect(read?.clientFromMetadataDocument).toBeUndefined();
+    expect(read?.clientRegistered).toBeUndefined();
   });
 });
 
