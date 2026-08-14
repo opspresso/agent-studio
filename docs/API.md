@@ -820,7 +820,8 @@ GET /api/mcps/oauth/client-metadata/{project}          (public)
 ```
 
 A project's OAuth Client ID Metadata Document, which an authorization server fetches to
-resolve a `client_id` that is a URL (protocol `2026-07-28`, replacing dynamic registration).
+resolve a `client_id` that is a URL (protocol `2026-07-28`, which deprecates dynamic
+registration — still the fallback for a server that does not accept a document).
 **Unauthenticated on purpose** — the reader is that server, arriving with no session — and it
 carries no secret: the deployment's name, and the single redirect URI it accepts. `404` for a
 name that is not a slug, `503` when no public base URL is configured, and
