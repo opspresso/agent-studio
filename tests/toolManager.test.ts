@@ -67,6 +67,14 @@ interface ServerScript {
   callOmitsContent?: boolean;
   /** When set, tools/call answers 401 — a token revoked after discovery succeeded. */
   callUnauthorized?: boolean;
+  /**
+   * Refuse `initialize` the way a server built only for a stateless revision
+   * does: an HTTP status carrying a JSON-RPC error rather than prose. Protocol
+   * `2026-07-28` removed the handshake, so such a server answers `400` with a
+   * spec-reserved code or `404` with `-32601` — correctly, while looking from
+   * the outside exactly like one that is down.
+   */
+  statelessRefusal?: { status: number; error: { code: number; message: string; data?: unknown } };
   /** Hook fired as each request arrives, for tests that need to race one. */
   onRequest?: (method: string) => void;
 }
@@ -149,6 +157,12 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
 
     if (body.method === "notifications/initialized") {
       return new Response("", { status: 202 });
+    }
+    if (script.statelessRefusal && body.method === "initialize") {
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id: body.id, error: script.statelessRefusal.error }),
+        { status: script.statelessRefusal.status, headers: { "content-type": "application/json" } },
+      );
     }
     // A session the server no longer knows. Checked before anything is done
     // with the message, which is why replaying the request afterwards is safe.
@@ -510,6 +524,91 @@ describe("ToolManager per-server error isolation", () => {
     await manager.init();
 
     expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
+  });
+});
+
+describe("ToolManager stateless-server refusal", () => {
+  it("reports a server that refuses the handshake as one this client is too old for", async () => {
+    stubMcpFetch({
+      "https://modern.test/mcp": {
+        statelessRefusal: {
+          status: 400,
+          error: {
+            code: -32022,
+            message: "Unsupported protocol version",
+            data: { supported: ["2026-07-28"], requested: PROTOCOL_VERSION },
+          },
+        },
+      },
+      "https://ok.test/mcp": { listTools: [{ name: "weather" }] },
+    });
+    const manager = new ToolManager([
+      server("modern", "https://modern.test/mcp"),
+      server("ok", "https://ok.test/mcp"),
+    ]);
+
+    await manager.init();
+
+    // The other server is untouched: this is one server's refusal, not an outage.
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
+    const warning = manager.warnings.find((w) => w.includes("'modern'"));
+    expect(warning).toContain("cannot be used by this client");
+    expect(warning).toContain("It speaks MCP 2026-07-28");
+    // The whole point: an operator sent to check a healthy host learns nothing.
+    expect(warning).not.toContain("unreachable");
+  });
+
+  it("reads a 404 with -32601 on initialize as the same refusal", async () => {
+    stubMcpFetch({
+      "https://modern.test/mcp": {
+        statelessRefusal: { status: 404, error: { code: -32601, message: "Method not found" } },
+      },
+    });
+    const manager = new ToolManager([server("modern", "https://modern.test/mcp")]);
+
+    await manager.init();
+
+    const warning = manager.warnings[0];
+    expect(warning).toContain("cannot be used by this client");
+    expect(warning).toContain("stateless MCP revision");
+    expect(warning).not.toContain("unreachable");
+  });
+
+  it("replays the refusal from cache rather than degrading to 'unreachable'", async () => {
+    const scripts = {
+      "https://modern.test/mcp": {
+        statelessRefusal: { status: 400, error: { code: -32022, message: "Unsupported" } },
+      },
+    };
+    stubMcpFetch(scripts);
+    await new ToolManager([server("modern", "https://modern.test/mcp")]).init();
+
+    // A second run within the failure TTL never reaches the server.
+    const second = new ToolManager([server("modern", "https://modern.test/mcp")]);
+    await second.init();
+
+    expect(second.warnings[0]).toContain("cannot be used by this client");
+    expect(second.warnings[0]).not.toContain("unreachable");
+  });
+
+  it("leaves an ordinary failure reported as unreachable", async () => {
+    stubMcpFetch({
+      // `-32000` is the implementation-defined range, not the spec's own: an
+      // old server's own error code must not be read as a new protocol.
+      "https://old.test/mcp": {
+        statelessRefusal: { status: 500, error: { code: -32000, message: "boom" } },
+      },
+      "https://prose.test/mcp": { notFoundAfterHandshake: true },
+    });
+    const manager = new ToolManager([
+      server("old", "https://old.test/mcp"),
+      server("prose", "https://prose.test/mcp"),
+    ]);
+
+    await manager.init();
+
+    expect(manager.warnings.find((w) => w.includes("'old'"))).toContain("is unreachable");
+    expect(manager.warnings.find((w) => w.includes("'prose'"))).toContain("is unreachable");
   });
 });
 

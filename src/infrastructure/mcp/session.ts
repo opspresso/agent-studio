@@ -34,12 +34,33 @@ const SESSION_END_TIMEOUT_MS = 5_000;
  */
 const MAX_TOOL_PAGES = 20;
 const MAX_MCP_RESPONSE_BYTES = 14_500_000;
+/**
+ * How much of a *failed* response to read while looking for a JSON-RPC error.
+ *
+ * Small on purpose, and unrelated to the ceiling above: the one thing being
+ * looked for — whether the server refused us in the protocol's own vocabulary —
+ * is in the first few hundred bytes or not there at all. A gateway answering a
+ * 400 with a megabyte of HTML must not cost the run that memory to learn
+ * nothing.
+ */
+const MAX_ERROR_BODY_BYTES = 64_000;
+
+/**
+ * A JSON-RPC error object. `data` carries the diagnostics protocol `2026-07-28`
+ * puts there — the `supported` version list of an `UnsupportedProtocolVersion`
+ * refusal is the one this client reads.
+ */
+interface JsonRpcError {
+  code: number;
+  message: string;
+  data?: unknown;
+}
 
 interface JsonRpcResponse {
   jsonrpc: string;
   id?: number | string;
   result?: unknown;
-  error?: { code: number; message: string };
+  error?: JsonRpcError;
 }
 
 /**
@@ -434,11 +455,83 @@ function headerValue(value: string): string {
 export class McpHttpError extends Error {
   constructor(
     readonly status: number,
-    method: string,
+    /** The request this failed, kept so a reading may depend on which one it was. */
+    readonly method: string,
+    /**
+     * The JSON-RPC error the failure carried, where it carried one. A status
+     * alone cannot tell a server that is down from one that is refusing this
+     * client on purpose, and from `2026-07-28` the difference is written in the
+     * body — see {@link modernProtocolRefusal}.
+     */
+    readonly rpcError?: JsonRpcError,
   ) {
     super(`${method} failed: HTTP ${status}`);
     this.name = "McpHttpError";
   }
+}
+
+/**
+ * The lowest code protocol `2026-07-28` reserves for the specification itself.
+ *
+ * The revision partitions the JSON-RPC server-error range: `-32000` to `-32019`
+ * stays implementation-defined, and `-32020` to `-32099` belongs to MCP. Read as
+ * a range rather than as the three codes allocated so far (`HeaderMismatch`,
+ * `MissingRequiredClientCapability`, `UnsupportedProtocolVersion`), because what
+ * is being detected is not which one arrived — it is that the server answers in
+ * a vocabulary only a revision *without* `initialize` has.
+ */
+const SPEC_RESERVED_ERROR_MIN = -32_099;
+const SPEC_RESERVED_ERROR_MAX = -32_020;
+const UNSUPPORTED_PROTOCOL_VERSION = -32_022;
+const METHOD_NOT_FOUND = -32_601;
+
+/** The `supported` list an `UnsupportedProtocolVersion` refusal carries, if any. */
+function supportedVersions(data: unknown): string[] {
+  if (typeof data !== "object" || data === null) {
+    return [];
+  }
+  const supported = (data as { supported?: unknown }).supported;
+  return Array.isArray(supported) ? supported.filter((v) => typeof v === "string") : [];
+}
+
+/**
+ * Did a server refuse this request *because* it speaks a stateless revision?
+ *
+ * This client opens with the `initialize` handshake, which protocol
+ * `2026-07-28` removed: every request now carries its own version in `_meta`,
+ * and a server built only for that revision has no such method. Such a server
+ * answers perfectly correctly — `400` with a spec-reserved code, or `404` with
+ * `-32601` — and the transport layer above reads both as "the server is
+ * unreachable", sending an operator to check a host that is healthy and
+ * refusing us on purpose.
+ *
+ * Returns the sentence to report, or `undefined` when the failure is an
+ * ordinary one. The reading lives here, beside the protocol it is about, rather
+ * than at the two call sites that need it — the same reason {@link
+ * isUnauthorized} does.
+ */
+export function modernProtocolRefusal(error: unknown): string | undefined {
+  if (!(error instanceof McpHttpError) || !error.rpcError) {
+    return undefined;
+  }
+  const { code, data } = error.rpcError;
+  const specReserved = code >= SPEC_RESERVED_ERROR_MIN && code <= SPEC_RESERVED_ERROR_MAX;
+  // `-32601` is an ordinary "unknown method" that any revision may send. Only
+  // the handshake makes it evidence: a server that does not implement
+  // `initialize` is one that never had it.
+  const noHandshake = code === METHOD_NOT_FOUND && error.method === "initialize";
+  if (!specReserved && !noHandshake) {
+    return undefined;
+  }
+  const supported = code === UNSUPPORTED_PROTOCOL_VERSION ? supportedVersions(data) : [];
+  const speaks =
+    supported.length > 0
+      ? `It speaks MCP ${supported.join(", ")}`
+      : "It speaks a stateless MCP revision (2026-07-28 or later)";
+  return (
+    `${speaks} and refused the handshake this client opens with ` +
+    `(protocol ${PROTOCOL_VERSION}): that revision has no 'initialize' method.`
+  );
 }
 
 /**
@@ -464,8 +557,43 @@ async function assertOk(response: Response, method: string): Promise<void> {
   if (response.ok) {
     return;
   }
-  await response.body?.cancel();
-  throw new McpHttpError(response.status, method);
+  throw new McpHttpError(response.status, method, await readRpcError(response));
+}
+
+/**
+ * The JSON-RPC error a failed response carried, or `undefined` for the far more
+ * common failure that carried prose.
+ *
+ * This reads the body where it used to cancel it, and the reason is narrow: from
+ * protocol `2026-07-28` the *status* no longer distinguishes a server that is
+ * broken from one refusing this client deliberately — only the body does. An
+ * error page, a proxy's HTML, an empty body and an oversized one all still come
+ * back `undefined`, so every failure that is not that refusal is reported
+ * exactly as before.
+ *
+ * Never throws. A body that cannot be read says nothing about the status the
+ * caller is already reporting, and letting it throw here would replace a
+ * server's real failure with an incident about reading it.
+ */
+async function readRpcError(response: Response): Promise<JsonRpcError | undefined> {
+  let text: string;
+  try {
+    text = await readBodyText(response, MAX_ERROR_BODY_BYTES);
+  } catch {
+    await response.body?.cancel().catch(() => {});
+    return undefined;
+  }
+  if (!text.trim().startsWith("{")) {
+    return undefined;
+  }
+  let message: JsonRpcResponse;
+  try {
+    message = JSON.parse(text) as JsonRpcResponse;
+  } catch {
+    return undefined;
+  }
+  const rpcError = message?.error;
+  return rpcError && typeof rpcError.code === "number" ? rpcError : undefined;
 }
 
 /** Read a JSON-RPC response body, handling both JSON and SSE framing. */
