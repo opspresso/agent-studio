@@ -30,14 +30,37 @@ function startLoopbackMcp(): Promise<{ server: Server; port: number }> {
     request.on("data", (chunk) => (body += chunk));
     request.on("end", () => {
       const message = JSON.parse(body || "{}") as { id?: number; method?: string };
+      if (request.method !== "POST") {
+        // The standalone stream a legacy connection opens, and the session
+        // release. This server hosts neither.
+        response.writeHead(405).end();
+        return;
+      }
       if (message.id === undefined) {
         response.writeHead(202).end();
+        return;
+      }
+      if (message.method === "server/discover") {
+        // A server predating protocol 2026-07-28 answers the era probe this
+        // way, which is what sends the client to `initialize`.
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: message.id,
+            error: { code: -32601, message: "Method not found" },
+          }),
+        );
         return;
       }
       const result =
         message.method === "tools/list"
           ? { tools: [{ name: "fetch_image", description: "d", inputSchema: { type: "object" } }] }
-          : { protocolVersion: "2025-06-18", serverInfo: { name: "loopback-mcp" } };
+          : {
+              protocolVersion: "2025-06-18",
+              capabilities: { tools: {} },
+              serverInfo: { name: "loopback-mcp", version: "1.0" },
+            };
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
     });

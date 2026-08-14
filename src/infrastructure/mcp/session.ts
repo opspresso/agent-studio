@@ -1,21 +1,58 @@
 /**
- * One streamable-HTTP session against a single MCP server: the JSON-RPC
- * handshake (`initialize` -> `notifications/initialized`) followed by
- * `tools/list` / `tools/call`, over plain `fetch` — no SDK dependency.
+ * One connection to a single MCP server, over `@modelcontextprotocol/client`.
  *
  * The single owner of the protocol. Both callers use it: the engine's
  * {@link ../toolManager ToolManager} for a run's tools, and the registry's
  * "Test connection" probe. A second implementation had already drifted from
  * this one on headers, framing and timeouts.
+ *
+ * **Why an SDK here, when `application` may name none.** This is the adapter
+ * layer, where a protocol client belongs, and the protocol stopped being small:
+ * revision `2026-07-28` removed the `initialize` handshake, so a client now has
+ * to detect which era a server implements and speak either the handshake or the
+ * per-request `_meta` envelope — with `Mcp-Param-*` mirroring, `server/discover`
+ * and multi round-trip results behind it. Hand-rolling that over `fetch` was
+ * tractable while the protocol was one handshake and two verbs; it is not now,
+ * and the era detection is the part that is easiest to get subtly wrong.
+ *
+ * What this file keeps is everything the SDK has no opinion about, and each of
+ * these was a defect once: the SSRF guard the deployment requires
+ * ({@link boundedFetch}), a ceiling on what one response may pull into memory,
+ * and the fact that a session connects lazily so a turn calling no tool makes
+ * no request at all.
  */
 
+import {
+  Client,
+  SdkError,
+  SdkErrorCode,
+  SdkHttpError,
+  StreamableHTTPClientTransport,
+  UnauthorizedError,
+  UnsupportedProtocolVersionError,
+  type FetchLike,
+} from "@modelcontextprotocol/client";
 import type { McpTool } from "@/domain/mcp/types";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
-import { readBodyText } from "@/shared/httpBody";
-import { log } from "@/shared/logger";
 
-export const PROTOCOL_VERSION = "2025-06-18";
+/**
+ * The revision this client probes with — the newest it can speak. Not a version
+ * it insists on: the SDK adopts whatever the server turns out to speak.
+ *
+ * Written here rather than re-exported, because the SDK's
+ * `LATEST_PROTOCOL_VERSION` names something else — the newest *legacy* revision,
+ * which is what it proposes in the `initialize` handshake once the probe has
+ * found a 2025-era server. Both travel, on different requests, so exporting one
+ * under this name would make the other look like a bug when it appeared on the
+ * wire. Kept in step with the SDK by {@link ../../../tests/toolManager.test.ts},
+ * which asserts the probe actually states it.
+ */
+export const PROTOCOL_VERSION = "2026-07-28";
+
+/** The revision proposed to a server that predates the probe. */
+export { LATEST_PROTOCOL_VERSION as LEGACY_PROTOCOL_VERSION } from "@modelcontextprotocol/client";
+
 /** A tool may legitimately take minutes; the model is waiting on its answer. */
 export const MCP_CALL_TIMEOUT_MS = 120_000;
 /**
@@ -33,35 +70,18 @@ const SESSION_END_TIMEOUT_MS = 5_000;
  * past any real catalogue, and a run declares at most 120 tools anyway.
  */
 const MAX_TOOL_PAGES = 20;
-const MAX_MCP_RESPONSE_BYTES = 14_500_000;
 /**
- * How much of a *failed* response to read while looking for a JSON-RPC error.
+ * How many bytes one response may pull into memory.
  *
- * Small on purpose, and unrelated to the ceiling above: the one thing being
- * looked for — whether the server refused us in the protocol's own vocabulary —
- * is in the first few hundred bytes or not there at all. A gateway answering a
- * 400 with a megabyte of HTML must not cost the run that memory to learn
- * nothing.
+ * Ours to impose, and the SDK does not: it reads a response to completion, so a
+ * server answering `tools/list` with something enormous — by bug, by compromise,
+ * or because a tool really did return a database — would be held whole before
+ * anything got to judge it.
  */
-const MAX_ERROR_BODY_BYTES = 64_000;
+const MAX_MCP_RESPONSE_BYTES = 14_500_000;
 
-/**
- * A JSON-RPC error object. `data` carries the diagnostics protocol `2026-07-28`
- * puts there — the `supported` version list of an `UnsupportedProtocolVersion`
- * refusal is the one this client reads.
- */
-interface JsonRpcError {
-  code: number;
-  message: string;
-  data?: unknown;
-}
-
-interface JsonRpcResponse {
-  jsonrpc: string;
-  id?: number | string;
-  result?: unknown;
-  error?: JsonRpcError;
-}
+/** How this client names itself to a server. */
+const CLIENT_INFO = { name: "agentdure", version: "0.1.0" } as const;
 
 /**
  * What one discovery learned: the catalogue, and how long the server says it
@@ -76,23 +96,56 @@ export interface McpDiscovery {
   ttlMs?: number;
 }
 
+/**
+ * The deployment's outbound fetch, with a ceiling on what one response may
+ * bring back.
+ *
+ * Both halves are this file's to supply. The guard is not defence in depth —
+ * an MCP URL is operator-supplied, and `fetchPublicUrl` is what keeps it from
+ * naming the metadata service or a neighbour on the cluster network. The
+ * ceiling is applied to the stream rather than after it, because "read it and
+ * check the length" spends the memory before it decides.
+ */
+function boundedFetch(loopback: boolean): FetchLike {
+  const send = loopback ? fetch : fetchPublicUrl;
+  return async (url, init) => {
+    const response = await send(url, init);
+    const declared = Number(response.headers.get("content-length") ?? "");
+    if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
+      await response.body?.cancel().catch(() => {});
+      throw new Error(`MCP response declares ${declared} bytes, over the ${MAX_MCP_RESPONSE_BYTES} cap`);
+    }
+    if (!response.body) {
+      return response;
+    }
+    let total = 0;
+    const bounded = response.body.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          total += chunk.byteLength;
+          if (total > MAX_MCP_RESPONSE_BYTES) {
+            controller.error(new Error(`MCP response exceeds ${MAX_MCP_RESPONSE_BYTES} bytes`));
+            return;
+          }
+          controller.enqueue(chunk);
+        },
+      }),
+    );
+    return new Response(bounded, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
 export class McpSession {
-  private sessionId: string | undefined;
-  private nextId = 1;
-  private initialized = false;
-  /** Name, version and negotiated protocol from the handshake; "" until then. */
+  private client: Client | undefined;
+  private transport: StreamableHTTPClientTransport | undefined;
+  /** The connection while it is being made; see {@link ensureConnected}. */
+  private connecting: Promise<Client> | undefined;
+  /** Name, version and negotiated protocol from the connection; "" until then. */
   private serverDescription = "";
-  /** The handshake while it is in flight; see {@link ensureInitialized}. */
-  private handshake: Promise<void> | undefined;
-  /**
-   * The protocol version the server agreed to, once it has said. Requests after
-   * the handshake carry this rather than {@link PROTOCOL_VERSION}: the header is
-   * meant to state the version *in use*, and a server that answered with an
-   * older revision is owed that revision's semantics, not a claim about ours.
-   * Undefined until the handshake, where our own version is the only thing there
-   * is to propose.
-   */
-  private negotiatedVersion: string | undefined;
 
   constructor(
     private readonly url: string,
@@ -112,338 +165,257 @@ export class McpSession {
     private readonly loopback = false,
   ) {}
 
-  private get send(): typeof fetch {
-    return this.loopback ? fetch : fetchPublicUrl;
-  }
-
-  private requestSignal(timeoutMs: number): AbortSignal {
-    const timeout = AbortSignal.timeout(timeoutMs);
-    return this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
+  /** The per-request options every call shares: the run's signal, and a deadline. */
+  private requestOptions(timeoutMs: number): { timeout: number; signal?: AbortSignal } {
+    return { timeout: timeoutMs, ...(this.signal ? { signal: this.signal } : {}) };
   }
 
   /**
-   * The headers every request carries, plus the two that mirror *this* request's
-   * body.
-   *
-   * `Mcp-Method` and `Mcp-Name` are required of a client from protocol
-   * `2026-07-28` (SEP-2243): they let an intermediary — a gateway, a rate
-   * limiter, a WAF — route and meter without parsing the body. A server that
-   * predates them ignores a header it does not know, so sending them now costs
-   * an older server nothing and is what a newer one refuses to work without.
-   *
-   * Applied *after* the caller's own headers, unlike the protocol version above,
-   * because these two are derived from the body rather than chosen: a server
-   * that reads them MUST reject the request when header and body disagree
-   * (`-32020 HeaderMismatch`), so a registry entry whose static headers happened
-   * to name one would otherwise fail every call made through that entry.
-   */
-  private baseHeaders(method?: string, name?: string): Record<string, string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      "MCP-Protocol-Version": this.negotiatedVersion ?? PROTOCOL_VERSION,
-      ...this.headers,
-    };
-    if (this.sessionId) {
-      headers["Mcp-Session-Id"] = this.sessionId;
-    }
-    if (method !== undefined) {
-      headers["Mcp-Method"] = method;
-    }
-    if (name !== undefined) {
-      headers["Mcp-Name"] = headerValue(name);
-    }
-    return headers;
-  }
-
-  /**
-   * Forget the server-side session, so the next request handshakes afresh.
-   *
-   * Shared by teardown and by expiry recovery, which want exactly the same
-   * thing: the id is gone, so nothing may be sent under it and nothing may
-   * wait on a handshake that established it.
-   */
-  private forgetSession(): void {
-    this.sessionId = undefined;
-    this.initialized = false;
-    this.handshake = undefined;
-    this.negotiatedVersion = undefined;
-  }
-
-  /**
-   * Handshake once, even when several callers arrive together. The MCP calls of
+   * Connect once, even when several callers arrive together. The MCP calls of
    * one model response are dispatched concurrently, and a session served from
-   * the discovery cache is still uninitialized when the first of them lands —
-   * so without this the server would hand out one session per racing caller and
-   * every id but the last would be lost, never released. A failed handshake
-   * clears the memo so the next call may retry.
+   * the discovery cache is still unconnected when the first of them lands — so
+   * without this each racing caller would open its own connection, and every one
+   * but the last would be left unreleased. A failed connect clears the memo so
+   * the next call may retry.
    */
-  private async ensureInitialized(): Promise<void> {
-    if (this.initialized) {
-      return;
+  private async ensureConnected(): Promise<Client> {
+    if (this.client) {
+      return this.client;
     }
-    this.handshake ??= this.initialize();
+    this.connecting ??= this.connect();
     try {
-      await this.handshake;
+      return await this.connecting;
     } catch (error) {
-      this.handshake = undefined;
+      this.connecting = undefined;
       throw error;
     }
   }
 
-  private async initialize(): Promise<void> {
-    const id = this.nextId++;
-    const response = await this.send(this.url, {
-      method: "POST",
-      headers: this.baseHeaders("initialize"),
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        method: "initialize",
-        params: {
-          protocolVersion: PROTOCOL_VERSION,
-          capabilities: {},
-          clientInfo: { name: "agentdure", version: "0.1.0" },
-        },
-      }),
-      signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),
+  private async connect(): Promise<Client> {
+    const transport = new StreamableHTTPClientTransport(new URL(this.url), {
+      fetch: boundedFetch(this.loopback),
+      // The registry entry's own headers — a bearer token, a tenant id. Applied
+      // as transport defaults so every request carries them, including the
+      // era probe, which is the first request a server ever sees from us.
+      requestInit: { headers: this.headers },
     });
-    const sessionId = response.headers.get("Mcp-Session-Id");
-    if (sessionId) {
-      // Recorded before the status check: a server that returns the session id
-      // and *then* fails still has a session to release.
-      this.sessionId = sessionId;
-    }
-    await assertOk(response, "initialize");
-    const handshake = await parseJsonRpc(response, id);
-    if (!handshake) {
-      throw new Error(
-        `MCP server answered initialize with ${response.status} and no reply ` +
-          `(content-type: ${response.headers.get("content-type") ?? "none"})`,
-      );
-    }
-    // What the server said it is. Kept so a server that offers no tools can say
-    // which protocol version it agreed to — the difference between "it has none"
-    // and "it would not talk to a client this old" is invisible otherwise.
-    const result = handshake?.result as
-      | { protocolVersion?: string; serverInfo?: { name?: string; version?: string } }
-      | undefined;
-    this.serverDescription = [
-      result?.serverInfo?.name,
-      result?.serverInfo?.version,
-      result?.protocolVersion ? `protocol ${result.protocolVersion}` : undefined,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    // Adopted, not just displayed. Every request from here on states the version
-    // actually in use — including the `notifications/initialized` below, which
-    // is already past the negotiation. A server that answered with something
-    // else is not refused: this client reads one shape of tool list, and every
-    // revision that answers `initialize` at all still speaks it, so disconnecting
-    // would cost an operator a working server to make a point about a header.
-    if (typeof result?.protocolVersion === "string" && result.protocolVersion !== "") {
-      this.negotiatedVersion = result.protocolVersion;
-    }
-
-    // Notify the server that initialization completed.
-    await this.send(this.url, {
-      method: "POST",
-      headers: this.baseHeaders("notifications/initialized"),
-      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
-      signal: this.requestSignal(MCP_DISCOVERY_TIMEOUT_MS),
+    const client = new Client(CLIENT_INFO, {
+      // The whole reason for the SDK. Without this the client is a `2025`-era
+      // one — `mode: 'legacy'` is the default — and a server built only for
+      // `2026-07-28` refuses it, correctly, on every request.
+      versionNegotiation: { mode: "auto" },
+      // This client answers no elicitation, sampling or roots request: it has
+      // no user to ask mid-run. Auto-fulfilment would try the handlers that are
+      // not registered; refusing instead lets `callTool` report the one thing
+      // that is true — the server needs something we cannot give it.
+      inputRequired: { autoFulfill: false },
+      listMaxPages: MAX_TOOL_PAGES,
     });
-    this.initialized = true;
+    // Held before the attempt, not after it. A connect that fails partway may
+    // already have been given a session id — the handshake answers with one, and
+    // a run cancelled at that moment is exactly when it happens — and a
+    // transport dropped on the way out strands that session on the server for
+    // its whole TTL. `end()` releases whatever this turns out to hold.
+    this.transport = transport;
+    try {
+      await client.connect(transport, this.requestOptions(MCP_DISCOVERY_TIMEOUT_MS));
+    } catch (error) {
+      throw asMcpError(error, "connect");
+    }
+    this.client = client;
+    this.serverDescription = describeServer(client);
+    return client;
   }
 
-  /** How the server identified itself at handshake. Empty before it happens. */
+  /** How the server identified itself when the connection was made. Empty before it happens. */
   get describedAs(): string {
     return this.serverDescription;
   }
 
   /**
-   * One request, retried once behind a fresh handshake if the server says the
-   * session is gone.
+   * Did the server declare that it has tools at all? `undefined` before a
+   * connection is made.
    *
-   * Streamable HTTP answers a request carrying an unknown `Mcp-Session-Id` with
-   * 404, and requires the client to start a new session rather than treat that
-   * as a dead server. Without it a run outliving the server's session TTL loses
-   * every tool for the rest of the run — the model keeps calling and keeps
-   * reading `HTTP 404`, with no path back. Runs here last up to ten minutes, so
-   * that is not a hypothetical window.
+   * Asked because the answer is otherwise invisible: the SDK returns an empty
+   * list — without sending `tools/list` — for a server that does not declare the
+   * `tools` capability, which the spec requires of any server that has them.
+   * That is the right reading of a conforming server and a silent loss for a
+   * non-conforming one, and a server whose tools simply stopped appearing is the
+   * hardest kind of failure to see. The caller reports the difference.
+   */
+  get declaresTools(): boolean | undefined {
+    return this.client ? this.client.getServerCapabilities()?.tools !== undefined : undefined;
+  }
+
+  /**
+   * Run one request, retried once behind a fresh connection if the server says
+   * the session is gone.
+   *
+   * The SDK does not do this, and a legacy server's session outliving neither
+   * the run nor its own TTL is not hypothetical: runs here last up to ten
+   * minutes. Streamable HTTP answers a request carrying an unknown
+   * `Mcp-Session-Id` with 404 and requires the client to start a new session
+   * rather than treat it as a dead server — without the retry, a run that
+   * crosses that boundary loses every tool for the rest of the run, the model
+   * keeps calling, and every call reads `HTTP 404` with no path back.
    *
    * Retrying is safe precisely because the 404 is a session-lookup failure: the
    * server rejected the message before running anything, so a `tools/call` that
-   * gets one had no effect to repeat.
+   * gets one had no effect to repeat. Bounded at one attempt, because a server
+   * answering 404 to everything — the endpoint itself is gone — would otherwise
+   * be reconnected to forever, and the second failure is the one that says so.
    *
-   * Bounded at one attempt. A server that answers 404 to everything — because
-   * the endpoint itself is gone — would otherwise be handshaked against forever,
-   * and the second failure is the one that says so.
+   * Protocol `2026-07-28` has no sessions at all, so on a modern connection
+   * `sessionId` is undefined and this is exactly one attempt.
    */
-  private async request(
+  private async withSessionRecovery<T>(
     method: string,
-    params: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<unknown> {
-    await this.ensureInitialized();
+    work: (client: Client) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.ensureConnected();
     // Captured before the attempt: it is what decides whether a 404 means *this*
     // session expired, and whether another caller has already replaced it.
-    const attemptedSession = this.sessionId;
+    const attemptedSession = this.transport?.sessionId;
     try {
-      return await this.dispatch(method, params, timeoutMs);
+      return await work(client);
     } catch (error) {
+      const failure = asMcpError(error, method);
       if (
-        !(error instanceof McpHttpError) ||
-        error.status !== 404 ||
+        !(failure instanceof McpHttpError) ||
+        failure.status !== 404 ||
         // No session id means the 404 is about the endpoint, not a session.
         attemptedSession === undefined
       ) {
-        throw error;
+        throw failure;
       }
-      // Only the caller whose session is still the current one clears it. The
+      // Only the caller whose session is still the current one discards it. The
       // MCP calls of one model response are dispatched concurrently, so several
-      // can hold the same expired id — and each resetting in turn would abandon
-      // a handshake another had already started, minting one server-side session
-      // per caller and leaking all but the last. The rest simply wait on the
-      // handshake the winner started.
-      if (this.sessionId === attemptedSession) {
-        this.forgetSession();
+      // can hold the same expired id — and each reconnecting in turn would
+      // abandon a connection another had already started, minting one
+      // server-side session per caller and leaking all but the last. The rest
+      // simply wait on the connection the winner started.
+      if (this.transport?.sessionId === attemptedSession) {
+        await this.discard();
       }
-      await this.ensureInitialized();
-      return await this.dispatch(method, params, timeoutMs);
+      try {
+        return await work(await this.ensureConnected());
+      } catch (retryError) {
+        throw asMcpError(retryError, method);
+      }
     }
   }
 
-  private async dispatch(
-    method: string,
-    params: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<unknown> {
-    const id = this.nextId++;
-    const response = await this.send(this.url, {
-      method: "POST",
-      headers: this.baseHeaders(method, mcpName(params)),
-      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-      signal: this.requestSignal(timeoutMs),
-    });
-    await assertOk(response, method);
-    const message = await parseJsonRpc(response, id);
-    if (message?.error) {
-      throw new Error(`MCP error (${message.error.code}): ${message.error.message}`);
-    }
-    if (!message) {
-      // A request must be answered. A 2xx that carries no reply — a bare 202,
-      // or a stream that held only notifications — used to fall through as
-      // `undefined`, which `tools/list` then read as a server with no tools:
-      // a wrong answer that looks like a legitimate one. Say what arrived
-      // instead, so the run reports an unreachable server rather than an empty
-      // one.
-      throw new Error(
-        `MCP server answered ${method} with ${response.status} and no reply ` +
-          `(content-type: ${response.headers.get("content-type") ?? "none"})`,
-      );
-    }
-    return message.result;
+  /** Drop the dead connection so the next caller opens a fresh one. */
+  private async discard(): Promise<void> {
+    const client = this.client;
+    this.client = undefined;
+    this.transport = undefined;
+    this.connecting = undefined;
+    // No session release: the server has already forgotten it, which is what
+    // the 404 said.
+    await client?.close().catch(() => {});
   }
 
   /**
-   * Every page of the server's catalogue, not just the first.
+   * Every page of the server's catalogue, not just the first — the SDK walks the
+   * `nextCursor` chain, bounded by {@link MAX_TOOL_PAGES}.
    *
-   * `tools/list` is paginated: a response may carry `nextCursor`, and the page
-   * it came with can be empty. Reading only the first page therefore reports a
-   * server as offering nothing while it is holding a full catalogue behind the
-   * cursor — indistinguishable, from the outside, from a server that genuinely
-   * has no tools.
+   * One thing changed with the SDK and is worth knowing before trusting the
+   * hint: the freshness a paged catalogue comes back with is the **first
+   * page's**, where this client used to take the shortest of all of them. The
+   * per-page call that would let us see the rest is unreachable — the SDK's
+   * per-page path is selected by passing a cursor, and the first page has none —
+   * so a server whose later pages ask for a shorter life is cached for longer
+   * than it asked. Bounded rather than unbounded: `MCP_MAX_SERVER_TTL_MS` caps
+   * whatever a server asks for, and a catalogue whose pages disagree about their
+   * own lifetime is not a shape any server here produces.
    */
   async listTools(): Promise<McpDiscovery> {
-    const tools: McpTool[] = [];
-    let ttlMs: number | undefined;
-    let cursor: string | undefined;
-    for (let page = 0; page < MAX_TOOL_PAGES; page++) {
-      const result = (await this.request(
-        "tools/list",
-        cursor === undefined ? {} : { cursor },
-        MCP_DISCOVERY_TIMEOUT_MS,
-      )) as { tools?: McpTool[]; nextCursor?: string; ttlMs?: unknown } | undefined;
-      tools.push(...(result?.tools ?? []));
-      // Each page carries its own hint and they may differ, but the caller
-      // caches the pages as one catalogue — so it is only as fresh as the page
-      // that goes stale first.
-      const pageTtl = result?.ttlMs;
-      if (typeof pageTtl === "number" && Number.isFinite(pageTtl)) {
-        ttlMs = ttlMs === undefined ? pageTtl : Math.min(ttlMs, pageTtl);
-      }
-      const next = result?.nextCursor;
-      // A server that repeats a cursor would otherwise re-read the same page
-      // until the bound, so stop on anything that is not forward progress.
-      if (typeof next !== "string" || next === "" || next === cursor) {
-        return { tools, ...(ttlMs === undefined ? {} : { ttlMs }) };
-      }
-      cursor = next;
-    }
-    log.warn("mcp", `${this.url} paged past ${MAX_TOOL_PAGES} tool pages; the tail was dropped`);
-    return { tools, ...(ttlMs === undefined ? {} : { ttlMs }) };
+    const result = await this.withSessionRecovery("tools/list", (client) =>
+      client.listTools(undefined, this.requestOptions(MCP_DISCOVERY_TIMEOUT_MS)),
+    );
+    const ttlMs = result.ttlMs;
+    return {
+      tools: result.tools as McpTool[],
+      ...(typeof ttlMs === "number" && Number.isFinite(ttlMs) ? { ttlMs } : {}),
+    };
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.request("tools/call", { name, arguments: args }, MCP_CALL_TIMEOUT_MS);
+    return this.withSessionRecovery("tools/call", (client) =>
+      client.callTool(
+        { name, arguments: args },
+        {
+          ...this.requestOptions(MCP_CALL_TIMEOUT_MS),
+          // Take an `input_required` result as a value rather than as a thrown
+          // error, so the caller can report *what* the server asked for. This
+          // client cannot answer it either way; the difference is whether the
+          // model is told why.
+          allowInputRequired: true,
+        },
+      ),
+    );
   }
 
   /**
-   * Release the server-side session (streamable HTTP `DELETE`). Best-effort:
-   * servers may not implement it, and a run must never fail on cleanup. A
-   * session that never initialized has nothing to release and returns at once.
+   * Release the server-side session and close the connection. Best-effort:
+   * servers may not implement the release, protocol `2026-07-28` has no session
+   * to release at all, and a run must never fail on cleanup. A session that
+   * never connected has nothing to close and returns at once.
    */
   async end(): Promise<void> {
-    if (!this.sessionId) {
+    const client = this.client;
+    const transport = this.transport;
+    this.client = undefined;
+    this.transport = undefined;
+    this.connecting = undefined;
+    if (!transport) {
       return;
     }
     try {
-      const response = await this.send(this.url, {
-        method: "DELETE",
-        headers: this.baseHeaders(),
-        signal: AbortSignal.timeout(SESSION_END_TIMEOUT_MS),
-      });
-      await response.body?.cancel();
+      // `close()` does not send it; on a legacy connection the DELETE is what
+      // frees the server's session, and without it each run leaks one. Protocol
+      // `2026-07-28` mints no session, so there is nothing to release and this
+      // is skipped.
+      if (transport.sessionId) {
+        await withTimeout(transport.terminateSession(), SESSION_END_TIMEOUT_MS);
+      }
     } catch {
       // Session teardown is best-effort.
-    } finally {
-      this.forgetSession();
+    }
+    try {
+      // Whichever end got as far as existing: a connect that threw leaves the
+      // transport open with no client above it.
+      await withTimeout(client ? client.close() : transport.close(), SESSION_END_TIMEOUT_MS);
+    } catch {
+      // Closing is best-effort too: the run is already over.
     }
   }
 }
 
-/**
- * The `Mcp-Name` a request's body implies: the tool being called, or the
- * resource being read.
- *
- * Read off the params rather than passed alongside them, because the header and
- * the body are compared by the server — deriving both from one value is what
- * makes them unable to drift. Absent for a request that names nothing, such as
- * `tools/list`, where the header is not required either.
- */
-function mcpName(params: Record<string, unknown>): string | undefined {
-  const name = params.name ?? params.uri;
-  return typeof name === "string" ? name : undefined;
+/** A promise that gives up rather than holding teardown open. */
+async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timed out")), ms);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-/**
- * A header value carried the way the transport's value encoding requires.
- *
- * HTTP field values are visible ASCII with no leading or trailing whitespace, so
- * anything else — a resource URI with a non-ASCII path, a name that would itself
- * be read as the sentinel — travels Base64-encoded between `=?base64?` and `?=`.
- * Tool names never reach that branch: the tool manager refuses any name outside
- * `[A-Za-z0-9_-]` before one can be called. It is here because this file owns
- * the protocol for callers that are not the tool manager, and because sending a
- * raw non-ASCII value would not merely be non-conforming — `fetch` rejects it,
- * costing the call rather than the header.
- */
-function headerValue(value: string): string {
-  const printableAscii = /^[\x20-\x7e]*$/.test(value) && value.trim() === value;
-  if (printableAscii && !(value.startsWith("=?base64?") && value.endsWith("?="))) {
-    return value;
-  }
-  return `=?base64?${Buffer.from(value, "utf-8").toString("base64")}?=`;
+/** What the server said it is, for a run that needs to name it. */
+function describeServer(client: Client): string {
+  const info = client.getServerVersion();
+  const version = client.getNegotiatedProtocolVersion();
+  return [info?.name, info?.version, version ? `protocol ${version}` : undefined]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**
@@ -457,81 +429,29 @@ export class McpHttpError extends Error {
     readonly status: number,
     /** The request this failed, kept so a reading may depend on which one it was. */
     readonly method: string,
-    /**
-     * The JSON-RPC error the failure carried, where it carried one. A status
-     * alone cannot tell a server that is down from one that is refusing this
-     * client on purpose, and from `2026-07-28` the difference is written in the
-     * body — see {@link modernProtocolRefusal}.
-     */
-    readonly rpcError?: JsonRpcError,
+    message?: string,
   ) {
-    super(`${method} failed: HTTP ${status}`);
+    super(message ?? `${method} failed: HTTP ${status}`);
     this.name = "McpHttpError";
   }
 }
 
 /**
- * The lowest code protocol `2026-07-28` reserves for the specification itself.
+ * The SDK's error vocabulary, in this codebase's.
  *
- * The revision partitions the JSON-RPC server-error range: `-32000` to `-32019`
- * stays implementation-defined, and `-32020` to `-32099` belongs to MCP. Read as
- * a range rather than as the three codes allocated so far (`HeaderMismatch`,
- * `MissingRequiredClientCapability`, `UnsupportedProtocolVersion`), because what
- * is being detected is not which one arrived — it is that the server answers in
- * a vocabulary only a revision *without* `initialize` has.
+ * Only the status is translated, and only because one status means something
+ * the rest do not (see {@link isUnauthorized}). Everything else keeps the SDK's
+ * own message: it is more specific than anything restating it here would be,
+ * and it is what an operator reads in the run's warning.
  */
-const SPEC_RESERVED_ERROR_MIN = -32_099;
-const SPEC_RESERVED_ERROR_MAX = -32_020;
-const UNSUPPORTED_PROTOCOL_VERSION = -32_022;
-const METHOD_NOT_FOUND = -32_601;
-
-/** The `supported` list an `UnsupportedProtocolVersion` refusal carries, if any. */
-function supportedVersions(data: unknown): string[] {
-  if (typeof data !== "object" || data === null) {
-    return [];
+function asMcpError(error: unknown, method: string): unknown {
+  if (error instanceof UnauthorizedError) {
+    return new McpHttpError(401, method, error.message);
   }
-  const supported = (data as { supported?: unknown }).supported;
-  return Array.isArray(supported) ? supported.filter((v) => typeof v === "string") : [];
-}
-
-/**
- * Did a server refuse this request *because* it speaks a stateless revision?
- *
- * This client opens with the `initialize` handshake, which protocol
- * `2026-07-28` removed: every request now carries its own version in `_meta`,
- * and a server built only for that revision has no such method. Such a server
- * answers perfectly correctly — `400` with a spec-reserved code, or `404` with
- * `-32601` — and the transport layer above reads both as "the server is
- * unreachable", sending an operator to check a host that is healthy and
- * refusing us on purpose.
- *
- * Returns the sentence to report, or `undefined` when the failure is an
- * ordinary one. The reading lives here, beside the protocol it is about, rather
- * than at the two call sites that need it — the same reason {@link
- * isUnauthorized} does.
- */
-export function modernProtocolRefusal(error: unknown): string | undefined {
-  if (!(error instanceof McpHttpError) || !error.rpcError) {
-    return undefined;
+  if (error instanceof SdkHttpError) {
+    return new McpHttpError(error.status, method, error.message);
   }
-  const { code, data } = error.rpcError;
-  const specReserved = code >= SPEC_RESERVED_ERROR_MIN && code <= SPEC_RESERVED_ERROR_MAX;
-  // `-32601` is an ordinary "unknown method" that any revision may send. Only
-  // the handshake makes it evidence: a server that does not implement
-  // `initialize` is one that never had it.
-  const noHandshake = code === METHOD_NOT_FOUND && error.method === "initialize";
-  if (!specReserved && !noHandshake) {
-    return undefined;
-  }
-  const supported = code === UNSUPPORTED_PROTOCOL_VERSION ? supportedVersions(data) : [];
-  const speaks =
-    supported.length > 0
-      ? `It speaks MCP ${supported.join(", ")}`
-      : "It speaks a stateless MCP revision (2026-07-28 or later)";
-  return (
-    `${speaks} and refused the handshake this client opens with ` +
-    `(protocol ${PROTOCOL_VERSION}): that revision has no 'initialize' method.`
-  );
+  return error;
 }
 
 /**
@@ -541,7 +461,7 @@ export function modernProtocolRefusal(error: unknown): string | undefined {
  * other failure: a 401 asks the *project* to reconnect, while the rest ask an
  * operator to go and look at the server. Three places need the answer —
  * discovery, a tool call made against a session the discovery cache let through
- * uninitialized, and the registry's probe — and each used to spell the pair out
+ * unconnected, and the registry's probe — and each used to spell the pair out
  * for itself, so a fourth was free to get either half of it subtly wrong.
  */
 export function isUnauthorized(error: unknown): boolean {
@@ -549,127 +469,44 @@ export function isUnauthorized(error: unknown): boolean {
 }
 
 /**
- * Fail on a transport-level error before the body is parsed: an error page is
- * not JSON-RPC, and parsing it would report a JSON syntax error instead of the
- * status the server actually sent.
+ * Is this server answering, but in a way this client cannot use?
+ *
+ * The distinction the caller needs, because "unreachable" sends an operator to
+ * check a host that is up and replying. Two failures are of this kind, and
+ * neither is fixed by looking at the network:
+ *
+ * - a server supporting only revisions newer than this client, which answers
+ *   `-32022` naming what it does speak. The probe cannot rescue this one — the
+ *   era gap it *can* cross is the older direction.
+ * - a server whose reply breaks the schema. The client validates a whole
+ *   result, so one tool with a non-object `inputSchema` costs that server its
+ *   entire catalogue. Strictly a behaviour change from the hand-rolled client,
+ *   which read what it could and dropped the rest; the trade is that a
+ *   malformed answer is now named instead of silently thinned.
+ *
+ * Returns the sentence to report, or `undefined` for an ordinary failure.
  */
-async function assertOk(response: Response, method: string): Promise<void> {
-  if (response.ok) {
-    return;
+export function unusableServerReason(error: unknown): string | undefined {
+  if (error instanceof UnsupportedProtocolVersionError) {
+    const supported = supportedVersions(error);
+    const speaks =
+      supported.length > 0
+        ? `It supports only MCP ${supported.join(", ")}`
+        : "It supports no MCP revision this client knows";
+    return `${speaks}, which this client cannot speak: its SDK needs upgrading.`;
   }
-  throw new McpHttpError(response.status, method, await readRpcError(response));
+  if (error instanceof SdkError && error.code === SdkErrorCode.InvalidResult) {
+    return `It answered with something this client could not read (${error.message}).`;
+  }
+  return undefined;
 }
 
-/**
- * The JSON-RPC error a failed response carried, or `undefined` for the far more
- * common failure that carried prose.
- *
- * This reads the body where it used to cancel it, and the reason is narrow: from
- * protocol `2026-07-28` the *status* no longer distinguishes a server that is
- * broken from one refusing this client deliberately — only the body does. An
- * error page, a proxy's HTML, an empty body and an oversized one all still come
- * back `undefined`, so every failure that is not that refusal is reported
- * exactly as before.
- *
- * Never throws. A body that cannot be read says nothing about the status the
- * caller is already reporting, and letting it throw here would replace a
- * server's real failure with an incident about reading it.
- */
-async function readRpcError(response: Response): Promise<JsonRpcError | undefined> {
-  let text: string;
-  try {
-    text = await readBodyText(response, MAX_ERROR_BODY_BYTES);
-  } catch {
-    await response.body?.cancel().catch(() => {});
-    return undefined;
+/** The `supported` list an `UnsupportedProtocolVersion` refusal carries, if any. */
+function supportedVersions(error: UnsupportedProtocolVersionError): string[] {
+  const data: unknown = (error as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) {
+    return [];
   }
-  if (!text.trim().startsWith("{")) {
-    return undefined;
-  }
-  let message: JsonRpcResponse;
-  try {
-    message = JSON.parse(text) as JsonRpcResponse;
-  } catch {
-    return undefined;
-  }
-  const rpcError = message?.error;
-  return rpcError && typeof rpcError.code === "number" ? rpcError : undefined;
-}
-
-/** Read a JSON-RPC response body, handling both JSON and SSE framing. */
-/**
- * Is this body an SSE stream?
- *
- * The content type decides. Sniffing for `data:` anywhere in the body — which
- * this used to do — reads a JSON document as a stream the moment any string
- * inside it happens to contain those five characters. Slack's MCP server
- * documents `data:` as a URL scheme its canvas tool strips, so its perfectly
- * ordinary `tools/list` reply was parsed as a stream, yielded no frames, and
- * came back as a server with no tools.
- *
- * The body is still consulted, but only where a stream could actually begin: a
- * server that omits the header is recognised by its first line, and a body that
- * opens with `{` or `[` is JSON no matter what it says further in.
- */
-function isEventStream(contentType: string, text: string): boolean {
-  if (contentType.includes("text/event-stream")) {
-    return true;
-  }
-  if (contentType.includes("application/json")) {
-    return false;
-  }
-  const start = text.trimStart();
-  if (start.startsWith("{") || start.startsWith("[")) {
-    return false;
-  }
-  return /^(event|data|id|retry):/.test(start.split("\n", 1)[0] ?? "");
-}
-
-/**
- * The reply to one request.
- *
- * `expectedId` matters on an SSE body, which may legally carry more than one
- * message: the server can interleave notifications and requests of its own
- * around the reply. Taking the last frame therefore picks whatever the server
- * happened to send last, and a notification has no `result` — which reads
- * downstream as a successful call that returned nothing, the hardest possible
- * failure to see. Matched by id, an extra frame is simply skipped.
- */
-export async function parseJsonRpc(
-  response: Response,
-  expectedId?: number | string,
-): Promise<JsonRpcResponse | undefined> {
-  const text = await readBodyText(response, MAX_MCP_RESPONSE_BYTES);
-  if (!text) {
-    return undefined;
-  }
-  const contentType = response.headers.get("content-type") ?? "";
-  if (isEventStream(contentType, text)) {
-    let fallback: JsonRpcResponse | undefined;
-    for (const line of text.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) {
-        continue;
-      }
-      const payload = trimmed.slice("data:".length).trim();
-      if (!payload || payload === "[DONE]") {
-        continue;
-      }
-      let message: JsonRpcResponse;
-      try {
-        message = JSON.parse(payload) as JsonRpcResponse;
-      } catch {
-        continue; // keep-alive or non-JSON frame
-      }
-      if (expectedId !== undefined && message.id === expectedId) {
-        return message;
-      }
-      // Only frames that answer *something* stand in when no id is expected.
-      if (message.result !== undefined || message.error !== undefined) {
-        fallback = message;
-      }
-    }
-    return fallback;
-  }
-  return JSON.parse(text) as JsonRpcResponse;
+  const supported = (data as { supported?: unknown }).supported;
+  return Array.isArray(supported) ? supported.filter((v): v is string => typeof v === "string") : [];
 }

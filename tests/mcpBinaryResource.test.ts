@@ -17,6 +17,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
+import { conforming, protocolPreamble } from "./mcpProtocolStub";
 
 const SERVER = { name: "files", url: "https://mcp.example.com/mcp", headers: {} };
 
@@ -26,9 +27,13 @@ function stubServer(content: unknown[]) {
     "fetch",
     vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+      const preamble = protocolPreamble(body.method, body.id, init?.method);
+      if (preamble) {
+        return preamble;
+      }
       const result =
         body.method === "tools/list"
-          ? { tools: [{ name: "read_file", description: "", inputSchema: {} }] }
+          ? { tools: conforming([{ name: "read_file", description: "" }]) }
           : { content };
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id ?? 1, result }), {
         headers: { "Content-Type": "application/json" },
@@ -54,7 +59,12 @@ describe("a resource blob that is not an image", () => {
     const pdf = Buffer.from("255044462d312e340a25e2e3cfd3", "hex").toString("base64");
 
     const result = await callWith([
-      { type: "resource", resource: { blob: pdf, mimeType: "application/pdf" } },
+      {
+        type: "resource",
+        // `uri` is required of an embedded resource, and the whole result is
+        // validated — omitting it scripts a refused answer, not a nameless file.
+        resource: { uri: "file:///doc.pdf", blob: pdf, mimeType: "application/pdf" },
+      },
     ]);
 
     // The original defect, still pinned: a decode that cannot fail turned this
@@ -62,7 +72,8 @@ describe("a resource blob that is not an image", () => {
     expect(result.text).not.toContain("\uFFFD");
     // And now it is carried rather than dropped — the file is the answer.
     expect(result.files).toEqual([
-      { b64: pdf, mimeType: "application/pdf", name: "file.pdf" },
+      // Named from the resource's own uri, which it now carries.
+      { b64: pdf, mimeType: "application/pdf", name: "doc.pdf" },
     ]);
     expect(result.text).toContain("14 bytes");
   });
@@ -74,6 +85,7 @@ describe("a resource blob that is not an image", () => {
       {
         type: "resource",
         resource: {
+          uri: "file:///data",
           blob: Buffer.from("id,name\n1,bruce", "utf-8").toString("base64"),
           mimeType: "application/octet-stream",
         },
@@ -88,6 +100,7 @@ describe("a resource blob that is not an image", () => {
       {
         type: "resource",
         resource: {
+          uri: "file:///data",
           blob: Buffer.from("제목: 보고서", "utf-8").toString("base64"),
           mimeType: "text/plain",
         },
@@ -102,7 +115,11 @@ describe("a resource blob that is not an image", () => {
       { type: "text", text: "here is the file" },
       {
         type: "resource",
-        resource: { blob: Buffer.from([0x00, 0x01, 0x02]).toString("base64"), mimeType: "application/zip" },
+        resource: {
+          uri: "file:///archive.zip",
+          blob: Buffer.from([0x00, 0x01, 0x02]).toString("base64"),
+          mimeType: "application/zip",
+        },
       },
     ]);
 

@@ -21,6 +21,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
+import { conforming, handshakeResult, protocolPreamble } from "./mcpProtocolStub";
 
 const MCP_URL = "https://crm.test/mcp";
 
@@ -104,13 +105,23 @@ function stubMcpServer(toolNames: string[]): { verbs: string[] } {
         return new Response("", { status: 204 });
       }
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
-      if (body.method === "notifications/initialized") {
-        return new Response("", { status: 202 });
+      if (body.method === "initialize") {
+        // Answered here rather than through the shared preamble, because this
+        // test is about the release: the session id only exists if the
+        // handshake response carries one.
+        return new Response(
+          JSON.stringify({ jsonrpc: "2.0", id: body.id, result: handshakeResult("preview") }),
+          { headers: { "content-type": "application/json", "Mcp-Session-Id": "s-1" } },
+        );
+      }
+      const preamble = protocolPreamble(body.method, body.id, init?.method);
+      if (preamble) {
+        return preamble;
       }
       const result =
         body.method === "tools/list"
-          ? { tools: toolNames.map((name) => ({ name })) }
-          : { protocolVersion: "2025-06-18", capabilities: {} };
+          ? { tools: conforming(toolNames.map((name) => ({ name }))) }
+          : { content: [{ type: "text", text: "ok" }] };
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json", "Mcp-Session-Id": "s-1" },
       });

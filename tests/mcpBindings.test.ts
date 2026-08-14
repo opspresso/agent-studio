@@ -25,6 +25,7 @@ import type { McpBinding, Project, Version } from "@/domain/project/types";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
+import { conforming, protocolPreamble } from "./mcpProtocolStub";
 
 const MCP_URL = "https://shared-mcp.test/mcp";
 
@@ -106,11 +107,14 @@ function stubMcpServer(toolNames: string[] = ["search"]): Array<Record<string, s
     vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       seen.push(Object.fromEntries(new Headers(init?.headers).entries()));
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
-      if (body.method === "notifications/initialized") {
-        return new Response("", { status: 202 });
+      const preamble = protocolPreamble(body.method, body.id, init?.method);
+      if (preamble) {
+        return preamble;
       }
       const result =
-        body.method === "tools/list" ? { tools: toolNames.map((name) => ({ name })) } : {};
+        body.method === "tools/list"
+          ? { tools: conforming(toolNames.map((name) => ({ name }))) }
+          : { content: [{ type: "text", text: "ok" }] };
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
       });

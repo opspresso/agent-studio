@@ -29,7 +29,7 @@ import {
   setCachedFailure,
   setCachedTools,
 } from "./discoveryCache";
-import { isUnauthorized, McpSession, modernProtocolRefusal, type McpTool } from "./session";
+import { isUnauthorized, McpSession, unusableServerReason, type McpTool } from "./session";
 import { log } from "@/shared/logger";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
@@ -146,16 +146,16 @@ export class ToolManager {
           // not vanish either: without this the tools are simply absent and the
           // run looks like a model that ignored them.
           const reason = error instanceof Error ? error.message : String(error);
-          const protocolRefusal = modernProtocolRefusal(error);
+          const unusable = unusableServerReason(error);
           log.warn(
             "mcp",
             `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
-            protocolRefusal ?? reason,
+            unusable ?? reason,
           );
           const failure: DiscoveryFailure = {
             reason,
             unauthorized: isUnauthorized(error),
-            ...(protocolRefusal ? { protocolRefusal } : {}),
+            ...(unusable ? { unusable } : {}),
           };
           setCachedFailure(server.url, server.headers, failure);
           this.recordFailure(server.name, failure);
@@ -180,8 +180,18 @@ export class ToolManager {
         // row in the system prompt's server table — with nothing to tell an
         // operator apart a server that offers nothing from one this app
         // dropped. Say it, so they go and look at the server.
+        // A server that answered but never declared it has tools is the one
+        // case where the emptiness has a cause worth naming: the protocol says
+        // a server with tools declares the capability, so this client never
+        // asked for the list. Left as plain emptiness, its tools disappear from
+        // the run with nothing to say the server was never asked.
+        const undeclared =
+          entry.session.declaresTools === false
+            ? " It did not declare the 'tools' capability, so its catalogue was never requested."
+            : "";
         this._warnings.push(
           `MCP server '${entry.server.name}' is connected but offers no tools; a run has nothing to call on it.` +
+            undeclared +
             (described ? ` It identified itself as: ${described}.` : ""),
         );
       }
@@ -231,9 +241,9 @@ export class ToolManager {
     // A server refusing the handshake because it has none is neither down nor
     // misconfigured, and "unreachable" would send an operator to look at a host
     // that is working. What it asks for is an upgrade on this side.
-    if (failure.protocolRefusal) {
+    if (failure.unusable) {
       this._warnings.push(
-        `MCP server '${serverName}' cannot be used by this client: ${failure.protocolRefusal} Its tools are unavailable this run.`,
+        `MCP server '${serverName}' cannot be used by this client: ${failure.unusable} Its tools are unavailable this run.`,
       );
       return;
     }

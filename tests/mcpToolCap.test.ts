@@ -8,6 +8,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { McpServer } from "@/domain/mcp/types";
 import type { Version } from "@/domain/project/types";
+import { conforming, protocolPreamble } from "./mcpProtocolStub";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
@@ -28,12 +29,17 @@ function stubServerWith(toolCount: number): void {
     "fetch",
     vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
-      if (body.method === "notifications/initialized") {
-        return new Response("", { status: 202 });
+      const preamble = protocolPreamble(body.method, body.id, init?.method);
+      if (preamble) {
+        return preamble;
       }
       const result =
         body.method === "tools/list"
-          ? { tools: Array.from({ length: toolCount }, (_, i) => ({ name: `tool_${i}` })) }
+          ? {
+              tools: conforming(
+                Array.from({ length: toolCount }, (_, i) => ({ name: `tool_${i}` })),
+              ),
+            }
           : { content: [{ type: "text", text: "ran" }] };
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
