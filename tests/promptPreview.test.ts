@@ -21,7 +21,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
-import { conforming, handshakeResult, protocolPreamble } from "./mcpProtocolStub";
+import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 const MCP_URL = "https://crm.test/mcp";
 
@@ -105,25 +105,17 @@ function stubMcpServer(toolNames: string[]): { verbs: string[] } {
         return new Response("", { status: 204 });
       }
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
-      if (body.method === "initialize") {
-        // Answered here rather than through the shared preamble, because this
-        // test is about the release: the session id only exists if the
-        // handshake response carries one.
-        return new Response(
-          JSON.stringify({ jsonrpc: "2.0", id: body.id, result: handshakeResult("preview") }),
-          { headers: { "content-type": "application/json", "Mcp-Session-Id": "s-1" } },
-        );
-      }
       const preamble = protocolPreamble(body.method, body.id, init?.method);
       if (preamble) {
         return preamble;
       }
-      const result =
-        body.method === "tools/list"
+      const result = modernResult(body.method, {
+        ...(body.method === "tools/list"
           ? { tools: conforming(toolNames.map((name) => ({ name }))) }
-          : { content: [{ type: "text", text: "ok" }] };
+          : { content: [{ type: "text", text: "ok" }] }),
+      });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
-        headers: { "content-type": "application/json", "Mcp-Session-Id": "s-1" },
+        headers: { "content-type": "application/json" },
       });
     }),
   );
@@ -220,16 +212,18 @@ describe("previewPrompt", () => {
     });
   });
 
-  it("releases the MCP session it opened", async () => {
-    // Preview is the first path that opens a session outside a run; one leaked
-    // per refresh would undo the teardown the run path just gained.
+  it("closes the MCP connection it opened without talking to the server", async () => {
+    // Preview is the first path that opens a connection outside a run. There is
+    // no session to release in this revision, so what teardown must not do is
+    // put a request on the wire nobody asked for.
     const deps = executionDepsFixture(new FakeChannel([]));
     wireRegistry(deps);
     const server = stubMcpServer(["query"]);
 
     await previewPrompt(deps, { project: projectFixture(), version: boundVersion() });
 
-    expect(server.verbs).toContain("DELETE");
+    expect(server.verbs).not.toContain("DELETE");
+    expect(server.verbs.every((verb) => verb === "POST")).toBe(true);
   });
 
   it("reports a binding it could not use instead of quietly omitting it", async () => {

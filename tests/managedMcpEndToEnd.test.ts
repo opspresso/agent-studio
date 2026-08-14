@@ -41,26 +41,35 @@ function startLoopbackMcp(): Promise<{ server: Server; port: number }> {
         return;
       }
       if (message.method === "server/discover") {
-        // A server predating protocol 2026-07-28 answers the era probe this
-        // way, which is what sends the client to `initialize`.
-        response.writeHead(404, { "content-type": "application/json" });
+        // The era probe every connection opens with. This client speaks one
+        // revision, so a server that answered anything else would not be talked
+        // to at all.
+        response.writeHead(200, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
             jsonrpc: "2.0",
             id: message.id,
-            error: { code: -32601, message: "Method not found" },
+            result: {
+              resultType: "complete",
+              supportedVersions: ["2026-07-28"],
+              capabilities: { tools: {} },
+              _meta: {
+                "io.modelcontextprotocol/serverInfo": { name: "loopback-mcp", version: "1.0" },
+              },
+            },
           }),
         );
         return;
       }
       const result =
         message.method === "tools/list"
-          ? { tools: [{ name: "fetch_image", description: "d", inputSchema: { type: "object" } }] }
-          : {
-              protocolVersion: "2025-06-18",
-              capabilities: { tools: {} },
-              serverInfo: { name: "loopback-mcp", version: "1.0" },
-            };
+          ? {
+              resultType: "complete",
+              ttlMs: 60_000,
+              cacheScope: "private",
+              tools: [{ name: "fetch_image", description: "d", inputSchema: { type: "object" } }],
+            }
+          : { resultType: "complete" };
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
     });

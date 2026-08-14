@@ -24,7 +24,7 @@ import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
-import { conforming, protocolPreamble } from "./mcpProtocolStub";
+import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 /** An MCP server whose tool is named exactly like a builtin. */
 const registryServer = {
@@ -113,12 +113,14 @@ function stubMcpServer(toolNames: string[]): { calls: string[] } {
       if (preamble) {
         return preamble;
       }
-      let result: unknown = {};
+      let result: unknown = modernResult(body.method, {});
       if (body.method === "tools/list") {
-        result = { tools: conforming(toolNames.map((name) => ({ name }))) };
+        result = modernResult(body.method, {
+          tools: conforming(toolNames.map((name) => ({ name }))),
+        });
       } else if (body.method === "tools/call") {
         calls.push(body.params?.name ?? "");
-        result = { content: [{ type: "text", text: "mcp answered" }] };
+        result = modernResult(body.method, { content: [{ type: "text", text: "mcp answered" }] });
       }
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },

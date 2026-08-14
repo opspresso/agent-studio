@@ -282,12 +282,12 @@ One line each — the linked section is the authority.
 - **Runtime settings** — DB override → env fallback, cached process-locally. Never read those
   env vars directly at dispatch; go through `src/lib/runtime-settings.ts`. →
   [CONFIGURATION.md](docs/CONFIGURATION.md#resolution-order)
-- **MCP** — one session owner, an adapter over `@modelcontextprotocol/client` that probes each
-  server's protocol era (`2026-07-28` or the `initialize` handshake); discovery cached per
-  `url + headers`, managed servers on loopback by provenance, per-project OAuth connections.
-  The SSRF guard, the response byte ceiling, the lazy connect and the expired-session retry
-  are the session's own — the SDK supplies none of them. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp)
+- **MCP** — one session owner, an adapter over `@modelcontextprotocol/client` **pinned to
+  revision `2026-07-28`**: no handshake, no session, no fallback — a server that does not offer
+  it is refused with the reason said out loud. Discovery cached per `url + headers`, managed
+  servers on loopback by provenance, per-project OAuth connections. The SSRF guard, the
+  response byte ceiling and the lazy connect are the session's own; the SDK supplies none of
+  them. → [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp)
 - **Capability catalog** — one global index (skills, MCP servers *and* their tools, external
   agents) rebuilt by a CronJob tick, never on a registry write. A version opting into
   `dynamicCapabilities` has its lists **widened** before resolution, from the system prompt and
