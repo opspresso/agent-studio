@@ -236,7 +236,7 @@ because several of these are read on every row write.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | How long a bound server's tool list is reused, keyed by `url + headers`. A warm entry also lets the session handshake lazily, so a turn that calls no tool makes no MCP request at all. `0` disables caching outright, and no server hint can switch it back on. Whole milliseconds. |
+| `MCP_DISCOVERY_CACHE_TTL_MS` | `60000` | — | How long a bound server's tool list is reused, keyed by `url + headers`. A warm entry also lets the session connect lazily, so a turn that calls no tool makes no MCP request at all. `0` disables caching outright, and no server hint can switch it back on. Whole milliseconds. |
 | `MCP_MAX_SERVER_TTL_MS` | `300000` (5 min) | — | Ceiling on the `ttlMs` a server may request on `tools/list` (SEP-2549). `0` ignores server hints entirely and returns every entry to the local TTL. Whole milliseconds. |
 | `MCP_INTERNAL_HOST_SUFFIXES` | empty | — | Comma-separated DNS suffixes whose hosts an MCP entry may use despite resolving to a private address — typically `<namespace>.svc.cluster.local`. Empty leaves the SSRF guard exactly as it was. See [SECURITY.md](SECURITY.md#declared-internal-hosts). |
 | `MANAGED_MCP_INSTANCE_ID` | unset | — | The host managed MCP containers are started on, through SSM Run Command. The literal value `local` runs Docker on this machine instead — app and container then share a loopback interface directly, which is the only way to exercise this path without EC2. |
@@ -259,7 +259,7 @@ are willing to wear.
 
 Failed discoveries are cached too, for the smaller of `MCP_DISCOVERY_CACHE_TTL_MS` and 30s.
 Without it, a server
-that is down — or a connection whose token was revoked — re-pays a failing handshake before
+that is down — or a connection whose token was revoked — re-pays a failing connect before
 the first token of every message. The window is short because a stale failure hides a
 recovery while a stale success only serves a slightly old tool list.
 
