@@ -135,6 +135,32 @@ function matchesKeyword(text: string, keywords: readonly string[] | undefined): 
 }
 
 /**
+ * A fixed action, rather than a question for the agent.
+ *
+ * Bang-prefixed and standing alone: `@bot !mute` is the command, `@bot !mute
+ * this thread please` is an ordinary request that happens to contain the word.
+ * The rule is strict on purpose — a command changes whether the bot speaks
+ * again, and guessing at that from a sentence is how it stops answering
+ * somebody who never asked it to.
+ */
+export type SlackCommand = "help" | "mute" | "unmute";
+
+const COMMANDS = new Set<SlackCommand>(["help", "mute", "unmute"]);
+
+/**
+ * The command a message *is*, or null for one that merely mentions a word.
+ * `text` is the message with its mentions already stripped.
+ */
+export function parseSlackCommand(text: string): SlackCommand | null {
+  const word = text.trim();
+  if (!word.startsWith("!")) {
+    return null;
+  }
+  const name = word.slice(1).toLowerCase();
+  return COMMANDS.has(name as SlackCommand) ? (name as SlackCommand) : null;
+}
+
+/**
  * What one delivered event should cause. Pure — the route spends any I/O the
  * answer calls for.
  */

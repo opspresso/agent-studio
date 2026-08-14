@@ -30,6 +30,27 @@ export const slackThreadRepository: SlackThreadRepository = {
     );
   },
 
+  async setMuted(projectName, channel, threadTs, muted) {
+    // A put rather than an update, like `markEngaged`: a mute on a thread the
+    // bot has not spoken in yet still has to be recorded, and there is nothing
+    // to merge with.
+    await getDocumentClient().send(
+      new PutCommand({
+        TableName: getTableName(),
+        Item: {
+          ...keys.slackThread(projectName, channel, threadTs),
+          entityType: "slackThread",
+          projectName,
+          channel,
+          threadTs,
+          muted,
+          engagedAt: new Date().toISOString(),
+          expiresAt: expiresAtFromNow(SLACK_ENGAGEMENT_TTL_SECONDS),
+        },
+      }),
+    );
+  },
+
   async isEngaged(projectName, channel, threadTs) {
     const result = await getDocumentClient().send(
       new GetCommand({
@@ -37,7 +58,7 @@ export const slackThreadRepository: SlackThreadRepository = {
         Key: keys.slackThread(projectName, channel, threadTs),
       }),
     );
-    if (!result.Item) {
+    if (!result.Item || result.Item.muted === true) {
       return false;
     }
     // The physical purge lags the TTL by up to ~48h, so an expired row is still

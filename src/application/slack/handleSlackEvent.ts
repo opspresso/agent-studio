@@ -1,7 +1,8 @@
 import type { SlackMessage } from "@/domain/slack/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createReplySink } from "@/application/slack/replyStream";
-import { selfUserId } from "@/application/slack/engagement";
+import { parseSlackCommand, selfUserId } from "@/application/slack/engagement";
+import { handleSlackCommand } from "@/application/slack/handleCommand";
 import {
   fileRefOf,
   resolveProducedFiles,
@@ -437,6 +438,22 @@ export async function handleSlackEvent(
   const message = (event.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim();
   const projectName = binding.projectName;
   const threadTs = event.thread_ts ?? event.ts;
+
+  // Ahead of the project lookup, because a command is answered whether or not
+  // this project has a runnable version — `!mute` in particular has to work on
+  // a bot that is currently failing, which is exactly when someone reaches for
+  // it.
+  const command = parseSlackCommand(message);
+  if (command) {
+    await handleSlackCommand(deps, command, {
+      projectName,
+      botToken: token,
+      channel: event.channel,
+      threadTs,
+      inThread: event.thread_ts !== undefined,
+    });
+    return;
+  }
 
   const project = await deps.projects.get(projectName);
   // External surface: published-only, drafts never leak (resolveRunnableVersion policy).

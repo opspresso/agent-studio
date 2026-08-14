@@ -18,6 +18,24 @@ export interface SlackThreadRepository {
    * as long as it stays active.
    */
   markEngaged(projectName: string, channel: string, threadTs: string): Promise<void>;
-  /** Whether the bot answered in this thread and the window has not passed. */
+  /**
+   * Whether the bot answered in this thread, the window has not passed, and
+   * nobody has muted it.
+   */
   isEngaged(projectName: string, channel: string, threadTs: string): Promise<boolean>;
+  /**
+   * Stop, or resume, following a thread without a mention.
+   *
+   * Muting is per thread by design: a busy thread is the noise, and silencing a
+   * whole channel is a different decision with a different control. It survives
+   * only as long as engagement does — and {@link markEngaged} clears it, which
+   * is how a direct mention brings the bot back without anyone having to
+   * remember the opposite command.
+   */
+  setMuted(
+    projectName: string,
+    channel: string,
+    threadTs: string,
+    muted: boolean,
+  ): Promise<void>;
 }
