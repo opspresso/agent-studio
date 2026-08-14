@@ -31,6 +31,7 @@ import {
   UnauthorizedError,
   UnsupportedProtocolVersionError,
   type FetchLike,
+  type Tool,
 } from "@modelcontextprotocol/client";
 import type { McpTool } from "@/domain/mcp/types";
 export type { McpTool };
@@ -341,7 +342,24 @@ export class McpSession {
     };
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  /**
+   * Call one tool.
+   *
+   * `definition` is the tool as the catalogue described it, and passing it is
+   * not an optimisation. From protocol `2026-07-28` a parameter the tool marks
+   * `x-mcp-header` **must** be mirrored into an `Mcp-Param-*` header, and the
+   * client derives that from the tool's `inputSchema` — normally from the
+   * `tools/list` it sent itself. This app's discovery cache means it often sent
+   * none: a warm entry connects at the first tool call, with nothing behind it
+   * to read. The header would then be missing from a request whose body has the
+   * value, which a server that routes on it must reject (`-32020`). The caller
+   * holds the definition either way, cached or fresh, so it hands it over.
+   */
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+    definition?: McpTool,
+  ): Promise<unknown> {
     return this.withSessionRecovery("tools/call", (client) =>
       client.callTool(
         { name, arguments: args },
@@ -352,6 +370,7 @@ export class McpSession {
           // client cannot answer it either way; the difference is whether the
           // model is told why.
           allowInputRequired: true,
+          ...(definition ? { toolDefinition: definition as Tool } : {}),
         },
       ),
     );
