@@ -98,9 +98,9 @@ export async function handleSlackEventRequest(
     return Response.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  let payload: SlackEventBody & { type?: string; challenge?: string };
+  let payload: SlackEventBody & { challenge?: string };
   try {
-    payload = JSON.parse(body) as SlackEventBody & { type?: string; challenge?: string };
+    payload = JSON.parse(body) as SlackEventBody & { challenge?: string };
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
