@@ -3,6 +3,7 @@ import { ToolManager, type McpServerConfig } from "@/infrastructure/mcp/toolMana
 import { listMcpTools } from "@/infrastructure/mcp/mcpClient";
 import {
   McpSession,
+  MCP_CALL_TIMEOUT_MS,
   MCP_DISCOVERY_TIMEOUT_MS,
   LEGACY_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
@@ -102,6 +103,8 @@ interface ServerScript {
    * is refusing on purpose and must not be reported as one that is down.
    */
   unsupportedVersion?: string[];
+  /** Never answer this method, as a server that accepts a request and stalls. */
+  hangOn?: string;
   /** Hook fired as each request arrives, for tests that need to race one. */
   onRequest?: (method: string) => void;
 }
@@ -225,6 +228,9 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       hasSignal: init?.signal instanceof AbortSignal,
     });
     script.onRequest?.(body.method);
+    if (script.hangOn !== undefined && body.method === script.hangOn) {
+      return new Promise<Response>(() => {});
+    }
 
     if (body.method === "notifications/initialized") {
       return new Response("", { status: 202 });
@@ -2003,5 +2009,37 @@ describe("SEP-2243 parameter mirroring over a warm discovery cache", () => {
 
     const call = calls.find((entry) => entry.method === "tools/call");
     expect(call?.paramHeaders).toEqual({ "mcp-param-region": "us-west1" });
+  });
+});
+
+describe("ToolManager call budget", () => {
+  it("lets a tool call outlive the budget discovery is held to", async () => {
+    // The pair is the point: a tool may legitimately take minutes while the
+    // model waits on it, and discovery must not hold the first token for that
+    // long. One budget for both would either cut every slow tool or park a run
+    // behind a server that never answers.
+    vi.useFakeTimers();
+    try {
+      stubMcpFetch({
+        "https://slow.test/mcp": { listTools: [{ name: "slow" }], hangOn: "tools/call" },
+      });
+      const manager = new ToolManager([server("slow", "https://slow.test/mcp")]);
+      await manager.init();
+      expect(manager.tools.map((t) => t.function.name)).toEqual(["slow"]);
+
+      const call = manager.callTool("slow", {});
+      let settled = false;
+      void call.then(() => (settled = true));
+
+      // Well past what discovery would have been given, and still waiting.
+      await vi.advanceTimersByTimeAsync(MCP_DISCOVERY_TIMEOUT_MS * 2);
+      expect(settled).toBe(false);
+
+      // Given up on at the call budget, and reported rather than thrown.
+      await vi.advanceTimersByTimeAsync(MCP_CALL_TIMEOUT_MS);
+      expect((await call).text).toContain("Error: tool call failed.");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
