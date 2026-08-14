@@ -1445,9 +1445,12 @@ messaging experience) pins the project's suggested prompts, and the legacy
 `assistant_thread_started` also introduces the project, because unlike `app_home_opened` it
 fires once per thread rather than on every visit. `app_context_changed` is deliberately not
 subscribed to — acting on the channel a user is looking at needs per-user context storage that
-does not exist. **None of that reaches a channel thread**, which has no status line and whose
-sink opens only on the first *text* delta, so a tool-heavy run there leaves no trace at all
-until it answers (`slack-channel-progress` in [MILESTONES.md](MILESTONES.md)).
+does not exist. **None of that reaches a channel thread**, which has no status line: there the
+reply message carries its own progress instead, posted on the first status and edited in place
+until the answer overwrites it at the same `ts`. That fixes those runs to edit-in-place — a
+note opened as a stream could never be replaced, since `chat.appendStream` only adds — and a
+run whose answer never arrives as text (a picture, an upload) takes the note back rather than
+leave the thread captioned as still working.
 
 Suggested prompts are per-project configuration (`SlackIntegration.suggestedPrompts`, at most
 four — `src/domain/slack/types.ts` owns the shape and the cap). They reach Slack twice: in the
@@ -1503,12 +1506,17 @@ survives redeploys and is shared across instances, with a terminal-state-guardin
 write so a concurrent complete/cancel never regresses a finished task. Rows are TTL-expired.
 
 **Outbound**: an agent registered with protocol `A2A` and its Agent Card URL. Custom headers
-are sent on card resolution and RPC calls. One **blocking** `message/send` per transfer,
-carrying no `contextId`: a remote investigation that runs for minutes sends nothing over the
-connection while it works and is exposed to gateway idle timeouts, and a second question from
-the same thread arrives at the remote agent cold (`a2a-streaming-transfer` in
-[MILESTONES.md](MILESTONES.md), plus the conversation-key gap listed there — the key does not
-exist on `RunOrigin` to carry).
+are sent on card resolution and RPC calls. A transfer asks for **`message/stream`** and folds
+the events back into the task a blocking send would have returned, so both paths are read by
+the same two extractors rather than by two copies of the artifacts-over-status rule. A card
+without `capabilities.streaming` falls back to one blocking `message/send` — the SDK refuses
+before any request goes out, which is what makes the fallback safe. **The bound is on silence,
+not on the whole exchange**: a remote investigation may run far longer than any gap between its
+updates, and the total is capped by the run's own deadline. Past the first event a broken
+stream is reported rather than retried, since the remote is already working and a second send
+would run the delegation twice. A transfer still carries no `contextId`, so a second question
+from the same thread arrives at the remote agent cold (the conversation-key gap in
+[MILESTONES.md](MILESTONES.md) — the key does not exist on `RunOrigin` to carry).
 
 SSE framing differs by protocol: `sseResponse` uses the OpenAI `[DONE]` terminator,
 `sseResponseRaw` uses A2A JSON-RPC framing (`src/app/api/_lib/sse.ts`).
