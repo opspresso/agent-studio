@@ -1445,7 +1445,9 @@ messaging experience) pins the project's suggested prompts, and the legacy
 `assistant_thread_started` also introduces the project, because unlike `app_home_opened` it
 fires once per thread rather than on every visit. `app_context_changed` is deliberately not
 subscribed to — acting on the channel a user is looking at needs per-user context storage that
-does not exist.
+does not exist. **None of that reaches a channel thread**, which has no status line and whose
+sink opens only on the first *text* delta, so a tool-heavy run there leaves no trace at all
+until it answers (`slack-channel-progress` in [MILESTONES.md](MILESTONES.md)).
 
 Suggested prompts are per-project configuration (`SlackIntegration.suggestedPrompts`, at most
 four — `src/domain/slack/types.ts` owns the shape and the cap). They reach Slack twice: in the
@@ -1501,7 +1503,12 @@ survives redeploys and is shared across instances, with a terminal-state-guardin
 write so a concurrent complete/cancel never regresses a finished task. Rows are TTL-expired.
 
 **Outbound**: an agent registered with protocol `A2A` and its Agent Card URL. Custom headers
-are sent on card resolution and RPC calls.
+are sent on card resolution and RPC calls. One **blocking** `message/send` per transfer,
+carrying no `contextId`: a remote investigation that runs for minutes sends nothing over the
+connection while it works and is exposed to gateway idle timeouts, and a second question from
+the same thread arrives at the remote agent cold (`a2a-streaming-transfer` in
+[MILESTONES.md](MILESTONES.md), plus the conversation-key gap listed there — the key does not
+exist on `RunOrigin` to carry).
 
 SSE framing differs by protocol: `sseResponse` uses the OpenAI `[DONE]` terminator,
 `sseResponseRaw` uses A2A JSON-RPC framing (`src/app/api/_lib/sse.ts`).
