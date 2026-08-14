@@ -21,6 +21,17 @@ export const DISPATCH_TOOL_NAME = "dispatch_agents";
 export const IMAGE_TOOL_NAME = "GenerateImage";
 export const EDIT_IMAGE_TOOL_NAME = "EditImage";
 export const FETCH_URL_TOOL_NAME = "FetchUrl";
+export const SLACK_HISTORY_TOOL_NAME = "SlackHistory";
+export const SLACK_THREAD_TOOL_NAME = "SlackThread";
+export const SLACK_USER_TOOL_NAME = "SlackUser";
+export const SLACK_CHANNELS_TOOL_NAME = "SlackChannels";
+/** The four that are served by one reader, so the loop can route them together. */
+export const SLACK_TOOL_NAMES: readonly string[] = [
+  SLACK_HISTORY_TOOL_NAME,
+  SLACK_THREAD_TOOL_NAME,
+  SLACK_USER_TOOL_NAME,
+  SLACK_CHANNELS_TOOL_NAME,
+];
 /**
  * Every name a builtin may claim. An MCP tool that arrives under one of these
  * must be aliased even when that builtin is inactive for the run: whether a
@@ -34,6 +45,7 @@ export const BUILTIN_TOOL_NAMES: readonly string[] = [
   IMAGE_TOOL_NAME,
   EDIT_IMAGE_TOOL_NAME,
   FETCH_URL_TOOL_NAME,
+  ...SLACK_TOOL_NAMES,
 ];
 
 /**
@@ -189,6 +201,13 @@ export interface AgentCapabilityDeps {
   generateImage?: ImageGenerator;
   editImage?: ImageEditor;
   fetchUrl?: UrlFetcher;
+  /**
+   * Serves the four Slack read tools, or absent when this run has no workspace
+   * to look at. One function rather than four deps: the tools differ only in
+   * which Slack call they make, and the reader already holds the token that
+   * decides *which* workspace — a choice the model must not get to make.
+   */
+  readSlack?: (tool: string, args: Record<string, unknown>) => Promise<string>;
 }
 
 /**
@@ -655,6 +674,88 @@ const FETCH_URL_TOOL_DEF: ChannelToolDef = {
   },
 };
 
+/**
+ * The workspace reads, offered together or not at all.
+ *
+ * One reader serves all four (`readSlack`), so a run either has a Slack
+ * workspace to look at or it does not — there is no partial state to describe,
+ * and four independent switches would be four ways to configure the same
+ * decision.
+ */
+const SLACK_TOOL_DEFS: readonly ChannelToolDef[] = [
+  {
+    type: "function",
+    function: {
+      name: SLACK_HISTORY_TOOL_NAME,
+      description:
+        "Read recent messages in a Slack channel, oldest first. Takes the channel *id* — use SlackChannels to turn a #name into one. Use it when the answer depends on what was actually said somewhere, rather than on what the request repeats.",
+      parameters: {
+        type: "object",
+        properties: {
+          channel: { type: "string", description: "The channel id, e.g. C08ABCDEFG." },
+          limit: {
+            type: "number",
+            description: "How many recent messages to read. Defaults to 20, at most 100.",
+          },
+        },
+        required: ["channel"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: SLACK_THREAD_TOOL_NAME,
+      description:
+        "Read a Slack thread in full, oldest first. Use it when a channel message has replies and the decision is in them — a channel read shows only the message that started the thread.",
+      parameters: {
+        type: "object",
+        properties: {
+          channel: { type: "string", description: "The channel id the thread is in." },
+          thread_ts: {
+            type: "string",
+            description: "The timestamp of the message that started the thread.",
+          },
+          limit: { type: "number", description: "How many replies to read. Defaults to 20." },
+        },
+        required: ["channel", "thread_ts"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: SLACK_USER_TOOL_NAME,
+      description:
+        "Look up who a Slack user id belongs to: display name and timezone. Email addresses are never returned. Transcripts already name their speakers, so this is for an id that appears somewhere else.",
+      parameters: {
+        type: "object",
+        properties: {
+          user: { type: "string", description: "The user id, e.g. U08ABCDEFG." },
+        },
+        required: ["user"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: SLACK_CHANNELS_TOOL_NAME,
+      description:
+        "List the Slack channels this bot can see, with their ids. Use it to turn a #name into the id the other Slack tools take. The listing says whether the bot is a member — it can only read the history of channels it is in.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Only channels whose name contains this. Omit to list them all.",
+          },
+        },
+      },
+    },
+  },
+];
+
 const EDIT_IMAGE_TOOL_DEF: ChannelToolDef = {
   type: "function",
   function: {
@@ -713,6 +814,8 @@ export interface AgentToolsInput {
   withImageTransfer: boolean;
   /** Whether this run may read an address the model names. */
   withUrlTool: boolean;
+  /** Whether this run may read the Slack workspace its project's bot is in. */
+  withSlackTools: boolean;
   /**
    * Whether fan-out is offered. False for a subagent run: a child that could
    * dispatch would multiply the run count by depth, and these children run
@@ -756,6 +859,12 @@ export function buildAgentTools(
   if (withUrlTool) {
     tools.push(FETCH_URL_TOOL_DEF);
     builtinNames.add(FETCH_URL_TOOL_NAME);
+  }
+  if (input.withSlackTools) {
+    tools.push(...SLACK_TOOL_DEFS);
+    for (const name of SLACK_TOOL_NAMES) {
+      builtinNames.add(name);
+    }
   }
   return { tools, builtinNames };
 }
@@ -851,6 +960,7 @@ export function assembleAgentRun(
   // From the deps, never from the version: a run is told it can do a thing
   // exactly when the thing was injected, so the preview and the run agree.
   const withUrlTool = Boolean(deps.fetchUrl);
+  const withSlackTools = Boolean(deps.readSlack);
   const systemPrompt = buildAgentSystemPrompt({
     ...(input.systemPrompt !== undefined ? { base: input.systemPrompt } : {}),
     skills,
@@ -871,6 +981,7 @@ export function assembleAgentRun(
     withEditTool: canEdit,
     withImageTransfer: canTransfer,
     withUrlTool,
+    withSlackTools,
     canDispatch,
   });
   return { systemPrompt, tools, builtinNames, subagents, canEdit, canTransfer, images };

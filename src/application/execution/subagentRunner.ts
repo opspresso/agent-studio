@@ -29,6 +29,7 @@ import {
   runImageSubagent,
 } from "./imageTool";
 import { buildUrlFetcher } from "./urlTool";
+import { buildSlackReader } from "./slackTool";
 import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
@@ -78,6 +79,7 @@ export async function buildAgentDeps(
     // One line here covers the top-level run, every subagent run, and the
     // Playground preview: all three come through this function.
     fetchUrl: buildUrlFetcher(deps, version),
+    readSlack: await buildSlackReader(deps, version, projectName),
   };
 }
 

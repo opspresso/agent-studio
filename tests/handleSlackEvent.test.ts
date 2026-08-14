@@ -99,6 +99,16 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       deleted.push(args.ts);
     },
     async uploadImage() {},
+    // The workspace read tools have their own tests; the handler never calls
+    // these, and a fake that omitted them would only be hiding that.
+    async channelHistory() {
+      calls.push("channelHistory");
+      return [];
+    },
+    async listChannels() {
+      calls.push("listChannels");
+      return [];
+    },
     async threadReplies() {
       calls.push("threadReplies");
       // Slack returns everything already in the thread — including whatever

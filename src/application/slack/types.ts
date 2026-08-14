@@ -5,6 +5,7 @@ import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { SlackThreadRepository } from "@/domain/slack/repository";
+import type { SlackReaderPort } from "@/domain/slack/reader";
 import type {
   SlackChunk,
   SlackMessage,
@@ -20,7 +21,7 @@ export type { SlackChunk, SlackTaskDisplayMode };
  * handler and the thread-start handler all take this same port rather than each
  * declaring the subset it happens to call.
  */
-export interface SlackClientPort {
+export interface SlackClientPort extends SlackReaderPort {
   postMessage(
     token: string,
     args: { channel: string; text: string; thread_ts?: string },
@@ -40,10 +41,9 @@ export interface SlackClientPort {
     token: string,
     args: { channel: string; threadTs?: string; filename: string; data: Buffer; title?: string },
   ): Promise<void>;
-  threadReplies(
-    token: string,
-    args: { channel: string; ts: string; limit?: number },
-  ): Promise<SlackMessage[]>;
+  // `threadReplies`, `channelHistory`, `listChannels` and `userProfile` come
+  // from `SlackReaderPort` above: they are what a *run's* tools read, and the
+  // execution slice has to be able to name them without importing this file.
   /**
    * Fetch a file shared with the bot (host-checked, bot-token authenticated).
    *
@@ -101,8 +101,6 @@ export interface SlackClientPort {
     token: string,
     args: { channel_id: string; thread_ts: string; title: string },
   ): Promise<void>;
-  /** Who a Slack user id is. Resolves to `null` rather than throwing. */
-  userProfile(token: string, userId: string): Promise<RunCaller | null>;
 }
 
 /** Injected dependencies; wired by the route from the composition root. */

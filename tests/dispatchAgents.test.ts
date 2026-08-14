@@ -520,6 +520,7 @@ describe("dispatch_agents is offered only to a top-level run", () => {
       canLoadSkills: false,
       withImageTool: false,
       withEditTool: false,
+      withSlackTools: false,
       withImageTransfer: false,
       withUrlTool: false,
       canDispatch,

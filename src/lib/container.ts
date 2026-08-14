@@ -97,6 +97,8 @@ import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
 import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
 import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClientKeyRepository";
 import { createProjectSlackUseCases, resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
+import { createSlackWorkspaceReader } from "@/application/slack/workspaceRead";
+import type { SlackReaderPort } from "@/domain/slack/reader";
 import { setAuditSink } from "@/application/audit/recordAudit";
 import { createAuditUseCases } from "@/application/audit/auditUseCases";
 import { createMemberUseCases } from "@/application/member/memberUseCases";
@@ -536,6 +538,25 @@ export const projectSlackUseCases = createProjectSlackUseCases({
 });
 
 /**
+ * The Slack workspace reads a run's tools are served from.
+ *
+ * Deferred per call like `slackAuthTest` above rather than imported at module
+ * scope, and for the same reason: `executionDeps` is reached by every route
+ * that runs anything, and a static import here would pull the Slack client into
+ * all of them for a capability almost no run has switched on.
+ */
+const slackReader: SlackReaderPort = {
+  channelHistory: async (token, args) =>
+    (await import("@/infrastructure/slack/client")).slackClient.channelHistory(token, args),
+  threadReplies: async (token, args) =>
+    (await import("@/infrastructure/slack/client")).slackClient.threadReplies(token, args),
+  listChannels: async (token, args) =>
+    (await import("@/infrastructure/slack/client")).slackClient.listChannels(token, args),
+  userProfile: async (token, userId) =>
+    (await import("@/infrastructure/slack/client")).slackClient.userProfile(token, userId),
+};
+
+/**
  * Slack profile lookup (cached) for putting a name on a `slack:` usage row.
  * Module-local like `slackAuthTest`: `usageUseCases` below is the only
  * consumer now, and the actors route used to import this alongside the cipher
@@ -671,6 +692,13 @@ export const executionDeps: ExecutionDeps = {
   // The same adapter the chat routes wire: an attachment and a fetched page
   // become text the same way, which is what keeps one owner for extraction.
   documents: documentExtractor,
+  // Bound here because deciding *which* workspace a project reads means
+  // decrypting its bot token, which is the Slack slice's knowledge — the
+  // execution slice takes the finished reader instead.
+  slackWorkspace: (project) => {
+    const runtime = resolveProjectSlackRuntime(secretCipher, project);
+    return runtime ? createSlackWorkspaceReader(slackReader, runtime.botToken) : null;
+  },
   remoteAgents,
   mcpSessions,
   mcpAuth: mcpAuthProvider,

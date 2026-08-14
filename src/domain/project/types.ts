@@ -118,6 +118,20 @@ export interface VersionParameters {
    */
   urlFetch?: boolean;
   /**
+   * Whether this version's runs may read the Slack workspace its project's bot
+   * is installed in — channel history, threads, who a user id is.
+   *
+   * Off by default, and opt-in for the same reason `urlFetch` is: it widens
+   * what a run can reach rather than how it answers. Projects are a shared
+   * catalog, so anyone who can run this project can read anything the bot can —
+   * which is every channel it was invited to. Inert without a configured,
+   * enabled Slack bot on the project.
+   *
+   * Read-only. `chat:write` is granted to the bot for its replies and is
+   * deliberately not reachable from a tool.
+   */
+  slackWorkspace?: boolean;
+  /**
    * Whether a run may reach capabilities this version did not bind, found by
    * searching the global catalog with this version's system prompt and the
    * request being answered.
