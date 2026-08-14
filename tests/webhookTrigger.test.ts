@@ -11,7 +11,11 @@ import { secretCipher } from "@/infrastructure/crypto/secretCipher";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type { TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
+import {
+  PROJECT_WEBHOOK_ID,
+  type TriggerRun,
+  type WebhookTrigger,
+} from "@/domain/trigger/types";
 import type { RunSlot, RunSlotRepository } from "@/domain/execution/runSlot";
 
 process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 3).toString("base64");
@@ -45,7 +49,7 @@ const version: Version = {
 function trigger(overrides: Partial<WebhookTrigger> = {}): WebhookTrigger {
   return {
     projectName: "p",
-    triggerId: "nightly",
+    triggerId: PROJECT_WEBHOOK_ID,
     kind: "webhook",
     description: "",
     enabled: true,
@@ -190,21 +194,21 @@ describe("payloadInput", () => {
 describe("admitDelivery", () => {
   it("refuses a wrong secret", async () => {
     const f = fixture();
-    const result = await admitDelivery(f.deps, "p", "nightly", "wrong", null);
+    const result = await admitDelivery(f.deps, "p", "wrong", null);
     expect(result.status).toBe("unauthorized");
     expect(f.rows).toHaveLength(0);
   });
 
   it("refuses a missing secret", async () => {
     const f = fixture();
-    expect((await admitDelivery(f.deps, "p", "nightly", null, null)).status).toBe(
+    expect((await admitDelivery(f.deps, "p", null, null)).status).toBe(
       "unauthorized",
     );
   });
 
-  it("reports an unknown trigger as not configured", async () => {
+  it("reports a project with no webhook as not configured", async () => {
     const f = fixture({ stored: null });
-    expect((await admitDelivery(f.deps, "p", "nope", SECRET, null)).status).toBe(
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
       "not-configured",
     );
   });
@@ -213,14 +217,14 @@ describe("admitDelivery", () => {
     // A disabled trigger must not answer a wrong secret differently from an
     // enabled one; that difference is an oracle for which triggers exist.
     const f = fixture({ stored: trigger({ enabled: false }) });
-    expect((await admitDelivery(f.deps, "p", "nightly", "wrong", null)).status).toBe(
+    expect((await admitDelivery(f.deps, "p", "wrong", null)).status).toBe(
       "unauthorized",
     );
   });
 
   it("does not run a disabled trigger", async () => {
     const f = fixture({ stored: trigger({ enabled: false }) });
-    expect((await admitDelivery(f.deps, "p", "nightly", SECRET, null)).status).toBe(
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
       "disabled",
     );
     expect(f.rows).toHaveLength(0);
@@ -228,17 +232,17 @@ describe("admitDelivery", () => {
 
   it("accepts a valid delivery and opens a running history row", async () => {
     const f = fixture();
-    const result = await admitDelivery(f.deps, "p", "nightly", SECRET, null);
+    const result = await admitDelivery(f.deps, "p", SECRET, null);
     expect(result.status).toBe("accepted");
     expect(f.rows).toHaveLength(1);
-    expect(f.rows[0]).toMatchObject({ status: "running", triggerId: "nightly" });
+    expect(f.rows[0]).toMatchObject({ status: "running", triggerId: PROJECT_WEBHOOK_ID });
   });
 
   it("refuses a redelivery of the same Idempotency-Key without a second history row", async () => {
     const f = fixture();
-    const first = await admitDelivery(f.deps, "p", "nightly", SECRET, "evt-1");
+    const first = await admitDelivery(f.deps, "p", SECRET, "evt-1");
     expect(first.status).toBe("accepted");
-    const second = await admitDelivery(f.deps, "p", "nightly", SECRET, "evt-1");
+    const second = await admitDelivery(f.deps, "p", SECRET, "evt-1");
     expect(second.status).toBe("duplicate");
     expect(f.rows).toHaveLength(1);
   });
@@ -247,15 +251,15 @@ describe("admitDelivery", () => {
     // Overlap allowed, so the only thing that could refuse the second is the
     // idempotency claim — which is what this is about.
     const f = fixture({ stored: trigger({ allowConcurrent: true }) });
-    await admitDelivery(f.deps, "p", "nightly", SECRET, "evt-1");
-    expect((await admitDelivery(f.deps, "p", "nightly", SECRET, "evt-2")).status).toBe(
+    await admitDelivery(f.deps, "p", SECRET, "evt-1");
+    expect((await admitDelivery(f.deps, "p", SECRET, "evt-2")).status).toBe(
       "accepted",
     );
   });
 
   it("records a skip when the project has no published version", async () => {
     const f = fixture({ published: null });
-    const result = await admitDelivery(f.deps, "p", "nightly", SECRET, null);
+    const result = await admitDelivery(f.deps, "p", SECRET, null);
     expect(result.status).toBe("no-published-version");
     // A skip is a row: "it never fired" must be distinguishable in the console
     // from "it fired and failed" without reading logs.
@@ -264,29 +268,29 @@ describe("admitDelivery", () => {
 
   it("refuses an overlapping delivery when concurrency is not allowed", async () => {
     const f = fixture();
-    const first = await admitDelivery(f.deps, "p", "nightly", SECRET, null);
+    const first = await admitDelivery(f.deps, "p", SECRET, null);
     expect(first.status).toBe("accepted");
-    const second = await admitDelivery(f.deps, "p", "nightly", SECRET, null);
+    const second = await admitDelivery(f.deps, "p", SECRET, null);
     expect(second.status).toBe("busy");
     expect(f.rows.map((r) => r.status)).toEqual(["running", "skipped"]);
   });
 
   it("allows overlap when the trigger opts in", async () => {
     const f = fixture({ stored: trigger({ allowConcurrent: true }) });
-    await admitDelivery(f.deps, "p", "nightly", SECRET, null);
-    expect((await admitDelivery(f.deps, "p", "nightly", SECRET, null)).status).toBe(
+    await admitDelivery(f.deps, "p", SECRET, null);
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
       "accepted",
     );
   });
 
   it("frees the overlap lease once the delivery finishes", async () => {
     const f = fixture();
-    const first = await admitDelivery(f.deps, "p", "nightly", SECRET, null);
+    const first = await admitDelivery(f.deps, "p", SECRET, null);
     if (first.status !== "accepted") {
       throw new Error("expected an accepted delivery");
     }
     await executeDelivery(f.deps, first, {});
-    expect((await admitDelivery(f.deps, "p", "nightly", SECRET, null)).status).toBe(
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe(
       "accepted",
     );
   });
@@ -294,7 +298,7 @@ describe("admitDelivery", () => {
 
 describe("executeDelivery", () => {
   async function accept(f: Fixture) {
-    const admitted = await admitDelivery(f.deps, "p", "nightly", SECRET, null);
+    const admitted = await admitDelivery(f.deps, "p", SECRET, null);
     if (admitted.status !== "accepted") {
       throw new Error(`expected acceptance, got ${admitted.status}`);
     }
@@ -314,7 +318,7 @@ describe("executeDelivery", () => {
     const f = fixture();
     await executeDelivery(f.deps, await accept(f), {});
     expect(f.runs[0]?.actorKind).toBe("webhook");
-    expect(triggerActor(trigger())).toEqual({ kind: "webhook", id: "p:nightly" });
+    expect(triggerActor(trigger())).toEqual({ kind: "webhook", id: `p:${PROJECT_WEBHOOK_ID}` });
   });
 
   it("finishes a row an earlier lost instance stranded, with no ticker involved", async () => {
@@ -324,7 +328,7 @@ describe("executeDelivery", () => {
     const f = fixture();
     f.rows.push({
       projectName: "p",
-      triggerId: "nightly",
+      triggerId: PROJECT_WEBHOOK_ID,
       runId: "lost-delivery",
       status: "running",
       startedAt: new Date(Date.now() - (REPAIR_AFTER_SECONDS + 60) * 1000).toISOString(),
@@ -459,7 +463,7 @@ describe("executeDelivery", () => {
     expect(f.rows[0]).toMatchObject({ status: "failed", error: "payload too deep" });
     expect(f.runs).toHaveLength(0);
     // The slot came back: the next delivery is admitted, not busy.
-    expect((await admitDelivery(f.deps, "p", "nightly", SECRET, null)).status).toBe("accepted");
+    expect((await admitDelivery(f.deps, "p", SECRET, null)).status).toBe("accepted");
   });
 
   it("still finishes the row when history writes fail", async () => {

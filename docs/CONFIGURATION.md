@@ -379,7 +379,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Tool result kept when the run's context budget cuts it | `500` chars minimum | `src/application/llm/toolResultBudget.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Chat tool traffic replayed into context | `3` turns / `20,000` chars | `src/application/chat/messageMapping.ts` |
-| Inbound webhook trigger / Slack event body | `1MB` each | `src/app/api/triggers/[project]/[trigger]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts` |
+| Inbound webhook / Slack event body | `1MB` each | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts` |
 | Slack thread turns used as context | `50` | `src/application/slack/handleSlackEvent.ts` |
 | Slack thread title / history image lookback | `60` chars / `10` messages | `src/application/slack/handleSlackEvent.ts` |
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |

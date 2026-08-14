@@ -23,7 +23,12 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { TriggerRepository } from "@/domain/trigger/repository";
-import type { Trigger, TriggerRun, WebhookTrigger } from "@/domain/trigger/types";
+import {
+  PROJECT_WEBHOOK_ID,
+  type Trigger,
+  type TriggerRun,
+  type WebhookTrigger,
+} from "@/domain/trigger/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { log } from "@/shared/logger";
@@ -134,7 +139,12 @@ export function payloadInput(
 }
 
 /**
- * Authenticate and admit a delivery, or say why not.
+ * Authenticate and admit a delivery to a project's webhook, or say why not.
+ *
+ * The project name is the whole address: a project has one webhook, stored
+ * under `PROJECT_WEBHOOK_ID`, and this resolves it. No caller chooses which row
+ * a delivery lands on, which is what makes "one webhook per project" a fact
+ * about the code rather than a convention the routes agree to keep.
  *
  * Returns before the run happens: the caller acks, then drives `execute` in the
  * background. Splitting it this way is what lets a webhook sender get its
@@ -143,17 +153,17 @@ export function payloadInput(
 export async function admitDelivery(
   deps: TriggerRunnerDeps,
   projectName: string,
-  triggerId: string,
   presentedSecret: string | null,
   idempotencyKey: string | null,
 ): Promise<AdmitResult> {
-  const trigger = await deps.triggers.get(projectName, triggerId);
+  const trigger = await deps.triggers.get(projectName, PROJECT_WEBHOOK_ID);
   if (!trigger) {
     return { status: "not-configured" };
   }
   if (trigger.kind !== "webhook") {
-    // A schedule trigger has no delivery URL. Answering exactly like an unknown
-    // trigger keeps the 404 from confirming the id exists.
+    // `create` refuses to let a schedule take the id, so this is unreachable
+    // through the API — but a row is not a type, and answering exactly like a
+    // project with no webhook is the only safe reading of one that is wrong.
     return { status: "not-configured" };
   }
   // The secret is checked before anything else observable happens, and in
@@ -166,7 +176,11 @@ export async function admitDelivery(
     return { status: "disabled" };
   }
   if (idempotencyKey) {
-    const claimed = await deps.triggers.claimIdempotencyKey(projectName, triggerId, idempotencyKey);
+    const claimed = await deps.triggers.claimIdempotencyKey(
+      projectName,
+      PROJECT_WEBHOOK_ID,
+      idempotencyKey,
+    );
     if (!claimed) {
       return { status: "duplicate" };
     }

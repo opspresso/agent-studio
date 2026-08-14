@@ -10,6 +10,32 @@
 /** The kinds a stored trigger row can be. */
 export type TriggerKind = "webhook" | "schedule";
 
+/**
+ * The id a project's own webhook is stored under.
+ *
+ * A project has exactly one webhook, addressed by the project name alone, so
+ * nobody names it — the console turns it on and off. It is still a trigger row,
+ * because everything a delivery needs already lives there: the secret, the
+ * firing history, the idempotency claim, the overlap lease, the project
+ * cascade delete. Reserving one id is what buys all of that without a second
+ * entity that would have to re-derive each of them.
+ *
+ * A schedule may not take this id (`triggerUseCases.create` refuses it); a
+ * webhook row that predates this and happens to carry it simply *is* the
+ * project's webhook.
+ */
+export const PROJECT_WEBHOOK_ID = "webhook";
+
+/**
+ * Where a project's webhook is delivered — the single owner of that address.
+ *
+ * The console shows it, the API reference documents it, and the route serves
+ * it; three spellings of one path is how a copied URL stops working.
+ */
+export function projectWebhookPath(projectName: string): string {
+  return `/api/webhook/${projectName}`;
+}
+
 /** How a delivery's payload reaches the run. */
 export type TriggerPayloadMode =
   /**

@@ -19,7 +19,7 @@ Design rationale for *why* a surface looks like this lives in
   instead of a session cookie; the token acts on the project owner's behalf and is scoped to
   that project (see [Project API token](#project-api-token)). Machine surfaces are gated
   differently: `/api/a2a/*` by `X-A2A-Key`, `/api/slack/events/*` by the Slack signing secret,
-  `/api/triggers/{project}/{trigger}` by the trigger's own secret, `/api/triggers/scan` by the
+  `/api/webhook/{project}` by the webhook's own secret, `/api/triggers/scan` by the
   deployment's `SCHEDULE_SCAN_TOKEN`. `/api/health`, `/api/ready` and `/api/metrics` are open.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner and configured admins may mutate one (update/delete/publish, version
@@ -141,7 +141,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | public |
 | `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
-| `/api/triggers/{project}/{trigger}` | `POST` | `X-Trigger-Secret` |
+| `/api/webhook/{project}` | `POST` | `X-Trigger-Secret` |
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
 | `/api/plugins/sync/scan` | `POST` | `X-Scan-Token` |
@@ -996,6 +996,15 @@ the project they transferred into.
 
 ## Triggers
 
+A project has **one webhook**, addressed by the project name alone, and any number of
+**schedules**, each named. Both are trigger rows and share everything below; the webhook is
+stored under the reserved id `webhook` (`PROJECT_WEBHOOK_ID`), and `create` enforces both
+halves of that with a 400 — a webhook may take no other id, and a schedule may not take this
+one. The first is what keeps a minted secret from existing with no address to use it at, since
+`/api/webhook/{project}` resolves that id and nothing else. The console has no "create a
+webhook" step for the same reason: Settings → Webhook is a switch, and turning it on the first
+time is what writes the row.
+
 Configuration (owner/admin):
 
 ```
@@ -1025,14 +1034,17 @@ immediately.
 Delivery (no session — the secret is the authentication):
 
 ```
-POST /api/triggers/{project}/{trigger}
-  X-Trigger-Secret: asw_…
+POST /api/webhook/{project}
+  X-Trigger-Secret: adw_…
   Idempotency-Key: <optional>
   { "any": "json payload" }
 → 202 { ok: true, status: "accepted", runId }
 → 202 { ok: true, status: "duplicate" | "disabled" | "busy" | "no-published-version" }
-→ 401 (wrong or missing secret) | 404 (no such trigger) | 400 (bad JSON) | 413 (>1MB)
+→ 401 (wrong or missing secret) | 404 (no webhook on this project) | 400 (bad JSON) | 413 (>1MB)
 ```
+
+This is the **only** delivery address. `admitDelivery` resolves the row from the project name
+itself and takes no trigger id, so nothing outside can name which webhook a delivery lands on.
 
 `202` even for the refusals a caller cannot fix by retrying: the delivery was accepted and
 its outcome is recorded, which is where an operator looks. Only `accepted` starts a run.

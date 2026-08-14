@@ -16,6 +16,7 @@ function ctx(overrides: Partial<ApiReferenceContext> = {}): ApiReferenceContext 
     origin: ORIGIN,
     a2a: null,
     slack: null,
+    webhook: null,
     ...overrides,
   };
 }
@@ -133,6 +134,42 @@ describe("buildApiReference — A2A endpoints", () => {
   });
 });
 
+describe("buildApiReference — project webhook", () => {
+  it("shows the webhook only once it is switched on (owner view)", () => {
+    expect(ids({ webhook: { enabled: true } })).toContain("webhook");
+    expect(ids({ webhook: { enabled: false } })).not.toContain("webhook");
+    expect(ids({ webhook: null })).not.toContain("webhook");
+  });
+
+  it("addresses it by project name alone and authenticates with the trigger secret", () => {
+    const endpoint = buildApiReference(ctx({ webhook: { enabled: true } })).find(
+      (e) => e.id === "webhook",
+    );
+    expect(endpoint?.path).toBe("/api/webhook/my-bot");
+    expect(endpoint?.auth).toBe("trigger-secret");
+    expect(codeOf(endpoint!, "bash")).toContain(`${ORIGIN}/api/webhook/my-bot`);
+    expect(codeOf(endpoint!, "bash")).toContain("X-Trigger-Secret");
+    // The header that makes a redelivery safe is part of the sample, not prose
+    // a reader has to translate into a curl flag themselves.
+    expect(codeOf(endpoint!, "bash")).toContain("Idempotency-Key");
+  });
+
+  it("stays listed with no published version, because the address is live either way", () => {
+    // The other endpoints are hidden without one; this one answers
+    // `no-published-version` at 202, which is the thing worth documenting.
+    expect(ids({ publishedVersion: null, webhook: { enabled: true } })).toEqual(["webhook"]);
+  });
+
+  it("documents every status a 202 can carry", () => {
+    const status = buildApiReference(ctx({ webhook: { enabled: true } }))
+      .find((e) => e.id === "webhook")
+      ?.responseFields?.find((f) => f.name === "status");
+    for (const value of ["accepted", "disabled", "duplicate", "busy", "no-published-version"]) {
+      expect(status?.description).toContain(value);
+    }
+  });
+});
+
 describe("buildApiReference — Slack endpoint", () => {
   it("shows the Slack webhook only when configured (owner view)", () => {
     expect(ids({ slack: { configured: true } })).toContain("slack-events");
@@ -148,6 +185,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
       ctx({
         a2a: { enabled: true, published: true },
         slack: { configured: true },
+        webhook: { enabled: true },
       }),
     );
     return endpoints.flatMap((e) =>
@@ -174,7 +212,11 @@ describe("buildApiReference — no real secrets leak into examples", () => {
 
   it("authenticated samples carry their credential placeholder", () => {
     const endpoints = buildApiReference(
-      ctx({ a2a: { enabled: true, published: true }, slack: { configured: true } }),
+      ctx({
+        a2a: { enabled: true, published: true },
+        slack: { configured: true },
+        webhook: { enabled: true },
+      }),
     );
     const byId = (id: string) => endpoints.find((e) => e.id === id)!;
 
@@ -184,6 +226,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
     expect(codeOf(byId("chat-completions"), "javascript")).toContain(PLACEHOLDERS.token);
     expect(codeOf(byId("a2a-rpc"), "bash")).toContain(PLACEHOLDERS.a2aKey);
     expect(codeOf(byId("slack-events"), "bash")).toContain(PLACEHOLDERS.slackSignature);
+    expect(codeOf(byId("webhook"), "bash")).toContain(PLACEHOLDERS.webhookSecret);
     // The public Agent Card carries no credential.
     expect(codeOf(byId("a2a-card"), "bash")).not.toContain(PLACEHOLDERS.token);
     expect(codeOf(byId("a2a-card"), "bash")).not.toContain(PLACEHOLDERS.a2aKey);
