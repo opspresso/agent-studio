@@ -1026,17 +1026,21 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
 **one owner**, `McpSession` (`src/infrastructure/mcp/session.ts`) — both the engine's
 `ToolManager` and the registry's "Test connection" probe run on it.
 
-The session is an adapter over **`@modelcontextprotocol/client`**, pinned to revision
-**`2026-07-28`** and speaking nothing else. Every connection opens with `server/discover`
-stating that revision; a server that does not offer it — because it is still waiting for the
-`initialize` handshake the revision removed, or because it speaks only something newer — is
-refused, and `unusableServerReason` says which of the two happened rather than reporting a
-healthy host as unreachable.
+The session is an adapter over **`@modelcontextprotocol/client`**, and the reason is the
+`2026-07-28` revision: it removed the `initialize` handshake, so a client must now detect
+which era a server implements and speak either the handshake or a per-request `_meta`
+envelope. Every connection opens with **`server/discover`**; a server that answers it is
+talked to statelessly, and one that answers `-32601` gets the `initialize` handshake instead.
+A server supporting only revisions this client does not know answers `-32022` naming what it
+does speak, which `unusableServerReason` reports as *this client needs upgrading* rather than
+as an unreachable host.
 
-Carrying both eras was the alternative and it costs more than it looks: a handshake, a session
-id, the expiry recovery around that id, and a second shape for every request — with the client
-quietly wrong in the seams between them. What the pin gives up is servers that have not moved
-yet, which is a deployment question with a date on it rather than a permanent one.
+**Pinning the revision instead was tried and reverted.** It is cheaper — a handshake, a
+session id and the expiry recovery around it all disappear, and with them the seams a
+dual-era client can be quietly wrong in. What it costs is every server that has not moved
+yet, and an MCP server is somebody else's deployment on somebody else's release schedule: a
+registry entry that stops working because this app upgraded is a failure its owner cannot
+fix. The seam is kept here so that no entry has to be upgraded in step.
 
 The SDK is an adapter-layer dependency, which is where a protocol client belongs; the rules
 in [AGENTS.md](../AGENTS.md#the-dependency-rule) keep it out of `application` and `domain`.
@@ -1058,17 +1062,33 @@ lazy connect below, and the expired-session retry — which the SDK does not imp
 - Sessions are registered before their first request and released with a `DELETE` when the run
   ends (`ToolManager.close()`, called from the execution facade's `finally` — including when
   discovery itself failed or was cancelled).
-- **There is no session.** The revision mints none, so nothing is released at teardown and
-  closing a connection puts nothing on the wire — and the expiry recovery a session id needed
-  (a 404 meaning "start a new one", replayed once) went with it.
-- Every request states the pinned revision, the probe included. There is no negotiated value
-  to carry instead.
-- Every POST mirrors its body into **`Mcp-Method`**, a request naming something into
-  **`Mcp-Name`**, and a parameter the tool marks `x-mcp-header` into `Mcp-Param-*`
-  (SEP-2243), so a gateway or rate limiter can route and meter without parsing the body. A
-  name outside printable ASCII travels Base64-encoded (`=?base64?…?=`). The SDK owns the
-  mirroring, including excluding a tool whose `x-mcp-header` declaration breaks the
-  constraints rather than letting one malformed tool cost the rest. **The tool's definition is handed to the call**, because the
+- A request answered **`404` while carrying an `Mcp-Session-Id`** means the server has
+  forgotten that session and the transport requires a new one: the connection is dropped and
+  the request is replayed **once** behind a fresh one. Replaying is safe because a 404 is a
+  session-lookup failure — the server rejected the message before running anything, so a
+  `tools/call` that gets one had no effect to repeat. Bounded at one attempt, or an endpoint
+  that has genuinely gone would be reconnected to forever. **Only the caller whose session is
+  still the current one discards it**: one model response dispatches its MCP calls together, so
+  several can hold the same dead id, and each resetting in turn would abandon a connection
+  another had started and mint one server-side session per caller. Without this, a run that
+  outlives the server's session TTL — runs here last up to ten minutes — loses every remaining
+  tool call, with the model reading `HTTP 404` and no path back. This is the session's own
+  code: the SDK has no such recovery. Protocol `2026-07-28` mints no session at all, so on a
+  modern connection the retry is unreachable by construction, and teardown sends no `DELETE`.
+- After the handshake, requests state the protocol version the **server** agreed to rather
+  than the one proposed. The handshake itself proposes in its *body*: the header names the
+  revision in use, and until the server answers there is not one. The era probe ahead of it
+  carries the newest revision this client speaks, which is what it is asking about.
+- On a `2026-07-28` connection every POST mirrors its body into **`Mcp-Method`**, a request
+  naming something into **`Mcp-Name`**, and a parameter the tool marks `x-mcp-header` into
+  `Mcp-Param-*` (SEP-2243), so a gateway or rate limiter can route and meter without parsing
+  the body. A name outside printable ASCII travels Base64-encoded (`=?base64?…?=`). **None of
+  them appear on a 2025-era exchange**, and that is deliberate rather than an omission: the
+  spec tells an intermediary to reject mirrored values it cannot check against a version that
+  guarantees the server validated them, so sending them to a server that never promised that
+  validation is worse than not sending them. The SDK owns the mirroring, including excluding
+  a tool whose `x-mcp-header` declaration breaks the constraints rather than letting one
+  malformed tool cost the rest. **The tool's definition is handed to the call**, because the
   SDK derives `Mcp-Param-*` from the `inputSchema` of a `tools/list` it sent itself — and a
   warm discovery cache means it often sent none. Without that, a run on a cached catalogue
   would omit a header whose value is in the body, which a server routing on it must reject.
@@ -1197,9 +1217,10 @@ run would change the discovery cache key every run.
 
 **Where the client itself comes from** changed with protocol `2026-07-28`, which deprecates
 dynamic registration in favour of **Client ID Metadata Documents**: the `client_id` is an
-HTTPS URL the client hosts, and the authorization server fetches it. Registration is not
-implemented here at all — a server that does not accept a document needs an app the owner
-registers once by hand. This deployment publishes
+HTTPS URL the client hosts, and the authorization server fetches it. Registration stays behind
+it for the servers that offer nothing else — a 2025-era authorization server advertises a
+`registration_endpoint` and no document support, and refusing those would leave their owners
+registering an app by hand for a connection that used to work. This deployment publishes
 one per project (`/api/mcps/oauth/client-metadata/{project}`) rather than one for the
 deployment, because that document is what a person sees when approving the connection — a
 single one would ask them to grant access to "AgentDure" with no way to tell which project is
