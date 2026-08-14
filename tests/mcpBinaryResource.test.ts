@@ -17,7 +17,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
 import { clearMcpDiscoveryCache } from "@/infrastructure/mcp/discoveryCache";
-import { conforming, protocolPreamble } from "./mcpProtocolStub";
+import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 const SERVER = { name: "files", url: "https://mcp.example.com/mcp", headers: {} };
 
@@ -31,10 +31,11 @@ function stubServer(content: unknown[]) {
       if (preamble) {
         return preamble;
       }
-      const result =
-        body.method === "tools/list"
+      const result = modernResult(body.method, {
+        ...(body.method === "tools/list"
           ? { tools: conforming([{ name: "read_file", description: "" }]) }
-          : { content };
+          : { content }),
+      });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id ?? 1, result }), {
         headers: { "Content-Type": "application/json" },
       });

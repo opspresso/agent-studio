@@ -5,13 +5,15 @@ import {
   McpSession,
   MCP_CALL_TIMEOUT_MS,
   MCP_DISCOVERY_TIMEOUT_MS,
-  LEGACY_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
 } from "@/infrastructure/mcp/session";
 import { clearMcpDiscoveryCache, getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 import {
+  bodylessResponse,
   conforming,
+  discoverResult,
   handshakeResult,
+  modernResult,
   probeMiss,
   protocolPreamble,
   type StubTool,
@@ -34,45 +36,22 @@ interface RpcEnvelope {
 interface ServerScript {
   /** Framing of JSON-RPC responses. Defaults to plain application/json. */
   framing?: "json" | "sse";
-  /** Value returned in the Mcp-Session-Id response header on initialize. */
-  sessionId?: string;
-  /** Session ids handed out one per initialize, so a re-handshake is visible. */
-  sessionIds?: string[];
-  /** Protocol version the handshake agrees to. Defaults to a 2025-era one. */
-  protocolVersion?: string;
-  /**
-   * What the server calls itself in the handshake. Required of a server by the
-   * spec, so it is present by default; a test that cares names its own.
-   */
+  /** What the server calls itself in the probe result. */
   serverInfo?: { name: string; version: string };
   /**
-   * Capabilities the handshake declares. Defaults to declaring tools, which the
-   * spec requires of any server that has them — a test passing `{}` is scripting
-   * the non-conforming server whose catalogue is therefore never requested.
+   * Capabilities the probe declares. Defaults to declaring tools, which the spec
+   * requires of any server that has them — a test passing `{}` is scripting the
+   * non-conforming server whose catalogue is therefore never requested.
    */
   capabilities?: Record<string, unknown>;
   /**
-   * Answer as a server built for protocol `2026-07-28`: `server/discover` in
-   * place of the handshake, no `initialize` at all, and results carrying
-   * `resultType`. This is the era where the SEP-2243 routing headers are
-   * required — a client must not put them on a 2025-era exchange, where an
-   * intermediary has no version guarantee to validate them against.
+   * Answer the probe as a 2025-era server does — it has no such method — and the
+   * handshake it expects instead. This client speaks one revision and has no
+   * fallback, so such a server is refused.
    */
-  modern?: boolean;
-  /**
-   * Answer requests carrying a session id with 404, as a server whose session
-   * has expired does. `once` expires only the first such request, which is the
-   * recoverable case; `always` never stops, which is what an endpoint that has
-   * genuinely gone looks like.
-   *
-   * Notifications are exempt — a real server answers those 202 whatever it
-   * thinks of the session, and this client does not read their status.
-   */
-  expiredSession?: "once" | "always";
-  /** Narrow {@link expiredSession} to one method, so a test can pick its moment. */
-  expireOn?: string;
-  /** 404 every post-handshake request, session or not: the endpoint itself is gone. */
-  notFoundAfterHandshake?: boolean;
+  legacy?: boolean;
+  /** 404 every request after the probe: the endpoint itself is gone. */
+  notFoundAfterProbe?: boolean;
   /** Tools reported by tools/list. */
   listTools?: StubTool[];
   /** Pages of tools/list, keyed by the cursor that asks for them ("" = first). */
@@ -129,12 +108,8 @@ interface RecordedCall {
   hasSignal: boolean;
 }
 
-function framedResponse(payload: RpcEnvelope, script: ServerScript, sessionId?: string): Response {
+function framedResponse(payload: RpcEnvelope, script: ServerScript): Response {
   const headers = new Headers();
-  const issued = sessionId ?? script.sessionId;
-  if (issued) {
-    headers.set("Mcp-Session-Id", issued);
-  }
   if (script.framing === "sse") {
     headers.set("content-type", "text/event-stream");
     return new Response(`data: ${JSON.stringify(payload)}\n\n`, { headers });
@@ -146,16 +121,6 @@ function framedResponse(payload: RpcEnvelope, script: ServerScript, sessionId?: 
 /** Install a fetch stub that speaks the MCP JSON-RPC protocol per URL. */
 function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
   const calls: RecordedCall[] = [];
-  /** Session ids already handed out, per script, so each initialize gets the next. */
-  const handshakes = new Map<ServerScript, number>();
-  /** Scripts that have already spent their one expiry. */
-  const expired = new Set<ServerScript>();
-  /**
-   * Session ids the server has forgotten. Once a session dies it stays dead for
-   * every request still carrying it, which is what makes concurrent callers meet
-   * the same 404 — the case a per-caller reset would turn into a session leak.
-   */
-  const dead = new Set<string>();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : String(input);
     const script = scripts[url];
@@ -166,7 +131,6 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       throw new Error("network down");
     }
     const sent = new Headers(init?.headers);
-    const sentSession = sent.get("Mcp-Session-Id") ?? undefined;
     const sentVersion = sent.get("MCP-Protocol-Version") ?? undefined;
     const sentMcpMethod = sent.get("Mcp-Method") ?? undefined;
     const sentMcpName = sent.get("Mcp-Name") ?? undefined;
@@ -185,7 +149,6 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       url,
       method: body.method,
       httpMethod: init?.method ?? "GET",
-      ...(sentSession ? { sessionId: sentSession } : {}),
       ...(sentVersion ? { protocolVersion: sentVersion } : {}),
       ...(sentMcpMethod ? { mcpMethod: sentMcpMethod } : {}),
       ...(sentMcpName ? { mcpName: sentMcpName } : {}),
@@ -197,36 +160,10 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     if (script.hangOn !== undefined && body.method === script.hangOn) {
       return new Promise<Response>(() => {});
     }
-
-    if (body.method === "notifications/initialized") {
-      return new Response("", { status: 202 });
-    }
-    if (script.modern) {
-      if (body.method === "server/discover") {
-        return framedResponse(
-          {
-            jsonrpc: "2.0",
-            id: body.id,
-            result: {
-              resultType: "complete",
-              supportedVersions: ["2026-07-28"],
-              capabilities: script.capabilities ?? { tools: {} },
-              _meta: {
-                "io.modelcontextprotocol/serverInfo": script.serverInfo ?? {
-                  name: "modern-server",
-                  version: "2.0",
-                },
-              },
-            },
-          },
-          script,
-        );
-      }
-      if (body.method === "initialize") {
-        // The revision removed it. A server that never had the method says so
-        // the way any server says it of any method.
-        return probeMiss(body.id);
-      }
+    if (body.method === undefined) {
+      // Nothing should arrive without a body: this revision has no standalone
+      // GET stream and no session to DELETE.
+      return bodylessResponse(init?.method);
     }
     if (script.unsupportedVersion) {
       return new Response(
@@ -242,45 +179,39 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         { status: 400, headers: { "content-type": "application/json" } },
       );
     }
-    // A session the server no longer knows. Checked before anything is done
-    // with the message, which is why replaying the request afterwards is safe.
-    if (sentSession !== undefined && dead.has(sentSession)) {
-      return new Response("Session not found", { status: 404 });
+    if (body.method === "server/discover") {
+      // A 2025-era server has no such method, and this client has no fallback:
+      // the connection ends here.
+      return script.legacy
+        ? probeMiss(body.id)
+        : framedResponse(
+            {
+              jsonrpc: "2.0",
+              id: body.id,
+              result: discoverResult(script.serverInfo?.name, {
+                capabilities: script.capabilities ?? { tools: {} },
+                ...(script.serverInfo
+                  ? { _meta: { "io.modelcontextprotocol/serverInfo": script.serverInfo } }
+                  : {}),
+              }),
+            },
+            script,
+          );
     }
-    const expiresNow =
-      script.expiredSession !== undefined &&
-      sentSession !== undefined &&
-      (script.expireOn === undefined || script.expireOn === body.method) &&
-      !expired.has(script);
-    if (expiresNow && sentSession !== undefined) {
-      if (script.expiredSession === "once") {
-        expired.add(script);
-      }
-      dead.add(sentSession);
-      return new Response("Session not found", { status: 404 });
+    if (script.legacy && body.method === "initialize") {
+      return framedResponse(
+        { jsonrpc: "2.0", id: body.id, result: handshakeResult(script.serverInfo?.name) },
+        script,
+      );
     }
-    if (script.notFoundAfterHandshake && body.method !== "initialize") {
+    if (script.notFoundAfterProbe) {
       return new Response("Not found", { status: 404 });
     }
     if (script.callUnauthorized && body.method === "tools/call") {
       return new Response("Unauthorized", { status: 401 });
     }
     let payload: RpcEnvelope;
-    let issuedSession: string | undefined;
-    if (body.method === "initialize") {
-      const nth = handshakes.get(script) ?? 0;
-      handshakes.set(script, nth + 1);
-      issuedSession = script.sessionIds?.[nth];
-      payload = {
-        jsonrpc: "2.0",
-        id: body.id,
-        result: {
-          protocolVersion: script.protocolVersion ?? "2025-06-18",
-          capabilities: script.capabilities ?? { tools: {} },
-          serverInfo: script.serverInfo ?? { name: "test-server", version: "1.0" },
-        },
-      };
-    } else if (body.method === "tools/list") {
+    if (body.method === "tools/list") {
       if (script.listError) {
         payload = { jsonrpc: "2.0", id: body.id, error: script.listError };
       } else if (script.toolPages) {
@@ -289,13 +220,13 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         payload = {
           jsonrpc: "2.0",
           id: body.id,
-          result: { ...page, tools: conforming(page.tools) },
+          result: modernResult(body.method, { ...page, tools: conforming(page.tools) }),
         };
       } else {
         payload = {
           jsonrpc: "2.0",
           id: body.id,
-          result: { tools: conforming(script.listTools ?? []) },
+          result: modernResult(body.method, { tools: conforming(script.listTools ?? []) }),
         };
       }
     } else if (body.method === "tools/call") {
@@ -324,26 +255,15 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         : {
             jsonrpc: "2.0",
             id: body.id,
-            result: {
+            result: modernResult(body.method, {
               ...(script.callOmitsContent ? {} : { content: script.callContent ?? [] }),
               ...(script.callStructuredContent !== undefined
                 ? { structuredContent: script.callStructuredContent }
                 : {}),
               ...(script.callIsError ? { isError: true } : {}),
-            },
+            }),
           };
-    } else if (body.method === undefined) {
-      // A bodyless request: the standalone SSE stream the transport opens on a
-      // legacy connection (GET), or the session release (DELETE). A server that
-      // hosts neither answers 405, which is what the spec tells one to do and
-      // what the client must survive.
-      return init?.method === "DELETE"
-        ? new Response("", { status: 202 })
-        : new Response("Method Not Allowed", { status: 405 });
     } else {
-      // A method this server does not implement. `server/discover` is the one
-      // that matters: a server predating protocol 2026-07-28 answers the era
-      // probe exactly this way, and that is how the client learns to handshake.
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
@@ -353,22 +273,17 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         { status: 404, headers: { "content-type": "application/json" } },
       );
     }
-    if (script.modern && payload.result && typeof payload.result === "object") {
-      // Every result carries `resultType` from this revision on, and a client
-      // reads one that omits it as `"complete"` only for backwards
-      // compatibility. The list verbs additionally carry the SEP-2549 caching
-      // hint, which is required of them rather than optional.
-      const cacheable =
-        body.method === "tools/list" ? { ttlMs: 60_000, cacheScope: "private" } : {};
-      payload = {
-        ...payload,
-        result: { resultType: "complete", ...cacheable, ...payload.result },
-      };
-    }
-    return framedResponse(payload, script, issuedSession);
+    return framedResponse(payload, script);
   });
   vi.stubGlobal("fetch", fetchMock);
   return calls;
+}
+
+/** The probe answer an inline stub gives when it is a conforming server. */
+function jsonProbe(id: number | undefined): Response {
+  return new Response(JSON.stringify({ jsonrpc: "2.0", id, result: discoverResult() }), {
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function server(name: string, url: string): McpServerConfig {
@@ -537,7 +452,6 @@ describe("ToolManager response parsing", () => {
     stubMcpFetch({
       "https://json.test/mcp": {
         framing: "json",
-        sessionId: "sess-json",
         listTools: [{ name: "ping" }],
         callContent: [textBlock("pong")],
       },
@@ -553,7 +467,6 @@ describe("ToolManager response parsing", () => {
     stubMcpFetch({
       "https://sse.test/mcp": {
         framing: "sse",
-        sessionId: "sess-sse",
         listTools: [{ name: "ping" }],
         callContent: [textBlock("pong-sse")],
       },
@@ -697,7 +610,6 @@ describe("ToolManager era negotiation", () => {
     // client cannot talk to it, and would report it as unreachable.
     const calls = stubMcpFetch({
       "https://modern.test/mcp": {
-        modern: true,
         listTools: [{ name: "search" }],
         callContent: [textBlock("ok")],
       },
@@ -714,20 +626,31 @@ describe("ToolManager era negotiation", () => {
     expect(calls.map((call) => call.method)).not.toContain("initialize");
   });
 
-  it("falls back to the handshake for a server that predates the probe", async () => {
+  it("refuses a server that still speaks a 2025-era revision, and says which", async () => {
+    // There is no fallback: the handshake this server is waiting for is not one
+    // this client performs. It is running and correct for the revision it
+    // implements, so the warning asks for that server to be upgraded rather
+    // than sending an operator to check whether it is up.
     const calls = stubMcpFetch({
-      "https://old.test/mcp": { listTools: [{ name: "search" }] },
+      "https://old.test/mcp": { legacy: true, listTools: [{ name: "search" }] },
+      "https://ok.test/mcp": { listTools: [{ name: "weather" }] },
     });
-    const manager = new ToolManager([server("old", "https://old.test/mcp")]);
+    const manager = new ToolManager([
+      server("old", "https://old.test/mcp"),
+      server("ok", "https://ok.test/mcp"),
+    ]);
 
     await manager.init();
 
-    expect(manager.tools.map((t) => t.function.name)).toEqual(["search"]);
-    // The probe is asked first and answered `-32601`, which is what sends this
-    // client to `initialize` rather than to a conclusion about the server.
-    expect(calls.map((call) => call.method).slice(0, 2)).toEqual([
+    // One server's problem, not the run's.
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
+    const warning = manager.warnings.find((w) => w.includes("'old'"));
+    expect(warning).toContain("cannot be used by this client");
+    expect(warning).toContain("does not offer MCP 2026-07-28");
+    expect(warning).not.toContain("unreachable");
+    // It asked once and stopped: no handshake was attempted.
+    expect(calls.filter((call) => call.url.includes("old")).map((call) => call.method)).toEqual([
       "server/discover",
-      "initialize",
     ]);
   });
 
@@ -767,7 +690,7 @@ describe("ToolManager era negotiation", () => {
   it("leaves an ordinary failure reported as unreachable", async () => {
     stubMcpFetch({
       "https://down.test/mcp": { networkError: true },
-      "https://prose.test/mcp": { notFoundAfterHandshake: true },
+      "https://prose.test/mcp": { notFoundAfterProbe: true },
     });
     const manager = new ToolManager([
       server("down", "https://down.test/mcp"),
@@ -823,7 +746,7 @@ describe("ToolManager per-binding tool allowlist", () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
       if (body.method === "server/discover") {
-        return probeMiss(body.id);
+        return jsonProbe(body.id);
       }
       if (body.method === "notifications/initialized") {
         return new Response("", { status: 202 });
@@ -831,18 +754,15 @@ describe("ToolManager per-binding tool allowlist", () => {
       if (body.method === undefined) {
         return new Response("Method Not Allowed", { status: 405 });
       }
-      const result =
-        body.method === "initialize"
-          ? handshakeResult("Slack MCP")
-          : {
-              tools: conforming([
-                {
-                  name: "canvas_edit",
-                  description: "Schemes like `javascript:`, `data:`, `file:` are removed.",
-                },
-                { name: "send_message" },
-              ]),
-            };
+      const result = modernResult(body.method, {
+        tools: conforming([
+          {
+            name: "canvas_edit",
+            description: "Schemes like `javascript:`, `data:`, `file:` are removed.",
+          },
+          { name: "send_message" },
+        ]),
+      });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
       });
@@ -866,16 +786,7 @@ describe("ToolManager per-binding tool allowlist", () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
       if (body.method === "server/discover") {
-        return probeMiss(body.id);
-      }
-      if (body.method === "initialize") {
-        return new Response(
-          JSON.stringify({ jsonrpc: "2.0", id: body.id, result: handshakeResult("deferred") }),
-          { headers: { "content-type": "application/json" } },
-        );
-      }
-      if (body.method === "notifications/initialized") {
-        return new Response("", { status: 202 });
+        return jsonProbe(body.id);
       }
       return new Response("", { status: 202 }); // accepted, answered nowhere we read
     });
@@ -904,15 +815,12 @@ describe("ToolManager per-binding tool allowlist", () => {
         return new Response("", { status: 202 });
       }
       if (body.method === "server/discover") {
-        return probeMiss(body.id);
+        return jsonProbe(body.id);
       }
       if (body.method === undefined) {
         return new Response("Method Not Allowed", { status: 405 });
       }
-      const reply =
-        body.method === "initialize"
-          ? handshakeResult("chatty")
-          : { tools: conforming([{ name: "search" }]) };
+      const reply = modernResult(body.method, { tools: conforming([{ name: "search" }]) });
       const frames = [
         `data: ${JSON.stringify({ jsonrpc: "2.0", id: body.id, result: reply })}\n\n`,
         // arrives after the reply, and answers nothing
@@ -1108,229 +1016,32 @@ describe("ToolManager image results", () => {
  * minutes, so a session expiring mid-run is not hypothetical — and left
  * unhandled it takes every remaining tool call down with it.
  */
-describe("ToolManager expired-session recovery", () => {
-  it("re-handshakes and completes the call the expired session refused", async () => {
+
+describe("ToolManager protocol version", () => {
+  it("states the pinned revision on every request", async () => {
+    // Not a proposal: this client speaks one revision, and every request says so
+    // — the probe that opens the connection included.
     const calls = stubMcpFetch({
-      "https://expiring.test/mcp": {
-        sessionIds: ["sess-1", "sess-2"],
-        expiredSession: "once",
-        expireOn: "tools/call",
-        listTools: [{ name: "search" }],
-        callContent: [textBlock("ok")],
-      },
+      "https://a.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
     });
-    const manager = new ToolManager([server("x", "https://expiring.test/mcp")]);
-    await manager.init();
-
-    const result = await manager.callTool("search", {});
-
-    // The model gets its answer, not `HTTP 404`.
-    expect(result.text).toBe("ok");
-    const rpc = calls.filter((call) => call.httpMethod === "POST");
-    expect(rpc.map((call) => call.method)).toEqual([
-      "server/discover",
-      "initialize",
-      "notifications/initialized",
-      "tools/list",
-      // The call that met the expired session, then a fresh connection — probe
-      // included, since the recovery drops the client rather than just the
-      // session id — then the same call again.
-      "tools/call",
-      "server/discover",
-      "initialize",
-      "notifications/initialized",
-      "tools/call",
-    ]);
-    // The retry carried the *new* id, which is what proves the old one was
-    // forgotten rather than merely re-sent.
-    expect(rpc.at(-1)?.sessionId).toBe("sess-2");
-    // And the second handshake proposed no session at all, as a new one must:
-    // re-offering the dead id would ask the server to resurrect it.
-    const handshakes = rpc.filter((call) => call.method === "initialize");
-    expect(handshakes).toHaveLength(2);
-    expect(handshakes.every((call) => call.sessionId === undefined)).toBe(true);
-  });
-
-  it("gives up after one retry when the endpoint itself is gone", async () => {
-    // A server that answers 404 to everything is not a session that expired, and
-    // handshaking against it forever would replace a failed call with a hang.
-    const calls = stubMcpFetch({
-      "https://gone.test/mcp": {
-        sessionIds: ["sess-1", "sess-2", "sess-3"],
-        expiredSession: "always",
-        listTools: [{ name: "search" }],
-      },
-    });
-    const manager = new ToolManager([server("x", "https://gone.test/mcp")]);
-    await manager.init();
-
-    // Discovery is the first thing to meet it: tools/list is a request like any
-    // other, so it retries once and then reports the server as unreachable.
-    expect(manager.tools).toHaveLength(0);
-    expect(manager.warnings[0]).toContain("unreachable");
-    expect(calls.filter((call) => call.method === "tools/list")).toHaveLength(2);
-    expect(calls.filter((call) => call.method === "initialize")).toHaveLength(2);
-  });
-
-  it("does not retry a 404 from a server that issued no session", async () => {
-    // Then the 404 is about the endpoint, and re-handshaking only doubles the
-    // wait before the same answer.
-    const calls = stubMcpFetch({
-      "https://nosession.test/mcp": {
-        notFoundAfterHandshake: true,
-        listTools: [{ name: "search" }],
-      },
-    });
-    const manager = new ToolManager([server("x", "https://nosession.test/mcp")]);
-
-    await manager.init();
-
-    expect(calls.filter((call) => call.method === "initialize")).toHaveLength(1);
-    expect(manager.warnings[0]).toContain("unreachable");
-  });
-
-  it("handshakes once when concurrent calls all meet the same expired session", async () => {
-    // The MCP calls of one model response are dispatched together, so several
-    // can hold the same dead id. Each resetting in turn would abandon a
-    // handshake another had started and mint one server-side session per caller.
-    const calls = stubMcpFetch({
-      "https://expiring.test/mcp": {
-        sessionIds: ["sess-1", "sess-2", "sess-3", "sess-4"],
-        expiredSession: "once",
-        expireOn: "tools/call",
-        listTools: [{ name: "search" }],
-        callContent: [textBlock("ok")],
-      },
-    });
-    const manager = new ToolManager([server("x", "https://expiring.test/mcp")]);
-    await manager.init();
-
-    const results = await Promise.all([
-      manager.callTool("search", {}),
-      manager.callTool("search", {}),
-      manager.callTool("search", {}),
-    ]);
-
-    expect(results.map((r) => r.text)).toEqual(["ok", "ok", "ok"]);
-    // Two in total: the original, and exactly one replacement.
-    expect(calls.filter((call) => call.method === "initialize")).toHaveLength(2);
-  });
-});
-
-describe("ToolManager protocol version negotiation", () => {
-  it("states the version the server agreed to, not the one we proposed", async () => {
-    // The header is meant to say which revision is in use. Claiming ours after a
-    // server answered with another states something it never agreed to — and it
-    // is the value era detection would key on if this client ever speaks two.
-    const calls = stubMcpFetch({
-      "https://old.test/mcp": {
-        protocolVersion: "2025-03-26",
-        listTools: [{ name: "search" }],
-        callContent: [textBlock("ok")],
-      },
-    });
-    const manager = new ToolManager([server("x", "https://old.test/mcp")]);
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
     await manager.callTool("search", {});
 
-    const byMethod = (method: string) => calls.find((call) => call.method === method);
-    // The probe states the newest revision this client speaks: it is asking
-    // whether the server is of that era at all.
-    expect(byMethod("server/discover")?.protocolVersion).toBe(PROTOCOL_VERSION);
-    // The handshake proposes in its body, not its header — the header names the
-    // revision *in use*, and until the server answers there is not one.
-    expect(byMethod("initialize")?.params?.protocolVersion).toBe(LEGACY_PROTOCOL_VERSION);
-    expect(byMethod("initialize")?.protocolVersion).toBeUndefined();
-    // Everything after it is the server's answer, the notification included.
-    expect(byMethod("notifications/initialized")?.protocolVersion).toBe("2025-03-26");
-    expect(byMethod("tools/list")?.protocolVersion).toBe("2025-03-26");
-    expect(byMethod("tools/call")?.protocolVersion).toBe("2025-03-26");
-  });
-
-  it("states the revision it proposed when the server echoes none", async () => {
-    const calls = stubMcpFetch({
-      "https://quiet.test/mcp": {
-        protocolVersion: LEGACY_PROTOCOL_VERSION,
-        listTools: [{ name: "search" }],
-      },
-    });
-    await new ToolManager([server("x", "https://quiet.test/mcp")]).init();
-
-    expect(calls.find((call) => call.method === "tools/list")?.protocolVersion).toBe(
-      LEGACY_PROTOCOL_VERSION,
-    );
+    expect(calls.map((call) => call.method)).toEqual([
+      "server/discover",
+      "tools/list",
+      "tools/call",
+    ]);
+    expect(calls.every((call) => call.protocolVersion === PROTOCOL_VERSION)).toBe(true);
   });
 });
 
-describe("ToolManager session release", () => {
-  const deletesTo = (calls: RecordedCall[], url: string) =>
-    calls.filter((call) => call.url === url && call.httpMethod === "DELETE");
-
-  it("releases a session whose discovery failed after it had been established", async () => {
-    const calls = stubMcpFetch({
-      "https://rpcfail.test/mcp": {
-        sessionId: "sess-1",
-        listError: { code: -32000, message: "boom" },
-      },
-    });
-    const manager = new ToolManager([server("rpcfail", "https://rpcfail.test/mcp")]);
-
-    await manager.init();
-    await manager.close();
-
-    // The server handed out a session before it refused tools/list; leaving it
-    // open would strand one per run against a half-broken server.
-    expect(deletesTo(calls, "https://rpcfail.test/mcp")).toHaveLength(1);
-    expect(manager.warnings).toHaveLength(1);
-    expect(manager.warnings[0]).toContain("rpcfail");
-  });
-
-  it("releases sessions opened before the run was cancelled mid-discovery", async () => {
-    const controller = new AbortController();
-    const calls = stubMcpFetch({
-      "https://a.test/mcp": {
-        sessionId: "sess-a",
-        listTools: [{ name: "search" }],
-        // The caller gives up while discovery is in flight — after the session
-        // exists, which is exactly when abandoning it would leak.
-        onRequest: (method) => {
-          if (method === "initialize") {
-            controller.abort();
-          }
-        },
-      },
-    });
-    const manager = new ToolManager(
-      [server("a", "https://a.test/mcp")],
-      undefined,
-      controller.signal,
-    );
-
-    await expect(manager.init()).rejects.toThrow();
-    await manager.close();
-
-    expect(deletesTo(calls, "https://a.test/mcp")).toHaveLength(1);
-  });
-
-  it("is idempotent: a second close sends nothing", async () => {
-    const calls = stubMcpFetch({
-      "https://a.test/mcp": { sessionId: "sess-a", listTools: [{ name: "search" }] },
-    });
-    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
-
-    await manager.init();
-    await manager.close();
-    await manager.close();
-
-    expect(deletesTo(calls, "https://a.test/mcp")).toHaveLength(1);
-  });
-});
 
 describe("listMcpTools (registry probe)", () => {
-  it("returns the server's tools and always releases the session", async () => {
+  it("returns the server's tools and closes what it opened", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {
-        sessionId: "sess-a",
         listTools: [{ name: "search", description: "Search things" }],
       },
     });
@@ -1338,20 +1049,21 @@ describe("listMcpTools (registry probe)", () => {
     const result = await listMcpTools("https://a.test/mcp", {});
 
     expect(result).toEqual({ ok: true, tools: [{ name: "search", description: "Search things" }] });
-    // A probe that left the session open would strand one per button press.
-    expect(calls.filter((c) => c.httpMethod === "DELETE")).toHaveLength(1);
+    // Closing is local now — there is no session to release — so what the probe
+    // must not do is leave anything on the wire behind it.
+    expect(calls.map((c) => c.method)).toEqual(["server/discover", "tools/list"]);
   });
 
-  it("reports a JSON-RPC failure without throwing, and still releases the session", async () => {
+  it("reports a JSON-RPC failure without throwing, and still closes", async () => {
     const calls = stubMcpFetch({
-      "https://a.test/mcp": { sessionId: "sess-a", listError: { code: -32000, message: "boom" } },
+      "https://a.test/mcp": { listError: { code: -32000, message: "boom" } },
     });
 
     const result = await listMcpTools("https://a.test/mcp", {});
 
     expect(result.ok).toBe(false);
     expect(result).toMatchObject({ error: expect.stringContaining("boom") });
-    expect(calls.filter((c) => c.httpMethod === "DELETE")).toHaveLength(1);
+    expect(calls.map((c) => c.method)).toEqual(["server/discover", "tools/list"]);
   });
 
   it("names a silent server as a timeout rather than as a raw client error", async () => {
@@ -1374,23 +1086,16 @@ describe("listMcpTools (registry probe)", () => {
     }
   });
 
-  it("speaks the same handshake a run does", async () => {
+  it("opens a connection exactly as a run does", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": { listTools: [{ name: "search" }] },
     });
 
     await listMcpTools("https://a.test/mcp", {});
 
-    // The probe, the fallback handshake, the standalone stream the transport
-    // opens on a legacy connection (bodyless, so it records no method), and the
-    // catalogue — exactly what a run's own discovery does.
-    expect(calls.map((c) => c.method)).toEqual([
-      "server/discover",
-      "initialize",
-      "notifications/initialized",
-      undefined,
-      "tools/list",
-    ]);
+    // The era probe and the catalogue — exactly what a run's own discovery does,
+    // and nothing else: no handshake, no standalone stream, no session.
+    expect(calls.map((c) => c.method)).toEqual(["server/discover", "tools/list"]);
   });
 });
 
@@ -1403,8 +1108,8 @@ describe("ToolManager request timeout", () => {
     await manager.init();
     await manager.callTool("search", {});
 
-    // initialize, notifications/initialized, tools/list, tools/call
-    expect(calls.length).toBeGreaterThanOrEqual(4);
+    // server/discover, tools/list, tools/call
+    expect(calls.length).toBeGreaterThanOrEqual(3);
     expect(calls.every((c) => c.hasSignal)).toBe(true);
   });
 
@@ -1412,7 +1117,7 @@ describe("ToolManager request timeout", () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method: string; id?: number };
       if (body.method === "server/discover") {
-        return probeMiss(body.id);
+        return jsonProbe(body.id);
       }
       if (body.method === "notifications/initialized") {
         return new Response("", { status: 202 });
@@ -1423,10 +1128,7 @@ describe("ToolManager request timeout", () => {
       if (body.method === "tools/call") {
         throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
       }
-      const result =
-        body.method === "tools/list"
-          ? { tools: conforming([{ name: "slow" }]) }
-          : handshakeResult("slow");
+      const result = modernResult(body.method, { tools: conforming([{ name: "slow" }]) });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
       });
@@ -1516,7 +1218,7 @@ describe("ToolManager init concurrency", () => {
         }
         const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
         if (body.method === "server/discover") {
-          return probeMiss(body.id);
+          return jsonProbe(body.id);
         }
         if (body.method === "notifications/initialized") {
           return new Response("", { status: 202 });
@@ -1524,10 +1226,7 @@ describe("ToolManager init concurrency", () => {
         if (body.method === undefined) {
           return new Response("Method Not Allowed", { status: 405 });
         }
-        const result =
-          body.method === "tools/list"
-            ? { tools: conforming([{ name: "t" }]) }
-            : handshakeResult("s");
+        const result = modernResult(body.method, { tools: conforming([{ name: "t" }]) });
         return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
           headers: { "content-type": "application/json" },
         });
@@ -1552,65 +1251,22 @@ describe("ToolManager init concurrency", () => {
   });
 });
 
-describe("ToolManager session teardown", () => {
-  it("releases each server session with a DELETE carrying its session id", async () => {
-    const requests: Array<{ url: string; method: string; sessionId: string | null }> = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const headers = new Headers(init?.headers);
-        requests.push({
-          url,
-          method: init?.method ?? "GET",
-          sessionId: headers.get("Mcp-Session-Id"),
-        });
-        if (init?.method === "DELETE") {
-          return new Response(null, { status: 204 });
-        }
-        const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
-        if (body.method === "server/discover") {
-          return probeMiss(body.id);
-        }
-        if (body.method === "notifications/initialized") {
-          return new Response("", { status: 202 });
-        }
-        if (body.method === undefined) {
-          return new Response("Method Not Allowed", { status: 405 });
-        }
-        const result =
-          body.method === "tools/list"
-            ? { tools: conforming([{ name: "t" }]) }
-            : handshakeResult("a");
-        return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
-          headers: { "content-type": "application/json", "Mcp-Session-Id": "sess-a" },
-        });
-      }),
-    );
-
-    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
-    await manager.init();
-    await manager.close();
-
-    const deletes = requests.filter((r) => r.method === "DELETE");
-    expect(deletes).toHaveLength(1);
-    expect(deletes[0]?.sessionId).toBe("sess-a");
-    // Idempotent: a second close is a no-op, not another DELETE.
-    await manager.close();
-    expect(requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
-  });
-
-  it("does not throw when a server rejects the teardown request", async () => {
-    stubMcpFetch({
-      "https://a.test/mcp": { sessionId: "s1", listTools: [{ name: "t" }] },
+describe("ToolManager teardown", () => {
+  it("closes without sending anything, because there is no session to release", async () => {
+    // The DELETE this used to assert on belonged to a session id the revision
+    // no longer mints. Closing is local; a teardown that still talked to the
+    // server would be a request nobody asked for.
+    const calls = stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "t" }] },
     });
     const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
-    vi.stubGlobal("fetch", vi.fn(async () => {
-      throw new Error("server gone");
-    }));
+    const before = calls.length;
 
-    await expect(manager.close()).resolves.toBeUndefined();
+    await manager.close();
+    await manager.close();
+
+    expect(calls).toHaveLength(before);
   });
 });
 
@@ -1618,7 +1274,6 @@ describe("MCP request metadata headers", () => {
   it("mirrors the method on every request and the name on the one that has one", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {
-        modern: true,
         listTools: [{ name: "search" }],
         callContent: [textBlock("ok")],
       },
@@ -1636,35 +1291,14 @@ describe("MCP request metadata headers", () => {
     ]);
   });
 
-  it("puts no routing header on a 2025-era exchange", async () => {
-    // Not an omission: the headers are a `2026-07-28` requirement, and an
-    // intermediary is told to reject values it cannot check against a version
-    // that guarantees the server validated them. Sending them to a server that
-    // never promised that validation is worse than not sending them.
-    const calls = stubMcpFetch({
-      "https://old.test/mcp": { listTools: [{ name: "search" }], callContent: [textBlock("ok")] },
-    });
-    const manager = new ToolManager([server("a", "https://old.test/mcp")]);
-    await manager.init();
-    await manager.callTool("search", {});
-
-    const call = calls.find((entry) => entry.method === "tools/call");
-    expect(call?.mcpMethod).toBeUndefined();
-    expect(call?.mcpName).toBeUndefined();
-    // The probe that decided the era is the one request that states ours.
-    expect(calls[0]?.method).toBe("server/discover");
-    expect(calls[0]?.protocolVersion).toBe(PROTOCOL_VERSION);
-  });
 
   it("names the tool the server knows, not the alias a collision produced", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {
-        modern: true,
         listTools: [{ name: "search" }],
         callContent: [textBlock("A")],
       },
       "https://b.test/mcp": {
-        modern: true,
         listTools: [{ name: "search" }],
         callContent: [textBlock("B")],
       },
@@ -1686,7 +1320,6 @@ describe("MCP request metadata headers", () => {
   it("is not overridable by a registry entry's own headers", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {
-        modern: true,
         listTools: [{ name: "search" }],
         callContent: [textBlock("ok")],
       },
@@ -1710,7 +1343,7 @@ describe("MCP request metadata headers", () => {
   });
 
   it("base64-encodes a name that cannot travel as a plain header value", async () => {
-    const calls = stubMcpFetch({ "https://a.test/mcp": { modern: true, callContent: [] } });
+    const calls = stubMcpFetch({ "https://a.test/mcp": { callContent: [] } });
     // Driven through the session directly: the tool manager refuses any name
     // outside `[A-Za-z0-9_-]`, so no call it dispatches can reach this branch.
     const session = new McpSession("https://a.test/mcp", {});
@@ -1726,9 +1359,6 @@ describe("ToolManager multi round-trip requests", () => {
   it("reports an input_required result as itself, not as an empty answer", async () => {
     stubMcpFetch({
       "https://a.test/mcp": {
-        // The vocabulary belongs to protocol 2026-07-28, so the server that
-        // speaks it is a modern one.
-        modern: true,
         listTools: [{ name: "search" }],
         callInputRequired: true,
       },
@@ -1833,10 +1463,14 @@ describe("ToolManager structured content", () => {
     const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
 
-    // Serializing structured data into a text block is only a SHOULD, so a
-    // server that skips it is still answering — this used to be "no content".
+    // A change worth knowing: serializing structured data into a text block is
+    // only a SHOULD, but `content` itself is required — and the client
+    // validates the whole result, so a server that sends `structuredContent`
+    // alone is refused rather than read. The refusal names the field, which is
+    // what the server's author needs; the alternative was reading half of it.
     const result = await manager.callTool("weather", {});
-    expect(result.text).toBe('{"temperature":22.5,"conditions":"Partly cloudy"}');
+    expect(result.text).toContain("Error: tool call failed.");
+    expect(result.text).toContain("content");
   });
 
   it("prefers the content blocks when the server sent both", async () => {
@@ -1866,10 +1500,11 @@ describe("ToolManager empty and failed results", () => {
     const manager = new ToolManager([server("a", "https://a.test/mcp")]);
     await manager.init();
 
-    // "It returned nothing" would lose the one thing the server did state.
+    // `isError` with no `content` is refused the same way, for the same reason:
+    // `content` is required of every tool result. It still reaches the model as
+    // a failure, which is the part that matters.
     const result = await manager.callTool("act", {});
     expect(result.text.startsWith("Error:")).toBe(true);
-    expect(result.text).toContain("reported a failure");
     expect(result.text).toContain("act");
   });
 
@@ -1923,8 +1558,6 @@ describe("ToolManager provider name aliasing", () => {
   it("aliases a dotted name rather than dropping the tool", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {
-        // Modern, so the routing header this asserts is actually sent.
-        modern: true,
         listTools: [{ name: "admin.tools.list" }],
         callContent: [textBlock("ok")],
       },
@@ -1966,7 +1599,6 @@ describe("SEP-2243 parameter mirroring over a warm discovery cache", () => {
     // routes on the header rejects a request whose header is missing.
     const scripts = {
       "https://a.test/mcp": {
-        modern: true,
         listTools: [
           {
             name: "execute_sql",

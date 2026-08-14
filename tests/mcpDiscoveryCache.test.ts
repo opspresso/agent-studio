@@ -7,7 +7,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 }));
 
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
-import { conforming, protocolPreamble } from "./mcpProtocolStub";
+import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 import {
   clearMcpDiscoveryCache,
   getCachedDiscovery,
@@ -36,13 +36,14 @@ function stubMcpServer(options: { listFails?: boolean; ttlMs?: number } = {}): s
           { headers: { "content-type": "application/json" } },
         );
       }
-      const result =
-        body.method === "tools/list"
+      const result = modernResult(body.method, {
+        ...(body.method === "tools/list"
           ? {
               tools: conforming([{ name: "search" }]),
               ...(options.ttlMs === undefined ? {} : { ttlMs: options.ttlMs }),
             }
-          : { content: [{ type: "text", text: "ok" }] };
+          : { content: [{ type: "text", text: "ok" }] }),
+      });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
       });
@@ -132,18 +133,12 @@ describe("MCP discovery cache keying", () => {
 });
 
 describe("ToolManager discovery over the cache", () => {
-  it("serves a warm tool list without any request, and handshakes only when a tool is called", async () => {
+  it("serves a warm tool list without any request, and connects only when a tool is called", async () => {
     const first = stubMcpServer();
     await new ToolManager([server()]).init();
-    // The probe decides the era, the handshake follows for a 2025-era server,
-    // and the bodyless GET is the standalone stream the transport opens there.
-    expect(first).toEqual([
-      "server/discover",
-      "initialize",
-      "notifications/initialized",
-      "(no body)",
-      "tools/list",
-    ]);
+    // The probe, then the catalogue. Nothing else: no handshake, no standalone
+    // stream, no session.
+    expect(first).toEqual(["server/discover", "tools/list"]);
     vi.unstubAllGlobals();
 
     // Second run, same server and credentials: nothing on the wire. This is the
@@ -155,18 +150,12 @@ describe("ToolManager discovery over the cache", () => {
     expect(second).toEqual([]);
     expect(manager.tools.map((tool) => tool.function.name)).toEqual(["search"]);
 
-    // The session was left uninitialized, so the first real call handshakes.
+    // The session was left unconnected, so the first real call connects.
     expect((await manager.callTool("search", {})).text).toBe("ok");
-    expect(second).toEqual([
-      "server/discover",
-      "initialize",
-      "notifications/initialized",
-      "(no body)",
-      "tools/call",
-    ]);
+    expect(second).toEqual(["server/discover", "tools/call"]);
   });
 
-  it("handshakes once when a warm session serves two calls at the same time", async () => {
+  it("connects once when a warm session serves two calls at the same time", async () => {
     stubMcpServer();
     await new ToolManager([server()]).init();
     vi.unstubAllGlobals();
@@ -174,15 +163,14 @@ describe("ToolManager discovery over the cache", () => {
     const methods = stubMcpServer();
     const manager = new ToolManager([server()]);
     await manager.init();
-    expect(methods).toEqual([]); // cache hit: the session is still uninitialized
+    expect(methods).toEqual([]); // cache hit: the session is still unconnected
 
     // The engine dispatches one response's MCP calls concurrently, so a warm
-    // session's first two calls race into the handshake together. Two
-    // `initialize`s mean two server-side sessions and only one id to release —
-    // the leak the cache was not supposed to reintroduce.
+    // session's first two calls race into the connection together. Two probes
+    // mean two connections where one was asked for.
     await Promise.all([manager.callTool("search", {}), manager.callTool("search", {})]);
 
-    expect(methods.filter((method) => method === "initialize")).toHaveLength(1);
+    expect(methods.filter((method) => method === "server/discover")).toHaveLength(1);
     expect(methods.filter((method) => method === "tools/call")).toHaveLength(2);
   });
 

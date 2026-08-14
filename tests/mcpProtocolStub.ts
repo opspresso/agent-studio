@@ -1,12 +1,13 @@
 /**
  * The parts of an MCP server every scripted stub has to get right, in one place.
  *
- * A client speaking protocol `2026-07-28` opens with `server/discover` and
- * validates what comes back, so a stub is no longer "answer `initialize`, then
- * return some tools". Three things it omits are now the difference between
- * scripting a server and scripting one that does not exist: the era probe, the
- * `serverInfo`/`capabilities` a handshake must carry, and the `inputSchema`
- * every tool must have. Each was a whole test file's worth of failures once.
+ * The client speaks protocol `2026-07-28` and only that: it opens with
+ * `server/discover`, never handshakes, and validates everything that comes back.
+ * So a stub is not "answer `initialize`, then return some tools" — it answers the
+ * probe with what it supports, and every result carries `resultType` (plus the
+ * caching hint on the list verbs, which this revision requires rather than
+ * offers). Getting any of that wrong scripts a server that does not exist, which
+ * was a whole test file's worth of failures each time.
  */
 
 /** A tool as a script gives it: everything but what the spec insists on. */
@@ -25,12 +26,9 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 /**
- * How a server that predates protocol `2026-07-28` answers the era probe.
- *
- * `server/discover` is the first request a client makes now. A stub answering it
- * with anything else — an empty result, a tool list — is describing a server no
- * revision defines, and the client's reading of it is not worth asserting on.
- * The 404 is what sends the client to `initialize`.
+ * How a server still speaking a 2025-era revision answers the probe: it has no
+ * such method. This client has no fallback, so that server is refused — which is
+ * what a stub scripts when it wants to test the refusal.
  */
 export function probeMiss(id: number | undefined): Response {
   return jsonResponse(
@@ -40,12 +38,8 @@ export function probeMiss(id: number | undefined): Response {
 }
 
 /**
- * The result a conforming 2025-era handshake returns.
- *
- * `serverInfo.version` and the `tools` capability are both required, and both
- * are load-bearing rather than decorative: a client validates the first, and
- * skips `tools/list` entirely without the second — returning an empty catalogue
- * for a server that has plenty.
+ * The result a 2025-era handshake returns, for the one test that scripts a
+ * server this client refuses to talk to.
  */
 export function handshakeResult(
   name = "test-server",
@@ -60,7 +54,11 @@ export function handshakeResult(
 }
 
 /**
- * The result the era probe returns from a server built for `2026-07-28`.
+ * The result the era probe returns from a conforming server.
+ *
+ * The `tools` capability is load-bearing rather than decorative: without it the
+ * client skips `tools/list` entirely and returns an empty catalogue for a server
+ * that has plenty.
  */
 export function discoverResult(
   name = "modern-server",
@@ -88,9 +86,9 @@ export function conforming(tools: StubTool[]): StubTool[] {
 }
 
 /**
- * The answer to a request carrying no JSON-RPC body: the standalone stream the
- * transport opens on a legacy connection (GET), or the session release (DELETE).
- * A server hosting neither answers 405, which the client must survive.
+ * The answer to a request carrying no JSON-RPC body. This revision has neither a
+ * standalone GET stream nor a session to DELETE, so nothing should arrive here —
+ * 405 is what a server says to a client that tries anyway.
  */
 export function bodylessResponse(httpMethod: string | undefined): Response {
   return httpMethod === "DELETE"
@@ -99,10 +97,10 @@ export function bodylessResponse(httpMethod: string | undefined): Response {
 }
 
 /**
- * The whole pre-catalogue exchange, for a stub that has no opinion about it:
- * the probe miss, the handshake, the initialized notification, and the bodyless
- * requests. Returns `undefined` when the request is something the caller has to
- * answer itself — which is every request a test is actually about.
+ * Everything before the catalogue, for a stub with no opinion about it: the era
+ * probe and the bodyless requests. Returns `undefined` when the request is
+ * something the caller has to answer itself — which is every request a test is
+ * actually about.
  */
 export function protocolPreamble(
   method: string | undefined,
@@ -114,13 +112,21 @@ export function protocolPreamble(
     return bodylessResponse(httpMethod);
   }
   if (method === "server/discover") {
-    return probeMiss(id);
-  }
-  if (method === "initialize") {
-    return jsonResponse({ jsonrpc: "2.0", id, result: handshakeResult(serverName) });
-  }
-  if (method === "notifications/initialized") {
-    return new Response("", { status: 202 });
+    return jsonResponse({ jsonrpc: "2.0", id, result: discoverResult(serverName) });
   }
   return undefined;
+}
+
+/**
+ * A result as this revision requires it: `resultType` on every one, and the
+ * SEP-2549 caching hint on the list verbs, where it is required rather than
+ * optional. A stub that omits either scripts a reply the client refuses.
+ */
+export function modernResult(
+  method: string | undefined,
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  const cacheable =
+    method === "tools/list" ? { ttlMs: 60_000, cacheScope: "private" } : {};
+  return { resultType: "complete", ...cacheable, ...result };
 }

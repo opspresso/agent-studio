@@ -10,7 +10,7 @@ import { buildMcpTools } from "@/application/execution/mcpTools";
 import type { ExecutionDeps } from "@/application/execution/deps";
 import type { McpServer } from "@/domain/mcp/types";
 import type { Version } from "@/domain/project/types";
-import { conforming, protocolPreamble } from "./mcpProtocolStub";
+import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
@@ -45,10 +45,11 @@ function stubMcpServer(): void {
       if (preamble) {
         return preamble;
       }
-      const result =
-        body.method === "tools/list"
+      const result = modernResult(body.method, {
+        ...(body.method === "tools/list"
           ? { tools: conforming([{ name: "fetch_image" }]) }
-          : { content: [{ type: "text", text: "ok" }] };
+          : { content: [{ type: "text", text: "ok" }] }),
+      });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
         headers: { "content-type": "application/json" },
       });
