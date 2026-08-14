@@ -8,7 +8,7 @@
 import type { McpTool } from "@/domain/mcp/types";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
 export type { ListToolsResult };
-import { isUnauthorized, McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
+import { isTimeout, isUnauthorized, McpSession, MCP_DISCOVERY_TIMEOUT_MS } from "./session";
 
 export type { McpTool };
 
@@ -36,7 +36,10 @@ export async function listMcpTools(
       tools: tools.map((tool) => ({ name: tool.name, description: tool.description ?? "" })),
     };
   } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    // Asked of the session rather than matched here: the protocol client has its
+    // own error shape, and a name check that only knew the DOM's stopped
+    // recognising a deadline the moment the session stopped raising one.
+    if (isTimeout(error)) {
       return { ok: false, error: `Connection timed out after ${deadline / 1000}s` };
     }
     return {

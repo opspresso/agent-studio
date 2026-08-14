@@ -36,6 +36,8 @@ import {
 import type { McpTool } from "@/domain/mcp/types";
 export type { McpTool };
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { cutCodePoints } from "@/shared/utf8Text";
+import { withTimeout } from "@/shared/withTimeout";
 
 /**
  * The revision this client probes with — the newest it can speak. Not a version
@@ -67,10 +69,17 @@ const SESSION_END_TIMEOUT_MS = 5_000;
 /**
  * Pages of `tools/list` to follow. A bound rather than a `while (cursor)`: the
  * cursor is opaque, so a server that keeps handing back a fresh one — by bug or
- * by design — would spin here on the critical path of a run's first token. Well
- * past any real catalogue, and a run declares at most 120 tools anyway.
+ * by design — would spin here on the critical path of a run's first token.
+ *
+ * Reaching it now **fails the discovery** rather than returning the pages
+ * already walked: the SDK throws on the cap and caches no partial aggregate,
+ * where the hand-rolled walk returned what it had and warned about the tail. So
+ * the bound is no longer free, and it sits at the SDK's own default rather than
+ * below it — a catalogue of 21 pages should not cost a server all of its tools.
+ * The discovery deadline is the real defence against a cursor that never
+ * converges; this is the backstop behind it.
  */
-const MAX_TOOL_PAGES = 20;
+const MAX_TOOL_PAGES = 64;
 /**
  * How many bytes one response may pull into memory.
  *
@@ -107,10 +116,10 @@ export interface McpDiscovery {
  * ceiling is applied to the stream rather than after it, because "read it and
  * check the length" spends the memory before it decides.
  */
-function boundedFetch(loopback: boolean): FetchLike {
+function boundedFetch(loopback: boolean, runSignal: () => AbortSignal | undefined): FetchLike {
   const send = loopback ? fetch : fetchPublicUrl;
   return async (url, init) => {
-    const response = await send(url, init);
+    const response = await send(url, withSignal(init, runSignal()));
     const declared = Number(response.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
       await response.body?.cancel().catch(() => {});
@@ -142,6 +151,23 @@ function boundedFetch(loopback: boolean): FetchLike {
   };
 }
 
+/**
+ * The request, cancelled by the run as well as by whatever the SDK asked for.
+ *
+ * The SDK forwards a caller's `signal` to the transport only on a modern
+ * connection with a per-request stream; on a 2025-era server it rejects the
+ * promise and leaves the POST running, holding a socket until the server answers
+ * or the call deadline passes. Merging it here is what makes a cancelled run
+ * actually stop talking.
+ */
+function withSignal(init: RequestInit | undefined, signal: AbortSignal | undefined): RequestInit {
+  if (!signal) {
+    return init ?? {};
+  }
+  const own = init?.signal;
+  return { ...init, signal: own ? AbortSignal.any([own, signal]) : signal };
+}
+
 export class McpSession {
   private client: Client | undefined;
   private transport: StreamableHTTPClientTransport | undefined;
@@ -149,6 +175,12 @@ export class McpSession {
   private connecting: Promise<Client> | undefined;
   /** Name, version and negotiated protocol from the connection; "" until then. */
   private serverDescription = "";
+  /**
+   * Set once {@link end} starts, so teardown is not cancelled by the very signal
+   * that caused it. A run aborted mid-flight still has a server-side session to
+   * release, and releasing it is the one request that must outlive the run.
+   */
+  private tearingDown = false;
 
   constructor(
     private readonly url: string,
@@ -196,7 +228,7 @@ export class McpSession {
 
   private async connect(): Promise<Client> {
     const transport = new StreamableHTTPClientTransport(new URL(this.url), {
-      fetch: boundedFetch(this.loopback),
+      fetch: boundedFetch(this.loopback, () => (this.tearingDown ? undefined : this.signal)),
       // The registry entry's own headers — a bearer token, a tenant id. Applied
       // as transport defaults so every request carries them, including the
       // era probe, which is the first request a server ever sees from us.
@@ -390,6 +422,7 @@ export class McpSession {
     this.client = undefined;
     this.transport = undefined;
     this.connecting = undefined;
+    this.tearingDown = true;
     if (!transport) {
       return;
     }
@@ -411,22 +444,6 @@ export class McpSession {
     } catch {
       // Closing is best-effort too: the run is already over.
     }
-  }
-}
-
-/** A promise that gives up rather than holding teardown open. */
-async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("timed out")), ms);
-        timer.unref?.();
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -458,21 +475,54 @@ export class McpHttpError extends Error {
 }
 
 /**
+ * How much of a server's failure text a failure may carry.
+ *
+ * The SDK puts the **entire response body** in the message of a non-OK POST, so
+ * a proxy answering with an HTML error page hands over the whole page. That
+ * message is not just logged: it becomes the run's warning — text the model and
+ * the reader see — and it is cached with the failure and replayed for the next
+ * runs. Enough of it to recognise the page, and no more.
+ */
+const MAX_FAILURE_TEXT_CHARS = 400;
+
+/**
  * The SDK's error vocabulary, in this codebase's.
  *
  * Only the status is translated, and only because one status means something
- * the rest do not (see {@link isUnauthorized}). Everything else keeps the SDK's
- * own message: it is more specific than anything restating it here would be,
- * and it is what an operator reads in the run's warning.
+ * the rest do not (see {@link isUnauthorized}). The message is kept but bounded:
+ * it is more specific than anything restating it here would be, and it is also
+ * unbounded at the source.
  */
 function asMcpError(error: unknown, method: string): unknown {
   if (error instanceof UnauthorizedError) {
-    return new McpHttpError(401, method, error.message);
+    return new McpHttpError(401, method, boundedFailure(method, 401, error.message));
   }
   if (error instanceof SdkHttpError) {
-    return new McpHttpError(error.status, method, error.message);
+    return new McpHttpError(error.status, method, boundedFailure(method, error.status, error.message));
   }
   return error;
+}
+
+/** `method failed: HTTP status — <as much of what the server said as fits>`. */
+function boundedFailure(method: string, status: number, message: string): string {
+  const said = cutCodePoints(message.replace(/\s+/g, " ").trim(), MAX_FAILURE_TEXT_CHARS);
+  return said ? `${method} failed: HTTP ${status} — ${said}` : `${method} failed: HTTP ${status}`;
+}
+
+/**
+ * Did this failure come from a deadline rather than from the server?
+ *
+ * The SDK rejects every timeout and abort as `SdkError(RequestTimeout)`, whose
+ * `name` is `"SdkError"` — so a caller matching the DOM's `TimeoutError` /
+ * `AbortError` names, which is what the registry probe did, silently stopped
+ * recognising any of them. Both shapes are answered here because the run's own
+ * signal can still surface as the DOM one.
+ */
+export function isTimeout(error: unknown): boolean {
+  if (error instanceof SdkError && error.code === SdkErrorCode.RequestTimeout) {
+    return true;
+  }
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
 
 /**
@@ -518,6 +568,12 @@ export function unusableServerReason(error: unknown): string | undefined {
   }
   if (error instanceof SdkError && error.code === SdkErrorCode.InvalidResult) {
     return `It answered with something this client could not read (${error.message}).`;
+  }
+  if (error instanceof SdkError && error.code === SdkErrorCode.ListPaginationExceeded) {
+    return (
+      `Its catalogue did not finish within ${MAX_TOOL_PAGES} pages, so none of it could be ` +
+      `used: a cursor that never converges cannot be read part-way.`
+    );
   }
   return undefined;
 }

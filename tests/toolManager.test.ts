@@ -9,6 +9,13 @@ import {
   PROTOCOL_VERSION,
 } from "@/infrastructure/mcp/session";
 import { clearMcpDiscoveryCache, getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
+import {
+  conforming,
+  handshakeResult,
+  probeMiss,
+  protocolPreamble,
+  type StubTool,
+} from "./mcpProtocolStub";
 
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
@@ -21,12 +28,6 @@ interface RpcEnvelope {
   id?: number;
   result?: unknown;
   error?: { code: number; message: string };
-}
-
-interface ToolShape {
-  name: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
 }
 
 /** Scripted behaviour for one MCP server, keyed by its URL. */
@@ -73,9 +74,9 @@ interface ServerScript {
   /** 404 every post-handshake request, session or not: the endpoint itself is gone. */
   notFoundAfterHandshake?: boolean;
   /** Tools reported by tools/list. */
-  listTools?: ToolShape[];
+  listTools?: StubTool[];
   /** Pages of tools/list, keyed by the cursor that asks for them ("" = first). */
-  toolPages?: Record<string, { tools: ToolShape[]; nextCursor?: string; ttlMs?: number }>;
+  toolPages?: Record<string, { tools: StubTool[]; nextCursor?: string; ttlMs?: number }>;
   /** Content blocks returned by tools/call. */
   callContent?: unknown[];
   /** When set, fetch itself rejects for this server (network failure). */
@@ -126,41 +127,6 @@ interface RecordedCall {
   paramHeaders?: Record<string, string>;
   params?: Record<string, unknown>;
   hasSignal: boolean;
-}
-
-/**
- * Fill in what the spec requires of a tool but these scripts mostly omit.
- *
- * `inputSchema` is required, and a client validates the whole `tools/list`
- * result — so a script leaving it out is not "a tool with no arguments", it is a
- * non-conforming server whose entire catalogue is refused. Tests that mean to
- * script that say so by giving an `inputSchema` of their own.
- */
-function conforming(tools: ToolShape[]): ToolShape[] {
-  return tools.map((tool) => ({ inputSchema: { type: "object" }, ...tool }));
-}
-
-/**
- * How a server that predates protocol `2026-07-28` answers the era probe.
- *
- * `server/discover` is the first request a client makes now, and every stub
- * needs an answer for it: one that replies with something else is scripting a
- * server that does not exist. The 404 is what sends the client to `initialize`.
- */
-function probeMiss(id: number | undefined): Response {
-  return new Response(
-    JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } }),
-    { status: 404, headers: { "content-type": "application/json" } },
-  );
-}
-
-/** The handshake result a conforming 2025-era server returns. */
-function handshakeResult(name: string): Record<string, unknown> {
-  return {
-    protocolVersion: "2025-06-18",
-    capabilities: { tools: {} },
-    serverInfo: { name, version: "1.0" },
-  };
 }
 
 function framedResponse(payload: RpcEnvelope, script: ServerScript, sessionId?: string): Response {
@@ -1388,6 +1354,26 @@ describe("listMcpTools (registry probe)", () => {
     expect(calls.filter((c) => c.httpMethod === "DELETE")).toHaveLength(1);
   });
 
+  it("names a silent server as a timeout rather than as a raw client error", async () => {
+    // The protocol client raises its own error type for a deadline, so the
+    // probe's reading of "timed out" has to ask rather than match on the DOM's
+    // error names — which is what it used to do, and what silently stopped
+    // matching anything.
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => new Promise<Response>(() => {})),
+      );
+      const probe = listMcpTools("https://silent.test/mcp", {});
+      await vi.advanceTimersByTimeAsync(MCP_DISCOVERY_TIMEOUT_MS + 1_000);
+
+      expect(await probe).toEqual({ ok: false, error: "Connection timed out after 10s" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("speaks the same handshake a run does", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": { listTools: [{ name: "search" }] },
@@ -2041,5 +2027,101 @@ describe("ToolManager call budget", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("what a failure carries", () => {
+  it("bounds the server's own error text before it becomes a warning", async () => {
+    // The protocol client puts the entire response body in its error message, so
+    // a proxy answering with an HTML page hands over the whole page — and that
+    // text becomes the run's warning, reaches the model, and is cached and
+    // replayed. Recognisable, not verbatim.
+    const page = `<html><body>${"gateway error ".repeat(5_000)}</body></html>`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+        const preamble = protocolPreamble(body.method, body.id, init?.method);
+        if (preamble) {
+          return preamble;
+        }
+        return new Response(page, { status: 502, headers: { "content-type": "text/html" } });
+      }),
+    );
+    const manager = new ToolManager([server("proxied", "https://proxied.test/mcp")]);
+
+    await manager.init();
+
+    const warning = manager.warnings[0] ?? "";
+    expect(warning).toContain("HTTP 502");
+    // Enough of the page to recognise it, and nowhere near all of it.
+    expect(warning).toContain("gateway error");
+    expect(warning.length).toBeLessThan(1_000);
+    expect(page.length).toBeGreaterThan(50_000);
+  });
+
+  it("reports a catalogue that never finishes paging as unusable, not unreachable", async () => {
+    // Reaching the page cap fails the whole discovery — the aggregate walk keeps
+    // no partial result — so the reason has to say that rather than describe a
+    // server that answered every request as unreachable.
+    const pages: Record<string, { tools: StubTool[]; nextCursor?: string }> = {};
+    for (let page = 0; page <= 70; page++) {
+      pages[page === 0 ? "" : `c${page}`] = {
+        tools: [{ name: `tool_${page}` }],
+        nextCursor: `c${page + 1}`,
+      };
+    }
+    stubMcpFetch({ "https://endless.test/mcp": { toolPages: pages } });
+    const manager = new ToolManager([server("endless", "https://endless.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools).toHaveLength(0);
+    const warning = manager.warnings[0] ?? "";
+    expect(warning).toContain("cannot be used by this client");
+    expect(warning).toContain("did not finish within");
+    expect(warning).not.toContain("unreachable");
+  });
+
+  it("stops talking to the server when the run is cancelled", async () => {
+    // The SDK forwards a caller's signal to the transport only on a modern
+    // per-request stream; on a 2025-era server it rejects the promise and leaves
+    // the POST running. The session merges the run's signal into the request so
+    // the socket actually goes.
+    const controller = new AbortController();
+    const seen: AbortSignal[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.signal instanceof AbortSignal) {
+          seen.push(init.signal);
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+        const preamble = protocolPreamble(body.method, body.id, init?.method);
+        if (preamble) {
+          return preamble;
+        }
+        controller.abort();
+        return new Promise<Response>((_, reject) => {
+          // What a real fetch does with an aborted signal. A stub that ignored
+          // it could not tell a request that was cut from one still running.
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted", "AbortError")),
+          );
+        });
+      }),
+    );
+    const manager = new ToolManager(
+      [server("a", "https://a.test/mcp")],
+      undefined,
+      controller.signal,
+    );
+
+    await expect(manager.init()).rejects.toThrow();
+
+    // Every request carried a signal, and the one in flight when the run was
+    // cancelled is aborted rather than left running.
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.at(-1)?.aborted).toBe(true);
   });
 });
