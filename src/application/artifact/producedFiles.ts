@@ -181,6 +181,15 @@ export async function* withAddressedFiles(
       yield chunk;
       continue;
     }
+    if (!sign && chunk.file.b64) {
+      // A deployment with no object storage: the bracket's capture is the
+      // identity there, so the bytes are still on the frame and *are* the
+      // delivery. Swapping them for "there is nothing to download" would take
+      // away the one copy that exists — which is how this branch got written
+      // the first time, from a deployment that had storage.
+      yield chunk;
+      continue;
+    }
     const { b64: _stripped, artifactId: _row, key: _object, ...rest } = chunk.file;
     const outcome = await resolveProducedFile(fileRefOf(chunk.file), sign, ttlSeconds);
     if (outcome.file) {

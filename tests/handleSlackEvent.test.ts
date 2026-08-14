@@ -345,6 +345,36 @@ describe("handleSlackEvent", () => {
     );
   });
 
+  it("does not let a tool-supplied filename break the link it sits in", async () => {
+    // `safeFileName` takes out control characters and path separators; every
+    // character Slack reads as mrkdwn survives it. A name with a pipe used to
+    // truncate the visible label at the pipe — the reader was shown a name that
+    // was not the file's.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, finalText } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        {
+          file: {
+            name: "Q3 <draft>|v2.docx",
+            mimeType: "application/msword",
+            source: "mcp: render",
+            key: "objects/q3.docx",
+          },
+        },
+        { done: true },
+      ],
+      slack,
+    );
+    deps.signFile = async (key) => `https://signed/${key}`;
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(finalText()).toContain("Q3 &lt;draft&gt;∣v2.docx");
+    expect(finalText()).not.toContain("<draft>");
+  });
+
   it("says a file was not kept when this deployment stores nothing", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);

@@ -353,6 +353,11 @@ export async function executeFiring(
   // and "the nightly report produced report.docx" are different rows to the
   // person reading the history, and this row is their only record of it.
   const files: string[] = [];
+  // Counted apart from the names above, which stop at `MAX_LISTED_FILES`. A
+  // firing that rendered twenty-five documents reporting "Produced 10 files" is
+  // a wrong number rather than a shortened list, and this row is the only place
+  // anyone would have read either.
+  let produced = 0;
   try {
     for await (const chunk of deps.run({
       project,
@@ -381,8 +386,11 @@ export async function executeFiring(
         images += 1;
       }
       // Counted from subagent turns too, exactly like the images above.
-      if (chunk.file && files.length < MAX_LISTED_FILES) {
-        files.push(chunk.file.name);
+      if (chunk.file) {
+        produced += 1;
+        if (files.length < MAX_LISTED_FILES) {
+          files.push(chunk.file.name);
+        }
       }
       const warning = collectedWarning(chunk, warnings);
       if (warning) {
@@ -405,7 +413,7 @@ export async function executeFiring(
     // have prepared the report" and never where the report went. A firing is
     // unattended, so this row is the only place anyone learns the name to look
     // for in the artifacts.
-    text: producedNote(text || (images > 0 ? imagesOnlyResult(images) : text), files),
+    text: producedNote(text || (images > 0 ? imagesOnlyResult(images) : text), produced, files),
     ...(error ? { error } : {}),
     ...(warnings.length > 0 ? { warning: warnings.join("\n") } : {}),
     ...(traceId ? { traceId } : {}),
@@ -434,11 +442,13 @@ const MAX_LISTED_FILES = 10;
  * read this one, so the names are what it offers: enough to find the document
  * in the project's artifacts, which is where the bytes actually are.
  */
-function producedNote(text: string, files: readonly string[]): string {
-  if (files.length === 0) {
+function producedNote(text: string, produced: number, files: readonly string[]): string {
+  if (produced === 0) {
     return text;
   }
-  const line = `Produced ${files.length} file${files.length === 1 ? "" : "s"}: ${files.join(", ")}. They are kept with the project's artifacts.`;
+  // The count is the run's; the names are as many as the row will carry.
+  const named = files.length < produced ? `${files.join(", ")}, …` : files.join(", ");
+  const line = `Produced ${produced} file${produced === 1 ? "" : "s"}: ${named}. They are kept with the project's artifacts.`;
   if (!text) {
     return line;
   }
