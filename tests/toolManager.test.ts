@@ -119,6 +119,8 @@ interface RecordedCall {
   /** The SEP-2243 routing headers, which mirror the body a server compares them to. */
   mcpMethod?: string;
   mcpName?: string;
+  /** `Mcp-Param-*`: the tool parameters a server asked to be mirrored, lowercased. */
+  paramHeaders?: Record<string, string>;
   params?: Record<string, unknown>;
   hasSignal: boolean;
 }
@@ -199,6 +201,12 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
     const sentVersion = sent.get("MCP-Protocol-Version") ?? undefined;
     const sentMcpMethod = sent.get("Mcp-Method") ?? undefined;
     const sentMcpName = sent.get("Mcp-Name") ?? undefined;
+    const paramHeaders: Record<string, string> = {};
+    sent.forEach((value, name) => {
+      if (name.toLowerCase().startsWith("mcp-param-")) {
+        paramHeaders[name.toLowerCase()] = value;
+      }
+    });
     const body = JSON.parse(String(init?.body ?? "{}")) as {
       method: string;
       id?: number;
@@ -212,6 +220,7 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       ...(sentVersion ? { protocolVersion: sentVersion } : {}),
       ...(sentMcpMethod ? { mcpMethod: sentMcpMethod } : {}),
       ...(sentMcpName ? { mcpName: sentMcpName } : {}),
+      ...(Object.keys(paramHeaders).length > 0 ? { paramHeaders } : {}),
       params: body.params,
       hasSignal: init?.signal instanceof AbortSignal,
     });
@@ -1954,5 +1963,45 @@ describe("ToolManager provider name aliasing", () => {
     const alias = manager.tools[0]?.function.name ?? "";
     expect(alias).toHaveLength(64);
     expect((await manager.callTool(alias, {})).text).toBe("ok");
+  });
+});
+
+describe("SEP-2243 parameter mirroring over a warm discovery cache", () => {
+  it("mirrors an x-mcp-header parameter even when tools/list was never sent this run", async () => {
+    // The gap a warm cache opens: discovery is served from our own cache, so the
+    // client connects at the first tool call with no `tools/list` behind it —
+    // and the mirroring reads the tool definition, not the call. A server that
+    // routes on the header rejects a request whose header is missing.
+    const scripts = {
+      "https://a.test/mcp": {
+        modern: true,
+        listTools: [
+          {
+            name: "execute_sql",
+            inputSchema: {
+              type: "object",
+              properties: {
+                region: { type: "string", "x-mcp-header": "Region" },
+                query: { type: "string" },
+              },
+            },
+          },
+        ],
+        callContent: [textBlock("ok")],
+      },
+    };
+    stubMcpFetch(scripts);
+    await new ToolManager([server("a", "https://a.test/mcp")]).init();
+
+    // Second run: the catalogue comes from the cache, not the wire.
+    const calls = stubMcpFetch(scripts);
+    const manager = new ToolManager([server("a", "https://a.test/mcp")]);
+    await manager.init();
+    expect(calls).toHaveLength(0);
+
+    await manager.callTool("execute_sql", { region: "us-west1", query: "SELECT 1" });
+
+    const call = calls.find((entry) => entry.method === "tools/call");
+    expect(call?.paramHeaders).toEqual({ "mcp-param-region": "us-west1" });
   });
 });

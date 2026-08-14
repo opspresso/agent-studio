@@ -1026,6 +1026,22 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
 **one owner**, `McpSession` (`src/infrastructure/mcp/session.ts`) — both the engine's
 `ToolManager` and the registry's "Test connection" probe run on it.
 
+The session is an adapter over **`@modelcontextprotocol/client`**, and the reason is the
+`2026-07-28` revision: it removed the `initialize` handshake, so a client must now detect
+which era a server implements and speak either the handshake or a per-request `_meta`
+envelope. Every connection opens with **`server/discover`**; a server that answers it is
+talked to statelessly, and one that answers `-32601` gets the `initialize` handshake instead.
+A server supporting only revisions this client does not know answers `-32022` naming what it
+does speak, which `unusableServerReason` reports as *this client needs upgrading* rather than
+as an unreachable host.
+
+The SDK is an adapter-layer dependency, which is where a protocol client belongs; the rules
+in [AGENTS.md](../AGENTS.md#the-dependency-rule) keep it out of `application` and `domain`.
+What the SDK has no opinion about stays in the session, and each of these was a defect once:
+the SSRF guard (injected as the transport's `fetch`, so an operator-supplied MCP URL still
+cannot name the metadata service), a ceiling on what one response may pull into memory, the
+lazy connect below, and the expired-session retry — which the SDK does not implement.
+
 - Tool-name collisions get `_1`/`_2` suffix aliases with a reverse mapping, and the same
   aliasing carries a name a **provider** would refuse: MCP allows 128 characters and a dot
   (`admin.tools.list` is the spec's own example) where a function name is
@@ -1040,29 +1056,35 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
   ends (`ToolManager.close()`, called from the execution facade's `finally` — including when
   discovery itself failed or was cancelled).
 - A request answered **`404` while carrying an `Mcp-Session-Id`** means the server has
-  forgotten that session and the transport requires a new one: the session id is dropped and
-  the request is replayed **once** behind a fresh handshake. Replaying is safe because a 404
-  is a session-lookup failure — the server rejected the message before running anything, so a
+  forgotten that session and the transport requires a new one: the connection is dropped and
+  the request is replayed **once** behind a fresh one. Replaying is safe because a 404 is a
+  session-lookup failure — the server rejected the message before running anything, so a
   `tools/call` that gets one had no effect to repeat. Bounded at one attempt, or an endpoint
-  that has genuinely gone would be handshaked against forever. **Only the caller whose session
-  is still the current one clears it**: one model response dispatches its MCP calls together,
-  so several can hold the same dead id, and each resetting in turn would abandon a handshake
+  that has genuinely gone would be reconnected to forever. **Only the caller whose session is
+  still the current one discards it**: one model response dispatches its MCP calls together, so
+  several can hold the same dead id, and each resetting in turn would abandon a connection
   another had started and mint one server-side session per caller. Without this, a run that
   outlives the server's session TTL — runs here last up to ten minutes — loses every remaining
-  tool call, with the model reading `HTTP 404` and no path back.
+  tool call, with the model reading `HTTP 404` and no path back. This is the session's own
+  code: the SDK has no such recovery. Protocol `2026-07-28` mints no session at all, so on a
+  modern connection the retry is unreachable by construction.
 - After the handshake, requests state the protocol version the **server** agreed to rather
-  than the one proposed; a server answering with another revision is not refused, since every
-  revision that answers `initialize` still speaks the tool-list shape this client reads.
-- Every POST also mirrors its body into **`Mcp-Method`**, and a request that names something
-  into **`Mcp-Name`** (SEP-2243, required of a client from protocol `2026-07-28`), so a gateway
-  or rate limiter can route and meter without parsing the body. Older servers ignore a header
-  they do not know, which is what makes sending them now free. They are applied **after** a
-  registry entry's own headers, unlike the protocol version: they are derived from the body,
-  and a server that reads them rejects a request where the two disagree (`-32020`), so an entry
-  that happened to name one would otherwise fail every call made through it. A name outside
-  printable ASCII travels Base64-encoded (`=?base64?…?=`) — unreachable through the tool
-  manager, which refuses any name outside `[A-Za-z0-9_-]`, but the session owns the protocol
-  for every caller.
+  than the one proposed. The handshake itself proposes in its *body*: the header names the
+  revision in use, and until the server answers there is not one. The era probe ahead of it
+  carries the newest revision this client speaks, which is what it is asking about.
+- On a `2026-07-28` connection every POST mirrors its body into **`Mcp-Method`**, a request
+  naming something into **`Mcp-Name`**, and a parameter the tool marks `x-mcp-header` into
+  `Mcp-Param-*` (SEP-2243), so a gateway or rate limiter can route and meter without parsing
+  the body. A name outside printable ASCII travels Base64-encoded (`=?base64?…?=`). **None of
+  them appear on a 2025-era exchange**, and that is deliberate rather than an omission: the
+  spec tells an intermediary to reject mirrored values it cannot check against a version that
+  guarantees the server validated them, so sending them to a server that never promised that
+  validation is worse than not sending them. The SDK owns the mirroring, including excluding
+  a tool whose `x-mcp-header` declaration breaks the constraints rather than letting one
+  malformed tool cost the rest. **The tool's definition is handed to the call**, because the
+  SDK derives `Mcp-Param-*` from the `inputSchema` of a `tools/list` it sent itself — and a
+  warm discovery cache means it often sent none. Without that, a run on a cached catalogue
+  would omit a header whose value is in the body, which a server routing on it must reject.
 - A result marked **`resultType: "input_required"`** — the server needs an approval or a
   missing argument before it can answer (MRTR, protocol `2026-07-28`) — is reported as its own
   failure rather than falling through the "no content" check, which would send an operator to
@@ -1078,9 +1100,19 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
 - **Every other content type is read as the protocol defines it.** A `resource_link` becomes
   its URI plus whatever identifies it — it is a pointer the model can ask for, not a payload.
   An `audio` block is named and stops there, because a turn carries only text and images, so
-  the model is told a recording exists and can ask for a transcript. A type this client has
-  not learned is **named rather than called invalid**: the protocol keeps gaining them, and a
-  server ahead of us is not a broken one.
+  the model is told a recording exists and can ask for a transcript.
+- **A result that breaks the schema is refused whole.** The client validates the entire
+  result, so one tool declaring a non-object `inputSchema` costs that server its whole
+  catalogue, and a content block of a type the schema does not know fails that call. This is a
+  change from the hand-rolled client, which read what parsed and named the rest — the trade is
+  that a malformed answer is reported instead of silently thinned, and a revision that adds a
+  block type will need an SDK upgrade. It is kept out of "unreachable"
+  (`unusableServerReason`), because the server is up and answering and the fix is on one side
+  or the other, never on the network.
+- **A server that does not declare the `tools` capability is never asked for its catalogue.**
+  The spec requires the declaration of any server that has tools, and the SDK returns an empty
+  list without sending `tools/list`. That would be a silent loss, so the run says which of the
+  two happened: `McpSession.declaresTools` is what the emptiness warning reads.
 - **`structuredContent` is read when the server sent no content blocks.** Serializing it into
   a text block is only a SHOULD, so a server that skips it is still answering — that result
   used to be reported as "no content", a failure report about a call that succeeded. Content
@@ -1098,14 +1130,21 @@ Tool loading uses MCP streamable HTTP (`tools/list`, `tools/call` JSON-RPC). The
 #### Discovery cache
 
 Discovery is cached per `url + headers` (`discoveryCache.ts`). On a hit the session is left
-uninitialized and handshakes lazily on its first tool call, so **a turn that calls no tool
-makes no MCP request at all** — a chat used to pay the full handshake per message per server.
+unconnected and connects lazily on its first tool call, so **a turn that calls no tool makes
+no MCP request at all** — a chat used to pay the full handshake per message per server.
 Headers are part of the key so one tenant's tool list never answers another's.
 
-Failures are cached too, briefly. A server that sends the caching hint `ttlMs` on `tools/list`
-(SEP-2549) sets its own entry's lifetime — it knows its catalogue, and the local default is
-only a guess about someone else's — bounded by a separate ceiling. The full reasoning for two
-knobs, and their values, is in [CONFIGURATION.md](CONFIGURATION.md#mcp).
+Failures are cached too, briefly, and as one value (`DiscoveryFailure`) so a replayed failure
+explains itself exactly as the live one did — including the two readings that are not
+"unreachable": a 401 asks the *project* to reconnect, and an unusable server asks for a fix on
+one side or the other.
+
+A server that sends the caching hint `ttlMs` on `tools/list` (SEP-2549) sets its own entry's
+lifetime — it knows its catalogue, and the local default is only a guess about someone else's
+— bounded by a separate ceiling. For a **paged** catalogue that hint is the first page's,
+where this client used to take the shortest across pages: the SDK's per-page call is selected
+by passing a cursor, which the first page does not have. The full reasoning for two knobs, and
+their values, is in [CONFIGURATION.md](CONFIGURATION.md#mcp).
 
 #### Managed servers
 

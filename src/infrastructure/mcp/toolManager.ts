@@ -57,6 +57,13 @@ export class ToolManager {
   private readonly sessionByToolName = new Map<string, McpSession>();
   private readonly originalNameByAlias = new Map<string, string>();
   /**
+   * The catalogue entry behind each alias, kept for the call rather than the
+   * offer: the SEP-2243 parameter mirroring reads the tool's `inputSchema`, and
+   * on a warm discovery cache no `tools/list` was sent this run for the client
+   * to read one from. See {@link McpSession.callTool}.
+   */
+  private readonly toolByAlias = new Map<string, McpTool>();
+  /**
    * Which server an alias came from, for the failure messages. A run may bind
    * several servers, and "HTTP 500" without one names nothing an operator can
    * go and look at.
@@ -216,6 +223,7 @@ export class ToolManager {
         });
         this.sessionByToolName.set(alias, entry.session);
         this.originalNameByAlias.set(alias, tool.name);
+        this.toolByAlias.set(alias, tool);
         this.serverNameByAlias.set(alias, entry.server.name);
         aliases.push(alias);
       }
@@ -314,7 +322,11 @@ export class ToolManager {
     }
     const serverName = this.serverNameByAlias.get(aliasName) ?? "unknown";
     try {
-      const result = (await session.callTool(originalName, args)) as
+      const result = (await session.callTool(
+        originalName,
+        args,
+        this.toolByAlias.get(aliasName),
+      )) as
         | {
             content?: unknown[];
             isError?: boolean;
