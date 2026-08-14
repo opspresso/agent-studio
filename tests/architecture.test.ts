@@ -1590,7 +1590,37 @@ const ONE_AXIS_ON_PURPOSE = [
   "src/application/artifact/producedFiles.ts",
 ];
 
+/**
+ * The routes whose answer *is* the engine's chunk.
+ *
+ * Two of them, and they have to agree: `/agent` and `/predict` with
+ * `stream: true` hand the same frames to the same SSE helper. A file frame
+ * leaving either one carries the object key and artifact id the run bracket put
+ * on it unless something swaps them for an address — which is a leak of this
+ * platform's bookkeeping in one direction and, in the other, a frame naming a
+ * document the caller has no way to fetch.
+ *
+ * The chat routes are deliberately absent: they wrap their own envelope and sign
+ * a file when the finished turn is read back, a turn later, because a run there
+ * outlives the connection that started it and a signature minted mid-run would
+ * be spent on a reader who may not be attached.
+ */
+const RAW_CHUNK_STREAM_ROUTES = [
+  "src/app/api/projects/[name]/versions/[version]/agent/route.ts",
+  "src/app/api/projects/[name]/versions/[version]/predict/route.ts",
+];
+
 describe("what a run produced", () => {
+  it("is addressed by every route that answers in raw chunks", () => {
+    const addressing = SOURCE_FILES.filter((file) =>
+      /withAddressedFiles\(/.test(stripComments(file.text)),
+    ).map((file) => file.path);
+    // The module that declares it is not asked to also use it.
+    expect(addressing.filter((path) => path.startsWith("src/app/")).sort()).toEqual(
+      [...RAW_CHUNK_STREAM_ROUTES].sort(),
+    );
+  });
+
   it("is read on both axes wherever it is read at all", () => {
     const reads = (text: string, field: "image" | "file") =>
       new RegExp(String.raw`chunk\.${field}\b`).test(text);

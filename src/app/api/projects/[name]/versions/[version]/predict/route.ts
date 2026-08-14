@@ -7,7 +7,7 @@ import {
   projectUseCases,
   versionUseCases,
 } from "@/lib/container";
-import { resolveProducedFiles } from "@/application/artifact/producedFiles";
+import { resolveProducedFiles, withAddressedFiles } from "@/application/artifact/producedFiles";
 import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { generateImage } from "@/application/image/generateImage";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
@@ -65,7 +65,14 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     if (parsed.data.stream) {
       const abortController = new AbortController();
       return await sseResponse(
-        executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
+        // Addressed on the way out, exactly like `/agent`: this branch answers
+        // in raw chunks too, and a file frame carrying an object key is the
+        // same non-answer there as it was here.
+        withAddressedFiles(
+          executeProjectStream(executionDeps, { ...params, signal: abortController.signal }),
+          artifactStorage?.objects.sign,
+          VIEW_URL_TTL_SECONDS,
+        ),
         abortController,
       );
     }

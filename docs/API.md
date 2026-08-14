@@ -899,8 +899,12 @@ For an `image` project, send `{ "prompt", "size?", "quality?", "images?" }` → 
 mimeType, model, usage }`. `images` are source pictures as inline bytes
 (`[ { b64, mimeType } ]`, same caps as a chat attachment): with any present the prompt
 **edits** them, with none it draws from scratch. The version's system prompt, when set, is
-prepended to the prompt as the version's persistent style.
-With `"stream": true`, the response is SSE.
+prepended to the prompt as the version's persistent style. `stream` does not apply to an
+image project — there is one picture and one body — and is ignored there.
+
+For every other project type, `"stream": true` answers with SSE `EngineChunk` frames (the
+same contract `/agent` documents below, file frames addressed the same way) instead of the
+JSON body above.
 
 A run this endpoint could not finish answers `502` with what the provider said and the model
 it was asked of — `Image generation failed for xai/grok-imagine-image: 404 The requested
