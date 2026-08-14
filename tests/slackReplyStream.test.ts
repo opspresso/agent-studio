@@ -513,3 +513,32 @@ describe("a channel's checklist", () => {
     ]);
   });
 });
+
+describe("a checklist that would grow past reading", () => {
+  it("shares one row once the cap is reached, and closes it at the end", async () => {
+    // A checklist nobody can read is not a better report than a line that
+    // moves — and each row costs two appends against Slack's stream limit.
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    for (let index = 0; index < 30; index += 1) {
+      await sink.step(`c${index}`, `tool-${index}`);
+    }
+    await sink.finish("done", "");
+
+    const rows = chunks.map(({ chunk }) => chunk).filter((chunk) => chunk.type === "task_update");
+    const ids = new Set(rows.map((row) => row.id));
+    // 25 of their own, plus the one they overflow into.
+    expect(ids.size).toBe(26);
+    expect(ids.has("run-progress-more")).toBe(true);
+    // The shared row keeps moving rather than freezing on the 26th tool, and
+    // the run does not leave it spinning.
+    const overflow = rows.filter((row) => row.id === "run-progress-more");
+    expect(overflow.at(-1)).toEqual({
+      type: "task_update",
+      id: "run-progress-more",
+      title: "tool-29",
+      status: "complete",
+    });
+  });
+});

@@ -1839,6 +1839,23 @@ describe("commands", () => {
     expect(posted[0]?.text).toContain("Muting works per thread");
   });
 
+  it("says muting means nothing in a DM rather than confirming it", async () => {
+    // The gate answers every DM without consulting engagement at all, so a mute
+    // recorded here would be a flag nothing reads and a confirmation that was
+    // never true.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, posted } = makeSlackFake();
+
+    await handleSlackEvent(
+      deps0(slack),
+      { ...DM_EVENT, event: { ...DM_EVENT.event, thread_ts: "1.0", text: "!mute" } },
+      BINDING,
+    );
+
+    expect(mutes).toEqual([]);
+    expect(posted[0]?.text).toContain("channel threads");
+  });
+
   it("lists the commands", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const { slack, posted } = makeSlackFake();

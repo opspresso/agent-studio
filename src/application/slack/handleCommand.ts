@@ -27,6 +27,12 @@ export interface CommandContext {
    * this is asked separately.
    */
   inThread: boolean;
+  /**
+   * A DM, where muting has no meaning: the gate answers every message in one
+   * without consulting engagement at all, so a mute would be recorded and then
+   * ignored. Saying so beats confirming something that is not true.
+   */
+  assistantThread: boolean;
 }
 
 const HELP = [
@@ -47,6 +53,14 @@ const HELP = [
 const MUTE_NEEDS_A_THREAD =
   ":mute: Muting works per thread — reply `!mute` (or `!unmute`) inside the thread you mean.";
 
+/**
+ * A DM answers every message by definition, so there is nothing engagement
+ * could be muted *from*. Recording one anyway would leave a flag nothing reads
+ * and a confirmation that was never true.
+ */
+const MUTE_IS_FOR_CHANNELS =
+  ":mute: Muting applies to channel threads. Here, every message reaches me — close the conversation instead.";
+
 export async function handleSlackCommand(
   deps: SlackEventDeps,
   command: SlackCommand,
@@ -62,6 +76,10 @@ export async function handleSlackCommand(
 
   if (command === "help") {
     await say(HELP);
+    return;
+  }
+  if (ctx.assistantThread) {
+    await say(MUTE_IS_FOR_CHANNELS);
     return;
   }
   if (!ctx.inThread) {
