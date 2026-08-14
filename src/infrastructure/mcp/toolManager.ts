@@ -10,11 +10,14 @@
  *   - a result the server marks `input_required` is one of those failures, and
  *     says so as itself: this client does not answer multi round-trip requests,
  *   - a server that cannot be reached loses only its own tools, and the reason
- *     is reported through {@link ToolManager.warnings} so the run can surface it,
+ *     is reported through {@link ToolManager.warnings} so the run can surface it
+ *     — including the two readings that are not "unreachable": a 401 asks the
+ *     project to reconnect, and a server this client cannot speak to asks for a
+ *     fix on one side or the other,
  *   - discovery is served from {@link ../discoveryCache the discovery cache} when
- *     it is warm, which also leaves the session to handshake lazily on its first
+ *     it is warm, which also leaves the session to connect lazily on its first
  *     tool call — a turn that calls nothing then makes no MCP request at all,
- *     and a turn that calls several at once still handshakes exactly once
+ *     and a turn that calls several at once still connects exactly once
  *     ({@link ./session McpSession} serializes it).
  */
 
@@ -126,19 +129,19 @@ export class ToolManager {
     const discovered = await Promise.all(
       this.servers.map(async (server) => {
         const session = new McpSession(server.url, server.headers, this.signal, server.loopback);
-        // Registered before the first request: a session that initializes and
-        // then fails — or one abandoned when the run aborts mid-discovery —
-        // must still be reachable by `close()`, or it is leaked server-side.
+        // Registered before the first request: a session that connects and then
+        // fails — or one abandoned when the run aborts mid-discovery — must
+        // still be reachable by `close()`, or it is leaked server-side.
         this.sessions.push(session);
         const cached = getCachedDiscovery(server.url, server.headers);
         if (cached?.kind === "tools") {
-          // The session stays uninitialized; it handshakes on its first actual
-          // tool call, so a run that calls nothing makes no request at all.
+          // The session stays unconnected; it connects on its first actual tool
+          // call, so a run that calls nothing makes no request at all.
           return { server, session, tools: cached.tools };
         }
         if (cached?.kind === "failure") {
           // Replayed rather than re-attempted: without this a server that is
-          // down re-pays a failing handshake before the first token of every
+          // down re-pays a failing connect before the first token of every
           // message. The reason is the live one, so the run explains itself the
           // same way it did when the failure actually happened.
           this.recordFailure(server.name, cached);
