@@ -34,12 +34,14 @@ export interface McpServerAuth {
    * a callback's RFC 9207 `iss` is compared against, and the key a connection's
    * client credentials are bound to (SEP-2352, SEP-2468).
    *
-   * Optional only because entries discovered before it was recorded have none.
-   * Those fall back to {@link authorizationServer}, which RFC 8414 §3.3 requires
-   * an authorization server's `issuer` to equal anyway; re-running discovery
-   * stores the value the server actually published.
+   * Required. An entry discovered before it was recorded has none and is
+   * refused rather than fallen back on: the fallback was
+   * {@link authorizationServer}, which is the URL we *asked at* rather than the
+   * identity the server claimed, and treating the two as interchangeable is
+   * exactly what the literal comparison downstream exists to prevent. Re-running
+   * Discover on the entry stores the published value.
    */
-  issuer?: string;
+  issuer: string;
   /** RFC 9207: does this server advertise that it returns `iss`? See the metadata field. */
   issParameterSupported?: boolean;
   authorizationEndpoint: string;
@@ -58,22 +60,6 @@ export interface McpServerAuth {
   discoveredAt: string;
 }
 
-/**
- * Which authorization server an entry's credentials and callbacks belong to.
- *
- * The single owner of that question — a callback's RFC 9207 `iss` is compared
- * against it, and a connection's client credentials are bound to it, so the two
- * must never disagree about what "this entry's issuer" means.
- *
- * Falls back to the advertised URL for entries discovered before the published
- * `issuer` was recorded: RFC 8414 §3.3 requires an authorization server's
- * metadata `issuer` to equal the identifier it was fetched under, so for any
- * conforming server the fallback is the same string, and a re-discovery
- * replaces it with the published value either way.
- */
-export function issuerOf(auth: McpServerAuth): string {
-  return auth.issuer ?? auth.authorizationServer;
-}
 
 /**
  * How a server is reached, and therefore why its address may be trusted.

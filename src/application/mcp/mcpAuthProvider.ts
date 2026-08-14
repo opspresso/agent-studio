@@ -16,7 +16,7 @@ import type {
   TokenRequestTarget,
 } from "@/domain/mcp/oauth";
 import { OAuthGrantError } from "@/domain/mcp/oauth";
-import { issuerOf, type McpServerAuth } from "@/domain/mcp/types";
+import type { McpServerAuth } from "@/domain/mcp/types";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import { MAX_RUN_DURATION_MS } from "@/shared/runDeadline";
 
@@ -69,11 +69,10 @@ function mismatchReason(
   serverName: string,
   auth: McpServerAuth,
 ): string | undefined {
-  const issuer = issuerOf(auth);
-  if ((connection.issuer ?? issuer) !== issuer) {
+  if (connection.issuer !== auth.issuer) {
     return `MCP server '${serverName}' points at a different authorization server than the one this project's credentials were registered with; it needs to be connected again.`;
   }
-  if ((connection.resource ?? auth.resource) !== auth.resource) {
+  if (connection.resource !== auth.resource) {
     return `MCP server '${serverName}' now identifies as a different resource than the one this project's access was granted for; it needs to be connected again.`;
   }
   return undefined;

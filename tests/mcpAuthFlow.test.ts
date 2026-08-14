@@ -34,6 +34,7 @@ const SERVER: McpServer = {
     type: "oauth2",
     resource: "https://mcp.slack.com",
     authorizationServer: "https://mcp.slack.com",
+    issuer: "https://mcp.slack.com",
     authorizationEndpoint: "https://slack.com/oauth/v2_user/authorize",
     tokenEndpoint: "https://slack.com/api/oauth.v2.user.access",
     tokenEndpointAuthMethod: "client_secret_post",
@@ -111,6 +112,8 @@ function harness(
       serverName: "slack",
       clientId: "client-1",
       clientSecret: "enc:shh",
+      issuer: server.auth?.issuer ?? "https://mcp.slack.com",
+      resource: server.auth?.resource ?? "https://mcp.slack.com",
       scopes: ["chat:write"],
       status: "needs_auth",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -494,22 +497,6 @@ describe("completeAuthorization: issuer validation", () => {
     expect(h.exchanges).toHaveLength(0);
   });
 
-  it("refuses an iss it cannot check, rather than accepting it unchecked", async () => {
-    // A state written before the expected issuer was recorded — a deploy can
-    // catch one mid-flight. There is nothing to compare against, and treating
-    // that as a pass would be the same as not checking at all.
-    const h = harness({ connection: {} });
-    const uc = createMcpAuthUseCases(h.deps);
-    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
-    const state = new URL(authorizeUrl).searchParams.get("state") as string;
-    const pending = h.states.get(state);
-    h.states.set(state, { ...pending!, issuer: undefined });
-
-    await expect(
-      uc.completeAuthorization({ state, code: "c", userEmail: OWNER, iss: "https://anything" }),
-    ).rejects.toThrow(/before issuer validation was in place/);
-    expect(h.exchanges).toHaveLength(0);
-  });
 });
 
 describe("abandonAuthorization", () => {

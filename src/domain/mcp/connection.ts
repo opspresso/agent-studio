@@ -46,11 +46,12 @@ export interface McpConnection {
    * registry entry — which rewrites `McpServerAuth` and never touches these
    * rows — would silently present one server's client to another.
    *
-   * Absent on rows written before it was recorded: those are treated as
-   * belonging to whatever the entry points at now, which is what they were
-   * already being used as.
+   * Required. A row written before it was recorded has none, compares equal to
+   * nothing, and is refused — the owner reconnects. Treating an absent value as
+   * "belongs to whatever the entry points at now" is the assumption this field
+   * exists to stop making.
    */
-  issuer?: string;
+  issuer: string;
   /**
    * The RFC 8707 `resource` the stored tokens were minted for — the audience
    * they are bound to, and therefore the only server they may be presented at.
@@ -63,11 +64,10 @@ export interface McpConnection {
    * the entry's current `auth.resource` is what stops a token minted for one
    * server being sent to another.
    *
-   * Absent on rows written before it was recorded: those are treated as
-   * belonging to whatever the entry points at now, which is what they were
-   * already being used as.
+   * Required, for the same reason as {@link issuer} and with the same
+   * consequence for a row that predates it.
    */
-  resource?: string;
+  resource: string;
   scopes: string[];
   /** Encrypted. */
   accessToken?: string;
@@ -104,11 +104,10 @@ export interface McpOAuthState {
    * on the same record as the PKCE verifier, and the entry is exactly what a
    * re-discovery may have changed while the user was away at the provider.
    *
-   * Absent only on a state written before this field existed. Such a flow has
-   * nothing to compare against, so a response that carries `iss` is refused
-   * rather than accepted unchecked.
+   * Required. A state written before this field existed has nothing to compare
+   * against, and an unchecked `iss` is the mix-up this guards.
    */
-  issuer?: string;
+  issuer: string;
   /** RFC 9207 advertisement, snapshotted with {@link issuer} for the same reason. */
   issParameterSupported?: boolean;
   createdAt: string;

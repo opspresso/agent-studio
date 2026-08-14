@@ -32,7 +32,23 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function fromItem(item: Record<string, unknown>): McpConnection {
+/**
+ * A stored row as a connection, or `null` for one this code cannot use.
+ *
+ * `issuer` and `resource` are what a stored token is checked against before it
+ * is sent anywhere — the two axes that stop one server's credentials reaching
+ * another. A row written before they were recorded has neither, and there is no
+ * safe value to invent: the old fallback ("assume it belongs to whatever the
+ * entry points at now") is the assumption those fields exist to stop making.
+ * Read as absent instead, so the console offers a reconnect, which is the only
+ * thing that can supply the missing halves.
+ */
+function fromItem(item: Record<string, unknown>): McpConnection | null {
+  const issuer = optionalString(item.issuer);
+  const resource = optionalString(item.resource);
+  if (!issuer || !resource) {
+    return null;
+  }
   return {
     projectName: item.projectName as string,
     serverName: item.serverName as string,
@@ -43,8 +59,8 @@ function fromItem(item: Record<string, unknown>): McpConnection {
     // then silently lost, and this one decides whether the issuer check applies
     // to the row at all.
     ...(item.clientFromMetadataDocument === true ? { clientFromMetadataDocument: true } : {}),
-    issuer: optionalString(item.issuer),
-    resource: optionalString(item.resource),
+    issuer,
+    resource,
     scopes: (item.scopes as string[] | undefined) ?? [],
     accessToken: optionalString(item.accessToken),
     refreshToken: optionalString(item.refreshToken),
@@ -76,7 +92,7 @@ export const mcpConnectionRepository: McpConnectionRepository = {
         ":prefix": keys.mcpConnectionPrefix(),
       },
     });
-    return items.map(fromItem);
+    return items.map(fromItem).filter((connection) => connection !== null);
   },
 
   async put(connection) {

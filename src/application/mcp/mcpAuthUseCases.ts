@@ -29,7 +29,7 @@ import { BlockedUrlError, type UrlPolicy } from "@/domain/security/urlPolicy";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/application/errors";
 import { assertProjectWritable } from "@/application/project/projectUseCases";
 import { assertAllowedUrl } from "@/application/registry/registryUseCases";
-import { issuerOf, skipsUrlGuard } from "@/domain/mcp/types";
+import { skipsUrlGuard } from "@/domain/mcp/types";
 import { createOAuthState, createPkcePair } from "@/shared/pkce";
 import { log } from "@/shared/logger";
 
@@ -128,7 +128,7 @@ async function assertAuthEndpoint(policy: UrlPolicy, url: string, label: string)
  * issuer this flow was started against.
  */
 function assertIssuerMatches(
-  expected: { issuer?: string; issParameterSupported?: boolean },
+  expected: { issuer: string; issParameterSupported?: boolean },
   iss: string | undefined,
 ): void {
   if (iss === undefined) {
@@ -140,14 +140,6 @@ function assertIssuerMatches(
       );
     }
     return;
-  }
-  if (expected.issuer === undefined) {
-    // A flow started before the expected issuer was recorded. There is nothing
-    // to compare against, and accepting an unchecked `iss` would be the same as
-    // not checking at all — fail closed and let the owner start again.
-    throw new ValidationError(
-      "This authorization was started before issuer validation was in place. Please connect the server again.",
-    );
   }
   if (iss !== expected.issuer) {
     throw new ValidationError(
@@ -528,7 +520,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
             : deps.cipher.encrypt(submitted);
       const scopes = input.scopes ?? existing?.scopes ?? server.auth.scopesSupported ?? [];
 
-      const issuer = issuerOf(server.auth);
+      const issuer = server.auth.issuer;
 
       // Saving credentials that did not change is a no-op, not a reset. Both
       // boxes arrive prefilled from the stored connection, so pressing Save
@@ -539,7 +531,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         existing.clientId === input.clientId &&
         existing.clientSecret === clientSecret &&
         sameScopes(existing.scopes, scopes) &&
-        (existing.issuer ?? issuer) === issuer
+        existing.issuer === issuer
       ) {
         return toConnectionView(deps.cipher, existing);
       }
@@ -550,8 +542,10 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         clientId: input.clientId,
         ...(clientSecret ? { clientSecret } : {}),
         // Whatever the owner just typed was registered with the server this
-        // entry points at now; that is what makes it re-checkable later.
+        // entry points at now; that is what makes it re-checkable later. The
+        // audience goes with it, on the other axis.
         issuer,
+        resource: server.auth.resource,
         scopes,
         // Credentials changing invalidates whatever they authorized. Keeping the
         // old tokens would leave a connection that reports `connected` while
@@ -567,7 +561,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       await assertProjectWritable(deps.projects, projectName, userEmail);
       const server = await requireOAuthServer(serverName);
       const callback = await redirectUri();
-      const issuer = issuerOf(server.auth);
+      const issuer = server.auth.issuer;
       let connection = await deps.connections.get(projectName, serverName);
 
       /**
@@ -587,7 +581,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // working connection to enforce a rule about credentials it does not
         // have.
         connection.clientFromMetadataDocument !== true &&
-        (connection.issuer ?? issuer) !== issuer;
+        connection.issuer !== issuer;
       if (staleCredentials) {
         // Nothing here can be re-issued on the owner's behalf: a stored client
         // is one they typed in, and only they can replace it.
@@ -610,17 +604,19 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // Nothing is requested and nothing is issued: the `client_id` is the
         // address of a document this deployment already serves, and the server
         // fetches it when the authorization arrives.
-        connection = {
+        const fresh: McpConnection = {
           projectName,
           serverName,
           clientId: clientMetadataUrl(await publicBase(), projectName),
           clientFromMetadataDocument: true,
           issuer,
+          resource: server.auth.resource,
           scopes: connection?.scopes ?? server.auth.scopesSupported ?? [],
           status: "needs_auth",
           updatedAt: new Date().toISOString(),
         };
-        await deps.connections.put(connection);
+        await deps.connections.put(fresh);
+        connection = fresh;
       }
 
       const pkce = createPkcePair();
@@ -684,7 +680,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
       // Redeeming at the new server's token endpoint would send it a code its
       // authorization server never issued. Skipped for a state that predates the
       // recorded issuer, which has nothing to compare.
-      if (pending.issuer !== undefined && issuerOf(server.auth) !== pending.issuer) {
+      if (server.auth.issuer !== pending.issuer) {
         throw new ValidationError(
           `The authorization server configured for "${pending.serverName}" changed while this authorization was in progress. Please connect it again.`,
         );
@@ -712,7 +708,7 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         // halves the first time it is authorized rather than staying unbound
         // forever. `resource` is what these very tokens were minted for — the
         // RFC 8707 audience sent on the exchange just above.
-        issuer: issuerOf(server.auth),
+        issuer: server.auth.issuer,
         resource: server.auth.resource,
         accessToken: deps.cipher.encrypt(tokens.accessToken),
         ...(tokens.refreshToken
