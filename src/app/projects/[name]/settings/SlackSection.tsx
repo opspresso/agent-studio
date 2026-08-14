@@ -16,6 +16,7 @@ import { Alert, Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@
 import { monoInput } from "@/app/_components/monoInput";
 import { stateColor } from "@/app/_components/badgeColors";
 import { MAX_SUGGESTED_PROMPTS } from "@/domain/slack/types";
+import { parseList } from "@/shared/parseList";
 import { useT } from "@/app/_i18n/provider";
 
 /**
@@ -43,6 +44,15 @@ export function SlackSection({
   const [signingSecret, setSigningSecret] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [prompts, setPrompts] = useState<SlackSuggestedPrompt[]>(emptyPrompts([]));
+  /**
+   * Edited as one comma-separated line rather than as rows.
+   *
+   * Unlike the prompts above there is no fixed number of slots, and a keyword is
+   * a single short word — a grid of twenty inputs would be all chrome. The use
+   * case owns splitting hairs about the contents: it trims, folds case and drops
+   * duplicates, so what comes back may not be what was typed.
+   */
+  const [keywords, setKeywords] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,6 +68,7 @@ export function SlackSection({
           setSigningSecret(v.signingSecret);
           setEnabled(v.enabled);
           setPrompts(emptyPrompts(v.suggestedPrompts));
+          setKeywords(v.channelKeywords.join(", "));
         }
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Load failed"));
@@ -84,12 +95,15 @@ export function SlackSection({
         signingSecret,
         enabled,
         suggestedPrompts: prompts,
+        channelKeywords: parseList(keywords),
       });
       setView(next);
       setBotToken(next.botToken);
       setSigningSecret(next.signingSecret);
       setEnabled(next.enabled);
       setPrompts(emptyPrompts(next.suggestedPrompts));
+      // What came back, not what was typed — the use case normalized it.
+      setKeywords(next.channelKeywords.join(", "));
       setStatus("Saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -236,6 +250,24 @@ export function SlackSection({
               />
             </Group>
           ))}
+        </Stack>
+
+        <Stack gap="xs">
+          <Text fz="sm" fw={500}>
+            Channel keywords
+          </Text>
+          <Text fz="xs" c="dimmed" lh={1.6}>
+            Words that wake this bot in a channel without an @mention, separated by commas. Leave
+            empty and the bot answers only when it is mentioned — or when someone replies in a
+            thread it already answered in, which needs no configuration and lasts a day. Matching
+            ignores case and matches inside words, so short or common words wake the bot often.
+          </Text>
+          <TextInput
+            aria-label="Channel keywords"
+            placeholder="deploy, incident, 배포"
+            value={keywords}
+            onChange={(e) => setKeywords(e.currentTarget.value)}
+          />
         </Stack>
 
         {status && (

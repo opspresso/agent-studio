@@ -7,10 +7,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * open with no prompts and nothing would say why. The two handlers are mocked:
  * what is under test is the routing, not what they do.
  */
-const { handled, claim, settle } = vi.hoisted(() => ({
+const { handled, claim, settle, isEngaged } = vi.hoisted(() => ({
   handled: [] as Array<{ handler: "run" | "threadStart"; type?: string }>,
   claim: vi.fn(async () => true),
   settle: vi.fn(async () => {}),
+  isEngaged: vi.fn(async () => false),
 }));
 
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
@@ -27,6 +28,9 @@ vi.mock("@/infrastructure/slack/client", () => ({ slackClient: {} }));
 vi.mock("@/application/execution/runProject", () => ({ executeAgent: () => {} }));
 vi.mock("@/infrastructure/db/repositories/slackEventRepository", () => ({
   slackEventRepository: { claim, settle },
+}));
+vi.mock("@/infrastructure/db/repositories/slackThreadRepository", () => ({
+  slackThreadRepository: { isEngaged, markEngaged: vi.fn(async () => {}) },
 }));
 vi.mock("@/application/slack/handleSlackEvent", () => ({
   handleSlackEvent: async (_deps: unknown, body: { event?: { type?: string } }) => {
@@ -63,17 +67,36 @@ function signedRequest(payload: unknown): Request {
   });
 }
 
-const deliver = (payload: unknown) =>
+const deliver = (payload: unknown, keywords?: string[]) =>
   handleSlackEventRequest(signedRequest(payload), {
     signingSecret: SIGNING_SECRET,
     binding: BINDING,
     logLabel: "project painter",
+    ...(keywords ? { engagement: { keywords } } : {}),
   });
+
+/** A human's message in a public channel, as `message.channels` delivers it. */
+const channelMessage = (over: Record<string, unknown> = {}) => ({
+  type: "event_callback",
+  event_id: "EvC",
+  team_id: "T1",
+  authorizations: [{ user_id: "U0BOT", is_bot: true }],
+  event: {
+    type: "message",
+    channel_type: "channel",
+    channel: "C1",
+    user: "U_HUMAN",
+    ts: "2.0",
+    text: "how is the deploy going",
+    ...over,
+  },
+});
 
 beforeEach(() => {
   handled.length = 0;
   vi.clearAllMocks();
   claim.mockResolvedValue(true);
+  isEngaged.mockResolvedValue(false);
 });
 
 describe("which Slack events reach a handler", () => {
@@ -124,15 +147,63 @@ describe("which Slack events reach a handler", () => {
       event_id: "Ev6",
       event: { type: "reaction_added", channel: "C1" },
     });
-    await deliver({
-      type: "event_callback",
-      event_id: "Ev7",
-      event: { type: "message", channel_type: "channel", channel: "C1", ts: "1.0" },
-    });
 
     expect(handled).toEqual([]);
     // An ignored event is never claimed — the dedup table is for work that ran.
     expect(claim).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The bot is subscribed to `message.channels`, so it receives every message
+   * in every channel it belongs to. What matters as much as *whether* each one
+   * runs is what it costs when it does not: the gate decides ahead of the dedup
+   * claim, so an ignored message writes nothing.
+   */
+  describe("a channel message with no mention", () => {
+    it("costs nothing at all when it is not for the bot", async () => {
+      await deliver(channelMessage());
+
+      expect(handled).toEqual([]);
+      expect(claim).not.toHaveBeenCalled();
+      // Not even the engagement lookup: a top-level message carries no
+      // `thread_ts`, so there is no thread to ask about.
+      expect(isEngaged).not.toHaveBeenCalled();
+    });
+
+    it("runs as a follow-up in a thread the bot is engaged in", async () => {
+      isEngaged.mockResolvedValue(true);
+
+      await deliver(channelMessage({ thread_ts: "1.0" }));
+
+      expect(handled).toEqual([{ handler: "run", type: "message" }]);
+      expect(isEngaged).toHaveBeenCalledWith("painter", "C1", "1.0");
+    });
+
+    it("is dropped before the claim when the thread is not one of the bot's", async () => {
+      await deliver(channelMessage({ thread_ts: "1.0" }));
+
+      expect(handled).toEqual([]);
+      expect(isEngaged).toHaveBeenCalledOnce();
+      expect(claim).not.toHaveBeenCalled();
+    });
+
+    it("runs when it carries a keyword the project named", async () => {
+      await deliver(channelMessage(), ["deploy"]);
+
+      expect(handled).toEqual([{ handler: "run", type: "message" }]);
+    });
+
+    it("stays silent rather than answering when the engagement lookup fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      isEngaged.mockRejectedValue(new Error("dynamo is down"));
+
+      await deliver(channelMessage({ thread_ts: "1.0" }));
+
+      // One unanswered follow-up is the cheaper failure; the other way the bot
+      // speaks uninvited in a channel nobody addressed it in.
+      expect(handled).toEqual([]);
+      expect(claim).not.toHaveBeenCalled();
+    });
   });
 
   it("answers the url_verification challenge without handling anything", async () => {

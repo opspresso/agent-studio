@@ -276,3 +276,85 @@ describe("suggested prompts", () => {
     ]);
   });
 });
+
+describe("what the manifest asks Slack for", () => {
+  const events = () => {
+    const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com");
+    return (manifest.settings as { event_subscriptions: { bot_events: string[] } })
+      .event_subscriptions.bot_events;
+  };
+  const scopes = () => {
+    const manifest = buildProjectSlackManifest(makeProject(), "https://studio.example.com");
+    return (manifest.oauth_config as { scopes: { bot: string[] } }).scopes.bot;
+  };
+
+  it("subscribes to channel messages in both kinds of channel", () => {
+    // Public and private together: `groups:history` is granted, and taking only
+    // the public half would leave follow-ups silently broken in private
+    // channels with nothing saying why.
+    expect(events()).toContain("message.channels");
+    expect(events()).toContain("message.groups");
+  });
+
+  it("asks for the scope that resolves a channel name to an id", () => {
+    // `channels:history` reads a channel the bot already has the id of.
+    // Without `channels:read` "summarise #deploy" cannot even find the channel.
+    expect(scopes()).toContain("channels:read");
+    expect(scopes()).toContain("channels:history");
+  });
+});
+
+describe("channel keywords", () => {
+  const stored = (project: Project) => project.slack?.channelKeywords;
+
+  it("folds case and drops blanks and duplicates", async () => {
+    const { repo, current } = fakeRepo(makeProject());
+
+    await updateProjectSlack(
+      repo,
+      "bot-proj",
+      { channelKeywords: ["Deploy", "  ", "deploy", " 배포 "] },
+      OWNER,
+    );
+
+    // Case is folded at rest because the list is shown back to the operator —
+    // storing `Deploy` and `deploy` separately would display a distinction the
+    // matcher does not make.
+    expect(stored(current())).toEqual(["deploy", "배포"]);
+  });
+
+  it("refuses a keyword too short to be anything but noise", async () => {
+    const { repo } = fakeRepo(makeProject());
+
+    await expect(
+      updateProjectSlack(repo, "bot-proj", { channelKeywords: ["a"] }, OWNER),
+    ).rejects.toThrow(/at least/);
+  });
+
+  it("refuses more than the cap", async () => {
+    const { repo } = fakeRepo(makeProject());
+    const many = Array.from({ length: 21 }, (_, index) => `keyword${index}`);
+
+    await expect(
+      updateProjectSlack(repo, "bot-proj", { channelKeywords: many }, OWNER),
+    ).rejects.toThrow(/At most/);
+  });
+
+  it("keeps what is stored when the update does not mention them", async () => {
+    const { repo, current } = fakeRepo(makeProject());
+    await updateProjectSlack(repo, "bot-proj", { channelKeywords: ["deploy"] }, OWNER);
+
+    await updateProjectSlack(repo, "bot-proj", { enabled: false }, OWNER);
+
+    expect(stored(current())).toEqual(["deploy"]);
+  });
+
+  it("clears them when the update sends an empty list", async () => {
+    const { repo, current } = fakeRepo(makeProject());
+    await updateProjectSlack(repo, "bot-proj", { channelKeywords: ["deploy"] }, OWNER);
+
+    await updateProjectSlack(repo, "bot-proj", { channelKeywords: [] }, OWNER);
+
+    expect(stored(current())).toBeUndefined();
+  });
+});

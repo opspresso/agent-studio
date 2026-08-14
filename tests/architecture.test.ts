@@ -1308,6 +1308,25 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/slack/types.ts",
   },
   {
+    // With `message.channels` subscribed the bot receives its own replies, and
+    // a reply lands in a thread the bot is engaged in — so a second copy of
+    // this check that drifted would not merely answer something twice, it would
+    // answer itself without end. The handler used to carry its own copy, after
+    // the dedup claim, where it could no longer prevent the loop it names.
+    what: "whether a Slack event is the bot talking to itself",
+    pattern: /authorizations\?\.find/,
+    owner: "src/application/slack/engagement.ts",
+  },
+  {
+    // Which delivered events cause a run. The gate has to stay ahead of the
+    // dedup claim — that ordering is what keeps an ignored channel message from
+    // costing a write — so a surface that re-decided it downstream would be
+    // paying for a decision already made.
+    what: "which Slack events are for the bot",
+    pattern: /export function classifySlackEvent/,
+    owner: "src/application/slack/engagement.ts",
+  },
+  {
     // The agent half of the same dispatch, which cannot be checked tree-wide:
     // `projectType !== "agent"` is also how several use cases validate what a
     // project supports (a Slack bot, a chat, a tools capability), and that is a

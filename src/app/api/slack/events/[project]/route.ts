@@ -19,5 +19,6 @@ export async function POST(request: Request, ctx: RouteContext): Promise<Respons
     signingSecret: bound.signingSecret,
     binding: { projectName: bound.projectName, botToken: bound.botToken },
     logLabel: `project ${bound.projectName}`,
+    engagement: { keywords: bound.channelKeywords },
   });
 }

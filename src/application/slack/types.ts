@@ -4,6 +4,7 @@ import type { RunCaller } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+import type { SlackThreadRepository } from "@/domain/slack/repository";
 import type {
   SlackChunk,
   SlackMessage,
@@ -112,6 +113,11 @@ export interface SlackEventDeps {
   versions: VersionRepository;
   slack: SlackClientPort;
   /**
+   * Where the bot has spoken, so a channel follow-up needs no mention. Written
+   * after every channel reply; the event gate is what reads it back.
+   */
+  threads: SlackThreadRepository;
+  /**
    * Reads an attached document into the text a turn carries. Required rather
    * than optional: a deployment that forgot to wire it would drop every attached
    * file with the same warning the old image-only path used, which is exactly
@@ -148,6 +154,12 @@ export interface SlackEventFile {
 }
 
 export interface SlackEventBody {
+  /**
+   * The envelope kind — `event_callback` for a delivered event, and
+   * `url_verification` for the one-off challenge a Request URL is set up with.
+   * Read by the event gate, which refuses anything that is not the former.
+   */
+  type?: string;
   event_id?: string;
   /** The workspace the event came from; required to stream into a channel. */
   team_id?: string;

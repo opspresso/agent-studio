@@ -178,8 +178,21 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   };
 }
 
+/**
+ * Threads the handler recorded the bot as engaged in. Module-level so a test
+ * can read it without threading a recorder through `makeDeps`; cleared between
+ * tests below.
+ */
+const engagements: Array<{ project: string; channel: string; threadTs: string }> = [];
+
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
   return {
+    threads: {
+      markEngaged: async (project, channel, threadTs) => {
+        engagements.push({ project, channel, threadTs });
+      },
+      isEngaged: async () => false,
+    },
     runAgent: async function* () {
       for (const chunk of chunks) {
         yield chunk;
@@ -226,6 +239,7 @@ const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
 
 afterEach(() => {
   vi.restoreAllMocks();
+  engagements.length = 0;
 });
 
 describe("handleSlackEvent", () => {
@@ -1589,5 +1603,72 @@ describe("a document attached to a Slack message", () => {
 
     expect(downloads).toEqual([]);
     expect(finalText()).toContain("larger than 10MB");
+  });
+});
+
+/**
+ * A channel does not tell the bot which of its messages are for it, so the bot
+ * writes down where it spoke. The event gate reads this back to let a follow-up
+ * skip the mention; without the write, every turn in a channel needs one.
+ */
+describe("what the bot remembers about a channel thread", () => {
+  it("records the thread it answered in", async () => {
+    const { slack } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), EVENT, BINDING);
+
+    // The mention opened a new thread rooted at its own ts, which is where the
+    // reply went and therefore what a follow-up will carry as `thread_ts`.
+    expect(engagements).toEqual([{ project: "painter", channel: "C1", threadTs: "1.0" }]);
+  });
+
+  it("records the existing thread when the mention was a reply", async () => {
+    const { slack } = makeSlackFake();
+
+    await handleSlackEvent(
+      deps0(slack),
+      { ...EVENT, event: { ...EVENT.event, ts: "2.0", thread_ts: "1.0" } },
+      BINDING,
+    );
+
+    expect(engagements).toEqual([{ project: "painter", channel: "C1", threadTs: "1.0" }]);
+  });
+
+  it("records nothing for a DM, where every message is already for the bot", async () => {
+    const { slack } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), DM_EVENT, BINDING);
+
+    expect(engagements).toEqual([]);
+  });
+
+  it("records a reply that was only warnings", async () => {
+    const { slack } = makeSlackFake();
+    // The run failed and said so. That is still the bot holding the floor, and
+    // "try without the attachment" is exactly the turn someone answers without
+    // stopping to re-address it.
+    const deps = makeDeps([{ error: "provider is unavailable" }], slack);
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(engagements).toHaveLength(1);
+  });
+
+  it("still answers when the record cannot be written", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, finalText } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "here you go" } }, { done: true }], slack);
+    deps.threads = {
+      markEngaged: async () => {
+        throw new Error("dynamo is down");
+      },
+      isEngaged: async () => false,
+    };
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    // A lost record costs the next follow-up its mention-free reply. It must
+    // not cost this run the answer it already produced.
+    expect(finalText()).toContain("here you go");
   });
 });

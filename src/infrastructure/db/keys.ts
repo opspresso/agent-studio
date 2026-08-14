@@ -164,6 +164,16 @@ export const keys = {
 
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
+  /**
+   * A channel thread this project's bot is engaged in. Point-read only — the
+   * gate asks about one thread — so the whole address is the partition and
+   * nothing ever queries across them.
+   */
+  slackThread: (projectName: string, channel: string, threadTs: string) => ({
+    PK: `SLACKTHREAD#${projectName}#${channel}#${threadTs}`,
+    SK: "META",
+  }),
+
   a2aTask: (projectName: string, taskId: string) => ({
     PK: `A2ATASK#${projectName}#${taskId}`,
     SK: "META",

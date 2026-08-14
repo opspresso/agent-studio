@@ -39,6 +39,14 @@ export interface SlackIntegration {
    * the agent surface offers nothing beyond its description.
    */
   suggestedPrompts?: SlackSuggestedPrompt[];
+  /**
+   * Words that wake the bot in a channel without a mention.
+   *
+   * Not a secret either, and empty by default: the bot receives every message
+   * in the channels it belongs to, and a project that names nothing here
+   * answers only mentions and follow-ups in threads it is already part of.
+   */
+  channelKeywords?: string[];
 }
 
 /**

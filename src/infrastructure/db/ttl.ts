@@ -85,6 +85,19 @@ export const RETENTION = {
  */
 export const RUN_LOG_TTL_SECONDS = RUN_LEASE_SECONDS + 15 * 60;
 
+/**
+ * How long the bot stays engaged in a channel thread it answered in.
+ *
+ * Not retention — it is the feature. Inside this window a follow-up in that
+ * thread needs no mention; past it, one is required again. A day, refreshed on
+ * every reply: within a working day picking a conversation back up without
+ * re-addressing the bot is how people actually talk, and by the next day a
+ * mention is a reasonable thing to ask for. Fixed rather than configurable,
+ * because there is no evidence yet that would tell an operator what to set it
+ * to.
+ */
+export const SLACK_ENGAGEMENT_TTL_SECONDS = SECONDS_PER_DAY;
+
 /** Unix-seconds TTL: `retentionDays` after `baseIso`. Falls back to now for an
  * unparseable base so a row is never written without an expiry. */
 export function expiresAtSeconds(baseIso: string, retentionDays: number): number {
