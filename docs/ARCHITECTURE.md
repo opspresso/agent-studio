@@ -1517,10 +1517,23 @@ run reports what it is doing once; the sink picks the mechanism the surface has:
 message rather than a chunk). Slack renders and animates that task, and the answer keeps
 streaming into the same message's text.
 
-It is **one task retitled**, under a constant id, not a row per tool call: `status` carries no
-per-step completion boundary, so a timeline of many would claim the run finished steps it only
-stopped reporting. `chat.stopStream` marks it `complete`, since a step left `in_progress` on a
-finished message reads as a run that never came back.
+It is a **checklist**: the ambient row ("is thinking…") under a constant id while the run is
+still deciding, then a row per step of real work — opened when a tool call is announced, ticked
+off when its result comes back, and named by the agent that made it when a subagent did. The
+ambient row closes as soon as the first step opens, because a row spinning above a list that is
+visibly moving reads as a stuck run.
+
+**Only a real boundary may tick a row off**, which is the whole constraint. `status` has none —
+a line changing means the run stopped saying something, not that it finished it — so a
+checklist driven by status changes would claim the run completed things it merely stopped
+mentioning. A tool result is a boundary, so steps close as the run goes; anything still open at
+the end rides out on `chat.stopStream`, since a step left `in_progress` on a finished message
+reads as a run that never came back.
+
+The two surfaces phrase the same step differently, and the sink owns that: a checklist row
+stands alone and keeps the bare name (`Skill: deep-research`), while the DM's status line and
+the text-note fallback need a verb, because Slack renders the line after the app's name
+("AgentDure is using search…").
 
 That shape is the fix for a deeper problem than the missing animation. Modelling status as *the
 DM mechanism* left the channel nothing but text to imitate it with; text had to live in the

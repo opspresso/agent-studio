@@ -990,7 +990,10 @@ describe("streaming a Slack reply", () => {
       [
         // A tool-only stretch: what used to leave the thread with nothing at
         // all until the answer arrived.
-        { delta: { toolCalls: [{ function: { name: "search" } }] } },
+        { delta: { toolCalls: [{ id: "c_search", function: { name: "search" } }] } },
+        // The result is the completion boundary, and it names what the call
+        // acted on — which the call itself never does.
+        { toolResult: { toolCallId: "c_search", name: "web: search", content: "3 hits" } },
         { delta: { content: "found it" } },
         { done: true },
       ],
@@ -1003,19 +1006,52 @@ describe("streaming a Slack reply", () => {
     expect(posted).toHaveLength(0);
     expect(streamStarts).toHaveLength(1);
     expect(streamStarts[0]).toMatchObject({ task_display_mode: "timeline" });
-    // One task, retitled as the run moves and completed at the end — not a row
-    // per tool call, which would claim steps finished that only stopped being
-    // reported.
-    expect(new Set(tasks.map((task) => task.id)).size).toBe(1);
-    expect(tasks.map((task) => `${task.title}:${task.status}`)).toEqual([
-      "is thinking…:in_progress",
-      "is using search…:in_progress",
-      "is using search…:complete",
+    // A checklist: the ambient row while the run is deciding, then a row per
+    // step, each opened when the call is announced and ticked off when its
+    // result arrives. The ambient row closes as soon as there is something
+    // specific to list, so nothing spins above a list that is visibly moving.
+    expect(tasks).toEqual([
+      { id: "run-progress", title: "is thinking…", status: "in_progress" },
+      { id: "run-progress", title: "is thinking…", status: "complete" },
+      { id: "c_search", title: "search", status: "in_progress" },
+      { id: "c_search", title: "web: search", status: "complete" },
     ]);
     // The answer never mentions the progress: it is the other axis.
     expect(appended.join("")).toBe("found it");
     // A channel thread has no status line, so nothing is spent trying to set one.
     expect(calls).not.toContain("setStatus");
+  });
+
+  it("names a subagent's step by the agent that ran it", async () => {
+    // The checklist is what the *run* is doing, and a hand-off's work is still
+    // the run's work — but unlabelled it reads as the top-level agent having
+    // called a tool it was never given.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const { slack, tasks } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        {
+          author: "researcher",
+          delta: { toolCalls: [{ id: "c_1", function: { name: "SlackHistory" } }] },
+        },
+        {
+          author: "researcher",
+          toolResult: { toolCallId: "c_1", name: "SlackHistory", content: "..." },
+        },
+        { delta: { content: "here it is" } },
+        { done: true },
+      ] as EngineChunk[],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(tasks.filter((task) => task.id === "c_1")).toEqual([
+      { id: "c_1", title: "researcher: SlackHistory", status: "in_progress" },
+      { id: "c_1", title: "researcher: SlackHistory", status: "complete" },
+    ]);
   });
 
   it("falls back to a text note where the workspace cannot stream", async () => {
@@ -1028,7 +1064,7 @@ describe("streaming a Slack reply", () => {
     const { slack, posted, updates, tasks } = makeSlackFake({ streaming: false });
     const deps = makeDeps(
       [
-        { delta: { toolCalls: [{ function: { name: "search" } }] } },
+        { delta: { toolCalls: [{ id: "c_search", function: { name: "search" } }] } },
         { delta: { content: "found it" } },
         { done: true },
       ],
@@ -1279,8 +1315,8 @@ describe("the native agent affordances", () => {
     const { slack, statuses } = makeSlackFake();
     const deps = makeDeps(
       [
-        { delta: { toolCalls: [{ function: { name: "search" } }] } },
-        { delta: { toolCalls: [{ function: { name: "fetch" } }] } },
+        { delta: { toolCalls: [{ id: "c_search", function: { name: "search" } }] } },
+        { delta: { toolCalls: [{ id: "c_fetch", function: { name: "fetch" } }] } },
         { delta: { content: "done" } },
         { done: true },
       ] as EngineChunk[],
@@ -1303,7 +1339,10 @@ describe("the native agent affordances", () => {
         // A model fanning calls out in one response puts them side by side here.
         {
           delta: {
-            toolCalls: [{ function: { name: "search" } }, { function: { name: "fetch" } }],
+            toolCalls: [
+              { id: "c_search", function: { name: "search" } },
+              { id: "c_fetch", function: { name: "fetch" } },
+            ],
           },
         },
         { done: true },
@@ -1313,7 +1352,12 @@ describe("the native agent affordances", () => {
 
     await handleSlackEvent(deps, DM_EVENT, BINDING);
 
-    expect(statuses).toContain("is using search, fetch…");
+    // Both, as two steps rather than one joined line: a model that fans out
+    // calls in one response puts them side by side in this array, and reading
+    // index 0 alone reported one of them and hid the rest. They are separate
+    // units of work, so they finish separately too.
+    expect(statuses).toContain("is using search…");
+    expect(statuses).toContain("is using fetch…");
   });
 
   it("does not drop a tool that follows hard on the previous one", async () => {
@@ -1324,8 +1368,8 @@ describe("the native agent affordances", () => {
     const { slack, statuses } = makeSlackFake();
     const deps = makeDeps(
       [
-        { delta: { toolCalls: [{ function: { name: "search" } }] } },
-        { delta: { toolCalls: [{ function: { name: "fetch" } }] } },
+        { delta: { toolCalls: [{ id: "c_search", function: { name: "search" } }] } },
+        { delta: { toolCalls: [{ id: "c_fetch", function: { name: "fetch" } }] } },
         { done: true },
       ] as EngineChunk[],
       slack,

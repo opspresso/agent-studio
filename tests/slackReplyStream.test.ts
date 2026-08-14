@@ -423,3 +423,93 @@ describe("progress on a channel stream's task axis", () => {
     expect(streamStarts[0]).not.toHaveProperty("task_display_mode");
   });
 });
+
+/**
+ * The checklist. Claude Tag's defining progress surface is a list that
+ * accumulates — steps ticked off behind, one in flight — rather than a single
+ * line that keeps being rewritten. The constraint that shapes it: a step may
+ * only be ticked off at a *real* boundary, and the only one a run has is a tool
+ * result coming back.
+ */
+describe("a channel's checklist", () => {
+  const rows = (chunks: Array<{ chunk: SlackChunk }>) =>
+    chunks
+      .map(({ chunk }) => chunk)
+      .filter((chunk) => chunk.type === "task_update")
+      .map((chunk) => `${chunk.id}/${chunk.title}/${chunk.status}`);
+
+  it("accumulates a row per step and ticks each off on its own", async () => {
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is thinking…");
+    await sink.step("c1", "search");
+    await sink.step("c2", "fetch");
+    await sink.stepDone("c1", "web: search");
+    await sink.stepDone("c2");
+    await sink.finish("done", "");
+
+    expect(rows(chunks)).toEqual([
+      "run-progress/is thinking…/in_progress",
+      // Closed the moment there is something specific to list: a row spinning
+      // above a list that is visibly moving reads as a stuck run.
+      "run-progress/is thinking…/complete",
+      "c1/search/in_progress",
+      "c2/fetch/in_progress",
+      // Retitled by the result, which names what the call acted on.
+      "c1/web: search/complete",
+      "c2/fetch/complete",
+    ]);
+  });
+
+  it("closes a step the run never finished, on the way out", async () => {
+    // A timeout or a failed run leaves work in flight. A row left in_progress
+    // on a finished message reads as a run that never came back.
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.step("c1", "search");
+    await sink.finish("gave up", ":warning: Agent run timed out");
+
+    expect(rows(chunks)).toEqual(["c1/search/in_progress", "c1/search/complete"]);
+  });
+
+  it("ticks nothing off for a step that never opened", async () => {
+    // The only completion boundary is a result for a call that was announced.
+    // An unopened id would appear as a finished row for work nobody watched
+    // start — which is how a checklist starts describing a different run.
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.stepDone("c_never", "search");
+    await sink.finish("done", "");
+
+    expect(rows(chunks)).toEqual([]);
+  });
+
+  it("does not re-send a step it is already showing", async () => {
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.step("c1", "search");
+    await sink.step("c1", "search");
+    await sink.finish("done", "");
+
+    expect(rows(chunks)).toEqual(["c1/search/in_progress", "c1/search/complete"]);
+  });
+
+  it("keeps the ambient row when no step ever replaced it", async () => {
+    // A run that answers without calling anything still has to close the row it
+    // opened with.
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is thinking…");
+    await sink.finish("here you go", "");
+
+    expect(rows(chunks)).toEqual([
+      "run-progress/is thinking…/in_progress",
+      "run-progress/is thinking…/complete",
+    ]);
+  });
+});
