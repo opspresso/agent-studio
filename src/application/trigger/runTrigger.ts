@@ -439,7 +439,16 @@ function producedNote(text: string, files: readonly string[]): string {
     return text;
   }
   const line = `Produced ${files.length} file${files.length === 1 ? "" : "s"}: ${files.join(", ")}. They are kept with the project's artifacts.`;
-  return text ? `${text}\n\n${line}` : line;
+  if (!text) {
+    return line;
+  }
+  // The answer yields the space, not the note. `finishFiring` cuts the whole
+  // row at `MAX_RESULT_CHARS`, and this line is appended last — so on any run
+  // whose answer is long enough to be cut, the one part naming the deliverable
+  // would be the part that disappeared.
+  const room = MAX_RESULT_CHARS - line.length - 2;
+  const body = room > 0 ? cutCodePoints(text, room) : "";
+  return body ? `${body}\n\n${line}` : line;
 }
 
 /** Close a firing's history row with whatever the attempt produced. */
