@@ -201,6 +201,8 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
  * tests below.
  */
 const engagements: Array<{ project: string; channel: string; threadTs: string }> = [];
+/** Mute changes the handler recorded, in order. */
+const mutes: Array<{ threadTs: string; muted: boolean }> = [];
 
 function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps {
   return {
@@ -209,6 +211,9 @@ function makeDeps(chunks: EngineChunk[], slack: SlackClientPort): SlackEventDeps
         engagements.push({ project, channel, threadTs });
       },
       isEngaged: async () => false,
+      setMuted: async (_project, _channel, threadTs, muted) => {
+        mutes.push({ threadTs, muted });
+      },
     },
     runAgent: async function* () {
       for (const chunk of chunks) {
@@ -257,6 +262,7 @@ const deps0 = (slack: SlackClientPort) => makeDeps([{ done: true }], slack);
 afterEach(() => {
   vi.restoreAllMocks();
   engagements.length = 0;
+  mutes.length = 0;
 });
 
 describe("handleSlackEvent", () => {
@@ -1770,6 +1776,7 @@ describe("what the bot remembers about a channel thread", () => {
         throw new Error("dynamo is down");
       },
       isEngaged: async () => false,
+      setMuted: async () => {},
     };
 
     await handleSlackEvent(deps, EVENT, BINDING);
@@ -1777,5 +1784,98 @@ describe("what the bot remembers about a channel thread", () => {
     // A lost record costs the next follow-up its mention-free reply. It must
     // not cost this run the answer it already produced.
     expect(finalText()).toContain("here you go");
+  });
+});
+
+/**
+ * A command is answered here rather than by a run: the answer is a constant, and
+ * two of the three change *whether the bot speaks again* — which no amount of
+ * prompting makes reliable. A person silencing a thread has to be obeyed.
+ */
+describe("commands", () => {
+  /** `@bot !mute` sent as a reply inside an existing thread. */
+  const inThread = (text: string): SlackEventBody => ({
+    ...EVENT,
+    event: { ...EVENT.event, ts: "2.0", thread_ts: "1.0", text: `<@U0> ${text}` },
+  });
+
+  it("mutes the thread it was sent in, and says so", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, posted, calls } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), inThread("!mute"), BINDING);
+
+    expect(mutes).toEqual([{ threadTs: "1.0", muted: true }]);
+    expect(posted[0]?.text).toContain("Muted");
+    // No run at all: no stream, no reaction, no engagement record. A muted
+    // thread that recorded engagement would unmute itself on the way out.
+    expect(calls).toEqual(["postMessage"]);
+    expect(engagements).toEqual([]);
+  });
+
+  it("unmutes the same way", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, posted } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), inThread("!unmute"), BINDING);
+
+    expect(mutes).toEqual([{ threadTs: "1.0", muted: false }]);
+    expect(posted[0]?.text).toContain("Unmuted");
+  });
+
+  it("points a top-level !mute at a thread rather than silently doing nothing", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, posted } = makeSlackFake();
+
+    // EVENT is a top-level mention: its reply opens a thread rooted at itself,
+    // so muting here would silence a conversation before it existed.
+    await handleSlackEvent(
+      deps0(slack),
+      { ...EVENT, event: { ...EVENT.event, text: "<@U0> !mute" } },
+      BINDING,
+    );
+
+    expect(mutes).toEqual([]);
+    expect(posted[0]?.text).toContain("Muting works per thread");
+  });
+
+  it("lists the commands", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, posted } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), inThread("!help"), BINDING);
+
+    expect(posted[0]?.text).toContain("`!mute`");
+    expect(mutes).toEqual([]);
+  });
+
+  it("treats a message that merely contains the word as an ordinary request", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, finalText } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "sure" } }, { done: true }], slack);
+
+    await handleSlackEvent(deps, inThread("!mute this thread please"), BINDING);
+
+    expect(mutes).toEqual([]);
+    expect(finalText()).toBe("sure");
+  });
+
+  it("says a mute it could not save was not saved", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, posted } = makeSlackFake();
+    const deps = deps0(slack);
+    deps.threads = {
+      markEngaged: async () => {},
+      isEngaged: async () => false,
+      setMuted: async () => {
+        throw new Error("dynamo is down");
+      },
+    };
+
+    await handleSlackEvent(deps, inThread("!mute"), BINDING);
+
+    // A person not told it failed will read the next reply as being ignored.
+    expect(posted[0]?.text).toContain("could not save");
   });
 });

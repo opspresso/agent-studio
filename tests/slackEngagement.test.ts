@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifySlackEvent } from "@/application/slack/engagement";
+import { classifySlackEvent, parseSlackCommand } from "@/application/slack/engagement";
 import type { SlackEventBody } from "@/application/slack/types";
 
 /**
@@ -217,5 +217,27 @@ describe("which Slack events are for the bot", () => {
     };
 
     expect(classifySlackEvent(withoutAuth).kind).toBe("ignore");
+  });
+});
+
+/**
+ * A command changes whether the bot speaks again, so recognising one is not a
+ * matter of the message containing the word. It has to *be* the word.
+ */
+describe("commands", () => {
+  it("recognises the exact words, case-insensitively", () => {
+    expect(parseSlackCommand("!help")).toBe("help");
+    expect(parseSlackCommand("  !mute  ")).toBe("mute");
+    expect(parseSlackCommand("!UNMUTE")).toBe("unmute");
+  });
+
+  it("refuses anything with more to it", () => {
+    // Guessing at intent here is how the bot stops answering somebody who never
+    // asked it to.
+    expect(parseSlackCommand("!mute this thread please")).toBeNull();
+    expect(parseSlackCommand("can you !mute")).toBeNull();
+    expect(parseSlackCommand("mute")).toBeNull();
+    expect(parseSlackCommand("!restart")).toBeNull();
+    expect(parseSlackCommand("")).toBeNull();
   });
 });
