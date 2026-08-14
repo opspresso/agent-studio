@@ -98,6 +98,8 @@ instrumentation import.
 | `scripts/seed-skills.ts` | Seed sample skills, idempotently. |
 | `scripts/integration-check.ts` | End-to-end repository round-trips + the engine (single-shot and agent loop). |
 | `scripts/check-models.ts` | Diff `src/domain/llm/models.ts` against the ids the configured channels serve. |
+| `scripts/backfill-artifacts.ts` | One-off: give objects stored under the pre-artifact `images/<uuid>` layout the rows that make them listable and deletable. Idempotent (the id is derived from the key), never touches an object or the chat message it read, and reports without writing unless passed `--apply`. |
+| `scripts/restore-chat-image-refs.ts` | One-off: rewrite legacy chat image `url`s left pointing at the pre-rebrand bucket to the `key` the current bucket holds, which `resolveImageUrl` signs per read. Confirms each object exists first, writes a rollback file, and needs `--apply` to touch a row. |
 
 ### `check-models`
 
@@ -190,30 +192,45 @@ This is the structural gate, and it fails loudly rather than warning. It enforce
    rather than an owner: which surfaces start an image run (`IMAGE_RUN_ENTRY_POINTS`), which
    start an agent run by calling `executeAgent` directly (`AGENT_RUN_ENTRY_POINTS`), and where
    a version's tools are resolved (`TOOL_RESOLUTION_SITES`, each of which must also name
-   `discoveryQueries` — resolving without them silently disables capability discovery). A
-   fourth entry is added to any of them on purpose, which is what the list buys.
-4. **Composition** — a repository the routes no longer compose reaches no route handler, `app`
+   `discoveryQueries` — resolving without them silently disables capability discovery), plus
+   where a run's bytes are captured (`ARTIFACT_CAPTURE_SITES`, paired with a second check that
+   fails any `openRun` caller which does not also capture — a fifth entry point that forgot
+   would drop its output silently). A further entry is added to any of them on purpose, which
+   is what the list buys.
+4. **Both output axes travel together** — a module that reads `EngineChunk.image` reads
+   `EngineChunk.file` too, enforced as a pairing rather than a list, with the modules whose
+   subject really is one axis exempted by name. Every route answering in raw chunks is checked
+   for addressing both.
+5. **URLs the model chose** — exactly one adapter fetches them, it never imports
+   `skipsUrlGuard` (honouring the internal-host exemption there would turn one prompt
+   injection into a read of a cluster-internal service), and it attaches no credential of this
+   deployment's.
+6. **A dollar amount is never written by hand** — no `${…toFixed(…)}` anywhere in `app`
+   outside `formatUsd`/`formatBytes`, which is how the dashboard once showed a `$0.00` total
+   over rows adding to `$0.0043`. Scoped to `app` because that is where the owner is
+   reachable: the cost guards format dollars in `application`, which may not import `@/app`.
+7. **Composition** — a repository the routes no longer compose reaches no route handler, `app`
    composes only at its wiring sites, the application slice graph has no cycles, and the
    composition root decides every optional `ExecutionDeps` field by name.
-5. **Configuration reads** — `process.env` is not reached from domain, shared, the adapters or
+8. **Configuration reads** — `process.env` is not reached from domain, shared, the adapters or
    the use cases; config arrives injected. One file is excepted by name, and the exception is
    itself checked for still being true.
-6. **The client bundle** — what a `"use client"` entry can reach transitively. The entry count
+9. **The client bundle** — what a `"use client"` entry can reach transitively. The entry count
    is asserted exactly rather than as merely non-empty, because a scan that has gone blind
    reads just like a clean pass.
-7. **React event handling**, two rules. No `currentTarget` read inside a `setState` updater —
+10. **React event handling**, two rules. No `currentTarget` read inside a `setState` updater —
    React nulls `SyntheticEvent.currentTarget` once the handler returns, so a deferred read
    throws whenever React batches. And no block-rooted Mantine component (`Badge`, `Group`,
    `Stack`, …) inside a `<Text>` or `<Title>` — those render a `<p>`/`<h*>`, which a browser
    *closes* where a `<div>` opens inside it, so the server's HTML and React's tree disagree
    and hydration fails. `component="span"` on the inner one, or `component="div"` on the
    outer, is the fix and is what the rule looks for.
-8. **Edge runtime compatibility** — imports that would pull `node:crypto` or the AWS SDK into
-   the edge bundle.
-9. **Create modals reset what they declare** — every field a create modal holds in `useState`
-   is cleared before `onCreated()`, so a reopened modal never shows the previous entry's
-   values.
-10. **The scanner's own tests**, so a rule that silently stopped matching is caught.
+11. **Edge runtime compatibility** — imports that would pull `node:crypto` or the AWS SDK into
+    the edge bundle.
+12. **Create modals reset what they declare** — every field a create modal holds in `useState`
+    is cleared before `onCreated()`, so a reopened modal never shows the previous entry's
+    values.
+13. **The scanner's own tests**, so a rule that silently stopped matching is caught.
 
 > When one of these fails, **fix the import — do not widen the rule.** The allowlists are
 > empty on purpose: adding a violation is meant to be a visible decision, not a quiet one.

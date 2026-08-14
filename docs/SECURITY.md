@@ -223,7 +223,7 @@ Five credentials authenticate a caller with no session cookie:
 
 | Surface | Credential | Verification |
 |---|---|---|
-| Execution endpoints (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer ast_…` | Decrypt-and-compare in constant time (or hash compare for a legacy token), scoped to the `{name}` in the path; runs **as the project owner** (`authenticateExecution`) |
+| Execution endpoints (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer adt_…` | Decrypt-and-compare in constant time (or hash compare for a legacy token), scoped to the `{name}` in the path; runs **as the project owner** (`authenticateExecution`) |
 | Slack events | Slack signing secret | HMAC + `timingSafeEqualString`, 5-minute replay window, per-project secret |
 | Inbound A2A | `X-A2A-Key` | Constant-time compare against the shared `A2A_API_KEY` (actor `a2a:shared-key`), else a hash lookup against the admin-issued **named client keys** (actor `a2a:{client}` — attributed and rate-limited per client). With neither configured the endpoints are off |
 | Webhook triggers | `X-Trigger-Secret` | `cipher.decryptEquals` (constant time) |

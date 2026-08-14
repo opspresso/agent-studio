@@ -34,7 +34,7 @@ const KIND_CHAR: Record<GeneratedSecretKind, string> = {
   triggerSecret: "w",
 };
 
-/** The `as{kind}_` prefix a generated secret of this kind carries. */
+/** The `ad{kind}_` prefix a generated secret of this kind carries. */
 export function secretPrefix(kind: GeneratedSecretKind): string {
   return `${VENDOR}${KIND_CHAR[kind]}_`;
 }

@@ -124,6 +124,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/me/profile` | `GET` | session |
 | `/api/me/usage` | `GET` | session |
 | `/api/members` | `GET` | admin |
+| `/api/members/{id}/tier` | `PUT` | admin |
 | `/api/settings` | `GET` `PUT` | admin |
 | `/api/settings/a2a-key` | `POST` | admin |
 | `/api/settings/a2a-key/reveal` | `POST` | admin |
@@ -824,8 +825,8 @@ POST   /api/projects/{name}/token/reveal   → { token, createdAt }           (r
 DELETE /api/projects/{name}/token          → 204
 ```
 
-Tokens are `ast_` + 32 random bytes (base64url). `masked` is the display mask recorded at
-generation (`ast_••••…••wXyZ`) — the token itself stays unrecoverable, so this is the only
+Tokens are `adt_` + 32 random bytes (base64url). `masked` is the display mask recorded at
+generation (`adt_••••…••wXyZ`) — the token itself stays unrecoverable, so this is the only
 way the console can show *which* token is set without decrypting. It is absent on tokens
 issued before masks were recorded; those keep working, since verification never looks at
 the prefix.

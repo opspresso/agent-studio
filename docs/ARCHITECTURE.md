@@ -774,7 +774,7 @@ for a failure — which is what lets consumers read the ending instead of inferr
   cachedInputPer1M?, imageInputPer1M?, imageOutputPer1M?, perImage? },
   capabilities { tools, structuredOutput, imageInput, reasoning, reasoningWithTools?,
   imageGeneration? }, contextWindow, maxTokens, hidden?, wireId? }`. See
-  [CONFIGURATION.md](CONFIGURATION.md#model-registry-and-wireid) for `wireId` and drift
+  [CONFIGURATION.md](CONFIGURATION.md#model-registry-families-and-offerings) for `wireId` and drift
   checking.
 
 ### Images
@@ -1664,7 +1664,8 @@ audit row answers exactly that and nothing else.
 AuditEvent { eventId, actorEmail,
              action: 'secret.reveal' | 'secret.rotate' | 'secret.revoke'
                    | 'project.admin-override' | 'settings.update'
-                   | 'project.delete' | 'registry.delete' | 'registry.adopt',
+                   | 'project.delete' | 'registry.delete' | 'registry.adopt'
+                   | 'artifact.delete' | 'member.set-tier',
              target,        // `kind:name` — `project:my-bot`, `skill:pdf-reader`
              detail?, createdAt }
 ```
@@ -1793,12 +1794,19 @@ any one error or warning string.
 /artifacts            what your runs produced; a project's own tab holds the rest
 /skills  /tools (MCP)  /agents  /plugins  (each + /[name] detail page)
 /dashboard            redirects to `/`, which carries the cost dashboard as its last section
+/profile              your own tier, what it caps, and this UTC month's spend
 /members              admin-only workspace member list with join and last-login times
+/models               admin-only model registry, with a per-model reachability test
 /audit                admin-only sensitive-action audit trail
 /settings             admin-only runtime env-var overrides
 ```
 
-UI text is in English. Mantine components provide the structure and the styling; the theme in
+The console speaks **English and Korean**, resolved from a cookie rather than a route segment
+(`src/app/_i18n/`): `en.ts` is the source of truth and `ko.ts` is typed against it, so a key
+added to one and not the other fails `pnpm typecheck` instead of rendering an English string
+inside a Korean page. Error messages and the product nouns stay English in both catalogues;
+[../AGENTS.md](../AGENTS.md#conventions-that-bite) has the reasoning and the rules a new
+string has to follow. Mantine components provide the structure and the styling; the theme in
 `src/app/theme.ts` is the **single owner** of the brand palette and of the component defaults
 that used to be hand-written class constants, so a button or input is never styled at the call
 site. Anything Mantine cannot express — the chart palette, the code block's syntax colours, the

@@ -23,6 +23,10 @@ into `ChatDeps.runAgent`.
 - `replayRunLog.ts` — `openRunLogReplay`: replay the log from the start, then follow it.
 - `cancelRun.ts` — `cancelChatRun` (persist the ask) and `watchChatCancel` (the running
   side's poll for it).
+- `resolveImages.ts` — sign a stored image key per read, at the lifetime the reader chooses;
+  reports how many could not be addressed so the caller can say so.
+- `resolveFiles.ts` — the same for a file a run produced, carrying the filename to save as.
+  Only the view calls it: a file's bytes never enter a replayed turn.
 - `createChat.ts` / `sendMessage.ts` / `listChats.ts` / `getChat.ts` / `deleteChat.ts`.
 
 ## Design decisions (read before changing)

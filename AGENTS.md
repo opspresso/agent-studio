@@ -157,13 +157,11 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | How an artifact row is written | `src/application/artifact/storeArtifact.ts` |
 | The object key an artifact is stored under | `artifactObjectKey` in `src/domain/artifact/types.ts` |
 | Deleting a stored object | `src/infrastructure/storage/s3ObjectStore.ts` |
-| Offering a file a run produced to a reader | `src/application/artifact/producedFiles.ts` |
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
 | Whether a configured value is blank | `src/shared/env.ts` |
 | Asking a provider for an embedding | `src/infrastructure/llm/embeddings.ts` |
 | Reaching Bedrock | `src/infrastructure/llm/bedrockClient.ts` |
-| Signing an outbound request for AWS | `src/infrastructure/llm/awsSigner.ts` |
 | What a model is, and which routes serve it | `MODEL_FAMILIES`/`MODEL_OFFERINGS` in `src/domain/llm/models.ts` |
 | Talking to the vector store | `src/infrastructure/vector/s3VectorsStore.ts` |
 | The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
@@ -186,6 +184,8 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
 | Merging concurrent generators | `src/shared/mergeGenerators.ts` |
 | Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
+| A dollar amount, written for a person | `formatUsd` in `src/app/_lib/formatUsd.ts` — enforced as its own rule rather than as a `SINGLE_OWNERS` row: no `${…toFixed(…)}` anywhere in `app` but the two `_lib` formatters |
+| A stored object's size, written for a person | `formatBytes` in `src/app/_lib/formatBytes.ts` |
 | Deriving why a run ended from its chunks | `chunkTermination`/`runTermination` in `src/domain/llm/types.ts` |
 | Collecting what a run lost from its chunks | `collectedWarning` in `src/domain/llm/types.ts` |
 | The 401 response body | `src/shared/unauthorized.ts` |
@@ -223,7 +223,8 @@ same rule applies to:
 | `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
 | Turning a stored image reference into an address | `resolveImageUrl` in `src/domain/chat/imageRefs.ts` |
 | Turning a stored file reference into a download address | `resolveFileUrl` in `src/domain/chat/fileRefs.ts` |
-| A stored object's size, written for a person | `formatBytes` in `src/app/_lib/formatBytes.ts` |
+| Offering a file a run produced to a reader | `src/application/artifact/producedFiles.ts` — the test enforces the *pairing* (a module reading one output axis reads the other) and exempts this file by name, since its whole subject is the axis |
+| Signing an outbound request for AWS | `src/infrastructure/llm/awsSigner.ts` — pinned by `tests/awsSigner.test.ts` instead, which fixes the signature it produces |
 | How long a signed object URL lives, per reader | `src/application/artifact/urlTtl.ts` |
 | Who releases a chat's run lease | `teeToRunLog` in `src/application/chat/runLog.ts` |
 | How a chat run reaches the browser | `src/app/api/chats/_lib/detachedRun.ts` |
