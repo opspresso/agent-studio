@@ -291,6 +291,13 @@ the single outbound boundary:
 
 Any public URL is allowed. Register only trusted endpoints.
 
+The MCP client runs on `@modelcontextprotocol/client`, and the guard is **injected into it**
+rather than sitting beside it: `boundedFetch` (`src/infrastructure/mcp/session.ts`) is what the
+transport is given as its `fetch`, so the probe, the handshake, every tool call and the session
+release all go through the same boundary. An SDK left to its own `fetch` would take an
+operator-supplied URL straight to the network. The same wrapper carries the response byte
+ceiling, which the SDK also has no notion of.
+
 ### Declared internal hosts
 
 On a cluster, the MCP servers this app is *meant* to call are private by
