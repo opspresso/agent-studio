@@ -54,6 +54,7 @@ import {
   MAX_DISPATCH_TASKS,
   runClockBlock,
   SKILL_TOOL_NAME,
+  SLACK_TOOL_NAMES,
   TRANSFER_TOOL_NAME,
   withEngineBlocks,
   type AgentCapabilityDeps,
@@ -87,6 +88,7 @@ export {
   ImageRegistry,
   imagePromptUses,
   SKILL_TOOL_NAME,
+  SLACK_TOOL_NAMES,
   TRANSFER_TOOL_NAME,
 } from "./agentAssembly";
 export type {
@@ -115,6 +117,8 @@ export type { ToolResultBudget } from "./toolResultBudget";
  * framing is charged to the group whether or not any answer fits.
  */
 const SECTION_SEPARATOR = "\n\n";
+/** The Slack read tools, as a set — the loop routes all four to one reader. */
+const SLACK_TOOL_SET = new Set(SLACK_TOOL_NAMES);
 const DEFAULT_MAX_TURN = 50;
 /**
  * What separates one turn's words from the next turn's in the flattened answer.
@@ -2037,6 +2041,27 @@ export async function* runAgent(
         content = await loadSkillSafe(deps.loadSkillContent, skills, skillName, filePath);
         if (skillName) {
           resultName = `${SKILL_TOOL_NAME}: ${skillName}`;
+        }
+      } else if (builtin && SLACK_TOOL_SET.has(call.name) && deps.readSlack) {
+        // One branch for all four: they differ only in which Slack call they
+        // make, and that choice belongs with the reader that holds the token.
+        //
+        // Served in call order rather than joining the concurrent pool above.
+        // These are short reads, and the pool's shape is what enforces the
+        // parallel-call cap — a third kind in it would be a change to the one
+        // place that bound is expressed, bought for latency nobody has measured.
+        try {
+          // Left to the fit rather than charged whole: a transcript's length is
+          // Slack's to decide, not this engine's, so it is exactly the kind of
+          // payload the turn budget exists to trim.
+          content = await deps.readSlack(call.name, displayArgs);
+        } catch (error) {
+          // Slack refusing — a channel the bot is not in, a missing scope — is
+          // an ordinary answer the model can act on, not a broken run. The same
+          // rule the URL builtin follows. This sentence is the engine's own, so
+          // it is charged whole.
+          content = `Error: ${call.name} could not read Slack — ${errorMessage(error)}`;
+          bounded = true;
         }
       } else {
         const server = serverByTool.get(call.name);

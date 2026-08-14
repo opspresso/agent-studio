@@ -1,7 +1,12 @@
 /** Minimal Slack Web API client over fetch — no SDK dependency. */
 
 import { callerFrom, type RunCaller } from "@/domain/execution/actor";
-import type { SlackChunk, SlackMessage, SlackTaskDisplayMode } from "@/domain/slack/types";
+import type {
+  SlackChannelInfo,
+  SlackChunk,
+  SlackMessage,
+  SlackTaskDisplayMode,
+} from "@/domain/slack/types";
 import { log } from "@/shared/logger";
 import { readBodyBytes } from "@/shared/httpBody";
 import { getCachedProfile, rememberProfile } from "./profileCache";
@@ -326,5 +331,85 @@ export const slackClient = {
       `thread ${args.ts} exceeds ${MAX_THREAD_PAGES} pages; newest replies were not read`,
     );
     return messages;
+  },
+
+  /**
+   * One page of a channel's recent messages, newest first.
+   *
+   * Deliberately unpaginated, unlike `threadReplies`: a thread is a unit and
+   * reading half of one is reading the wrong thing, while a channel has no end
+   * and "what was said lately" is exactly its tail. The caller's `limit` is what
+   * bounds it.
+   */
+  async channelHistory(
+    token: string,
+    args: { channel: string; limit?: number },
+  ): Promise<SlackMessage[]> {
+    // Read-family Web API methods reject JSON bodies; use GET with query params.
+    const params = new URLSearchParams({
+      channel: args.channel,
+      limit: String(args.limit ?? PAGE_SIZE),
+    });
+    const res = await fetch(`https://slack.com/api/conversations.history?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      messages?: SlackMessage[];
+    };
+    if (!data.ok) {
+      throw new Error(`Slack conversations.history failed: ${data.error ?? res.status}`);
+    }
+    return data.messages ?? [];
+  },
+
+  /**
+   * The conversations this bot can see, so a channel *name* can become the id
+   * every other call takes.
+   *
+   * Archived channels are excluded — a run asking about `#deploy` means the one
+   * people are using. Both public and private types are requested; which of
+   * them Slack actually returns depends on the granted scopes, and a workspace
+   * that granted only one gets that one rather than an error.
+   */
+  async listChannels(token: string, args?: { limit?: number }): Promise<SlackChannelInfo[]> {
+    const params = new URLSearchParams({
+      types: "public_channel,private_channel",
+      exclude_archived: "true",
+      limit: String(args?.limit ?? PAGE_SIZE),
+    });
+    const res = await fetch(`https://slack.com/api/conversations.list?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      channels?: Array<{
+        id?: string;
+        name?: string;
+        is_private?: boolean;
+        is_member?: boolean;
+        topic?: { value?: string };
+        purpose?: { value?: string };
+      }>;
+    };
+    if (!data.ok) {
+      throw new Error(`Slack conversations.list failed: ${data.error ?? res.status}`);
+    }
+    return (data.channels ?? [])
+      .filter((channel): channel is { id: string; name: string } & typeof channel =>
+        Boolean(channel.id && channel.name),
+      )
+      .map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        ...(firstNonEmpty(channel.topic?.value) ? { topic: channel.topic?.value?.trim() } : {}),
+        ...(firstNonEmpty(channel.purpose?.value)
+          ? { purpose: channel.purpose?.value?.trim() }
+          : {}),
+        ...(channel.is_private === undefined ? {} : { isPrivate: channel.is_private }),
+        ...(channel.is_member === undefined ? {} : { isMember: channel.is_member }),
+      }));
   },
 };

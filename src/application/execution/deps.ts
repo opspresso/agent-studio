@@ -25,6 +25,7 @@ import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
 import type { RunActor, RunCaller } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
+import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 
 /**
  * Extends the run bracket's deps rather than restating them: every entry point
@@ -55,6 +56,18 @@ export interface ExecutionDeps extends RunBracketDeps {
   http: HttpResourceReader;
   /** Turns attached or fetched bytes into text; tests inject a fake. */
   documents: DocumentExtractor;
+  /**
+   * A reader for the Slack workspace this project's bot is installed in, or
+   * null when it has no enabled bot.
+   *
+   * Bound by the composition root rather than assembled here, and that is the
+   * layering rather than a preference: *which token a project reads with* is
+   * the Slack slice's knowledge, and reaching for it from execution makes the
+   * two slices mutually dependent — the Slack slice already names this one to
+   * describe the runs it starts. The usage slice takes its profile reader the
+   * same way, for the same reason.
+   */
+  slackWorkspace: (project: Project) => SlackWorkspaceReader | null;
   /** External-agent dispatch — wired by the composition root; tests inject a fake. */
   remoteAgents: RemoteAgentDispatcher;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */

@@ -381,6 +381,9 @@ export const en = {
   "version.fetchUrl": "Read URLs (FetchUrl tool)",
   "version.fetchUrlHint":
     "Lets the agent read a web address it names — a page, a PDF, a data file or an image. Off by default: every other outbound request goes somewhere an operator registered, while this one goes wherever the model decides.",
+  "version.slackWorkspace": "Read Slack (SlackHistory, SlackThread, SlackUser, SlackChannels)",
+  "version.slackWorkspaceHint":
+    "Lets the agent read the Slack workspace this project's bot is installed in: channel history, threads, and who a user id is. Read-only — it can never post. Off by default, and inert unless the project has an enabled Slack bot. Note that projects are a shared catalog, so anyone who can run this project can read anything the bot can.",
   "version.bindingsInertImage":
     "An “image” project draws from a prompt and offers no tools — the bindings below are stored but never used. Remove them here; new ones cannot be added.",
   "version.bindingsInertLlm":

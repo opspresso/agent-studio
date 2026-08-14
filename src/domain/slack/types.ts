@@ -46,6 +46,21 @@ export interface SlackMessage {
 }
 
 /**
+ * A conversation as `conversations.list` returns it, narrowed to what a run
+ * reads. `id` is what every other Slack call takes; the name is only ever how a
+ * person refers to it.
+ */
+export interface SlackChannelInfo {
+  id: string;
+  name: string;
+  topic?: string;
+  purpose?: string;
+  isPrivate?: boolean;
+  /** Whether this bot is in it — which decides whether its history is readable. */
+  isMember?: boolean;
+}
+
+/**
  * How Slack lays out the tasks a streaming message reports: `timeline` shows
  * them one after another with their text, `plan` shows them together.
  */

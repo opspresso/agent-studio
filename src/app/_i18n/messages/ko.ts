@@ -324,6 +324,9 @@ export const ko: Messages = {
   "version.fetchUrl": "URL 읽기 (FetchUrl 도구)",
   "version.fetchUrlHint":
     "에이전트가 스스로 지정한 주소 — 웹 페이지·PDF·데이터 파일·이미지 — 를 읽게 합니다. 기본은 꺼짐입니다. 다른 모든 외부 요청은 운영자가 등록한 곳으로만 가지만, 이것은 모델이 정한 곳으로 갑니다.",
+  "version.slackWorkspace": "Slack 읽기 (SlackHistory, SlackThread, SlackUser, SlackChannels)",
+  "version.slackWorkspaceHint":
+    "이 프로젝트의 봇이 설치된 Slack 워크스페이스를 에이전트가 읽게 합니다 — 채널 히스토리, 스레드, 사용자 id 조회. 읽기 전용이라 글을 쓸 수는 없습니다. 기본은 꺼짐이고, 프로젝트에 활성화된 Slack 봇이 없으면 켜도 동작하지 않습니다. 프로젝트는 공유 카탈로그이므로, 이 프로젝트를 실행할 수 있는 사람은 봇이 읽을 수 있는 것을 모두 읽을 수 있습니다.",
   "version.bindingsInertImage":
     "“image” 프로젝트는 프롬프트로 그림을 그릴 뿐 도구를 제공하지 않습니다 — 아래 바인딩은 저장되지만 쓰이지 않습니다. 여기서 지울 수는 있고, 새로 추가할 수는 없습니다.",
   "version.bindingsInertLlm":

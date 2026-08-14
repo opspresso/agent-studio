@@ -435,6 +435,21 @@ export function VersionEditor({
         </Stack>
       )}
 
+      {(runsTools || value.parameters.slackWorkspace) && (
+        <Stack gap="xs">
+          <Checkbox
+            label={t("version.slackWorkspace")}
+            checked={value.parameters.slackWorkspace ?? false}
+            onChange={(e) =>
+              patchParams({ slackWorkspace: e.currentTarget.checked ? true : undefined })
+            }
+          />
+          <Text fz="xs" c="dimmed">
+            {t("version.slackWorkspaceHint")}
+          </Text>
+        </Stack>
+      )}
+
       {(runsTools || hasToolBindings) && (
         <Stack gap="sm">
           {!runsTools && (
