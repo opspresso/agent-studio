@@ -12,6 +12,9 @@ const { projectRepo, versionRepo, calls } = vi.hoisted(() => ({
 vi.mock("@/lib/container", async () => ({
   executionDeps: {},
   imageDeps: {},
+  // No object storage in this deployment, which is what makes the file branch
+  // below say "not kept" rather than mint an address.
+  artifactStorage: undefined,
   // `executionAuth` is loaded for real through `importOriginal` below, and it
   // imports this. Only `authenticateExecution` is overridden, so narrowing that
   // override would otherwise fail on an undefined binding rather than say what
@@ -54,6 +57,7 @@ vi.mock("@/application/execution/runProject", async (importOriginal) => ({
       model: "openai/gpt-5-mini",
       usage: { inputTokens: 1, outputTokens: 2, costUsd: 0.1 },
       images: [],
+      files: [],
       warnings: [],
     };
   },

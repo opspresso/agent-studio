@@ -1,6 +1,7 @@
 import { chunkTermination, isTopLevelChunk } from "@/domain/llm/types";
 import type { EngineChunk, RunResult, RunTerminationReason } from "@/domain/llm/types";
 import type { RunImage } from "@/application/execution/runProject";
+import type { ProducedFile, ProducedFileRef } from "@/application/artifact/producedFiles";
 
 function newChatId(): string {
   return `chatcmpl-${crypto.randomUUID().replace(/-/g, "")}`;
@@ -39,6 +40,8 @@ function wireFinishReason(termination: RunTerminationReason | undefined): "stop"
 export function toChatCompletion(
   result: RunResult & {
     images?: RunImage[];
+    /** Already addressable: the route signs a reference before it gets here. */
+    files?: ProducedFile[];
     warnings?: string[];
     termination?: RunTerminationReason;
   },
@@ -65,6 +68,10 @@ export function toChatCompletion(
     // schema has no field for what a run lost, and dropping it is what left a
     // degraded run looking exactly like a clean one on this surface.
     ...(result.warnings && result.warnings.length > 0 ? { warnings: result.warnings } : {}),
+    // And again for what it produced but cannot inline. A document rides as an
+    // address rather than bytes, which is the one way this extension differs
+    // from `images` beside it.
+    ...(result.files && result.files.length > 0 ? { files: result.files } : {}),
   };
 }
 
@@ -85,6 +92,15 @@ export function toChatCompletion(
 export async function* toChatCompletionChunks(
   source: AsyncGenerator<EngineChunk>,
   model: string,
+  /**
+   * Turns a file reference into an address, or says why it has none. Supplied by
+   * the route, which is the layer that knows this deployment's signer and how
+   * long a signature should live. Absent means files pass unmentioned, which is
+   * what every caller of this function did before there were any.
+   */
+  resolveFile?: (
+    file: ProducedFileRef,
+  ) => Promise<{ file?: ProducedFile; warning?: string }>,
 ): AsyncGenerator<Record<string, unknown>> {
   const base = { id: newChatId(), object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model };
   let sentRole = false;
@@ -108,6 +124,25 @@ export async function* toChatCompletionChunks(
       const delta = sentRole ? { images } : { role: "assistant", images };
       sentRole = true;
       yield { ...base, choices: [{ index: 0, delta, finish_reason: null }] };
+    }
+    if (chunk.file && resolveFile) {
+      // Before the top-level filter for the reason `images` is: a transferred-to
+      // agent rendering the document is how the work gets done, and the file is
+      // this run's output either way. Resolved as it passes rather than held to
+      // the end — a stream has no later frame to put it in, which is exactly the
+      // hole that made this surface silent about files at all.
+      const { b64: _stripped, source: _provenance, artifactId: _row, ...ref } = chunk.file;
+      const outcome = await resolveFile(ref);
+      const delta = outcome.file
+        ? { files: [outcome.file] }
+        : outcome.warning
+          ? { warnings: [outcome.warning] }
+          : undefined;
+      if (delta) {
+        const withRole = sentRole ? delta : { role: "assistant", ...delta };
+        sentRole = true;
+        yield { ...base, choices: [{ index: 0, delta: withRole, finish_reason: null }] };
+      }
     }
     if (chunk.warning) {
       // Before the top-level filter, like `images` above: a subagent's warning

@@ -110,6 +110,114 @@ describe("toChatCompletionChunks images", () => {
 });
 
 /**
+ * A file a tool produced, on the surfaces that answer with one.
+ *
+ * The bytes are gone by the time a surface sees the chunk — the bracket stored
+ * them and stripped the payload — so what travels is a reference, and what a
+ * caller receives is an address. Both OpenAI shapes carry it, because a run
+ * that renders a report and answers "here is your report" with no report was
+ * this endpoint's behaviour until they did.
+ */
+describe("a file a run produced, on the OpenAI surface", () => {
+  const rendered: EngineChunk = {
+    file: {
+      name: "report.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      source: "mcp: render_document",
+      byteSize: 2048,
+      key: "objects/report.docx",
+      artifactId: "art-1",
+    },
+  };
+
+  it("collects the reference, provenance stripped, from a child's turn too", async () => {
+    const result = await collectRun(
+      stream([
+        { delta: { content: "done" } },
+        rendered,
+        { author: "writer", file: { name: "notes.pdf", mimeType: "application/pdf", source: "mcp: x", key: "objects/notes.pdf" } },
+        { done: true },
+      ]),
+      "m",
+    );
+    // What a reader needs, and nothing that only the platform does: `source` and
+    // `artifactId` name the run's own bookkeeping.
+    expect(result.files).toEqual([
+      {
+        name: "report.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        byteSize: 2048,
+        key: "objects/report.docx",
+      },
+      { name: "notes.pdf", mimeType: "application/pdf", key: "objects/notes.pdf" },
+    ]);
+  });
+
+  it("omits the files field when a run produced none", async () => {
+    const result = await collectRun(stream([{ delta: { content: "text" } }, { done: true }]), "m");
+    expect(result.files).toEqual([]);
+    expect(toChatCompletion(result)).not.toHaveProperty("files");
+  });
+
+  it("carries addressed files as an extension on the collected completion", async () => {
+    const result = await collectRun(stream([rendered, { done: true }]), "m");
+    const completion = toChatCompletion({
+      ...result,
+      files: [{ name: "report.docx", mimeType: "application/msword", url: "https://signed/report" }],
+    });
+    expect(completion.files).toEqual([
+      { name: "report.docx", mimeType: "application/msword", url: "https://signed/report" },
+    ]);
+  });
+
+  it("streams an addressed file as a delta extension without a terminal frame", async () => {
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(stream([rendered, { done: true }]), "m", async (ref) => ({
+      file: { name: ref.name, mimeType: ref.mimeType, url: `https://signed/${ref.key}` },
+    }))) {
+      frames.push(frame);
+    }
+    const deltas = frames.map((f) => (f.choices as Array<{ delta: unknown }>)[0]?.delta);
+    expect(deltas[0]).toEqual({
+      role: "assistant",
+      files: [
+        {
+          name: "report.docx",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          url: "https://signed/objects/report.docx",
+        },
+      ],
+    });
+    expect(finishReasons(frames)).toEqual(["stop"]);
+  });
+
+  it("streams the reason instead when the file has no address", async () => {
+    // Silence here is the bug this replaces: the run produced something and the
+    // caller has to be able to tell that from a run that produced nothing.
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(stream([rendered, { done: true }]), "m", async () => ({
+      warning: "1 file(s) this run produced were not kept.",
+    }))) {
+      frames.push(frame);
+    }
+    const deltas = frames.map((f) => (f.choices as Array<{ delta: unknown }>)[0]?.delta);
+    expect(deltas[0]).toEqual({
+      role: "assistant",
+      warnings: ["1 file(s) this run produced were not kept."],
+    });
+  });
+
+  it("says nothing about files when the surface supplied no resolver", async () => {
+    const frames: Record<string, unknown>[] = [];
+    for await (const frame of toChatCompletionChunks(stream([rendered, { done: true }]), "m")) {
+      frames.push(frame);
+    }
+    expect(frames).toHaveLength(1);
+    expect(finishReasons(frames)).toEqual(["stop"]);
+  });
+});
+
+/**
  * The OpenAI schema has no field for what a run lost, which is the same problem
  * `images` has — so it takes the same answer. The two shapes have to agree:
  * `finish_reason` is here because they once did not.
