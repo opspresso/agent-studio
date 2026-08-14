@@ -314,6 +314,31 @@ describe("executeDelivery", () => {
     expect(f.rows[0]?.endedAt).toBeTruthy();
   });
 
+  it("names the files a firing produced, beside whatever it answered", async () => {
+    // A firing is unattended, and this row is the only record a person reads.
+    // The answer's own text says "I have prepared the report" and never where
+    // the report went — so unlike a picture, a file is named either way.
+    const f = fixture({
+      chunks: [
+        { delta: { content: "Prepared the report." } },
+        { file: { name: "report.docx", mimeType: "application/msword", source: "mcp: render" } },
+        { author: "writer", file: { name: "notes.pdf", mimeType: "application/pdf", source: "mcp: render" } },
+      ],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]?.status).toBe("succeeded");
+    expect(f.rows[0]?.result).toContain("Prepared the report.");
+    expect(f.rows[0]?.result).toContain("Produced 2 files: report.docx, notes.pdf");
+  });
+
+  it("does not close a file-only firing as an empty success", async () => {
+    const f = fixture({
+      chunks: [{ file: { name: "report.docx", mimeType: "application/msword", source: "mcp: render" } }],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]?.result).toContain("Produced 1 file: report.docx");
+  });
+
   it("attributes the run to the trigger", async () => {
     const f = fixture();
     await executeDelivery(f.deps, await accept(f), {});

@@ -1,5 +1,7 @@
 import { sseResponse } from "@/app/api/_lib/sse";
-import { executionDeps, projectUseCases, versionUseCases } from "@/lib/container";
+import { artifactStorage, executionDeps, projectUseCases, versionUseCases } from "@/lib/container";
+import { withAddressedFiles } from "@/application/artifact/producedFiles";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { executeAgent } from "@/application/execution/runProject";
 import { agentSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
@@ -27,14 +29,23 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     const versionEntity = await versionUseCases.get(name, version);
     const abortController = new AbortController();
     return await sseResponse(
-      executeAgent(executionDeps, {
-        project,
-        version: versionEntity,
-        messages: parsed.data.messages,
-        actor: principalActor(principal),
-        ...(principal.caller ? { caller: principal.caller } : {}),
-        signal: abortController.signal,
-      }),
+      // A file chunk leaves here addressed: the object key and artifact id the
+      // bracket put on it are this platform's own bookkeeping, and a caller
+      // holding them can do nothing but wonder. The console's Playground and
+      // compare view read this stream too, which is how both of them ended up
+      // drawing the picture a run made and saying nothing about the document.
+      withAddressedFiles(
+        executeAgent(executionDeps, {
+          project,
+          version: versionEntity,
+          messages: parsed.data.messages,
+          actor: principalActor(principal),
+          ...(principal.caller ? { caller: principal.caller } : {}),
+          signal: abortController.signal,
+        }),
+        artifactStorage?.objects.sign,
+        VIEW_URL_TTL_SECONDS,
+      ),
       abortController,
     );
   } catch (error) {

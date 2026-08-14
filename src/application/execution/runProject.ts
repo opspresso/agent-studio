@@ -27,7 +27,7 @@ import { actorKey as toActorKey, type RunOrigin } from "@/domain/execution/actor
 import type { Project } from "@/domain/project/types";
 import { openRun } from "@/application/run/runBracket";
 import { captureRunArtifacts } from "@/application/artifact/runArtifacts";
-import type { ProducedFileRef } from "@/application/artifact/producedFiles";
+import { fileRefOf, type ProducedFileRef } from "@/application/artifact/producedFiles";
 import type { ExecuteAgentInput, ExecuteProjectInput, ExecuteVersionInput, ExecutionDeps } from "./deps";
 import { discoveryQueries, recentUserQueries, resolveRunTools } from "./bindings";
 import { closeMcp } from "./mcpTools";
@@ -382,8 +382,7 @@ export async function collectRun(
     // The bytes are already gone — the bracket kept them — so this is the
     // reference a surface turns into a download.
     if (chunk.file) {
-      const { b64: _stripped, source: _provenance, artifactId: _row, ...ref } = chunk.file;
-      files.push(ref);
+      files.push(fileRefOf(chunk.file));
     }
     // Usage counts every chunk, subagent turns included, so the reported
     // usage matches what the run actually billed.

@@ -1,6 +1,7 @@
 import { chunkTermination, isTopLevelChunk } from "@/domain/llm/types";
 import type { EngineChunk, RunResult, RunTerminationReason } from "@/domain/llm/types";
 import type { RunImage } from "@/application/execution/runProject";
+import { fileRefOf } from "@/application/artifact/producedFiles";
 import type { ProducedFile, ProducedFileRef } from "@/application/artifact/producedFiles";
 
 function newChatId(): string {
@@ -131,8 +132,7 @@ export async function* toChatCompletionChunks(
       // this run's output either way. Resolved as it passes rather than held to
       // the end — a stream has no later frame to put it in, which is exactly the
       // hole that made this surface silent about files at all.
-      const { b64: _stripped, source: _provenance, artifactId: _row, ...ref } = chunk.file;
-      const outcome = await resolveFile(ref);
+      const outcome = await resolveFile(fileRefOf(chunk.file));
       const delta = outcome.file
         ? { files: [outcome.file] }
         : outcome.warning

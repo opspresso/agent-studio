@@ -21,6 +21,7 @@
 
 import { resolveFileUrl } from "@/domain/chat/fileRefs";
 import type { SignObjectUrl } from "@/domain/artifact/objectStore";
+import type { EngineChunk } from "@/domain/llm/types";
 import { log } from "@/shared/logger";
 
 /** A file a run produced, in the shape a reference is stored in the stream. */
@@ -39,6 +40,23 @@ export interface ProducedFile {
   byteSize?: number;
   /** A signed download address. Absent only when the reference could not be signed. */
   url?: string;
+}
+
+/**
+ * The reference a chunk carries, without what only this platform uses.
+ *
+ * `b64` is already gone by the time a surface sees the chunk; `source` is the
+ * provenance an artifact row keeps, and `artifactId` names that row. None of
+ * the three is anything a reader can act on, and every surface that answers
+ * with a file was picking the same four fields out by hand.
+ */
+export function fileRefOf(file: NonNullable<EngineChunk["file"]>): ProducedFileRef {
+  return {
+    name: file.name,
+    mimeType: file.mimeType,
+    ...(file.byteSize !== undefined ? { byteSize: file.byteSize } : {}),
+    ...(file.key ? { key: file.key } : {}),
+  };
 }
 
 /**
@@ -136,4 +154,41 @@ export async function resolveProducedFiles(
     files: resolved,
     warnings: unaddressable > 0 ? [filesUnaddressableWarning(unaddressable)] : [],
   };
+}
+
+/**
+ * The same resolution, applied in place to a stream of raw chunks.
+ *
+ * For a surface whose contract *is* the chunk — `/agent`, and the console
+ * Playground and compare view that read it. Two things happen to a file chunk
+ * on the way through, and the second matters as much as the first: it gains the
+ * address a reader can use, and it loses the object key and artifact id it was
+ * carrying. Those are this platform's own bookkeeping; a caller receiving them
+ * learns nothing it can act on, and a signed URL is the only form of that
+ * object anyone outside is meant to hold.
+ *
+ * A file that cannot be addressed is announced as a warning and dropped, for the
+ * reason the collected surfaces drop one: a chunk naming a document with no way
+ * to fetch it reads as an offer, and there is nothing behind it.
+ */
+export async function* withAddressedFiles(
+  source: AsyncGenerator<EngineChunk>,
+  sign: SignObjectUrl | undefined,
+  ttlSeconds: number,
+): AsyncGenerator<EngineChunk> {
+  for await (const chunk of source) {
+    if (!chunk.file) {
+      yield chunk;
+      continue;
+    }
+    const { b64: _stripped, artifactId: _row, key: _object, ...rest } = chunk.file;
+    const outcome = await resolveProducedFile(fileRefOf(chunk.file), sign, ttlSeconds);
+    if (outcome.file) {
+      yield { ...chunk, file: { ...rest, url: outcome.file.url! } };
+      continue;
+    }
+    if (outcome.warning) {
+      yield { ...(chunk.author ? { author: chunk.author } : {}), warning: outcome.warning };
+    }
+  }
 }

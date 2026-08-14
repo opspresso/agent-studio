@@ -1,4 +1,5 @@
 import type { ExecuteAgentInput } from "@/application/execution/runProject";
+import type { SignObjectUrl } from "@/domain/artifact/objectStore";
 import type { RunCaller } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { EngineChunk } from "@/domain/llm/types";
@@ -96,6 +97,16 @@ export interface SlackEventDeps {
    * the silence this replaced.
    */
   documents: DocumentExtractor;
+  /**
+   * Signs an address for a file this run produced.
+   *
+   * A thread cannot be handed the bytes — the run bracket stored the document
+   * and stripped the payload before any of this saw it — so a link is what a
+   * reader gets. Optional because a deployment may have no object storage, and
+   * then the reply says so rather than silently answering with prose about a
+   * report nobody can open.
+   */
+  signFile?: SignObjectUrl;
   /**
    * What marks a reply as still being written, on the edit-in-place path only —
    * a streamed reply is marked as unfinished by Slack itself. Injected rather

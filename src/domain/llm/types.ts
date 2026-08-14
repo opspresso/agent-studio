@@ -141,6 +141,13 @@ export interface EngineChunk {
     byteSize?: number;
     artifactId?: string;
     key?: string;
+    /**
+     * A signed download address, put here by a surface that answers with raw
+     * chunks — and put there *instead of* the key and the artifact id, which
+     * are this platform's own bookkeeping and mean nothing to a reader. The
+     * bracket fills the two identifiers; only the boundary fills this.
+     */
+    url?: string;
   };
   /** Emitted after a tool (MCP / Skill) finished executing. */
   toolResult?: {

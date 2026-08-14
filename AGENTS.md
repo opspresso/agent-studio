@@ -157,6 +157,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | How an artifact row is written | `src/application/artifact/storeArtifact.ts` |
 | The object key an artifact is stored under | `artifactObjectKey` in `src/domain/artifact/types.ts` |
 | Deleting a stored object | `src/infrastructure/storage/s3ObjectStore.ts` |
+| Offering a file a run produced to a reader | `src/application/artifact/producedFiles.ts` |
 | Constant-time secret comparison | `src/shared/timingSafe.ts` |
 | Parsing a comma-separated config list | `src/shared/parseList.ts` |
 | Whether a configured value is blank | `src/shared/env.ts` |
@@ -417,11 +418,20 @@ One line each — the linked section is the authority.
   `ARTIFACT_CAPTURE_SITES` in `tests/architecture.test.ts` bounds the list, and a second check
   fails any `openRun` caller that does not also capture — a fifth entry point that forgot would
   drop its output silently, which is exactly how chat-only storage stayed invisible.
-- **A file a tool produced is not an image.** `EngineChunk.file` is its own axis because ten
-  consumers know `chunk.image` and would upload a DOCX to Slack as a picture or draw it in an
-  `<img>`. The asymmetry: a file's bytes **never enter the model's context** — no image budget,
-  no fallback rule, no follow-up message — and they are stripped from the chunk once stored,
-  since a download link is what a reader needs.
+- **A file a tool produced is not an image, and the two axes travel together.**
+  `EngineChunk.file` is its own axis because ten consumers know `chunk.image` and would upload
+  a DOCX to Slack as a picture or draw it in an `<img>`. The asymmetry: a file's bytes **never
+  enter the model's context** — no image budget, no fallback rule, no follow-up message — and
+  they are stripped from the chunk once stored, since a download link is what a reader needs.
+  Being its own axis is also how it went missing: the field was added for the chat view and
+  reached nowhere else, so `/predict`, both OpenAI shapes, `/agent`, A2A, Slack, a trigger's
+  history row and the console's Playground and compare view each read the image beside it and
+  dropped the file. The document was stored and the caller was never told it existed. **A
+  module that reads one output axis now reads the other**, which `tests/architecture.test.ts`
+  enforces as a pairing rather than a list — what a surface *does* with each is its own
+  business. `src/application/artifact/producedFiles.ts` owns turning a reference into an
+  address, the sentence for one that could not be kept, and the `/agent` stream transform that
+  swaps the object key for a signed URL on the way out.
 - **An attachment that is not an image becomes text, at the surface that received it.** A
   model id here may be served by the default router or by its own provider's
   OpenAI-compatible endpoint, and those disagree about file content parts — while capability

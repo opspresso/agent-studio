@@ -348,6 +348,11 @@ export async function executeFiring(
   // that produced nothing at all. An image project on a schedule is the whole
   // case: the picture is the answer, and the row was the only record of it.
   let images = 0;
+  // Files a tool rendered. Named rather than counted, because unlike a picture
+  // a file is usually the whole point of the firing — "the nightly report ran"
+  // and "the nightly report produced report.docx" are different rows to the
+  // person reading the history, and this row is their only record of it.
+  const files: string[] = [];
   try {
     for await (const chunk of deps.run({
       project,
@@ -375,6 +380,10 @@ export async function executeFiring(
       if (chunk.image) {
         images += 1;
       }
+      // Counted from subagent turns too, exactly like the images above.
+      if (chunk.file && files.length < MAX_LISTED_FILES) {
+        files.push(chunk.file.name);
+      }
       const warning = collectedWarning(chunk, warnings);
       if (warning) {
         warnings.push(warning);
@@ -387,10 +396,16 @@ export async function executeFiring(
     await admitted.release();
   }
   await finishFiring(deps, run, {
-    // Said only when the run produced nothing else to say. A picture beside an
-    // answer is already accounted for by the answer; a picture *instead* of one
-    // is what would otherwise close as an empty success.
-    text: text || (images > 0 ? imagesOnlyResult(images) : text),
+    // A picture is said only when the run produced nothing else to say: one
+    // beside an answer is already accounted for by the answer, and one
+    // *instead* of an answer is what would otherwise close as an empty success.
+    //
+    // A file is said either way, which is the asymmetry worth keeping. The
+    // answer's own text almost always mentions the picture it drew; it says "I
+    // have prepared the report" and never where the report went. A firing is
+    // unattended, so this row is the only place anyone learns the name to look
+    // for in the artifacts.
+    text: producedNote(text || (images > 0 ? imagesOnlyResult(images) : text), files),
     ...(error ? { error } : {}),
     ...(warnings.length > 0 ? { warning: warnings.join("\n") } : {}),
     ...(traceId ? { traceId } : {}),
@@ -407,6 +422,24 @@ export async function executeFiring(
  */
 function imagesOnlyResult(count: number): string {
   return `Generated ${count} image${count === 1 ? "" : "s"}. A trigger's history records text, so the image itself is not stored here.`;
+}
+
+/** How many produced files one row names before it stops listing them. */
+const MAX_LISTED_FILES = 10;
+
+/**
+ * The answer with a line naming what the firing produced as files.
+ *
+ * A row carries text and a signature would be long expired by the time anyone
+ * read this one, so the names are what it offers: enough to find the document
+ * in the project's artifacts, which is where the bytes actually are.
+ */
+function producedNote(text: string, files: readonly string[]): string {
+  if (files.length === 0) {
+    return text;
+  }
+  const line = `Produced ${files.length} file${files.length === 1 ? "" : "s"}: ${files.join(", ")}. They are kept with the project's artifacts.`;
+  return text ? `${text}\n\n${line}` : line;
 }
 
 /** Close a firing's history row with whatever the attempt produced. */

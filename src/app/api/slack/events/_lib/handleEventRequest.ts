@@ -3,7 +3,12 @@ import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
-import { executionDeps, projectRepository, versionRepository } from "@/lib/container";
+import {
+  artifactStorage,
+  executionDeps,
+  projectRepository,
+  versionRepository,
+} from "@/lib/container";
 import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import { handleThreadStart } from "@/application/slack/handleThreadStart";
@@ -21,6 +26,9 @@ const slackEventDeps: SlackEventDeps = {
   versions: versionRepository,
   slack: slackClient,
   documents: documentExtractor,
+  // Named even when this deployment has none, so "no object storage here" is a
+  // decision in the source rather than a field nobody thought about.
+  ...(artifactStorage ? { signFile: artifactStorage.objects.sign } : {}),
   loadingIndicator: config.slackLoadingIndicator,
 };
 

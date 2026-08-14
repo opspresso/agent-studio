@@ -18,6 +18,9 @@ vi.mock("@/lib/container", () => ({
   executionDeps: {},
   projectRepository: {},
   versionRepository: {},
+  // No object storage in this deployment, which the wiring site names rather
+  // than leaves undecided.
+  artifactStorage: undefined,
 }));
 vi.mock("@/lib/config", () => ({ config: { slackLoadingIndicator: undefined } }));
 vi.mock("@/infrastructure/slack/client", () => ({ slackClient: {} }));

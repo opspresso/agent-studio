@@ -557,7 +557,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(80);
+    expect(entries.length).toBe(81);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1553,6 +1553,55 @@ describe("run artifacts", () => {
       .filter((file) => !/bracket\.artifacts|captureRunArtifacts\(/.test(stripComments(file.text)))
       .map((file) => file.path);
     expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * The two output axes travel together.
+ *
+ * `EngineChunk.file` is its own axis because a DOCX is not a picture — ten
+ * consumers know `chunk.image` and would have uploaded one to Slack as one. But
+ * being its own axis is exactly how it went missing: the field was added with
+ * the chat view in mind and reached nowhere else, so `/predict`, both OpenAI
+ * shapes, A2A, Slack and a trigger's history row each read the image beside it
+ * and dropped the file on the floor. The document was stored as an artifact and
+ * the caller was never told it existed — and because every one of those surfaces
+ * *does* answer with images, nothing about them said files were different.
+ *
+ * So the rule is a pairing rather than a list: a module that reads one output
+ * axis reads the other. What it then does with them is its own business —
+ * Slack links a file and uploads a picture, A2A addresses one by uri and inlines
+ * the other's bytes — and none of those differences is what this catches. What
+ * it catches is a seventh surface reading only `chunk.image`, which is the exact
+ * shape of every one of the six.
+ *
+ * The exemptions are the places whose subject really is one axis: the image
+ * pipeline itself, and the client-side wire shapes that mirror one field.
+ */
+const ONE_AXIS_ON_PURPOSE = [
+  // The image use case and its channel: an image project's whole output.
+  "src/application/image/generateImage.ts",
+  // Reads a turn's *attached* images, which have no file counterpart — a
+  // document a person attaches becomes text before it reaches a turn.
+  "src/application/llm/imageParts.ts",
+  // The file module itself: its whole subject is the axis this rule exists to
+  // keep from being forgotten, and pairing it with images would mean the owner
+  // of one answer also handling the other.
+  "src/application/artifact/producedFiles.ts",
+];
+
+describe("what a run produced", () => {
+  it("is read on both axes wherever it is read at all", () => {
+    const reads = (text: string, field: "image" | "file") =>
+      new RegExp(String.raw`chunk\.${field}\b`).test(text);
+    const oneAxis = SOURCE_FILES.filter((file) => {
+      if (!file.path.startsWith("src/") || ONE_AXIS_ON_PURPOSE.includes(file.path)) {
+        return false;
+      }
+      const text = stripComments(file.text);
+      return reads(text, "image") !== reads(text, "file");
+    }).map((file) => file.path);
+    expect(oneAxis).toEqual([]);
   });
 });
 
