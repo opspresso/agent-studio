@@ -39,6 +39,19 @@ export interface AuthorizationServerMetadata {
    * they update their metadata, and the comparison costs nothing.
    */
   issParameterSupported?: boolean;
+  /**
+   * `client_id_metadata_document_supported`: this server resolves a `client_id`
+   * that is an HTTPS URL by fetching the metadata document it points at.
+   *
+   * What it decides is whether this deployment has to register at all. Dynamic
+   * Client Registration is deprecated from protocol `2026-07-28` in favour of
+   * these documents, and a client that can use one skips the registration
+   * request, the issued secret, and the storage that goes with both.
+   *
+   * Only `true` counts, as with {@link issParameterSupported}: a server that
+   * says nothing is one that has not promised to fetch anything.
+   */
+  clientIdMetadataDocumentSupported?: boolean;
 }
 
 /**

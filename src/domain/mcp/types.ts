@@ -46,6 +46,15 @@ export interface McpServerAuth {
   tokenEndpoint: string;
   /** RFC 7591. Absent means the provider requires a manually registered app. */
   registrationEndpoint?: string;
+  /**
+   * Does this server resolve a `client_id` that is an HTTPS URL by fetching the
+   * document it points at? See the metadata field of the same meaning.
+   *
+   * Preferred over {@link registrationEndpoint} where both are offered: from
+   * protocol `2026-07-28` registration is deprecated in favour of these
+   * documents, and there is nothing to store or re-register.
+   */
+  clientIdMetadataDocumentSupported?: boolean;
   tokenEndpointAuthMethod: TokenEndpointAuthMethod;
   scopesSupported?: string[];
   discoveredAt: string;

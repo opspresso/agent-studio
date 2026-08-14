@@ -1208,8 +1208,18 @@ Token refresh happens only within a margin derived from `MAX_RUN_DURATION_MS`, s
 cannot expire mid-run *and* the header stays byte-identical between runs — refreshing every
 run would change the discovery cache key every run.
 
-The protocol-level checks (PKCE, `resource`, `iss`, issuer binding) are in
-[SECURITY.md](SECURITY.md#mcp-oauth).
+**Where the client itself comes from** changed with protocol `2026-07-28`, which deprecates
+dynamic registration in favour of **Client ID Metadata Documents**: the `client_id` is an
+HTTPS URL the client hosts, and the authorization server fetches it. This deployment publishes
+one per project (`/api/mcps/oauth/client-metadata/{project}`) rather than one for the
+deployment, because that document is what a person sees when approving the connection — a
+single one would ask them to grant access to "AgentDure" with no way to tell which project is
+asking, where registration named the project in every client it created. Nothing is requested
+and nothing is stored: the flow that used to register, receive a secret and encrypt it now
+writes a URL it already knew.
+
+The protocol-level checks (PKCE, `resource`, `iss`, issuer binding — which inverts for a
+metadata-document client) are in [SECURITY.md](SECURITY.md#mcp-oauth).
 
 ### Triggers
 

@@ -158,6 +158,13 @@ export const oauthMetadataClient: OAuthMetadataClient = {
           ...(doc.authorization_response_iss_parameter_supported === true
             ? { issParameterSupported: true }
             : {}),
+          // Read at registration like everything else here, so the run path
+          // never pays for it. A server that adds support later is picked up
+          // when an admin re-runs discovery — the same moment every other
+          // endpoint on this document would move.
+          ...(doc.client_id_metadata_document_supported === true
+            ? { clientIdMetadataDocumentSupported: true }
+            : {}),
         };
       },
       "authorization server metadata",

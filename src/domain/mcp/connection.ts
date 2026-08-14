@@ -27,6 +27,19 @@ export interface McpConnection {
   /** True when RFC 7591 issued the credentials, so they can be re-registered. */
   clientRegistered?: boolean;
   /**
+   * True when `clientId` is this deployment's own Client ID Metadata Document
+   * URL rather than something an authorization server issued.
+   *
+   * It changes what {@link issuer} means for this row. A registered or
+   * hand-entered `client_id` is meaningless away from the server that issued it,
+   * which is the whole of SEP-2352 and the reason the issuer is recorded. A
+   * metadata-document `client_id` is the opposite: it is self-hosted and
+   * resolved on demand by *whichever* server is asked, so it stays valid when
+   * the entry moves to another authorization server and must not be refused as
+   * belonging to the old one.
+   */
+  clientFromMetadataDocument?: boolean;
+  /**
    * The authorization server these credentials belong to.
    *
    * A `client_id` is only meaningful at the server that issued it, so SEP-2352
