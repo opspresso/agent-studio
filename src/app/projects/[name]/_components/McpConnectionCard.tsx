@@ -149,12 +149,17 @@ export function McpConnectionCard({
 
   const status = connection?.status ?? "needs_auth";
   // A client comes from a metadata document this deployment publishes, from
-  // dynamic registration, or from the owner. The first two need nothing typed
-  // here; the boxes appear only when neither is on offer.
-  const canSelfIdentify = Boolean(
-    server.auth.clientIdMetadataDocumentSupported || server.auth.registrationEndpoint,
-  );
-  const needsManualClient = !canSelfIdentify && !connection?.clientId;
+  // dynamic registration, or from the owner. Only registration can hide the
+  // boxes on its own: a document is a route *conditionally*, on this
+  // deployment's public base URL being an address the provider can fetch from,
+  // and that is a server-side fact the browser cannot check. Hiding the manual
+  // path on the capability flag alone is how the owner ended up being told to
+  // save credentials in a form that was not on the page.
+  const canSelfIdentify = Boolean(server.auth.registrationEndpoint);
+  // Distinct from the above: this sentence is about what the *provider* offers,
+  // so it must not appear for one that offers a document we merely cannot serve.
+  const needsManualClient =
+    !canSelfIdentify && !server.auth.clientIdMetadataDocumentSupported && !connection?.clientId;
 
   return (
     <Stack gap="sm">
