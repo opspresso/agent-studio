@@ -19,6 +19,15 @@ import { unrefTimer } from "@/shared/unrefTimer";
  *
  * A caller streams a reply without knowing which of the two it got: the sink
  * opens on the first output, prefers streaming, and falls back on failure.
+ *
+ * **Progress reaches a channel thread through the reply itself.** Slack's native
+ * status line exists only in a DM (`assistantThread`), so a channel run that
+ * spends minutes in tool calls used to leave no trace until it answered — which
+ * reads as a dead bot and gets the user to ask again. There the first status
+ * posts the message and later ones edit it, so the answer lands on the same
+ * `ts` rather than below a note. That fixes the transport to edit-in-place for
+ * those runs: `appendStream` only ever adds, so a note opened as a stream could
+ * never be replaced by what it was standing in for.
  */
 
 /** Cadence of `chat.appendStream`, whose limit is Tier 4 (100+/min). */
@@ -77,6 +86,16 @@ export interface ReplySink {
   finish(fullText: string, suffix: string): Promise<void>;
 }
 
+/**
+ * A status-line phrase, dressed to stand on its own as a message. Slack renders
+ * these after the app's name ("AgentDure is thinking…"); posted into a thread
+ * they arrive without that subject, so the emphasis is what says this is the
+ * app reporting on itself rather than the answer beginning.
+ */
+function progressText(text: string, indicator: string): string {
+  return `_${text}_ ${indicator}`;
+}
+
 function withSuffix(text: string, suffix: string): string {
   if (!suffix) {
     return text;
@@ -100,6 +119,12 @@ export function createReplySink(
    * stream sends each delta exactly once.
    */
   let flushed = 0;
+  /**
+   * Whether the open message is still only a progress note. It stands in for an
+   * answer rather than being one, so a run that ends with no text takes it back
+   * instead of leaving it on screen.
+   */
+  let progressOnly = false;
   let lastWrite = 0;
   let lastStatus = "";
   let lastStatusLoading: string[] | undefined;
@@ -143,8 +168,64 @@ export function createReplySink(
     flushed = text.length;
   }
 
+  /**
+   * Progress for a channel thread, which has no status line to put it on.
+   *
+   * Paced like any other edit, and never fatal: a failed post leaves the sink
+   * unopened so the next call — a status or the answer itself — retries.
+   */
+  async function showProgress(text: string): Promise<void> {
+    // The clear at the end of a run has nothing to say here, and once the answer
+    // has started arriving the message belongs to it. Rewriting the message with
+    // what it already says costs a call and shows the reader nothing — the same
+    // reason the status line above does not repeat itself, except that here the
+    // message does not expire, so an unchanged one is never worth re-sending.
+    if (!text || flushed > 0 || text === lastStatus) {
+      return;
+    }
+    if (mode === "unopened") {
+      try {
+        const posted = await slack.postMessage(token, {
+          channel: target.channel,
+          thread_ts: target.threadTs,
+          text: progressText(text, indicator),
+        });
+        mode = "edit";
+        progressOnly = true;
+        messageTs = posted.ts;
+        messageChannel = posted.channel || target.channel;
+        lastWrite = Date.now();
+        lastStatus = text;
+      } catch (error) {
+        log.warn("slack", "progress note could not be posted", error);
+      }
+      return;
+    }
+    if (!progressOnly) {
+      return;
+    }
+    const now = Date.now();
+    // A progress line the edit limit swallowed is simply skipped: the next tool
+    // will write the current one, and nothing here is worth queueing.
+    if (now - lastWrite < EDIT_INTERVAL_MS) {
+      return;
+    }
+    lastWrite = now;
+    await slack
+      .updateMessage(token, {
+        channel: messageChannel,
+        ts: messageTs,
+        text: progressText(text, indicator),
+      })
+      .then(() => {
+        lastStatus = text;
+      })
+      .catch(() => {});
+  }
+
   async function sendStatus(text: string, loadingMessages?: string[]): Promise<void> {
     if (!target.assistantThread) {
+      await showProgress(text);
       return;
     }
     const now = Date.now();
@@ -245,6 +326,7 @@ export function createReplySink(
         })
         .then(() => {
           flushed = fullText.length;
+          progressOnly = false;
         })
         .catch(() => {});
     },
@@ -268,6 +350,12 @@ export function createReplySink(
               text,
             });
           }
+        } else if (progressOnly && !withSuffix(fullText, suffix)) {
+          // Same decision as the branch above, reached from the other side: the
+          // only thing on screen is a note standing in for an answer that never
+          // came as text. Leaving it would caption a picture-only run as still
+          // working, so it is taken back instead.
+          await slack.deleteMessage(token, { channel: messageChannel, ts: messageTs });
         } else if (mode === "stream") {
           const remaining = withSuffix(fullText.slice(flushed), suffix);
           await slack.stopStream(token, {

@@ -22,6 +22,13 @@ export interface SlackClientPort {
     token: string,
     args: { channel: string; ts: string; text: string },
   ): Promise<{ ts: string }>;
+  /**
+   * Take back a message the bot posted. Used for a channel thread's progress
+   * note when the run turns out to have no text to replace it with — a picture
+   * is the whole answer often enough that leaving "is thinking…" behind would
+   * caption it as having said nothing.
+   */
+  deleteMessage(token: string, args: { channel: string; ts: string }): Promise<void>;
   uploadImage(
     token: string,
     args: { channel: string; threadTs?: string; filename: string; data: Buffer; title?: string },

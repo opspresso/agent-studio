@@ -52,6 +52,8 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   const streaming = options.streaming ?? true;
   const posted: Array<{ channel: string; text: string; thread_ts?: string }> = [];
   const updates: Array<{ ts: string; text: string }> = [];
+  /** Messages taken back — a channel progress note the answer never replaced. */
+  const deleted: string[] = [];
   const streamStarts: Array<{
     channel: string;
     thread_ts: string;
@@ -81,6 +83,10 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       calls.push("updateMessage");
       updates.push(args);
       return { ts: args.ts };
+    },
+    async deleteMessage(_token, args) {
+      calls.push("deleteMessage");
+      deleted.push(args.ts);
     },
     async uploadImage() {},
     async threadReplies() {
@@ -139,6 +145,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     slack,
     posted,
     updates,
+    deleted,
     appended,
     streamStarts,
     statuses,
@@ -294,7 +301,7 @@ describe("handleSlackEvent", () => {
   it("does not caption a picture-only answer as having said nothing", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);
-    const { slack, posted, finalText } = makeSlackFake();
+    const { slack, posted, updates, deleted, finalText } = makeSlackFake();
     const uploads: string[] = [];
     slack.uploadImage = async (_token, args) => {
       uploads.push(args.filename);
@@ -310,7 +317,14 @@ describe("handleSlackEvent", () => {
     // The run answered — with a picture. The reply transport cannot see that,
     // so it must not be the thing deciding there was no answer.
     expect(finalText()).not.toContain("no response");
-    expect(posted).toEqual([]);
+    // The channel thread got a progress note, which is the one thing standing
+    // where an answer would go. Nothing came to replace it, so it is taken back
+    // rather than left captioning the picture as an unfinished run.
+    expect(posted.map((message) => message.text)).toEqual([
+      "_is thinking…_ :hourglass_flowing_sand:",
+    ]);
+    expect(updates).toEqual([]);
+    expect(deleted).toEqual(["100.1"]);
   });
 
   /**
@@ -433,7 +447,9 @@ describe("handleSlackEvent", () => {
       BINDING,
     );
 
-    expect(calls).toEqual(["threadReplies", "postMessage"]);
+    // The channel's progress note is the first thing written, and the answer
+    // lands on it — the read still comes before either.
+    expect(calls).toEqual(["threadReplies", "postMessage", "updateMessage"]);
     expect(seen.map((m) => m.content)).toEqual([
       "earlier question",
       "earlier answer",
@@ -865,7 +881,8 @@ describe("handleSlackEvent", () => {
 /**
  * Slack's agent surface expects a streamed reply: the message is opened once
  * and grown with deltas, which it renders as text arriving rather than as a
- * message being rewritten.
+ * message being rewritten. That is the DM transport — a channel thread opens
+ * with a progress note instead, which only an edit can replace.
  */
 describe("streaming a Slack reply", () => {
   it("opens the stream once and sends deltas, not the whole answer", async () => {
@@ -884,7 +901,7 @@ describe("streaming a Slack reply", () => {
       slack,
     );
 
-    await handleSlackEvent(deps, EVENT, BINDING);
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
 
     expect(calls.filter((call) => call === "startStream")).toHaveLength(1);
     expect(calls).toContain("stopStream");
@@ -894,10 +911,16 @@ describe("streaming a Slack reply", () => {
     expect(finalText()).toBe("Once upon a time.");
   });
 
-  it("names the recipient when the thread is a channel", async () => {
+  it("names the recipient when a channel reply falls through to streaming", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     const { slack, streamStarts } = makeSlackFake();
+    // With the progress note unpostable the sink stays unopened, so the answer
+    // opens it — the one path left that streams into a channel.
+    slack.postMessage = async () => {
+      throw new Error("nope");
+    };
     const deps = makeDeps([{ delta: { content: "hi" } }, { done: true }], slack);
 
     await handleSlackEvent(
@@ -908,6 +931,38 @@ describe("streaming a Slack reply", () => {
 
     // Slack requires both to stream anywhere other than a DM.
     expect(streamStarts[0]).toMatchObject({ recipient_user_id: "U7", recipient_team_id: "T9" });
+  });
+
+  it("leaves a channel thread one message: a progress note the answer overwrites", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const { slack, posted, updates, calls } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        // A tool-only stretch: what used to leave the thread with nothing at
+        // all until the answer arrived.
+        { delta: { toolCalls: [{ function: { name: "search" } }] } },
+        { delta: { content: "found it" } },
+        { done: true },
+      ],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.text).toContain("is thinking…");
+    // Every later write lands on that same message rather than adding another,
+    // and what the run is doing shows up there while it works.
+    expect(updates.every((update) => update.ts === "100.1")).toBe(true);
+    expect(updates.map((update) => update.text)).toContainEqual(
+      expect.stringContaining("is using search…"),
+    );
+    expect(updates.at(-1)?.text).toBe("found it");
+    expect(calls).not.toContain("startStream");
+    // A channel thread has no status line, so nothing is spent trying to set one.
+    expect(calls).not.toContain("setStatus");
   });
 
   it("omits the recipient in a DM", async () => {
@@ -1309,7 +1364,7 @@ describe("falling back when a workspace cannot stream", () => {
     advancingClock();
     const { slack, appended } = makeSlackFake();
 
-    await handleSlackEvent(makeDeps(chunks, slack), EVENT, BINDING);
+    await handleSlackEvent(makeDeps(chunks, slack), DM_EVENT, BINDING);
 
     expect(appended.join("")).toBe("생각 중");
   });

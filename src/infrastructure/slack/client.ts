@@ -189,6 +189,9 @@ export const slackClient = {
   ): Promise<{ ts: string }> {
     return slackApi(token, "chat.update", args);
   },
+  async deleteMessage(token: string, args: { channel: string; ts: string }): Promise<void> {
+    await slackApi(token, "chat.delete", args);
+  },
   /**
    * Open a streamed reply. Slack renders it as text arriving live rather than a
    * message being rewritten, and `chat.appendStream` costs a tenth of what a
