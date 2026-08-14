@@ -438,6 +438,9 @@ export async function handleSlackEvent(
   const message = (event.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim();
   const projectName = binding.projectName;
   const threadTs = event.thread_ts ?? event.ts;
+  // A DM is an agent thread: it has a native status line and a title. A channel
+  // mention has neither, and streaming into one needs the recipient named.
+  const isAssistantThread = event.channel_type === "im";
 
   // Ahead of the project lookup, because a command is answered whether or not
   // this project has a runnable version — `!mute` in particular has to work on
@@ -451,6 +454,7 @@ export async function handleSlackEvent(
       channel: event.channel,
       threadTs,
       inThread: event.thread_ts !== undefined,
+      assistantThread: isAssistantThread,
     });
     return;
   }
@@ -492,9 +496,6 @@ export async function handleSlackEvent(
     -MAX_THREAD_HISTORY_MESSAGES,
   );
 
-  // A DM is an agent thread: it has a native status line and a title. A channel
-  // mention has neither, and streaming into one needs the recipient named.
-  const isAssistantThread = event.channel_type === "im";
   const sink = createReplySink(
     deps.slack,
     token,

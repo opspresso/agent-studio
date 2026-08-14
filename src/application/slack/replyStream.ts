@@ -65,6 +65,22 @@ const STATUS_REFRESH_MS = 45_000;
  */
 const AMBIENT_TASK_ID = "run-progress";
 /**
+ * How many rows a checklist may grow to, and where the rest go.
+ *
+ * Two reasons for a cap, and the second is the one that bites. A checklist
+ * nobody can read is not a better report than a line that moves — Claude Tag's
+ * own examples are four rows. And each row costs *two* `chat.appendStream`
+ * calls, one to open and one to tick off, against a limit of about a hundred a
+ * minute: a run that fans tool calls out over fifty turns would spend its
+ * stream budget describing itself.
+ *
+ * Past the cap every further step shares one row, retitled as the run moves —
+ * which is exactly the single-line behaviour this replaced, kept for the case
+ * it was always right for.
+ */
+const MAX_CHECKLIST_STEPS = 25;
+const OVERFLOW_TASK_ID = "run-progress-more";
+/**
  * Appended to an edited-in-place reply that is still being written, when the
  * deployment names nothing else.
  *
@@ -439,8 +455,9 @@ export function createReplySink(
         return;
       }
       await closeAmbient();
-      steps.set(id, { title, complete: false });
-      await showTask(id, title, "in_progress", usingPhrase(title));
+      const rowId = known || steps.size < MAX_CHECKLIST_STEPS ? id : OVERFLOW_TASK_ID;
+      steps.set(rowId, { title, complete: false });
+      await showTask(rowId, title, "in_progress", usingPhrase(title));
     },
 
     async stepDone(id, title) {
