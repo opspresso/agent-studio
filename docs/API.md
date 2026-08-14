@@ -103,6 +103,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
 | `/api/mcps/oauth/callback` | `GET` | session |
+| `/api/mcps/oauth/client-metadata/{project}` | `GET` | **public** |
 | `/api/agents/{name}/message` | `POST` | session |
 
 ### Chats, usage, platform
@@ -811,6 +812,19 @@ carries a one-time result.
 The callback validates RFC 9207 `iss` before the code is redeemed and re-checks project
 ownership, which can change while the user is at the provider. See
 [SECURITY.md](SECURITY.md#mcp-oauth) for the full set of checks.
+
+### Client ID metadata document
+
+```
+GET /api/mcps/oauth/client-metadata/{project}          (public)
+```
+
+A project's OAuth Client ID Metadata Document, which an authorization server fetches to
+resolve a `client_id` that is a URL (protocol `2026-07-28`, replacing dynamic registration).
+**Unauthenticated on purpose** — the reader is that server, arriving with no session — and it
+carries no secret: the deployment's name, and the single redirect URI it accepts. `404` for a
+name that is not a slug, `503` when no public base URL is configured, and
+`Cache-Control: public, max-age=300`.
 
 ## Project API token
 

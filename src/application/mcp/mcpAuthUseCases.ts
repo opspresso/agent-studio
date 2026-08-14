@@ -163,6 +163,64 @@ export const OAUTH_STATE_TTL_SECONDS = 600;
 export const MCP_OAUTH_CALLBACK_PATH = "/api/mcps/oauth/callback";
 
 /**
+ * Where this deployment publishes a project's Client ID Metadata Document.
+ *
+ * One document per project rather than one for the deployment, because the
+ * document is what an authorization server shows the person approving the
+ * connection: a single one would ask them to grant access to "AgentDure" with no
+ * way to tell which project is asking, where dynamic registration named the
+ * project in every client it created.
+ */
+export const MCP_CLIENT_METADATA_PATH = "/api/mcps/oauth/client-metadata";
+
+/** The base URL with any trailing slashes removed, so paths append cleanly. */
+function trimBase(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
+
+/**
+ * The `client_id` a project presents: the address of its metadata document.
+ *
+ * The spec requires the `client_id` **inside** the document to equal the URL the
+ * document was fetched from, exactly — an authorization server that finds them
+ * different rejects the authorization. That is why this and
+ * {@link clientMetadataDocument} live together and why both build from the
+ * configured public base rather than from a request: two places deriving the
+ * same URL is precisely the drift the rule is checking for.
+ */
+export function clientMetadataUrl(baseUrl: string, projectName: string): string {
+  return `${trimBase(baseUrl)}${MCP_CLIENT_METADATA_PATH}/${projectName}`;
+}
+
+/**
+ * The document itself, as
+ * [OAuth Client ID Metadata Document](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-client-id-metadata-document-00)
+ * defines it. `client_id`, `client_name` and `redirect_uris` are the required
+ * three; the rest state what this client actually does.
+ *
+ * `token_endpoint_auth_method: "none"` is not a weakening — there is no secret
+ * to hold. A self-hosted `client_id` is public by construction, which is why the
+ * flow's defence is PKCE plus a redirect URI fixed here rather than a shared
+ * secret: an authorization started by anyone else still lands its code at this
+ * deployment's callback, where it is useless without the verifier.
+ */
+export function clientMetadataDocument(
+  baseUrl: string,
+  projectName: string,
+): Record<string, unknown> {
+  const base = trimBase(baseUrl);
+  return {
+    client_id: clientMetadataUrl(base, projectName),
+    client_name: `AgentDure — ${projectName}`,
+    client_uri: base,
+    redirect_uris: [`${base}${MCP_OAUTH_CALLBACK_PATH}`],
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none",
+  };
+}
+
+/**
  * A connection as the console may see it.
  *
  * The client secret is masked the way every other stored secret in this codebase
@@ -331,16 +389,25 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     return server as McpServer & { auth: McpServerAuth };
   }
 
-  async function redirectUri(): Promise<string> {
+  /**
+   * The address this deployment is reachable at, which both the redirect target
+   * and a client metadata document are built from. Never taken from the request:
+   * a redirect target from caller input is the open-redirect this flow would
+   * otherwise hand out, and a `client_id` from caller input is a document an
+   * authorization server would fetch from somewhere we do not control.
+   */
+  async function publicBase(): Promise<string> {
     const base = await deps.publicBaseUrl();
     if (!base) {
       throw new ValidationError(
         "A public base URL must be configured before an OAuth connection can be authorized.",
       );
     }
-    // Built here, never from the request: a redirect target taken from caller
-    // input is the open-redirect this flow would otherwise hand out.
-    return `${base.replace(/\/+$/, "")}${MCP_OAUTH_CALLBACK_PATH}`;
+    return base;
+  }
+
+  async function redirectUri(): Promise<string> {
+    return `${(await publicBase()).replace(/\/+$/, "")}${MCP_OAUTH_CALLBACK_PATH}`;
   }
 
   async function requireConnection(
@@ -432,6 +499,9 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         ...(asMetadata.registrationEndpoint
           ? { registrationEndpoint: asMetadata.registrationEndpoint }
           : {}),
+        ...(asMetadata.clientIdMetadataDocumentSupported
+          ? { clientIdMetadataDocumentSupported: true }
+          : {}),
         tokenEndpointAuthMethod: selectAuthMethod(asMetadata),
         ...(scopesSupported ? { scopesSupported } : {}),
         discoveredAt: new Date().toISOString(),
@@ -522,7 +592,15 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
        * points at.
        */
       const staleCredentials =
-        connection?.clientId !== undefined && (connection.issuer ?? issuer) !== issuer;
+        connection?.clientId !== undefined &&
+        // A metadata-document client is exempt, and this is the one place the
+        // exemption matters. Such a `client_id` is a URL this deployment hosts
+        // and any authorization server resolves on demand, so it is still the
+        // same client after the entry moves — refusing it here would break a
+        // working connection to enforce a rule about credentials it does not
+        // have.
+        connection.clientFromMetadataDocument !== true &&
+        (connection.issuer ?? issuer) !== issuer;
       if (staleCredentials && connection?.clientRegistered !== true) {
         // Hand-entered credentials cannot be re-issued on the owner's behalf.
         throw new ValidationError(
@@ -530,37 +608,52 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         );
       }
 
-      // No client yet, or one that belongs to a server this entry has moved off:
-      // register with the server it points at now. Failing that, the owner has
-      // to bring credentials from a manually registered app.
+      // No client yet, or one that belongs to a server this entry has moved off.
+      // The order is the spec's: credentials already held (hand-entered ones
+      // reach here as `connection.clientId`), then a metadata document, then
+      // registration, then nothing this app can do on the owner's behalf.
       if (!connection?.clientId || staleCredentials) {
-        if (!server.auth.registrationEndpoint) {
-          throw new ValidationError(
-            `MCP server "${serverName}" does not support dynamic client registration. Register an app with the provider and save its client ID and secret first.`,
-          );
-        }
         const scopes = connection?.scopes ?? server.auth.scopesSupported ?? [];
-        const registered = await deps.oauth.register({
-          registrationEndpoint: server.auth.registrationEndpoint,
-          clientName: `AgentDure — ${projectName}`,
-          redirectUri: callback,
-          scopes,
-        });
-        // Rebuilt rather than merged: whatever the previous client authorized
-        // was granted by a different server, and must not survive into this one.
-        connection = {
+        // Rebuilt rather than merged in either branch: whatever the previous
+        // client authorized was granted by a different server, and must not
+        // survive into this one.
+        const base = {
           projectName,
           serverName,
-          clientId: registered.clientId,
-          ...(registered.clientSecret
-            ? { clientSecret: deps.cipher.encrypt(registered.clientSecret) }
-            : {}),
-          clientRegistered: true,
           issuer,
           scopes,
-          status: "needs_auth",
+          status: "needs_auth" as const,
           updatedAt: new Date().toISOString(),
         };
+        if (server.auth.clientIdMetadataDocumentSupported) {
+          // Nothing is requested and nothing is issued: the `client_id` is the
+          // address of a document this deployment already serves, and the
+          // server fetches it when the authorization arrives.
+          connection = {
+            ...base,
+            clientId: clientMetadataUrl(await publicBase(), projectName),
+            clientFromMetadataDocument: true,
+          };
+        } else if (server.auth.registrationEndpoint) {
+          const registered = await deps.oauth.register({
+            registrationEndpoint: server.auth.registrationEndpoint,
+            clientName: `AgentDure — ${projectName}`,
+            redirectUri: callback,
+            scopes,
+          });
+          connection = {
+            ...base,
+            clientId: registered.clientId,
+            ...(registered.clientSecret
+              ? { clientSecret: deps.cipher.encrypt(registered.clientSecret) }
+              : {}),
+            clientRegistered: true,
+          };
+        } else {
+          throw new ValidationError(
+            `MCP server "${serverName}" supports neither client ID metadata documents nor dynamic client registration. Register an app with the provider and save its client ID and secret first.`,
+          );
+        }
         await deps.connections.put(connection);
       }
 

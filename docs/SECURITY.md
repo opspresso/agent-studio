@@ -466,9 +466,35 @@ Enforced properties:
   the old server. Deleting and recreating an entry under the same name is caught the same way
   — which matters, because the registry is admin-owned while connections are owner-owned and
   the only thing joining them is the name.
+- **How a client is obtained, in the spec's own order**: credentials already held (registered
+  once, or entered by hand), then a Client ID Metadata Document, then dynamic registration,
+  then an error naming what the owner has to do. Registration is deprecated from protocol
+  `2026-07-28` in favour of the documents, so a server advertising
+  `client_id_metadata_document_supported` is never registered with.
 - Dynamic registration (RFC 7591) declares `application_type: "web"` (SEP-837) rather than
   leaving the OpenID Connect default to apply. A public client with no secret sends `none`
   whatever the server's metadata preferred.
+- **A Client ID Metadata Document is served publicly, per project**, at
+  `/api/mcps/oauth/client-metadata/{project}` — the one MCP route with no session check, and
+  deliberately so: the reader is an authorization server resolving a `client_id` that is a
+  URL, arriving from wherever the provider runs with no cookie. Nothing in it is a secret; it
+  states this deployment's name and the one redirect URI it accepts, which is what
+  registration used to send in a POST body. The `client_id` inside must equal the URL it was
+  fetched from, so both are built by one function (`clientMetadataUrl` /
+  `clientMetadataDocument`) from the **configured** public base — never from the request,
+  which would let a caller publish a document authorizing a redirect to its own host. The
+  project is not looked up: a public endpoint that reads the database per request invites
+  unauthenticated traffic into it, and a 404 for an unknown name would leak which projects
+  exist. A document for a project that does not exist is inert — the authorization it could
+  start lands at the callback, which finds no connection and stops.
+- **Such a client is public by construction**, so the flow's defence is PKCE plus that fixed
+  redirect URI rather than a shared secret: an authorization anyone else starts still delivers
+  its code to this deployment's callback, where it is useless without the verifier.
+- **The issuer-binding rule above inverts for it.** A registered or hand-entered `client_id`
+  is meaningless away from the server that issued it, which is why it is keyed by issuer and
+  re-registered when that changes. A metadata-document `client_id` is self-hosted and resolved
+  on demand by whichever server is asked, so it survives the entry moving — refusing it would
+  break a working connection over credentials it does not have.
 - The callback **re-checks project ownership**, because it can change while the user is at the
   provider.
 

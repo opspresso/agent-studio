@@ -228,10 +228,87 @@ describe("beginAuthorization", () => {
     expect(connection?.clientSecret).toBe("enc:dcr-secret");
   });
 
-  it("says what to do when the server has no registration endpoint and no client is stored", async () => {
+  it("uses a client ID metadata document instead of registering, where the server takes one", async () => {
+    // The point of CIMD: nothing is requested and nothing is issued. The
+    // `client_id` is the address of a document this deployment already serves,
+    // which the authorization server fetches when the authorization arrives.
+    const h = harness({
+      server: {
+        ...SERVER,
+        auth: { ...SERVER.auth!, clientIdMetadataDocumentSupported: true },
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.registrations).toHaveLength(0);
+    const expected = `${BASE_URL}/api/mcps/oauth/client-metadata/p`;
+    const connection = h.connections.get("p/slack");
+    expect(connection?.clientId).toBe(expected);
+    expect(connection?.clientFromMetadataDocument).toBe(true);
+    // Public by construction: there is no secret to hold, so none is stored.
+    expect(connection?.clientSecret).toBeUndefined();
+    expect(connection?.clientRegistered).toBeUndefined();
+    expect(new URL(authorizeUrl).searchParams.get("client_id")).toBe(expected);
+  });
+
+  it("prefers a metadata document over registration when a server offers both", async () => {
+    // Registration is deprecated from protocol 2026-07-28, and the spec's own
+    // order puts the document ahead of it.
+    const h = harness({
+      server: {
+        ...SERVER,
+        auth: {
+          ...SERVER.auth!,
+          registrationEndpoint: "https://auth.example.com/register",
+          clientIdMetadataDocumentSupported: true,
+        },
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.registrations).toHaveLength(0);
+    expect(h.connections.get("p/slack")?.clientFromMetadataDocument).toBe(true);
+  });
+
+  it("keeps a metadata-document client when the entry moves to another authorization server", async () => {
+    // The SEP-2352 rule inverts here. A registered client is meaningless away
+    // from the server that issued it; a self-hosted document is resolved by
+    // whichever server is asked, so refusing it would break a working
+    // connection over credentials it does not have.
+    const h = harness({
+      server: {
+        ...SERVER,
+        auth: {
+          ...SERVER.auth!,
+          issuer: "https://new-auth.example.com",
+          clientIdMetadataDocumentSupported: true,
+        },
+      },
+      connection: {
+        clientId: `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
+        clientSecret: undefined,
+        clientFromMetadataDocument: true,
+        issuer: "https://old-auth.example.com",
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.beginAuthorization("p", "slack", OWNER)).resolves.toBeDefined();
+
+    expect(h.registrations).toHaveLength(0);
+    expect(h.connections.get("p/slack")?.clientId).toBe(
+      `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
+    );
+  });
+
+  it("says what to do when the server offers neither way to get a client", async () => {
     const uc = createMcpAuthUseCases(harness().deps);
     await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
-      /does not support dynamic client registration/,
+      /supports neither client ID metadata documents nor dynamic client registration/,
     );
   });
 
