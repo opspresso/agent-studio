@@ -73,6 +73,8 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     }
   }
   const statuses: string[] = [];
+  /** What the bot put on the message it picked up, and where. */
+  const reactions: Array<{ channel: string; ts: string; name: string }> = [];
   const titles: Array<{ channel_id: string; thread_ts: string; title: string }> = [];
   const calls: string[] = [];
   const replies: SlackMessage[] = [];
@@ -99,6 +101,10 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       deleted.push(args.ts);
     },
     async uploadImage() {},
+    async addReaction(_token, args) {
+      calls.push("addReaction");
+      reactions.push(args);
+    },
     // The workspace read tools have their own tests; the handler never calls
     // these, and a fake that omitted them would only be hiding that.
     async channelHistory() {
@@ -175,6 +181,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     updates,
     deleted,
     appended,
+    reactions,
     tasks,
     streamStarts,
     statuses,
@@ -492,8 +499,10 @@ describe("handleSlackEvent", () => {
     );
 
     // The channel's progress opens the stream and the answer closes it — the
-    // read still comes before either.
-    expect(calls).toEqual(["threadReplies", "startStream", "stopStream"]);
+    // read still comes before either. The pickup reaction sits between them and
+    // is harmless there: it writes no message, so nothing it does can end up in
+    // the history this run was assembled from.
+    expect(calls).toEqual(["threadReplies", "addReaction", "startStream", "stopStream"]);
     expect(seen.map((m) => m.content)).toEqual([
       "earlier question",
       "earlier answer",
@@ -1020,6 +1029,50 @@ describe("streaming a Slack reply", () => {
     expect(appended.join("")).toBe("found it");
     // A channel thread has no status line, so nothing is spent trying to set one.
     expect(calls).not.toContain("setStatus");
+  });
+
+  it("reacts to the message it picked up, before anything else", async () => {
+    // The only acknowledgement that lands on the message the person wrote. It
+    // matters most where nothing was addressed to the bot explicitly — a
+    // thread follow-up, a keyword — and there is no reason to assume it heard.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, reactions, calls } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), EVENT, BINDING);
+
+    expect(reactions).toEqual([{ channel: "C1", ts: "1.0", name: "eyes" }]);
+    // Ahead of the run's own output: it is the cheaper of the two signals and
+    // lands where the person is already looking.
+    expect(calls.indexOf("addReaction")).toBeLessThan(calls.indexOf("startStream"));
+  });
+
+  it("does not react in a DM, which says it another way", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, reactions, statuses } = makeSlackFake();
+
+    await handleSlackEvent(deps0(slack), DM_EVENT, BINDING);
+
+    // Every message in a DM is for the bot, and the thread has a status line.
+    expect(reactions).toEqual([]);
+    expect(statuses[0]).toBe("is thinking…");
+  });
+
+  it("still answers when the reaction is refused", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, finalText } = makeSlackFake();
+    slack.addReaction = async () => {
+      throw new Error("missing_scope");
+    };
+    const deps = makeDeps([{ delta: { content: "here you go" } }, { done: true }], slack);
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    // The run answering is a louder acknowledgement than the one that failed,
+    // so it is not even reported as a warning in the reply.
+    expect(finalText()).toBe("here you go");
   });
 
   it("names a subagent's step by the agent that ran it", async () => {

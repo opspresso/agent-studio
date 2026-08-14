@@ -36,6 +36,21 @@ const MAX_THREAD_TITLE_LENGTH = 60;
  * from "stuck", which one static line cannot say.
  */
 const THINKING_MESSAGES = ["is thinking…", "is working through it…", "is still on it…"];
+/**
+ * Put on the message the run was started by, the moment it is picked up.
+ *
+ * A channel's reply lives in a thread, which is somewhere nobody is
+ * necessarily looking yet, and several people may be talking at once — so the
+ * only acknowledgement that says *this message, and I have it* is one on the
+ * message itself. It matters most where nothing was addressed to the bot
+ * explicitly: a follow-up in a thread it is engaged in, or a keyword it woke
+ * on, where the person has no reason to assume it heard.
+ *
+ * Built-in rather than configurable, and built-in rather than a custom name: a
+ * workspace that has not defined a custom emoji renders the reaction as an
+ * error, and there is no evidence yet about what a project would want instead.
+ */
+const PICKED_UP_REACTION = "eyes";
 /** Most recent thread turns carried as context; older turns are dropped. */
 const MAX_THREAD_HISTORY_MESSAGES = 50;
 /**
@@ -479,6 +494,17 @@ export async function handleSlackEvent(
   // Ahead of every lookup below. Profile resolution is several round trips on a
   // cold cache, and making the user wait for them before anything acknowledges
   // the message is the one thing the status line exists to prevent.
+  //
+  // The reaction goes first because it is the cheaper of the two and it lands
+  // where the person is already looking. A DM gets none: every message there is
+  // for the bot, and the thread's own status line says it was picked up.
+  if (!isAssistantThread) {
+    await deps.slack
+      .addReaction(token, { channel: event.channel, ts: event.ts, name: PICKED_UP_REACTION })
+      // Never fatal, and not even a warning in the reply: the run is about to
+      // answer, which is a louder acknowledgement than the one that failed.
+      .catch((error) => log.error("slack", "pickup reaction failed", error));
+  }
   await sink.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
 
   // The version's opt-in gates the *lookup*, not just the prompt: a project that
