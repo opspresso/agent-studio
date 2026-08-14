@@ -83,6 +83,16 @@ describe("a project's client ID metadata document", () => {
     expect((await get("helper")).status).toBe(503);
   });
 
+  it("lets a server cache it, but briefly", async () => {
+    // The document changes when this deployment's own address does, and an
+    // authorization server holding a stale `redirect_uri` refuses every
+    // authorization until its copy expires. Asserted because the cost of the
+    // number growing is paid by whoever moves the deployment, long after.
+    const response = await get("helper");
+
+    expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+  });
+
   it("tolerates a base URL with a trailing slash", async () => {
     publicBaseUrl.value = "https://studio.example.com/";
     const document = (await (await get("helper")).json()) as Record<string, unknown>;

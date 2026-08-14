@@ -41,9 +41,9 @@ function startLoopbackMcp(): Promise<{ server: Server; port: number }> {
         return;
       }
       if (message.method === "server/discover") {
-        // The era probe every connection opens with. This client speaks one
-        // revision, so a server that answered anything else would not be talked
-        // to at all.
+        // The era probe every connection opens with. Answering it is what
+        // makes this stub a modern server; one that answered `-32601` would be
+        // talked to just as happily, over the `initialize` handshake instead.
         response.writeHead(200, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
