@@ -1113,6 +1113,11 @@ lazy connect below, and the expired-session retry — which the SDK does not imp
   The spec requires the declaration of any server that has tools, and the SDK returns an empty
   list without sending `tools/list`. That would be a silent loss, so the run says which of the
   two happened: `McpSession.declaresTools` is what the emptiness warning reads.
+- **A catalogue that never finishes paging costs all of it.** The aggregating walk throws at
+  the page cap and keeps no partial result, where the hand-rolled one returned the pages it
+  had and warned about the tail — so the cap is no longer free, sits at the SDK's own default
+  of 64 rather than below it, and reaching it is reported as a server this client cannot use.
+  The discovery deadline is the real defence against a cursor that never converges.
 - **`structuredContent` is read when the server sent no content blocks.** Serializing it into
   a text block is only a SHOULD, so a server that skips it is still answering — that result
   used to be reported as "no content", a failure report about a call that succeeded. Content
