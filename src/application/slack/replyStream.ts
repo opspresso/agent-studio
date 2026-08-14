@@ -1,4 +1,4 @@
-import type { SlackClientPort } from "@/application/slack/types";
+import type { SlackChunk, SlackClientPort } from "@/application/slack/types";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 
@@ -54,13 +54,16 @@ const EDIT_INTERVAL_MS = 3000;
  */
 const STATUS_REFRESH_MS = 45_000;
 /**
- * The id every progress task is sent under.
+ * The id the run's ambient state is sent under — "is thinking…", before any
+ * step of its own exists. Constant, so re-sending it retitles that one row
+ * rather than adding another.
  *
- * Constant on purpose: sending the same id updates that task in place, which is
- * what makes the channel's timeline behave like the agent thread's single
- * status line rather than accumulating one row per tool call.
+ * Every *step* carries its own id instead, which is what makes the channel show
+ * a checklist that accumulates. The two are different things: the ambient line
+ * is the run having nothing more specific to say, and a step is a unit of work
+ * with a real beginning and end.
  */
-const TASK_ID = "run-progress";
+const AMBIENT_TASK_ID = "run-progress";
 /**
  * Appended to an edited-in-place reply that is still being written, when the
  * deployment names nothing else.
@@ -99,6 +102,26 @@ export interface ReplySink {
    */
   status(text: string, loadingMessages?: string[]): Promise<void>;
   /**
+   * A unit of work began — a tool call, a hand-off — identified by something
+   * stable for its lifetime.
+   *
+   * Where the surface renders a checklist this adds a row; where it renders one
+   * status line it takes the line over. Calling it again with the same `id`
+   * retitles that step rather than adding a second.
+   */
+  step(id: string, title: string): Promise<void>;
+  /**
+   * That unit of work finished. `title` replaces the one it opened with when the
+   * ending says more than the beginning did — a tool result names what it acted
+   * on, which the call alone does not.
+   *
+   * Only a real boundary may call this. Nothing else in a run has one: a status
+   * line changing does not mean the last thing it said is *finished*, and a
+   * checklist that ticked items off on that basis would claim the run completed
+   * things it merely stopped mentioning.
+   */
+  stepDone(id: string, title?: string): Promise<void>;
+  /**
    * Keep the current status from expiring while a run is in flight. Returns the
    * stopper; call it in a `finally` so a failed run does not leave a timer.
    */
@@ -117,6 +140,19 @@ export interface ReplySink {
  */
 function progressText(text: string, indicator: string): string {
   return `_${text}_ ${indicator}`;
+}
+
+/**
+ * A step, said as a sentence.
+ *
+ * A checklist row stands on its own and reads best as the bare thing — `Skill:
+ * deep-research` — while the two surfaces that render progress as *prose* need
+ * a verb: Slack puts the status line after the app's name ("AgentDure is using
+ * search…"), and the text-note fallback posts it as a message. One phrasing for
+ * both, so the fallback cannot drift from the line it stands in for.
+ */
+function usingPhrase(title: string): string {
+  return `is using ${title}…`;
 }
 
 function withSuffix(text: string, suffix: string): string {
@@ -152,6 +188,20 @@ export function createReplySink(
   let lastStatus = "";
   let lastStatusLoading: string[] | undefined;
   let lastStatusAt = 0;
+  /**
+   * The checklist, in the order Slack was told about it. Titles are kept because
+   * a `task_update` carries the whole row every time — completing a step means
+   * re-sending its title, not sending a status on its own.
+   */
+  const steps = new Map<string, { title: string; complete: boolean }>();
+  /**
+   * Whether the ambient "is thinking…" row has been closed off.
+   *
+   * It is closed by the first *step*, because that is the moment the run stopped
+   * deciding and started doing. Leaving it open would put a permanently spinning
+   * row above a checklist that is visibly moving.
+   */
+  let ambientClosed = false;
   const indicator = loadingIndicator || DEFAULT_LOADING_INDICATOR;
 
   async function open(text: string): Promise<void> {
@@ -199,16 +249,27 @@ export function createReplySink(
    * Progress on the stream's task axis — what a channel has instead of the
    * agent container's status line.
    *
-   * The run reports one evolving step, so it is one task retitled rather than a
-   * timeline of many: `status` carries no completion boundary per step, and
-   * inventing one would claim the run finished things it only stopped saying.
-   * {@link finish} is what marks it complete.
+   * One row per `id`, so the caller decides whether this is a checklist or a
+   * single line that keeps being rewritten. Both are here: the ambient state is
+   * one constant id, and each step of real work carries its own.
+   *
+   * The constraint that shapes it: a row may only be ticked off at a *real*
+   * boundary. `status` has none — a line changing means the run stopped saying
+   * something, not that it finished it — so the ambient row is only ever closed
+   * by the first step or by {@link finish}. A tool result does have one, which
+   * is why steps can tick off as the run goes.
    *
    * Nothing is written into the reply's own text, which is the whole point —
    * the answer keeps streaming into the same message.
    */
-  async function showTask(text: string, status: "in_progress" | "complete"): Promise<void> {
-    const chunk = { type: "task_update" as const, id: TASK_ID, title: text, status };
+  async function showTask(
+    id: string,
+    text: string,
+    status: "in_progress" | "complete",
+    /** What the text-note fallback writes instead, when a row's wording is not a sentence. */
+    prose = text,
+  ): Promise<void> {
+    const chunk = { type: "task_update" as const, id, title: text, status };
     if (mode === "stream") {
       await slack
         .appendStream(token, { channel: messageChannel, ts: messageTs, chunks: [chunk] })
@@ -249,7 +310,7 @@ export function createReplySink(
           error instanceof Error ? error.message : "unknown"
         }`,
       );
-      await showProgress(text);
+      await showProgress(prose);
     }
   }
 
@@ -313,11 +374,13 @@ export function createReplySink(
       // The same report, rendered the way this surface renders one. Skipped when
       // there is nothing to say or the answer has taken the message over — a
       // task does not expire, so an unchanged one is never worth re-sending.
-      if (text && flushed === 0 && text !== lastStatus) {
+      // Once a step exists the checklist is the report, and an ambient line
+      // under it would be a second, vaguer account of the same run.
+      if (text && flushed === 0 && text !== lastStatus && !ambientClosed) {
         // `lastStatus` is set by whichever mechanism actually lands it — setting
         // it here would make the text-note fallback believe the note it is about
         // to write is already on screen, and it would write nothing at all.
-        await showTask(text, "in_progress");
+        await showTask(AMBIENT_TASK_ID, text, "in_progress");
       }
       return;
     }
@@ -347,8 +410,55 @@ export function createReplySink(
       .catch(() => {});
   }
 
+  /**
+   * Close the ambient row, once, when the work becomes specific enough to list.
+   * On the agent thread there is no list and nothing to close.
+   */
+  async function closeAmbient(): Promise<void> {
+    if (ambientClosed || target.assistantThread || !lastStatus) {
+      ambientClosed = true;
+      return;
+    }
+    ambientClosed = true;
+    await showTask(AMBIENT_TASK_ID, lastStatus, "complete");
+  }
+
   return {
     status: sendStatus,
+
+    async step(id, title) {
+      if (target.assistantThread) {
+        // One line, so a step *is* the status — and it has to read as one. The
+        // phrasing belongs to the surface rather than to the caller that named
+        // the step, which is why a checklist row keeps the bare title.
+        await sendStatus(usingPhrase(title));
+        return;
+      }
+      const known = steps.get(id);
+      if (known?.title === title && !known.complete) {
+        return;
+      }
+      await closeAmbient();
+      steps.set(id, { title, complete: false });
+      await showTask(id, title, "in_progress", usingPhrase(title));
+    },
+
+    async stepDone(id, title) {
+      const known = steps.get(id);
+      if (target.assistantThread) {
+        // Nothing to mark: the next step takes the line, and `finish` clears it.
+        return;
+      }
+      // A completion for a step that was never opened is the shape of a bug
+      // upstream, not something to render — an unopened id would appear as a
+      // finished row for work nobody watched start.
+      if (!known || known.complete) {
+        return;
+      }
+      const shown = title || known.title;
+      steps.set(id, { title: shown, complete: true });
+      await showTask(id, shown, "complete");
+    },
 
     keepStatusAlive() {
       if (!target.assistantThread) {
@@ -425,6 +535,31 @@ export function createReplySink(
     },
 
     async finish(fullText, suffix) {
+      // Built before the writes below, because two of the three branches never
+      // reach the stream close: the checklist is only a channel's, and only a
+      // streamed one's.
+      const closingChunks: SlackChunk[] = target.assistantThread
+        ? []
+        : [
+            ...(ambientClosed || !lastStatus
+              ? []
+              : [
+                  {
+                    type: "task_update" as const,
+                    id: AMBIENT_TASK_ID,
+                    title: lastStatus,
+                    status: "complete" as const,
+                  },
+                ]),
+            ...[...steps.entries()]
+              .filter(([, step]) => !step.complete)
+              .map(([id, step]) => ({
+                type: "task_update" as const,
+                id,
+                title: step.title,
+                status: "complete" as const,
+              })),
+          ];
       // Warnings ride out with the answer rather than replacing it: a late
       // failure (image upload, timeout, mid-stream error) must not discard text
       // that already reached the user.
@@ -459,16 +594,11 @@ export function createReplySink(
             channel: messageChannel,
             ts: messageTs,
             ...(remaining ? { markdown_text: remaining } : {}),
-            // The task rides out on the close rather than in its own append: a
-            // step left `in_progress` on a finished message reads as a run that
-            // never came back.
-            ...(lastStatus && !target.assistantThread
-              ? {
-                  chunks: [
-                    { type: "task_update" as const, id: TASK_ID, title: lastStatus, status: "complete" as const },
-                  ],
-                }
-              : {}),
+            // Every unfinished row rides out on the close rather than in its own
+            // append: a step left `in_progress` on a finished message reads as a
+            // run that never came back. The ambient row is one of them when no
+            // step ever replaced it.
+            ...(closingChunks.length > 0 ? { chunks: closingChunks } : {}),
           });
           flushed = fullText.length;
         } else {

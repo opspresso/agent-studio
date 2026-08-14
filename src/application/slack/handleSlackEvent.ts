@@ -579,17 +579,36 @@ export async function handleSlackEvent(
       if (warning) {
         warnings.push(warning);
       }
-      // Report tool activity through the status line rather than the answer:
-      // a tool-heavy first turn shows progress without spending the message
-      // body on it, so every tool can be named, not just the first.
+      // Tool activity is reported as steps rather than in the answer: a
+      // tool-heavy first turn shows what is happening without spending the
+      // message body on it, and where the surface renders a checklist the steps
+      // accumulate into one.
+      //
       // Every tool the chunk announced, not just the first: a model that fans
       // out calls in one response puts them side by side in this array, and
       // reading index 0 alone reported one of them and hid the rest.
-      const toolNames = ((chunk.delta?.toolCalls ?? []) as Array<{ function?: { name?: string } }>)
-        .map((call) => call.function?.name)
-        .filter((name): name is string => Boolean(name));
-      if (toolNames.length > 0) {
-        await sink.status(`is using ${toolNames.join(", ")}…`);
+      //
+      // A subagent's calls are listed too, named by the agent that made them —
+      // the checklist is what the run is doing, and a hand-off's work is still
+      // the run's work.
+      for (const call of chunk.delta?.toolCalls ?? []) {
+        const name = call.function?.name;
+        // Arguments stream in after the name, so a later delta for the same
+        // call carries neither and is not a step of its own.
+        if (call.id && name) {
+          await sink.step(call.id, chunk.author ? `${chunk.author}: ${name}` : name);
+        }
+      }
+      // The one real completion boundary a run has. Nothing else may tick a
+      // step off: a status changing means the run stopped saying something, not
+      // that it finished it.
+      if (chunk.toolResult) {
+        await sink.stepDone(
+          chunk.toolResult.toolCallId,
+          // The result names what the call acted on — the skill it loaded, the
+          // server an MCP tool came from — which the call's own name never does.
+          chunk.author ? `${chunk.author}: ${chunk.toolResult.name}` : chunk.toolResult.name,
+        );
       }
       if (chunk.image) {
         images.push(chunk.image);
