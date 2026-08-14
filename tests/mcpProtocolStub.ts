@@ -101,10 +101,13 @@ export function conforming(tools: StubTool[]): StubTool[] {
 }
 
 /**
- * The answer to a request carrying no JSON-RPC body: the session DELETE a
- * legacy connection sends on teardown, or the standalone GET stream — which
- * this client never opens, and 405 is what a server says to one that tries.
- * Revision `2026-07-28` has neither, so on a modern stub nothing arrives here.
+ * The answer to a request carrying no JSON-RPC body, which on a legacy
+ * connection is two things: the standalone GET stream the SDK offers to open
+ * after the handshake, and the session DELETE it sends on teardown. 405 to the
+ * GET is a server that does not have one, which the client accepts and carries
+ * on — the shape most 2025-era servers here actually take.
+ *
+ * Revision `2026-07-28` has neither, so nothing reaches this on a modern stub.
  */
 export function bodylessResponse(httpMethod: string | undefined): Response {
   return httpMethod === "DELETE"
