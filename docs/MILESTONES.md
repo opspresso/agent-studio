@@ -4,33 +4,9 @@ AgentDure는 프로젝트·버전 관리, LLM/에이전트 실행, Skills/MCP/�
 Slack/A2A 연동, 사용량 집계와 트레이스를 갖추고 있다. 이 문서는 구현 이력이 아니라
 프로덕션 운영에 남은 작업만 우선순위대로 관리한다.
 
-## `bedrock-claude` — Bedrock 의 Claude 를 실행 가능하게
-
-Bedrock 채널은 붙었지만 **Claude 는 이 경로로 못 간다.** Bedrock 의 OpenAI 호환
-엔드포인트(`bedrock-mantle`)는 `anthropic.*` 모델에 대해
-`does not support the '/v1/chat/completions' API` 로 400 을 낸다 — Claude 는 같은
-엔드포인트의 **Anthropic Messages API**(`/v1/messages`)로만 열려 있다. 그래서 지금
-레지스트리의 Bedrock offering 은 open-weight 모델뿐이고, 사내 AWS 계정으로 Claude 를
-쓰려던 원래 동기는 아직 충족되지 않았다.
-
-필요한 것은 두 번째 wire protocol 어댑터다: `LlmChannel` 포트의 두 번째 구현이
-Messages 요청/스트리밍 이벤트/tool_use 블록/usage 를 도메인 청크로 옮긴다. 채널 선택은
-이미 `ResolvedTarget` 이 들고 있는 정보로 충분하다 — 인증(`auth`)이 transport 를
-갈랐듯 protocol 도 route 의 속성이다.
-
-**완료 조건**: `bedrock/claude-*` offering 이 레지스트리에 있고, 그 id 로 시작한 런이
-툴 호출을 포함해 끝까지 돌며 usage 행이 $0 이 아니다. 어댑터의 매핑은 `tests/` 에서
-fake 로 고정한다 (`tests/fakeChannel.ts` 와 같은 자리).
-
-**선행 없음.** 범위를 줄이려면 Claude 대신 Converse API 를 쓰는 선택지도 있으나, 그쪽은
-OpenAI 호환도 Anthropic 호환도 아닌 세 번째 모양이라 얻는 것이 없다.
-
----
-
-다른 열려 있는 마일스톤은 없다. 목록이 짧은 것은 할 일이 없다는 뜻이 아니라,
-*자동으로 확인 가능한 완료 조건을 갖춘* 작업이 지금은 이 하나뿐이라는 뜻이다 (아래 규약 첫 항목).
-직전까지 있던 두 건 — 원격 에이전트 위임의 스트리밍, 채널 스레드의 진행 표시 — 은 구현되어
-규약대로 제거됐다. 이력은 git log와 태그별 GitHub Release에 있다.
+열린 마일스톤은 없다. 목록이 비어 있는 것은 할 일이 없다는 뜻이 아니라, *자동으로
+확인 가능한 완료 조건을 갖춘* 작업이 지금은 하나도 등록돼 있지 않다는 뜻이다 (아래 규약
+첫 항목). 완료된 것의 이력은 git log와 태그별 GitHub Release에 있다.
 
 의도적으로 열지 않은 갭도 있다. 기록해 두는 이유는 "아직 안 했다"와 "안 하기로 했다"가
 문서에서 구별되지 않으면 다음 사람이 같은 판단을 다시 하기 때문이다.
