@@ -32,6 +32,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { LoadingText } from "@/app/_components/PageState";
+import { ProducedFile } from "@/app/_components/ProducedFile";
 
 /**
  * One side's outcome, folded from the same chunk stream the playground reads —
@@ -49,6 +50,8 @@ interface SideResult {
   image: ImageResult | null;
   /** Pictures an agent run drew with its builtin image tool. */
   agentImages: Array<{ b64: string; mimeType: string }>;
+  /** Documents a tool rendered, addressed by `/agent` on the way out. */
+  agentFiles: Array<{ name: string; byteSize?: number; url?: string }>;
 }
 
 const IDLE: SideResult = {
@@ -61,6 +64,7 @@ const IDLE: SideResult = {
   durationMs: null,
   image: null,
   agentImages: [],
+  agentFiles: [],
 };
 
 function versionOptions(versions: Version[], published: string | undefined) {
@@ -186,6 +190,20 @@ export default function ComparePage() {
           const generated = chunk.image;
           setSide((prev) => ({ ...prev, agentImages: [...prev.agentImages, generated] }));
         }
+        if (chunk.file) {
+          const produced = chunk.file;
+          setSide((prev) => ({
+            ...prev,
+            agentFiles: [
+              ...prev.agentFiles,
+              {
+                name: produced.name,
+                ...(produced.byteSize !== undefined ? { byteSize: produced.byteSize } : {}),
+                ...(produced.url ? { url: produced.url } : {}),
+              },
+            ],
+          }));
+        }
         if (chunk.usage) {
           const spent = chunk.usage.costUsd;
           setSide((prev) => ({ ...prev, costUsd: (prev.costUsd ?? 0) + spent }));
@@ -305,6 +323,16 @@ export default function ComparePage() {
                       src={imageDataUrl(generated)}
                       alt="Image drawn during the run"
                       radius="sm"
+                    />
+                  ))}
+                  {/* Comparing two versions means comparing what each produced,
+                      and a rendered document is as much of that as a picture. */}
+                  {side.agentFiles.map((file, fileIndex) => (
+                    <ProducedFile
+                      key={`file-${fileIndex}`}
+                      name={file.name}
+                      byteSize={file.byteSize}
+                      url={file.url}
                     />
                   ))}
                   <Group gap="xs">

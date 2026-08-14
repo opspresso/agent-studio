@@ -877,9 +877,17 @@ therefore ignored for an agent project — an agent run has no prompt template t
   "usage": { "inputTokens": 12, "outputTokens": 34, … },
   "finishReason": "completed",  // why the run ended: "turn-limit" / "output-limit" mark a partial answer
   "warnings": [ "Skill 'x' is no longer in the registry; it was not offered." ]?,  // only when the run lost something
-  "images": [ { "b64": "…", "mimeType": "image/png" } ]?  // only when the run drew something
+  "images": [ { "b64": "…", "mimeType": "image/png" } ]?,  // only when the run drew something
+  "files": [ { "name": "report.docx", "mimeType": "…", "byteSize": 2048, "url": "https://…" } ]?  // only when a tool produced one
 }
 ```
+
+`files` are documents a tool rendered — the bytes are kept as artifacts and stripped from the
+run's stream, so this carries a **signed download address** rather than the file. The
+signature is short-lived (15 minutes); the artifact itself stays in the project's gallery. A
+file this deployment could not keep or could not sign is reported in `warnings` instead of
+being listed, because a document the run produced and the caller was never told about reads
+as the platform having lost it.
 
 `warnings` is what the run reported losing on the way to that answer — a binding no
 longer in the registry, an MCP server the outbound guard blocked, tools past the per-run
@@ -932,6 +940,11 @@ is capped at 10MB, and the version's model must have the `imageInput` capability
 `images: [ { b64, mimeType, prompt? } ]` on the completion object, and `choices[0].delta.images`
 frames in a stream. Clients that do not know the field simply ignore it.
 
+**File output.** Same treatment again, with one difference that matters: a document is
+*taken away* rather than drawn, so it travels as an address — `files: [ { name, mimeType,
+byteSize?, url } ]` on the completion object and `choices[0].delta.files` frames in a stream.
+See `/predict` above for what the address is and how long it lives.
+
 **What the run lost.** Same treatment, same reason: `warnings: [ "…" ]` on the completion
 object and `choices[0].delta.warnings` frames in a stream. These are the losses a run
 reports as it goes (see `/predict` above); without them a degraded run and a clean one are
@@ -940,10 +953,16 @@ the same response on this surface.
 ### `POST /api/projects/{name}/versions/{version}/agent`
 
 Agent SSE stream. Body `{ "messages": [ … ] }`. Emits `EngineChunk` frames
-(`delta.content`, `toolResult`, `warning`, `image`, `author` for subagent turns, `error`,
-and a terminal `done: true` or `finishReason` naming why the run ended) then
+(`delta.content`, `toolResult`, `warning`, `image`, `file`, `author` for subagent turns,
+`error`, and a terminal `done: true` or `finishReason` naming why the run ended) then
 `data: [DONE]`. The full field contract is in
 [ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-contract).
+
+A `file` frame leaves this endpoint **addressed**: the object key and artifact id the run
+bracket put on it are replaced by a short-lived signed `url`, since those two are the
+platform's own bookkeeping and a caller holding them can do nothing with them. A file that
+could not be signed arrives as a `warning` frame instead of a `file` frame naming a document
+nothing can fetch.
 
 **Agent projects only** — 400 for any other type. The tool loop has nowhere to put an
 `llm` project's `userPromptTemplate`, and an `image` project's model does not serve

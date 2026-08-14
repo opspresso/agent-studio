@@ -1,6 +1,12 @@
 import type { SlackMessage } from "@/domain/slack/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createReplySink } from "@/application/slack/replyStream";
+import {
+  fileRefOf,
+  resolveProducedFile,
+  type ProducedFile,
+} from "@/application/artifact/producedFiles";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import type { SlackEventBody, SlackEventDeps, SlackEventFile } from "@/application/slack/types";
 import type { RunCaller } from "@/domain/execution/actor";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
@@ -462,6 +468,11 @@ export async function handleSlackEvent(
 
   let text = "";
   const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
+  // Documents a tool rendered. Not uploaded like the images below them: their
+  // bytes were stripped at the bracket the moment they were stored, so a thread
+  // gets a link. Without this the run answered "here is the report" into a
+  // thread with no report in it.
+  const produced: ProducedFile[] = [];
   // Enforced by an abort signal so a run that stops producing chunks entirely
   // (hung provider or tool) still ends and reports a timeout instead of
   // leaving the status up forever.
@@ -544,6 +555,18 @@ export async function handleSlackEvent(
       if (chunk.image) {
         images.push(chunk.image);
       }
+      if (chunk.file) {
+        const resolved = await resolveProducedFile(
+          fileRefOf(chunk.file),
+          deps.signFile,
+          VIEW_URL_TTL_SECONDS,
+        );
+        if (resolved.file) {
+          produced.push(resolved.file);
+        } else if (resolved.warning && !warnings.includes(resolved.warning)) {
+          warnings.push(resolved.warning);
+        }
+      }
       const content = chunk.delta?.content;
       if (content && isTopLevelChunk(chunk)) {
         text += content;
@@ -585,9 +608,18 @@ export async function handleSlackEvent(
   }
   // Only this scope knows whether *anything* reached the thread — the sink sees
   // the text and not the uploaded images, which is how a run that answered
-  // purely with a picture used to be captioned "(no response)".
-  if (!text && images.length === 0 && warnings.length === 0) {
+  // purely with a picture used to be captioned "(no response)". A produced file
+  // counts for the same reason: it is the deliverable, and the link below is the
+  // only place the thread carries it.
+  if (!text && images.length === 0 && produced.length === 0 && warnings.length === 0) {
     warnings.push("The run finished without producing an answer.");
   }
-  await sink.finish(text, warnings.map((warning) => `:warning: ${warning}`).join("\n"));
+  // Links first, warnings after: one is what the run made and the other is what
+  // it lost, and a reader scanning the end of a reply should meet them in that
+  // order.
+  const suffix = [
+    ...produced.map((file) => `:paperclip: <${file.url}|${file.name}>`),
+    ...warnings.map((warning) => `:warning: ${warning}`),
+  ].join("\n");
+  await sink.finish(text, suffix);
 }

@@ -7,6 +7,7 @@ import { parseWireToolCall } from "@/app/_lib/toolCalls";
 import { findTemplateVariables } from "@/shared/template";
 import { pairToolTraffic } from "@/app/_lib/toolPairs";
 import { formatUsd } from "@/app/_lib/formatUsd";
+import { ProducedFile } from "@/app/_components/ProducedFile";
 import { ToolRow } from "@/app/_components/ToolRow";
 import {
   chunkAuthorPath,
@@ -95,6 +96,11 @@ export function RunPanel({
   const [agentImages, setAgentImages] = useState<
     Array<{ b64: string; mimeType: string; prompt?: string }>
   >([]);
+  // Documents a tool rendered. They arrive addressed — `/agent` signs the
+  // reference on its way out — so what this holds is already a download.
+  const [agentFiles, setAgentFiles] = useState<
+    Array<{ name: string; byteSize?: number; url?: string }>
+  >([]);
   const [size, setSize] = useState("1024x1024");
   const [quality, setQuality] = useState("medium");
   const { attachments, attachError, addFiles, removeAt } = useAttachments();
@@ -128,6 +134,7 @@ export function RunPanel({
     setCost(null);
     setImage(null);
     setAgentImages([]);
+    setAgentFiles([]);
     let totalCost = 0;
 
     try {
@@ -216,6 +223,17 @@ export function RunPanel({
         if (chunk.image) {
           const generated = chunk.image;
           setAgentImages((prev) => [...prev, generated]);
+        }
+        if (chunk.file) {
+          const produced = chunk.file;
+          setAgentFiles((prev) => [
+            ...prev,
+            {
+              name: produced.name,
+              ...(produced.byteSize !== undefined ? { byteSize: produced.byteSize } : {}),
+              ...(produced.url ? { url: produced.url } : {}),
+            },
+          ]);
         }
         if (chunk.usage) {
           totalCost += chunk.usage.costUsd;
@@ -428,6 +446,13 @@ export function RunPanel({
           alt={img.prompt ?? t("chat.generatedImage")}
           radius="md"
         />
+      ))}
+
+      {/* The same row the chat draws. A run that renders a document answers
+          with it, and this surface used to show the picture beside it and
+          nothing else. */}
+      {agentFiles.map((file, i) => (
+        <ProducedFile key={`file-${i}`} name={file.name} byteSize={file.byteSize} url={file.url} />
       ))}
 
       {/* The same paired rows the chat draws — one row per call, badged by what

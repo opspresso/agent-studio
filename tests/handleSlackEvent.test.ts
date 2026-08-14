@@ -313,6 +313,54 @@ describe("handleSlackEvent", () => {
     expect(posted).toEqual([]);
   });
 
+  /**
+   * A document a tool rendered. Its bytes were stripped at the bracket the
+   * moment it was stored, so a thread cannot be handed the file the way it is
+   * handed a picture — it gets a link. Before this, Slack read `chunk.image`
+   * beside `chunk.file` and dropped the second: the bot answered "here is the
+   * report" into a thread with no report in it.
+   */
+  const rendered: EngineChunk = {
+    file: {
+      name: "report.docx",
+      mimeType: "application/msword",
+      source: "mcp: render_document",
+      byteSize: 2048,
+      key: "objects/report.docx",
+    },
+  };
+
+  it("links a file the run produced, under the name it should be saved as", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, finalText } = makeSlackFake();
+    const deps = makeDeps([{ delta: { content: "Here is your report." } }, rendered, { done: true }], slack);
+    deps.signFile = async (key, _ttl, opts) => `https://signed/${key}?as=${opts?.downloadAs ?? ""}`;
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(finalText()).toContain("Here is your report.");
+    expect(finalText()).toContain(
+      "<https://signed/objects/report.docx?as=report.docx|report.docx>",
+    );
+  });
+
+  it("says a file was not kept when this deployment stores nothing", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, finalText } = makeSlackFake();
+    // No signer wired — the reader is told the download does not exist rather
+    // than being left to wonder where it went.
+    const deps = makeDeps([rendered, { done: true }], slack);
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(finalText()).toContain(":warning:");
+    expect(finalText()).toContain("were not kept");
+    // And the run is not captioned as having produced nothing: it produced this.
+    expect(finalText()).not.toContain("without producing an answer");
+  });
+
   it("says so when the run really produced nothing at all", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);

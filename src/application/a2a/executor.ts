@@ -15,6 +15,8 @@ import {
   type ExecutionDeps,
 } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
+import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
+import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
@@ -140,7 +142,15 @@ export class ProjectA2aExecutor implements AgentExecutor {
         if (warning) {
           warnings.push(warning);
         }
-        const parts = this.chunkParts(chunk);
+        // A file a tool produced, resolved as it passes. Its bytes were stripped
+        // at the bracket, so unlike an image it travels as an address — and when
+        // there is none, the reason joins the warnings rather than the task
+        // quietly completing without the document it was asked for.
+        const produced = chunk.file ? await this.filePart(chunk.file) : undefined;
+        if (produced?.warning && !warnings.includes(produced.warning)) {
+          warnings.push(produced.warning);
+        }
+        const parts = [...(produced?.part ? [produced.part] : []), ...this.chunkParts(chunk)];
         if (parts.length === 0) {
           continue;
         }
@@ -244,6 +254,38 @@ export class ProjectA2aExecutor implements AgentExecutor {
       status: { state: "canceled", timestamp: new Date().toISOString() },
     });
     this.publishStatus(eventBus, taskId, task.contextId, "canceled", true);
+  }
+
+  /**
+   * A produced file as an A2A file part, addressed by uri.
+   *
+   * `bytes` is not an option: the run bracket stored the document and dropped
+   * the payload from the chunk long before this sees it. The signature outlives
+   * the run comfortably but not the stored task — a `tasks/get` days later reads
+   * a link that has expired, and the artifact is still in the console. That is
+   * the trade for not carrying megabytes through a task store.
+   */
+  private async filePart(
+    file: NonNullable<EngineChunk["file"]>,
+  ): Promise<{ part?: Part; warning?: string }> {
+    const outcome = await resolveProducedFile(
+      fileRefOf(file),
+      this.deps.artifacts?.objects.sign,
+      VIEW_URL_TTL_SECONDS,
+    );
+    if (!outcome.file) {
+      return outcome.warning ? { warning: outcome.warning } : {};
+    }
+    return {
+      part: {
+        kind: "file",
+        file: {
+          uri: outcome.file.url!,
+          mimeType: outcome.file.mimeType,
+          name: outcome.file.name,
+        },
+      },
+    };
   }
 
   private chunkParts(chunk: EngineChunk): Part[] {
