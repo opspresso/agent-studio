@@ -67,7 +67,7 @@ function discoveryTtlMs(serverTtlMs: number | undefined): number {
  * Failures are remembered too, and for much less time.
  *
  * Without this a server that is down — or a connection whose token has been
- * revoked — re-pays a failing handshake on *every* message, before the first
+ * revoked — re-pays a failing connect on *every* message, before the first
  * token, forever. One that accepts the connection and never answers costs the
  * full discovery timeout each time.
  *

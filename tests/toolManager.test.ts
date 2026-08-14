@@ -1428,6 +1428,11 @@ describe("ToolManager protocol version", () => {
     const after = calls.filter((call) => call.method === "tools/list" || call.method === "tools/call");
     expect(after).not.toHaveLength(0);
     expect(after.every((call) => call.protocolVersion === "2025-06-18")).toBe(true);
+    // And the handshake itself states none: it proposes in its *body*, and the
+    // header names the revision in use — until the server answers there is not
+    // one. Asserted because it is the SDK's behaviour rather than ours, so an
+    // upgrade could change it without anything here saying so.
+    expect(calls.find((call) => call.method === "initialize")?.protocolVersion).toBeUndefined();
   });
 
   it("proposes a revision a 2025-era server can actually accept", async () => {

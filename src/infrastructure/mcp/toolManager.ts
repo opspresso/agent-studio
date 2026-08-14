@@ -184,17 +184,19 @@ export class ToolManager {
       }
       if (entry.tools.length === 0) {
         const described = entry.session.describedAs;
-        // The one outcome that would otherwise explain nothing: the handshake
+        // The one outcome that would otherwise explain nothing: the connection
         // succeeded, `tools/list` answered, and the answer was empty. Left
         // silent, the server vanishes from the run — no error, no tools, and no
         // row in the system prompt's server table — with nothing to tell an
         // operator apart a server that offers nothing from one this app
         // dropped. Say it, so they go and look at the server.
+        //
         // A server that answered but never declared it has tools is the one
         // case where the emptiness has a cause worth naming: the protocol says
         // a server with tools declares the capability, so this client never
-        // asked for the list. Left as plain emptiness, its tools disappear from
-        // the run with nothing to say the server was never asked.
+        // asked for the list. `undefined` rather than `false` is a session the
+        // discovery cache served without connecting — nothing was asked, so
+        // nothing may be claimed.
         const undeclared =
           entry.session.declaresTools === false
             ? " It did not declare the 'tools' capability, so its catalogue was never requested."
@@ -249,9 +251,13 @@ export class ToolManager {
       );
       return;
     }
-    // A server refusing the handshake because it has none is neither down nor
-    // misconfigured, and "unreachable" would send an operator to look at a host
-    // that is working. What it asks for is an upgrade on this side.
+    // A server that answered, in a way this client cannot use: a revision only
+    // newer clients speak, a reply that breaks the schema, a catalogue that
+    // never finishes paging. It is neither down nor misconfigured, so
+    // "unreachable" would send an operator to look at a host that is working —
+    // what these ask for is a fix on one side or the other. A server still on a
+    // 2025-era revision is *not* one of them: the probe falls back to the
+    // handshake and it runs like any other.
     if (failure.unusable) {
       this._warnings.push(
         `MCP server '${serverName}' cannot be used by this client: ${failure.unusable} Its tools are unavailable this run.`,
