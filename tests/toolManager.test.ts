@@ -9,9 +9,11 @@ import {
 } from "@/infrastructure/mcp/session";
 import { clearMcpDiscoveryCache, getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 import {
+  accepted,
   bodylessResponse,
   conforming,
   discoverResult,
+  eraResult,
   handshakeResult,
   modernResult,
   probeMiss,
@@ -45,11 +47,15 @@ interface ServerScript {
    */
   capabilities?: Record<string, unknown>;
   /**
-   * Answer the probe as a 2025-era server does — it has no such method — and the
-   * handshake it expects instead. This client speaks one revision and has no
-   * fallback, so such a server is refused.
+   * Be a 2025-era server: no `server/discover`, the `initialize` handshake
+   * instead, a session id on every subsequent request, and results without the
+   * fields the newer revision added. The client falls back to all of it.
    */
   legacy?: boolean;
+  /** The session id a legacy handshake hands out. */
+  sessionId?: string;
+  /** 404 the next legacy request as a server whose session has expired does. */
+  expireSessionOnce?: boolean;
   /** 404 every request after the probe: the endpoint itself is gone. */
   notFoundAfterProbe?: boolean;
   /** Tools reported by tools/list. */
@@ -131,6 +137,7 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       throw new Error("network down");
     }
     const sent = new Headers(init?.headers);
+    const sentSession = sent.get("Mcp-Session-Id") ?? undefined;
     const sentVersion = sent.get("MCP-Protocol-Version") ?? undefined;
     const sentMcpMethod = sent.get("Mcp-Method") ?? undefined;
     const sentMcpName = sent.get("Mcp-Name") ?? undefined;
@@ -149,6 +156,7 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       url,
       method: body.method,
       httpMethod: init?.method ?? "GET",
+      ...(sentSession ? { sessionId: sentSession } : {}),
       ...(sentVersion ? { protocolVersion: sentVersion } : {}),
       ...(sentMcpMethod ? { mcpMethod: sentMcpMethod } : {}),
       ...(sentMcpName ? { mcpName: sentMcpName } : {}),
@@ -180,8 +188,8 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
       );
     }
     if (body.method === "server/discover") {
-      // A 2025-era server has no such method, and this client has no fallback:
-      // the connection ends here.
+      // A 2025-era server has no such method; the client reads the miss and
+      // handshakes instead.
       return script.legacy
         ? probeMiss(body.id)
         : framedResponse(
@@ -199,13 +207,29 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
           );
     }
     if (script.legacy && body.method === "initialize") {
-      return framedResponse(
+      const handshake = framedResponse(
         { jsonrpc: "2.0", id: body.id, result: handshakeResult(script.serverInfo?.name) },
         script,
       );
+      // The session id is what every later request has to carry back, and what
+      // the DELETE on teardown releases. A legacy server that issues none is a
+      // different shape of server; scripts asking for one say so.
+      if (script.sessionId) {
+        handshake.headers.set("mcp-session-id", script.sessionId);
+      }
+      return handshake;
+    }
+    if (script.legacy && body.method === "notifications/initialized") {
+      return accepted();
     }
     if (script.notFoundAfterProbe) {
       return new Response("Not found", { status: 404 });
+    }
+    if (script.expireSessionOnce && sentSession) {
+      // Exactly once: Streamable HTTP answers an unknown session id with 404 and
+      // requires a fresh session rather than treating the server as dead.
+      script.expireSessionOnce = false;
+      return new Response("Session not found", { status: 404 });
     }
     if (script.callUnauthorized && body.method === "tools/call") {
       return new Response("Unauthorized", { status: 401 });
@@ -220,13 +244,13 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         payload = {
           jsonrpc: "2.0",
           id: body.id,
-          result: modernResult(body.method, { ...page, tools: conforming(page.tools) }),
+          result: eraResult(script.legacy, body.method, { ...page, tools: conforming(page.tools) }),
         };
       } else {
         payload = {
           jsonrpc: "2.0",
           id: body.id,
-          result: modernResult(body.method, { tools: conforming(script.listTools ?? []) }),
+          result: eraResult(script.legacy, body.method, { tools: conforming(script.listTools ?? []) }),
         };
       }
     } else if (body.method === "tools/call") {
@@ -255,7 +279,7 @@ function stubMcpFetch(scripts: Record<string, ServerScript>): RecordedCall[] {
         : {
             jsonrpc: "2.0",
             id: body.id,
-            result: modernResult(body.method, {
+            result: eraResult(script.legacy, body.method, {
               ...(script.callOmitsContent ? {} : { content: script.callContent ?? [] }),
               ...(script.callStructuredContent !== undefined
                 ? { structuredContent: script.callStructuredContent }
@@ -626,32 +650,99 @@ describe("ToolManager era negotiation", () => {
     expect(calls.map((call) => call.method)).not.toContain("initialize");
   });
 
-  it("refuses a server that still speaks a 2025-era revision, and says which", async () => {
-    // There is no fallback: the handshake this server is waiting for is not one
-    // this client performs. It is running and correct for the revision it
-    // implements, so the warning asks for that server to be upgraded rather
-    // than sending an operator to check whether it is up.
+  it("falls back to the handshake for a server that still speaks a 2025-era revision", async () => {
+    // The half that has to keep working: an MCP server is somebody else's
+    // deployment, and a registry entry pointing at one that has not moved yet
+    // must not become a broken entry because this app moved.
     const calls = stubMcpFetch({
+      "https://old.test/mcp": {
+        legacy: true,
+        listTools: [{ name: "search" }],
+        callContent: [textBlock("ok")],
+      },
+    });
+    const manager = new ToolManager([server("old", "https://old.test/mcp")]);
+
+    await manager.init();
+
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["search"]);
+    expect((await manager.callTool("search", {})).text).toBe("ok");
+    expect(manager.warnings).toEqual([]);
+    // The probe went first and the handshake only after it missed: a client
+    // that skipped the probe would be a 2025-era one, which is the SDK default
+    // and would silently stop working against a modern server.
+    const methods = calls.map((call) => call.method);
+    expect(methods.indexOf("server/discover")).toBe(0);
+    expect(methods).toContain("initialize");
+  });
+
+  it("runs both eras side by side in one run", async () => {
+    // The point of negotiating rather than pinning: one registry, two kinds of
+    // server, and nothing in the run that has to know which is which.
+    stubMcpFetch({
       "https://old.test/mcp": { legacy: true, listTools: [{ name: "search" }] },
-      "https://ok.test/mcp": { listTools: [{ name: "weather" }] },
+      "https://new.test/mcp": { listTools: [{ name: "weather" }] },
     });
     const manager = new ToolManager([
       server("old", "https://old.test/mcp"),
-      server("ok", "https://ok.test/mcp"),
+      server("new", "https://new.test/mcp"),
     ]);
 
     await manager.init();
 
-    // One server's problem, not the run's.
-    expect(manager.tools.map((t) => t.function.name)).toEqual(["weather"]);
-    const warning = manager.warnings.find((w) => w.includes("'old'"));
-    expect(warning).toContain("cannot be used by this client");
-    expect(warning).toContain("does not offer MCP 2026-07-28");
-    expect(warning).not.toContain("unreachable");
-    // It asked once and stopped: no handshake was attempted.
-    expect(calls.filter((call) => call.url.includes("old")).map((call) => call.method)).toEqual([
-      "server/discover",
+    expect(manager.tools.map((t) => t.function.name)).toEqual(["search", "weather"]);
+    expect(manager.warnings).toEqual([]);
+  });
+
+  it("releases a legacy server's session on teardown, and mints none on a modern one", async () => {
+    // A legacy connection's session lives on the server until it is released or
+    // its TTL passes, so every run that skipped the DELETE used to leak one.
+    // The modern half of the assertion is the one that would rot quietly: this
+    // revision has no session at all, and a DELETE to a server that never
+    // issued one is a request with nothing to release.
+    const calls = stubMcpFetch({
+      "https://old.test/mcp": { legacy: true, sessionId: "sess-1", listTools: [{ name: "search" }] },
+      "https://new.test/mcp": { listTools: [{ name: "weather" }] },
+    });
+    const manager = new ToolManager([
+      server("old", "https://old.test/mcp"),
+      server("new", "https://new.test/mcp"),
     ]);
+    await manager.init();
+
+    await manager.close();
+
+    const deletes = calls.filter((call) => call.httpMethod === "DELETE");
+    expect(deletes.map((call) => call.url)).toEqual(["https://old.test/mcp"]);
+    expect(deletes[0]?.sessionId).toBe("sess-1");
+    // And every request after the handshake carried the id back.
+    expect(
+      calls.filter((call) => call.method === "tools/list" && call.url.includes("old"))[0]?.sessionId,
+    ).toBe("sess-1");
+  });
+
+  it("recovers a legacy session the server has forgotten", async () => {
+    // Runs here last up to ten minutes, so a session expiring mid-run is not
+    // hypothetical. Without the retry the model keeps calling and every call
+    // reads `HTTP 404` for the rest of the run, with no path back.
+    const script: ServerScript = {
+      legacy: true,
+      sessionId: "sess-1",
+      listTools: [{ name: "search" }],
+      callContent: [textBlock("ok")],
+    };
+    const calls = stubMcpFetch({ "https://old.test/mcp": script });
+    const manager = new ToolManager([server("old", "https://old.test/mcp")]);
+    await manager.init();
+
+    // The next request finds the session gone. Mutated after init so discovery
+    // succeeds and the expiry lands on the tool call, which is where it hurts.
+    script.expireSessionOnce = true;
+    const result = await manager.callTool("search", {});
+
+    expect(result.text).toBe("ok");
+    // It handshook a second time rather than reporting the server as dead.
+    expect(calls.filter((call) => call.method === "initialize")).toHaveLength(2);
   });
 
   it("reports a server that speaks only a revision this client does not", async () => {
