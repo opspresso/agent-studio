@@ -41,6 +41,15 @@ export interface SlackClientPort extends SlackReaderPort {
     token: string,
     args: { channel: string; threadTs?: string; filename: string; data: Buffer; title?: string },
   ): Promise<void>;
+  /**
+   * Mark a message as picked up, on the message itself.
+   *
+   * The only acknowledgement that lands on the thing the person wrote rather
+   * than underneath it, which is what a channel needs: several people are
+   * talking, and the reply appears in a thread nobody is necessarily looking at
+   * yet. It also arrives a round trip sooner than anything the run produces.
+   */
+  addReaction(token: string, args: { channel: string; ts: string; name: string }): Promise<void>;
   // `threadReplies`, `channelHistory`, `listChannels` and `userProfile` come
   // from `SlackReaderPort` above: they are what a *run's* tools read, and the
   // execution slice has to be able to name them without importing this file.

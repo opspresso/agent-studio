@@ -198,6 +198,32 @@ export const slackClient = {
     await slackApi(token, "chat.delete", args);
   },
   /**
+   * React to a message, to say it has been picked up.
+   *
+   * `already_reacted` is success, not failure: Slack redelivers events, and a
+   * redelivery that the dedup claim let through — a reclaimed lease after an
+   * instance died — would otherwise turn an acknowledgement into a logged
+   * error. Nothing else about a reaction is worth failing a run over either,
+   * which is why the caller treats every other error the same way.
+   */
+  async addReaction(
+    token: string,
+    args: { channel: string; ts: string; name: string },
+  ): Promise<void> {
+    try {
+      await slackApi(token, "reactions.add", {
+        channel: args.channel,
+        timestamp: args.ts,
+        name: args.name,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("already_reacted")) {
+        return;
+      }
+      throw error;
+    }
+  },
+  /**
    * Open a streamed reply. Slack renders it as text arriving live rather than a
    * message being rewritten, and `chat.appendStream` costs a tenth of what a
    * `chat.update` loop does against the rate limit.
