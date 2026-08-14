@@ -80,10 +80,28 @@ function failureTtlMs(): number {
   return Math.min(config.mcpDiscoveryCacheTtlMs, 30_000);
 }
 
+/**
+ * Why a server contributed no tools, in the form the run reports it.
+ *
+ * One value rather than three arguments because it is remembered and replayed:
+ * a cached failure has to explain itself exactly as the live one did, and a
+ * reading added to one path but not the other is how the replay quietly
+ * degrades into "no tools".
+ */
+export interface DiscoveryFailure {
+  reason: string;
+  unauthorized: boolean;
+  /**
+   * Present when the server refused *because* it speaks a stateless revision
+   * (protocol `2026-07-28` or later) that has no `initialize`. A healthy server
+   * answering exactly as its protocol says it should — which is why it must not
+   * be reported as an unreachable one.
+   */
+  protocolRefusal?: string;
+}
+
 /** A remembered discovery: what the server offered, or why it offered nothing. */
-export type CachedDiscovery =
-  | { kind: "tools"; tools: McpTool[] }
-  | { kind: "failure"; reason: string; unauthorized: boolean };
+export type CachedDiscovery = { kind: "tools"; tools: McpTool[] } | ({ kind: "failure" } & DiscoveryFailure);
 
 interface CacheEntry {
   /** Kept alongside the hashed key so a registry edit can evict by server. */
@@ -175,11 +193,10 @@ export function setCachedTools(
 export function setCachedFailure(
   url: string,
   headers: Record<string, string>,
-  reason: string,
-  unauthorized: boolean,
+  failure: DiscoveryFailure,
   now: number = Date.now(),
 ): void {
-  remember(url, headers, { kind: "failure", reason, unauthorized }, failureTtlMs(), now);
+  remember(url, headers, { kind: "failure", ...failure }, failureTtlMs(), now);
 }
 
 /**

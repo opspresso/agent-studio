@@ -23,8 +23,13 @@ import type { ChannelToolDef } from "@/domain/llm/channel";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import { base64ByteLength, MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
 import type { McpToolResult } from "@/domain/llm/types";
-import { getCachedDiscovery, setCachedFailure, setCachedTools } from "./discoveryCache";
-import { isUnauthorized, McpSession, type McpTool } from "./session";
+import {
+  type DiscoveryFailure,
+  getCachedDiscovery,
+  setCachedFailure,
+  setCachedTools,
+} from "./discoveryCache";
+import { isUnauthorized, McpSession, modernProtocolRefusal, type McpTool } from "./session";
 import { log } from "@/shared/logger";
 import { cutCodePoints, decodeUtf8Text } from "@/shared/utf8Text";
 
@@ -129,7 +134,7 @@ export class ToolManager {
           // down re-pays a failing handshake before the first token of every
           // message. The reason is the live one, so the run explains itself the
           // same way it did when the failure actually happened.
-          this.recordFailure(server.name, cached.reason, cached.unauthorized);
+          this.recordFailure(server.name, cached);
           return null;
         }
         try {
@@ -141,14 +146,19 @@ export class ToolManager {
           // not vanish either: without this the tools are simply absent and the
           // run looks like a model that ignored them.
           const reason = error instanceof Error ? error.message : String(error);
+          const protocolRefusal = modernProtocolRefusal(error);
           log.warn(
             "mcp",
             `discovery failed for '${server.name}' (${server.url}); its tools are unavailable this run:`,
-            reason,
+            protocolRefusal ?? reason,
           );
-          const unauthorized = isUnauthorized(error);
-          setCachedFailure(server.url, server.headers, reason, unauthorized);
-          this.recordFailure(server.name, reason, unauthorized);
+          const failure: DiscoveryFailure = {
+            reason,
+            unauthorized: isUnauthorized(error),
+            ...(protocolRefusal ? { protocolRefusal } : {}),
+          };
+          setCachedFailure(server.url, server.headers, failure);
+          this.recordFailure(server.name, failure);
           return null;
         }
       }),
@@ -210,16 +220,25 @@ export class ToolManager {
    * apart: naming it "unreachable" would send the operator to check a server
    * that is working fine and answering exactly as it should.
    */
-  private recordFailure(serverName: string, reason: string, unauthorized: boolean): void {
-    if (unauthorized) {
+  private recordFailure(serverName: string, failure: DiscoveryFailure): void {
+    if (failure.unauthorized) {
       this.recordUnauthorized(serverName);
       this._warnings.push(
         `MCP server '${serverName}' rejected this project's credentials; it needs to be reconnected before its tools are available.`,
       );
       return;
     }
+    // A server refusing the handshake because it has none is neither down nor
+    // misconfigured, and "unreachable" would send an operator to look at a host
+    // that is working. What it asks for is an upgrade on this side.
+    if (failure.protocolRefusal) {
+      this._warnings.push(
+        `MCP server '${serverName}' cannot be used by this client: ${failure.protocolRefusal} Its tools are unavailable this run.`,
+      );
+      return;
+    }
     this._warnings.push(
-      `MCP server '${serverName}' is unreachable (${reason}); its tools are unavailable this run.`,
+      `MCP server '${serverName}' is unreachable (${failure.reason}); its tools are unavailable this run.`,
     );
   }
 
