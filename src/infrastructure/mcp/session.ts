@@ -114,7 +114,9 @@ function boundedFetch(loopback: boolean): FetchLike {
     const declared = Number(response.headers.get("content-length") ?? "");
     if (Number.isFinite(declared) && declared > MAX_MCP_RESPONSE_BYTES) {
       await response.body?.cancel().catch(() => {});
-      throw new Error(`MCP response declares ${declared} bytes, over the ${MAX_MCP_RESPONSE_BYTES} cap`);
+      throw new Error(
+        `MCP response declares ${declared} bytes, over the ${MAX_MCP_RESPONSE_BYTES} cap`,
+      );
     }
     if (!response.body) {
       return response;
@@ -527,5 +529,8 @@ function supportedVersions(error: UnsupportedProtocolVersionError): string[] {
     return [];
   }
   const supported = (data as { supported?: unknown }).supported;
-  return Array.isArray(supported) ? supported.filter((v): v is string => typeof v === "string") : [];
+  if (!Array.isArray(supported)) {
+    return [];
+  }
+  return supported.filter((version): version is string => typeof version === "string");
 }
