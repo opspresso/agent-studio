@@ -1631,6 +1631,36 @@ same text produces, under two event ids the claim cannot join. The mention is th
 delivery, so the `message` copy is dropped. This is applied to channels only: whether
 `app_mention` also fires in a DM is not something the gate depends on.
 
+#### Commands, and being told to stop
+
+Three messages are answered without a run: `!help`, `!mute` and `!unmute`. Answered directly
+because the answer is a constant, and because two of them change *whether the bot speaks again*
+— which no amount of prompting makes reliable. A person silencing a thread has to be obeyed,
+not interpreted. That is also why a command has to stand alone: `!mute this thread please` is an
+ordinary request, since guessing at intent is how the bot stops answering somebody who never
+asked it to.
+
+`!mute` sets a flag on the same engagement row, which `isEngaged` reads — so a muted thread
+falls out of the funnel at step 4 and costs nothing more. **Muting needs no opposite to undo
+it**: `markEngaged` clears the flag and runs after every ordinary reply, so a direct mention
+brings the bot back on its own. Muting is per thread; a top-level `!mute` is answered with where
+to put it rather than with silence, and in a DM it is answered with the fact that a DM answers
+everything.
+
+Commands are handled *ahead of the project lookup*, because `!mute` has to work on a bot that is
+currently failing — which is exactly when someone reaches for it.
+
+#### Saying it was picked up
+
+A channel run reacts to the message it started from (`:eyes:`) before anything else. A reply
+lives in a thread, which is somewhere nobody is necessarily looking yet, and several people may
+be talking at once — so the only acknowledgement that says *this message, and I have it* is one
+on the message itself. It matters most where nothing was addressed to the bot explicitly. A DM
+gets none: every message there is for the bot and the thread has a native status line.
+
+Never fatal, and not even a warning in the reply: the run answering is a louder acknowledgement
+than the one that failed.
+
 #### Reading the workspace
 
 A version may opt into four read-only tools (`parameters.slackWorkspace`): `SlackHistory`,
