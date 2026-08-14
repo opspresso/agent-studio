@@ -553,9 +553,19 @@ function OAuthSection({
               ["Token", server.auth.tokenEndpoint],
               [
                 "Client identity",
-                server.auth.clientIdMetadataDocumentSupported
-                  ? "client ID metadata document"
-                  : "not offered — clients must be registered by hand",
+                // Both, when both are on offer: which one a connection ends up
+                // using is decided per project, and an operator diagnosing one
+                // needs to see what was available to it rather than the winner.
+                [
+                  server.auth.clientIdMetadataDocumentSupported
+                    ? "client ID metadata document"
+                    : undefined,
+                  server.auth.registrationEndpoint
+                    ? `dynamic registration (${server.auth.registrationEndpoint})`
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(", ") || "not offered — clients must be registered by hand",
               ],
               ["Client auth", server.auth.tokenEndpointAuthMethod],
             ] as const

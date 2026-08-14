@@ -56,9 +56,12 @@ function fromItem(item: Record<string, unknown>): McpConnection | null {
     clientSecret: optionalString(item.clientSecret),
     // Read back explicitly, unlike the write, which spreads the whole
     // connection: a field added to the type and not to this list is stored and
-    // then silently lost, and this one decides whether the issuer check applies
-    // to the row at all.
+    // then silently lost. Both of these decide whether the issuer check applies
+    // to the row — the first exempts a client this deployment hosts, the second
+    // one the app can re-register on the owner's behalf — so losing either turns
+    // a recoverable connection into one that refuses to reconnect.
     ...(item.clientFromMetadataDocument === true ? { clientFromMetadataDocument: true } : {}),
+    ...(item.clientRegistered === true ? { clientRegistered: true } : {}),
     issuer,
     resource,
     scopes: (item.scopes as string[] | undefined) ?? [],

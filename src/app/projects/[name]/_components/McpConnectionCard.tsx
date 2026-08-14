@@ -148,10 +148,12 @@ export function McpConnectionCard({
   }
 
   const status = connection?.status ?? "needs_auth";
-  // A client comes from a metadata document this deployment publishes, or from
-  // the owner. There is no third way: dynamic registration is deprecated and no
-  // longer used.
-  const canSelfIdentify = Boolean(server.auth.clientIdMetadataDocumentSupported);
+  // A client comes from a metadata document this deployment publishes, from
+  // dynamic registration, or from the owner. The first two need nothing typed
+  // here; the boxes appear only when neither is on offer.
+  const canSelfIdentify = Boolean(
+    server.auth.clientIdMetadataDocumentSupported || server.auth.registrationEndpoint,
+  );
   const needsManualClient = !canSelfIdentify && !connection?.clientId;
 
   return (

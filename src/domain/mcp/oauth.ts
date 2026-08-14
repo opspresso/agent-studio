@@ -27,6 +27,7 @@ export interface AuthorizationServerMetadata {
   issuer: string;
   authorizationEndpoint: string;
   tokenEndpoint: string;
+  registrationEndpoint?: string;
   tokenEndpointAuthMethodsSupported?: string[];
   codeChallengeMethodsSupported?: string[];
   scopesSupported?: string[];
@@ -96,6 +97,12 @@ export interface OAuthMetadataClient {
    * @throws {McpMetadataError} when neither candidate yields a usable document.
    */
   fetchAuthorizationServer(issuer: string): Promise<AuthorizationServerMetadata>;
+}
+
+/** What an RFC 7591 registration hands back. A public client gets no secret. */
+export interface RegisteredClient {
+  clientId: string;
+  clientSecret?: string;
 }
 
 export interface TokenSet {
@@ -177,6 +184,13 @@ export interface McpAuthProvider {
 }
 
 export interface OAuthClient {
+  /** RFC 7591 dynamic client registration. */
+  register(params: {
+    registrationEndpoint: string;
+    clientName: string;
+    redirectUri: string;
+    scopes: string[];
+  }): Promise<RegisteredClient>;
   /** @throws {OAuthGrantError} when the provider rejects the code itself. */
   exchangeCode(
     target: TokenRequestTarget,
