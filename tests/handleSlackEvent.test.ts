@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import { DocumentExtractionError } from "@/domain/llm/documentExtractor";
 import type {
+  SlackChunk,
   SlackClientPort,
   SlackEventBody,
   SlackEventDeps,
@@ -62,6 +63,15 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   }> = [];
   /** Every delta Slack accepted, in order — the streamed message's contents. */
   const appended: string[] = [];
+  /** The other stream axis: what the run reported it was doing, in order. */
+  const tasks: Array<{ id: string; title: string; status: string }> = [];
+  function recordTasks(chunks: SlackChunk[] | undefined): void {
+    for (const chunk of chunks ?? []) {
+      if (chunk.type === "task_update") {
+        tasks.push({ id: chunk.id, title: chunk.title, status: chunk.status });
+      }
+    }
+  }
   const statuses: string[] = [];
   const titles: Array<{ channel_id: string; thread_ts: string; title: string }> = [];
   const calls: string[] = [];
@@ -108,17 +118,25 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
         throw new Error("streaming is not available on this plan");
       }
       streamStarts.push(args);
+      // The opening chunk counts too: on a channel the first task is what
+      // opens the message, so a fake that ignored it would hide the whole
+      // point of the axis.
+      recordTasks(args.chunks);
       return { ts: "200.1", channel: args.channel };
     },
     async appendStream(_token, args) {
       calls.push("appendStream");
-      appended.push(args.markdown_text);
+      if (args.markdown_text) {
+        appended.push(args.markdown_text);
+      }
+      recordTasks(args.chunks);
     },
     async stopStream(_token, args) {
       calls.push("stopStream");
       if (args.markdown_text) {
         appended.push(args.markdown_text);
       }
+      recordTasks(args.chunks);
     },
     async setStatus(_token, args) {
       calls.push("setStatus");
@@ -147,6 +165,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     updates,
     deleted,
     appended,
+    tasks,
     streamStarts,
     statuses,
     titles,
@@ -301,7 +320,7 @@ describe("handleSlackEvent", () => {
   it("does not caption a picture-only answer as having said nothing", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(Date, "now").mockReturnValue(NOW);
-    const { slack, posted, updates, deleted, finalText } = makeSlackFake();
+    const { slack, posted, updates, deleted, calls, finalText } = makeSlackFake();
     const uploads: string[] = [];
     slack.uploadImage = async (_token, args) => {
       uploads.push(args.filename);
@@ -317,14 +336,15 @@ describe("handleSlackEvent", () => {
     // The run answered — with a picture. The reply transport cannot see that,
     // so it must not be the thing deciding there was no answer.
     expect(finalText()).not.toContain("no response");
-    // The channel thread got a progress note, which is the one thing standing
-    // where an answer would go. Nothing came to replace it, so it is taken back
-    // rather than left captioning the picture as an unfinished run.
-    expect(posted.map((message) => message.text)).toEqual([
-      "_is thinking…_ :hourglass_flowing_sand:",
-    ]);
+    // The channel thread got a progress task, which is the one thing standing
+    // where an answer would go. Nothing came to replace it, so the message it
+    // opened is taken back rather than left captioning the picture as an
+    // unfinished run — and the stream is closed first, since deleting one Slack
+    // still considers open leaves it mid-write.
+    expect(posted).toEqual([]);
     expect(updates).toEqual([]);
-    expect(deleted).toEqual(["100.1"]);
+    expect(calls.indexOf("stopStream")).toBeLessThan(calls.indexOf("deleteMessage"));
+    expect(deleted).toEqual(["200.1"]);
   });
 
   /**
@@ -447,9 +467,9 @@ describe("handleSlackEvent", () => {
       BINDING,
     );
 
-    // The channel's progress note is the first thing written, and the answer
-    // lands on it — the read still comes before either.
-    expect(calls).toEqual(["threadReplies", "postMessage", "updateMessage"]);
+    // The channel's progress opens the stream and the answer closes it — the
+    // read still comes before either.
+    expect(calls).toEqual(["threadReplies", "startStream", "stopStream"]);
     expect(seen.map((m) => m.content)).toEqual([
       "earlier question",
       "earlier answer",
@@ -933,11 +953,15 @@ describe("streaming a Slack reply", () => {
     expect(streamStarts[0]).toMatchObject({ recipient_user_id: "U7", recipient_team_id: "T9" });
   });
 
-  it("leaves a channel thread one message: a progress note the answer overwrites", async () => {
+  it("reports a channel run's progress on the stream's task axis", async () => {
+    // The two axes are the whole point. Progress goes on the task timeline,
+    // which Slack renders and animates; the answer streams into the same
+    // message's text. Before this, progress *was* the text — which forced the
+    // message open as a plain post and cost the run its stream.
     vi.spyOn(console, "log").mockImplementation(() => {});
     let clock = NOW;
     vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
-    const { slack, posted, updates, calls } = makeSlackFake();
+    const { slack, posted, tasks, appended, streamStarts, calls } = makeSlackFake();
     const deps = makeDeps(
       [
         // A tool-only stretch: what used to leave the thread with nothing at
@@ -951,18 +975,53 @@ describe("streaming a Slack reply", () => {
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
+    // One message, and it is a stream rather than a posted note.
+    expect(posted).toHaveLength(0);
+    expect(streamStarts).toHaveLength(1);
+    expect(streamStarts[0]).toMatchObject({ task_display_mode: "timeline" });
+    // One task, retitled as the run moves and completed at the end — not a row
+    // per tool call, which would claim steps finished that only stopped being
+    // reported.
+    expect(new Set(tasks.map((task) => task.id)).size).toBe(1);
+    expect(tasks.map((task) => `${task.title}:${task.status}`)).toEqual([
+      "is thinking…:in_progress",
+      "is using search…:in_progress",
+      "is using search…:complete",
+    ]);
+    // The answer never mentions the progress: it is the other axis.
+    expect(appended.join("")).toBe("found it");
+    // A channel thread has no status line, so nothing is spent trying to set one.
+    expect(calls).not.toContain("setStatus");
+  });
+
+  it("falls back to a text note where the workspace cannot stream", async () => {
+    // The task axis lives on the stream, so a workspace without one keeps the
+    // note it always had rather than losing progress entirely.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const { slack, posted, updates, tasks } = makeSlackFake({ streaming: false });
+    const deps = makeDeps(
+      [
+        { delta: { toolCalls: [{ function: { name: "search" } }] } },
+        { delta: { content: "found it" } },
+        { done: true },
+      ],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(tasks).toEqual([]);
     expect(posted).toHaveLength(1);
     expect(posted[0]?.text).toContain("is thinking…");
-    // Every later write lands on that same message rather than adding another,
-    // and what the run is doing shows up there while it works.
+    // Every later write lands on that same message, and the answer replaces it.
     expect(updates.every((update) => update.ts === "100.1")).toBe(true);
     expect(updates.map((update) => update.text)).toContainEqual(
       expect.stringContaining("is using search…"),
     );
     expect(updates.at(-1)?.text).toBe("found it");
-    expect(calls).not.toContain("startStream");
-    // A channel thread has no status line, so nothing is spent trying to set one.
-    expect(calls).not.toContain("setStatus");
   });
 
   it("omits the recipient in a DM", async () => {

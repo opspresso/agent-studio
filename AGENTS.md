@@ -197,8 +197,8 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Whether a run's prompt may name its caller | `callerFor` in `src/application/execution/deps.ts` |
 | What a tool result has to do, and in what order | `createToolResultEmitter` in `src/application/llm/toolResultBudget.ts` |
 | How the execution facade dispatches an agent project | `src/application/execution/deps.ts` |
-| How a Slack reply is delivered | `src/application/slack/replyStream.ts` |
-| The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts` |
+| How a Slack reply is delivered, progress included | `src/application/slack/replyStream.ts` — one report, rendered by whichever mechanism the surface has: a DM's status line or a channel stream's `task_update` axis. Neither is the definition of the other |
+| The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts`; the streaming chunk shapes it passes are `SlackChunk` in `src/domain/slack/types.ts`, which is where the adapter can also reach them |
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
 | User-document caps | `src/domain/llm/documentLimits.ts` |
 | How a fetched URL is framed in a turn | `framedFetchedUrl` in `src/application/llm/documentParts.ts` |

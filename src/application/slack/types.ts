@@ -4,7 +4,13 @@ import type { RunCaller } from "@/domain/execution/actor";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
-import type { SlackMessage, SlackSuggestedPrompt } from "@/domain/slack/types";
+import type {
+  SlackChunk,
+  SlackMessage,
+  SlackSuggestedPrompt,
+  SlackTaskDisplayMode,
+} from "@/domain/slack/types";
+export type { SlackChunk, SlackTaskDisplayMode };
 
 /**
  * The slice of the Slack Web API the event handlers use; faked in tests.
@@ -53,16 +59,24 @@ export interface SlackClientPort {
       thread_ts: string;
       recipient_user_id?: string;
       recipient_team_id?: string;
+      /**
+       * How Slack lays out the tasks this stream reports. Set at open time
+       * because it describes the message, not a chunk — a stream that later
+       * sends tasks without it has nowhere to put them.
+       */
+      task_display_mode?: SlackTaskDisplayMode;
+      /** What the message opens with. Slack requires text or chunks, not neither. */
+      chunks?: SlackChunk[];
     },
   ): Promise<{ ts: string; channel: string }>;
   /** Takes a delta, not the accumulated answer. */
   appendStream(
     token: string,
-    args: { channel: string; ts: string; markdown_text: string },
+    args: { channel: string; ts: string; markdown_text?: string; chunks?: SlackChunk[] },
   ): Promise<void>;
   stopStream(
     token: string,
-    args: { channel: string; ts: string; markdown_text?: string },
+    args: { channel: string; ts: string; markdown_text?: string; chunks?: SlackChunk[] },
   ): Promise<void>;
   setStatus(
     token: string,

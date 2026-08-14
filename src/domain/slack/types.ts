@@ -31,3 +31,38 @@ export interface SlackMessage {
     url_private?: string;
   }>;
 }
+
+/**
+ * How Slack lays out the tasks a streaming message reports: `timeline` shows
+ * them one after another with their text, `plan` shows them together.
+ */
+export type SlackTaskDisplayMode = "timeline" | "plan";
+
+/**
+ * A piece of a streaming message.
+ *
+ * The reason this exists rather than `markdown_text` alone: a stream carries
+ * **two independent axes**, and the answer is only one of them. `task_update`
+ * is what a channel has instead of the agent container's status line — a step
+ * with a lifecycle, rendered by Slack rather than written into the reply's own
+ * text. Keeping them apart is what lets a run report progress *and* stream its
+ * answer into the same message; a progress note written as text could only ever
+ * be one or the other.
+ *
+ * Here rather than beside `SlackClientPort`, which is the layer rule rather
+ * than a preference: the adapter names these on the wire, and infrastructure
+ * may not reach into `application`. Spelled out rather than imported from
+ * `@slack/types` for the mirror-image reason on the other side.
+ */
+export type SlackChunk =
+  | { type: "markdown_text"; text: string }
+  | {
+      type: "task_update";
+      /** Stable per step: sending the same id again updates that task in place. */
+      id: string;
+      title: string;
+      status: "pending" | "in_progress" | "complete" | "error";
+      details?: string;
+      output?: string;
+    }
+  | { type: "plan_update"; title: string };

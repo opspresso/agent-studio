@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
-import type { SlackClientPort } from "@/application/slack/types";
+import type { SlackChunk, SlackClientPort } from "@/application/slack/types";
 
 const NOW = 1_750_000_000_000;
 
@@ -153,7 +153,12 @@ const CHANNEL: ReplyTarget = {
 
 const INDICATOR = ":hourglass_flowing_sand:";
 
-/** Records the one message a channel thread's progress and answer share. */
+/**
+ * A channel surface with **no streaming**: `startStream` is absent, so every
+ * call falls through to post-and-edit. That is the fallback path, and naming it
+ * matters — the tests under "progress in a channel thread" describe a workspace
+ * that cannot stream, not the ordinary one.
+ */
 function makeChannelFake() {
   const posted: string[] = [];
   const updates: Array<{ channel: string; ts: string; text: string }> = [];
@@ -178,7 +183,7 @@ function makeChannelFake() {
   return { slack, posted, updates, deleted, statuses };
 }
 
-describe("progress in a channel thread", () => {
+describe("progress in a channel thread that cannot stream", () => {
   it("posts the first progress and edits that message after it", async () => {
     let clock = NOW;
     vi.spyOn(Date, "now").mockImplementation(() => clock);
@@ -282,5 +287,139 @@ describe("progress in a channel thread", () => {
 
     expect(posted).toEqual([]);
     expect(statuses).toEqual(["is thinking…"]);
+  });
+});
+
+/** A channel surface that can stream, which is the ordinary one. */
+function makeStreamingChannelFake() {
+  const streamStarts: Array<Record<string, unknown>> = [];
+  const chunks: Array<{ at: "start" | "append" | "stop"; chunk: SlackChunk }> = [];
+  const appended: string[] = [];
+  const stopped: Array<{ markdown_text?: string }> = [];
+  const deleted: string[] = [];
+  const posted: string[] = [];
+  function record(at: "start" | "append" | "stop", list: SlackChunk[] | undefined): void {
+    for (const chunk of list ?? []) {
+      chunks.push({ at, chunk });
+    }
+  }
+  const slack = {
+    async startStream(_token: string, args: Record<string, unknown>) {
+      streamStarts.push(args);
+      record("start", args.chunks as SlackChunk[] | undefined);
+      return { ts: "200.1", channel: "C1" };
+    },
+    async appendStream(
+      _token: string,
+      args: { markdown_text?: string; chunks?: SlackChunk[] },
+    ) {
+      if (args.markdown_text) {
+        appended.push(args.markdown_text);
+      }
+      record("append", args.chunks);
+    },
+    async stopStream(_token: string, args: { markdown_text?: string; chunks?: SlackChunk[] }) {
+      stopped.push({ ...(args.markdown_text ? { markdown_text: args.markdown_text } : {}) });
+      record("stop", args.chunks);
+    },
+    async postMessage(_token: string, args: { text: string }) {
+      posted.push(args.text);
+      return { ts: "100.1", channel: "C1" };
+    },
+    async deleteMessage(_token: string, args: { ts: string }) {
+      deleted.push(args.ts);
+    },
+  } as unknown as SlackClientPort;
+  return { slack, streamStarts, chunks, appended, stopped, deleted, posted };
+}
+
+/**
+ * The two axes of a streaming message. Progress is not text, so it does not
+ * compete with the answer for the reply's body — which is what used to force a
+ * channel run off streaming altogether.
+ */
+describe("progress on a channel stream's task axis", () => {
+  it("opens the message with the first task rather than a posted note", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, streamStarts, chunks, posted } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is thinking…");
+
+    expect(posted).toEqual([]);
+    expect(streamStarts[0]).toMatchObject({
+      task_display_mode: "timeline",
+      recipient_user_id: "U1",
+      recipient_team_id: "T1",
+    });
+    expect(chunks).toEqual([
+      {
+        at: "start",
+        chunk: { type: "task_update", id: "run-progress", title: "is thinking…", status: "in_progress" },
+      },
+    ]);
+  });
+
+  it("retitles the one task instead of adding a row per step", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is thinking…");
+    await sink.status("is using search…");
+    // Unchanged: a task does not expire, so re-sending it shows nothing.
+    await sink.status("is using search…");
+
+    expect(chunks.map((entry) => entry.chunk)).toEqual([
+      { type: "task_update", id: "run-progress", title: "is thinking…", status: "in_progress" },
+      { type: "task_update", id: "run-progress", title: "is using search…", status: "in_progress" },
+    ]);
+  });
+
+  it("streams the answer into the same message and completes the task at the end", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, appended, stopped, chunks, streamStarts } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is using search…");
+    await sink.push("found ");
+    await sink.finish("found it", "");
+
+    // One message for both axes — the progress never had to be overwritten.
+    expect(streamStarts).toHaveLength(1);
+    expect(appended.join("")).toBe("found ");
+    expect(stopped).toEqual([{ markdown_text: "it" }]);
+    // A step left `in_progress` on a finished message reads as a run that never
+    // came back.
+    expect(chunks.at(-1)).toEqual({
+      at: "stop",
+      chunk: { type: "task_update", id: "run-progress", title: "is using search…", status: "complete" },
+    });
+  });
+
+  it("takes back a message that only ever held a task", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, deleted, stopped } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is thinking…");
+    // A picture-only run: the answer went out as an upload this sink never saw.
+    await sink.finish("", "");
+
+    // Closed before it is deleted — removing a message Slack still considers
+    // open leaves it mid-write.
+    expect(stopped).toHaveLength(1);
+    expect(deleted).toEqual(["200.1"]);
+  });
+
+  it("sets no task layout on an agent thread, which has the status line", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { slack, streamStarts, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", DM);
+
+    await sink.push("hello");
+
+    expect(chunks).toEqual([]);
+    expect(streamStarts[0]).not.toHaveProperty("task_display_mode");
   });
 });

@@ -1509,12 +1509,30 @@ messaging experience) pins the project's suggested prompts, and the legacy
 `assistant_thread_started` also introduces the project, because unlike `app_home_opened` it
 fires once per thread rather than on every visit. `app_context_changed` is deliberately not
 subscribed to — acting on the channel a user is looking at needs per-user context storage that
-does not exist. **None of that reaches a channel thread**, which has no status line: there the
-reply message carries its own progress instead, posted on the first status and edited in place
-until the answer overwrites it at the same `ts`. That fixes those runs to edit-in-place — a
-note opened as a stream could never be replaced, since `chat.appendStream` only adds — and a
-run whose answer never arrives as text (a picture, an upload) takes the note back rather than
-leave the thread captioned as still working.
+does not exist. **A channel has no status line, but it is not without a
+rendering** — a stream carries two independent axes, and progress goes on the other one. The
+run reports what it is doing once; the sink picks the mechanism the surface has: a DM gets
+`assistant.threads.setStatus`, a channel gets a `task_update` chunk on the open stream
+(`task_display_mode: "timeline"`, declared at `chat.startStream` because it describes the
+message rather than a chunk). Slack renders and animates that task, and the answer keeps
+streaming into the same message's text.
+
+It is **one task retitled**, under a constant id, not a row per tool call: `status` carries no
+per-step completion boundary, so a timeline of many would claim the run finished steps it only
+stopped reporting. `chat.stopStream` marks it `complete`, since a step left `in_progress` on a
+finished message reads as a run that never came back.
+
+That shape is the fix for a deeper problem than the missing animation. Modelling status as *the
+DM mechanism* left the channel nothing but text to imitate it with; text had to live in the
+reply body; and a note in the reply could not be replaced by what it stood in for, because
+`chat.appendStream` only ever adds. So every channel run that reported progress was pushed onto
+edit-in-place and gave up streaming altogether — one edit per three seconds instead of a hundred
+appends a minute, and none of Slack's native rendering. The axes are independent, so none of
+that follows any more. The **text note survives as the fallback** for a workspace that cannot
+stream at all, which is the only place it was ever the right answer. Either way, a run whose
+answer never arrives as text (a picture, an upload) takes its message back rather than leave the
+thread captioned as still working — closing the stream first, since deleting one Slack still
+considers open leaves it mid-write.
 
 Suggested prompts are per-project configuration (`SlackIntegration.suggestedPrompts`, at most
 four — `src/domain/slack/types.ts` owns the shape and the cap). They reach Slack twice: in the

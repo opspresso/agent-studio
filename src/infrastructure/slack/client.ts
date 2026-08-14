@@ -1,7 +1,7 @@
 /** Minimal Slack Web API client over fetch — no SDK dependency. */
 
 import { callerFrom, type RunCaller } from "@/domain/execution/actor";
-import type { SlackMessage } from "@/domain/slack/types";
+import type { SlackChunk, SlackMessage, SlackTaskDisplayMode } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
 import { readBodyBytes } from "@/shared/httpBody";
 import { getCachedProfile, rememberProfile } from "./profileCache";
@@ -200,6 +200,10 @@ export const slackClient = {
    * `thread_ts` is required: a stream is always a reply to the request that
    * caused it. Streaming into a *channel* additionally needs the recipient, so
    * a channel mention passes `recipient_user_id`/`recipient_team_id`.
+   *
+   * `task_display_mode` belongs on the open rather than on a chunk: it says how
+   * this message lays out tasks, so a stream that omits it has nowhere to put
+   * the ones it later sends.
    */
   startStream(
     token: string,
@@ -208,6 +212,8 @@ export const slackClient = {
       thread_ts: string;
       recipient_user_id?: string;
       recipient_team_id?: string;
+      task_display_mode?: SlackTaskDisplayMode;
+      chunks?: SlackChunk[];
     },
   ): Promise<{ ts: string; channel: string }> {
     return slackApi(token, "chat.startStream", args);
@@ -215,17 +221,20 @@ export const slackClient = {
   /**
    * Append to an open stream. `markdown_text` is a *delta*, not the accumulated
    * answer — sending the whole text each time would repeat it on screen.
+   *
+   * `chunks` is the other axis: a `task_update` there reports what the run is
+   * doing without touching the answer's text. Slack requires one of the two.
    */
   appendStream(
     token: string,
-    args: { channel: string; ts: string; markdown_text: string },
+    args: { channel: string; ts: string; markdown_text?: string; chunks?: SlackChunk[] },
   ): Promise<void> {
     return slackApi(token, "chat.appendStream", args).then(() => undefined);
   },
-  /** Close an open stream, optionally with one last delta. */
+  /** Close an open stream, optionally with one last delta and a final chunk. */
   stopStream(
     token: string,
-    args: { channel: string; ts: string; markdown_text?: string },
+    args: { channel: string; ts: string; markdown_text?: string; chunks?: SlackChunk[] },
   ): Promise<void> {
     return slackApi(token, "chat.stopStream", args).then(() => undefined);
   },
