@@ -199,6 +199,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | How the execution facade dispatches an agent project | `src/application/execution/deps.ts` |
 | How a Slack reply is delivered, progress included | `src/application/slack/replyStream.ts` — one report, rendered by whichever mechanism the surface has: a DM's status line or a channel stream's `task_update` axis. Neither is the definition of the other |
 | Which delivered Slack events are for the bot, the loop guard included | `src/application/slack/engagement.ts` |
+| Which messages are a fixed command rather than a question | `parseSlackCommand` in `src/application/slack/engagement.ts` — strict by design: a command changes whether the bot speaks again, and a looser match silences threads nobody asked to silence |
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts`; the streaming chunk shapes it passes are `SlackChunk` in `src/domain/slack/types.ts`, which is where the adapter can also reach them |
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
 | User-document caps | `src/domain/llm/documentLimits.ts` |

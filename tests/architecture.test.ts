@@ -1327,6 +1327,14 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/slack/engagement.ts",
   },
   {
+    // A command changes whether the bot speaks again, so a second, looser match
+    // would silence threads nobody asked to silence — and silently, because the
+    // symptom is a bot that stopped answering rather than one that errored.
+    what: "which Slack messages are a fixed command rather than a question",
+    pattern: /export function parseSlackCommand/,
+    owner: "src/application/slack/engagement.ts",
+  },
+  {
     // The agent half of the same dispatch, which cannot be checked tree-wide:
     // `projectType !== "agent"` is also how several use cases validate what a
     // project supports (a Slack bot, a chat, a tools capability), and that is a
