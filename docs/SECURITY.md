@@ -480,6 +480,16 @@ Enforced properties:
   release. Dropping it was tried and reverted: it makes a working connection unconnectable
   and tells its owner to go and register an app by hand, over a revision date they do not
   control.
+- **A document is only a route where the provider could fetch it.** The `client_id` is a URL
+  the *authorization server* retrieves, so a deployment whose public base is `http://localhost`
+  or an internal hostname mints one that resolves to nothing — and the provider says so only
+  after the user approves, as *Unknown OAuth client*, which reads as a problem with the client
+  rather than with a URL. The address faces the same https-and-publicly-routable check the
+  entry's own endpoints do; failing it moves to registration, and the refusal when there is no
+  registration to move to names the base URL rather than the provider. A stored document
+  `client_id` that is no longer the one this deployment would serve is rebuilt for the same
+  reason — otherwise the row keeps a `clientId`, every branch is skipped, and the same
+  unfetchable URL is presented forever.
 - Dynamic registration (RFC 7591) declares `application_type: "web"` (SEP-837) rather than
   leaving the OpenID Connect default to apply. A public client with no secret sends `none`
   whatever the server's metadata preferred.

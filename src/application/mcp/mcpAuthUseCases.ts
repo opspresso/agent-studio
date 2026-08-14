@@ -402,6 +402,34 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
     return `${(await publicBase()).replace(/\/+$/, "")}${MCP_OAUTH_CALLBACK_PATH}`;
   }
 
+  /**
+   * The document's own address, but only when an authorization server could
+   * actually fetch it.
+   *
+   * A metadata-document `client_id` is not a name the server looks up — it is a
+   * URL the server **retrieves**, from wherever the provider runs. A base URL
+   * that is `http://localhost:3000`, an internal hostname, or anything else off
+   * the public internet therefore produces a `client_id` that resolves to
+   * nothing, and the provider says so in its own words much later: the user
+   * approves the connection and lands on *Unknown OAuth client*, with the
+   * failure attributed to a client that looked perfectly well-formed here.
+   *
+   * The same predicate the entry's own endpoints face, because it is the same
+   * question — an https URL at a publicly routable address. `undefined` sends
+   * the caller to the next way of getting a client, which is what the fallback
+   * order exists for: a provider offering registration as well is not out of
+   * options just because this deployment cannot host a document.
+   */
+  async function servableMetadataUrl(projectName: string): Promise<string | undefined> {
+    const url = clientMetadataUrl(await publicBase(), projectName);
+    try {
+      await assertAuthEndpoint(deps.urlPolicy, url, "Client ID metadata document");
+      return url;
+    } catch {
+      return undefined;
+    }
+  }
+
   async function requireConnection(
     projectName: string,
     serverName: string,
@@ -601,16 +629,39 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
         );
       }
 
-      // No client yet, or one that belongs to a server this entry has moved off.
-      // The order is the spec's: credentials already held (hand-entered ones
-      // reach here as `connection.clientId`), then a metadata document, then
-      // registration, then nothing this app can do on the owner's behalf.
+      // Offered *and* fetchable: a document at an address the provider cannot
+      // reach is not a route, and taking it anyway dead-ends at the provider
+      // with a message about a client rather than about a URL.
+      const metadataUrl = server.auth.clientIdMetadataDocumentSupported
+        ? await servableMetadataUrl(projectName)
+        : undefined;
+
+      /**
+       * A stored document `client_id` that is no longer the one this deployment
+       * would serve — because the public base moved, or because it stopped being
+       * an address a provider can fetch from at all.
+       *
+       * Rebuilt rather than reused, and it is the difference between the mistake
+       * self-healing and being permanent: the row below still has a `clientId`,
+       * so without this the next attempt sails past every branch and presents
+       * the same unfetchable URL again. Nothing is lost by rebuilding — such a
+       * client holds no secret, and the tokens it authorized were granted to a
+       * `client_id` that no longer resolves.
+       */
+      const staleDocument =
+        connection?.clientFromMetadataDocument === true && connection.clientId !== metadataUrl;
+
+      // No client yet, or one that belongs to a server this entry has moved off,
+      // or a document address this deployment no longer serves. The order is the
+      // spec's: credentials already held (hand-entered ones reach here as
+      // `connection.clientId`), then a metadata document, then registration, then
+      // nothing this app can do on the owner's behalf.
       //
       // Registration is last because the revision deprecates it — but it is
       // still here, because a server on a 2025-era release offers no metadata
       // document and asking its owner to go and register an app by hand is not
       // an upgrade path, it is a working entry that stopped working.
-      if (!connection?.clientId || staleCredentials) {
+      if (!connection?.clientId || staleCredentials || staleDocument) {
         const scopes = connection?.scopes ?? server.auth.scopesSupported ?? [];
         // Rebuilt rather than merged in either branch: whatever the previous
         // client authorized was granted by a different server, and must not
@@ -625,13 +676,13 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
           updatedAt: new Date().toISOString(),
         };
         let fresh: McpConnection;
-        if (server.auth.clientIdMetadataDocumentSupported) {
+        if (metadataUrl) {
           // Nothing is requested and nothing is issued: the `client_id` is the
           // address of a document this deployment already serves, and the
           // server fetches it when the authorization arrives.
           fresh = {
             ...base,
-            clientId: clientMetadataUrl(await publicBase(), projectName),
+            clientId: metadataUrl,
             clientFromMetadataDocument: true,
           };
         } else if (server.auth.registrationEndpoint) {
@@ -649,6 +700,14 @@ export function createMcpAuthUseCases(deps: McpAuthUseCasesDeps): McpAuthUseCase
               : {}),
             clientRegistered: true,
           };
+        } else if (server.auth.clientIdMetadataDocumentSupported) {
+          // The provider's side is fine and ours is not, so saying it "supports
+          // neither" would send the owner to the provider over a setting of
+          // ours. Named here because the alternative is finding out from the
+          // provider, after approving, as *Unknown OAuth client*.
+          throw new ValidationError(
+            `MCP server "${serverName}" accepts client ID metadata documents, but this deployment's public base URL (${await publicBase()}) is not one an authorization server can fetch a document from — it has to be a public https address. Set PUBLIC_BASE_URL to one, or register an app with the provider and save its client ID and secret here.`,
+          );
         } else {
           throw new ValidationError(
             `MCP server "${serverName}" supports neither client ID metadata documents nor dynamic client registration. Register an app with the provider and save its client ID and secret first.`,
