@@ -594,6 +594,36 @@ characters, and an avatar is accepted only if it is an `https:` URL. That does n
 injection impossible — the message body is untrusted too — but it stops identity metadata from
 being a place to hide instructions a reader cannot see.
 
+## Reading the Slack workspace
+
+Opt-in per version via `parameters.slackWorkspace`. With it on, a run may read the channel
+history, threads and user names of the workspace its project's bot is installed in.
+
+**Projects are a shared catalog.** Anyone who can run a project can therefore read anything its
+bot can — which is every channel the bot was invited to, including private ones where
+`groups:history` applies. That is the whole reason this is a per-version opt-in rather than a
+capability every Slack-connected project has: turning it on is a decision to make a channel's
+contents reachable to a wider set of people than the channel's own membership.
+
+Two things are refused by construction rather than by omission:
+
+- **No writes.** `chat:write` is granted to the bot — the reply transport needs it — and is
+  deliberately not reachable from any tool. A run is steered by text it did not write; a run
+  that could also post is one where a message planted in a channel can make the bot speak
+  somewhere else.
+- **No email**, though `users:read.email` is granted. `SlackUser` answers with a display name and
+  a timezone, which is the rule [caller context](#caller-context) already applies, for the same
+  reason: an email identifies a person outside Slack and no answer needs one to be written well.
+
+What *is* carried in is untrusted in exactly the way an attached document is: a channel's
+messages were written by whoever is in that channel, and they reach the model as text. PII
+filtering applies to the tool result like any other (`parameters.piiFiltering`), and the
+per-turn tool-result budget bounds its size — a transcript's length is Slack's to decide, so it
+goes through the fit rather than being charged whole.
+
+The reader holds the bot token, bound at construction. A tool argument naming the workspace
+would let the model choose one, and there is no request for which that is the right shape.
+
 ## Attached documents
 
 A document's text goes into the turn, so **anything anyone can attach can say anything**. In a
