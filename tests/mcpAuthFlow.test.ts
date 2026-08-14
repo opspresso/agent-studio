@@ -85,7 +85,6 @@ interface Harness {
   connections: Map<string, McpConnection>;
   states: Map<string, McpOAuthState>;
   exchanges: Array<{ target: TokenRequestTarget; params: Record<string, string> }>;
-  registrations: Array<Record<string, unknown>>;
   probes: Array<{ url: string; headers: Record<string, string> }>;
   unauthorized: string[];
 }
@@ -103,7 +102,6 @@ function harness(
   const connections = new Map<string, McpConnection>();
   const states = new Map<string, McpOAuthState>();
   const exchanges: Harness["exchanges"] = [];
-  const registrations: Harness["registrations"] = [];
   const probes: Array<{ url: string; headers: Record<string, string> }> = [];
   const unauthorized: string[] = [];
   const server = overrides.server ?? SERVER;
@@ -151,10 +149,6 @@ function harness(
     },
     metadata: {} as never,
     oauth: {
-      register: async (params: Record<string, unknown>) => {
-        registrations.push(params);
-        return { clientId: "dcr-client", clientSecret: "dcr-secret" };
-      },
       exchangeCode: async (target: TokenRequestTarget, params: Record<string, string>) => {
         exchanges.push({ target, params });
         return overrides.tokens ?? { accessToken: "at-1", refreshToken: "rt-1", expiresInSeconds: 43_200 };
@@ -178,7 +172,7 @@ function harness(
     },
     publicBaseUrl: async () => BASE_URL,
   };
-  return { deps, connections, states, exchanges, registrations, probes, unauthorized };
+  return { deps, connections, states, exchanges, probes, unauthorized };
 }
 
 describe("beginAuthorization", () => {
@@ -208,25 +202,6 @@ describe("beginAuthorization", () => {
     expect(stored?.userEmail).toBe(OWNER);
   });
 
-  it("registers a client dynamically when the server offers it and none is stored", async () => {
-    const h = harness({
-      server: {
-        ...SERVER,
-        auth: { ...SERVER.auth!, registrationEndpoint: "https://auth.example.com/register" },
-      },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    await uc.beginAuthorization("p", "slack", OWNER);
-
-    expect(h.registrations).toHaveLength(1);
-    expect(h.registrations[0]).toMatchObject({ redirectUri: CALLBACK });
-    const connection = h.connections.get("p/slack");
-    expect(connection?.clientId).toBe("dcr-client");
-    expect(connection?.clientRegistered).toBe(true);
-    // Whatever the server issued is stored encrypted, exactly like one typed in.
-    expect(connection?.clientSecret).toBe("enc:dcr-secret");
-  });
 
   it("uses a client ID metadata document instead of registering, where the server takes one", async () => {
     // The point of CIMD: nothing is requested and nothing is issued. The
@@ -242,35 +217,28 @@ describe("beginAuthorization", () => {
 
     const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
 
-    expect(h.registrations).toHaveLength(0);
     const expected = `${BASE_URL}/api/mcps/oauth/client-metadata/p`;
     const connection = h.connections.get("p/slack");
     expect(connection?.clientId).toBe(expected);
     expect(connection?.clientFromMetadataDocument).toBe(true);
     // Public by construction: there is no secret to hold, so none is stored.
     expect(connection?.clientSecret).toBeUndefined();
-    expect(connection?.clientRegistered).toBeUndefined();
     expect(new URL(authorizeUrl).searchParams.get("client_id")).toBe(expected);
   });
 
-  it("prefers a metadata document over registration when a server offers both", async () => {
-    // Registration is deprecated from protocol 2026-07-28, and the spec's own
-    // order puts the document ahead of it.
+  it("uses the document rather than asking the owner for credentials", async () => {
+    // Registration was the third way and is gone; a server that accepts a
+    // document needs nothing from the owner at all.
     const h = harness({
       server: {
         ...SERVER,
-        auth: {
-          ...SERVER.auth!,
-          registrationEndpoint: "https://auth.example.com/register",
-          clientIdMetadataDocumentSupported: true,
-        },
+        auth: { ...SERVER.auth!, clientIdMetadataDocumentSupported: true },
       },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
     await uc.beginAuthorization("p", "slack", OWNER);
 
-    expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientFromMetadataDocument).toBe(true);
   });
 
@@ -299,16 +267,15 @@ describe("beginAuthorization", () => {
 
     await expect(uc.beginAuthorization("p", "slack", OWNER)).resolves.toBeDefined();
 
-    expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientId).toBe(
       `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
     );
   });
 
-  it("says what to do when the server offers neither way to get a client", async () => {
+  it("says what to do when the server does not accept a document", async () => {
     const uc = createMcpAuthUseCases(harness().deps);
     await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
-      /supports neither client ID metadata documents nor dynamic client registration/,
+      /does not accept client ID metadata documents/,
     );
   });
 
@@ -614,87 +581,53 @@ describe("abandonAuthorization", () => {
 describe("client credentials bound to their issuer", () => {
   const AT_A: McpServer = {
     ...SERVER,
-    auth: {
-      ...SERVER.auth!,
-      issuer: "https://auth-a.example.com",
-      registrationEndpoint: "https://auth-a.example.com/register",
-    },
+    auth: { ...SERVER.auth!, issuer: "https://auth-a.example.com" },
   };
   const AT_B: McpServer = {
     ...AT_A,
     auth: { ...AT_A.auth!, issuer: "https://auth-b.example.com" },
   };
 
-  it("re-registers dynamic credentials when the entry has moved to another issuer", async () => {
+
+  it("refuses stored credentials from another issuer rather than guessing", async () => {
+    // Nothing here can re-issue them — registration is gone — so the only
+    // honest move is to say which server the owner now has to register with.
     const h = harness({
       server: AT_B,
-      connection: {
-        clientId: "client-at-a",
-        clientRegistered: true,
-        issuer: "https://auth-a.example.com",
-        status: "connected",
-        accessToken: "enc:at",
-        refreshToken: "enc:rt",
-      },
-    });
-    const uc = createMcpAuthUseCases(h.deps);
-
-    await uc.beginAuthorization("p", "slack", OWNER);
-
-    expect(h.registrations).toHaveLength(1);
-    const connection = h.connections.get("p/slack");
-    expect(connection?.clientId).toBe("dcr-client");
-    expect(connection?.issuer).toBe("https://auth-b.example.com");
-    // Whatever the old client authorized was granted by a server this entry no
-    // longer points at; keeping it would leave a connection reporting
-    // `connected` on a token nothing here can refresh.
-    expect(connection?.status).toBe("needs_auth");
-    expect(connection?.accessToken).toBeUndefined();
-    expect(connection?.refreshToken).toBeUndefined();
-  });
-
-  it("refuses hand-entered credentials from another issuer rather than guessing", async () => {
-    // Nothing here can re-issue them, so the only honest move is to say which
-    // server the owner now has to register with.
-    const h = harness({
-      server: AT_B,
-      connection: { clientId: "manual", clientRegistered: false, issuer: "https://auth-a.example.com" },
+      connection: { clientId: "manual", issuer: "https://auth-a.example.com" },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
     await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
       /registered with a different authorization server/,
     );
-    expect(h.registrations).toHaveLength(0);
   });
 
   it("leaves credentials alone while the issuer still matches", async () => {
     const h = harness({
       server: AT_A,
-      connection: { clientId: "client-at-a", clientRegistered: true, issuer: "https://auth-a.example.com" },
+      connection: { clientId: "client-at-a", issuer: "https://auth-a.example.com" },
     });
     const uc = createMcpAuthUseCases(h.deps);
 
     await uc.beginAuthorization("p", "slack", OWNER);
 
-    expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientId).toBe("client-at-a");
   });
 
   it("treats a row written before issuer binding as belonging to the current server", async () => {
     // Those credentials were already being used against this entry; inventing a
     // mismatch would break every existing connection on deploy.
-    const h = harness({ server: AT_A, connection: { clientId: "legacy", clientRegistered: true } });
+    const h = harness({ server: AT_A, connection: { clientId: "legacy" } });
     const uc = createMcpAuthUseCases(h.deps);
 
     await uc.beginAuthorization("p", "slack", OWNER);
 
-    expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientId).toBe("legacy");
   });
 
   it("stamps the issuer on a row that predates binding when it is next authorized", async () => {
-    const h = harness({ server: AT_A, connection: { clientId: "legacy", clientRegistered: true } });
+    const h = harness({ server: AT_A, connection: { clientId: "legacy" } });
     const uc = createMcpAuthUseCases(h.deps);
     const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
     const state = new URL(authorizeUrl).searchParams.get("state") as string;
@@ -708,7 +641,7 @@ describe("client credentials bound to their issuer", () => {
     // The other axis: `issuer` says who issued the client, `resource` says which
     // server the tokens may be presented at. An entry moved to a different
     // resource must not have these tokens follow it there.
-    const h = harness({ server: AT_A, connection: { clientId: "c", clientRegistered: true } });
+    const h = harness({ server: AT_A, connection: { clientId: "c" } });
     const uc = createMcpAuthUseCases(h.deps);
     const { authorizeUrl } = await uc.beginAuthorization("p", "slack", OWNER);
     const state = new URL(authorizeUrl).searchParams.get("state") as string;

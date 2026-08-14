@@ -1197,7 +1197,9 @@ run would change the discovery cache key every run.
 
 **Where the client itself comes from** changed with protocol `2026-07-28`, which deprecates
 dynamic registration in favour of **Client ID Metadata Documents**: the `client_id` is an
-HTTPS URL the client hosts, and the authorization server fetches it. This deployment publishes
+HTTPS URL the client hosts, and the authorization server fetches it. Registration is not
+implemented here at all — a server that does not accept a document needs an app the owner
+registers once by hand. This deployment publishes
 one per project (`/api/mcps/oauth/client-metadata/{project}`) rather than one for the
 deployment, because that document is what a person sees when approving the connection — a
 single one would ask them to grant access to "AgentDure" with no way to tell which project is

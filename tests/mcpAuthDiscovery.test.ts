@@ -113,7 +113,6 @@ describe("discovering a server's authorization configuration", () => {
       tokenEndpoint: "https://slack.com/api/oauth.v2.user.access",
       tokenEndpointAuthMethod: "client_secret_post",
     });
-    expect(stored[0]?.auth?.registrationEndpoint).toBeUndefined();
   });
 
   it("records a registration endpoint and a public client when the server offers them", async () => {
@@ -127,7 +126,6 @@ describe("discovering a server's authorization configuration", () => {
         issuer: "https://auth.example.com",
         authorizationEndpoint: "https://auth.example.com/authorize",
         tokenEndpoint: "https://auth.example.com/token",
-        registrationEndpoint: "https://auth.example.com/register",
         tokenEndpointAuthMethodsSupported: ["none"],
       }),
     });
@@ -135,7 +133,6 @@ describe("discovering a server's authorization configuration", () => {
     await uc.discover("slack");
 
     expect(stored[0]?.auth).toMatchObject({
-      registrationEndpoint: "https://auth.example.com/register",
       tokenEndpointAuthMethod: "none",
     });
   });

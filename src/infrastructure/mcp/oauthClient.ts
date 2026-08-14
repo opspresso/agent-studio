@@ -7,12 +7,7 @@
  * for one from being replayed against another.
  */
 
-import type {
-  OAuthClient,
-  RegisteredClient,
-  TokenRequestTarget,
-  TokenSet,
-} from "@/domain/mcp/oauth";
+import type { OAuthClient, TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
 import { OAuthGrantError } from "@/domain/mcp/oauth";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
@@ -134,41 +129,6 @@ async function postForm(
 }
 
 export const oauthClient: OAuthClient = {
-  async register({ registrationEndpoint, clientName, redirectUri, scopes }) {
-    const response = await fetchPublicUrl(registrationEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        client_name: clientName,
-        redirect_uris: [redirectUri],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: "client_secret_post",
-        // SEP-837. The redirect is always this deployment's own https callback,
-        // built from the configured public base URL — never a loopback one — so
-        // `web` is the accurate declaration. Sent rather than left to the OpenID
-        // Connect default because an authorization server that applies the
-        // default differently rejects the registration on a field we never
-        // stated an opinion about.
-        application_type: "web",
-        ...(scopes.length > 0 ? { scope: scopes.join(" ") } : {}),
-      }),
-      signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
-    });
-    const body = await readJson(response);
-    if (response.status < 200 || response.status >= 300) {
-      const description = asString(body.error_description) ?? asString(body.error);
-      throw new Error(
-        `Dynamic client registration failed: HTTP ${response.status}${description ? ` — ${description}` : ""}`,
-      );
-    }
-    const clientId = asString(body.client_id);
-    if (!clientId) {
-      throw new Error("Registration response carried no client_id");
-    }
-    const clientSecret = asString(body.client_secret);
-    return { clientId, ...(clientSecret ? { clientSecret } : {}) } satisfies RegisteredClient;
-  },
 
   async exchangeCode(target, { code, redirectUri, codeVerifier }) {
     return postForm(target, {

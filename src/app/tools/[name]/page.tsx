@@ -552,9 +552,10 @@ function OAuthSection({
               ["Authorize", server.auth.authorizationEndpoint],
               ["Token", server.auth.tokenEndpoint],
               [
-                "Registration",
-                server.auth.registrationEndpoint ??
-                  "not offered — clients must be registered by hand",
+                "Client identity",
+                server.auth.clientIdMetadataDocumentSupported
+                  ? "client ID metadata document"
+                  : "not offered — clients must be registered by hand",
               ],
               ["Client auth", server.auth.tokenEndpointAuthMethod],
             ] as const
