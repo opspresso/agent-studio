@@ -252,7 +252,7 @@ export function buildProjectSlackManifest(
     },
     features: {
       app_home: {
-        home_tab_enabled: false,
+        home_tab_enabled: true,
         messages_tab_enabled: true,
         messages_tab_read_only_enabled: false,
       },
@@ -275,10 +275,7 @@ export function buildProjectSlackManifest(
           "app_mentions:read",
           "assistant:write",
           "channels:history",
-          // Reading a channel's history is granted above, but resolving a
-          // channel *name* to the id every read takes is a separate scope.
-          // Without it an agent can only reach the conversation it is already
-          // in, which makes "summarise #deploy" unanswerable.
+          "channels:join",
           "channels:read",
           "chat:write",
           "emoji:read",
@@ -287,8 +284,10 @@ export function buildProjectSlackManifest(
           "groups:history",
           "groups:read",
           "im:history",
+          "im:write",
           "incoming-webhook",
           "reactions:read",
+          "reactions:write",
           "users:read.email",
           "users:read",
           "users.profile:read",
