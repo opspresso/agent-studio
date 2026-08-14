@@ -5,6 +5,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { Alert, Badge, Button, Group, Stack, Switch, Text, TextInput } from "@mantine/core";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { stateColor } from "@/app/_components/badgeColors";
+import { PROJECT_WEBHOOK_ID } from "@/domain/trigger/types";
 import { toSlug } from "@/shared/slug";
 import { useT } from "@/app/_i18n/provider";
 import { TriggerRuns } from "./TriggerRuns";
@@ -35,6 +36,11 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
   const [newMessage, setNewMessage] = useState("");
+  // Webhook rows registered by name before a project had one of its own. There
+  // is no delivery address that reaches them any more, so they run nothing —
+  // but the row is still an encrypted secret, and a credential nobody can see
+  // is a credential nobody can revoke. Listed only to be deleted.
+  const [orphans, setOrphans] = useState<TriggerView[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +49,11 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
     const { triggers } = await listTriggers(projectName);
     const listed = triggers.filter((trigger) => trigger.kind === "schedule");
     setSchedules(listed);
+    setOrphans(
+      triggers.filter(
+        (trigger) => trigger.kind !== "schedule" && trigger.triggerId !== PROJECT_WEBHOOK_ID,
+      ),
+    );
     const entries = await Promise.all(
       listed.map(async (trigger) => {
         const { runs: recent } = await listTriggerRuns(projectName, trigger.triggerId);
@@ -246,6 +257,47 @@ export function SchedulesSection({ projectName }: { projectName: string }) {
           <Text fz="sm" c="dimmed">
             No schedules yet.
           </Text>
+        )}
+
+        {orphans.length > 0 && (
+          <Alert color="yellow" variant="light">
+            <Stack gap="xs">
+              <Text fz="sm">
+                {orphans.length === 1 ? "A webhook" : "Webhooks"} registered under{" "}
+                {orphans.length === 1 ? "a name" : "names"} of their own, from before a project had
+                one webhook addressed by its own name. Nothing delivers to{" "}
+                {orphans.length === 1 ? "it" : "them"} any more; deleting{" "}
+                {orphans.length === 1 ? "it retires its secret" : "them retires their secrets"}.
+              </Text>
+              {orphans.map((orphan) => (
+                <Group key={orphan.triggerId} gap="sm">
+                  <Text fw={600} fz="sm">
+                    {orphan.triggerId}
+                  </Text>
+                  <Button
+                    variant="default"
+                    color="red"
+                    size="compact-xs"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (
+                        !(await confirm({
+                          title: "Delete webhook",
+                          message: `Delete the retired webhook "${orphan.triggerId}"? Its secret stops existing.`,
+                          confirmLabel: "Delete",
+                        }))
+                      ) {
+                        return;
+                      }
+                      void act(() => deleteTrigger(projectName, orphan.triggerId));
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </Group>
+              ))}
+            </Stack>
+          </Alert>
         )}
       </Stack>
     </CollapsibleSection>

@@ -345,6 +345,26 @@ describe("executeDelivery", () => {
     expect((f.rows[0]?.result ?? "").length).toBeLessThanOrEqual(2_000);
   });
 
+  it("counts every file it produced, even past the names it lists", async () => {
+    // The row lists a bounded number of names; the count is the run's. Reporting
+    // the listed length would put a wrong number on the one row anyone reads.
+    const f = fixture({
+      chunks: Array.from({ length: 25 }, (_unused, index) => ({
+        file: {
+          name: `doc-${index}.pdf`,
+          mimeType: "application/pdf",
+          source: "mcp: render",
+        },
+      })),
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]?.result).toContain("Produced 25 files:");
+    expect(f.rows[0]?.result).toContain("doc-0.pdf");
+    // Ten named, then an ellipsis rather than a silent stop.
+    expect(f.rows[0]?.result).not.toContain("doc-10.pdf");
+    expect(f.rows[0]?.result).toContain("…");
+  });
+
   it("does not close a file-only firing as an empty success", async () => {
     const f = fixture({
       chunks: [{ file: { name: "report.docx", mimeType: "application/msword", source: "mcp: render" } }],

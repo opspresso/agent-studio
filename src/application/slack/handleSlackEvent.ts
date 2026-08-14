@@ -3,10 +3,10 @@ import { resolveRunnableVersion } from "@/application/project/resolveRunnableVer
 import { createReplySink } from "@/application/slack/replyStream";
 import {
   fileRefOf,
-  resolveProducedFile,
-  type ProducedFile,
+  resolveProducedFiles,
+  type ProducedFileRef,
 } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import type { SlackEventBody, SlackEventDeps, SlackEventFile } from "@/application/slack/types";
 import type { RunCaller } from "@/domain/execution/actor";
 import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
@@ -84,6 +84,20 @@ export interface ThreadTurn {
  * turns survive. So this records who wrote each turn and
  * {@link withSpeakerLabels} labels whatever is left after the slice.
  */
+/**
+ * Text safe to put inside Slack mrkdwn, for a string this side did not choose.
+ *
+ * A produced file's name comes from an MCP server, and `safeFileName` only takes
+ * out control characters and path separators — every character mrkdwn reads as
+ * syntax survives it. `<`, `>` and `|` are the three that matter here: a file
+ * called `Q3 <draft>.docx` breaks the link span it is placed in, and
+ * `report|v2.docx` truncates the label at the pipe, so the reader is shown a
+ * name that is not the file's.
+ */
+export function mrkdwnText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\|/g, "∣");
+}
+
 export function threadToTurns(replies: SlackMessage[], currentTs: string): ThreadTurn[] {
   return replies
     .filter(
@@ -472,7 +486,11 @@ export async function handleSlackEvent(
   // bytes were stripped at the bracket the moment they were stored, so a thread
   // gets a link. Without this the run answered "here is the report" into a
   // thread with no report in it.
-  const produced: ProducedFile[] = [];
+  //
+  // References while the run goes, addresses after it: a link signed as the
+  // chunk passed would start expiring minutes before the reply carrying it was
+  // posted, and a run is allowed to last ten of them.
+  const producedRefs: ProducedFileRef[] = [];
   // Enforced by an abort signal so a run that stops producing chunks entirely
   // (hung provider or tool) still ends and reports a timeout instead of
   // leaving the status up forever.
@@ -556,16 +574,7 @@ export async function handleSlackEvent(
         images.push(chunk.image);
       }
       if (chunk.file) {
-        const resolved = await resolveProducedFile(
-          fileRefOf(chunk.file),
-          deps.signFile,
-          VIEW_URL_TTL_SECONDS,
-        );
-        if (resolved.file) {
-          produced.push(resolved.file);
-        } else if (resolved.warning && !warnings.includes(resolved.warning)) {
-          warnings.push(resolved.warning);
-        }
+        producedRefs.push(fileRefOf(chunk.file));
       }
       const content = chunk.delta?.content;
       if (content && isTopLevelChunk(chunk)) {
@@ -606,19 +615,32 @@ export async function handleSlackEvent(
       warnings.push(`Image upload failed: ${error instanceof Error ? error.message : "unknown"}`);
     }
   }
+  // Signed here, one step before the message goes out, and for a window that
+  // suits a record rather than an open page: a thread is read minutes later by
+  // the person who asked and days later by whoever searches the channel.
+  const produced = await resolveProducedFiles(
+    producedRefs,
+    deps.signFile,
+    RECORD_URL_TTL_SECONDS,
+  );
+  for (const warning of produced.warnings) {
+    if (!warnings.includes(warning)) {
+      warnings.push(warning);
+    }
+  }
   // Only this scope knows whether *anything* reached the thread — the sink sees
   // the text and not the uploaded images, which is how a run that answered
   // purely with a picture used to be captioned "(no response)". A produced file
   // counts for the same reason: it is the deliverable, and the link below is the
   // only place the thread carries it.
-  if (!text && images.length === 0 && produced.length === 0 && warnings.length === 0) {
+  if (!text && images.length === 0 && producedRefs.length === 0 && warnings.length === 0) {
     warnings.push("The run finished without producing an answer.");
   }
   // Links first, warnings after: one is what the run made and the other is what
   // it lost, and a reader scanning the end of a reply should meet them in that
   // order.
   const suffix = [
-    ...produced.map((file) => `:paperclip: <${file.url}|${file.name}>`),
+    ...produced.files.map((file) => `:paperclip: <${file.url}|${mrkdwnText(file.name)}>`),
     ...warnings.map((warning) => `:warning: ${warning}`),
   ].join("\n");
   await sink.finish(text, suffix);

@@ -884,7 +884,10 @@ therefore ignored for an agent project — an agent run has no prompt template t
 
 `files` are documents a tool rendered — the bytes are kept as artifacts and stripped from the
 run's stream, so this carries a **signed download address** rather than the file. The
-signature is short-lived (15 minutes); the artifact itself stays in the project's gallery. A
+signature is short-lived (15 minutes for an API response, seven days where the link goes into
+a durable record — a Slack thread, a stored A2A task); the artifact itself stays in the
+project's gallery. On a deployment with no object storage the bytes are never stripped, so a
+raw-chunk surface delivers the file inline on its frame instead. A
 file this deployment could not keep or could not sign is reported in `warnings` instead of
 being listed, because a document the run produced and the caller was never told about reads
 as the platform having lost it.

@@ -13,8 +13,11 @@ import {
   filesNotKeptWarning,
   resolveProducedFile,
   resolveProducedFiles,
+  withAddressedFiles,
   type ProducedFileRef,
 } from "@/application/artifact/producedFiles";
+import type { SignObjectUrl } from "@/domain/artifact/objectStore";
+import type { EngineChunk } from "@/domain/llm/types";
 
 const TTL = 900;
 
@@ -86,5 +89,84 @@ describe("resolveProducedFile", () => {
     expect((await resolveProducedFile(ref(), sign, TTL)).file?.url).toContain("objects/report.docx");
     expect((await resolveProducedFile(ref(), undefined, TTL)).warning).toBe(filesNotKeptWarning(1));
     expect(await resolveProducedFile(ref({ key: undefined }), sign, TTL)).toEqual({});
+  });
+});
+
+describe("withAddressedFiles", () => {
+  const stored: EngineChunk = {
+    file: {
+      name: "report.docx",
+      mimeType: "application/msword",
+      source: "mcp: render",
+      byteSize: 2048,
+      key: "objects/report.docx",
+      artifactId: "art-1",
+    },
+  };
+
+  async function drain(
+    chunks: EngineChunk[],
+    signer: SignObjectUrl | undefined,
+  ): Promise<EngineChunk[]> {
+    const out: EngineChunk[] = [];
+    for await (const chunk of withAddressedFiles(
+      (async function* () {
+        for (const chunk of chunks) {
+          yield chunk;
+        }
+      })(),
+      signer,
+      TTL,
+    )) {
+      out.push(chunk);
+    }
+    return out;
+  }
+
+  it("swaps the platform's identifiers for an address", async () => {
+    const [chunk] = await drain([stored], sign);
+    expect(chunk?.file).toEqual({
+      name: "report.docx",
+      mimeType: "application/msword",
+      source: "mcp: render",
+      byteSize: 2048,
+      url: "https://signed/objects/report.docx?name=report.docx",
+    });
+    // The object key and artifact row id are this platform's bookkeeping; a
+    // caller holding them can do nothing with them.
+    expect(chunk?.file).not.toHaveProperty("key");
+    expect(chunk?.file).not.toHaveProperty("artifactId");
+  });
+
+  it("leaves the bytes alone when this deployment stores nothing", async () => {
+    // The bracket's capture is the identity without storage, so the payload is
+    // still on the frame and *is* the delivery. Replacing it with "there is
+    // nothing to download" would take away the only copy that exists.
+    const inline: EngineChunk = {
+      file: { name: "a.txt", mimeType: "text/plain", source: "mcp: x", b64: "aGk=" },
+    };
+    expect(await drain([inline], undefined)).toEqual([inline]);
+  });
+
+  it("says why when there is neither an address nor bytes", async () => {
+    const bare: EngineChunk = {
+      file: { name: "a.txt", mimeType: "text/plain", source: "mcp: x" },
+    };
+    const out = await drain([bare], undefined);
+    expect(out).toEqual([{ warning: filesNotKeptWarning(1) }]);
+  });
+
+  it("keeps a child's authorship on the warning it replaces", async () => {
+    const authored: EngineChunk = {
+      author: "writer",
+      file: { name: "a.txt", mimeType: "text/plain", source: "mcp: x" },
+    };
+    const out = await drain([authored], undefined);
+    expect(out[0]).toMatchObject({ author: "writer" });
+  });
+
+  it("passes every other chunk through untouched", async () => {
+    const others: EngineChunk[] = [{ delta: { content: "hi" } }, { done: true }];
+    expect(await drain(others, sign)).toEqual(others);
   });
 });

@@ -16,7 +16,7 @@ import {
 } from "@/application/execution/runProject";
 import { generateImage } from "@/application/image/generateImage";
 import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
-import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
@@ -260,10 +260,15 @@ export class ProjectA2aExecutor implements AgentExecutor {
    * A produced file as an A2A file part, addressed by uri.
    *
    * `bytes` is not an option: the run bracket stored the document and dropped
-   * the payload from the chunk long before this sees it. The signature outlives
-   * the run comfortably but not the stored task — a `tasks/get` days later reads
-   * a link that has expired, and the artifact is still in the console. That is
-   * the trade for not carrying megabytes through a task store.
+   * the payload from the chunk long before this sees it. That is the trade for
+   * not carrying megabytes through a task store.
+   *
+   * Signed for a record rather than for a present reader. A task is stored and
+   * read back later — a non-streaming `message/send` client does not see this
+   * artifact until the run completes, which may be ten minutes after the chunk
+   * carrying it passed — so the window has to outlast the run by a wide margin
+   * rather than by minutes. Even {@link RECORD_URL_TTL_SECONDS} runs out
+   * eventually; the artifact itself stays in the console.
    */
   private async filePart(
     file: NonNullable<EngineChunk["file"]>,
@@ -271,7 +276,7 @@ export class ProjectA2aExecutor implements AgentExecutor {
     const outcome = await resolveProducedFile(
       fileRefOf(file),
       this.deps.artifacts?.objects.sign,
-      VIEW_URL_TTL_SECONDS,
+      RECORD_URL_TTL_SECONDS,
     );
     if (!outcome.file) {
       return outcome.warning ? { warning: outcome.warning } : {};
