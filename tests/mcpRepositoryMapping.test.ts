@@ -113,11 +113,51 @@ describe("mcp connection mapping", () => {
       projectName: "p",
       serverName: "slack",
       clientId: "typed-by-hand",
+      issuer: "https://auth.example.com",
+      resource: "https://mcp.slack.com",
       scopes: [],
       status: "needs_auth",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
     expect((await mcpConnectionRepository.get("p", "slack"))?.clientFromMetadataDocument).toBeUndefined();
+  });
+});
+
+describe("connections written before the checks existed", () => {
+  it("reads a row missing its issuer as no connection at all", async () => {
+    // There is nothing safe to assume for it. The old fallback — "it belongs to
+    // whatever the entry points at now" — is the assumption the field exists to
+    // stop making, and a token checked against a guess is not checked.
+    stored = {
+      PK: "PROJECT#p",
+      SK: "MCPCONN#slack",
+      projectName: "p",
+      serverName: "slack",
+      clientId: "old",
+      resource: "https://mcp.slack.com",
+      scopes: [],
+      status: "connected",
+      accessToken: "enc:token",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
+  });
+
+  it("reads a row missing its resource the same way", async () => {
+    stored = {
+      PK: "PROJECT#p",
+      SK: "MCPCONN#slack",
+      projectName: "p",
+      serverName: "slack",
+      clientId: "old",
+      issuer: "https://auth.example.com",
+      scopes: [],
+      status: "connected",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(await mcpConnectionRepository.get("p", "slack")).toBeNull();
   });
 });

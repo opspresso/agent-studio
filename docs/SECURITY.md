@@ -459,7 +459,12 @@ Enforced properties:
   the issuer they were registered with, and its tokens carry the `resource` they were minted
   for. Both are checked before anything is handed out — on the refresh path *and* on the path
   that only reads a live token, because a bearer token has an audience and serving one
-  unchecked is the same mistake as spending the client secret.
+  unchecked is the same mistake as spending the client secret. **Both are required rather than
+  defaulted**: a row written before they were recorded reads back as *no connection*, so the
+  console offers a reconnect. The old fallback assumed such a row belonged to whatever the
+  entry points at now, which is exactly the assumption the fields exist to stop making — and a
+  token checked against a guess is not checked. The same applies to a pending authorization
+  whose state carries no issuer: it is refused rather than completed unchecked.
 - **Editing an entry's URL drops its `auth` block outright.** The block was read out of the
   old address's well-known documents. The entry falls back to its own headers until an admin
   re-runs Discover; once they do, the two checks above catch every connection that belonged to

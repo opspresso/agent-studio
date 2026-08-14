@@ -55,6 +55,7 @@ const OAUTH: McpServer["auth"] = {
   type: "oauth2",
   resource: "https://example.test",
   authorizationServer: "https://as.example.test",
+  issuer: "https://as.example.test",
   authorizationEndpoint: "https://as.example.test/authorize",
   tokenEndpoint: "https://as.example.test/token",
   tokenEndpointAuthMethod: "none",

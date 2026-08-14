@@ -204,6 +204,7 @@ describe("MCP registry secret contract", () => {
       type: "oauth2" as const,
       resource: "https://mcp.example",
       authorizationServer: "https://auth.example",
+      issuer: "https://auth.example",
       authorizationEndpoint: "https://auth.example/authorize",
       tokenEndpoint: "https://auth.example/token",
       tokenEndpointAuthMethod: "client_secret_post" as const,
