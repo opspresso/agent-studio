@@ -309,6 +309,8 @@ export interface ProjectSlackView {
   eventsPath: string;
   eventsUrl: string;
   suggestedPrompts: SlackSuggestedPrompt[];
+  /** Normalized by the server — trimmed, lower-cased and deduplicated. */
+  channelKeywords: string[];
   /** Every verb returns it, so the settings page can always render the manifest. */
   manifest: Record<string, unknown>;
 }
@@ -328,6 +330,7 @@ export async function updateProjectSlack(
     signingSecret?: string;
     enabled?: boolean;
     suggestedPrompts?: SlackSuggestedPrompt[];
+    channelKeywords?: string[];
   },
 ): Promise<ProjectSlackView> {
   const res = await fetch(`/api/projects/${name}/slack`, {

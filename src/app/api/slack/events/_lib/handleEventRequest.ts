@@ -3,6 +3,7 @@ import { verifySlackSignature } from "@/infrastructure/slack/verify";
 import { slackClient } from "@/infrastructure/slack/client";
 import { documentExtractor } from "@/infrastructure/llm/documentExtractor";
 import { slackEventRepository } from "@/infrastructure/db/repositories/slackEventRepository";
+import { slackThreadRepository } from "@/infrastructure/db/repositories/slackThreadRepository";
 import {
   artifactStorage,
   executionDeps,
@@ -12,6 +13,7 @@ import {
 import { executeAgent } from "@/application/execution/runProject";
 import { handleSlackEvent } from "@/application/slack/handleSlackEvent";
 import { handleThreadStart } from "@/application/slack/handleThreadStart";
+import { classifySlackEvent, type EngagementPolicy } from "@/application/slack/engagement";
 import { BodyTooLargeError, readBodyText } from "@/shared/httpBody";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 import { withRunContext } from "@/shared/runContext";
@@ -25,6 +27,7 @@ const slackEventDeps: SlackEventDeps = {
   projects: projectRepository,
   versions: versionRepository,
   slack: slackClient,
+  threads: slackThreadRepository,
   documents: documentExtractor,
   // Named even when this deployment has none, so "no object storage here" is a
   // decision in the source rather than a field nobody thought about.
@@ -36,14 +39,27 @@ const MAX_SLACK_BODY_BYTES = 1_000_000;
 
 /**
  * Shared Slack Events pipeline: verify signature → url_verification →
- * event-type gate → exactly-once claim → ack immediately and process in the
+ * engagement gate → exactly-once claim → ack immediately and process in the
  * background via `after()`. Slack requires an ack within 3 seconds; the
  * container runs as a persistent process, so background work survives the
  * response.
+ *
+ * **The gate is ahead of the claim, and that is a cost contract.** The bot
+ * receives every message in every channel it belongs to, and the great majority
+ * are not for it; deciding that before the claim is what keeps an ignored
+ * message from writing a DynamoDB row. `classifySlackEvent` owns the decision
+ * and spends nothing — the one branch that needs storage says so by returning
+ * `engagedThread`, and only a threaded message can reach it.
  */
 export async function handleSlackEventRequest(
   request: Request,
-  opts: { signingSecret: string; binding: SlackBotBinding; logLabel: string },
+  opts: {
+    signingSecret: string;
+    binding: SlackBotBinding;
+    logLabel: string;
+    /** What this project asked to be woken by, beyond a mention. */
+    engagement?: EngagementPolicy;
+  },
 ): Promise<Response> {
   let body: string;
   try {
@@ -93,21 +109,28 @@ export async function handleSlackEventRequest(
     return Response.json({ challenge: payload.challenge });
   }
 
-  const eventType = payload.event?.type;
-  const isMention = eventType === "app_mention";
-  const isDirectMessage = eventType === "message" && payload.event?.channel_type === "im";
-  /**
-   * A user opening the agent. The agent messaging experience announces it with
-   * `app_home_opened` on the Messages tab (the Home tab is a different surface
-   * and is not ours); the legacy assistant view uses `assistant_thread_started`.
-   * Both are answered with prompts rather than a run.
-   */
-  const isThreadStart =
-    (eventType === "app_home_opened" && payload.event?.tab === "messages") ||
-    eventType === "assistant_thread_started";
-  if (payload.type !== "event_callback" || (!isMention && !isDirectMessage && !isThreadStart)) {
+  const disposition = classifySlackEvent(payload, opts.engagement ?? {});
+  if (disposition.kind === "ignore") {
     return Response.json({ ok: true });
   }
+  // The one branch that costs a read. It is spent here rather than inside the
+  // handler because the answer decides whether this is work at all — past the
+  // claim below, an unengaged thread would already have cost a write.
+  if (disposition.kind === "engagedThread") {
+    const engaged = await slackThreadRepository
+      .isEngaged(opts.binding.projectName, disposition.channel, disposition.threadTs)
+      // A lookup that failed must not answer a message nobody addressed. The
+      // cost of being wrong here is one unanswered follow-up; the cost the
+      // other way is the bot speaking uninvited in a channel.
+      .catch((error) => {
+        log.error("slack", `${opts.logLabel} engagement lookup failed`, error);
+        return false;
+      });
+    if (!engaged) {
+      return Response.json({ ok: true });
+    }
+  }
+  const isThreadStart = disposition.kind === "threadStart";
 
   const eventId = payload.event_id;
   if (eventId) {

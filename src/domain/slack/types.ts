@@ -15,6 +15,19 @@ export const MAX_PROMPT_MESSAGE_LENGTH = 500;
 /** Slack's cap on the agent overview shown above the Messages tab. */
 export const MAX_AGENT_DESCRIPTION_LENGTH = 300;
 
+/**
+ * Caps on the words a project may be woken by in a channel.
+ *
+ * Ours rather than Slack's, and low on purpose: every keyword is matched
+ * against every message in every channel the bot belongs to, and a list long
+ * enough to need scrolling is one nobody can predict the behaviour of. A
+ * keyword short enough to appear inside ordinary words wakes the bot constantly,
+ * which is why there is a floor as well as a ceiling.
+ */
+export const MAX_CHANNEL_KEYWORDS = 20;
+export const MIN_KEYWORD_LENGTH = 2;
+export const MAX_KEYWORD_LENGTH = 50;
+
 /** A Slack message as the Web API returns it, narrowed to what a run reads. */
 export interface SlackMessage {
   ts: string;

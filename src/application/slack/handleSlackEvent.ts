@@ -38,12 +38,6 @@ const THINKING_MESSAGES = ["is thinking…", "is working through it…", "is sti
 /** Most recent thread turns carried as context; older turns are dropped. */
 const MAX_THREAD_HISTORY_MESSAGES = 50;
 /**
- * Message subtypes still worth handling. Subtyped messages are mostly channel
- * bookkeeping (joins, edits, …), but a user's file upload arrives as
- * `file_share` and dropping it would leave the mention unanswered.
- */
-const ALLOWED_SUBTYPES = new Set(["file_share"]);
-/**
  * Attachment limits — the same ones every other surface enforces. Anything
  * dropped is reported, never silently skipped.
  */
@@ -380,7 +374,14 @@ export interface SlackBotBinding {
   botToken: string;
 }
 
-/** Process one app_mention / DM event: run the agent project and stream the reply. */
+/**
+ * Run the agent project for one message and stream the reply.
+ *
+ * Whether this message was for the bot at all is already decided:
+ * `classifySlackEvent` is the single owner of that, and it runs in the route
+ * ahead of the dedup claim. Nothing here re-checks it — a second copy of the
+ * loop guard is exactly the kind of drift the split is meant to prevent.
+ */
 export async function handleSlackEvent(
   deps: SlackEventDeps,
   body: SlackEventBody,
@@ -389,17 +390,6 @@ export async function handleSlackEvent(
   const event = body.event;
   const token = binding.botToken;
   if (!event?.channel || !event.ts) {
-    return;
-  }
-  // Ignore our own (and any other bot's) messages to prevent loops. `bot_id` is
-  // not enough on its own: a file the bot shares through the external upload flow
-  // is attributed to the bot *user*, and `file_share` is an allowed subtype — so
-  // the app's own user id is checked too.
-  const selfUserId = body.authorizations?.find((auth) => auth.user_id)?.user_id;
-  if (event.bot_id || (selfUserId && event.user === selfUserId)) {
-    return;
-  }
-  if (event.subtype && !ALLOWED_SUBTYPES.has(event.subtype)) {
     return;
   }
 
@@ -644,4 +634,20 @@ export async function handleSlackEvent(
     ...warnings.map((warning) => `:warning: ${warning}`),
   ].join("\n");
   await sink.finish(text, suffix);
+
+  // The bot has now spoken here, so the next message in this thread is a
+  // follow-up rather than channel noise — recorded after the reply, because
+  // that is what makes it true. A DM needs no record: every message in one is
+  // addressed to the bot already.
+  //
+  // Recorded even when the reply was only warnings. That is still the bot
+  // holding the floor, and "it failed — try without the attachment" is exactly
+  // the turn someone answers without stopping to re-address it.
+  if (!isAssistantThread) {
+    await deps.threads
+      .markEngaged(projectName, event.channel, threadTs)
+      // A lost record costs the next follow-up its mention-free reply. Not
+      // worth failing a run that already answered.
+      .catch((error) => log.error("slack", "thread engagement could not be recorded", error));
+  }
 }

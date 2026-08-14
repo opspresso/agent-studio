@@ -7,9 +7,12 @@ import type { ProjectRepository } from "@/domain/project/repository";
 import type { SlackSuggestedPrompt } from "@/domain/slack/types";
 import {
   MAX_AGENT_DESCRIPTION_LENGTH,
+  MAX_CHANNEL_KEYWORDS,
+  MAX_KEYWORD_LENGTH,
   MAX_PROMPT_MESSAGE_LENGTH,
   MAX_PROMPT_TITLE_LENGTH,
   MAX_SUGGESTED_PROMPTS,
+  MIN_KEYWORD_LENGTH,
 } from "@/domain/slack/types";
 import { nextUpdatedAt } from "@/application/project/timestamps";
 
@@ -21,6 +24,8 @@ export interface ProjectSlackView {
   eventsPath: string;
   /** Not a secret, unlike the two above — returned as stored. */
   suggestedPrompts: SlackSuggestedPrompt[];
+  /** Not a secret either. Empty means mentions and follow-ups only. */
+  channelKeywords: string[];
 }
 
 export interface ProjectSlackUpdate {
@@ -28,6 +33,7 @@ export interface ProjectSlackUpdate {
   signingSecret?: string;
   enabled?: boolean;
   suggestedPrompts?: SlackSuggestedPrompt[];
+  channelKeywords?: string[];
 }
 
 export function eventsPathFor(projectName: string): string {
@@ -43,7 +49,43 @@ function maskedView(cipher: SecretCipher, project: Project): ProjectSlackView {
     signingSecret: slack?.signingSecret ? cipher.mask(slack.signingSecret) : "",
     eventsPath: eventsPathFor(project.name),
     suggestedPrompts: slack?.suggestedPrompts ?? [],
+    channelKeywords: slack?.channelKeywords ?? [],
   };
+}
+
+/**
+ * Normalize the keyword list the editor sends: drop blanks, fold case, and
+ * remove duplicates.
+ *
+ * Case is folded at rest rather than at match time because the list is shown
+ * back to the operator — storing `Deploy` and `deploy` as two entries would
+ * display a list with a distinction the matcher does not make.
+ */
+function cleanKeywords(input: string[]): string[] {
+  const seen = new Set<string>();
+  const keywords: string[] = [];
+  for (const raw of input) {
+    const keyword = raw.trim().toLowerCase();
+    if (keyword === "" || seen.has(keyword)) {
+      continue;
+    }
+    if (keyword.length < MIN_KEYWORD_LENGTH) {
+      throw new ValidationError(
+        `A channel keyword needs at least ${MIN_KEYWORD_LENGTH} characters`,
+      );
+    }
+    if (keyword.length > MAX_KEYWORD_LENGTH) {
+      throw new ValidationError(
+        `A channel keyword is limited to ${MAX_KEYWORD_LENGTH} characters`,
+      );
+    }
+    seen.add(keyword);
+    keywords.push(keyword);
+  }
+  if (keywords.length > MAX_CHANNEL_KEYWORDS) {
+    throw new ValidationError(`At most ${MAX_CHANNEL_KEYWORDS} channel keywords are allowed`);
+  }
+  return keywords;
 }
 
 /**
@@ -143,11 +185,16 @@ export async function updateProjectSlack(
     update.suggestedPrompts !== undefined
       ? cleanPrompts(update.suggestedPrompts)
       : (project.slack?.suggestedPrompts ?? []);
+  const keywords =
+    update.channelKeywords !== undefined
+      ? cleanKeywords(update.channelKeywords)
+      : (project.slack?.channelKeywords ?? []);
   const slack: SlackIntegration = {
     botToken: mergeSecret(cipher, project.slack?.botToken, update.botToken),
     signingSecret: mergeSecret(cipher, project.slack?.signingSecret, update.signingSecret),
     enabled: update.enabled ?? project.slack?.enabled ?? false,
     ...(prompts.length > 0 ? { suggestedPrompts: prompts } : {}),
+    ...(keywords.length > 0 ? { channelKeywords: keywords } : {}),
   };
   if (slack.enabled && (!slack.botToken || !slack.signingSecret)) {
     throw new ValidationError("Bot token and signing secret are required to enable Slack");
@@ -228,6 +275,11 @@ export function buildProjectSlackManifest(
           "app_mentions:read",
           "assistant:write",
           "channels:history",
+          // Reading a channel's history is granted above, but resolving a
+          // channel *name* to the id every read takes is a separate scope.
+          // Without it an agent can only reach the conversation it is already
+          // in, which makes "summarise #deploy" unanswerable.
+          "channels:read",
           "chat:write",
           "emoji:read",
           "files:read",
@@ -253,7 +305,22 @@ export function buildProjectSlackManifest(
         // channel a user is looking at needs per-user context storage, which
         // does not exist yet, and subscribing to an event nobody reads only
         // buys traffic.
-        bot_events: ["app_mention", "app_home_opened", "message.im"],
+        //
+        // `message.channels`/`message.groups` are what let a follow-up in a
+        // thread the bot answered in skip the mention. They deliver every
+        // message in every channel the bot belongs to — not the workspace, but
+        // still far more than is for it — which is why `classifySlackEvent`
+        // decides ahead of the dedup claim. Both eras of channel are
+        // subscribed together on purpose: `groups:history` is already granted,
+        // and taking only the public half would leave follow-ups silently
+        // broken in private channels with nothing saying why.
+        bot_events: [
+          "app_mention",
+          "app_home_opened",
+          "message.channels",
+          "message.groups",
+          "message.im",
+        ],
       },
       org_deploy_enabled: false,
       socket_mode_enabled: false,
@@ -284,21 +351,38 @@ export async function testProjectSlack(
 }
 
 /**
- * The credentials a Slack event on this project's endpoint must be verified
- * with, or null when the project is missing or its bot is not enabled. No
- * session is involved — the signature is the authentication.
+ * What one Slack event on this project's endpoint needs before it can be
+ * handled: the credentials to verify it with, and the policy that decides
+ * whether it is for this bot at all. Null when the project is missing or its
+ * bot is not enabled. No session is involved — the signature is the
+ * authentication.
+ *
+ * The keywords ride along rather than being fetched by the gate: this read
+ * already happens on every delivered event, and a second one to ask what the
+ * project listens for would double the cost of ignoring a message.
  */
+export interface SlackEventBinding {
+  projectName: string;
+  botToken: string;
+  signingSecret: string;
+  channelKeywords: string[];
+}
+
 export async function resolveSlackEventBinding(
   repo: ProjectRepository,
   projectName: string,
   cipher: SecretCipher,
-): Promise<{ projectName: string; botToken: string; signingSecret: string } | null> {
+): Promise<SlackEventBinding | null> {
   const project = await repo.get(projectName);
   const runtime = project ? resolveProjectSlackRuntime(cipher, project) : null;
   if (!project || !runtime) {
     return null;
   }
-  return { projectName: project.name, ...runtime };
+  return {
+    projectName: project.name,
+    ...runtime,
+    channelKeywords: project.slack?.channelKeywords ?? [],
+  };
 }
 
 /**
@@ -318,9 +402,7 @@ export interface ProjectSlackUseCases {
   disconnect(name: string, userEmail: string): Promise<ProjectSlackResult>;
   test(name: string, userEmail: string): Promise<{ ok: true; team?: string; botUser?: string } | { ok: false }>;
   /** No session involved — the request signature is the authentication. */
-  resolveEventBinding(
-    projectName: string,
-  ): Promise<{ projectName: string; botToken: string; signingSecret: string } | null>;
+  resolveEventBinding(projectName: string): Promise<SlackEventBinding | null>;
 }
 
 export function createProjectSlackUseCases(deps: {
