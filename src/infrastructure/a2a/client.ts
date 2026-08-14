@@ -1,14 +1,34 @@
 /**
  * Outbound A2A client for registry agents with `protocol: "a2a"`.
- * Resolves the Agent Card from the stored URL, sends one blocking
- * `message/send`, and extracts the reply text from the returned Message or
- * Task (artifacts take precedence over the final status message, which some
- * remote agents use to repeat or summarize artifact content).
+ * Resolves the Agent Card from the stored URL, asks for the reply as a stream,
+ * and extracts the text from the returned Message or Task (artifacts take
+ * precedence over the final status message, which some remote agents use to
+ * repeat or summarize artifact content).
+ *
+ * **Streaming is what lets a long delegation finish.** A blocking `message/send`
+ * puts nothing on the connection while the remote works, and a gateway reads
+ * that silence as idle and cuts it — a remote investigation that runs for
+ * minutes returns a timeout rather than an answer. Status updates keep bytes
+ * flowing, so the idle judgement never comes up. Which path is taken is read
+ * off the card's `capabilities.streaming` **before anything is sent**, and that
+ * is deliberate: it is the one question whose answer is known without a
+ * request, so there is no failure to retry and no setting to add. Trying the
+ * stream first and falling back on error would be the same feature with a
+ * double-execution bug in it — an HTTP error can arrive from a gateway *after*
+ * the remote accepted the work.
  */
 
-import type { Message, Part, Task } from "@a2a-js/sdk";
+import type {
+  AgentCard,
+  Message,
+  MessageSendParams,
+  Part,
+  Task,
+  TaskArtifactUpdateEvent,
+} from "@a2a-js/sdk";
 import { A2AClient } from "@a2a-js/sdk/client";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
+import { readBodyText } from "@/shared/httpBody";
 
 export interface A2aImage {
   b64: string;
@@ -21,7 +41,18 @@ export type A2aSendResult =
   | { ok: false; error: string };
 
 const AGENT_CARD_SUFFIX = "/.well-known/agent-card.json";
-const TIMEOUT_MS = 120_000;
+/**
+ * How long the exchange may stay *silent*, not how long it may take.
+ *
+ * A streaming remote can work far longer than any single gap between its
+ * updates, so a bound on the whole exchange would cut exactly the runs
+ * streaming exists to carry. The total is capped by the run's own deadline,
+ * which arrives as `signal`. The blocking path has no events to reset it, so
+ * there the same number is the whole-request bound it always was.
+ */
+const IDLE_TIMEOUT_MS = 120_000;
+/** An Agent Card is a small JSON document; nothing here reads a body unbounded. */
+const MAX_CARD_BYTES = 1_000_000;
 
 /** Accepts either the card URL itself or the agent base URL. */
 export function normalizeAgentCardUrl(url: string): string {
@@ -90,6 +121,167 @@ export function extractA2aImages(result: Message | Task): A2aImage[] {
   return partsImages(resultParts(result));
 }
 
+/** One entry of a task's `artifacts`, named without restating the SDK's aliases. */
+type TaskArtifact = NonNullable<Task["artifacts"]>[number];
+
+/**
+ * A status or artifact event that arrived before the task it belongs to.
+ *
+ * The protocol sends the task first, so this is the defensive branch — but a
+ * remote that skips it would otherwise have its whole answer dropped, and the
+ * event carries the two identifiers a task needs.
+ */
+function ensureTask(task: Task | null, event: { taskId: string; contextId: string }): Task {
+  return (
+    task ?? {
+      kind: "task",
+      id: event.taskId,
+      contextId: event.contextId,
+      status: { state: "working" },
+    }
+  );
+}
+
+/** `append` continues an artifact already sent; anything else replaces it. */
+function mergeArtifact(task: Task, event: TaskArtifactUpdateEvent): Task {
+  const artifacts = task.artifacts ?? [];
+  const existing = artifacts.find((a) => a.artifactId === event.artifact.artifactId);
+  if (!existing) {
+    return { ...task, artifacts: [...artifacts, event.artifact] };
+  }
+  const merged: TaskArtifact = event.append
+    ? { ...existing, ...event.artifact, parts: [...existing.parts, ...event.artifact.parts] }
+    : event.artifact;
+  return { ...task, artifacts: artifacts.map((a) => (a === existing ? merged : a)) };
+}
+
+/** States after which the task will not change again. */
+const TERMINAL_STATES = new Set(["completed", "failed", "canceled", "rejected"]);
+
+interface StreamCollected {
+  /** Null when the stream failed before producing anything usable. */
+  result: Message | Task | null;
+  error?: string;
+}
+
+/**
+ * Fold the stream's events back into the value the blocking send would have
+ * returned, so both paths are read by the same two extractors — that, rather
+ * than a second copy of the artifacts-over-status rule, is what keeps the two
+ * answers identical.
+ */
+async function collectStream(
+  client: A2AClient,
+  params: MessageSendParams,
+  onEvent: () => void,
+  idle: AbortSignal,
+): Promise<StreamCollected> {
+  let task: Task | null = null;
+  let message: Message | null = null;
+  try {
+    for await (const event of client.sendMessageStream(params)) {
+      onEvent();
+      switch (event.kind) {
+        case "message":
+          message = event;
+          break;
+        case "task":
+          task = event;
+          break;
+        case "status-update": {
+          const base = ensureTask(task, event);
+          task = {
+            ...base,
+            status: event.status,
+            /*
+             * The blocking path receives a server-built `history`, and that is
+             * what `extractA2aText` falls through to when a remote puts its
+             * answer in a status message rather than an artifact. Nothing else
+             * fills it here, so without this a streamed run reports "no
+             * supported content" for a reply the blocking one reads fine.
+             */
+            ...(event.status.message
+              ? { history: [...(base.history ?? []), event.status.message] }
+              : {}),
+          };
+          /*
+           * The terminal event ends the exchange. The SDK's generator runs
+           * until the response *body* closes rather than until this marker, so
+           * a remote (or a proxy) that holds the connection open afterwards
+           * would otherwise cost the whole idle bound — and then time out with
+           * the finished answer already in hand.
+           */
+          if (event.final) {
+            return { result: task };
+          }
+          break;
+        }
+        case "artifact-update":
+          task = mergeArtifact(ensureTask(task, event), event);
+          break;
+      }
+    }
+  } catch (error) {
+    /*
+     * A stream that broke *after* its terminal event still delivered the
+     * answer: a proxy resetting the connection, or a single trailing frame the
+     * SDK cannot parse, must not discard a task that is already complete.
+     * Anything short of terminal is a genuine loss and reported as one.
+     */
+    if (task && TERMINAL_STATES.has(task.status.state)) {
+      return { result: task };
+    }
+    return { result: null, error: errorText(error, idle) };
+  }
+  // A task is the fuller record whenever there is one: it carries the artifacts,
+  // the terminal status and the history the extractors fall through.
+  return { result: task ?? message };
+}
+
+/**
+ * The card, read here rather than through `A2AClient.fromCardUrl` so the
+ * streaming capability is in hand before a request is sent. Same single fetch
+ * the SDK helper does — it ends in this same constructor.
+ */
+async function loadAgentCard(cardUrl: string, fetchImpl: typeof fetch): Promise<AgentCard> {
+  const response = await fetchImpl(cardUrl, { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch Agent Card from ${cardUrl}: ${response.status} ${response.statusText}`,
+    );
+  }
+  const body = await readBodyText(response, MAX_CARD_BYTES);
+  try {
+    return JSON.parse(body) as AgentCard;
+  } catch {
+    throw new Error(`Agent Card at ${cardUrl} is not JSON`);
+  }
+}
+
+function toResult(result: Message | Task): A2aSendResult {
+  const text = extractA2aText(result);
+  const images = extractA2aImages(result);
+  if (!text && images.length === 0) {
+    const state = result.kind === "task" ? result.status.state : "message";
+    return { ok: false, error: `A2A reply contained no supported content (state: ${state})` };
+  }
+  return { ok: true, text, images };
+}
+
+/**
+ * `idle` separates our own bound from the caller's. Both arrive as an
+ * `AbortError`, and reporting a run cancelled by its deadline as a 120-second
+ * timeout describes a wait that never happened.
+ */
+function errorText(error: unknown, idle?: AbortSignal): string {
+  if (error instanceof Error && error.name === "AbortError") {
+    return idle?.aborted
+      ? `Request timed out after ${IDLE_TIMEOUT_MS / 1000}s with no response`
+      : "Request was cancelled";
+  }
+  return error instanceof Error ? error.message : "A2A request failed";
+}
+
 export async function sendA2aMessage(
   url: string,
   headers: Record<string, string>,
@@ -97,7 +289,11 @@ export async function sendA2aMessage(
   signal?: AbortSignal,
 ): Promise<A2aSendResult> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
+  const keepAwake = (): void => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
+  };
   const requestSignal = signal
     ? AbortSignal.any([signal, controller.signal])
     : controller.signal;
@@ -108,36 +304,40 @@ export async function sendA2aMessage(
       signal: requestSignal,
     });
 
+  const params: MessageSendParams = {
+    message: {
+      kind: "message",
+      messageId: crypto.randomUUID(),
+      role: "user",
+      parts: [{ kind: "text", text: message }],
+    },
+    configuration: {
+      acceptedOutputModes: ["text/plain", "image/png", "image/jpeg", "image/webp"],
+    },
+  };
+
   try {
-    const client = await A2AClient.fromCardUrl(normalizeAgentCardUrl(url), { fetchImpl });
+    const card = await loadAgentCard(normalizeAgentCardUrl(url), fetchImpl);
+    const client = new A2AClient(card, { fetchImpl });
+    keepAwake();
+    if (card.capabilities?.streaming) {
+      const streamed = await collectStream(client, params, keepAwake, controller.signal);
+      return streamed.result
+        ? toResult(streamed.result)
+        : { ok: false, error: streamed.error ?? "A2A stream ended with no reply" };
+    }
+    // No events to reset the idle bound, so here it is the whole-request one.
     const response = await client.sendMessage({
-      message: {
-        kind: "message",
-        messageId: crypto.randomUUID(),
-        role: "user",
-        parts: [{ kind: "text", text: message }],
-      },
-      configuration: {
-        blocking: true,
-        acceptedOutputModes: ["text/plain", "image/png", "image/jpeg", "image/webp"],
-      },
+      ...params,
+      configuration: { ...params.configuration, blocking: true },
     });
     if ("error" in response) {
       return { ok: false, error: `A2A error ${response.error.code}: ${response.error.message}` };
     }
-    const text = extractA2aText(response.result);
-    const images = extractA2aImages(response.result);
-    if (!text && images.length === 0) {
-      const state = response.result.kind === "task" ? response.result.status.state : "message";
-      return { ok: false, error: `A2A reply contained no supported content (state: ${state})` };
-    }
-    return { ok: true, text, images };
+    return toResult(response.result);
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      return { ok: false, error: `Request timed out after ${TIMEOUT_MS / 1000}s` };
-    }
-    return { ok: false, error: error instanceof Error ? error.message : "A2A request failed" };
+    return { ok: false, error: errorText(error, controller.signal) };
   } finally {
-    clearTimeout(timer);
+    clearTimeout(idleTimer);
   }
 }

@@ -1,9 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Card builders resolve the public base URL via runtime settings; stub the
 // repository so tests never touch DynamoDB.
 vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
   settingsRepository: { get: async () => null, put: async () => {} },
+}));
+// The outbound client reaches the network through the SSRF guard, which has its
+// own tests; these are about what the client does with the reply.
+vi.mock("@/infrastructure/net/publicFetch", () => ({
+  fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
 import type { Message, Task } from "@a2a-js/sdk";
 import type { AgentExecutionEvent, ExecutionEventBus, TaskStore } from "@a2a-js/sdk/server";
@@ -13,6 +18,7 @@ import {
   extractA2aImages,
   extractA2aText,
   normalizeAgentCardUrl,
+  sendA2aMessage,
 } from "@/infrastructure/a2a/client";
 import { ProjectA2aExecutor } from "@/application/a2a/executor";
 import type { Project, Version } from "@/domain/project/types";
@@ -224,6 +230,307 @@ describe("normalizeAgentCardUrl", () => {
     expect(normalizeAgentCardUrl("https://x.test/api/a2a/p/.well-known/agent-card.json")).toBe(
       "https://x.test/api/a2a/p/.well-known/agent-card.json",
     );
+  });
+});
+
+// --- outbound send ----------------------------------------------------------
+
+const RPC_URL = "https://remote.test/a2a";
+const CARD_URL = `${RPC_URL}/.well-known/agent-card.json`;
+
+function agentCard(streaming: boolean): Response {
+  return Response.json({
+    protocolVersion: "0.3.0",
+    name: "Remote",
+    description: "A remote agent",
+    url: RPC_URL,
+    version: "1.0.0",
+    capabilities: { streaming },
+    defaultInputModes: ["text/plain"],
+    defaultOutputModes: ["text/plain"],
+    skills: [],
+  });
+}
+
+/** The events a task-based remote sends: text in two chunks, then a picture. */
+const TASK_EVENT = { kind: "task", id: "t1", contextId: "c1", status: { state: "working" } };
+const ARTIFACT_OPEN = {
+  kind: "artifact-update",
+  taskId: "t1",
+  contextId: "c1",
+  artifact: { artifactId: "a1", parts: [{ kind: "text", text: "the " }] },
+};
+const ARTIFACT_APPEND = {
+  kind: "artifact-update",
+  taskId: "t1",
+  contextId: "c1",
+  append: true,
+  artifact: { artifactId: "a1", parts: [{ kind: "text", text: "answer" }] },
+};
+const ARTIFACT_IMAGE = {
+  kind: "artifact-update",
+  taskId: "t1",
+  contextId: "c1",
+  artifact: {
+    artifactId: "a2",
+    parts: [{ kind: "file", file: { bytes: "aGk=", mimeType: "image/png", name: "p.png" } }],
+  },
+};
+const FINAL_STATUS = {
+  kind: "status-update",
+  taskId: "t1",
+  contextId: "c1",
+  final: true,
+  status: { state: "completed" },
+};
+/** What the blocking path returns for the same exchange. */
+const FINAL_TASK = {
+  kind: "task",
+  id: "t1",
+  contextId: "c1",
+  status: { state: "completed" },
+  artifacts: [
+    { artifactId: "a1", parts: [{ kind: "text", text: "the answer" }] },
+    {
+      artifactId: "a2",
+      parts: [{ kind: "file", file: { bytes: "aGk=", mimeType: "image/png", name: "p.png" } }],
+    },
+  ],
+};
+
+const STREAMED_REPLY = {
+  ok: true,
+  text: "the answer",
+  images: [{ b64: "aGk=", mimeType: "image/png", name: "p.png" }],
+};
+
+function sseFrames(requestId: number, results: unknown[]): string {
+  return results
+    .map((result) => `data: ${JSON.stringify({ jsonrpc: "2.0", id: requestId, result })}\n\n`)
+    .join("");
+}
+
+function sseResponse(body: string): Response {
+  return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+}
+
+/**
+ * An SSE body the test feeds one event at a time, to control the gaps.
+ *
+ * `respond` honours the caller's `signal` the way a real fetch does — tearing
+ * the body down on abort. Without that a timeout would fire and the stream
+ * would go on reading, which is not how this fails in production.
+ */
+function manualSse(requestId: number) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+    },
+  });
+  return {
+    respond(signal?: AbortSignal) {
+      signal?.addEventListener("abort", () => {
+        const error = new Error("The operation was aborted");
+        error.name = "AbortError";
+        controller.error(error);
+      });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+    },
+    push(result: unknown) {
+      controller.enqueue(encoder.encode(sseFrames(requestId, [result])));
+    },
+    close() {
+      controller.close();
+    },
+  };
+}
+
+/** Answers the card, then hands each RPC call to `rpc`. Records the methods. */
+function stubRemote(
+  card: Response,
+  rpc: (method: string, id: number, signal?: AbortSignal) => Response,
+) {
+  const methods: string[] = [];
+  vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input) === CARD_URL) {
+      return card;
+    }
+    const body = JSON.parse(String(init?.body)) as { method: string; id: number };
+    methods.push(body.method);
+    return rpc(body.method, body.id, init?.signal ?? undefined);
+  });
+  return methods;
+}
+
+describe("sendA2aMessage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("collects a streamed reply, appending an artifact continued across events", async () => {
+    stubRemote(agentCard(true), (_method, id) =>
+      sseResponse(
+        sseFrames(id, [TASK_EVENT, ARTIFACT_OPEN, ARTIFACT_APPEND, ARTIFACT_IMAGE, FINAL_STATUS]),
+      ),
+    );
+
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual(STREAMED_REPLY);
+  });
+
+  it("falls back to a blocking send for a card that cannot stream", async () => {
+    const methods = stubRemote(agentCard(false), (_method, id) =>
+      Response.json({ jsonrpc: "2.0", id, result: FINAL_TASK }),
+    );
+
+    // The same answer as the streamed path: both read the reply back through
+    // `extractA2aText`/`extractA2aImages`, so neither can drift from the other.
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual(STREAMED_REPLY);
+    // The SDK refuses before any request goes out, so nothing ran twice.
+    expect(methods).toEqual(["message/send"]);
+  });
+
+  it("reports a stream that broke before the task finished, without re-sending it", async () => {
+    const methods = stubRemote(agentCard(true), (_method, id) =>
+      // A frame the SDK cannot parse ends the stream while the task is still
+      // working — the remote may well be mid-delegation, so a second send would
+      // run the whole thing twice.
+      sseResponse(`${sseFrames(id, [TASK_EVENT, ARTIFACT_OPEN])}data: not-json\n\n`),
+    );
+
+    const result = await sendA2aMessage(RPC_URL, {}, "hello");
+
+    expect(result.ok).toBe(false);
+    expect(methods).toEqual(["message/stream"]);
+  });
+
+  it("keeps an answer whose stream broke after the task reached a terminal state", async () => {
+    stubRemote(agentCard(true), (_method, id) =>
+      // Everything arrived, then the connection tore down ungracefully — a
+      // proxy reset, a trailing frame. The finished task is not thrown away.
+      sseResponse(
+        `${sseFrames(id, [TASK_EVENT, ARTIFACT_OPEN, ARTIFACT_APPEND, ARTIFACT_IMAGE, FINAL_STATUS])}data: not-json\n\n`,
+      ),
+    );
+
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual(STREAMED_REPLY);
+  });
+
+  it("does not re-send when the stream could not be established at all", async () => {
+    const methods = stubRemote(agentCard(true), () =>
+      // A gateway 502 says nothing about whether the remote took the work, so
+      // the blocking path is not a safe retry.
+      Response.json({ error: "bad gateway" }, { status: 502 }),
+    );
+
+    const result = await sendA2aMessage(RPC_URL, {}, "hello");
+
+    expect(result.ok).toBe(false);
+    expect(methods).toEqual(["message/stream"]);
+  });
+
+  it("reads an answer a remote put in a status message rather than an artifact", async () => {
+    const answering = {
+      kind: "status-update",
+      taskId: "t1",
+      contextId: "c1",
+      final: false,
+      status: {
+        state: "working",
+        message: {
+          kind: "message",
+          messageId: "m1",
+          role: "agent",
+          parts: [{ kind: "text", text: "the answer" }],
+        },
+      },
+    };
+    stubRemote(agentCard(true), (_method, id) =>
+      // The terminal event carries no message, so the reply survives only if
+      // the earlier status message reached the task's history — which is where
+      // the blocking path would have found it.
+      sseResponse(sseFrames(id, [TASK_EVENT, answering, FINAL_STATUS])),
+    );
+
+    await expect(sendA2aMessage(RPC_URL, {}, "hello")).resolves.toEqual({
+      ok: true,
+      text: "the answer",
+      images: [],
+    });
+  });
+
+  it("returns as soon as the task is final, without waiting for the body to close", async () => {
+    vi.useFakeTimers();
+    const sse = manualSse(1);
+    stubRemote(agentCard(true), (_method, _id, signal) => sse.respond(signal));
+
+    const pending = sendA2aMessage(RPC_URL, {}, "hello");
+    await vi.advanceTimersByTimeAsync(0);
+    sse.push(TASK_EVENT);
+    sse.push(ARTIFACT_OPEN);
+    sse.push(ARTIFACT_APPEND);
+    sse.push(ARTIFACT_IMAGE);
+    sse.push(FINAL_STATUS);
+    // The connection is deliberately left open: a remote behind a proxy may
+    // hold it, and waiting would burn the idle bound on a finished answer.
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(pending).resolves.toEqual(STREAMED_REPLY);
+  });
+
+  it("says a run was cancelled rather than blaming a timeout that never elapsed", async () => {
+    vi.useFakeTimers();
+    const cancel = new AbortController();
+    const sse = manualSse(1);
+    stubRemote(agentCard(true), (_method, _id, signal) => sse.respond(signal));
+
+    const pending = sendA2aMessage(RPC_URL, {}, "hello", cancel.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    sse.push(TASK_EVENT);
+    await vi.advanceTimersByTimeAsync(0);
+    // The run's own deadline, well inside the idle bound this never reached.
+    cancel.abort();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await pending).toEqual({ ok: false, error: "Request was cancelled" });
+  });
+
+  it("keeps a stream alive past the blocking timeout while events keep arriving", async () => {
+    vi.useFakeTimers();
+    const sse = manualSse(1);
+    stubRemote(agentCard(true), (_method, _id, signal) => sse.respond(signal));
+
+    const pending = sendA2aMessage(RPC_URL, {}, "hello");
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Two gaps, each inside the idle bound, adding up to well past what the
+    // blocking send allows for the whole exchange.
+    sse.push(TASK_EVENT);
+    await vi.advanceTimersByTimeAsync(100_000);
+    sse.push(ARTIFACT_OPEN);
+    await vi.advanceTimersByTimeAsync(100_000);
+    sse.push(ARTIFACT_APPEND);
+    sse.push(ARTIFACT_IMAGE);
+    sse.push(FINAL_STATUS);
+    sse.close();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(pending).resolves.toEqual(STREAMED_REPLY);
+  });
+
+  it("gives up on a stream that goes silent for longer than the idle bound", async () => {
+    vi.useFakeTimers();
+    const sse = manualSse(1);
+    stubRemote(agentCard(true), (_method, _id, signal) => sse.respond(signal));
+
+    const pending = sendA2aMessage(RPC_URL, {}, "hello");
+    await vi.advanceTimersByTimeAsync(0);
+    sse.push(TASK_EVENT);
+    await vi.advanceTimersByTimeAsync(200_000);
+
+    expect(await pending).toEqual({ ok: false, error: expect.stringContaining("timed out") });
   });
 });
 
