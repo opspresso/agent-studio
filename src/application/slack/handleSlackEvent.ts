@@ -1,6 +1,7 @@
 import type { SlackMessage } from "@/domain/slack/types";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createReplySink } from "@/application/slack/replyStream";
+import { selfUserId } from "@/application/slack/engagement";
 import {
   fileRefOf,
   resolveProducedFiles,
@@ -68,17 +69,6 @@ export interface ThreadTurn {
 }
 
 /**
- * Convert thread replies to engine turns: bot turns → assistant, human turns →
- * user. A message with no text is kept when it carried files — an image posted
- * on its own is still part of the conversation.
- *
- * Speakers are *not* named here. Labelling needs profile lookups, and doing them
- * from inside this mapping meant resolving everyone in the thread Slack returned
- * — up to ten pages of it — when only the last {@link MAX_THREAD_HISTORY_MESSAGES}
- * turns survive. So this records who wrote each turn and
- * {@link withSpeakerLabels} labels whatever is left after the slice.
- */
-/**
  * Text safe to put inside Slack mrkdwn, for a string this side did not choose.
  *
  * A produced file's name comes from an MCP server, and `safeFileName` only takes
@@ -92,14 +82,50 @@ export function mrkdwnText(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\|/g, "∣");
 }
 
-export function threadToTurns(replies: SlackMessage[], currentTs: string): ThreadTurn[] {
+/**
+ * Convert thread replies to engine turns: this bot's own turns → assistant,
+ * humans → user, **any other app's messages dropped**. A message with no text is
+ * kept when it carried files — an image posted on its own is still part of the
+ * conversation.
+ *
+ * Dropping other bots is the correction, not a filter for noise. `bot_id` alone
+ * says "an app wrote this", not "we wrote this", so a thread the bot shares with
+ * a CI notifier or an alerting app had that app's messages arriving as *our*
+ * assistant turns — the model was shown a deploy bot's output as words it had
+ * said itself, and answered follow-ups as though it had. A channel is exactly
+ * where several apps post into one thread, which is why this surfaced with
+ * `message.channels` rather than before it.
+ *
+ * `selfUserId` is our app's user id in this workspace (from the event
+ * envelope's `authorizations`). Without one there is no way to tell our
+ * messages from another app's, so the old rule stands rather than the whole
+ * history being thrown away: a thread where the bot's own replies vanished
+ * would be worse than one carrying a stranger's.
+ *
+ * Speakers are *not* named here. Labelling needs profile lookups, and doing them
+ * from inside this mapping meant resolving everyone in the thread Slack returned
+ * — up to ten pages of it — when only the last {@link MAX_THREAD_HISTORY_MESSAGES}
+ * turns survive. So this records who wrote each turn and
+ * {@link withSpeakerLabels} labels whatever is left after the slice.
+ */
+export function threadToTurns(
+  replies: SlackMessage[],
+  currentTs: string,
+  selfUserId?: string,
+): ThreadTurn[] {
+  const isOurs = (m: SlackMessage): boolean =>
+    selfUserId ? m.user === selfUserId : Boolean(m.bot_id);
   return replies
     .filter(
-      (m) => m.ts !== currentTs && ((m.text ?? "").trim() !== "" || (m.files ?? []).length > 0),
+      (m) =>
+        m.ts !== currentTs &&
+        ((m.text ?? "").trim() !== "" || (m.files ?? []).length > 0) &&
+        // Another app's message: not ours to claim, and not a person's turn either.
+        (isOurs(m) || !m.bot_id),
     )
     .map((m) => ({
       message: {
-        role: m.bot_id ? ("assistant" as const) : ("user" as const),
+        role: isOurs(m) ? ("assistant" as const) : ("user" as const),
         content: (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim(),
       },
       files: m.files ?? [],
@@ -427,7 +453,12 @@ export async function handleSlackEvent(
     }
   }
 
-  const rawTurns = threadToTurns(replies, event.ts).slice(-MAX_THREAD_HISTORY_MESSAGES);
+  // The newest turns, not the oldest: a long thread's most recent exchange is
+  // what a follow-up is about, and dropping the head costs less than dropping
+  // the question being answered.
+  const rawTurns = threadToTurns(replies, event.ts, selfUserId(body)).slice(
+    -MAX_THREAD_HISTORY_MESSAGES,
+  );
 
   // A DM is an agent thread: it has a native status line and a title. A channel
   // mention has neither, and streaming into one needs the recipient named.

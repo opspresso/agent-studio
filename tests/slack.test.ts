@@ -322,6 +322,42 @@ describe("threadToTurns", () => {
     ]);
   });
 
+  it("claims only its own messages as assistant turns, and drops other apps'", () => {
+    // A channel is where several apps post into one thread. Reading `bot_id`
+    // alone made a deploy notifier's output arrive as words this bot had said,
+    // and it answered follow-ups as though it had said them.
+    const turns = threadToTurns(
+      [
+        { ts: "1", user: "U1", text: "did the deploy land?" },
+        { ts: "2", bot_id: "B_CI", text: "Build 4f2c1 FAILED — 3 tests red" },
+        { ts: "3", user: "UBOT", bot_id: "B_OURS", text: "checking now" },
+        { ts: "4", user: "U1", text: "and now?" },
+      ],
+      "9",
+      "UBOT",
+    );
+
+    expect(turns.map((t) => t.message)).toEqual([
+      { role: "user", content: "did the deploy land?" },
+      { role: "assistant", content: "checking now" },
+      { role: "user", content: "and now?" },
+    ]);
+  });
+
+  it("keeps the old rule when the envelope names no authorization", () => {
+    // Nothing can tell our messages from another app's, and a thread whose own
+    // replies vanished would be worse than one carrying a stranger's.
+    const turns = threadToTurns(
+      [
+        { ts: "1", user: "U1", text: "question" },
+        { ts: "2", bot_id: "B_OURS", text: "answer" },
+      ],
+      "9",
+    );
+
+    expect(turns.map((t) => t.message.role)).toEqual(["user", "assistant"]);
+  });
+
   it("keeps a text-less turn that carried files, with its attachments", () => {
     const turns = threadToTurns(
       [

@@ -80,8 +80,25 @@ function isOwnMessage(body: SlackEventBody): boolean {
   if (event?.bot_id) {
     return true;
   }
-  const selfUserId = body.authorizations?.find((auth) => auth.user_id)?.user_id;
-  return Boolean(selfUserId && event?.user === selfUserId);
+  const self = selfUserId(body);
+  return Boolean(self && event?.user === self);
+}
+
+/**
+ * Our app's own user id in this workspace, as the event envelope reports it.
+ *
+ * Exported because the answer is needed twice for two different questions —
+ * "did we write this event" (above) and "which of a thread's messages are
+ * ours" (`threadToTurns`) — and the *extraction* is the same one either way.
+ * A second reader spelling it out again is how one of them would end up
+ * reading a field the other had moved on from.
+ *
+ * Undefined when the envelope carries no authorization, which each caller
+ * degrades from differently: the loop guard falls back to `bot_id`, the thread
+ * mapping keeps its old rule rather than discarding the history.
+ */
+export function selfUserId(body: SlackEventBody): string | undefined {
+  return body.authorizations?.find((auth) => auth.user_id)?.user_id;
 }
 
 /**
@@ -96,8 +113,8 @@ function isOwnMessage(body: SlackEventBody): boolean {
  * dropped.
  */
 function mentionsSelf(body: SlackEventBody): boolean {
-  const selfUserId = body.authorizations?.find((auth) => auth.user_id)?.user_id;
-  return Boolean(selfUserId && (body.event?.text ?? "").includes(`<@${selfUserId}>`));
+  const self = selfUserId(body);
+  return Boolean(self && (body.event?.text ?? "").includes(`<@${self}>`));
 }
 
 /**
