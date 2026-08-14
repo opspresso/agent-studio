@@ -21,6 +21,7 @@ import type { McpConnection, McpOAuthState } from "@/domain/mcp/connection";
 import type { McpServer } from "@/domain/mcp/types";
 import type { TokenRequestTarget, TokenSet } from "@/domain/mcp/oauth";
 import type { ListToolsResult } from "@/domain/mcp/toolProbe";
+import { BlockedUrlError } from "@/domain/security/urlPolicy";
 
 const OWNER = "owner@example.com";
 const BASE_URL = "https://studio.example.com";
@@ -99,6 +100,8 @@ function harness(
     tokens?: TokenSet;
     authHeaders?: { headers: Record<string, string>; unavailable?: string };
     probeResult?: ListToolsResult;
+    /** This deployment's public base, for the tests that turn on it. */
+    baseUrl?: string;
   } = {},
 ): Harness {
   const connections = new Map<string, McpConnection>();
@@ -165,7 +168,16 @@ function harness(
       refresh: async () => ({ accessToken: "at-2" }),
     } as never,
     cipher,
-    urlPolicy: { assertAllowed: async () => {} },
+    // The real guard's verdict, narrowed to what these tests turn on: a
+    // loopback or plain-http address is one no authorization server can reach.
+    urlPolicy: {
+      assertAllowed: async (url: string) => {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "https:" || parsed.hostname === "localhost") {
+          throw new BlockedUrlError(`${url} is not publicly reachable`);
+        }
+      },
+    },
     probe: {
       listTools: async (url: string, headers: Record<string, string>) => {
         probes.push({ url, headers });
@@ -179,7 +191,7 @@ function harness(
         unauthorized.push(serverName);
       },
     },
-    publicBaseUrl: async () => BASE_URL,
+    publicBaseUrl: async () => overrides.baseUrl ?? BASE_URL,
   };
   return { deps, connections, states, exchanges, registrations, probes, unauthorized };
 }
@@ -309,6 +321,100 @@ describe("beginAuthorization", () => {
     expect(h.registrations).toHaveLength(0);
     expect(h.connections.get("p/slack")?.clientId).toBe(
       `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
+    );
+  });
+
+  it("registers instead when a document could not be fetched from this deployment", async () => {
+    // Notion, from a dev machine. It advertises both routes, and the document
+    // one cannot work: a metadata `client_id` is a URL the *provider* retrieves,
+    // and `http://localhost:3000/...` resolves to nothing from where it runs.
+    // Taking it anyway dead-ends after the user approves, as `Unknown OAuth
+    // client` — a message about a client, for a problem with a URL.
+    const h = harness({
+      baseUrl: "http://localhost:3000",
+      server: {
+        ...SERVER,
+        auth: {
+          ...SERVER.auth!,
+          clientIdMetadataDocumentSupported: true,
+          registrationEndpoint: "https://auth.example.com/register",
+        },
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.registrations).toHaveLength(1);
+    const connection = h.connections.get("p/slack");
+    expect(connection?.clientId).toBe("dcr-client");
+    expect(connection?.clientFromMetadataDocument).toBeUndefined();
+  });
+
+  it("rebuilds a stored document client whose address this deployment no longer serves", async () => {
+    // Without this the mistake is permanent rather than transient: the row still
+    // has a `clientId`, so the next attempt sails past every branch and presents
+    // the same unfetchable URL. Nothing is lost by rebuilding — such a client
+    // holds no secret, and whatever it authorized was granted to an address that
+    // no longer resolves.
+    const h = harness({
+      baseUrl: "http://localhost:3000",
+      server: {
+        ...SERVER,
+        auth: {
+          ...SERVER.auth!,
+          clientIdMetadataDocumentSupported: true,
+          registrationEndpoint: "https://auth.example.com/register",
+        },
+      },
+      connection: {
+        clientId: "http://localhost:3000/api/mcps/oauth/client-metadata/p",
+        clientFromMetadataDocument: true,
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.connections.get("p/slack")?.clientId).toBe("dcr-client");
+  });
+
+  it("rebuilds a document client after the deployment's public base moves", async () => {
+    // The same rule from the other direction, and the reason it is written as
+    // "not the URL we would serve now" rather than as a reachability check.
+    const h = harness({
+      server: {
+        ...SERVER,
+        auth: { ...SERVER.auth!, clientIdMetadataDocumentSupported: true },
+      },
+      connection: {
+        clientId: "https://old-studio.example.com/api/mcps/oauth/client-metadata/p",
+        clientFromMetadataDocument: true,
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await uc.beginAuthorization("p", "slack", OWNER);
+
+    expect(h.connections.get("p/slack")?.clientId).toBe(
+      `${BASE_URL}/api/mcps/oauth/client-metadata/p`,
+    );
+  });
+
+  it("names the base URL, not the provider, when a document is the only route", async () => {
+    // The provider's side is fine and ours is not, so sending the owner to go
+    // and register an app with it would be pointing at the wrong thing.
+    const h = harness({
+      baseUrl: "http://localhost:3000",
+      server: {
+        ...SERVER,
+        auth: { ...SERVER.auth!, clientIdMetadataDocumentSupported: true },
+      },
+    });
+    const uc = createMcpAuthUseCases(h.deps);
+
+    await expect(uc.beginAuthorization("p", "slack", OWNER)).rejects.toThrow(
+      /public base URL \(http:\/\/localhost:3000\) is not one an authorization server can fetch/,
     );
   });
 
