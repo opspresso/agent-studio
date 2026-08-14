@@ -7,6 +7,7 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 }));
 
 import { ToolManager } from "@/infrastructure/mcp/toolManager";
+import { conforming, protocolPreamble } from "./mcpProtocolStub";
 import {
   clearMcpDiscoveryCache,
   getCachedDiscovery,
@@ -25,8 +26,9 @@ function stubMcpServer(options: { listFails?: boolean; ttlMs?: number } = {}): s
     vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
       methods.push(body.method ?? "(no body)");
-      if (body.method === "notifications/initialized") {
-        return new Response("", { status: 202 });
+      const preamble = protocolPreamble(body.method, body.id, init?.method);
+      if (preamble) {
+        return preamble;
       }
       if (body.method === "tools/list" && options.listFails) {
         return new Response(
@@ -37,7 +39,7 @@ function stubMcpServer(options: { listFails?: boolean; ttlMs?: number } = {}): s
       const result =
         body.method === "tools/list"
           ? {
-              tools: [{ name: "search" }],
+              tools: conforming([{ name: "search" }]),
               ...(options.ttlMs === undefined ? {} : { ttlMs: options.ttlMs }),
             }
           : { content: [{ type: "text", text: "ok" }] };
@@ -133,7 +135,15 @@ describe("ToolManager discovery over the cache", () => {
   it("serves a warm tool list without any request, and handshakes only when a tool is called", async () => {
     const first = stubMcpServer();
     await new ToolManager([server()]).init();
-    expect(first).toEqual(["initialize", "notifications/initialized", "tools/list"]);
+    // The probe decides the era, the handshake follows for a 2025-era server,
+    // and the bodyless GET is the standalone stream the transport opens there.
+    expect(first).toEqual([
+      "server/discover",
+      "initialize",
+      "notifications/initialized",
+      "(no body)",
+      "tools/list",
+    ]);
     vi.unstubAllGlobals();
 
     // Second run, same server and credentials: nothing on the wire. This is the
@@ -148,8 +158,10 @@ describe("ToolManager discovery over the cache", () => {
     // The session was left uninitialized, so the first real call handshakes.
     expect((await manager.callTool("search", {})).text).toBe("ok");
     expect(second).toEqual([
+      "server/discover",
       "initialize",
       "notifications/initialized",
+      "(no body)",
       "tools/call",
     ]);
   });

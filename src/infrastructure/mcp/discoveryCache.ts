@@ -92,12 +92,12 @@ export interface DiscoveryFailure {
   reason: string;
   unauthorized: boolean;
   /**
-   * Present when the server refused *because* it speaks a stateless revision
-   * (protocol `2026-07-28` or later) that has no `initialize`. A healthy server
-   * answering exactly as its protocol says it should — which is why it must not
-   * be reported as an unreachable one.
+   * Present when the server answered but this client cannot use what it said —
+   * a revision too new to speak, or a reply that breaks the schema. A host that
+   * is up and replying, which is why it must not be reported as an unreachable
+   * one: the fix is on one side or the other, never on the network.
    */
-  protocolRefusal?: string;
+  unusable?: string;
 }
 
 /** A remembered discovery: what the server offered, or why it offered nothing. */
