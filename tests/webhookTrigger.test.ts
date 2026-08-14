@@ -331,6 +331,20 @@ describe("executeDelivery", () => {
     expect(f.rows[0]?.result).toContain("Produced 2 files: report.docx, notes.pdf");
   });
 
+  it("keeps the file note when the answer is long enough to be cut", async () => {
+    // The row is cut at its own limit and the note is appended last, so a
+    // verbose run would have lost the one line naming what it delivered.
+    const f = fixture({
+      chunks: [
+        { delta: { content: "x".repeat(5_000) } },
+        { file: { name: "report.docx", mimeType: "application/msword", source: "mcp: render" } },
+      ],
+    });
+    await executeDelivery(f.deps, await accept(f), {});
+    expect(f.rows[0]?.result).toContain("Produced 1 file: report.docx");
+    expect((f.rows[0]?.result ?? "").length).toBeLessThanOrEqual(2_000);
+  });
+
   it("does not close a file-only firing as an empty success", async () => {
     const f = fixture({
       chunks: [{ file: { name: "report.docx", mimeType: "application/msword", source: "mcp: render" } }],
