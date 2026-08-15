@@ -1,6 +1,6 @@
 {
   "name": "agentdure",
-  "version": "0.66.2",
+  "version": "0.66.3",
   "private": true,
   "packageManager": "pnpm@11.10.0",
   "engines": {
