@@ -1527,8 +1527,17 @@ visibly moving reads as a stuck run.
 a line changing means the run stopped saying something, not that it finished it — so a
 checklist driven by status changes would claim the run completed things it merely stopped
 mentioning. A tool result is a boundary, so steps close as the run goes; anything still open at
-the end rides out on `chat.stopStream`, since a step left `in_progress` on a finished message
-reads as a run that never came back.
+the end is closed on its own `chat.appendStream` just before the stop, since a step left
+`in_progress` on a finished message reads as a run that never came back.
+
+**The close is two calls, and it has to be.** Slack refuses `markdown_text` and `chunks` on one
+request (`cannot_provide_both_markdown_text_and_chunks`), and sending both to `chat.stopStream`
+threw — which left the stream open and the answer undelivered, so a channel showed
+"is thinking…" forever on a run that had already finished. The rows go first because a stopped
+stream cannot take an append, and on their own call because they are the half that may be lost:
+a run that loses its tick-offs still answered, one that loses `stopStream` did not. If the close
+fails anyway, whatever Slack never took is posted as a plain message — that failure was silent
+for a release, and a reader had no way to tell a lost answer from a slow one.
 
 The two surfaces phrase the same step differently, and the sink owns that: a checklist row
 stands alone and keeps the bare name (`Skill: deep-research`), while the DM's status line and

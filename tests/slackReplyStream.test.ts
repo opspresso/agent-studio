@@ -291,6 +291,22 @@ describe("progress in a channel thread that cannot stream", () => {
 });
 
 /** A channel surface that can stream, which is the ordinary one. */
+/**
+ * Slack refuses `markdown_text` and `chunks` on the same request
+ * (`cannot_provide_both_markdown_text_and_chunks`). The fakes enforce it because
+ * not enforcing it is exactly why this shipped: eighty passing tests accepted a
+ * call Slack rejects, and a channel showed "is thinking…" forever on a run that
+ * had already answered.
+ */
+function refuseBothPayloads(
+  method: string,
+  args: { markdown_text?: string; text?: string; chunks?: unknown[] },
+): void {
+  if ((args.markdown_text ?? args.text) !== undefined && args.chunks !== undefined) {
+    throw new Error(`Slack ${method} failed: cannot_provide_both_markdown_text_and_chunks`);
+  }
+}
+
 function makeStreamingChannelFake() {
   const streamStarts: Array<Record<string, unknown>> = [];
   const chunks: Array<{ at: "start" | "append" | "stop"; chunk: SlackChunk }> = [];
@@ -305,6 +321,7 @@ function makeStreamingChannelFake() {
   }
   const slack = {
     async startStream(_token: string, args: Record<string, unknown>) {
+      refuseBothPayloads("chat.startStream", args as never);
       streamStarts.push(args);
       record("start", args.chunks as SlackChunk[] | undefined);
       return { ts: "200.1", channel: "C1" };
@@ -313,12 +330,14 @@ function makeStreamingChannelFake() {
       _token: string,
       args: { markdown_text?: string; chunks?: SlackChunk[] },
     ) {
+      refuseBothPayloads("chat.appendStream", args);
       if (args.markdown_text) {
         appended.push(args.markdown_text);
       }
       record("append", args.chunks);
     },
     async stopStream(_token: string, args: { markdown_text?: string; chunks?: SlackChunk[] }) {
+      refuseBothPayloads("chat.stopStream", args);
       stopped.push({ ...(args.markdown_text ? { markdown_text: args.markdown_text } : {}) });
       record("stop", args.chunks);
     },
@@ -388,11 +407,15 @@ describe("progress on a channel stream's task axis", () => {
     // One message for both axes — the progress never had to be overwritten.
     expect(streamStarts).toHaveLength(1);
     expect(appended.join("")).toBe("found ");
+    // The close carries the text and *only* the text. Slack refuses both
+    // payloads on one call, and sending them together is what left a finished
+    // run showing "is thinking…" forever.
     expect(stopped).toEqual([{ markdown_text: "it" }]);
     // A step left `in_progress` on a finished message reads as a run that never
-    // came back.
+    // came back — so the rows close on their own append, before the stream is
+    // stopped and can no longer take one.
     expect(chunks.at(-1)).toEqual({
-      at: "stop",
+      at: "append",
       chunk: { type: "task_update", id: "run-progress", title: "is using search…", status: "complete" },
     });
   });
@@ -540,5 +563,56 @@ describe("a checklist that would grow past reading", () => {
       title: "tool-29",
       status: "complete",
     });
+  });
+});
+
+/**
+ * The defect that shipped in v0.63.0 and was found in production: a channel run
+ * finished, produced its answer, and the reader saw "is thinking…" forever.
+ *
+ * `chat.stopStream` refuses `markdown_text` and `chunks` on the same request, so
+ * a close that carried both threw — after which the stream was never stopped and
+ * the answer was never delivered. It needed *both* to fire, which is why it hid:
+ * the text has to be non-empty (the last delta, unflushed because pushes are
+ * paced at a second) and a row has to still be open.
+ */
+describe("closing a stream that still owes both text and rows", () => {
+  it("delivers the answer", async () => {
+    const { slack, appended, stopped, posted, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is thinking…");
+    await sink.step("c1", "search");
+    await sink.finish("here is the answer", ":warning: one binding was unusable");
+
+    const delivered = [...appended, stopped[0]?.markdown_text ?? ""].join("");
+    expect(delivered).toContain("here is the answer");
+    expect(delivered).toContain("one binding was unusable");
+    // The rows still closed — on their own append, ahead of the stop.
+    expect(
+      chunks.filter(({ at, chunk }) => at === "append" && chunk.type === "task_update"),
+    ).not.toHaveLength(0);
+    // And no fallback was needed, because nothing failed.
+    expect(posted).toEqual([]);
+  });
+
+  it("posts what went missing when the close fails anyway", async () => {
+    // Belt and braces for the same class of failure. This was silent for a
+    // release: the run logged an error, the message stayed open, and a reader
+    // had no way to tell a lost answer from a slow one.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { slack, posted } = makeStreamingChannelFake();
+    slack.stopStream = async () => {
+      throw new Error("Slack chat.stopStream failed: ratelimited");
+    };
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.status("is thinking…");
+    await sink.push("here is ");
+    await sink.finish("here is the answer", "");
+
+    // Only the part Slack never took — `flushed` is not advanced past a failed
+    // write, so a duplicated head would be its own defect.
+    expect(posted).toEqual(["the answer"]);
   });
 });

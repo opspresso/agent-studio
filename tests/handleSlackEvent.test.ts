@@ -49,6 +49,22 @@ function versionFixture(): Version {
  * that cannot stream behaves — the handler is expected to fall back to posting
  * and editing one message.
  */
+/**
+ * Slack refuses `markdown_text` and `chunks` on the same request
+ * (`cannot_provide_both_markdown_text_and_chunks`). The fakes enforce it because
+ * not enforcing it is exactly why this shipped: eighty passing tests accepted a
+ * call Slack rejects, and a channel showed "is thinking…" forever on a run that
+ * had already answered.
+ */
+function refuseBothPayloads(
+  method: string,
+  args: { markdown_text?: string; text?: string; chunks?: unknown[] },
+): void {
+  if ((args.markdown_text ?? args.text) !== undefined && args.chunks !== undefined) {
+    throw new Error(`Slack ${method} failed: cannot_provide_both_markdown_text_and_chunks`);
+  }
+}
+
 function makeSlackFake(options: { streaming?: boolean } = {}) {
   const streaming = options.streaming ?? true;
   const posted: Array<{ channel: string; text: string; thread_ts?: string }> = [];
@@ -133,6 +149,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       if (!streaming) {
         throw new Error("streaming is not available on this plan");
       }
+      refuseBothPayloads("chat.startStream", args as never);
       streamStarts.push(args);
       // The opening chunk counts too: on a channel the first task is what
       // opens the message, so a fake that ignored it would hide the whole
@@ -142,6 +159,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     },
     async appendStream(_token, args) {
       calls.push("appendStream");
+      refuseBothPayloads("chat.appendStream", args);
       if (args.markdown_text) {
         appended.push(args.markdown_text);
       }
@@ -149,6 +167,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     },
     async stopStream(_token, args) {
       calls.push("stopStream");
+      refuseBothPayloads("chat.stopStream", args);
       if (args.markdown_text) {
         appended.push(args.markdown_text);
       }
@@ -508,7 +527,15 @@ describe("handleSlackEvent", () => {
     // read still comes before either. The pickup reaction sits between them and
     // is harmless there: it writes no message, so nothing it does can end up in
     // the history this run was assembled from.
-    expect(calls).toEqual(["threadReplies", "addReaction", "startStream", "stopStream"]);
+    // The append between them closes the checklist: Slack refuses text and
+    // chunks on one call, so the rows cannot ride out on the stop.
+    expect(calls).toEqual([
+      "threadReplies",
+      "addReaction",
+      "startStream",
+      "appendStream",
+      "stopStream",
+    ]);
     expect(seen.map((m) => m.content)).toEqual([
       "earlier question",
       "earlier answer",

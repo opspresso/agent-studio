@@ -607,15 +607,32 @@ export function createReplySink(
           await slack.deleteMessage(token, { channel: messageChannel, ts: messageTs });
         } else if (mode === "stream") {
           const remaining = withSuffix(fullText.slice(flushed), suffix);
+          // **Two calls, and it has to be two.** Slack refuses `markdown_text`
+          // and `chunks` on the same request
+          // (`cannot_provide_both_markdown_text_and_chunks`), and sending both
+          // to `chat.stopStream` threw — which left the stream open and the
+          // answer undelivered, so a channel showed "is thinking…" forever on a
+          // run that had already finished.
+          //
+          // The rows are closed first because a stopped stream cannot take an
+          // append, and on their own call because they are the half that may be
+          // lost: a run that loses its tick-offs still answered, one that loses
+          // `stopStream` did not. Every unfinished row rides out here — a step
+          // left `in_progress` on a finished message reads as a run that never
+          // came back, and the ambient row is one of them when no step replaced it.
+          if (closingChunks.length > 0) {
+            await slack
+              .appendStream(token, {
+                channel: messageChannel,
+                ts: messageTs,
+                chunks: closingChunks,
+              })
+              .catch((error) => log.warn("slack", "checklist could not be closed", error));
+          }
           await slack.stopStream(token, {
             channel: messageChannel,
             ts: messageTs,
             ...(remaining ? { markdown_text: remaining } : {}),
-            // Every unfinished row rides out on the close rather than in its own
-            // append: a step left `in_progress` on a finished message reads as a
-            // run that never came back. The ambient row is one of them when no
-            // step ever replaced it.
-            ...(closingChunks.length > 0 ? { chunks: closingChunks } : {}),
           });
           flushed = fullText.length;
         } else {
@@ -630,6 +647,26 @@ export function createReplySink(
         }
       } catch (error) {
         log.error("slack", "final reply write failed", error);
+        // The run answered and nothing on screen carries it. That was silent for
+        // a whole release: the log line above existed, the message stayed open,
+        // and the thread read as a run that never came back — so a reader had no
+        // way to tell a lost answer from a slow one.
+        //
+        // `flushed` is what Slack actually took, and it is not advanced past a
+        // failed write, so this is the part that went missing rather than the
+        // whole answer. A duplicated tail would be its own defect.
+        const undelivered = withSuffix(fullText.slice(flushed), suffix);
+        if (undelivered) {
+          await slack
+            .postMessage(token, {
+              channel: target.channel,
+              thread_ts: target.threadTs,
+              text: undelivered,
+            })
+            .catch((fallbackError) =>
+              log.error("slack", "fallback reply failed too", fallbackError),
+            );
+        }
       }
       // Sending a message clears the status on its own, but only if the send
       // above succeeded — clear it explicitly so a failed reply does not leave
