@@ -116,6 +116,21 @@ export interface EngineChunk {
     b64: string;
     mimeType: string;
     prompt?: string;
+    /**
+     * The run *read* these bytes rather than making them — a picture `FetchUrl`
+     * brought back from an address the model named.
+     *
+     * It reaches the reader and the model like any other image; it is simply
+     * not kept. An artifact is what a run produced, and filing away everything
+     * it merely looked at fills a person's gallery with other people's
+     * pictures — their own avatar, most immediately, since redrawing a profile
+     * begins by fetching one.
+     *
+     * Only `FetchUrl` sets it. An MCP tool returning a picture may equally have
+     * read it or rendered it, and nothing here can tell those apart, so those
+     * are kept as before.
+     */
+    fetched?: boolean;
     artifactId?: string;
     key?: string;
   };

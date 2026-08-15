@@ -273,6 +273,11 @@ One line each — the linked section is the authority.
   does. The adapter that fetches it is the **only** place an address the *model* chose is
   requested, and the rules there are load-bearing rather than defence in depth. →
   [SECURITY.md](docs/SECURITY.md#urls-the-model-chose)
+  A picture it brings back travels the same `EngineChunk.image` axis as a drawn one — every
+  surface renders it, the model can edit it — but carries `fetched` and is **not stored**: an
+  artifact is what a run *produced*, and keeping what it read files a person's own avatar in
+  their gallery beside the drawing made from it. Only `FetchUrl` sets that mark; an MCP tool's
+  picture may as easily have been rendered as read, and nothing can tell those apart.
 - **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2`; usage rows are daily
   per-project-per-model maps updated with atomic `ADD`. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)

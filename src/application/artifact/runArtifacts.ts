@@ -126,6 +126,12 @@ export async function* captureRunArtifacts(
 }
 
 async function captured(recorder: ArtifactRecorder, chunk: EngineChunk): Promise<EngineChunk> {
+  // Delivered, never kept: the run read these bytes rather than making them, and
+  // a gallery of what an agent glanced at is not a record of what it produced.
+  // The reader still sees it, and the model still has it to edit.
+  if (chunk.image?.fetched) {
+    return chunk;
+  }
   if (chunk.image) {
     const stored = await recorder.record({
       kind: "image",

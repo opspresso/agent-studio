@@ -347,3 +347,53 @@ describe("captureRunArtifacts", () => {
     expect(storage.rowsWritten).toHaveLength(0);
   });
 });
+
+/**
+ * An artifact is what a run *produced*. `FetchUrl` brings back pictures the run
+ * only read — and once a run can fetch its caller's avatar to redraw it, keeping
+ * those files a person's own gallery with the photo they started from.
+ */
+describe("a picture the run read rather than made", () => {
+  it("is delivered but not kept", async () => {
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+
+    const chunks: EngineChunk[] = [];
+    for await (const chunk of captureRunArtifacts(
+      recorder,
+      (async function* () {
+        yield {
+          image: { b64: "YWJj", mimeType: "image/png", prompt: "Returned by FetchUrl", fetched: true },
+        };
+      })(),
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(storage.rowsWritten).toEqual([]);
+    expect(storage.puts).toEqual([]);
+    // The reader still sees it and the model can still edit it — the bytes ride
+    // through untouched, with no artifact reference attached.
+    expect(chunks[0]?.image?.b64).toBe("YWJj");
+    expect(chunks[0]?.image?.artifactId).toBeUndefined();
+  });
+
+  it("still keeps what the same run went on to make", async () => {
+    // The case this exists for: fetch the avatar, redraw it, keep the drawing.
+    const storage = fakeStorage();
+    const recorder = createArtifactRecorder(storage, CONTEXT);
+
+    for await (const _ of captureRunArtifacts(
+      recorder,
+      (async function* () {
+        yield { image: { b64: "c3Jj", mimeType: "image/png", fetched: true } };
+        yield { image: { b64: "ZHJhdw==", mimeType: "image/png", prompt: "a crude doodle" } };
+      })(),
+    )) {
+      // drained
+    }
+
+    expect(storage.rowsWritten).toHaveLength(1);
+    expect(storage.rowsWritten[0]?.prompt).toBe("a crude doodle");
+  });
+});

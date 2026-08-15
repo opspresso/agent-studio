@@ -2118,7 +2118,15 @@ export async function* runAgent(
                 // Sending parts this model rejects would fail the whole turn.
                 attachedImages.push(image);
               }
-              yield { author, image: { ...image, prompt: `Returned by ${call.name}` } };
+              yield {
+                author,
+                image: {
+                  ...image,
+                  prompt: `Returned by ${call.name}`,
+                  // Read rather than produced — see `EngineChunk.image.fetched`.
+                  ...(builtin && call.name === FETCH_URL_TOOL_NAME ? { fetched: true } : {}),
+                },
+              };
             }
             const idNote =
               ids.length > 0 ? ` (image id${ids.length > 1 ? "s" : ""}: ${ids.join(", ")})` : "";

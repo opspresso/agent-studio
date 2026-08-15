@@ -162,9 +162,16 @@ describe("fetching a picture", () => {
       fetchUrl: async () => ({ text: "", image: { b64: PNG, mimeType: "image/png" } }),
     };
     const chunks = await collect(runAgent(deps, input()));
-    // The same axis a generated image travels, so every surface — and the
-    // artifact capture — already knows what to do with it.
-    expect(chunks.find((c) => c.image)?.image).toMatchObject({ b64: PNG, mimeType: "image/png" });
+    // The same axis a generated image travels, so every surface already knows
+    // what to do with it — but marked `fetched`, because the run read these
+    // bytes rather than making them and an artifact is what a run produced.
+    // Without the mark, redrawing somebody's avatar files the original photo in
+    // their gallery alongside the drawing.
+    expect(chunks.find((c) => c.image)?.image).toMatchObject({
+      b64: PNG,
+      mimeType: "image/png",
+      fetched: true,
+    });
   });
 });
 
