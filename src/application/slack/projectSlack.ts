@@ -285,7 +285,6 @@ export function buildProjectSlackManifest(
           "groups:read",
           "im:history",
           "im:write",
-          "incoming-webhook",
           "reactions:read",
           "reactions:write",
           "users:read.email",
