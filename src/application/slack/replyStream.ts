@@ -81,6 +81,17 @@ const AMBIENT_TASK_ID = "run-progress";
 const MAX_CHECKLIST_STEPS = 25;
 const OVERFLOW_TASK_ID = "run-progress-more";
 /**
+ * Slack's cap on one `markdown_text`, whether it is the argument or a chunk.
+ *
+ * Theirs, not ours, and it bites in one specific place: the **first** append is
+ * deliberately unpaced, so it carries everything the run has produced so far. A
+ * model that emits a long answer in one burst therefore hands Slack a payload
+ * over the limit on the very first write — which is rejected, and then re-sent
+ * unchanged by every push after it, because a failed append does not advance
+ * what has been flushed. The answer never arrives and the retry never differs.
+ */
+const MAX_STREAM_TEXT = 12_000;
+/**
  * Appended to an edited-in-place reply that is still being written, when the
  * deployment names nothing else.
  *
@@ -177,6 +188,15 @@ function usingPhrase(title: string): string {
   return `is using ${title}…`;
 }
 
+/** Text as as many `markdown_text` chunks as Slack's per-chunk cap requires. */
+function textChunks(text: string): SlackChunk[] {
+  const chunks: SlackChunk[] = [];
+  for (let at = 0; at < text.length; at += MAX_STREAM_TEXT) {
+    chunks.push({ type: "markdown_text", text: text.slice(at, at + MAX_STREAM_TEXT) });
+  }
+  return chunks;
+}
+
 function withSuffix(text: string, suffix: string): string {
   if (!suffix) {
     return text;
@@ -235,7 +255,23 @@ export function createReplySink(
    * row above a checklist that is visibly moving.
    */
   let ambientClosed = false;
+  /**
+   * Appends Slack has refused in a row.
+   *
+   * A dropped append heals on the next push, so one is not worth a line. A
+   * *persistent* refusal is a different thing entirely — the answer is not
+   * arriving at all — and it read exactly the same from the outside, which is
+   * how a wrong payload shape went two releases without anyone noticing.
+   */
+  let appendFailures = 0;
   const indicator = loadingIndicator || DEFAULT_LOADING_INDICATOR;
+
+  function appendFailed(error: unknown): void {
+    appendFailures += 1;
+    if (appendFailures === 1 || appendFailures % 10 === 0) {
+      log.warn("slack", `reply append refused (${appendFailures} in a row)`, error);
+    }
+  }
   /**
    * Which payload this stream speaks — decided by Slack, not by us.
    *
@@ -583,17 +619,20 @@ export function createReplySink(
         lastWrite = Date.now();
         if (mode === "stream") {
           // `chat.startStream` opened the message empty, so the first append
-          // carries everything accumulated so far.
+          // carries everything accumulated so far — bounded, because that is
+          // exactly where a long answer exceeds what Slack takes in one write.
+          const opening = fullText.slice(0, MAX_STREAM_TEXT);
           await slack
             .appendStream(token, {
               channel: messageChannel,
               ts: messageTs,
-              ...answerPayload(fullText),
+              ...answerPayload(opening),
             })
             .then(() => {
-              flushed = fullText.length;
+              flushed = opening.length;
+              appendFailures = 0;
             })
-            .catch(() => {});
+            .catch(appendFailed);
         }
         return;
       }
@@ -603,16 +642,20 @@ export function createReplySink(
       }
       lastWrite = now;
       if (mode === "stream") {
+        // Only as much as Slack takes; whatever is left goes with the next
+        // push, or with the close.
+        const sending = fullText.slice(flushed, flushed + MAX_STREAM_TEXT);
         await slack
           .appendStream(token, {
             channel: messageChannel,
             ts: messageTs,
-            ...answerPayload(fullText.slice(flushed)),
+            ...answerPayload(sending),
           })
           .then(() => {
-            flushed = fullText.length;
+            flushed += sending.length;
+            appendFailures = 0;
           })
-          .catch(() => {});
+          .catch(appendFailed);
         return;
       }
       await slack
@@ -701,10 +744,10 @@ export function createReplySink(
           // run never closed, then whatever text Slack has not taken. A stream
           // that has been stopped can take neither, so nothing may be left for
           // afterwards.
-          const closing: SlackChunk[] = [
-            ...closingChunks,
-            ...(remaining ? [{ type: "markdown_text" as const, text: remaining }] : []),
-          ];
+          // Split, because what is left here is unbounded: every append that
+          // Slack refused is still owed, so a run whose writes all failed
+          // arrives at the close holding the entire answer.
+          const closing: SlackChunk[] = [...closingChunks, ...textChunks(remaining)];
           await slack.stopStream(token, {
             channel: messageChannel,
             ts: messageTs,
@@ -713,7 +756,7 @@ export function createReplySink(
                 ? { chunks: closing }
                 : {}
               : remaining
-                ? { markdown_text: remaining }
+                ? { markdown_text: remaining.slice(0, MAX_STREAM_TEXT) }
                 : {}),
           });
           flushed = fullText.length;

@@ -92,12 +92,65 @@ const FILE_HOSTS = new Set(["files.slack.com", "slack.com", "www.slack.com"]);
 /** Page cap so a pathological thread cannot loop unbounded. */
 const MAX_THREAD_PAGES = 10;
 
+/**
+ * How long any one Slack call may take.
+ *
+ * Every other outbound adapter here bounds its requests — the URL reader, the
+ * remote-agent dispatcher, the MCP session, the OAuth client — and this one did
+ * not, which mattered more than it looks: a Slack run's work happens in
+ * `after()`, past the response, so a hung call has nothing above it to give up.
+ * The run's own deadline covers the model and the tools, not the reply.
+ */
+const SLACK_TIMEOUT_MS = 30_000;
+/** Bytes move here, so the same ceiling would cut a large upload short. */
+const SLACK_TRANSFER_TIMEOUT_MS = 120_000;
+
+function slackFetch(url: string, init: RequestInit = {}, timeoutMs = SLACK_TIMEOUT_MS) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+}
+
+/**
+ * Read one Slack response, failing with something an operator can act on.
+ *
+ * Slack answers a rate limit with **429 and a non-JSON body**, so parsing the
+ * body first turned "slow down" into `Unexpected end of JSON input` — a message
+ * that names neither the method nor the cause. The transport status is checked
+ * before the payload for that reason, and the `Retry-After` Slack sends is
+ * quoted rather than dropped: it is the whole content of the answer.
+ */
+async function slackResult<T>(res: Response, method: string): Promise<T> {
+  if (!res.ok) {
+    throw new Error(
+      res.status === 429
+        ? `Slack ${method} rate limited; Slack asked for ${res.headers.get("retry-after") ?? "?"}s`
+        : `Slack ${method} failed: HTTP ${res.status}`,
+    );
+  }
+  const data = (await res.json()) as { ok: boolean; error?: string } & T;
+  if (!data.ok) {
+    throw new Error(`Slack ${method} failed: ${data.error ?? res.status}`);
+  }
+  return data;
+}
+
+/** A read-family method: GET with query params, which is what Slack requires. */
+async function slackGet<T>(
+  token: string,
+  method: string,
+  params: URLSearchParams,
+): Promise<T> {
+  const res = await slackFetch(`https://slack.com/api/${method}?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return slackResult<T>(res, method);
+}
+
 async function slackApi<T>(
   token: string,
   method: string,
   payload: Record<string, unknown>,
 ): Promise<T> {
-  const res = await fetch(`https://slack.com/api/${method}`, {
+  const res = await slackFetch(`https://slack.com/api/${method}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -105,11 +158,7 @@ async function slackApi<T>(
     },
     body: JSON.stringify(payload),
   });
-  const data = (await res.json()) as { ok: boolean; error?: string } & T;
-  if (!data.ok) {
-    throw new Error(`Slack ${method} failed: ${data.error ?? res.status}`);
-  }
-  return data;
+  return slackResult<T>(res, method);
 }
 
 export const slackClient = {
@@ -125,19 +174,19 @@ export const slackClient = {
       filename: args.filename,
       length: String(args.data.byteLength),
     });
-    const urlRes = await fetch(`https://slack.com/api/files.getUploadURLExternal?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const urlData = (await urlRes.json()) as {
-      ok: boolean;
-      error?: string;
-      upload_url?: string;
-      file_id?: string;
-    };
-    if (!urlData.ok || !urlData.upload_url || !urlData.file_id) {
-      throw new Error(`Slack getUploadURLExternal failed: ${urlData.error ?? urlRes.status}`);
+    const urlData = await slackGet<{ upload_url?: string; file_id?: string }>(
+      token,
+      "files.getUploadURLExternal",
+      params,
+    );
+    if (!urlData.upload_url || !urlData.file_id) {
+      throw new Error("Slack files.getUploadURLExternal returned no upload target");
     }
-    const putRes = await fetch(urlData.upload_url, { method: "POST", body: args.data as never });
+    const putRes = await slackFetch(
+      urlData.upload_url,
+      { method: "POST", body: args.data as never },
+      SLACK_TRANSFER_TIMEOUT_MS,
+    );
     if (!putRes.ok) {
       throw new Error(`Slack file upload failed: ${putRes.status}`);
     }
@@ -162,7 +211,11 @@ export const slackClient = {
     if (!FILE_HOSTS.has(host)) {
       throw new Error(`Slack file url has an unexpected host: ${host}`);
     }
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await slackFetch(
+      url,
+      { headers: { Authorization: `Bearer ${token}` } },
+      SLACK_TRANSFER_TIMEOUT_MS,
+    );
     if (!res.ok) {
       throw new Error(`Slack file download failed: ${res.status}`);
     }
@@ -189,18 +242,13 @@ export const slackClient = {
     }
     let resolved: SlackUserDetail | null = null;
     try {
-      // A read-family method: GET with query params, like conversations.replies.
-      const params = new URLSearchParams({ user: userId });
-      const res = await fetch(`https://slack.com/api/users.info?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        error?: string;
-        user?: SlackUserInfo;
-      };
-      if (!data.ok || !data.user) {
-        throw new Error(`Slack users.info failed: ${data.error ?? res.status}`);
+      const data = await slackGet<{ user?: SlackUserInfo }>(
+        token,
+        "users.info",
+        new URLSearchParams({ user: userId }),
+      );
+      if (!data.user) {
+        throw new Error("Slack users.info returned no user");
       }
       resolved = toUserDetail(data.user, userId);
     } catch (error) {
@@ -256,18 +304,10 @@ export const slackClient = {
       if (cursor) {
         params.set("cursor", cursor);
       }
-      const res = await fetch(`https://slack.com/api/users.list?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        error?: string;
+      const data = await slackGet<{
         members?: Array<SlackUserInfo & { id?: string; is_bot?: boolean; deleted?: boolean }>;
         response_metadata?: { next_cursor?: string };
-      };
-      if (!data.ok) {
-        throw new Error(`Slack users.list failed: ${data.error ?? res.status}`);
-      }
+      }>(token, "users.list", params);
       for (const member of data.members ?? []) {
         if (!member.id || member.deleted || member.id === "USLACKBOT") {
           continue;
@@ -301,17 +341,9 @@ export const slackClient = {
       // with the names.
       full: "true",
     });
-    const res = await fetch(`https://slack.com/api/reactions.get?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = (await res.json()) as {
-      ok: boolean;
-      error?: string;
+    const data = await slackGet<{
       message?: { reactions?: Array<{ name?: string; count?: number; users?: string[] }> };
-    };
-    if (!data.ok) {
-      throw new Error(`Slack reactions.get failed: ${data.error ?? res.status}`);
-    }
+    }>(token, "reactions.get", params);
     return (data.message?.reactions ?? [])
       .filter((reaction): reaction is { name: string } & typeof reaction => Boolean(reaction.name))
       .map((reaction) => ({
@@ -472,18 +504,10 @@ export const slackClient = {
       if (cursor) {
         params.set("cursor", cursor);
       }
-      const res = await fetch(`https://slack.com/api/conversations.replies?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        error?: string;
+      const data = await slackGet<{
         messages?: SlackMessage[];
         response_metadata?: { next_cursor?: string };
-      };
-      if (!data.ok) {
-        throw new Error(`Slack conversations.replies failed: ${data.error ?? res.status}`);
-      }
+      }>(token, "conversations.replies", params);
       messages.push(...(data.messages ?? []));
       cursor = data.response_metadata?.next_cursor || undefined;
       if (!cursor) {
@@ -514,17 +538,11 @@ export const slackClient = {
       channel: args.channel,
       limit: String(args.limit ?? PAGE_SIZE),
     });
-    const res = await fetch(`https://slack.com/api/conversations.history?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = (await res.json()) as {
-      ok: boolean;
-      error?: string;
-      messages?: SlackMessage[];
-    };
-    if (!data.ok) {
-      throw new Error(`Slack conversations.history failed: ${data.error ?? res.status}`);
-    }
+    const data = await slackGet<{ messages?: SlackMessage[] }>(
+      token,
+      "conversations.history",
+      params,
+    );
     return data.messages ?? [];
   },
 
@@ -543,12 +561,7 @@ export const slackClient = {
       exclude_archived: "true",
       limit: String(args?.limit ?? PAGE_SIZE),
     });
-    const res = await fetch(`https://slack.com/api/conversations.list?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = (await res.json()) as {
-      ok: boolean;
-      error?: string;
+    const data = await slackGet<{
       channels?: Array<{
         id?: string;
         name?: string;
@@ -557,10 +570,7 @@ export const slackClient = {
         topic?: { value?: string };
         purpose?: { value?: string };
       }>;
-    };
-    if (!data.ok) {
-      throw new Error(`Slack conversations.list failed: ${data.error ?? res.status}`);
-    }
+    }>(token, "conversations.list", params);
     return (data.channels ?? [])
       .filter((channel): channel is { id: string; name: string } & typeof channel =>
         Boolean(channel.id && channel.name),

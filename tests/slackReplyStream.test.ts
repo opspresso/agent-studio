@@ -700,3 +700,43 @@ describe("closing a stream that still owes both text and rows", () => {
     expect(posted).toEqual(["the answer"]);
   });
 });
+
+/**
+ * Slack takes at most 12,000 characters in one `markdown_text`. That bites in
+ * one specific place: the first append is deliberately unpaced, so it carries
+ * everything the run has produced — and a refused append does not advance what
+ * has been flushed, so every push after it re-sends the same oversized payload.
+ * The answer never arrives and the retry never differs.
+ */
+describe("an answer longer than one write", () => {
+  const LONG = "x".repeat(30_000);
+
+  it("sends it across several writes rather than one Slack refuses", async () => {
+    const { slack, appended } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+
+    await sink.push(LONG);
+    await sink.push(LONG);
+    await sink.push(LONG);
+    await sink.finish(LONG, "");
+
+    // Every write is within the cap, and the whole answer still arrives.
+    expect(appended.every((piece) => piece.length <= 12_000)).toBe(true);
+    expect(appended.join("")).toBe(LONG);
+  });
+
+  it("splits what the close still owes", async () => {
+    // A run whose every append was refused arrives here holding all of it.
+    const { slack, appended, stopped } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+    await sink.status("is thinking…");
+
+    await sink.finish(LONG, "");
+
+    expect(stopped).toEqual([{}]);
+    expect(appended.every((piece) => piece.length <= 12_000)).toBe(true);
+    expect(appended.join("")).toBe(LONG);
+  });
+});
