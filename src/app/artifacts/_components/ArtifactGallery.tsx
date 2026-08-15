@@ -21,6 +21,7 @@ import {
   Image,
   Modal,
   Paper,
+  ScrollArea,
   SegmentedControl,
   Stack,
   Text,
@@ -129,27 +130,51 @@ export function ArtifactGallery({
     <Stack gap="lg">
       {confirmModal}
 
-      {/* One modal for the page, not one per tile: a grid mounts as many portals
-          as it has cards to show at most one of them. */}
+      {/*
+       * One modal for the page, not one per tile: a grid mounts as many portals
+       * as it has cards to show at most one of them.
+       *
+       * The picture is the subject and the prompt is a caption under it. The
+       * prompt used to *be* the title, and `size="auto"` sizes a modal to its
+       * content — so a paragraph-long prompt stretched the dialog past the
+       * screen and pushed the image out of view, which is the one thing opening
+       * it was for. `lineClamp` did not help: it clamps what is drawn, not what
+       * the box asks for.
+       */}
       <Modal
         opened={preview !== null}
         onClose={() => setPreview(null)}
         title={
           <Text fw={500} lineClamp={1}>
-            {preview?.filename ?? preview?.prompt ?? "Image"}
+            {preview?.filename ?? t("artifacts.preview")}
           </Text>
         }
         size="auto"
         centered
+        // On the dialog rather than on its body, so nothing inside can stretch
+        // it — a long filename in the header would otherwise do exactly what the
+        // prompt did.
+        styles={{ content: { maxWidth: "min(92vw, 60rem)" } }}
       >
         {preview?.url && (
-          <Image
-            src={preview.url}
-            alt={preview.prompt ?? "Generated image"}
-            fit="contain"
-            mah="75vh"
-            w="auto"
-          />
+          <Stack gap="sm">
+            <Image
+              src={preview.url}
+              alt={preview.prompt ?? t("artifacts.preview")}
+              fit="contain"
+              mah="65vh"
+              w="auto"
+            />
+            {preview.prompt && (
+              // Its own scroll region rather than the modal's: a long prompt
+              // scrolls where it is instead of moving the image off screen.
+              <ScrollArea.Autosize mah="18vh" type="auto">
+                <Text fz="sm" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+                  {preview.prompt}
+                </Text>
+              </ScrollArea.Autosize>
+            )}
+          </Stack>
         )}
       </Modal>
 

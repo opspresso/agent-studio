@@ -467,6 +467,7 @@ export const ko: Messages = {
   "artifacts.delete": "삭제",
   "artifacts.all": "전체",
   "artifacts.images": "이미지",
+  "artifacts.preview": "미리보기",
   "artifacts.documents": "문서",
 
   "managed.title": "관리형 MCP 서버 실행",

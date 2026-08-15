@@ -536,6 +536,7 @@ export const en = {
   "artifacts.delete": "Delete",
   "artifacts.all": "All",
   "artifacts.images": "Images",
+  "artifacts.preview": "Preview",
   "artifacts.documents": "Documents",
 
   // Managed MCP: a container this host runs. The start dialog and the server's
