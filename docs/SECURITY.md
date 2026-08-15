@@ -611,11 +611,22 @@ Two things are refused by construction rather than by omission:
   deliberately not reachable from any tool. A run is steered by text it did not write; a run
   that could also post is one where a message planted in a channel can make the bot speak
   somewhere else.
-- **No email**, though `users:read.email` is granted. `SlackUser` and `SlackUsers` answer with a
-  name, job title, timezone, status line and avatar — everything a colleague sees by clicking the
-  profile — and never the address. That is the rule [caller context](#caller-context) already
-  applies, for the same reason: an email identifies a person outside Slack and no answer needs one
-  to be written well. The scope is granted and simply not read; nothing in the adapter maps it.
+- **No email reaches the model**, though `users:read.email` is granted. `SlackUser` and
+  `SlackUsers` answer with a name, job title, timezone, status line and avatar — everything a
+  colleague sees by clicking the profile — and never the address. That is the rule
+  [caller context](#caller-context) already applies, for the same reason: an email identifies a
+  person outside Slack and no answer needs one to be written well.
+
+  The address *is* read for one thing: **filing a run's output under its author**. A Slack actor
+  is a workspace id and the artifact owner index is keyed by email, so a picture somebody asked
+  the bot to draw was reachable only through its project, never from their own gallery. It is
+  carried as `ownerEmail`, separate from the actor — that key groups usage by surface and decides
+  which tier's spend cap and concurrency limit a run answers to, and an unregistered address
+  resolves to `guest` (one concurrent run, $2 a month), which is a change belonging to a
+  different decision. `toUserDetail` does not copy the address, so nothing a tool returns can
+  carry it, and the lookup is not gated on `callerContext`: that parameter decides what the model
+  is told, and a person's own pictures going missing from their own gallery is not something it
+  should be able to cause.
 
 What *is* carried in is untrusted in exactly the way an attached document is: a channel's
 messages were written by whoever is in that channel, and they reach the model as text. PII

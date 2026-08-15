@@ -105,6 +105,12 @@ export async function openRun(
   project: Project,
   version: Version,
   actor?: RunActor,
+  /**
+   * What the surface knows beyond the actor. Only the artifact owner so far,
+   * and separate from `actor` on purpose: that key decides spend and limits,
+   * this one only decides whose gallery the output shows up in.
+   */
+  opts: { ownerEmail?: string } = {},
 ): Promise<RunBracket> {
   // Before the first `await`, and therefore before this function leaves the
   // caller's async context. `enterWith` binds the store to the context it runs
@@ -168,6 +174,7 @@ export async function openRun(
             projectName: project.name,
             versionName: version.versionName,
             ...(actor ? { actor } : {}),
+            ...(opts.ownerEmail ? { ownerEmail: opts.ownerEmail } : {}),
             ancestry: [project.name],
             runId: context.runId,
           }),

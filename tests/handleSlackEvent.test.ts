@@ -126,6 +126,8 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
   const downloads: string[] = [];
   const profileLookups: string[] = [];
   const profiles = new Map<string, RunCaller>();
+  /** Slack id → address, for the artifact owner the run files its output under. */
+  const emails = new Map<string, string>();
   const slack: SlackClientPort = {
     async downloadFile(_token, url) {
       downloads.push(url);
@@ -218,6 +220,10 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     },
     // The workspace read tools have their own tests; the handler never calls
     // these, and a fake that omitted them would only be hiding that.
+    async userEmail(_token, userId) {
+      calls.push("userEmail");
+      return emails.get(userId) ?? null;
+    },
     async userDetail() {
       calls.push("userDetail");
       return null;
@@ -252,6 +258,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     replies,
     downloads,
     profiles,
+    emails,
     profileLookups,
     finalText,
   };
@@ -1816,6 +1823,92 @@ describe("a document attached to a Slack message", () => {
 
     expect(downloads).toEqual([]);
     expect(finalText()).toContain("larger than 10MB");
+  });
+});
+
+/**
+ * Whose gallery a run's output lands in.
+ *
+ * A Slack actor is a workspace id, and the artifact owner index is keyed by
+ * email — so a picture somebody asked the bot to draw was reachable only through
+ * its project, never from their own gallery. The surface can resolve the
+ * address, so it does.
+ */
+describe("filing a Slack run's output under its author", () => {
+  it("carries the asker's address to the run", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, emails } = makeSlackFake();
+    emails.set("U1", "me@nalbam.com");
+    const deps = deps0(slack);
+    let seen: { ownerEmail?: string; actor?: { kind: string; id: string } } = {};
+    deps.runAgent = async function* (input) {
+      seen = input;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      { ...EVENT, event: { ...EVENT.event, user: "U1" } },
+      BINDING,
+    );
+
+    expect(seen.ownerEmail).toBe("me@nalbam.com");
+    // The actor is untouched: it groups usage by surface and decides which
+    // tier's spend cap applies, which is a different question.
+    expect(seen.actor).toEqual({ kind: "slack", id: "U1" });
+  });
+
+  it("files by project alone when the workspace shares no address", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack } = makeSlackFake();
+    const deps = deps0(slack);
+    let seen: { ownerEmail?: string } = {};
+    deps.runAgent = async function* (input) {
+      seen = input;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, user: "U1" } }, BINDING);
+
+    expect(seen.ownerEmail).toBeUndefined();
+  });
+
+  it("still answers when the address lookup fails", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { slack, finalText } = makeSlackFake();
+    slack.userEmail = async () => {
+      throw new Error("missing_scope");
+    };
+    const deps = makeDeps([{ delta: { content: "here you go" } }, { done: true }], slack);
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(finalText()).toBe("here you go");
+  });
+
+  it("does not gate the lookup on callerContext, which decides a different thing", async () => {
+    // `callerContext` decides what the *model* is told. This address reaches no
+    // prompt and no tool result — a person's own pictures going missing from
+    // their own gallery is not something a version parameter should cause.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, emails } = makeSlackFake();
+    emails.set("U1", "me@nalbam.com");
+    const deps = deps0(slack);
+    deps.versions = {
+      get: async () => ({ ...versionFixture(), parameters: { piiFiltering: false } }),
+      list: async () => [],
+    } as unknown as VersionRepository;
+    let seen: { ownerEmail?: string; caller?: unknown } = {};
+    deps.runAgent = async function* (input) {
+      seen = input;
+      yield { done: true };
+    };
+
+    await handleSlackEvent(deps, { ...EVENT, event: { ...EVENT.event, user: "U1" } }, BINDING);
+
+    expect(seen.caller).toBeUndefined();
+    expect(seen.ownerEmail).toBe("me@nalbam.com");
   });
 });
 

@@ -7,7 +7,10 @@ import {
 
 const NOW = 1_750_000_000_000;
 const HOUR = 60 * 60 * 1000;
-const PROFILE = { id: "U1", displayName: "Bruce", timezone: "Asia/Seoul" };
+const PROFILE = {
+  detail: { id: "U1", displayName: "Bruce", timezone: "Asia/Seoul" },
+  email: "bruce@example.com",
+};
 
 beforeEach(() => {
   clearProfileCache();

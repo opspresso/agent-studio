@@ -36,6 +36,8 @@ export interface ArtifactContext {
   projectName: string;
   versionName: string;
   actor?: RunActor;
+  /** The mailbox this run's output belongs to, when the surface knows one. */
+  ownerEmail?: string;
   ancestry?: readonly string[];
   runId?: string;
 }
@@ -80,6 +82,7 @@ export async function storeArtifact(
     projectName: context.projectName,
     versionName: context.versionName,
     ...(context.actor ? { actor: context.actor } : {}),
+    ...(context.ownerEmail ? { ownerEmail: context.ownerEmail } : {}),
     ...(context.ancestry && context.ancestry.length > 0 ? { ancestry: context.ancestry } : {}),
     ...(input.producedBy ? { producedBy: input.producedBy } : {}),
     ...(context.runId ? { runId: context.runId } : {}),

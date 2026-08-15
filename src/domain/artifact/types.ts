@@ -38,6 +38,22 @@ export interface Artifact {
    * `caller` is deliberately absent — it is a display name, not a storage key.
    */
   actor?: RunActor;
+  /**
+   * Whose gallery this belongs in, when the surface knows a mailbox the actor
+   * does not name.
+   *
+   * A Slack actor is a workspace id, so the owner index — which is keyed by
+   * email — had nothing to key on, and a picture somebody asked the bot to draw
+   * was reachable only through its project. The surface can resolve the address,
+   * so it does, and files the output under the person who asked for it.
+   *
+   * Deliberately *not* folded into the actor. That is a storage key grouped by
+   * surface, and a year of usage rows already reads `slack:U03FUG4UD`; it also
+   * decides which tier's spend cap and concurrency limit a run answers to, and
+   * an unregistered address resolves to `guest` — a change that belongs to a
+   * different decision than "file this where its author can find it".
+   */
+  ownerEmail?: string;
   /** Project names on the transfer chain, outermost first. */
   ancestry?: readonly string[];
   /** The subagent that produced it, from the chunk's author. Absent at top level. */
@@ -103,7 +119,14 @@ export function artifactObjectKey(
  * instead. That is why the owner index is sparse and why the project index is
  * not optional: without it those artifacts could never be listed or deleted.
  */
-export function artifactOwnerEmail(actor?: RunActor): string | undefined {
+export function artifactOwnerEmail(
+  actor?: RunActor,
+  /** What the surface resolved, when it knows an address the actor does not carry. */
+  resolved?: string,
+): string | undefined {
+  if (resolved) {
+    return resolved;
+  }
   if (!actor) {
     return undefined;
   }

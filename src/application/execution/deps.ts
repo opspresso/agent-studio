@@ -138,6 +138,15 @@ export interface ExecuteAgentInput {
   actor?: RunActor;
   /** See {@link ExecuteVersionInput.caller}. */
   caller?: RunCaller;
+  /**
+   * Whose gallery this run's output belongs in, when the surface can resolve an
+   * address the actor does not carry — a Slack actor is a workspace id.
+   *
+   * Separate from {@link actor} on purpose: that key groups usage by surface and
+   * decides which tier's spend cap and concurrency limit apply, and folding a
+   * mailbox into it would answer a different question than the one this asks.
+   */
+  ownerEmail?: string;
   signal?: AbortSignal;
 }
 

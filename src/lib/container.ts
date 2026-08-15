@@ -556,6 +556,8 @@ const slackReader: SlackReaderPort = {
     (await import("@/infrastructure/slack/client")).slackClient.userProfile(token, userId),
   userDetail: async (token, userId) =>
     (await import("@/infrastructure/slack/client")).slackClient.userDetail(token, userId),
+  userEmail: async (token, userId) =>
+    (await import("@/infrastructure/slack/client")).slackClient.userEmail(token, userId),
   findUsers: async (token, query, maxPages) =>
     (await import("@/infrastructure/slack/client")).slackClient.findUsers(token, query, maxPages),
   messageReactions: async (token, args) =>

@@ -46,6 +46,16 @@ export interface SlackReaderPort {
    */
   userDetail(token: string, userId: string): Promise<SlackUserDetail | null>;
   /**
+   * The address behind a Slack id — for attribution, never for a prompt.
+   *
+   * A Slack actor is a workspace id, so the artifact owner index (keyed by
+   * email) had nothing to key on and a picture somebody asked the bot to draw
+   * was reachable only through its project. `null` when the workspace does not
+   * share it or the scope is missing, and the output is then filed by project
+   * exactly as before.
+   */
+  userEmail(token: string, userId: string): Promise<string | null>;
+  /**
    * People whose name or handle contains `query`.
    *
    * Slack has no name search a bot can reach — `users.list` is a full walk — so

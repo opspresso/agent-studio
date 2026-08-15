@@ -531,6 +531,21 @@ export async function handleSlackEvent(
   const named = version.parameters.callerContext
     ? await resolveSpeakers(deps, token, rawTurns, event.user)
     : { caller: undefined, nameByUser: undefined };
+  // Whose gallery this run's output belongs in. Not gated on `callerContext`,
+  // which decides what the *model* is told: this address reaches no prompt and
+  // no tool result, and a person's own pictures going missing from their own
+  // gallery is not something a version parameter should be able to cause.
+  //
+  // Best effort in both directions — a workspace that does not share addresses,
+  // or a bot without the scope, files by project exactly as before.
+  const ownerEmail = event.user
+    ? await deps.slack
+        .userEmail(token, event.user)
+        .catch((error) => {
+          log.warn("slack", "owner lookup failed; filing by project alone", error);
+          return null;
+        })
+    : null;
   const turns = withSpeakerLabels(rawTurns, named.nameByUser);
   // Name the thread from the question that opened it, so the agent's history
   // reads as a list of topics rather than of timestamps. Only the opening turn:
@@ -604,6 +619,7 @@ export async function handleSlackEvent(
       // guessing at a mapping would attribute spend to the wrong person.
       ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
       ...(named.caller ? { caller: named.caller } : {}),
+      ...(ownerEmail ? { ownerEmail } : {}),
       signal: deadline,
     })) {
       if (chunk.error) {

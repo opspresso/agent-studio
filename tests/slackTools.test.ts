@@ -78,6 +78,10 @@ function makeSlackFake(
           }
         : null;
     },
+    async userEmail() {
+      // Attribution only; no tool reads it.
+      return null;
+    },
     async userDetail(_token, userId) {
       calls.push({ method: "userDetail", args: userId });
       return PEOPLE[userId] ?? null;

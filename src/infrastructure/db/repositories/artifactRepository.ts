@@ -112,7 +112,7 @@ async function list({
 
 export class DynamoArtifactRepository implements ArtifactRepository {
   async put(artifact: Artifact): Promise<void> {
-    const ownerEmail = artifactOwnerEmail(artifact.actor);
+    const ownerEmail = artifactOwnerEmail(artifact.actor, artifact.ownerEmail);
     await getDocumentClient().send(
       new PutCommand({
         TableName: getTableName(),

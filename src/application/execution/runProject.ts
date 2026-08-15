@@ -451,7 +451,9 @@ export async function* executeAgent(
     ...(input.caller ? { caller: input.caller } : {}),
   };
   const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
-  const bracket = await openRun(deps, input.project, input.version, input.actor);
+  const bracket = await openRun(deps, input.project, input.version, input.actor, {
+    ...(input.ownerEmail ? { ownerEmail: input.ownerEmail } : {}),
+  });
   const recorder = deps.traces
     ? createTraceRecorder(deps.traces, input.project, input.version, input.messages.length, origin)
     : undefined;
