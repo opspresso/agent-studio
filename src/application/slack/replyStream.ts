@@ -121,11 +121,17 @@ export interface ReplySink {
    * A unit of work began — a tool call, a hand-off — identified by something
    * stable for its lifetime.
    *
-   * Where the surface renders a checklist this adds a row; where it renders one
-   * status line it takes the line over. Calling it again with the same `id`
-   * retitles that step rather than adding a second.
+   * Where the surface renders a checklist this adds a row **per tool, not per
+   * call** — reaching for the same one five times is one row saying five, which
+   * is the sentence a checklist is for. Where it renders one status line, the
+   * step takes the line over.
+   *
+   * `nested` marks work a subagent is doing. It still moves a status line, which
+   * cannot accumulate and would otherwise sit still through a long hand-off; it
+   * earns no checklist row, because the parent's own transfer row already stands
+   * for the whole thing.
    */
-  step(id: string, title: string): Promise<void>;
+  step(id: string, title: string, opts?: { nested?: boolean }): Promise<void>;
   /**
    * That unit of work finished. `title` replaces the one it opened with when the
    * ending says more than the beginning did — a tool result names what it acted
@@ -205,11 +211,22 @@ export function createReplySink(
   let lastStatusLoading: string[] | undefined;
   let lastStatusAt = 0;
   /**
-   * The checklist, in the order Slack was told about it. Titles are kept because
-   * a `task_update` carries the whole row every time — completing a step means
-   * re-sending its title, not sending a status on its own.
+   * The checklist, in the order Slack was told about it, keyed by the **tool**
+   * rather than by the call.
+   *
+   * A row per call is what a checklist looks like before anyone uses it: five
+   * reads of the same channel became five identical rows, and a hand-off became
+   * one row per tool the child ran. A checklist is meant to say what the run is
+   * doing, and "SlackHistory ×5" is that sentence — five copies of it are not.
+   *
+   * `total` is what collapsed here and `open` how many are still running, which
+   * is what decides the row's status. The decorated title from a result is only
+   * shown when one call is under the row: with five, which skill each one loaded
+   * is detail the count is standing in for.
    */
-  const steps = new Map<string, { title: string; complete: boolean }>();
+  const rows = new Map<string, { label: string; detail?: string; total: number; open: number }>();
+  /** Which row a given call id belongs to, so its result can tick the right one. */
+  const rowByCall = new Map<string, string>();
   /**
    * Whether the ambient "is thinking…" row has been closed off.
    *
@@ -427,6 +444,24 @@ export function createReplySink(
   }
 
   /**
+   * What a row reads as: the one call's own name, or the tool and how many
+   * times the run reached for it.
+   */
+  function rowTitle(key: string): string {
+    const row = rows.get(key);
+    if (!row) {
+      return key;
+    }
+    // The overflow row's `total` counts the *other tools* that landed on it, not
+    // repeats of the one it is currently showing — so `×N` there would say the
+    // run reached for this tool N times, which it did not.
+    if (key === OVERFLOW_TASK_ID) {
+      return row.total > 1 ? `${row.label} (+${row.total - 1} more)` : row.label;
+    }
+    return row.total > 1 ? `${row.label} ×${row.total}` : (row.detail ?? row.label);
+  }
+
+  /**
    * Close the ambient row, once, when the work becomes specific enough to list.
    * On the agent thread there is no list and nothing to close.
    */
@@ -442,39 +477,55 @@ export function createReplySink(
   return {
     status: sendStatus,
 
-    async step(id, title) {
+    async step(id, title, opts) {
       if (target.assistantThread) {
         // One line, so a step *is* the status — and it has to read as one. The
         // phrasing belongs to the surface rather than to the caller that named
         // the step, which is why a checklist row keeps the bare title.
+        //
+        // A nested step counts here even though it gets no checklist row: one
+        // line cannot accumulate, and during a long hand-off the child's tools
+        // are the only thing still moving. A status that stops moving is how a
+        // working run comes to look like a stuck one.
         await sendStatus(usingPhrase(title));
         return;
       }
-      const known = steps.get(id);
-      if (known?.title === title && !known.complete) {
+      // The parent's own `transfer_to_agent` row already stands for the whole
+      // hand-off, and its result closes it when the child returns — so listing
+      // the child's tools as well says the same thing again, once per call.
+      if (opts?.nested) {
         return;
       }
       await closeAmbient();
-      const rowId = known || steps.size < MAX_CHECKLIST_STEPS ? id : OVERFLOW_TASK_ID;
-      steps.set(rowId, { title, complete: false });
-      await showTask(rowId, title, "in_progress", usingPhrase(title));
+      const key = rows.has(title) || rows.size < MAX_CHECKLIST_STEPS ? title : OVERFLOW_TASK_ID;
+      const row = rows.get(key) ?? { label: title, total: 0, open: 0 };
+      rowByCall.set(id, key);
+      rows.set(key, { ...row, label: title, total: row.total + 1, open: row.open + 1 });
+      await showTask(key, rowTitle(key), "in_progress", usingPhrase(title));
     },
 
     async stepDone(id, title) {
-      const known = steps.get(id);
       if (target.assistantThread) {
         // Nothing to mark: the next step takes the line, and `finish` clears it.
         return;
       }
-      // A completion for a step that was never opened is the shape of a bug
+      // A completion for a call that was never opened is the shape of a bug
       // upstream, not something to render — an unopened id would appear as a
       // finished row for work nobody watched start.
-      if (!known || known.complete) {
+      const key = rowByCall.get(id);
+      const row = key ? rows.get(key) : undefined;
+      if (!key || !row || row.open === 0) {
         return;
       }
-      const shown = title || known.title;
-      steps.set(id, { title: shown, complete: true });
-      await showTask(id, shown, "complete");
+      rowByCall.delete(id);
+      rows.set(key, {
+        ...row,
+        open: row.open - 1,
+        // Only meaningful while the row stands for one call; past that the count
+        // is what the row says and a single result's detail would misdescribe it.
+        ...(row.total === 1 && title ? { detail: title } : {}),
+      });
+      await showTask(key, rowTitle(key), row.open === 1 ? "complete" : "in_progress");
     },
 
     keepStatusAlive() {
@@ -568,12 +619,12 @@ export function createReplySink(
                     status: "complete" as const,
                   },
                 ]),
-            ...[...steps.entries()]
-              .filter(([, step]) => !step.complete)
-              .map(([id, step]) => ({
+            ...[...rows.entries()]
+              .filter(([, row]) => row.open > 0)
+              .map(([key]) => ({
                 type: "task_update" as const,
-                id,
-                title: step.title,
+                id: key,
+                title: rowTitle(key),
                 status: "complete" as const,
               })),
           ];

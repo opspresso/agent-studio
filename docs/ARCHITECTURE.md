@@ -1518,10 +1518,22 @@ message rather than a chunk). Slack renders and animates that task, and the answ
 streaming into the same message's text.
 
 It is a **checklist**: the ambient row ("is thinking…") under a constant id while the run is
-still deciding, then a row per step of real work — opened when a tool call is announced, ticked
-off when its result comes back, and named by the agent that made it when a subagent did. The
-ambient row closes as soon as the first step opens, because a row spinning above a list that is
-visibly moving reads as a stuck run.
+still deciding, then a row **per tool** — opened when a call is announced, ticked off when its
+result comes back. The ambient row closes as soon as the first step opens, because a row
+spinning above a list that is visibly moving reads as a stuck run.
+
+**Per tool, not per call**, and a subagent's calls get no row at all. A row per call is what a
+checklist looks like before anyone uses it: five reads of the same channel became five identical
+rows, and one hand-off became a row per tool the child ran — twenty rows for work a reader would
+describe in three. So repeats collapse into one row that counts them (`SlackHistory ×5`), and the
+parent's own `transfer_to_agent` row stands for the whole hand-off, closing when the child
+returns. The decorated title a result carries is only shown while a row stands for a single
+call; past that the count is what the row says, and one result's detail would misdescribe it.
+
+A nested step still **moves a DM's status line**, which cannot accumulate and would otherwise sit
+still through a long hand-off — a status that stops moving is how a working run comes to look
+like a stuck one. Which is the sink's decision to make, not the caller's: same report, different
+rendering.
 
 **Only a real boundary may tick a row off**, which is the whole constraint. `status` has none —
 a line changing means the run stopped saying something, not that it finished it — so a

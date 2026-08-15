@@ -461,7 +461,7 @@ describe("a channel's checklist", () => {
       .filter((chunk) => chunk.type === "task_update")
       .map((chunk) => `${chunk.id}/${chunk.title}/${chunk.status}`);
 
-  it("accumulates a row per step and ticks each off on its own", async () => {
+  it("accumulates a row per tool and ticks each off on its own", async () => {
     const { slack, chunks } = makeStreamingChannelFake();
     const sink = createReplySink(slack, "tok", CHANNEL);
 
@@ -477,11 +477,58 @@ describe("a channel's checklist", () => {
       // Closed the moment there is something specific to list: a row spinning
       // above a list that is visibly moving reads as a stuck run.
       "run-progress/is thinking…/complete",
-      "c1/search/in_progress",
-      "c2/fetch/in_progress",
-      // Retitled by the result, which names what the call acted on.
-      "c1/web: search/complete",
-      "c2/fetch/complete",
+      "search/search/in_progress",
+      "fetch/fetch/in_progress",
+      // Retitled by the result, which names what the call acted on — and only
+      // because this row stands for a single call.
+      "search/web: search/complete",
+      "fetch/fetch/complete",
+    ]);
+  });
+
+  it("collapses repeated reaches for the same tool into one counted row", async () => {
+    // Five reads of the same channel used to be five identical rows. A
+    // checklist is meant to say what the run is doing, and "SlackHistory ×5" is
+    // that sentence — five copies of it are not.
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.step("c1", "SlackHistory");
+    await sink.step("c2", "SlackHistory");
+    await sink.step("c3", "SlackHistory");
+    await sink.stepDone("c1", "slack: SlackHistory");
+    await sink.stepDone("c2");
+    await sink.stepDone("c3");
+    await sink.finish("done", "");
+
+    expect(rows(chunks)).toEqual([
+      "SlackHistory/SlackHistory/in_progress",
+      "SlackHistory/SlackHistory ×2/in_progress",
+      "SlackHistory/SlackHistory ×3/in_progress",
+      // Still running while any of the three is: the row's status is the run's
+      // state, not the last result's.
+      "SlackHistory/SlackHistory ×3/in_progress",
+      "SlackHistory/SlackHistory ×3/in_progress",
+      "SlackHistory/SlackHistory ×3/complete",
+    ]);
+  });
+
+  it("keeps a subagent's tools off the checklist", async () => {
+    // The parent's own transfer row already stands for the whole hand-off, and
+    // its result closes it when the child returns. Listing the child's calls as
+    // well says the same thing again, once per call.
+    const { slack, chunks } = makeStreamingChannelFake();
+    const sink = createReplySink(slack, "tok", CHANNEL);
+
+    await sink.step("c1", "dispatch_agents");
+    await sink.step("c2", "researcher: SlackUser", { nested: true });
+    await sink.step("c3", "researcher: FetchUrl", { nested: true });
+    await sink.stepDone("c1", "dispatch_agents: researcher");
+    await sink.finish("done", "");
+
+    expect(rows(chunks)).toEqual([
+      "dispatch_agents/dispatch_agents/in_progress",
+      "dispatch_agents/dispatch_agents: researcher/complete",
     ]);
   });
 
@@ -494,7 +541,7 @@ describe("a channel's checklist", () => {
     await sink.step("c1", "search");
     await sink.finish("gave up", ":warning: Agent run timed out");
 
-    expect(rows(chunks)).toEqual(["c1/search/in_progress", "c1/search/complete"]);
+    expect(rows(chunks)).toEqual(["search/search/in_progress", "search/search/complete"]);
   });
 
   it("ticks nothing off for a step that never opened", async () => {
@@ -510,15 +557,19 @@ describe("a channel's checklist", () => {
     expect(rows(chunks)).toEqual([]);
   });
 
-  it("does not re-send a step it is already showing", async () => {
+  it("counts a repeat rather than re-sending the row unchanged", async () => {
     const { slack, chunks } = makeStreamingChannelFake();
     const sink = createReplySink(slack, "tok", CHANNEL);
 
     await sink.step("c1", "search");
-    await sink.step("c1", "search");
+    await sink.step("c2", "search");
     await sink.finish("done", "");
 
-    expect(rows(chunks)).toEqual(["c1/search/in_progress", "c1/search/complete"]);
+    expect(rows(chunks)).toEqual([
+      "search/search/in_progress",
+      "search/search ×2/in_progress",
+      "search/search ×2/complete",
+    ]);
   });
 
   it("keeps the ambient row when no step ever replaced it", async () => {
@@ -544,6 +595,7 @@ describe("a checklist that would grow past reading", () => {
     const { slack, chunks } = makeStreamingChannelFake();
     const sink = createReplySink(slack, "tok", CHANNEL);
 
+    // Distinct tools, since same-named calls now collapse into one row.
     for (let index = 0; index < 30; index += 1) {
       await sink.step(`c${index}`, `tool-${index}`);
     }
@@ -555,12 +607,14 @@ describe("a checklist that would grow past reading", () => {
     expect(ids.size).toBe(26);
     expect(ids.has("run-progress-more")).toBe(true);
     // The shared row keeps moving rather than freezing on the 26th tool, and
-    // the run does not leave it spinning.
+    // the run does not leave it spinning. Its count is the *other tools* that
+    // landed on it — `×N` here would claim the run reached for tool-29 five
+    // times, which it did not.
     const overflow = rows.filter((row) => row.id === "run-progress-more");
     expect(overflow.at(-1)).toEqual({
       type: "task_update",
       id: "run-progress-more",
-      title: "tool-29",
+      title: "tool-29 (+4 more)",
       status: "complete",
     });
   });

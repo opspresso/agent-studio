@@ -1069,8 +1069,10 @@ describe("streaming a Slack reply", () => {
     expect(tasks).toEqual([
       { id: "run-progress", title: "is thinking…", status: "in_progress" },
       { id: "run-progress", title: "is thinking…", status: "complete" },
-      { id: "c_search", title: "search", status: "in_progress" },
-      { id: "c_search", title: "web: search", status: "complete" },
+      // Keyed by the tool, not the call: reaching for the same one twice is one
+      // row saying twice.
+      { id: "search", title: "search", status: "in_progress" },
+      { id: "search", title: "web: search", status: "complete" },
     ]);
     // The answer never mentions the progress: it is the other axis.
     expect(appended.join("")).toBe("found it");
@@ -1122,16 +1124,17 @@ describe("streaming a Slack reply", () => {
     expect(finalText()).toBe("here you go");
   });
 
-  it("names a subagent's step by the agent that ran it", async () => {
-    // The checklist is what the *run* is doing, and a hand-off's work is still
-    // the run's work — but unlabelled it reads as the top-level agent having
-    // called a tool it was never given.
+  it("keeps a subagent's tools off the channel checklist", async () => {
+    // The parent's own transfer row stands for the whole hand-off. Listing the
+    // child's calls as well is the same thing said again, once per call — which
+    // is what made a tool-heavy run unreadable.
     vi.spyOn(console, "log").mockImplementation(() => {});
     let clock = NOW;
     vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
     const { slack, tasks } = makeSlackFake();
     const deps = makeDeps(
       [
+        { delta: { toolCalls: [{ id: "c_t", function: { name: "transfer_to_agent" } }] } },
         {
           author: "researcher",
           delta: { toolCalls: [{ id: "c_1", function: { name: "SlackHistory" } }] },
@@ -1139,6 +1142,9 @@ describe("streaming a Slack reply", () => {
         {
           author: "researcher",
           toolResult: { toolCallId: "c_1", name: "SlackHistory", content: "..." },
+        },
+        {
+          toolResult: { toolCallId: "c_t", name: "transfer_to_agent: researcher", content: "..." },
         },
         { delta: { content: "here it is" } },
         { done: true },
@@ -1148,10 +1154,40 @@ describe("streaming a Slack reply", () => {
 
     await handleSlackEvent(deps, EVENT, BINDING);
 
-    expect(tasks.filter((task) => task.id === "c_1")).toEqual([
-      { id: "c_1", title: "researcher: SlackHistory", status: "in_progress" },
-      { id: "c_1", title: "researcher: SlackHistory", status: "complete" },
+    const steps = tasks.filter((task) => task.id !== "run-progress");
+    expect(steps).toEqual([
+      { id: "transfer_to_agent", title: "transfer_to_agent", status: "in_progress" },
+      {
+        id: "transfer_to_agent",
+        title: "transfer_to_agent: researcher",
+        status: "complete",
+      },
     ]);
+  });
+
+  it("still moves a DM's status line while a subagent works", async () => {
+    // One line cannot accumulate, and during a long hand-off the child's tools
+    // are the only thing still moving. A status that stops moving is how a
+    // working run comes to look like a stuck one.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    let clock = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => (clock += 5000));
+    const { slack, statuses } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        {
+          author: "researcher",
+          delta: { toolCalls: [{ id: "c_1", function: { name: "SlackHistory" } }] },
+        },
+        { delta: { content: "here it is" } },
+        { done: true },
+      ] as EngineChunk[],
+      slack,
+    );
+
+    await handleSlackEvent(deps, DM_EVENT, BINDING);
+
+    expect(statuses).toContain("is using researcher: SlackHistory…");
   });
 
   it("falls back to a text note where the workspace cannot stream", async () => {

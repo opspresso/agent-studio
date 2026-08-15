@@ -396,7 +396,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Slack prompt title / message / agent description | `80` / `500` / `300` chars | `src/domain/slack/types.ts` |
 | Slack channel keywords per project / length each | `20` / `2`–`50` chars | `src/domain/slack/types.ts` |
 | How long the bot stays engaged in a channel thread it answered in (refreshed on every reply) | `24h` | `src/infrastructure/db/ttl.ts` |
-| Rows a channel's progress checklist may grow to before further steps share one | `25` | `src/application/slack/replyStream.ts` |
+| Distinct tools a channel checklist may list before further ones share a row | `25` | `src/application/slack/replyStream.ts` |
 | Messages one `SlackHistory`/`SlackThread` read returns (default / ceiling) | `20` / `100` | `src/application/slack/workspaceRead.ts` |
 | Channels one `SlackChannels` listing returns | `200` | `src/application/slack/workspaceRead.ts` |
 | People one Slack transcript or reaction list resolves to names | `25` | `src/application/slack/workspaceRead.ts` |

@@ -640,7 +640,9 @@ export async function handleSlackEvent(
         // Arguments stream in after the name, so a later delta for the same
         // call carries neither and is not a step of its own.
         if (call.id && name) {
-          await sink.step(call.id, chunk.author ? `${chunk.author}: ${name}` : name);
+          await sink.step(call.id, chunk.author ? `${chunk.author}: ${name}` : name, {
+            nested: !isTopLevelChunk(chunk),
+          });
         }
       }
       // The one real completion boundary a run has. Nothing else may tick a
