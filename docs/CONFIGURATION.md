@@ -399,7 +399,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Distinct tools a channel checklist may list before further ones share a row | `25` | `src/application/slack/replyStream.ts` |
 | Messages one `SlackHistory`/`SlackThread` read returns (default / ceiling) | `20` / `100` | `src/application/slack/workspaceRead.ts` |
 | Channels one `SlackChannels` listing returns | `200` | `src/application/slack/workspaceRead.ts` |
-| People one Slack transcript or reaction list resolves to names | `25` | `src/application/slack/workspaceRead.ts` |
+| People one Slack transcript or reaction list resolves to names (at most `5` at once) | `25` | `src/application/slack/workspaceRead.ts` |
 | `users.list` pages one `SlackUsers` search walks (it reports stopping) | `5` × `200` | `src/application/slack/workspaceRead.ts` |
 | Matches one `SlackUsers` search prints (the rest are counted) | `20` | `src/application/slack/workspaceRead.ts` |
 | Slack reply write cadence (stream / edit) | `1s` / `3s` | `src/application/slack/replyStream.ts` |

@@ -65,6 +65,7 @@ import {
   type SubagentInfo,
 } from "./agentAssembly";
 import { framedFetchedUrl } from "./documentParts";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 import {
   createToolResultBudget,
   createToolResultEmitter,
@@ -235,29 +236,6 @@ const MAX_PARALLEL_TOOL_CALLS = 5;
  * low enough that a run talked into sweeping a network runs out.
  */
 const MAX_URL_FETCHES_PER_RUN = 20;
-
-/** Run `fn` over `items` with at most `limit` in flight; results keep input order. */
-async function mapWithLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
-      const index = next;
-      next += 1;
-      const item = items[index];
-      if (index >= items.length || item === undefined) {
-        return;
-      }
-      results[index] = await fn(item);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
 
 /** 429 or 5xx are the only fallback-eligible errors, matching FallbackRunner. */
 function isRetryableError(error: unknown): boolean {

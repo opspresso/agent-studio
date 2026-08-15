@@ -561,7 +561,9 @@ export async function handleSlackEvent(
   }
 
   let text = "";
-  const images: Array<{ b64: string; mimeType: string; prompt?: string }> = [];
+  // `fetched` rides along: what the run read is uploaded only when it is all the
+  // run has to show (see below).
+  const images: Array<{ b64: string; mimeType: string; prompt?: string; fetched?: boolean }> = [];
   // Documents a tool rendered. Not uploaded like the images below them: their
   // bytes were stripped at the bracket the moment they were stored, so a thread
   // gets a link. Without this the run answered "here is the report" into a
@@ -698,11 +700,22 @@ export async function handleSlackEvent(
     stopStatusHeartbeat();
   }
 
+  // A picture the run only *read* is worth posting when it is all the run has
+  // to show — "show me the image at this address" is answered by it. Beside
+  // something the run drew it is the source material, and uploading both turns
+  // "redraw my avatar" into two pictures where one was asked for.
+  //
+  // A thread is where this matters and a chat is not: each upload here is its
+  // own message and its own notification, while a chat renders inline in a
+  // conversation already flowing past.
+  const drawn = images.filter((image) => !image.fetched);
+  const uploads = drawn.length > 0 ? drawn : images;
+
   log.info(
     "slack",
-    `run done project=${projectName} chars=${text.length} images=${images.length} warnings=${warnings.length}`,
+    `run done project=${projectName} chars=${text.length} images=${uploads.length} warnings=${warnings.length}`,
   );
-  for (const [index, image] of images.entries()) {
+  for (const [index, image] of uploads.entries()) {
     try {
       const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await deps.slack.uploadImage(token, {
@@ -735,7 +748,7 @@ export async function handleSlackEvent(
   // purely with a picture used to be captioned "(no response)". A produced file
   // counts for the same reason: it is the deliverable, and the link below is the
   // only place the thread carries it.
-  if (!text && images.length === 0 && producedRefs.length === 0 && warnings.length === 0) {
+  if (!text && uploads.length === 0 && producedRefs.length === 0 && warnings.length === 0) {
     warnings.push("The run finished without producing an answer.");
   }
   // Links first, warnings after: one is what the run made and the other is what

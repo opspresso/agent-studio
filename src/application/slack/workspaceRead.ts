@@ -1,5 +1,6 @@
 import type { SlackChannelInfo, SlackMessage, SlackUserDetail } from "@/domain/slack/types";
 import type { SlackReaderPort, SlackWorkspaceReader } from "@/domain/slack/reader";
+import { mapWithLimit } from "@/shared/mapWithLimit";
 // The names live with every other builtin's, which is the single owner of what
 // a builtin may be called — a run's alias table is built from that list before
 // this module is reached.
@@ -56,6 +57,8 @@ const MAX_CHANNELS = 200;
  * name and far better than a tool call that took ten seconds.
  */
 const MAX_PROFILE_LOOKUPS = 25;
+/** How many of those may be in flight. A burst is what trips a per-minute limit. */
+const MAX_CONCURRENT_LOOKUPS = 5;
 /**
  * Pages of `users.list` one name search walks, and how many matches it prints.
  *
@@ -100,21 +103,28 @@ function personLines(person: SlackUserDetail): string[] {
   ];
 }
 
-/** Resolve a bounded set of ids to names, best effort. Shared by two readers. */
+/**
+ * Resolve a bounded set of ids to names, best effort. Shared by two readers.
+ *
+ * Bounded in flight as well as in count. Twenty-five `users.info` calls at once
+ * is a burst against a per-minute limit, and on a cold cache — a channel full of
+ * people the bot has not seen this hour — that is exactly what it was. Nothing
+ * retries a rate limit, so the cost of hitting one is a transcript that names
+ * ids instead of people.
+ */
 async function resolveNames(
   slack: SlackReaderPort,
   token: string,
   ids: string[],
 ): Promise<Map<string, string>> {
   const names = new Map<string, string>();
-  await Promise.all(
-    [...new Set(ids)].slice(0, MAX_PROFILE_LOOKUPS).map(async (id) => {
-      const profile = await slack.userProfile(token, id).catch(() => null);
-      if (profile) {
-        names.set(id, profile.displayName);
-      }
-    }),
-  );
+  const wanted = [...new Set(ids)].slice(0, MAX_PROFILE_LOOKUPS);
+  await mapWithLimit(wanted, MAX_CONCURRENT_LOOKUPS, async (id) => {
+    const profile = await slack.userProfile(token, id).catch(() => null);
+    if (profile) {
+      names.set(id, profile.displayName);
+    }
+  });
   return names;
 }
 

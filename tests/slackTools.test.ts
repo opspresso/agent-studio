@@ -488,3 +488,51 @@ describe("reading a message's reactions", () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("resolving a crowd of names", () => {
+  it("does not open one request per person at once", async () => {
+    // Twenty-five `users.info` calls at once is a burst against a per-minute
+    // limit, and nothing retries a rate limit — the cost of hitting one is a
+    // transcript that names ids instead of people.
+    let inFlight = 0;
+    let peak = 0;
+    const slack: SlackReaderPort = {
+      async channelHistory() {
+        return Array.from({ length: 20 }, (_, index) => ({
+          ts: TS_A,
+          user: `U0PERSON${index}`,
+          text: "hi",
+        }));
+      },
+      async threadReplies() {
+        return [];
+      },
+      async listChannels() {
+        return [];
+      },
+      async userDetail() {
+        return null;
+      },
+      async userEmail() {
+        return null;
+      },
+      async findUsers() {
+        return { users: [], truncated: false };
+      },
+      async messageReactions() {
+        return [];
+      },
+      async userProfile(_token, userId) {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await Promise.resolve();
+        inFlight -= 1;
+        return { displayName: userId };
+      },
+    };
+
+    await createSlackWorkspaceReader(slack, TOKEN)("SlackHistory", { channel: "C1" });
+
+    expect(peak).toBeLessThanOrEqual(5);
+  });
+});

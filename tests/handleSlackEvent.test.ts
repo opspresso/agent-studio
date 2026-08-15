@@ -118,6 +118,8 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     }
   }
   const statuses: string[] = [];
+  /** Pictures that actually reached the thread. */
+  const uploads: Array<{ title?: string; filename: string }> = [];
   /** What the bot put on the message it picked up, and where. */
   const reactions: Array<{ channel: string; ts: string; name: string }> = [];
   const titles: Array<{ channel_id: string; thread_ts: string; title: string }> = [];
@@ -147,7 +149,10 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       calls.push("deleteMessage");
       deleted.push(args.ts);
     },
-    async uploadImage() {},
+    async uploadImage(_token, args) {
+      calls.push("uploadImage");
+      uploads.push({ title: args.title, filename: args.filename });
+    },
     async addReaction(_token, args) {
       calls.push("addReaction");
       reactions.push(args);
@@ -249,6 +254,7 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
     updates,
     deleted,
     appended,
+    uploads,
     reactions,
     tasks,
     streamStarts,
@@ -1823,6 +1829,47 @@ describe("a document attached to a Slack message", () => {
 
     expect(downloads).toEqual([]);
     expect(finalText()).toContain("larger than 10MB");
+  });
+});
+
+/**
+ * A picture the run only *read* — one `FetchUrl` brought back. Each Slack upload
+ * is its own message and its own notification, so posting the source material
+ * beside the drawing made from it turns one answer into two pictures.
+ */
+describe("uploading what the run read", () => {
+  it("posts only the drawing when the run made one", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, uploads } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        { image: { b64: "c3Jj", mimeType: "image/png", fetched: true, prompt: "Returned by FetchUrl" } },
+        { image: { b64: "ZHJhdw==", mimeType: "image/png", prompt: "a crude doodle" } },
+        { done: true },
+      ] as EngineChunk[],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(uploads.map((upload) => upload.title)).toEqual(["a crude doodle"]);
+  });
+
+  it("posts it when it is all the run has to show", async () => {
+    // "Show me the image at this address" is answered by exactly this.
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, uploads } = makeSlackFake();
+    const deps = makeDeps(
+      [
+        { image: { b64: "c3Jj", mimeType: "image/png", fetched: true, prompt: "Returned by FetchUrl" } },
+        { done: true },
+      ] as EngineChunk[],
+      slack,
+    );
+
+    await handleSlackEvent(deps, EVENT, BINDING);
+
+    expect(uploads).toHaveLength(1);
   });
 });
 
