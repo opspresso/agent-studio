@@ -39,6 +39,30 @@ describe("the caller block in an agent prompt", () => {
     );
   });
 
+  it("says the avatar can be read when the run can read a URL", () => {
+    // A URL nobody said was reachable is a URL nobody reaches. Asked to redraw
+    // their own profile picture, a run with every capability on invented a face
+    // instead: the address was in this block, FetchUrl was offered and returns
+    // an image as an editable handle, and nothing connected the two.
+    const prompt = buildAgentSystemPrompt({
+      ...NO_BINDINGS,
+      caller: CALLER,
+      withUrlTool: true,
+    });
+
+    expect(prompt).toContain("read it with FetchUrl first");
+    expect(prompt).toContain("Never draw a face from imagination");
+  });
+
+  it("stays quiet about reading it when the run cannot", () => {
+    // Advice a run cannot take is worse than none — it spends prompt budget
+    // pointing at a tool that was never offered.
+    const prompt = buildAgentSystemPrompt({ ...NO_BINDINGS, caller: CALLER });
+
+    expect(prompt).toContain("Their avatar: https://avatars.slack-edge.com/bruce_512.png");
+    expect(prompt).not.toContain("FetchUrl");
+  });
+
   it("carries only what the profile actually had", () => {
     const prompt = buildAgentSystemPrompt({
       ...NO_BINDINGS,

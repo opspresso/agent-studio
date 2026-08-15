@@ -552,14 +552,28 @@ export function runClockBlock(now: Date): string {
  *
  * The avatar is a URL rather than an image part: a face is almost never what the
  * question is about, and encoding one would spend a turn's image budget on it.
+ *
+ * But a URL nobody said was reachable is a URL nobody reaches. Asked to redraw
+ * their own profile picture, a run with every capability switched on invented a
+ * face instead — the address was sitting in this block, `FetchUrl` was offered
+ * and returns an image as an editable handle, and nothing connected the two.
+ * `FetchUrl`'s own description names requests, search results and tool output as
+ * where an address turns up, which is every place except this one; and
+ * `EditImage` points at the handle list, which the avatar is not in. So the
+ * block says it, and only where the run can actually act on it — advice a run
+ * cannot take is worse than none.
  */
-export function callerBlock(caller: RunCaller): string {
+export function callerBlock(caller: RunCaller, canFetchUrl = false): string {
   const lines = [`You are answering ${caller.displayName}.`];
   if (caller.timezone) {
     lines.push(`Their timezone is ${caller.timezone}; resolve their relative times in it.`);
   }
   if (caller.avatarUrl) {
-    lines.push(`Their avatar: ${caller.avatarUrl}`);
+    lines.push(
+      canFetchUrl
+        ? `Their avatar: ${caller.avatarUrl} — when the request is about their picture, read it with ${FETCH_URL_TOOL_NAME} first; it comes back as an image you can then edit. Never draw a face from imagination in its place.`
+        : `Their avatar: ${caller.avatarUrl}`,
+    );
   }
   return lines.join(" ");
 }
@@ -620,7 +634,7 @@ export function buildAgentSystemPrompt(input: AgentSystemPromptInput): string {
     blocks.push(runClockBlock(now));
   }
   if (caller) {
-    blocks.push(callerBlock(caller));
+    blocks.push(callerBlock(caller, input.withUrlTool === true));
   }
   if (sections.length > 0) {
     blocks.push(capabilityFraming(skills.length > 0, withMcp, subagents.length > 0), ...sections);
