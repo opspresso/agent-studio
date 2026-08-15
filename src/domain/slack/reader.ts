@@ -1,5 +1,10 @@
 import type { RunCaller } from "@/domain/execution/actor";
-import type { SlackChannelInfo, SlackMessage } from "./types";
+import type {
+  SlackChannelInfo,
+  SlackMessage,
+  SlackReaction,
+  SlackUserDetail,
+} from "./types";
 
 /**
  * The reads a run's Slack tools are served from.
@@ -22,8 +27,41 @@ export interface SlackReaderPort {
     args: { channel: string; ts: string; limit?: number },
   ): Promise<SlackMessage[]>;
   listChannels(token: string, args?: { limit?: number }): Promise<SlackChannelInfo[]>;
-  /** Who a Slack user id is. Resolves to `null` rather than throwing. */
+  /**
+   * Who a Slack user id is, as the *caller block* needs them — a name, a
+   * timezone, an avatar, made prompt-safe by `callerFrom`. Resolves to `null`
+   * rather than throwing: a missing name must not be why a mention goes
+   * unanswered.
+   */
   userProfile(token: string, userId: string): Promise<RunCaller | null>;
+  /**
+   * The same person, as a *tool* needs them: what they do, what their status
+   * says, whether they are still here. A wider view than the caller block on
+   * purpose — that one is spliced into the system prompt on every turn, so it
+   * carries the least that identifies someone, while this is asked for once and
+   * answered into a tool result.
+   *
+   * Shares the caller lookup's cache: both are one `users.info` call, and a
+   * project using caller context and this tool should not pay for it twice.
+   */
+  userDetail(token: string, userId: string): Promise<SlackUserDetail | null>;
+  /**
+   * People whose name or handle contains `query`.
+   *
+   * Slack has no name search a bot can reach — `users.list` is a full walk — so
+   * this pages and filters, and says when it stopped. That bound is the reason
+   * it exists as its own method rather than as "the user list".
+   */
+  findUsers(
+    token: string,
+    query: string,
+    maxPages: number,
+  ): Promise<{ users: SlackUserDetail[]; truncated: boolean }>;
+  /** What people put on one message. Empty when nobody reacted. */
+  messageReactions(
+    token: string,
+    args: { channel: string; ts: string },
+  ): Promise<SlackReaction[]>;
 }
 
 /**

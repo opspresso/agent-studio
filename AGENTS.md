@@ -321,7 +321,7 @@ One line each — the linked section is the authority.
   costs no write and opens no reply. Own message → mention → DM → a thread it answered in
   (a day-long window) → a project keyword → nothing. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#which-events-are-for-the-bot)
-- **Slack workspace reads** — four read-only tools behind a version opt-in, all routed to one
+- **Slack workspace reads** — six read-only tools behind a version opt-in, all routed to one
   injected reader that holds the token. No writes and no email, by construction rather than
   omission. → [SECURITY.md](docs/SECURITY.md#reading-the-slack-workspace)
 - **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it

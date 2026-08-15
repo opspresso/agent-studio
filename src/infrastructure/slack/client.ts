@@ -5,19 +5,67 @@ import type {
   SlackChannelInfo,
   SlackChunk,
   SlackMessage,
+  SlackReaction,
   SlackTaskDisplayMode,
+  SlackUserDetail,
 } from "@/domain/slack/types";
 import { log } from "@/shared/logger";
 import { readBodyBytes } from "@/shared/httpBody";
 import { getCachedProfile, rememberProfile } from "./profileCache";
 export type { SlackMessage };
 
-/** The slice of `users.info`'s user object a caller is built from. */
+/** The slice of `users.info`'s user object a profile is built from. */
 interface SlackUserInfo {
   name?: string;
   real_name?: string;
   tz?: string;
-  profile?: { display_name?: string; real_name?: string; image_512?: string };
+  is_bot?: boolean;
+  deleted?: boolean;
+  profile?: {
+    display_name?: string;
+    real_name?: string;
+    title?: string;
+    status_text?: string;
+    status_emoji?: string;
+    image_512?: string;
+  };
+}
+
+/**
+ * One user object to the shape a run may see.
+ *
+ * Slack documents every one of these fields as possibly absent, null *or the
+ * empty string*, so each goes through `firstNonEmpty` rather than `??` — an
+ * empty `display_name` is extremely common and `??` would keep it. The name is
+ * the first of four Slack may have filled; falling back to the id keeps a person
+ * addressable when it has filled none.
+ *
+ * `profile.email` is deliberately not read even where the scope allows it — see
+ * `SlackUserDetail`.
+ */
+function toUserDetail(user: SlackUserInfo, id: string): SlackUserDetail {
+  const displayName =
+    firstNonEmpty(user.profile?.display_name, user.profile?.real_name, user.real_name, user.name) ??
+    id;
+  const realName = firstNonEmpty(user.profile?.real_name, user.real_name);
+  return {
+    id,
+    displayName,
+    ...(realName && realName !== displayName ? { realName } : {}),
+    ...(firstNonEmpty(user.profile?.title) ? { title: user.profile?.title?.trim() } : {}),
+    ...(firstNonEmpty(user.tz) ? { timezone: user.tz?.trim() } : {}),
+    ...(firstNonEmpty(user.profile?.status_text)
+      ? { statusText: user.profile?.status_text?.trim() }
+      : {}),
+    ...(firstNonEmpty(user.profile?.status_emoji)
+      ? { statusEmoji: user.profile?.status_emoji?.trim() }
+      : {}),
+    ...(firstNonEmpty(user.profile?.image_512)
+      ? { avatarUrl: user.profile?.image_512?.trim() }
+      : {}),
+    ...(user.is_bot === undefined ? {} : { isBot: user.is_bot }),
+    ...(user.deleted === undefined ? {} : { deactivated: user.deleted }),
+  };
 }
 
 /**
@@ -130,20 +178,16 @@ export const slackClient = {
   /**
    * Who a Slack user id is, cached per workspace.
    *
-   * Slack documents every one of these fields as possibly absent, null *or the
-   * empty string*, so each is read through `firstNonEmpty` rather than `??` —
-   * an empty `display_name` is extremely common and `??` would keep it.
-   *
    * Never throws: a name is a nicety and a missing one must not be the reason a
    * mention goes unanswered. A failure is cached briefly so a revoked scope does
    * not cost a round trip per message.
    */
-  async userProfile(token: string, userId: string): Promise<RunCaller | null> {
+  async userDetail(token: string, userId: string): Promise<SlackUserDetail | null> {
     const cached = getCachedProfile(token, userId);
     if (cached) {
       return cached.value;
     }
-    let resolved: RunCaller | null = null;
+    let resolved: SlackUserDetail | null = null;
     try {
       // A read-family method: GET with query params, like conversations.replies.
       const params = new URLSearchParams({ user: userId });
@@ -158,19 +202,7 @@ export const slackClient = {
       if (!data.ok || !data.user) {
         throw new Error(`Slack users.info failed: ${data.error ?? res.status}`);
       }
-      const user = data.user;
-      // `callerFrom` owns what is safe to hand a prompt; this only decides which
-      // of Slack's several name fields is the one to offer it.
-      resolved = callerFrom({
-        displayName: firstNonEmpty(
-          user.profile?.display_name,
-          user.profile?.real_name,
-          user.real_name,
-          user.name,
-        ),
-        timezone: firstNonEmpty(user.tz),
-        avatarUrl: firstNonEmpty(user.profile?.image_512),
-      });
+      resolved = toUserDetail(data.user, userId);
     } catch (error) {
       log.warn(
         "slack",
@@ -181,6 +213,112 @@ export const slackClient = {
     }
     rememberProfile(token, userId, resolved);
     return resolved;
+  },
+
+  /**
+   * The caller-block view of the same lookup.
+   *
+   * Derived rather than fetched separately: one `users.info` answers both, and
+   * `callerFrom` owns what is safe to splice into a system prompt.
+   */
+  async userProfile(token: string, userId: string): Promise<RunCaller | null> {
+    const detail = await slackClient.userDetail(token, userId);
+    return detail
+      ? callerFrom({
+          displayName: detail.displayName,
+          ...(detail.timezone ? { timezone: detail.timezone } : {}),
+          ...(detail.avatarUrl ? { avatarUrl: detail.avatarUrl } : {}),
+        })
+      : null;
+  },
+
+  /**
+   * People whose name or handle contains `query`, case-insensitively.
+   *
+   * Slack offers a bot no name search, so this walks `users.list` and filters.
+   * The page bound is what keeps a large workspace from turning one tool call
+   * into dozens of requests — and it reports when it stopped, because a search
+   * that quietly missed someone is worse than one that says it did.
+   *
+   * Deactivated accounts and Slackbot are dropped: a run asking who someone is
+   * means a colleague it can reach.
+   */
+  async findUsers(
+    token: string,
+    query: string,
+    maxPages: number,
+  ): Promise<{ users: SlackUserDetail[]; truncated: boolean }> {
+    const needle = query.trim().toLowerCase();
+    const users: SlackUserDetail[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < maxPages; page += 1) {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      const res = await fetch(`https://slack.com/api/users.list?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        members?: Array<SlackUserInfo & { id?: string; is_bot?: boolean; deleted?: boolean }>;
+        response_metadata?: { next_cursor?: string };
+      };
+      if (!data.ok) {
+        throw new Error(`Slack users.list failed: ${data.error ?? res.status}`);
+      }
+      for (const member of data.members ?? []) {
+        if (!member.id || member.deleted || member.id === "USLACKBOT") {
+          continue;
+        }
+        const detail = toUserDetail(member, member.id);
+        const haystack = [detail.displayName, detail.realName, member.name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!needle || haystack.includes(needle)) {
+          users.push(detail);
+        }
+      }
+      cursor = data.response_metadata?.next_cursor || undefined;
+      if (!cursor) {
+        return { users, truncated: false };
+      }
+    }
+    return { users, truncated: true };
+  },
+
+  /** What people put on one message. */
+  async messageReactions(
+    token: string,
+    args: { channel: string; ts: string },
+  ): Promise<SlackReaction[]> {
+    const params = new URLSearchParams({
+      channel: args.channel,
+      timestamp: args.ts,
+      // Without it Slack cuts the user list at 25 and the counts stop agreeing
+      // with the names.
+      full: "true",
+    });
+    const res = await fetch(`https://slack.com/api/reactions.get?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = (await res.json()) as {
+      ok: boolean;
+      error?: string;
+      message?: { reactions?: Array<{ name?: string; count?: number; users?: string[] }> };
+    };
+    if (!data.ok) {
+      throw new Error(`Slack reactions.get failed: ${data.error ?? res.status}`);
+    }
+    return (data.message?.reactions ?? [])
+      .filter((reaction): reaction is { name: string } & typeof reaction => Boolean(reaction.name))
+      .map((reaction) => ({
+        name: reaction.name,
+        count: reaction.count ?? (reaction.users?.length ?? 0),
+        users: reaction.users ?? [],
+      }));
   },
   postMessage(
     token: string,

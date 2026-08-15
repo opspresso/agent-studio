@@ -187,6 +187,20 @@ function makeSlackFake(options: { streaming?: boolean } = {}) {
       profileLookups.push(userId);
       return profiles.get(userId) ?? null;
     },
+    // The workspace read tools have their own tests; the handler never calls
+    // these, and a fake that omitted them would only be hiding that.
+    async userDetail() {
+      calls.push("userDetail");
+      return null;
+    },
+    async findUsers() {
+      calls.push("findUsers");
+      return { users: [], truncated: false };
+    },
+    async messageReactions() {
+      calls.push("messageReactions");
+      return [];
+    },
   };
   /**
    * What the reader ends up seeing, whichever transport delivered it — so a

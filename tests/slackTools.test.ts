@@ -9,8 +9,12 @@ import {
 } from "@/application/llm/engine";
 import type { EngineChunk } from "@/domain/llm/types";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
-import type { RunCaller } from "@/domain/execution/actor";
-import type { SlackChannelInfo, SlackMessage } from "@/domain/slack/types";
+import type {
+  SlackChannelInfo,
+  SlackMessage,
+  SlackReaction,
+  SlackUserDetail,
+} from "@/domain/slack/types";
 
 /**
  * The four workspace reads a run may be offered.
@@ -23,9 +27,20 @@ import type { SlackChannelInfo, SlackMessage } from "@/domain/slack/types";
 
 const TOKEN = "xoxb-test";
 
-const PEOPLE: Record<string, RunCaller> = {
-  U0ADA123: { displayName: "Ada", timezone: "Asia/Seoul" },
-  U0LIN456: { displayName: "Lin" },
+const PEOPLE: Record<string, SlackUserDetail> = {
+  U0ADA123: {
+    id: "U0ADA123",
+    displayName: "Ada",
+    realName: "Ada Lovelace",
+    title: "Staff Engineer, Platform",
+    timezone: "Asia/Seoul",
+    statusText: "OOO until Friday",
+    statusEmoji: ":palm_tree:",
+    avatarUrl: "https://avatars.slack-edge.com/ada_512.png",
+  },
+  U0LIN456: { id: "U0LIN456", displayName: "Lin" },
+  U0GONE11: { id: "U0GONE11", displayName: "Former", deactivated: true },
+  U0APP222: { id: "U0APP222", displayName: "Deploybot", isBot: true },
 };
 
 function makeSlackFake(
@@ -33,6 +48,8 @@ function makeSlackFake(
     history?: SlackMessage[];
     thread?: SlackMessage[];
     channels?: SlackChannelInfo[];
+    reactions?: SlackReaction[];
+    findUsers?: { users: SlackUserDetail[]; truncated: boolean };
   } = {},
 ) {
   const calls: Array<{ method: string; args: unknown }> = [];
@@ -49,8 +66,29 @@ function makeSlackFake(
       calls.push({ method: "listChannels", args });
       return over.channels ?? [];
     },
+    // Derived from the detail, exactly as the adapter does — one lookup, two
+    // views, so a test cannot pass on a shape the real client never produces.
     async userProfile(_token, userId) {
+      const person = PEOPLE[userId];
+      return person
+        ? {
+            displayName: person.displayName,
+            ...(person.timezone ? { timezone: person.timezone } : {}),
+            ...(person.avatarUrl ? { avatarUrl: person.avatarUrl } : {}),
+          }
+        : null;
+    },
+    async userDetail(_token, userId) {
+      calls.push({ method: "userDetail", args: userId });
       return PEOPLE[userId] ?? null;
+    },
+    async findUsers(_token, query, maxPages) {
+      calls.push({ method: "findUsers", args: { query, maxPages } });
+      return over.findUsers ?? { users: [], truncated: false };
+    },
+    async messageReactions(_token, args) {
+      calls.push({ method: "messageReactions", args });
+      return over.reactions ?? [];
     },
   };
   return { slack, calls, read: createSlackWorkspaceReader(slack, TOKEN) };
@@ -154,10 +192,39 @@ describe("reading a thread", () => {
 });
 
 describe("looking up a user", () => {
-  it("answers with a name and a timezone", async () => {
+  it("answers with the whole profile, not just a name", async () => {
+    // What someone does and whether they are away is most of why a run asks who
+    // somebody is — "who owns deploys" and "can they answer today" are the two
+    // questions, and a bare display name answers neither.
     const { read } = makeSlackFake();
 
-    expect(await read("SlackUser", { user: "U0ADA123" })).toBe("U0ADA123: Ada\ntimezone: Asia/Seoul");
+    expect(await read("SlackUser", { user: "U0ADA123" })).toBe(
+      [
+        "U0ADA123: Ada",
+        "name: Ada Lovelace",
+        "title: Staff Engineer, Platform",
+        "timezone: Asia/Seoul",
+        "status: :palm_tree: OOO until Friday",
+        "avatar: https://avatars.slack-edge.com/ada_512.png",
+      ].join("\n"),
+    );
+  });
+
+  it("says when an account is an app or deactivated", async () => {
+    // An unanswered mention is often one of these two, and neither is visible
+    // from a transcript.
+    const { read } = makeSlackFake();
+
+    expect(await read("SlackUser", { user: "U0GONE11" })).toContain("deactivated");
+    expect(await read("SlackUser", { user: "U0APP222" })).toContain("an app, not a person");
+  });
+
+  it("prints only what Slack actually filled", async () => {
+    // Slack leaves almost every profile field empty, and a wall of "title: —"
+    // is worse than a short answer.
+    const { read } = makeSlackFake();
+
+    expect(await read("SlackUser", { user: "U0LIN456" })).toBe("U0LIN456: Lin");
   });
 
   it("never returns an email", async () => {
@@ -229,7 +296,7 @@ describe("what a run is offered", () => {
       withSlackTools,
     }).tools.map((tool) => tool.function.name);
 
-  it("offers all four together or none at all", () => {
+  it("offers them all together or none at all", () => {
     expect(toolNames(true)).toEqual([...SLACK_TOOL_NAMES]);
     expect(toolNames(false)).toEqual([]);
   });
@@ -329,5 +396,91 @@ describe("dispatching a Slack tool", () => {
 
     expect(chunks.find((chunk) => chunk.toolResult)?.toolResult?.content).toContain("missing_scope");
     expect(chunks.some((chunk) => chunk.error)).toBe(false);
+  });
+});
+
+describe("finding people by name", () => {
+  it("answers with the same detail a direct lookup gives", async () => {
+    // Otherwise the model has to search, then look each result up again — two
+    // round trips for one question.
+    const { read, calls } = makeSlackFake({
+      findUsers: { users: [PEOPLE.U0ADA123!], truncated: false },
+    });
+
+    const result = await read("SlackUsers", { query: "ada" });
+
+    expect(result).toContain("Staff Engineer, Platform");
+    expect(result).toContain("OOO until Friday");
+    expect(calls.at(-1)).toEqual({ method: "findUsers", args: { query: "ada", maxPages: 5 } });
+  });
+
+  it("says the workspace has more people than it read", async () => {
+    // Slack gives a bot no name search, so a match costs a directory walk. A
+    // search that quietly missed someone is worse than one that admits it.
+    const { read } = makeSlackFake({ findUsers: { users: [], truncated: true } });
+
+    expect(await read("SlackUsers", { query: "kim" })).toContain("the workspace has more");
+  });
+
+  it("distinguishes nobody-matched from stopped-looking", async () => {
+    const { read } = makeSlackFake({ findUsers: { users: [], truncated: false } });
+
+    expect(await read("SlackUsers", { query: "nobody" })).toBe(
+      'Nobody in this workspace matches "nobody".',
+    );
+  });
+
+  it("counts the matches it did not print", async () => {
+    const many = Array.from({ length: 25 }, (_, index) => ({
+      id: `U${index}`,
+      displayName: `Kim ${index}`,
+    }));
+    const { read } = makeSlackFake({ findUsers: { users: many, truncated: false } });
+
+    expect(await read("SlackUsers", { query: "kim" })).toContain("5 more match");
+  });
+
+  it("needs something to search for", async () => {
+    const { read, calls } = makeSlackFake();
+
+    expect(await read("SlackUsers", {})).toMatch(/requires something to search for/);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("reading a message's reactions", () => {
+  it("names who reacted rather than listing ids", async () => {
+    // "Who acknowledged this" is the question, and a list of U04B7QK9E answers
+    // it with nothing.
+    const { read } = makeSlackFake({
+      reactions: [{ name: "white_check_mark", count: 2, users: ["U0ADA123", "U0LIN456"] }],
+    });
+
+    expect(await read("SlackReactions", { channel: "C1", ts: TS_A })).toBe(
+      ":white_check_mark: 2 — Ada, Lin",
+    );
+  });
+
+  it("leaves an id alone when the lookup finds nobody", async () => {
+    const { read } = makeSlackFake({
+      reactions: [{ name: "eyes", count: 1, users: ["U0GHOST9"] }],
+    });
+
+    expect(await read("SlackReactions", { channel: "C1", ts: TS_A })).toContain("U0GHOST9");
+  });
+
+  it("reports an unreacted message as unreacted", async () => {
+    const { read } = makeSlackFake({ reactions: [] });
+
+    expect(await read("SlackReactions", { channel: "C1", ts: TS_A })).toBe(
+      "Nobody has reacted to that message.",
+    );
+  });
+
+  it("needs both the channel and the message", async () => {
+    const { read, calls } = makeSlackFake();
+
+    expect(await read("SlackReactions", { channel: "C1" })).toMatch(/requires a channel id and a/);
+    expect(calls).toEqual([]);
   });
 });

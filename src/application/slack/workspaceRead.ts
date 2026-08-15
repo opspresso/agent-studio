@@ -1,4 +1,4 @@
-import type { SlackChannelInfo, SlackMessage } from "@/domain/slack/types";
+import type { SlackChannelInfo, SlackMessage, SlackUserDetail } from "@/domain/slack/types";
 import type { SlackReaderPort, SlackWorkspaceReader } from "@/domain/slack/reader";
 // The names live with every other builtin's, which is the single owner of what
 // a builtin may be called — a run's alias table is built from that list before
@@ -6,12 +6,14 @@ import type { SlackReaderPort, SlackWorkspaceReader } from "@/domain/slack/reade
 import {
   SLACK_CHANNELS_TOOL_NAME,
   SLACK_HISTORY_TOOL_NAME,
+  SLACK_REACTIONS_TOOL_NAME,
   SLACK_THREAD_TOOL_NAME,
   SLACK_USER_TOOL_NAME,
+  SLACK_USERS_TOOL_NAME,
 } from "@/application/llm/agentAssembly";
 
 /**
- * The Slack workspace, as four read-only tools a run may be offered.
+ * The Slack workspace, as six read-only tools a run may be offered.
  *
  * The bot already sits in the workspace and already holds scopes to read it;
  * what was missing was any way for a *run* to spend them. Without this an agent
@@ -54,6 +56,67 @@ const MAX_CHANNELS = 200;
  * name and far better than a tool call that took ten seconds.
  */
 const MAX_PROFILE_LOOKUPS = 25;
+/**
+ * Pages of `users.list` one name search walks, and how many matches it prints.
+ *
+ * Slack gives a bot no name search, so a match costs a full-directory walk. The
+ * page bound keeps one tool call from becoming dozens of requests; the match
+ * bound keeps a search for "kim" from spending the turn's whole budget on a
+ * directory listing. Both say when they cut something.
+ */
+const MAX_USER_PAGES = 5;
+const MAX_USER_MATCHES = 20;
+/** Names printed per reaction before the rest are counted instead. */
+const MAX_REACTION_NAMES = 12;
+
+/**
+ * A profile field, flattened to one line.
+ *
+ * Not a security measure — a title is no more attacker-controlled than the
+ * messages already in a transcript, and those go through untouched. It is about
+ * the *shape* of the answer: these are rendered as `label: value`, and a newline
+ * inside a value invents a label that nobody wrote.
+ */
+function oneLine(value: string | undefined): string | undefined {
+  const flattened = value?.replace(/\s+/g, " ").trim();
+  return flattened || undefined;
+}
+
+/** A person, as the tools print them. Ordered by what a reader asks first. */
+function personLines(person: SlackUserDetail): string[] {
+  const status = [oneLine(person.statusEmoji), oneLine(person.statusText)]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    `${person.id}: ${oneLine(person.displayName) ?? person.id}`,
+    ...(person.realName ? [`name: ${oneLine(person.realName)}`] : []),
+    ...(person.title ? [`title: ${oneLine(person.title)}`] : []),
+    ...(person.timezone ? [`timezone: ${person.timezone}`] : []),
+    ...(status ? [`status: ${status}`] : []),
+    ...(person.avatarUrl ? [`avatar: ${person.avatarUrl}`] : []),
+    // Worth saying out loud: an unanswered mention is often one of these two.
+    ...(person.isBot ? ["this is an app, not a person"] : []),
+    ...(person.deactivated ? ["this account is deactivated"] : []),
+  ];
+}
+
+/** Resolve a bounded set of ids to names, best effort. Shared by two readers. */
+async function resolveNames(
+  slack: SlackReaderPort,
+  token: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  await Promise.all(
+    [...new Set(ids)].slice(0, MAX_PROFILE_LOOKUPS).map(async (id) => {
+      const profile = await slack.userProfile(token, id).catch(() => null);
+      if (profile) {
+        names.set(id, profile.displayName);
+      }
+    }),
+  );
+  return names;
+}
 
 export type { SlackReaderPort, SlackWorkspaceReader };
 
@@ -116,15 +179,7 @@ async function transcript(
   if (messages.length === 0) {
     return "No messages.";
   }
-  const names = new Map<string, string>();
-  await Promise.all(
-    referencedUsers(messages).map(async (userId) => {
-      const profile = await slack.userProfile(token, userId).catch(() => null);
-      if (profile) {
-        names.set(userId, profile.displayName);
-      }
-    }),
-  );
+  const names = await resolveNames(slack, token, referencedUsers(messages));
   const named = (userId: string): string => names.get(userId) ?? userId;
   const lines = messages.map((message) => {
     const author = message.user ? named(message.user) : message.bot_id ? "(app)" : "(unknown)";
@@ -199,16 +254,61 @@ export function createSlackWorkspaceReader(
         if (!userId) {
           return `Error: ${SLACK_USER_TOOL_NAME} requires a user id.`;
         }
-        const profile = await slack.userProfile(token, userId);
-        if (!profile) {
+        const person = await slack.userDetail(token, userId);
+        if (!person) {
           return `No profile for ${userId}. The user may be deactivated, or the bot may not be allowed to read profiles.`;
         }
-        // Name and timezone only. An email is a person's identity outside this
-        // workspace and no answer needs one to be written well.
+        return personLines(person).join("\n");
+      }
+      case SLACK_USERS_TOOL_NAME: {
+        const query = stringArg(args, "query");
+        if (!query) {
+          return `Error: ${SLACK_USERS_TOOL_NAME} requires something to search for.`;
+        }
+        const found = await slack.findUsers(token, query, MAX_USER_PAGES);
+        if (found.users.length === 0) {
+          return found.truncated
+            ? `No match for "${query}" in the first ${MAX_USER_PAGES * 200} people, and the workspace has more. Try the exact handle, or a user id.`
+            : `Nobody in this workspace matches "${query}".`;
+        }
+        const shown = found.users.slice(0, MAX_USER_MATCHES);
         return [
-          `${userId}: ${profile.displayName}`,
-          ...(profile.timezone ? [`timezone: ${profile.timezone}`] : []),
+          ...shown.map((person) => personLines(person).join(" · ")),
+          // Said rather than swallowed: a search that quietly missed someone is
+          // worse than one that admits it stopped looking.
+          ...(found.users.length > shown.length
+            ? [`(${found.users.length - shown.length} more match; narrow the search.)`]
+            : []),
+          ...(found.truncated
+            ? ["(The workspace has more people than this search read.)"]
+            : []),
         ].join("\n");
+      }
+      case SLACK_REACTIONS_TOOL_NAME: {
+        const channel = stringArg(args, "channel");
+        const ts = stringArg(args, "ts");
+        if (!channel || !ts) {
+          return `Error: ${SLACK_REACTIONS_TOOL_NAME} requires a channel id and a message ts.`;
+        }
+        const reactions = await slack.messageReactions(token, { channel, ts });
+        if (reactions.length === 0) {
+          return "Nobody has reacted to that message.";
+        }
+        // Names, not ids, for the same reason a transcript resolves them: a list
+        // of `U04B7QK9E` answers "who acknowledged this" with nothing.
+        const names = await resolveNames(
+          slack,
+          token,
+          reactions.flatMap((reaction) => reaction.users),
+        );
+        return reactions
+          .map((reaction) => {
+            const who = reaction.users.map((id) => names.get(id) ?? id);
+            const listed = who.slice(0, MAX_REACTION_NAMES).join(", ");
+            const rest = who.length - Math.min(who.length, MAX_REACTION_NAMES);
+            return `:${reaction.name}: ${reaction.count} — ${listed}${rest > 0 ? ` and ${rest} more` : ""}`;
+          })
+          .join("\n");
       }
       case SLACK_CHANNELS_TOOL_NAME: {
         const query = stringArg(args, "query").toLowerCase().replace(/^#/, "");

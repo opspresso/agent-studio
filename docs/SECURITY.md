@@ -611,9 +611,11 @@ Two things are refused by construction rather than by omission:
   deliberately not reachable from any tool. A run is steered by text it did not write; a run
   that could also post is one where a message planted in a channel can make the bot speak
   somewhere else.
-- **No email**, though `users:read.email` is granted. `SlackUser` answers with a display name and
-  a timezone, which is the rule [caller context](#caller-context) already applies, for the same
-  reason: an email identifies a person outside Slack and no answer needs one to be written well.
+- **No email**, though `users:read.email` is granted. `SlackUser` and `SlackUsers` answer with a
+  name, job title, timezone, status line and avatar — everything a colleague sees by clicking the
+  profile — and never the address. That is the rule [caller context](#caller-context) already
+  applies, for the same reason: an email identifies a person outside Slack and no answer needs one
+  to be written well. The scope is granted and simply not read; nothing in the adapter maps it.
 
 What *is* carried in is untrusted in exactly the way an attached document is: a channel's
 messages were written by whoever is in that channel, and they reach the model as text. PII

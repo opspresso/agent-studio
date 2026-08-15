@@ -24,13 +24,17 @@ export const FETCH_URL_TOOL_NAME = "FetchUrl";
 export const SLACK_HISTORY_TOOL_NAME = "SlackHistory";
 export const SLACK_THREAD_TOOL_NAME = "SlackThread";
 export const SLACK_USER_TOOL_NAME = "SlackUser";
+export const SLACK_USERS_TOOL_NAME = "SlackUsers";
 export const SLACK_CHANNELS_TOOL_NAME = "SlackChannels";
-/** The four that are served by one reader, so the loop can route them together. */
+export const SLACK_REACTIONS_TOOL_NAME = "SlackReactions";
+/** The set served by one reader, so the loop can route them together. */
 export const SLACK_TOOL_NAMES: readonly string[] = [
   SLACK_HISTORY_TOOL_NAME,
   SLACK_THREAD_TOOL_NAME,
   SLACK_USER_TOOL_NAME,
+  SLACK_USERS_TOOL_NAME,
   SLACK_CHANNELS_TOOL_NAME,
+  SLACK_REACTIONS_TOOL_NAME,
 ];
 /**
  * Every name a builtin may claim. An MCP tool that arrives under one of these
@@ -202,7 +206,7 @@ export interface AgentCapabilityDeps {
   editImage?: ImageEditor;
   fetchUrl?: UrlFetcher;
   /**
-   * Serves the four Slack read tools, or absent when this run has no workspace
+   * Serves the Slack read tools, or absent when this run has no workspace
    * to look at. One function rather than four deps: the tools differ only in
    * which Slack call they make, and the reader already holds the token that
    * decides *which* workspace — a choice the model must not get to make.
@@ -727,13 +731,31 @@ const SLACK_TOOL_DEFS: readonly ChannelToolDef[] = [
     function: {
       name: SLACK_USER_TOOL_NAME,
       description:
-        "Look up who a Slack user id belongs to: display name and timezone. Email addresses are never returned. Transcripts already name their speakers, so this is for an id that appears somewhere else.",
+        "Look up who a Slack user id belongs to: name, job title, timezone, status line (where “OOO until Friday” lives), avatar, and whether the account is a bot or deactivated. Email addresses are never returned. Transcripts already name their speakers, so this is for an id that appears somewhere else.",
       parameters: {
         type: "object",
         properties: {
           user: { type: "string", description: "The user id, e.g. U08ABCDEFG." },
         },
         required: ["user"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: SLACK_USERS_TOOL_NAME,
+      description:
+        "Find people by name or handle, with the same details SlackUser returns. Use it when a request names someone — “what is Ada working on” — and you have a name rather than an id. Deactivated accounts are left out.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Part of a name or handle, e.g. “ada” or “kim”.",
+          },
+        },
+        required: ["query"],
       },
     },
   },
@@ -751,6 +773,22 @@ const SLACK_TOOL_DEFS: readonly ChannelToolDef[] = [
             description: "Only channels whose name contains this. Omit to list them all.",
           },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: SLACK_REACTIONS_TOOL_NAME,
+      description:
+        "Read the emoji reactions on one message, and who left them. Use it when acknowledgement is the question — who has seen a notice, who signed off, whether anyone objected — since a team often answers with a reaction instead of a reply.",
+      parameters: {
+        type: "object",
+        properties: {
+          channel: { type: "string", description: "The channel id the message is in." },
+          ts: { type: "string", description: "The message's timestamp." },
+        },
+        required: ["channel", "ts"],
       },
     },
   },

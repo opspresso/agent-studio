@@ -1672,10 +1672,23 @@ than the one that failed.
 
 #### Reading the workspace
 
-A version may opt into four read-only tools (`parameters.slackWorkspace`): `SlackHistory`,
-`SlackThread`, `SlackUser` and `SlackChannels`. The bot already holds the scopes; what was
-missing was a way for a *run* to spend them. `SlackChannels` exists because every other Slack
-call takes an id while a person names a channel.
+A version may opt into six read-only tools (`parameters.slackWorkspace`): `SlackHistory`,
+`SlackThread`, `SlackUser`, `SlackUsers`, `SlackChannels` and `SlackReactions`. The bot already
+holds the scopes; what was missing was a way for a *run* to spend them.
+
+Two of them exist because **Slack addresses everything by id while people use names**:
+`SlackChannels` turns `#deploy` into a channel id, and `SlackUsers` does the same for a person —
+by walking `users.list` and filtering, since a bot gets no name search. That walk is bounded and
+*says when it stopped*, because a search that quietly missed someone is worse than one that
+admits it. `SlackReactions` is there because a team often answers with an emoji rather than a
+reply, so "who has seen this" is unanswerable from a transcript alone.
+
+`SlackUser` returns the whole profile — name, job title, timezone, the status line where
+"OOO until Friday" lives, the avatar, and whether the account is an app or deactivated. The
+caller block gets a narrower view of the same lookup: it is spliced into the system prompt on
+every turn, so it carries the least that identifies someone, while a tool result is asked for
+once. **One `users.info` answers both**, and the cache holds the wider one — caching the
+narrower would make a project using caller context and this tool fetch the same person twice.
 
 The engine routes all four names to one injected reader
 (`AgentCapabilityDeps.readSlack`), which holds the bot token — so *which* workspace is read is

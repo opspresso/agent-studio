@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
-import type { RunCaller } from "@/domain/execution/actor";
+import type { SlackUserDetail } from "@/domain/slack/types";
 
 /**
  * Remembered Slack profiles, per workspace.
+ *
+ * The *detail* is what is cached, not the caller block derived from it: both
+ * views come from one `users.info` call, and caching the narrower one would make
+ * a project that uses caller context and the profile tool fetch the same person
+ * twice.
  *
  * Every mention and every thread participant would otherwise cost a `users.info`
  * round trip on the request path — and a busy thread asks for the same handful
@@ -34,7 +39,7 @@ const MAX_ENTRIES = 2000;
 
 interface CacheEntry {
   /** `null` is a remembered miss, not an empty profile. */
-  value: RunCaller | null;
+  value: SlackUserDetail | null;
   expiresAt: number;
 }
 
@@ -53,7 +58,7 @@ export function getCachedProfile(
   token: string,
   userId: string,
   now: number = Date.now(),
-): { value: RunCaller | null } | undefined {
+): { value: SlackUserDetail | null } | undefined {
   const key = cacheKey(token, userId);
   const entry = cache.get(key);
   if (!entry) {
@@ -69,7 +74,7 @@ export function getCachedProfile(
 export function rememberProfile(
   token: string,
   userId: string,
-  value: RunCaller | null,
+  value: SlackUserDetail | null,
   now: number = Date.now(),
 ): void {
   const key = cacheKey(token, userId);

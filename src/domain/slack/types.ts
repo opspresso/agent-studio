@@ -61,6 +61,43 @@ export interface SlackChannelInfo {
 }
 
 /**
+ * A person, as `users.info` describes them — narrowed to what a run may see.
+ *
+ * **No email**, though `users:read.email` is granted. That is the rule
+ * `callerFrom` already applies to the caller block, for the same reason: an
+ * email identifies someone outside Slack, and no answer needs one to be written
+ * well. Everything here is visible to anyone in the workspace who clicks a
+ * profile.
+ *
+ * Every field but `id` and `displayName` is optional because Slack fills almost
+ * none of them reliably — its own reference warns a field "may not be present at
+ * all, may be null or may contain the empty string".
+ */
+export interface SlackUserDetail {
+  id: string;
+  displayName: string;
+  realName?: string;
+  /** What they do, as they wrote it — "Staff Engineer, Platform". */
+  title?: string;
+  timezone?: string;
+  /** Their status line, which is where "OOO until Friday" lives. */
+  statusText?: string;
+  statusEmoji?: string;
+  avatarUrl?: string;
+  isBot?: boolean;
+  /** Deactivated. Worth saying out loud: an unanswered mention often is this. */
+  deactivated?: boolean;
+}
+
+/** One emoji on one message, and who put it there. */
+export interface SlackReaction {
+  name: string;
+  count: number;
+  /** Slack user ids. `full: true` on the request keeps a long list from being cut. */
+  users: string[];
+}
+
+/**
  * How Slack lays out the tasks a streaming message reports: `timeline` shows
  * them one after another with their text, `plan` shows them together.
  */
