@@ -236,6 +236,32 @@ export function createReplySink(
    */
   let ambientClosed = false;
   const indicator = loadingIndicator || DEFAULT_LOADING_INDICATOR;
+  /**
+   * Which payload this stream speaks — decided by Slack, not by us.
+   *
+   * A stream is opened in one of two modes and stays there: `markdown_text` as
+   * a top-level argument, or `chunks`. Sending the other one afterwards is
+   * `streaming_mode_mismatch`, and sending both on one call is
+   * `cannot_provide_both_markdown_text_and_chunks`.
+   *
+   * A channel is therefore *always* chunks, because its progress rows are
+   * chunks and they open the message before any text exists — so the answer
+   * travels as a `markdown_text` **chunk**, which is a listed chunk type and is
+   * how Slack means a message to carry both axes. A DM has no rows and stays on
+   * the plain argument.
+   *
+   * This was learned the hard way twice: the whole answer was silently dropped
+   * on every channel run, because `push` swallows a failed append and only the
+   * final close ever logged.
+   */
+  const payload: "text" | "chunks" = target.assistantThread ? "text" : "chunks";
+
+  /** The answer, shaped for whichever mode this stream is in. */
+  function answerPayload(text: string): { markdown_text: string } | { chunks: SlackChunk[] } {
+    return payload === "text"
+      ? { markdown_text: text }
+      : { chunks: [{ type: "markdown_text", text }] };
+  }
 
   async function open(text: string): Promise<void> {
     try {
@@ -562,7 +588,7 @@ export function createReplySink(
             .appendStream(token, {
               channel: messageChannel,
               ts: messageTs,
-              markdown_text: fullText,
+              ...answerPayload(fullText),
             })
             .then(() => {
               flushed = fullText.length;
@@ -581,7 +607,7 @@ export function createReplySink(
           .appendStream(token, {
             channel: messageChannel,
             ts: messageTs,
-            markdown_text: fullText.slice(flushed),
+            ...answerPayload(fullText.slice(flushed)),
           })
           .then(() => {
             flushed = fullText.length;
@@ -671,19 +697,24 @@ export function createReplySink(
           // `stopStream` did not. Every unfinished row rides out here — a step
           // left `in_progress` on a finished message reads as a run that never
           // came back, and the ambient row is one of them when no step replaced it.
-          if (closingChunks.length > 0) {
-            await slack
-              .appendStream(token, {
-                channel: messageChannel,
-                ts: messageTs,
-                chunks: closingChunks,
-              })
-              .catch((error) => log.warn("slack", "checklist could not be closed", error));
-          }
+          // One call, because both halves are chunks in this mode: the rows the
+          // run never closed, then whatever text Slack has not taken. A stream
+          // that has been stopped can take neither, so nothing may be left for
+          // afterwards.
+          const closing: SlackChunk[] = [
+            ...closingChunks,
+            ...(remaining ? [{ type: "markdown_text" as const, text: remaining }] : []),
+          ];
           await slack.stopStream(token, {
             channel: messageChannel,
             ts: messageTs,
-            ...(remaining ? { markdown_text: remaining } : {}),
+            ...(payload === "chunks"
+              ? closing.length > 0
+                ? { chunks: closing }
+                : {}
+              : remaining
+                ? { markdown_text: remaining }
+                : {}),
           });
           flushed = fullText.length;
         } else {

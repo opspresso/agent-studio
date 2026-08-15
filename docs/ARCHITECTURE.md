@@ -1542,14 +1542,23 @@ mentioning. A tool result is a boundary, so steps close as the run goes; anythin
 the end is closed on its own `chat.appendStream` just before the stop, since a step left
 `in_progress` on a finished message reads as a run that never came back.
 
-**The close is two calls, and it has to be.** Slack refuses `markdown_text` and `chunks` on one
-request (`cannot_provide_both_markdown_text_and_chunks`), and sending both to `chat.stopStream`
-threw — which left the stream open and the answer undelivered, so a channel showed
-"is thinking…" forever on a run that had already finished. The rows go first because a stopped
-stream cannot take an append, and on their own call because they are the half that may be lost:
-a run that loses its tick-offs still answered, one that loses `stopStream` did not. If the close
-fails anyway, whatever Slack never took is posted as a plain message — that failure was silent
-for a release, and a reader had no way to tell a lost answer from a slow one.
+**A stream has a mode, and Slack decides it.** `chat.startStream` fixes whether the message
+speaks `markdown_text` (a top-level argument) or `chunks`; the other one later is
+`streaming_mode_mismatch`, and both on one call is
+`cannot_provide_both_markdown_text_and_chunks`. A channel is therefore **always chunks** — its
+progress rows are chunks and they open the message before any text exists — so the answer
+travels as a `markdown_text` *chunk*, which is a listed chunk type and is how Slack means one
+message to carry both axes. A DM has no rows and stays on the plain argument.
+
+That was learned twice, in production both times, because `push` swallows a failed append: a
+channel's every text append was rejected and only the final close ever logged, so the answer was
+silently dropped and then re-posted by the fallback below as a plain message. The test fakes
+enforce both rules now — passing tests had been accepting calls Slack rejects.
+
+The close therefore carries the unfinished rows *and* the last of the answer in one call, since
+in this mode both are chunks. If it fails anyway, whatever Slack never took is posted as a plain
+message — that failure was silent for a release, and a reader had no way to tell a lost answer
+from a slow one.
 
 The two surfaces phrase the same step differently, and the sink owns that: a checklist row
 stands alone and keeps the bare name (`Skill: deep-research`), while the DM's status line and

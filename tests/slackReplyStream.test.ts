@@ -292,22 +292,46 @@ describe("progress in a channel thread that cannot stream", () => {
 
 /** A channel surface that can stream, which is the ordinary one. */
 /**
- * Slack refuses `markdown_text` and `chunks` on the same request
- * (`cannot_provide_both_markdown_text_and_chunks`). The fakes enforce it because
- * not enforcing it is exactly why this shipped: eighty passing tests accepted a
- * call Slack rejects, and a channel showed "is thinking…" forever on a run that
- * had already answered.
+ * The two rules Slack enforces on one stream, which the fakes enforce because
+ * not enforcing them is exactly how both shipped:
+ *
+ * - `markdown_text` and `chunks` on the same request is
+ *   `cannot_provide_both_markdown_text_and_chunks`;
+ * - the mode a stream opens in is the mode it stays in — the other one later is
+ *   `streaming_mode_mismatch`. A channel's progress rows are chunks and they
+ *   open the message, so on a channel the answer must travel as a
+ *   `markdown_text` *chunk*.
+ *
+ * Passing tests accepted calls Slack rejects, twice, and `push` swallows a
+ * failed append — so every channel run silently dropped its whole answer.
  */
-function refuseBothPayloads(
-  method: string,
-  args: { markdown_text?: string; text?: string; chunks?: unknown[] },
-): void {
-  if ((args.markdown_text ?? args.text) !== undefined && args.chunks !== undefined) {
-    throw new Error(`Slack ${method} failed: cannot_provide_both_markdown_text_and_chunks`);
-  }
+function streamModeGuard() {
+  let mode: "text" | "chunks" | undefined;
+  return (
+    method: string,
+    args: { markdown_text?: string; text?: string; chunks?: unknown[] },
+  ): void => {
+    const hasText = (args.markdown_text ?? args.text) !== undefined;
+    const hasChunks = args.chunks !== undefined;
+    if (hasText && hasChunks) {
+      throw new Error(`Slack ${method} failed: cannot_provide_both_markdown_text_and_chunks`);
+    }
+    const used = hasChunks ? "chunks" : hasText ? "text" : undefined;
+    if (!used) {
+      return;
+    }
+    if (mode === undefined) {
+      mode = used;
+      return;
+    }
+    if (mode !== used) {
+      throw new Error(`Slack ${method} failed: streaming_mode_mismatch`);
+    }
+  };
 }
 
 function makeStreamingChannelFake() {
+  const guard = streamModeGuard();
   const streamStarts: Array<Record<string, unknown>> = [];
   const chunks: Array<{ at: "start" | "append" | "stop"; chunk: SlackChunk }> = [];
   const appended: string[] = [];
@@ -316,12 +340,18 @@ function makeStreamingChannelFake() {
   const posted: string[] = [];
   function record(at: "start" | "append" | "stop", list: SlackChunk[] | undefined): void {
     for (const chunk of list ?? []) {
+      // Text is text whichever envelope carried it — a test about the answer
+      // should not have to know which mode the stream is in.
+      if (chunk.type === "markdown_text") {
+        appended.push(chunk.text);
+        continue;
+      }
       chunks.push({ at, chunk });
     }
   }
   const slack = {
     async startStream(_token: string, args: Record<string, unknown>) {
-      refuseBothPayloads("chat.startStream", args as never);
+      guard("chat.startStream", args as never);
       streamStarts.push(args);
       record("start", args.chunks as SlackChunk[] | undefined);
       return { ts: "200.1", channel: "C1" };
@@ -330,14 +360,14 @@ function makeStreamingChannelFake() {
       _token: string,
       args: { markdown_text?: string; chunks?: SlackChunk[] },
     ) {
-      refuseBothPayloads("chat.appendStream", args);
+      guard("chat.appendStream", args);
       if (args.markdown_text) {
         appended.push(args.markdown_text);
       }
       record("append", args.chunks);
     },
     async stopStream(_token: string, args: { markdown_text?: string; chunks?: SlackChunk[] }) {
-      refuseBothPayloads("chat.stopStream", args);
+      guard("chat.stopStream", args);
       stopped.push({ ...(args.markdown_text ? { markdown_text: args.markdown_text } : {}) });
       record("stop", args.chunks);
     },
@@ -406,16 +436,16 @@ describe("progress on a channel stream's task axis", () => {
 
     // One message for both axes — the progress never had to be overwritten.
     expect(streamStarts).toHaveLength(1);
-    expect(appended.join("")).toBe("found ");
-    // The close carries the text and *only* the text. Slack refuses both
-    // payloads on one call, and sending them together is what left a finished
-    // run showing "is thinking…" forever.
-    expect(stopped).toEqual([{ markdown_text: "it" }]);
+    // Both halves arrive as chunks, because the progress row opened the stream
+    // in chunks mode and Slack keeps a stream in the mode it opened in. The
+    // answer is a `markdown_text` chunk, which is a listed chunk type.
+    expect(appended.join("")).toBe("found it");
+    expect(stopped).toEqual([{}]);
     // A step left `in_progress` on a finished message reads as a run that never
-    // came back — so the rows close on their own append, before the stream is
-    // stopped and can no longer take one.
+    // came back, so the unfinished rows ride out on the close — alongside the
+    // last of the answer, since in this mode both are chunks.
     expect(chunks.at(-1)).toEqual({
-      at: "append",
+      at: "stop",
       chunk: { type: "task_update", id: "run-progress", title: "is using search…", status: "complete" },
     });
   });
