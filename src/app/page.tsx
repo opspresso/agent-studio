@@ -18,10 +18,13 @@ import {
   IconBook2,
   IconRobot,
   IconChartBar,
+  IconFiles,
   IconFolder,
   IconMessageCircle,
   IconPackage,
   IconPhoto,
+  IconSearch,
+  IconTimeline,
   IconTool,
 } from "@tabler/icons-react";
 import { SignInButton } from "@/components/SignInButton";
@@ -69,6 +72,12 @@ const DOMAINS = [
     Icon: IconPackage,
   },
   {
+    label: "catalog",
+    title: "home.domain.catalog",
+    body: "home.domain.catalogBody",
+    Icon: IconSearch,
+  },
+  {
     label: "chats",
     title: "home.domain.chats",
     body: "home.domain.chatsBody",
@@ -81,6 +90,12 @@ const DOMAINS = [
     Icon: IconPhoto,
   },
   {
+    label: "artifacts",
+    title: "home.domain.artifacts",
+    body: "home.domain.artifactsBody",
+    Icon: IconFiles,
+  },
+  {
     label: "surfaces",
     title: "home.domain.surfaces",
     body: "home.domain.surfacesBody",
@@ -91,6 +106,12 @@ const DOMAINS = [
     title: "home.domain.cost",
     body: "home.domain.costBody",
     Icon: IconChartBar,
+  },
+  {
+    label: "traces",
+    title: "home.domain.traces",
+    body: "home.domain.tracesBody",
+    Icon: IconTimeline,
   },
 ] as const satisfies ReadonlyArray<{
   label: string;

@@ -71,7 +71,7 @@ export const en = {
   "home.headline": "Build an agent once,",
   "home.headlineAccent": " call it from anywhere.",
   "home.lede":
-    "Author a prompt or an agent as a project, iterate in versions, publish one — then call it from the console, an OpenAI-compatible API, Slack, a webhook, or another agent. Every run attributed, priced, and bounded.",
+    "Author a prompt, an agent, or an image project, iterate in versions, publish one — then call it from the console, an OpenAI-compatible API, Slack, a webhook, or another agent. Every run attributed, priced, and bounded.",
   "home.signInHint": "Your Google account, on one of this deployment’s allowed domains.",
   "home.proof.engine": "One engine",
   "home.proof.engineNote": "Every model, every surface",
@@ -89,7 +89,7 @@ export const en = {
     "Author prompts, agents, and image projects as immutable versions. Publish one; callers pin it or follow the pointer.",
   "home.domain.agent": "Agent loop",
   "home.domain.agentBody":
-    "A multi-turn tool loop with turn budgets, on-demand skills, and subagent transfers — streamed end to end.",
+    "A multi-turn tool loop with turn and context budgets, on-demand skills, subagent transfers, and opt-in URL reading — streamed end to end.",
   "home.domain.mcp": "MCP tools",
   "home.domain.mcpBody":
     "Register a server once; versions bind it, narrow its tools, and override headers — with per-project OAuth, secrets encrypted at rest.",
@@ -99,18 +99,27 @@ export const en = {
   "home.domain.plugins": "Agent Plugins",
   "home.domain.pluginsBody":
     "Skills and MCP servers sync from one plugins repo — the source of truth for every name it declares.",
+  "home.domain.catalog": "Capability catalog",
+  "home.domain.catalogBody":
+    "One searchable index of skills, MCP tools, and external agents. A version that opts in has its bindings widened per run by what the prompt and the request ask for.",
   "home.domain.chats": "Chats",
   "home.domain.chatsBody":
-    "Talk to any agent project — replies stream, tool traffic stays inline, and a run outlives the tab that started it.",
+    "Talk to any agent project — attach images and documents, replies stream, tool traffic stays inline, and a run outlives the tab that started it.",
   "home.domain.images": "Images",
   "home.domain.imagesBody":
     "Draw or edit from a prompt — as a project type, agent builtins, or an image subagent; an edit can address any image the run has seen.",
+  "home.domain.artifacts": "Artifacts",
+  "home.domain.artifactsBody":
+    "Every image or file a run produced, stored under a signed address and listed per project and per person — whichever surface it came from.",
   "home.domain.surfaces": "Slack, A2A & webhooks",
   "home.domain.surfacesBody":
-    "Per-project Slack bots, A2A in both directions, webhook and schedule triggers — every entry point runs the same engine.",
+    "Per-project Slack bots that answer mentions, DMs, and keyword-matched channel messages, A2A in both directions, webhook and schedule triggers — every entry point runs the same engine.",
   "home.domain.cost": "Cost & guards",
   "home.domain.costBody":
-    "Every call priced from the model registry and rolled up per project, per caller, per day — daily and monthly thresholds warn, then refuse.",
+    "Every call priced — what the channel charged, or the model registry's rate — and rolled up per project, per caller, per day. Daily and monthly thresholds warn, then refuse; concurrency and member tiers bound the rest.",
+  "home.domain.traces": "Traces & audit",
+  "home.domain.tracesBody":
+    "Every agent run traced turn by turn, tool traffic included, and reachable from its project. Secret reveals, admin overrides, and deletions each leave an audit row.",
   // Split from the sentence because the bolded name differs by language: the
   // English page glosses the Korean word, and the Korean page has no gloss to
   // give.
