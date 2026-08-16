@@ -28,6 +28,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
     optimizePackageImports: ["@mantine/core", "@mantine/hooks", "@tabler/icons-react"],
+    useTypeScriptCli: true,
   },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];

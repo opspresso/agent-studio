@@ -2,8 +2,11 @@ allowBuilds:
   esbuild: true
   sharp: true
 
-# Security overrides for Next.js transitive deps (Dependabot):
-# sharp <0.35 libvips CVEs (GHSA-f88m-g3jw-g9cj), postcss <8.5.10 XSS (GHSA-qx2v-qp2m-jg93).
 overrides:
+  # Keep Smithy transitive dependencies behind the minimum release-age gate.
+  '@smithy/core': 3.33.0
+  '@smithy/types': 4.17.0
+  # Security overrides for Next.js transitive deps (Dependabot):
+  # sharp <0.35 libvips CVEs (GHSA-f88m-g3jw-g9cj), postcss <8.5.10 XSS (GHSA-qx2v-qp2m-jg93).
   sharp: ">=0.35.0"
   "postcss@<8.5.10": ">=8.5.10"
