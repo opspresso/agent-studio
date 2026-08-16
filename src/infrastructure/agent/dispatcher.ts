@@ -44,13 +44,28 @@ async function transferOpenAi(
 }
 
 export const remoteAgentDispatcher: RemoteAgentDispatcher = {
-  async send(target, message, signal) {
+  async send(target, message, signal, options) {
     if (target.protocol === "a2a") {
-      const result = await sendA2aMessage(target.url, target.headers, message, signal);
+      // The options travel only when there is one to send: without a
+      // conversation the call is exactly the call it always was.
+      const result = await sendA2aMessage(
+        target.url,
+        target.headers,
+        message,
+        signal,
+        ...(options?.contextId ? [{ contextId: options.contextId }] : []),
+      );
       return result.ok
-        ? { ok: true, text: result.text, images: result.images }
+        ? {
+            ok: true,
+            text: result.text,
+            images: result.images,
+            ...(result.contextId ? { contextId: result.contextId } : {}),
+          }
         : { ok: false, error: result.error };
     }
+    // The OpenAI-shaped protocol has no conversation to continue; a
+    // `contextId` handed here has nowhere to go and is not pretended into one.
     return transferOpenAi(target, message, signal);
   },
 

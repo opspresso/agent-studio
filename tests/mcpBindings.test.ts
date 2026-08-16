@@ -22,6 +22,8 @@ import { encryptHeaderOverrides, encryptHeaders } from "@/infrastructure/crypto/
 import type { ImageChannel } from "@/domain/llm/imageChannel";
 import type { EngineChunk } from "@/domain/llm/types";
 import type { McpBinding, Project, Version } from "@/domain/project/types";
+import type { RunConversation } from "@/domain/execution/actor";
+import { getCachedDiscovery } from "@/infrastructure/mcp/discoveryCache";
 import type { UsageDelta } from "@/domain/usage/types";
 import { contentChunk, FakeChannel, usageChunk } from "./fakeChannel";
 import { fakeSkillRepository } from "./fakeSkills";
@@ -128,7 +130,7 @@ function stubMcpServer(toolNames: string[] = ["search"]): Array<Record<string, s
 async function dispatchHeaders(
   projectName: string,
   mcpList: McpBinding[],
-  overrides: Parameters<typeof depsFixture>[1] = {},
+  overrides: Parameters<typeof depsFixture>[1] & { conversation?: RunConversation } = {},
 ): Promise<Record<string, string>> {
   const seen = stubMcpServer();
   try {
@@ -138,6 +140,7 @@ async function dispatchHeaders(
       project: projectFixture(projectName),
       version: versionFixture(projectName, mcpList),
       messages: [{ role: "user", content: "hi" }],
+      ...(overrides.conversation ? { conversation: overrides.conversation } : {}),
     })) {
       chunks.push(chunk);
     }
@@ -169,6 +172,47 @@ describe("per-project MCP header overrides at dispatch", () => {
     const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }]);
 
     expect(headers["x-tenant-id"]).toBe("painter");
+  });
+
+  it("names the run's conversation on every request, outside the discovery cache key", async () => {
+    // What lets a stateful server (a memory server) tell one thread's working
+    // notes from the project's shared knowledge — and what must *not* cost a
+    // full discovery per thread: the tenant keys the cache, the conversation
+    // only travels.
+    const conversation: RunConversation = { surface: "slack", id: "C1:1723.45" };
+    const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }], { conversation });
+
+    expect(headers["x-conversation-id"]).toBe("slack:C1:1723.45");
+    expect(headers["x-tenant-id"]).toBe("painter");
+    // Cached under the identity headers alone: a second thread finds the entry.
+    expect(
+      getCachedDiscovery(MCP_URL, {
+        Authorization: "Bearer registry-default",
+        "X-Shared": "shared-value",
+        "X-Tenant-Id": "painter",
+      }),
+    ).toMatchObject({ kind: "tools" });
+  });
+
+  it("sends no conversation header for a run that has no conversation", async () => {
+    const headers = await dispatchHeaders("painter", [{ name: "shared-mcp" }]);
+
+    expect(headers["x-conversation-id"]).toBeUndefined();
+  });
+
+  it("a binding cannot name another conversation either", async () => {
+    const headers = await dispatchHeaders(
+      "painter",
+      [
+        {
+          name: "shared-mcp",
+          headers: encryptHeaderOverrides({ "x-conversation-id": "chat:not-mine" }),
+        },
+      ],
+      { conversation: { surface: "chat", id: "mine" } },
+    );
+
+    expect(headers["x-conversation-id"]).toBe("chat:mine");
   });
 
   it("a binding cannot impersonate another project's tenant", async () => {

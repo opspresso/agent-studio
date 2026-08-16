@@ -1,4 +1,4 @@
-import type { RunActor, RunCaller } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
 import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository } from "@/domain/chat/runLog";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
@@ -19,6 +19,8 @@ export interface AgentRunParams {
    * `callerContext`; the facade applies that gate, not this boundary.
    */
   caller?: RunCaller;
+  /** The chat itself: `chat:{chatId}`, so a transfer or an MCP server can tell it apart from the owner's other chats. */
+  conversation: RunConversation;
   signal?: AbortSignal;
 }
 

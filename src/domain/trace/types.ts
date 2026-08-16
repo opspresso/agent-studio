@@ -38,6 +38,13 @@ export interface Trace {
    * upwards, not only downwards through `subagentTraceId`.
    */
   ancestry?: string[];
+  /**
+   * The conversation the run belonged to, as `conversationKey` spells it —
+   * `chat:{id}`, `slack:{channel}:{thread}`, `a2a:{client}:{contextId}`,
+   * `api:{caller}:{id}`. Absent for a firing, and on traces written before
+   * conversations existed. What lets the runs of one thread be found together.
+   */
+  conversation?: string;
   status: TraceStatus;
   spans: TraceSpan[];
   /** Spans dropped after the per-trace cap; absent when nothing was dropped. */

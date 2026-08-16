@@ -5,6 +5,7 @@ import { VIEW_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { chatCompletionsSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
+import { requestConversation } from "@/app/api/projects/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { turnBody } from "@/app/api/_lib/body";
 import { toChatCompletion, toChatCompletionChunks } from "@/app/api/projects/_lib/openai";
@@ -31,6 +32,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
     // The strategy→executor mapping lives in runProject; this route only
     // wraps the answer in the OpenAI schema. An image project is refused
     // there — an image has no chat completion.
+    const conversation = requestConversation(request, principalActor(principal));
     const params = {
       project,
       version: versionEntity,
@@ -38,6 +40,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       messages: parsed.data.messages,
       actor: principalActor(principal),
       ...(principal.caller ? { caller: principal.caller } : {}),
+      ...(conversation ? { conversation } : {}),
     };
 
     // Both shapes answer with the same signer and the same lifetime, so a file

@@ -7,6 +7,7 @@
 import type { CatalogSearchDeps } from "@/application/catalog/searchCatalog";
 import type { ExternalAgentRepository } from "@/domain/agent/repository";
 import type { RemoteAgentDispatcher } from "@/domain/agent/dispatcher";
+import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
 import type { LlmChannel } from "@/domain/llm/channel";
 import type { ChatMessageInput, EngineParameters } from "@/domain/llm/types";
 import type { McpRepository } from "@/domain/mcp/repository";
@@ -23,7 +24,7 @@ import type { UrlPolicy } from "@/domain/security/urlPolicy";
 import type { HttpResourceReader } from "@/domain/net/httpResource";
 import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
 import type { SecretCipher } from "@/domain/security/secretCipher";
-import type { RunActor, RunCaller } from "@/domain/execution/actor";
+import type { RunActor, RunCaller, RunConversation } from "@/domain/execution/actor";
 import type { RunBracketDeps } from "@/application/run/runBracket";
 import type { SlackWorkspaceReader } from "@/domain/slack/reader";
 
@@ -70,6 +71,13 @@ export interface ExecutionDeps extends RunBracketDeps {
   slackWorkspace: (project: Project) => SlackWorkspaceReader | null;
   /** External-agent dispatch — wired by the composition root; tests inject a fake. */
   remoteAgents: RemoteAgentDispatcher;
+  /**
+   * Which remote conversation an external agent holds for one of ours, so a
+   * second transfer from the same conversation continues it. Optional because
+   * a deployment without it loses only continuity: every transfer is then a
+   * cold start, which is what every transfer was before this existed.
+   */
+  remoteConversations?: RemoteConversationRepository;
   /** MCP tool sessions — wired by the composition root; tests inject a fake. */
   mcpSessions: McpSessionFactory;
   /** Per-project OAuth for registry servers that require it. */
@@ -127,6 +135,8 @@ export interface ExecuteVersionInput {
    * at all otherwise.
    */
   caller?: RunCaller;
+  /** Which conversation this run belongs to, when the surface has one. */
+  conversation?: RunConversation;
   signal?: AbortSignal;
 }
 
@@ -138,6 +148,8 @@ export interface ExecuteAgentInput {
   actor?: RunActor;
   /** See {@link ExecuteVersionInput.caller}. */
   caller?: RunCaller;
+  /** See {@link ExecuteVersionInput.conversation}. */
+  conversation?: RunConversation;
   /**
    * Whose gallery this run's output belongs in, when the surface can resolve an
    * address the actor does not carry — a Slack actor is a workspace id.
@@ -160,6 +172,8 @@ export interface ExecuteProjectInput {
   actor?: RunActor;
   /** See {@link ExecuteVersionInput.caller}. */
   caller?: RunCaller;
+  /** See {@link ExecuteVersionInput.conversation}. */
+  conversation?: RunConversation;
   signal?: AbortSignal;
 }
 
@@ -195,13 +209,17 @@ export function callerFor(input: { version: Version; caller?: RunCaller }): { ca
  */
 export function toRunInput(
   input: ExecuteProjectInput,
-): Pick<ExecuteAgentInput, "project" | "version" | "messages" | "actor" | "caller" | "signal"> {
+): Pick<
+  ExecuteAgentInput,
+  "project" | "version" | "messages" | "actor" | "caller" | "conversation" | "signal"
+> {
   return {
     project: input.project,
     version: input.version,
     messages: input.messages,
     ...(input.actor ? { actor: input.actor } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
+    ...(input.conversation ? { conversation: input.conversation } : {}),
     signal: input.signal,
   };
 }

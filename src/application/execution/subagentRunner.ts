@@ -17,7 +17,7 @@ import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
 import type { Project, SubagentRef, Version } from "@/domain/project/types";
 import type { ImageBytes } from "@/domain/llm/imageChannel";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
-import { descend, type RunOrigin } from "@/domain/execution/actor";
+import { conversationKey, descend, type RunOrigin } from "@/domain/execution/actor";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps } from "./deps";
@@ -168,7 +168,13 @@ export function buildSubagentRunner(
       }
       // A remote agent takes one text message, which is exactly the shape the
       // transcript was rendered into — so it carries the conversation too.
-      return yield* runRemoteSubagent(deps, agentName, withTranscript(message, transcript), signal);
+      return yield* runRemoteSubagent(
+        deps,
+        agentName,
+        withTranscript(message, transcript),
+        signal,
+        origin,
+      );
     }
     // Refuse cycles and runaway nesting as tool errors, like an unknown agent:
     // the parent sees the refusal and can answer, instead of the run burning
@@ -455,7 +461,7 @@ export async function* runLocalSubagent(
       // — so a child that found an agent can also transfer to it.
       version: runVersion,
       discovered,
-    } = await resolveRunTools(deps, version, signal, discoveryQueries(version, [message]));
+    } = await resolveRunTools(deps, version, signal, discoveryQueries(version, [message]), origin);
     if (discovered.length > 0) {
       // A gain, so it is logged rather than reported as a loss — see the field.
       log.info(
@@ -533,10 +539,19 @@ export async function* runLocalSubagent(
 }
 
 export async function* runRemoteSubagent(
-  deps: Pick<ExecutionDeps, "externalAgents" | "urlPolicy" | "cipher" | "remoteAgents">,
+  deps: Pick<
+    ExecutionDeps,
+    "externalAgents" | "urlPolicy" | "cipher" | "remoteAgents" | "remoteConversations"
+  >,
   agentName: string,
   message: string,
   signal?: AbortSignal,
+  /**
+   * Where the transfer came from. Its conversation, with the transferring
+   * project (the chain's last element), is what a remote `contextId` is
+   * remembered under; without one every transfer is its own conversation.
+   */
+  origin?: RunOrigin,
 ): AsyncGenerator<EngineChunk, string> {
   const agent = await deps.externalAgents.get(agentName);
   if (!agent) {
@@ -557,9 +572,32 @@ export async function* runRemoteSubagent(
     protocol: agent.protocol,
     headers: deps.cipher.decryptHeadersForOutbound(agent.headers),
   };
+  // The remote conversation to continue, if this one has been there before.
+  // Only an A2A agent has one to continue, and only a run in a conversation
+  // has a key to look it up by; a lookup that fails costs a cold start, not
+  // the transfer — the read is a hint and is treated as one.
+  const projectName = origin?.ancestry.at(-1);
+  const key = origin?.conversation ? conversationKey(origin.conversation) : undefined;
+  const continuity =
+    deps.remoteConversations && agent.protocol === "a2a" && projectName && key
+      ? { store: deps.remoteConversations, projectName, key }
+      : undefined;
+  let contextId: string | null = null;
+  if (continuity) {
+    try {
+      contextId = await continuity.store.get(continuity.projectName, agentName, continuity.key);
+    } catch (error) {
+      log.warn("run", `remote conversation lookup failed for '${agentName}'; starting cold`, error);
+    }
+  }
   let reply;
   try {
-    reply = await deps.remoteAgents.send(target, message, signal);
+    reply = await deps.remoteAgents.send(
+      target,
+      message,
+      signal,
+      contextId ? { contextId } : undefined,
+    );
   } catch (error) {
     signal?.throwIfAborted();
     yield { author: agentName, error: error instanceof Error ? error.message : String(error) };
@@ -569,6 +607,15 @@ export async function* runRemoteSubagent(
   if (!reply.ok) {
     yield { author: agentName, error: reply.error };
     return "";
+  }
+  // Remembered after every successful reply, not only the first: the remote may
+  // move a conversation to a new context, and the window is refreshed on use.
+  if (continuity && reply.contextId) {
+    try {
+      await continuity.store.put(continuity.projectName, agentName, continuity.key, reply.contextId);
+    } catch (error) {
+      log.warn("run", `remote conversation for '${agentName}' could not be remembered`, error);
+    }
   }
   for (const image of reply.images) {
     yield {

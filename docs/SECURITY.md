@@ -385,8 +385,21 @@ OAuth token and assembles the same headers a run would, minus this one. On a ser
 exposes different tools per tenant, the list an owner is shown is therefore not necessarily
 the list their run is offered.
 
-That header is the **only** identity metadata sent automatically, and its value is the
-project name — never a user's name or email. What a server can learn beyond it is
+One more header rides beside it when the run is in a conversation: `X-Conversation-Id`
+(`CONVERSATION_ID_HEADER`, same file) with the run's conversation key — `chat:{chatId}`,
+`slack:{channel}:{threadTs}`, `a2a:{client}:{contextId}`, or `api:{caller}:{value}` for a
+caller that sent its own `X-Conversation-Id`, where `{caller}` is a short digest of the actor
+key rather than the email it is derived from. Reserved and stamped after the merge exactly
+like the tenant, so a binding cannot name another conversation. It travels in the session's
+*context* headers, not its identity headers, so it does not key the discovery cache: a
+conversation decides nothing about which tools a server exposes, and paying a discovery per
+thread would be the cost of pretending it did. A firing has no conversation and sends none;
+the probes above send none either. Like the tenant it authenticates nothing — a memory server
+may scope working notes by it, and must not treat it as authorization.
+
+Those two headers are the **only** identity metadata sent automatically, and neither carries a
+user's name or email — the tenant is the project name, the conversation an opaque thread
+address. What a server can learn beyond them is
 (a) whatever the model writes into tool arguments — see *PII filtering, and where it
 stops* — and (b) for OAuth entries, that the registered client is named
 `AgentDure — <project>` and that the token carries the grant of whoever connected the

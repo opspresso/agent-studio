@@ -449,6 +449,10 @@ export async function* executeAgent(
     // question that `callerFor` answers at each engine-input boundary — this
     // run's own opt-in decides nothing for the project it transfers to.
     ...(input.caller ? { caller: input.caller } : {}),
+    // And the conversation, for the same reason: a child is answering in the
+    // same thread as its parent, and a remote agent it hands off to continues
+    // that thread's context rather than opening one per hop.
+    ...(input.conversation ? { conversation: input.conversation } : {}),
   };
   const usage = createUsageAggregator(deps.usage, input.actor && toActorKey(input.actor));
   const bracket = await openRun(deps, input.project, input.version, input.actor, {
@@ -495,6 +499,7 @@ export async function* executeAgent(
       input.version,
       runSignal,
       discoveryQueries(input.version, recentUserQueries(input.messages)),
+      origin,
     );
     closeMcpSessions = mcp.close;
     const agentDeps = await buildAgentDeps(

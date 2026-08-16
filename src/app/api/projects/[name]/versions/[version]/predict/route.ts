@@ -13,6 +13,7 @@ import { generateImage } from "@/application/image/generateImage";
 import { executeProject, executeProjectStream } from "@/application/execution/runProject";
 import { predictSchema } from "@/app/api/projects/_lib/schemas";
 import { authenticateExecution, principalActor } from "@/app/api/projects/_lib/executionAuth";
+import { requestConversation } from "@/app/api/projects/_lib/conversation";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { turnBody } from "@/app/api/_lib/body";
 
@@ -50,6 +51,7 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       });
       return Response.json(image);
     }
+    const conversation = requestConversation(request, principalActor(principal));
     const params = {
       project,
       version: versionEntity,
@@ -59,6 +61,9 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       // Not on the image branch above: an image run's prompt is the rendered
       // template, with no system prompt for a caller block to live in.
       ...(principal.caller ? { caller: principal.caller } : {}),
+      // Nor is the conversation: an image run reaches no MCP server and makes
+      // no transfer, so there is nothing for it to continue.
+      ...(conversation ? { conversation } : {}),
     };
     // The strategy→executor mapping lives in runProject; this route only
     // decides how to serialise the answer.

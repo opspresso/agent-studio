@@ -18,6 +18,7 @@ import { generateImage } from "@/application/image/generateImage";
 import { fileRefOf, resolveProducedFile } from "@/application/artifact/producedFiles";
 import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
 import { A2A_ACTOR_ID, type RunActor } from "@/domain/execution/actor";
+import { a2aConversation } from "@/domain/a2a/conversation";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 
@@ -108,11 +109,15 @@ export class ProjectA2aExecutor implements AgentExecutor {
         return;
       }
 
+      // The caller's `contextId` is its conversation: a second message in it
+      // reaches an MCP server and any onward transfer as the same one.
+      const conversation = a2aConversation(this.actor, contextId);
       const source = executeProjectStream(this.deps, {
         project: this.project,
         version: this.version,
         messages,
         actor: this.actor,
+        ...(conversation ? { conversation } : {}),
         signal: controller.signal,
       });
       let isFirstChunk = true;

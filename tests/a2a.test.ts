@@ -302,6 +302,8 @@ const STREAMED_REPLY = {
   ok: true,
   text: "the answer",
   images: [{ b64: "aGk=", mimeType: "image/png", name: "p.png" }],
+  // The remote's conversation, handed back so the next send can continue it.
+  contextId: "c1",
 };
 
 function sseFrames(requestId: number, results: unknown[]): string {
@@ -350,7 +352,7 @@ function manualSse(requestId: number) {
 /** Answers the card, then hands each RPC call to `rpc`. Records the methods. */
 function stubRemote(
   card: Response,
-  rpc: (method: string, id: number, signal?: AbortSignal) => Response,
+  rpc: (method: string, id: number, signal?: AbortSignal, body?: unknown) => Response,
 ) {
   const methods: string[] = [];
   vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
@@ -359,7 +361,7 @@ function stubRemote(
     }
     const body = JSON.parse(String(init?.body)) as { method: string; id: number };
     methods.push(body.method);
-    return rpc(body.method, body.id, init?.signal ?? undefined);
+    return rpc(body.method, body.id, init?.signal ?? undefined, body);
   });
   return methods;
 }
@@ -458,7 +460,30 @@ describe("sendA2aMessage", () => {
       ok: true,
       text: "the answer",
       images: [],
+      contextId: "c1",
     });
+  });
+
+  it("sends the contextId it is asked to continue, and none when it is not", async () => {
+    const bodies: unknown[] = [];
+    // One stub per send: a card `Response` can be read once, and each send
+    // fetches it afresh — as a real transfer does.
+    const answer = (_method: string, id: number, _signal?: AbortSignal, body?: unknown) => {
+      bodies.push(body);
+      return Response.json({ jsonrpc: "2.0", id, result: FINAL_TASK });
+    };
+    stubRemote(agentCard(false), answer);
+    await sendA2aMessage(RPC_URL, {}, "hello");
+    stubRemote(agentCard(false), answer);
+    await sendA2aMessage(RPC_URL, {}, "and again", undefined, { contextId: "c1" });
+
+    const messages = bodies.map(
+      (body) => (body as { params: { message: { contextId?: string } } }).params.message,
+    );
+    // The first message opens a conversation: nothing to continue, so the
+    // field is absent rather than empty — a remote may treat "" as a real id.
+    expect(messages[0]).not.toHaveProperty("contextId");
+    expect(messages[1]).toMatchObject({ contextId: "c1" });
   });
 
   it("returns as soon as the task is final, without waiting for the body to close", async () => {

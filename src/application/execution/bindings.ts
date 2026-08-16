@@ -3,6 +3,7 @@
 import type { McpBinding, SubagentRef, Version } from "@/domain/project/types";
 import { messageText } from "@/domain/llm/types";
 import type { ChatMessageInput } from "@/domain/llm/types";
+import type { RunOrigin } from "@/domain/execution/actor";
 import type { Skill } from "@/domain/skill/types";
 import { loadSkillFileContent } from "@/application/skill/loadSkill";
 import { searchCapabilitiesByKind, type CatalogSearchDeps } from "@/application/catalog/searchCatalog";
@@ -373,6 +374,12 @@ export async function resolveRunTools(
   version: Version,
   signal?: AbortSignal,
   queries?: readonly string[],
+  /**
+   * Where the run came from. Only the conversation is read, and only by the
+   * MCP resolution, which names it to every server as a request header. The
+   * preview passes none: it stands for no conversation.
+   */
+  origin?: Pick<RunOrigin, "conversation">,
 ): Promise<{
   skills: engine.SkillInfo[];
   subagents: engine.SubagentInfo[];
@@ -459,7 +466,7 @@ export async function resolveRunTools(
     }
   }
 
-  const mcpPending = buildMcpTools(deps, version, signal);
+  const mcpPending = buildMcpTools(deps, version, signal, origin);
   // Claim the rejection now: a sibling that rejects first would otherwise let
   // this one surface as an unhandled rejection before the catch below runs.
   const mcpSettled = mcpPending.then(

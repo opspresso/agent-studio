@@ -37,8 +37,30 @@ export interface A2aImage {
 }
 
 export type A2aSendResult =
-  | { ok: true; text: string; images: A2aImage[] }
+  | {
+      ok: true;
+      text: string;
+      images: A2aImage[];
+      /**
+       * The remote conversation this reply belongs to. A task carries the
+       * `contextId` the remote grouped it under; a bare message reply carries
+       * its own. Handed back so the next send from the same conversation can
+       * continue it — see `A2aSendOptions.contextId`.
+       */
+      contextId?: string;
+    }
   | { ok: false; error: string };
+
+export interface A2aSendOptions {
+  /**
+   * Continue an existing remote conversation. The protocol's own mechanism:
+   * a message carrying the `contextId` an earlier reply named is grouped with
+   * it server-side, and a remote that keeps history keeps answering in it.
+   * Absent, the remote opens a new one — which is what every send did before
+   * this option existed.
+   */
+  contextId?: string;
+}
 
 const AGENT_CARD_SUFFIX = "/.well-known/agent-card.json";
 /**
@@ -265,7 +287,10 @@ function toResult(result: Message | Task): A2aSendResult {
     const state = result.kind === "task" ? result.status.state : "message";
     return { ok: false, error: `A2A reply contained no supported content (state: ${state})` };
   }
-  return { ok: true, text, images };
+  // Both shapes carry one; the field is optional on a message and the SDK
+  // types it as such, so it is read defensively either way.
+  const contextId = typeof result.contextId === "string" && result.contextId ? result.contextId : undefined;
+  return { ok: true, text, images, ...(contextId ? { contextId } : {}) };
 }
 
 /**
@@ -287,6 +312,7 @@ export async function sendA2aMessage(
   headers: Record<string, string>,
   message: string,
   signal?: AbortSignal,
+  options: A2aSendOptions = {},
 ): Promise<A2aSendResult> {
   const controller = new AbortController();
   let idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
@@ -310,6 +336,7 @@ export async function sendA2aMessage(
       messageId: crypto.randomUUID(),
       role: "user",
       parts: [{ kind: "text", text: message }],
+      ...(options.contextId ? { contextId: options.contextId } : {}),
     },
     configuration: {
       acceptedOutputModes: ["text/plain", "image/png", "image/jpeg", "image/webp"],

@@ -1044,6 +1044,27 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/execution/mcpTools.ts",
   },
   {
+    // Its sibling: the header that names the run's conversation to an MCP
+    // server. The API layer reads the same spelling *inbound* — a caller's own
+    // `X-Conversation-Id` — and that is one file by design, so a caller can
+    // follow its id through; it is exempted by path rather than by layer so no
+    // route handler grows a third.
+    what: "the header that names the run's conversation to an MCP server",
+    pattern: /"X-Conversation-Id"/,
+    owner: "src/application/execution/mcpTools.ts",
+    alsoAllowedUnder: ["src/app/api/projects/_lib/conversation.ts"],
+  },
+  {
+    // How a conversation is built from a surface's id and spelled as a key.
+    // Every surface has its own builder (`chatConversation`,
+    // `slackConversation`, `a2aConversation`, `requestConversation`), and each
+    // goes through these two — a surface normalising or spelling its own would
+    // present a memory server with a key nothing else can match.
+    what: "how a run's conversation is built and keyed",
+    pattern: /export function conversation(?:Of|Key)\b/,
+    owner: "src/domain/execution/actor.ts",
+  },
+  {
     // The plugins sync reads a frontmatter block from two document kinds —
     // SKILL.md and the MCP extension documents — and a second parser would let
     // the same document mean different things depending on which kind it came

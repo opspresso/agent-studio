@@ -303,8 +303,10 @@ that server's tools the run offers (absent or empty = all of them).
 
 - A string value replaces a registry default or adds a new header; `null` removes a registry
   default for this version. Matching is case-insensitive, as HTTP header names are.
-- `X-Tenant-Id` is **reserved**. Every spelling of it is dropped after the merge and the calling
-  project's name is stamped in its place, so no binding can name another project's tenant. See
+- `X-Tenant-Id` and `X-Conversation-Id` are **reserved**. Every spelling of either is dropped
+  after the merge; the calling project's name is stamped in the first's place, and the run's
+  conversation key — when the run has one — in the second's, so no binding can name another
+  project's tenant or another conversation. See
   [SECURITY.md](SECURITY.md#what-an-mcp-server-is-told-about-the-caller).
 - Omitting `headers` (or sending `{}`) uses the registry headers unchanged.
 - A bare string entry — `"mcpList": ["shared-mcp"]`, the shape before overrides existed — is
@@ -895,6 +897,19 @@ project's cost guard — either of which answers `429` with `Retry-After`. A ses
 is additionally bounded by the caller's tier (concurrency and monthly cost cap, the latter a
 third `429`); a token run is not — token spend belongs to the project, never to a personal
 budget.
+
+**`X-Conversation-Id`** (optional, all three) names the conversation the request belongs
+to. The three endpoints have no thread of their own, so continuity is the caller's to
+declare: send the same value on the follow-up questions of one conversation and the run
+carries it as `RunOrigin.conversation` — an A2A subagent it transfers to continues the
+remote conversation the first question opened, and every MCP server it calls is told the
+key (`X-Conversation-Id: api:{caller}:{value}`). The value is scoped to the caller — two
+callers sending `1` are in two conversations — and to at most 512 characters; whitespace and
+anything outside printable ASCII are normalised, never rejected. Absent, each request is its
+own conversation, which is what every request was before the header existed. Where a
+surface *has* a thread the platform names it itself: a chat is `chat:{chatId}`, a Slack
+reply `slack:{channel}:{threadTs}`, an inbound A2A message `a2a:{client}:{contextId}`. See
+[ARCHITECTURE.md](ARCHITECTURE.md#usage-and-cost-attribution).
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 
