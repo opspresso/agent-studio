@@ -33,6 +33,7 @@ import { recentProjects } from "@/app/_lib/overview";
 import { listProjects, type Project } from "@/app/projects/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { tierAtLeast, type MemberTier } from "@/domain/member/tiers";
 import { formatDate } from "@/shared/date";
 import { PROJECT_TYPE_COLOR } from "./badgeColors";
 import { OwnerLine } from "./OwnerLine";
@@ -81,11 +82,19 @@ type CatalogKey = (typeof CATALOGS)[number]["key"];
 export function Overview({
   userName,
   userEmail,
+  tier,
 }: {
   userName: string;
   userEmail: string;
+  /**
+   * Arrives as a prop for the same reason the email does: `useViewer()` answers
+   * after hydration, so the catalogue tiles would render and then vanish for
+   * the one reader who is not allowed to see they exist.
+   */
+  tier: MemberTier;
 }) {
   const viewerEmail = userEmail;
+  const showCatalogs = tierAtLeast(tier, "member");
   const t = useT();
   const locale = useLocale();
 
@@ -148,6 +157,11 @@ export function Overview({
   // Independently, so one unreachable registry costs its own tile and no more.
   useEffect(() => {
     let cancelled = false;
+    if (!showCatalogs) {
+      // Not merely a hidden tile: asking would be three 403s per visit, and the
+      // count is the fact being withheld.
+      return;
+    }
     for (const catalog of CATALOGS) {
       fetch(catalog.url)
         .then((res) => readJson<unknown[]>(res))
@@ -163,7 +177,7 @@ export function Overview({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showCatalogs]);
 
   const recent = recentProjects(projects ?? [], viewerEmail, RECENT_PROJECTS);
   const firstName = userName.split(" ")[0];
@@ -205,9 +219,10 @@ export function Overview({
           count={projects?.length}
           Icon={IconFolder}
         />
-        {CATALOGS.map(({ key, href, label, Icon }) => (
-          <CountTile key={key} href={href} label={t(label)} count={counts[key]} Icon={Icon} />
-        ))}
+        {showCatalogs &&
+          CATALOGS.map(({ key, href, label, Icon }) => (
+            <CountTile key={key} href={href} label={t(label)} count={counts[key]} Icon={Icon} />
+          ))}
       </SimpleGrid>
 
       {isNewWorkspace ? (

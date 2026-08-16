@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { executionDeps, projectUseCases, versionUseCases } from "@/lib/container";
 import { previewPrompt } from "@/application/execution/runProject";
 import { previewPromptSchema } from "@/app/api/projects/_lib/schemas";
@@ -10,18 +10,24 @@ type RouteContext = { params: Promise<{ name: string }> };
 /**
  * Assemble what the draft in the editor would send, without running it.
  *
- * Session-gated like running a project, not owner-gated like saving one. This
- * used to be the owner's, on the argument that the draft's MCP bindings attach
- * chosen headers to a registered server — but that is not an authority the gate
- * can reserve: any signed-in user binds the same registry server with the same
- * headers from a project of their own. A masked header resolves only against
- * this project's stored binding for the same server name, so the most a
- * non-owner's preview sends anywhere is what any run they may already start
- * sends; and the assembled text — system prompt, skill table, tool names — is
- * composed of what `GET /versions` already answers with a session. The URL
- * always comes from the registry, so the SSRF surface is a run's.
+ * Tier-gated at `member`, not owner-gated like saving one. It used to be the
+ * owner's, on the argument that the draft's MCP bindings attach chosen headers
+ * to a registered server — but that is not an authority the gate can reserve:
+ * any member binds the same registry server with the same headers from a
+ * project of their own. A masked header resolves only against this project's
+ * stored binding for the same server name, so the most a non-owner's preview
+ * sends anywhere is what any run they may already start sends. The URL always
+ * comes from the registry, so the SSRF surface is a run's.
+ *
+ * The rung is `member` rather than a bare session because of *what the preview
+ * is*: the assembled text is the system prompt, the skill table and the tool
+ * names — the same capability registry a guest is refused at `withMemberAuth`,
+ * only rendered per project instead of as a catalogue. Leaving this session-
+ * gated would hand back through one project page exactly what the four
+ * Intelligence pages withhold. Running the project stays open to a guest; a run
+ * answers, it does not enumerate.
  */
-export const POST = withAuth(async (user, request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (user, request: Request, ctx: RouteContext) => {
   const { name } = await ctx.params;
   const parsed = previewPromptSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

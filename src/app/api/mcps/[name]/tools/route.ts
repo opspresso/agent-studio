@@ -1,10 +1,10 @@
 import { mcpUseCases } from "@/lib/container";
-import { withAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 import { apiError, parseName } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
 
-export const POST = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const POST = withMemberAuth(async (_user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
     const result = await mcpUseCases.testConnection(parseName(name));

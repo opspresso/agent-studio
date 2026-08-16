@@ -14,7 +14,7 @@ const { authMock } = vi.hoisted(() => ({ authMock: { getSession: vi.fn() } }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: authMock.getSession } } }));
 
-const { withAuth, withAdminAuth, isAdmin } = await import("@/lib/session");
+const { withAuth, withMemberAuth, withAdminAuth, isAdmin } = await import("@/lib/session");
 
 const okHandler = vi.fn(async () => Response.json({ ok: true }));
 const session = (email: string, tier?: string) => ({
@@ -99,6 +99,52 @@ describe("withAdminAuth", () => {
     adminEmails.value = ["admin@x.com"];
     authMock.getSession.mockResolvedValue(session("guest@x.com", "guest"));
     expect((await withAdminAuth(okHandler)()).status).toBe(403);
+  });
+});
+
+describe("withMemberAuth", () => {
+  it("403s a guest", async () => {
+    authMock.getSession.mockResolvedValue(session("guest@x.com", "guest"));
+    const res = await withMemberAuth(okHandler)();
+    expect(res.status).toBe(403);
+    expect(okHandler).not.toHaveBeenCalled();
+  });
+
+  it("403s a row that predates tiers, which reads as guest", async () => {
+    authMock.getSession.mockResolvedValue(session("legacy@x.com"));
+    expect((await withMemberAuth(okHandler)()).status).toBe(403);
+  });
+
+  it("allows a member and an admin", async () => {
+    for (const tier of ["member", "admin"]) {
+      authMock.getSession.mockResolvedValue(session(`${tier}@x.com`, tier));
+      expect((await withMemberAuth(okHandler)()).status).toBe(200);
+    }
+  });
+
+  it("401s before the tier check when there is no session", async () => {
+    authMock.getSession.mockResolvedValue(null);
+    expect((await withMemberAuth(okHandler)()).status).toBe(401);
+  });
+
+  it("refuses a guest for the tier they hold, not for not being an admin", async () => {
+    // The two rungs answer different questions, and a reader told the wrong one
+    // goes looking for an admin to promote them rather than for the tier the
+    // registry is actually behind.
+    adminEmails.value = ["admin@x.com"];
+    authMock.getSession.mockResolvedValue(session("guest@x.com", "guest"));
+    const body = (await (await withMemberAuth(okHandler)()).json()) as { error: string };
+    expect(body.error).not.toMatch(/admin/i);
+  });
+
+  it("keeps the admin rung answering the list, not the ladder", async () => {
+    // Deliberate asymmetry, argued at `withAdminAuth`: an empty `ADMIN_EMAILS`
+    // is no restriction, so a guest passes there while being refused here. The
+    // registry reads are what a console path to a mutation goes through.
+    adminEmails.value = [];
+    authMock.getSession.mockResolvedValue(session("guest@x.com", "guest"));
+    expect((await withMemberAuth(okHandler)()).status).toBe(403);
+    expect((await withAdminAuth(okHandler)()).status).toBe(200);
   });
 });
 

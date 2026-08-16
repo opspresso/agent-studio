@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { withAdminAuth, withAuth } from "@/lib/session";
+import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError } from "@/app/api/_lib/http";
 import { AppError, UpstreamError } from "@/application/errors";
 import { getPluginsRepoConfig } from "@/lib/runtime-settings";
@@ -20,7 +20,7 @@ const selectionSchema = z.object({
     .optional(),
 });
 
-export const GET = withAuth(async () => {
+export const GET = withMemberAuth(async () => {
   const { repo, branch, token } = await getPluginsRepoConfig();
   return Response.json({
     configured: Boolean(repo && token),

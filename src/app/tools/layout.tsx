@@ -1,5 +1,8 @@
+import { assertIntelligenceVisible } from "@/app/_lib/intelligenceGate";
+
 export const metadata = { title: "Tools" };
 
-export default function ToolsLayout({ children }: { children: React.ReactNode }) {
+export default async function ToolsLayout({ children }: { children: React.ReactNode }) {
+  await assertIntelligenceVisible();
   return children;
 }

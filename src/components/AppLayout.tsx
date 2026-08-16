@@ -34,6 +34,7 @@ import {
 } from "@tabler/icons-react";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useT } from "@/app/_i18n/provider";
+import { tierAtLeast } from "@/domain/member/tiers";
 import type { Viewer } from "@/lib/viewer";
 import { LocaleToggle } from "./LocaleToggle";
 import { ThemeToggle } from "./ThemeToggle";
@@ -87,6 +88,28 @@ const NAV_GROUPS = [
   label: MessageKey;
   items: ReadonlyArray<{ href: string; label: MessageKey; Icon: typeof IconChartBar }>;
 }>;
+
+/**
+ * Which groups this viewer is offered.
+ *
+ * Both gates key on the group's `key` for the reason the comment above gives —
+ * a translated label stops matching the moment the sidebar speaks Korean. The
+ * intelligence half names the same rung `withMemberAuth` does, so the sidebar
+ * and the routes behind it cannot drift on who may read a registry; the pages
+ * are turned away server-side regardless, since a hidden link is not a closed
+ * door.
+ */
+function visibleTo(viewer: Viewer | null) {
+  return (group: (typeof NAV_GROUPS)[number]): boolean => {
+    if (group.key === "system") {
+      return viewer?.isAdmin === true;
+    }
+    if (group.key === "intelligence") {
+      return viewer !== null && tierAtLeast(viewer.tier, "member");
+    }
+    return true;
+  };
+}
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") {
@@ -183,7 +206,7 @@ export function AppLayout({
         </Group>
         <ScrollArea style={{ flex: 1 }} scrollbarSize={4}>
           <Stack gap="xl">
-            {NAV_GROUPS.filter((group) => group.key !== "system" || viewer?.isAdmin).map((group) => (
+            {NAV_GROUPS.filter(visibleTo(viewer)).map((group) => (
               <Stack key={group.key} gap={6}>
                 <Text fz={10} fw={600} c="dimmed" tt="uppercase" lts="0.12em" px="sm">
                   {t(group.label)}

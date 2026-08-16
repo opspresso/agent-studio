@@ -3,6 +3,7 @@ import {
   DEFAULT_MEMBER_TIER,
   MEMBER_TIERS,
   TIER_LIMITS,
+  tierAtLeast,
   tierMayCreateProjects,
   tierMayUseApiTokens,
   toMemberTier,
@@ -64,5 +65,29 @@ describe("tier capabilities", () => {
   it("refuses both to guest", () => {
     expect(tierMayCreateProjects("guest")).toBe(false);
     expect(tierMayUseApiTokens("guest")).toBe(false);
+  });
+
+});
+
+describe("tierAtLeast", () => {
+  it("holds every tier to be at least itself", () => {
+    for (const tier of MEMBER_TIERS) {
+      expect(tierAtLeast(tier, tier)).toBe(true);
+    }
+  });
+
+  it("orders admin above member above guest", () => {
+    expect(tierAtLeast("admin", "member")).toBe(true);
+    expect(tierAtLeast("member", "guest")).toBe(true);
+    expect(tierAtLeast("member", "admin")).toBe(false);
+    expect(tierAtLeast("guest", "member")).toBe(false);
+  });
+
+  it("puts a row that predates tiers below member", () => {
+    // Worth stating rather than leaving to `toMemberTier`: a member row written
+    // before the attribute existed carries no tier, and the `member` rung is
+    // the first gate whose default answer takes something away that used to be
+    // visible.
+    expect(tierAtLeast(toMemberTier(undefined), "member")).toBe(false);
   });
 });

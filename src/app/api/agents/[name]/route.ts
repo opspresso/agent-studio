@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentUseCases } from "@/lib/container";
-import { withAdminAuth, withAuth } from "@/lib/session";
+import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 
 type RouteContext = { params: Promise<{ name: string }> };
@@ -12,7 +12,7 @@ const updateSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
 });
 
-export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withMemberAuth(async (_user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
     return Response.json(await agentUseCases.get(parseName(name)));

@@ -134,7 +134,7 @@ const TRACE_LINES: Array<{ kind: "meta" | "tool" | "text" | "author"; text: stri
 export default async function Home() {
   const user = await getSessionUser();
   if (user) {
-    return <Overview userName={user.name} userEmail={user.email} />;
+    return <Overview userName={user.name} userEmail={user.email} tier={user.tier} />;
   }
 
   const t = await getT();

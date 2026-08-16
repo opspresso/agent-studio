@@ -14,9 +14,26 @@
  * have one source: the member's stored tier.
  */
 
+/**
+ * The three tiers, **most privileged first**. The order is not presentation:
+ * {@link tierAtLeast} reads it as the ladder, so moving a name here moves what
+ * that name may do.
+ */
 export const MEMBER_TIERS = ["admin", "member", "guest"] as const;
 
 export type MemberTier = (typeof MEMBER_TIERS)[number];
+
+/**
+ * Is `tier` at or above `minimum` on the ladder?
+ *
+ * The form every rung-shaped gate takes, so a rule reads as the tier it names
+ * — `withMemberAuth` asks for `"member"` — rather than as a list of tiers to
+ * exclude, which is the shape that silently keeps its old meaning when a
+ * fourth tier is added between two existing ones.
+ */
+export function tierAtLeast(tier: MemberTier, minimum: MemberTier): boolean {
+  return MEMBER_TIERS.indexOf(tier) <= MEMBER_TIERS.indexOf(minimum);
+}
 
 /** What a new sign-up starts as, and what an unrecognized stored value reads as. */
 export const DEFAULT_MEMBER_TIER: MemberTier = "guest";

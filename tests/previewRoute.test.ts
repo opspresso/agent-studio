@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Route-handler test: `withAuth` is stubbed to inject a controllable user. The
-// preview is session-gated like running a project — the route says why saving's
-// owner gate is deliberately not applied — so a non-owner assembling someone
-// else's project is the contract, not a leak.
+// Route-handler test: `withMemberAuth` is stubbed to inject a controllable
+// user. The preview is tier-gated at `member` rather than owner-gated — the
+// route says why saving's owner gate is deliberately not applied — so a
+// non-owner assembling someone else's project is the contract, not a leak. That
+// the rung refuses a guest is `tests/session.test.ts`'s to fix, not this
+// file's; here the wrapper is a stub either way.
 const { state, projectRepo, calls } = vi.hoisted(() => ({
   state: { email: "owner@example.com" },
   projectRepo: { get: vi.fn() },
@@ -11,7 +13,7 @@ const { state, projectRepo, calls } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/session", () => ({
-  withAuth:
+  withMemberAuth:
     (handler: (user: unknown, ...args: never[]) => unknown) =>
     (...args: never[]) =>
       handler({ id: "u1", email: state.email, name: "U", image: null }, ...args),

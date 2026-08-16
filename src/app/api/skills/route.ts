@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { skillUseCases } from "@/lib/container";
-import { withAdminAuth, withAuth } from "@/lib/session";
+import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 
@@ -11,7 +11,7 @@ const createSchema = z.object({
   content: z.string(),
 });
 
-export const GET = withAuth(async () => {
+export const GET = withMemberAuth(async () => {
   // A summary, not the entity: the list pages render a name, a description
   // and two badges, while a full skill carries its whole markdown body and up
   // to 200KB of attachments. Detail readers use GET /api/skills/{name}.

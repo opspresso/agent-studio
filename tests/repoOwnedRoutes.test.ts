@@ -14,7 +14,7 @@ const { skillUseCases, mcpUseCases, managedMcpUseCases } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/session", () => ({
-  withAuth:
+  withMemberAuth:
     (handler: (...args: any[]) => unknown) =>
     (...args: any[]) =>
       handler(...args),

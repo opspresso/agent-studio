@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { skillUseCases } from "@/lib/container";
-import { withAdminAuth, withAuth } from "@/lib/session";
+import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest, parseName } from "@/app/api/_lib/http";
 import { editorBody } from "@/app/api/_lib/body";
 import { REPO_OWNED, repoOwnedRefusal } from "@/app/api/_lib/repoOwned";
@@ -12,7 +12,7 @@ const updateSchema = z.object({
   content: z.string().optional(),
 });
 
-export const GET = withAuth(async (_user, _request: Request, ctx: RouteContext) => {
+export const GET = withMemberAuth(async (_user, _request: Request, ctx: RouteContext) => {
   try {
     const { name } = await ctx.params;
     return Response.json(await skillUseCases.get(parseName(name)));

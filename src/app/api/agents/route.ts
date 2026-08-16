@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isSlug, SLUG_RULE } from "@/shared/slug";
 import { agentUseCases } from "@/lib/container";
-import { withAdminAuth, withAuth } from "@/lib/session";
+import { withAdminAuth, withMemberAuth } from "@/lib/session";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
 
 const createSchema = z.object({
@@ -12,7 +12,7 @@ const createSchema = z.object({
   headers: z.record(z.string(), z.string()).default({}),
 });
 
-export const GET = withAuth(async () => {
+export const GET = withMemberAuth(async () => {
   return Response.json(await agentUseCases.list());
 });
 

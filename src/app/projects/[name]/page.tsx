@@ -22,6 +22,7 @@ import { PromptPreview } from "./_components/PromptPreview";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
+import { tierAtLeast } from "@/domain/member/tiers";
 import { Alert, Button, Grid, Group, Select, Stack, Text } from "@mantine/core";
 import classes from "./Playground.module.css";
 
@@ -250,6 +251,10 @@ export default function PlaygroundPage() {
   }
 
   const canEdit = canEditProject(viewer, project.ownerEmail);
+  // The same rung `POST /preview` answers on, for the same reason: the panel
+  // renders the prompt, the skill table and the tool names — the capability
+  // registry a guest is refused, assembled for one project.
+  const canPreview = tierAtLeast(viewer.tier, "member");
 
   return (
     <Grid gap="lg">
@@ -340,14 +345,16 @@ export default function PlaygroundPage() {
 
       <Grid.Col span={{ base: 12, lg: 6 }}>
         <Stack gap="md">
-          <CollapsibleSection title={t("playground.preview")}>
-            <PromptPreview
-              projectName={name}
-              projectType={project.projectType}
-              draft={draft}
-              versionName={selectedName || null}
-            />
-          </CollapsibleSection>
+          {canPreview && (
+            <CollapsibleSection title={t("playground.preview")}>
+              <PromptPreview
+                projectName={name}
+                projectType={project.projectType}
+                draft={draft}
+                versionName={selectedName || null}
+              />
+            </CollapsibleSection>
+          )}
 
           <CollapsibleSection title={t("playground.run")}>
             <RunPanel

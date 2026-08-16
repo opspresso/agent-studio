@@ -14,7 +14,7 @@ const { syncPluginsFromRepo, pluginUseCases, lastPluginSync, repoConfig } = vi.h
 }));
 
 vi.mock("@/lib/session", () => ({
-  withAuth:
+  withMemberAuth:
     (handler: (user: unknown, ...args: any[]) => unknown) =>
     (...args: any[]) =>
       handler({ id: "u1", email: "user@example.com", name: "U", image: null }, ...args),
