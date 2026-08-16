@@ -7,6 +7,9 @@
  * the same key, built by one function per surface, normalised in one place.
  */
 
+// The API surface keys its caller digest with the deployment's own secret.
+process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+
 import { describe, expect, it, vi } from "vitest";
 import {
   conversationKey,
@@ -22,6 +25,7 @@ import type { RemoteAgentDispatcher, RemoteAgentReply } from "@/domain/agent/dis
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
 import type { EngineChunk } from "@/domain/llm/types";
 import { requestConversation } from "@/app/api/projects/_lib/conversation";
+import { ValidationError } from "@/application/errors";
 import { createTraceRecorder } from "@/application/run/traceLifecycle";
 import type { Trace } from "@/domain/trace/types";
 import type { TraceRepository } from "@/domain/trace/repository";
@@ -33,23 +37,31 @@ describe("conversationOf", () => {
     expect(conversationKey({ surface: "chat", id: "0d1e-4f" })).toBe("chat:0d1e-4f");
   });
 
-  it("makes a foreign id safe for a header and a key", () => {
+  it("makes a foreign id safe for a header and a key, without merging two ids into one", () => {
     // Whitespace and control characters cannot travel in a header and would sit
-    // invisibly in a storage key; anything past printable ASCII likewise.
+    // invisibly in a storage key; anything past printable ASCII likewise. Each
+    // becomes its bytes, so the encoding reads back to exactly one id.
     expect(conversationOf("a2a", "ctx 1\r\nX-Injected: yes")).toEqual({
       surface: "a2a",
-      id: "ctx_1__X-Injected:_yes",
+      id: "ctx%201%0D%0AX-Injected:%20yes",
     });
-    // Two code points, two placeholders — the count is not the point, the fact
-    // that nothing outside printable ASCII survives is.
-    expect(conversationOf("api", "회의-1")?.id).toBe("__-1");
-    expect(conversationOf("api", `${"a".repeat(300)}`)?.id).toHaveLength(200);
+    expect(conversationOf("api", "회의-1")?.id).toBe("%ED%9A%8C%EC%9D%98-1");
+    expect(conversationOf("api", "회신-1")?.id).not.toBe(conversationOf("api", "회의-1")?.id);
+    // `%` is encoded too, or a caller could spell somebody else's encoding.
+    expect(conversationOf("api", "%ED%9A%8C")?.id).toBe("%25ED%259A%258C");
+    // A safe id — a UUID, a Slack address — reads back unchanged.
+    expect(conversationOf("slack", "C01:1723.45")?.id).toBe("C01:1723.45");
   });
 
-  it("answers null rather than an empty conversation", () => {
+  it("answers null rather than an empty or a shortened conversation", () => {
     expect(conversationOf("api", "")).toBeNull();
     expect(conversationOf("api", "   ")).toBeNull();
     expect(conversationOf("api", undefined)).toBeNull();
+    // Past the bound there is no conversation, not a truncated one that two
+    // long ids would share.
+    expect(conversationOf("api", "a".repeat(512))?.id).toHaveLength(512);
+    expect(conversationOf("api", "a".repeat(513))).toBeNull();
+    expect(conversationOf("api", "회".repeat(60))).toBeNull();
   });
 });
 
@@ -99,10 +111,27 @@ describe("requestConversation", () => {
     );
   });
 
-  it("refuses an oversized header rather than working on it", () => {
-    expect(
+  it("refuses an oversized header out loud rather than dropping the conversation", () => {
+    // A caller that declared a conversation and silently ran without one would
+    // have no way to know; the loss is a 400 like any other bad input.
+    expect(() =>
       requestConversation(request("x".repeat(600)), { kind: "user", id: "a@x.test" }),
-    ).toBeNull();
+    ).toThrow(ValidationError);
+    expect(
+      requestConversation(request("x".repeat(495)), { kind: "user", id: "a@x.test" })?.id,
+    ).toHaveLength(512);
+  });
+
+  it("scopes the caller with this deployment's key, so the digest means nothing elsewhere", () => {
+    const key = process.env.AES_ENCRYPTION_KEY;
+    const before = requestConversation(request("t"), { kind: "user", id: "alice@x.test" });
+    process.env.AES_ENCRYPTION_KEY = Buffer.from("fedcba9876543210fedcba9876543210").toString("base64");
+    try {
+      const after = requestConversation(request("t"), { kind: "user", id: "alice@x.test" });
+      expect(before?.id).not.toBe(after?.id);
+    } finally {
+      process.env.AES_ENCRYPTION_KEY = key;
+    }
   });
 });
 
@@ -128,6 +157,9 @@ describe("a remote A2A transfer continues the conversation", () => {
       },
       async put(projectName, agentName, key, contextId) {
         rows.set(`${projectName}|${agentName}|${key}`, contextId);
+      },
+      async forget(projectName, agentName, key) {
+        rows.delete(`${projectName}|${agentName}|${key}`);
       },
     };
     const deps = {
@@ -200,6 +232,23 @@ describe("a remote A2A transfer continues the conversation", () => {
     expect(sent.map((s) => s.contextId)).toEqual([undefined, undefined, undefined]);
   });
 
+  it("a continuation that failed drops its hint, so the next transfer starts cold", async () => {
+    const { deps, sent, rows } = fixture([
+      { ok: true, text: "first", images: [], contextId: "ctx-old" },
+      { ok: false, error: "context ctx-old is unknown" },
+      { ok: true, text: "fresh", images: [], contextId: "ctx-new" },
+    ]);
+
+    await drain(runRemoteSubagent(deps, "helper", "one", undefined, origin));
+    await drain(runRemoteSubagent(deps, "helper", "two", undefined, origin));
+    await drain(runRemoteSubagent(deps, "helper", "three", undefined, origin));
+
+    // Sent the hint once, lost it on the failure, and did not resend it — the
+    // failed transfer itself is not retried, since the remote may be working.
+    expect(sent.map((s) => s.contextId)).toEqual([undefined, "ctx-old", undefined]);
+    expect(rows.get("front-desk|helper|slack:C1:1723.45")).toBe("ctx-new");
+  });
+
   it("a lookup that fails costs a cold start, never the transfer", async () => {
     const { deps, sent } = fixture([{ ok: true, text: "fine", images: [] }]);
     const failing = {
@@ -207,6 +256,7 @@ describe("a remote A2A transfer continues the conversation", () => {
       remoteConversations: {
         get: vi.fn().mockRejectedValue(new Error("table offline")),
         put: vi.fn().mockRejectedValue(new Error("table offline")),
+        forget: vi.fn().mockRejectedValue(new Error("table offline")),
       },
     };
 

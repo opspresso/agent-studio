@@ -388,8 +388,12 @@ the list their run is offered.
 One more header rides beside it when the run is in a conversation: `X-Conversation-Id`
 (`CONVERSATION_ID_HEADER`, same file) with the run's conversation key — `chat:{chatId}`,
 `slack:{channel}:{threadTs}`, `a2a:{client}:{contextId}`, or `api:{caller}:{value}` for a
-caller that sent its own `X-Conversation-Id`, where `{caller}` is a short digest of the actor
-key rather than the email it is derived from. Reserved and stamped after the merge exactly
+caller that sent its own `X-Conversation-Id`, where `{caller}` is a digest of the actor key
+**keyed with this deployment's `AES_ENCRYPTION_KEY`**: stable for one caller here, so a
+server can tell their conversations apart, and not a plain hash of an email, which a list of
+addresses would reverse offline. It is a pseudonym, not anonymity — a server that sees the
+same digest twice knows the same caller asked twice, which is the point — and it means
+nothing to anyone without this deployment's key. Reserved and stamped after the merge exactly
 like the tenant, so a binding cannot name another conversation. It travels in the session's
 *context* headers, not its identity headers, so it does not key the discovery cache: a
 conversation decides nothing about which tools a server exposes, and paying a discovery per
@@ -578,9 +582,22 @@ that cannot accept it leaves `dynamicCapabilities` off on filtered versions, whi
 default. **`memoryRecall` sits at the same spot**: the newest user turn is sent to the bound
 memory server as the `recall` query before the engine constructs the filter — a connected MCP
 server already sees restored tool arguments, so this is the same exposure a turn earlier, and
-the same decision to make when turning the flag on. What comes back enters the *system prompt*
-as recalled text and is not masked either; it is stored text, and what a memory server holds is
-governed by that server's own registration.
+the same decision to make when turning the flag on. What comes back enters the *system
+prompt* as recalled text, and the system prompt **is** masked on a filtered version — so a
+stored memory that names an email reaches the model as `[[PII:…]]` even though the memory
+server holds it in the clear; what a memory server holds is governed by that server's own
+registration, not by this flag.
+
+**Recalled text is a prompt-injection surface of its own.** A memory is written by
+`remember` — by the model, from a user's words, in whatever conversation, by anyone who can
+run the project — and read back into the *system message* of every later conversation that
+recalls it. That is one step further than a tool result: it persists, and it crosses
+conversations and people. The block is therefore fenced (`<recalled>…</recalled>`), quoted
+line by line so a stored `## …` heading cannot pose as one of the prompt's own sections, and
+framed as background rather than instructions (`rememberedBlock` in
+`src/application/llm/agentAssembly.ts`). That bounds how a memory *reads*; it does not make
+a model immune to text it reads, any more than the caller-name sanitising does. Which memories
+a project keeps is a review of that server's `remember` policy, on the server's own terms.
 
 Detection is regex-based and covers emails, phone numbers, Korean resident/foreigner
 registration numbers (hyphenated form, with the date half validated) and payment card

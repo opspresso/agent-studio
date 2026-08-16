@@ -1605,6 +1605,26 @@ describe("ToolManager toolNamesByServer", () => {
     expect(manager.toolNamesByServer.get("b")).toEqual(["search_1"]);
     expect(manager.toolNamesByServer.has("down")).toBe(false);
   });
+
+  it("finds a server's own tool by its original name, whichever alias it was given", async () => {
+    // What `aliasFor` exists for: a run that wants *server b's* `search` cannot
+    // spell it — `search` is a's, and b's is `search_1`.
+    stubMcpFetch({
+      "https://a.test/mcp": { listTools: [{ name: "search" }, { name: "fetch" }] },
+      "https://b.test/mcp": { listTools: [{ name: "search" }] },
+    });
+    const manager = new ToolManager([
+      server("a", "https://a.test/mcp"),
+      server("b", "https://b.test/mcp"),
+    ]);
+
+    await manager.init();
+
+    expect(manager.aliasFor("a", "search")).toBe("search");
+    expect(manager.aliasFor("b", "search")).toBe("search_1");
+    expect(manager.aliasFor("b", "fetch")).toBeUndefined();
+    expect(manager.aliasFor("nobody", "search")).toBeUndefined();
+  });
 });
 
 describe("ToolManager request budgets", () => {

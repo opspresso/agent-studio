@@ -53,42 +53,66 @@ export interface RecallResult {
 }
 
 /**
+ * Which servers a run would recall from, without asking any of them — the
+ * preview's question. Separate from the recall itself so an empty query is
+ * never a way of saying "just look": at run time an empty query is a loss.
+ */
+export function recallTargets(
+  mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor">,
+): Array<{ server: string; alias: string }> {
+  return mcp.mcpServers.flatMap((server) => {
+    const alias = mcp.aliasFor?.(server.name, RECALL_TOOL_NAME);
+    return alias ? [{ server: server.name, alias }] : [];
+  });
+}
+
+/** The warning both callers raise when a version recalls and nothing offers it. */
+export function noRecallTargetWarning(): string {
+  return `Memory recall is on, but no bound MCP server offers a '${RECALL_TOOL_NAME}' tool; the run started without a memory.`;
+}
+
+/**
  * Ask every bound server that offers `recall`, in parallel, and fold the
- * answers into one block. Never throws: a memory that cannot be read is a
- * warning on the run, not the end of it — the answer is worth more than the
- * recollection, the same judgement a lost artifact write makes.
+ * answers into one block. Never throws for a memory that cannot be read: that
+ * is a warning on the run, not the end of it — the answer is worth more than
+ * the recollection, the same judgement a lost artifact write makes. A run that
+ * was cancelled meanwhile is the one exception, and it propagates as itself.
  */
 export async function recallMemories(input: {
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
-  /** The newest user turn as text; nothing to ask with means nothing is asked. */
+  /** The newest user turn as text; nothing to ask with is reported, not asked. */
   query: string;
   signal?: AbortSignal;
 }): Promise<RecallResult> {
   const { mcp } = input;
   const query = input.query.trim().slice(0, MAX_QUERY_CHARS);
-  const targets = mcp.mcpServers.flatMap((server) => {
-    const alias = mcp.aliasFor?.(server.name, RECALL_TOOL_NAME);
-    return alias ? [{ server: server.name, alias }] : [];
-  });
+  const targets = recallTargets(mcp);
   if (targets.length === 0) {
-    return {
-      warnings: [
-        `Memory recall is on, but no bound MCP server offers a '${RECALL_TOOL_NAME}' tool; the run started without a memory.`,
-      ],
-    };
+    return { warnings: [noRecallTargetWarning()] };
   }
   if (!query || !mcp.callMcpTool) {
-    return { warnings: [] };
+    // A picture-only turn, or a resolve that offered the tools but no way to
+    // call them. Said out loud: the version says it recalls, and nothing did.
+    return {
+      warnings: [
+        "Memory recall is on, but this turn carried no text to ask memory with; the run started without a memory.",
+      ],
+    };
   }
   const callMcpTool = mcp.callMcpTool;
   const warnings: string[] = [];
   const sections: string[] = [];
+  const startedAt = Date.now();
   const answers = await Promise.all(
     targets.map(async ({ server, alias }) => {
       try {
         const result = await withTimeout(callMcpTool(alias, { query }), input.signal);
         return { server, text: result.text.trim() };
       } catch (error) {
+        // A run cancelled mid-recall is not a memory server that failed; the
+        // engine reads the abort off the signal, and a warning blaming the
+        // server would be yielded ahead of it.
+        input.signal?.throwIfAborted();
         return { server, error: error instanceof Error ? error.message : String(error) };
       }
     }),
@@ -115,31 +139,45 @@ export async function recallMemories(input: {
     joined.length > MAX_RECALLED_CHARS
       ? `${joined.slice(0, MAX_RECALLED_CHARS)}\n…[recall truncated at ${MAX_RECALLED_CHARS} characters]`
       : joined;
-  log.info("memory", `recalled ${remembered.length} chars from ${targets.map((t) => t.server).join(", ")}`);
+  log.info(
+    "memory",
+    `recalled ${remembered.length} chars from ${targets.map((t) => t.server).join(", ")} in ${Date.now() - startedAt}ms`,
+  );
   return { remembered, warnings };
 }
 
+/**
+ * The call, bounded by the recall's own deadline and by the run's signal. The
+ * underlying request is not cancelled — `callMcpTool` owns its own timeout —
+ * only stopped being waited for, and both of its outcomes are handled so a
+ * late answer is never an unhandled rejection.
+ */
 async function withTimeout<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+  // Already cancelled: nothing to wait for. Checked before a listener is
+  // registered, since `abort` will not fire again.
+  signal?.throwIfAborted();
   return await new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`no answer within ${RECALL_TIMEOUT_MS / 1000}s`)),
-      RECALL_TIMEOUT_MS,
-    );
-    unrefTimer(timer);
-    const onAbort = () => {
+    const settle = (): void => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = (): void => {
+      settle();
       reject(signal?.reason instanceof Error ? signal.reason : new Error("Request was cancelled"));
     };
+    const timer = setTimeout(() => {
+      settle();
+      reject(new Error(`no answer within ${RECALL_TIMEOUT_MS / 1000}s`));
+    }, RECALL_TIMEOUT_MS);
+    unrefTimer(timer);
     signal?.addEventListener("abort", onAbort, { once: true });
     pending.then(
       (value) => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
+        settle();
         resolve(value);
       },
       (error: unknown) => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
+        settle();
         reject(error instanceof Error ? error : new Error(String(error)));
       },
     );

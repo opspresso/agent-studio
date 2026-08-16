@@ -377,6 +377,8 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Catalog matches asked of each MCP index, oversampled past that cap — many tool rows collapse to one server, and a candidate the run cannot bind must cost no slot | `4×` (tool index) / `3×` (server index) the MCP server cap | `src/application/execution/bindings.ts` |
 | What a run searches the catalog with (system prompt / newest user turns) | `2,000` chars / `3` turns | `src/application/execution/bindings.ts` |
 | Memory recall (`memoryRecall`): query sent / text kept in the prompt / how long the first token waits for it | `2,000` chars / `4,000` chars / `10s` | `src/application/execution/memoryRecall.ts` |
+| A conversation id, encoded (past it there is no conversation, and the API header answers 400) | `512` chars | `MAX_CONVERSATION_ID_LENGTH` in `src/domain/execution/actor.ts` |
+| A remote agent's `contextId` is kept for one of our conversations | `7` days, refreshed on use | `src/infrastructure/db/ttl.ts` |
 | MCP tools declared per run | `120` | `src/domain/llm/toolLimits.ts` |
 | A single MCP tool result | `100,000` chars | `src/infrastructure/mcp/toolManager.ts` |
 | An MCP server's HTTP response | `14.5MB` | `src/infrastructure/mcp/session.ts` |
