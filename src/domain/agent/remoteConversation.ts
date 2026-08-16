@@ -30,4 +30,12 @@ export interface RemoteConversationRepository {
     conversationKey: string,
     contextId: string,
   ): Promise<void>;
+  /**
+   * Drop the remembered `contextId` for this triple, so the next transfer
+   * starts cold. Called when a transfer that *continued* a context failed: the
+   * remote may have retired the context (a week here is longer than some keep
+   * one), and a wrong hint that is kept costs every transfer until it expires,
+   * where a hint dropped costs one cold start.
+   */
+  forget(projectName: string, agentName: string, conversationKey: string): Promise<void>;
 }

@@ -1797,6 +1797,23 @@ describe("tool resolution", () => {
       });
     }
   });
+
+  it("passes the run's origin at every site that runs", () => {
+    // The fifth argument is optional, and an omitted one reads exactly like a
+    // run with no conversation — the MCP header quietly absent, nothing saying
+    // so. The preview alone stands for no conversation and is exempt by name.
+    for (const path of TOOL_RESOLUTION_SITES) {
+      if (path === "src/application/execution/promptPreview.ts") {
+        continue;
+      }
+      const file = SOURCE_FILES.find((candidate) => candidate.path === path);
+      const call = /resolveRunTools\(([\s\S]*?)\);/.exec(file?.text ?? "");
+      expect({ path, passesOrigin: /\borigin\b/.test(call?.[1] ?? "") }).toEqual({
+        path,
+        passesOrigin: true,
+      });
+    }
+  });
 });
 
 describe("agent runs", () => {

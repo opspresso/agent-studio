@@ -8,6 +8,7 @@ import * as engine from "@/application/llm/engine";
 import type { ExecutionDeps, PromptPreview, PromptPreviewMessage } from "./deps";
 import { callerFor, runClock, runStrategyFor } from "./deps";
 import { discoveryQueries, resolveRunTools } from "./bindings";
+import { noRecallTargetWarning, recallTargets } from "./memoryRecall";
 import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 
@@ -156,6 +157,13 @@ export async function previewPrompt(
     // The same assembly a run uses, not a second spelling of it. This is where
     // the two drifted: the preview omitted the caller and showed a prompt one
     // block short of what the version actually sends.
+    // Nothing is asked — a preview has no request — but whether a version with
+    // recall on has anywhere to recall *from* is the one memory warning an
+    // author can act on from the editor.
+    const memory =
+      version.parameters.memoryRecall && recallTargets(resolved.mcp).length === 0
+        ? { warnings: [noRecallTargetWarning()] }
+        : { warnings: [] };
     const { systemPrompt, tools } = engine.assembleAgentRun(agentDeps, {
       ...(version.systemPrompt !== undefined ? { systemPrompt: version.systemPrompt } : {}),
       // No messages: a preview stands before the first turn, like a fresh run
@@ -176,7 +184,7 @@ export async function previewPrompt(
       messages: systemPrompt ? [{ role: "system", content: systemPrompt }] : [],
       toolNames: tools.map((tool) => tool.function.name),
       tools: tools.map((tool) => tool.function),
-      warnings: [...warnings, ...resolved.warnings],
+      warnings: [...warnings, ...resolved.warnings, ...memory.warnings],
       discovered: resolved.discovered,
     };
   } finally {

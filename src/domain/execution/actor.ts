@@ -171,11 +171,13 @@ export interface RunConversation {
 }
 
 /**
- * Longest id that still reads as one. Generous — a Slack thread address, an
- * A2A `contextId` a remote client minted, an API caller's own key — but a
- * bound all the same, because the value travels in a header and a storage key.
+ * Longest id kept, after encoding. Generous — a Slack thread address, an A2A
+ * `contextId` a remote client minted, an API caller's own key all fit many
+ * times over — but a bound all the same, because the value travels in a header
+ * and a storage key. Past it there is no conversation rather than a shortened
+ * one: a shortened id would make two long ids one conversation.
  */
-const MAX_CONVERSATION_ID_LENGTH = 200;
+export const MAX_CONVERSATION_ID_LENGTH = 512;
 
 /**
  * Build a conversation from whatever a surface knows — the single place a
@@ -183,19 +185,48 @@ const MAX_CONVERSATION_ID_LENGTH = 200;
  * made safe to carry.
  *
  * An A2A `contextId` and an API caller's header are chosen by somebody else,
- * so the id is normalised rather than trusted: whitespace and control
- * characters become `_` (a header cannot carry them; a key would carry them
- * invisibly), anything outside printable ASCII likewise, and the whole is
- * bounded. Returns `null` when nothing survives — no conversation is better
- * than an empty one, which every conversation with no id would share.
+ * so the id is **encoded rather than trusted, and encoded injectively**:
+ * anything outside printable ASCII, whitespace and control characters — none of
+ * which a header can carry, and all of which a key would carry invisibly — and
+ * `%` itself become `%XX` over their UTF-8 bytes, so two different ids never
+ * become one, and an id that was already safe (a UUID, a Slack address) reads
+ * back unchanged. Replacing them with a placeholder instead was tried, and it
+ * made every Korean word two underscores: two conversations, one memory.
+ *
+ * Returns `null` when nothing survives or the encoding runs past the bound —
+ * no conversation is better than a wrong one, and a caller that needs to say
+ * so (the API header) checks the same bound before it gets here.
  */
 export function conversationOf(surface: RunSurface, rawId: string | undefined | null): RunConversation | null {
   const trimmed = rawId?.trim();
   if (!trimmed) {
     return null;
   }
-  const id = trimmed.replace(/[^\x21-\x7e]/g, "_").slice(0, MAX_CONVERSATION_ID_LENGTH);
-  return { surface, id };
+  const id = encodeConversationId(trimmed);
+  return id.length > MAX_CONVERSATION_ID_LENGTH ? null : { surface, id };
+}
+
+/** Printable ASCII, minus `%` — what an id may carry as itself. */
+const SAFE_ID_CHAR = /^[\x21-\x24\x26-\x7e]$/;
+
+/**
+ * Percent-encode everything outside {@link SAFE_ID_CHAR}, `%` included so the
+ * result decodes uniquely. `encodeURIComponent` is the same idea with a
+ * different unreserved set — one that would rewrite the `:` every Slack and
+ * A2A key already carries.
+ */
+function encodeConversationId(raw: string): string {
+  let out = "";
+  for (const char of raw) {
+    if (SAFE_ID_CHAR.test(char)) {
+      out += char;
+      continue;
+    }
+    for (const byte of new TextEncoder().encode(char)) {
+      out += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    }
+  }
+  return out;
 }
 
 /**

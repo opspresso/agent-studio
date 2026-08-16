@@ -1,4 +1,4 @@
-import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { RemoteConversationRepository } from "@/domain/agent/remoteConversation";
 import { getDocumentClient, getTableName } from "../client";
 import { keys } from "../keys";
@@ -44,6 +44,17 @@ export const remoteConversationRepository: RemoteConversationRepository = {
           // TTL attribute; enable table TTL on `expiresAt` to purge old rows.
           expiresAt: expiresAtFromNow(REMOTE_CONVERSATION_TTL_SECONDS),
         },
+      }),
+    );
+  },
+
+  async forget(projectName, agentName, conversationKey) {
+    // Unconditional, like the put: deleting a row that is already gone is the
+    // outcome wanted, not a conflict.
+    await getDocumentClient().send(
+      new DeleteCommand({
+        TableName: getTableName(),
+        Key: keys.remoteConversation(projectName, agentName, conversationKey),
       }),
     );
   },

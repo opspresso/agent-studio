@@ -916,12 +916,17 @@ to. The three endpoints have no thread of their own, so continuity is the caller
 declare: send the same value on the follow-up questions of one conversation and the run
 carries it as `RunOrigin.conversation` — an A2A subagent it transfers to continues the
 remote conversation the first question opened, and every MCP server it calls is told the
-key (`X-Conversation-Id: api:{caller}:{value}`). The value is scoped to the caller — two
-callers sending `1` are in two conversations — and to at most 512 characters; whitespace and
-anything outside printable ASCII are normalised, never rejected. Absent, each request is its
-own conversation, which is what every request was before the header existed. Where a
-surface *has* a thread the platform names it itself: a chat is `chat:{chatId}`, a Slack
-reply `slack:{channel}:{threadTs}`, an inbound A2A message `a2a:{client}:{contextId}`. See
+key (`X-Conversation-Id: api:{caller}:{value}`). `{caller}` is a 16-hex digest of the
+calling actor keyed with this deployment's own secret — two callers sending `1` are in two
+conversations, no email travels, and the digest means nothing outside this deployment. The
+value is percent-encoded where it has to be (whitespace, control characters, anything
+outside printable ASCII, and `%`), which changes nothing about a UUID or a plain key and
+keeps two different values two conversations; at most 495 characters once encoded, and a
+longer header answers `400` rather than silently running without the conversation it
+declared. Absent, each request is its own conversation, which is what every request was
+before the header existed. Where a surface *has* a thread the platform names it itself: a
+chat is `chat:{chatId}`, a Slack reply `slack:{channel}:{threadTs}`, an inbound A2A message
+`a2a:{client}:{contextId}`. See
 [ARCHITECTURE.md](ARCHITECTURE.md#usage-and-cost-attribution).
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
@@ -1247,7 +1252,9 @@ according to `TRACE_SAMPLE_RATE` (0–1, default `0.1`). Trace spans contain mod
 summaries, tool input/output sizes, and local subagent trace links; raw prompts and tool
 results are not persisted. Each trace also carries `actor` — who caused the run — and a
 subagent's trace carries the actor of the top-level run that reached it, since the transfer
-was not a second person's decision.
+was not a second person's decision. A trace of a run that was in a conversation carries
+`conversation`, the run's conversation key (`chat:{id}`, `slack:{channel}:{thread}`, …);
+recorded for correlation, not yet indexed or filterable.
 
 ## Models
 

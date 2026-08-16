@@ -1836,9 +1836,21 @@ are two callers of the remote agent, and one context would show each the other's
 by our conversation rather than by the remote's, because the remote's key is what is being
 looked up. It is a hint with a week's TTL, refreshed on use: losing one costs the next transfer
 a cold start, which is exactly what every transfer got before the row existed, and a store
-that cannot be read starts cold rather than failing the transfer. An OpenAI-shaped remote has
+that cannot be read starts cold rather than failing the transfer. A transfer that *continued*
+a context and failed drops the hint — the remote may have retired the context, and a wrong hint
+kept costs every transfer until it expires where one dropped costs a single cold start. It is
+not retried on the spot: the remote may already be working, and a second send would run the
+delegation twice. An OpenAI-shaped remote has
 no conversation to continue and is sent none. A run without a conversation — a firing, an API
 call that sent no `X-Conversation-Id` — transfers cold, as before.
+
+The transcript still travels on a continued transfer. The two are not the same thing: the
+transcript is what was said *here* since the last hand-off — the turns the remote never saw —
+while the remote's context is what it said and did; a second question carries both, and the
+overlap is the earlier turns, bounded by the transcript's own 8,000 characters. Dropping the
+transcript on continuation would lose the local turns for the sake of that overlap, and a
+remote that keeps no history of its own — this platform's inbound side runs each message
+alone — would then see nothing.
 
 SSE framing differs by protocol: `sseResponse` uses the OpenAI `[DONE]` terminator,
 `sseResponseRaw` uses A2A JSON-RPC framing (`src/app/api/_lib/sse.ts`).
@@ -2092,13 +2104,23 @@ Two consumers read it, and only two: the outbound A2A transfer, which continues 
 conversation the first question opened ([A2A](#a2a)), and the MCP header that tells a
 stateful server which conversation is asking ([MCP](#mcp)). Neither the actor (a person is in
 many conversations) nor the ancestry (a chain of projects, not of turns) could stand in for
-it, which is why it is a field of its own. The trace records the key too, so the runs of one
-thread can be read together.
+it, which is why it is a field of its own. The trace records the key too — for correlation
+when reading one trace; nothing indexes or filters by it yet, so "every run of this thread" is
+not a query anything answers today.
+
+`conversationOf` **encodes rather than replaces**: whitespace, control characters, anything
+outside printable ASCII and `%` itself become `%XX` over their UTF-8 bytes, so a UUID or a
+Slack address reads back unchanged and two different foreign ids — an A2A `contextId`, a
+caller's header — never become one conversation. Replacing them with a placeholder was the
+first version, and it made every Korean word two underscores: two conversations, one memory.
+Past 512 encoded characters there is no conversation rather than a shortened one, for the
+same reason; the API surface answers 400 for that, since a caller that declared a
+conversation and silently ran without one would have no way to know.
 
 ### Traces
 
 ```ts
-Trace     { traceId, projectName, versionName, projectType, actor?, ancestry?,
+Trace     { traceId, projectName, versionName, projectType, actor?, ancestry?, conversation?,
             status: 'completed' | 'turn-limit' | 'failed' | 'cancelled',
             spans: TraceSpan[], spansDropped?, warnings?,
             startedAt, endedAt, durationMs, error?, createdAt }

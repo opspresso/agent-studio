@@ -106,4 +106,16 @@ describe("the per-run MCP tool cap", () => {
 
     expect(result?.text).toBe("ran");
   });
+
+  it("does not hand out the alias of a tool it cut, by server and name either", async () => {
+    // `aliasFor` is how a run addresses a server's tool without the model — the
+    // memory recall — and it must answer from the same offered set, or the cap
+    // would have a side door.
+    stubServerWith(MAX_MCP_TOOLS_PER_RUN + 5);
+    const resolved = await buildMcpTools(depsFor(), version);
+
+    expect(resolved.aliasFor?.("srv", "tool_0")).toBe("tool_0");
+    expect(resolved.aliasFor?.("srv", `tool_${MAX_MCP_TOOLS_PER_RUN + 1}`)).toBeUndefined();
+    expect(resolved.aliasFor?.("other", "tool_0")).toBeUndefined();
+  });
 });

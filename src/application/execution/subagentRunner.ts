@@ -613,6 +613,17 @@ export async function* runRemoteSubagent(
   }
   signal?.throwIfAborted();
   if (!reply.ok) {
+    // A continuation that failed drops its hint: the remote may have retired
+    // the context, and a wrong hint kept costs every transfer until it expires
+    // where one dropped costs a single cold start. Not retried now — the remote
+    // may already be working, and a second send would run the delegation twice.
+    if (continuity && contextId) {
+      await continuity.store
+        .forget(continuity.projectName, agentName, continuity.key)
+        .catch((error: unknown) =>
+          log.warn("run", `remote conversation for '${agentName}' could not be forgotten`, error),
+        );
+    }
     yield { author: agentName, error: reply.error };
     return "";
   }
