@@ -7,7 +7,7 @@ import { MEMBER_TIERS, type MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { EmptyState, LoadingText } from "@/app/_components/PageState";
-import { formatDate } from "@/app/_lib/formatDate";
+import { formatDateTime } from "@/shared/date";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
@@ -109,10 +109,10 @@ export default function MembersPage() {
                       }}
                     />
                   </Table.Td>
-                  <Table.Td><Text fz="sm">{formatDate(member.joinedAt, locale)}</Text></Table.Td>
+                  <Table.Td><Text fz="sm">{formatDateTime(member.joinedAt, locale)}</Text></Table.Td>
                   <Table.Td>
                     <Text fz="sm" c={member.lastLoginAt ? undefined : "dimmed"}>
-                      {member.lastLoginAt ? formatDate(member.lastLoginAt, locale) : t("members.neverRecorded")}
+                      {member.lastLoginAt ? formatDateTime(member.lastLoginAt, locale) : t("members.neverRecorded")}
                     </Text>
                   </Table.Td>
                 </Table.Tr>

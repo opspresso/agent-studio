@@ -7,10 +7,12 @@ import { BackLink } from "@/app/_components/BackLink";
 import { LoadingText } from "@/app/_components/PageState";
 import { getTrace, type Trace } from "../../../lib/api";
 import { TraceContent } from "../TraceContent";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
+import { formatDateTime } from "@/shared/date";
 
 export default function TraceDetailPage() {
   const t = useT();
+  const locale = useLocale();
   const { name, traceId } = useParams<{ name: string; traceId: string }>();
   const [trace, setTrace] = useState<Trace | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export default function TraceDetailPage() {
           <Group justify="space-between" align="flex-start" wrap="wrap">
             <div>
               <Title order={2} fz="h3">Trace {trace.traceId}</Title>
-              <Text c="dimmed" fz="sm">version {trace.versionName} · {trace.createdAt}</Text>
+              <Text c="dimmed" fz="sm">version {trace.versionName} · {formatDateTime(trace.createdAt, locale)}</Text>
             </div>
             <Group gap="md">
               <Badge color={trace.status === "completed" ? "teal" : trace.status === "turn-limit" ? "yellow" : "red"}>{trace.status}</Badge>

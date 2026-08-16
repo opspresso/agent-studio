@@ -27,7 +27,7 @@ import { LoadingText } from "@/app/_components/PageState";
 import { StatCard } from "@/app/_components/StatCard";
 import { UsageBreakdown } from "@/app/_components/UsageBreakdown";
 import { defaultDateRange } from "@/app/_lib/dateRange";
-import { formatDate } from "@/app/_lib/formatDate";
+import { formatDateTime } from "@/shared/date";
 import { formatUsd } from "@/app/_lib/formatUsd";
 import { readJson } from "@/app/_lib/httpClient";
 import { buildDailySeries, groupUsage, totalCalls, totalCost, type GroupBy } from "@/app/_lib/usage";
@@ -120,12 +120,12 @@ export default function ProfilePage() {
             <Group gap="xl" mt="sm">
               <div>
                 <Text fz="xs" c="dimmed">Joined</Text>
-                <Text fz="sm">{formatDate(member.joinedAt, locale)}</Text>
+                <Text fz="sm">{formatDateTime(member.joinedAt, locale)}</Text>
               </div>
               <div>
                 <Text fz="xs" c="dimmed">{t("members.lastLogin")}</Text>
                 <Text fz="sm" c={member.lastLoginAt ? undefined : "dimmed"}>
-                  {member.lastLoginAt ? formatDate(member.lastLoginAt, locale) : t("members.neverRecorded")}
+                  {member.lastLoginAt ? formatDateTime(member.lastLoginAt, locale) : t("members.neverRecorded")}
                 </Text>
               </div>
               <div>

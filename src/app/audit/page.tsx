@@ -10,10 +10,12 @@ import { EmptyState, LoadingText } from "@/app/_components/PageState";
 import { defaultDateRange } from "@/app/_lib/dateRange";
 import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
+import { formatDateTime } from "@/shared/date";
 
 export default function AuditPage() {
   const t = useT();
+  const locale = useLocale();
   const viewer = useViewer();
   const [range, setRange] = useState(defaultDateRange);
   const [events, setEvents] = useState<AuditEvent[]>([]);
@@ -80,7 +82,7 @@ export default function AuditPage() {
             <Table.Tbody>
               {events.map((event) => (
                 <Table.Tr key={event.eventId}>
-                  <Table.Td><Text fz="xs" ff="monospace">{event.createdAt}</Text></Table.Td>
+                  <Table.Td><Text fz="xs">{formatDateTime(event.createdAt, locale)}</Text></Table.Td>
                   <Table.Td><Badge variant="light">{event.action}</Badge></Table.Td>
                   <Table.Td>{event.actorEmail}</Table.Td>
                   <Table.Td><Text ff="monospace" fz="sm">{event.target}</Text></Table.Td>

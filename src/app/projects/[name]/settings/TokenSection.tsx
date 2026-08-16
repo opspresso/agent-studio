@@ -13,10 +13,12 @@ import {
 } from "../../lib/api";
 import { Alert, Badge, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { stateColor } from "@/app/_components/badgeColors";
-import { useT } from "@/app/_i18n/provider";
+import { useLocale, useT } from "@/app/_i18n/provider";
+import { formatDate } from "@/shared/date";
 
 export function TokenSection({ projectName }: { projectName: string }) {
   const t = useT();
+  const locale = useLocale();
   const [status, setStatus] = useState<ProjectTokenStatus | null>(null);
   // The plaintext token, either just generated or read back on request. Held in
   // component state only, so leaving the page hides it again.
@@ -159,7 +161,7 @@ export function TokenSection({ projectName }: { projectName: string }) {
               )}
             </Group>
             <Text fz="sm" c="dimmed">
-              A token is set{status.createdAt ? ` (created ${status.createdAt.slice(0, 10)})` : ""}.
+              A token is set{status.createdAt ? ` (created ${formatDate(status.createdAt, locale)})` : ""}.
               {status.revealable === false
                 ? " It was issued before tokens could be shown again, so only its hash is stored — regenerate to get one you can read back."
                 : ""}

@@ -9,9 +9,12 @@ import Link from "next/link";
 import { listTraces, type Trace } from "../../lib/api";
 import { Accordion, Anchor, Group, Stack, Text } from "@mantine/core";
 import { TraceContent } from "./TraceContent";
+import { useLocale } from "@/app/_i18n/provider";
+import { formatDateTime } from "@/shared/date";
 
 export default function TracesPage() {
   const { name } = useParams<{ name: string }>();
+  const locale = useLocale();
   const [range, setRange] = useState(defaultDateRange);
   const [traces, setTraces] = useState<Trace[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,7 @@ export default function TracesPage() {
                   </Group>
                 </Group>
                 <Text fz="xs" c="dimmed" mt={4}>
-                  {trace.createdAt}
+                  {formatDateTime(trace.createdAt, locale)}
                 </Text>
                 {trace.ancestry && trace.ancestry.length > 1 && (
                   <Text fz="xs" c="dimmed" mt={4}>

@@ -12,10 +12,23 @@
  */
 type DateLocale = Intl.LocalesArgument;
 
+function parsedDate(value: string): Date | null {
+  const date = new Date(value);
+  return value && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+/** Locale date only (year included). Empty string for missing/invalid input. */
+export function formatDate(value: string, locale?: DateLocale): string {
+  const date = parsedDate(value);
+  return date
+    ? new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date)
+    : "";
+}
+
 /** Compact date-time for chat bubbles (e.g. "7/23 14:32"). Empty string for missing/invalid input. */
 export function formatShortDateTime(iso: string, locale?: DateLocale): string {
-  const date = new Date(iso);
-  if (!iso || Number.isNaN(date.getTime())) {
+  const date = parsedDate(iso);
+  if (!date) {
     return "";
   }
   return date.toLocaleString(locale, {
@@ -28,11 +41,13 @@ export function formatShortDateTime(iso: string, locale?: DateLocale): string {
 
 /** Full locale date-time (year included). Empty string for missing/invalid input. */
 export function formatDateTime(iso: string, locale?: DateLocale): string {
-  const date = new Date(iso);
-  if (!iso || Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return date.toLocaleString(locale);
+  const date = parsedDate(iso);
+  return date
+    ? new Intl.DateTimeFormat(locale, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date)
+    : "";
 }
 
 /**

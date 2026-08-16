@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatDate,
   formatDateTime,
   formatRunClock,
   formatShortDateTime,
   isUtcDay,
 } from "@/shared/date";
+
+describe("formatDate", () => {
+  it("keeps date-only output date-only", () => {
+    expect(formatDate("2026-08-16T16:31:00", "ko-KR")).toBe("2026. 8. 16.");
+  });
+
+  it("returns empty string for invalid input", () => {
+    expect(formatDate("not-a-date", "ko-KR")).toBe("");
+  });
+});
 
 // Rendered output is locale/timezone dependent, so assert shape, not exact strings.
 describe("formatShortDateTime", () => {
@@ -34,6 +45,12 @@ describe("formatDateTime", () => {
 
   it("includes the year for a valid ISO timestamp", () => {
     expect(formatDateTime("2026-07-23T01:08:42.000Z")).toContain("2026");
+  });
+
+  it("uses the console's minute-precision Korean style", () => {
+    expect(formatDateTime("2026-08-16T16:31:23.815", "ko-KR")).toBe(
+      "2026. 8. 16. 오후 4:31",
+    );
   });
 });
 

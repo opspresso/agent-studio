@@ -22,6 +22,7 @@ import { Button, Group, SimpleGrid, Stack, Text, TextInput } from "@mantine/core
 import { monoInput } from "@/app/_components/monoInput";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { formatDateTime } from "@/shared/date";
 
 const STATUS_LABEL: Record<McpConnectionView["status"], MessageKey> = {
   connected: "mcpConn.connected",
@@ -234,7 +235,7 @@ export function McpConnectionCard({
             // Optional on the view; an absent one renders as it did before —
             // the sentence without a name, rather than the word "undefined".
             who: connection.connectedBy ?? "",
-            when: new Date(connection.connectedAt).toLocaleString(locale),
+            when: formatDateTime(connection.connectedAt, locale),
           })}
           {connection.scopes.length > 0 ? ` · ${connection.scopes.join(", ")}` : ""}
         </Text>

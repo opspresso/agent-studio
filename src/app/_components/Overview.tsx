@@ -33,6 +33,7 @@ import { recentProjects } from "@/app/_lib/overview";
 import { listProjects, type Project } from "@/app/projects/lib/api";
 import type { MessageKey } from "@/app/_i18n/messages/en";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { formatDate } from "@/shared/date";
 import { PROJECT_TYPE_COLOR } from "./badgeColors";
 import { OwnerLine } from "./OwnerLine";
 import { Dashboard } from "./Dashboard";
@@ -278,7 +279,7 @@ export function Overview({
                   </Text>
                   <Text fz="xs" c="dimmed" mt={2}>
                     {chat.projectName ? `${chat.projectName} · ` : ""}
-                    {new Date(chat.updatedAt).toLocaleDateString(locale)}
+                    {formatDate(chat.updatedAt, locale)}
                   </Text>
                 </UnstyledButton>
               ))}

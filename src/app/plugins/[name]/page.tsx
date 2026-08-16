@@ -21,6 +21,7 @@ import { listSkills, type SkillSummary } from "@/app/skills/api";
 import { listMcps, type McpServer } from "@/app/tools/api";
 import { getPlugin, type Plugin } from "../api";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import { formatDateTime } from "@/shared/date";
 
 export default function PluginDetailPage() {
   const t = useT();
@@ -114,7 +115,7 @@ export default function PluginDetailPage() {
             {plugin.commitSha.slice(0, 7)}
           </Anchor>
           {" · synced "}
-          {new Date(plugin.syncedAt).toLocaleString(locale)}
+          {formatDateTime(plugin.syncedAt, locale)}
         </Text>
       </div>
 
