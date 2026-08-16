@@ -119,7 +119,8 @@ the deadline lands there as a *failure*.
 **Alert on a non-zero `agentdure_unknown_model_calls_total` rate.** A model id missing from
 `src/domain/llm/models.ts` still runs, but its usage is booked at **$0** — the miss is
 invisible in exactly the cost dashboard it corrupts. Each miss also logs `[cost] unknown model
-id` once.
+id` once. `UNKNOWN_MODEL_POLICY=refuse` (env or runtime setting) turns the counter into a
+refusal: the run bracket answers `400` before any guard runs.
 
 Counters are per-process and name **no project, user or model**; the only label any of them
 carries is a histogram's `le`. A label whose values are unbounded turns one metric into a time
@@ -175,11 +176,12 @@ instance begins draining, so a rollout keeps its last spans.
 
 ## Row retention
 
-Traces, usage rows, chats and their messages, trigger deliveries, inbound A2A tasks, Slack
-dedup claims and Better Auth session rows all carry a unix-seconds `expiresAt`, as do three
-fixed-lifetime row kinds: webhook idempotency claims (24h), MCP OAuth in-flight states
-(10 min) and run concurrency slots (the lease length — concurrency stays correct without TTL,
-but the rows accumulate one per run).
+Traces, usage rows, chats and their messages, artifact rows, trigger deliveries, inbound A2A
+tasks, Slack dedup claims and Better Auth session rows all carry a unix-seconds `expiresAt`,
+as do four fixed-lifetime row kinds: webhook idempotency claims (24h), Slack thread
+engagements (1 day — the window a thread the bot answered in stays "for the bot"), MCP OAuth
+in-flight states (10 min) and run concurrency slots (the lease length — concurrency stays
+correct without TTL, but the rows accumulate one per run).
 
 > **Enable TTL on the `expiresAt` attribute of the production table.** Nothing in the
 > application does this; `scripts/init-local-table.ts` does it for local only. Without it,
@@ -190,6 +192,7 @@ but the rows accumulate one per run).
 | Traces (+ their deletion references) | 30 days | `TRACE_RETENTION_DAYS` | trace `createdAt` |
 | Usage | 400 days | `USAGE_RETENTION_DAYS` | the usage row's date |
 | Chats + messages | 180 days | `CHAT_RETENTION_DAYS` | last activity / message `createdAt` |
+| Artifact rows | 180 days | `ARTIFACT_RETENTION_DAYS` | the artifact's `createdAt` |
 | Trigger deliveries | 30 days | `TRIGGER_RUN_RETENTION_DAYS` | delivery start |
 | Inbound A2A tasks | 1 day | `A2A_TASK_RETENTION_DAYS` | last write |
 | Audit records | 400 days | `AUDIT_RETENTION_DAYS` | the act's `createdAt` |
@@ -230,7 +233,12 @@ UI renders that second case as "no longer available" rather than a broken image.
 ## Spend and load guards
 
 Both hang off the run bracket (`src/application/run/runBracket.ts`) and **fail in
-opposite directions on purpose**.
+opposite directions on purpose**. A third guard sits between them: the **member tier's
+monthly cap** (`TIER_LIMITS` in `src/domain/member/tiers.ts` — `member` $20, `guest` $2 by
+default) is checked for `user` actors after the project's cost guard and before the slot, so a
+person over budget is told so rather than queued for a slot the run would be refused on
+anyway. It answers `429` like the other two, fails open like the cost guard, and is documented
+with the tier model in [SECURITY.md](SECURITY.md#authorization-model).
 
 ### Cost guard — fails open
 
@@ -360,11 +368,13 @@ one request.
 
 ### Managed MCP after a redeploy
 
-A managed container joins this app's own network namespace
-(`--network container:<MANAGED_MCP_NETWORK_CONTAINER>`), which is the only way a loopback
-address means the same thing at both ends. Docker resolves that name to a container **id**
-when the workload starts and never re-resolves it — so replacing this app leaves the container
-running in a namespace nothing can address: healthy to `docker inspect`, reachable by nobody.
+On the SSM adapter (`MANAGED_MCP_INSTANCE_ID` naming an instance), a managed container joins
+this app's own network namespace (`--network container:<MANAGED_MCP_NETWORK_CONTAINER>`),
+which is the only way a loopback address means the same thing at both ends. Docker resolves
+that name to a container **id** when the workload starts and never re-resolves it — so
+replacing this app leaves the container running in a namespace nothing can address: healthy
+to `docker inspect`, reachable by nobody. (The `local` adapter publishes a
+`127.0.0.1:<port>` mapping instead and has no namespace to lose.)
 
 `reconcile` (`src/application/mcp/managedMcpUseCases.ts`) is fired from `instrumentation.ts`
 at boot and **never awaited**: it probes every managed entry and restarts the ones that do not

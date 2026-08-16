@@ -214,6 +214,9 @@ docker build -t agentdure .        # multi-stage, Next standalone output
 docker compose up --build             # local container + both DynamoDB Local instances
 ```
 
+The image sets `NODE_ENV=production`, which refuses to boot without an explicit `STAGE` — the
+compose service reads it from `.env.local` (`STAGE=local` in `.env.example`).
+
 Version tags (`v*`) build and push to ECR via GitHub OIDC and trigger a GitOps deploy. Point
 the load balancer at `/api/ready` and restart checks at `/api/health`, scrape `/api/metrics`,
 and enable DynamoDB TTL on the table's `expiresAt` attribute. The full checklist is in

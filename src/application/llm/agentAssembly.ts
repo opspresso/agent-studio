@@ -695,9 +695,9 @@ const FETCH_URL_TOOL_DEF: ChannelToolDef = {
 /**
  * The workspace reads, offered together or not at all.
  *
- * One reader serves all four (`readSlack`), so a run either has a Slack
+ * One reader serves all six (`readSlack`), so a run either has a Slack
  * workspace to look at or it does not — there is no partial state to describe,
- * and four independent switches would be four ways to configure the same
+ * and six independent switches would be six ways to configure the same
  * decision.
  */
 const SLACK_TOOL_DEFS: readonly ChannelToolDef[] = [

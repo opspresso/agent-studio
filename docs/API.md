@@ -28,9 +28,13 @@ Design rationale for *why* a surface looks like this lives in
   Project sub-resources that expose other users' runtime data or masked secrets — traces, the
   Slack config, the API token, triggers, per-caller usage, MCP connections — are limited to
   the owner and admins for *reading* as well. Chats are per-owner private (non-owner reads
-  return 404). MCP/agent/skill registries are shared for reads; mutations require membership
-  in `ADMIN_EMAILS` when set (unset allows any signed-in user), otherwise
-  `403 { "error": "Only admins can modify this resource" }`.
+  return 404). MCP/agent/skill/plugin registries are shared for reads **from the `member`
+  tier up** — a `guest` (the tier every sign-up starts as) gets
+  `403 { "error": "This resource is not available to your account" }` (`withMemberAuth`);
+  mutations require membership in `ADMIN_EMAILS` when set (unset allows any signed-in user),
+  otherwise `403 { "error": "Only admins can modify this resource" }`. Project creation is
+  likewise a tier capability: a tier without it gets
+  `403 { "error": "Your tier does not allow creating projects" }`.
 - **Errors**: `{ "error": string }`, with an extra `issues` array on schema-validation
   failures. Status codes: `400` (bad input), `401` (no session), `403` (not owner/admin),
   `404` (missing), `409` (name conflict), `413` (payload too large), `429` (refused for now —
@@ -44,8 +48,10 @@ Design rationale for *why* a surface looks like this lives in
   object (`{ chats }`, `{ models }`, `{ items }`, `{ triggers }`, `{ connections }`).
 - **Names** are slugs (`^[a-z0-9-]+$`), validated by `parseName`, which throws a
   `ValidationError` → `400`.
-- **SSE framing**: each event is `data: {json}\n\n`; OpenAI-style streams end with
-  `data: [DONE]\n\n`. On a mid-stream failure a final `data: {"error":"…"}` frame is sent.
+- **SSE framing**: each event is `data: {json}\n\n`; every stream `sseResponse` serves —
+  the OpenAI-style ones and the chat streams alike — ends with `data: [DONE]\n\n` (only the
+  A2A endpoint's JSON-RPC stream omits it). On a mid-stream failure a final
+  `data: {"error":"…"}` frame is sent.
   `chat/completions` streams always carry exactly one `finish_reason` chunk: `stop` when the
   model finished on its own, `length` when the run ended at a limit — its turn budget, or the
   provider cutting the response at its output cap — read from the termination the engine
@@ -54,19 +60,20 @@ Design rationale for *why* a surface looks like this lives in
 
 ## Route index
 
-`session` = Better Auth session cookie. `admin` = session + membership in the effective admin
+`session` = Better Auth session cookie. `member` = session + the `member` tier or above
+(`withMemberAuth`; a `guest` gets 403). `admin` = session + membership in the effective admin
 list. `owner` = the project's owner or a configured admin.
 
 ### Projects
 
 | Route | Methods | Auth |
 |---|---|---|
-| `/api/projects` | `GET` `POST` | session |
+| `/api/projects` | `GET` `POST` | session / session + a tier that may create projects |
 | `/api/projects/{name}` | `GET` `PUT` `DELETE` | session / owner |
 | `/api/projects/{name}/versions` | `GET` `POST` | session / owner |
 | `/api/projects/{name}/versions/{version}` | `GET` `PUT` `DELETE` | session / owner |
 | `/api/projects/{name}/publish` | `POST` | owner |
-| `/api/projects/{name}/preview` | `POST` | session |
+| `/api/projects/{name}/preview` | `POST` | member |
 | `/api/projects/{name}/versions/{version}/predict` | `POST` | session or project token |
 | `/api/projects/{name}/versions/{version}/chat/completions` | `POST` | session or project token |
 | `/api/projects/{name}/versions/{version}/agent` | `POST` | session or project token |
@@ -92,19 +99,19 @@ list. `owner` = the project's owner or a configured admin.
 
 | Route | Methods | Auth |
 |---|---|---|
-| `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | session / admin |
-| `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | session / admin |
-| `/api/plugins` | `GET` | session |
-| `/api/plugins/{name}` | `GET` | session |
-| `/api/plugins/sync` | `GET` `POST` | session / admin |
-| `/api/mcps/{name}/tools` | `POST` | session |
+| `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | member / admin |
+| `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | member / admin |
+| `/api/plugins` | `GET` | member |
+| `/api/plugins/{name}` | `GET` | member |
+| `/api/plugins/sync` | `GET` `POST` | member / admin |
+| `/api/mcps/{name}/tools` | `POST` | member |
 | `/api/mcps/{name}/auth` | `POST` `DELETE` | admin |
 | `/api/mcps/managed` | `POST` | admin |
 | `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
 | `/api/mcps/oauth/callback` | `GET` | session |
 | `/api/mcps/oauth/client-metadata/{project}` | `GET` | **public** |
-| `/api/agents/{name}/message` | `POST` | session |
+| `/api/agents/{name}/message` | `POST` | member |
 
 ### Chats, usage, platform
 
@@ -237,8 +244,8 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 
 Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
-structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?,
-dynamicCapabilities? }`,
+structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
+slackWorkspace?, dynamicCapabilities? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
 image-capable registry model is rejected with 400, as is a catalog `model` missing a capability
@@ -322,9 +329,11 @@ POST /api/projects/{name}/preview
 Assembles what the draft in the editor **would** send — system prompt, skill table, connected
 MCP server table, rendered template — without running it.
 
-Session-gated, like running a project. The draft's MCP bindings can attach chosen headers to a
-registered server, but that is not an authority the gate could reserve — any signed-in user
-binds the same registry server with the same headers from a project of their own. A masked
+Member-gated (`withMemberAuth`), not owner-gated: the assembled text names resolved skills and
+MCP servers — the same registry a `guest` is refused — so it sits behind that rung rather than
+the session alone. The draft's MCP bindings can attach chosen headers to a registered server,
+but that is not an authority the gate could reserve — any member binds the same registry
+server with the same headers from a project of their own. A masked
 header resolves only against this project's stored binding for the same server name, so a
 non-owner's preview sends nothing a run they may already start would not; and the assembled
 text is composed of what `GET /versions` already answers with a session. The URL always comes
@@ -334,15 +343,16 @@ from the registry, so the SSRF surface is a run's.
 
 ```
 GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
-                          llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix } ] },
+                          llmProviders: { source, items: [ { name, baseUrl, apiKey, keepModelPrefix, auth } ] },
                           updatedAt? }
 PUT /api/settings → 200 {…same shape…} | 400
 ```
 
 - Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `pluginsRepo`, `pluginsRepoBranch`, `githubToken`, `a2aApiKey`,
-  `publicBaseUrl`, `unknownModelPolicy` (`allow` | `refuse` | `""`, the only key validated as
-  an enum). `pluginsRepo` is the other key with a shape of its own — `owner/repo`, or empty to
+  `publicBaseUrl`, `artifactAccessMode` (`authenticated` | `public` | `""`),
+  `unknownModelPolicy` (`allow` | `refuse` | `""`) — those two are validated as enums.
+  `pluginsRepo` is the other key with a shape of its own — `owner/repo`, or empty to
   clear it; the rest are bounded strings.
 
 ```
@@ -350,7 +360,7 @@ POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
 POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 ```
 
-- Admin-only. Issues a fresh app-wide A2A key (`asa_` + 32 random bytes) as a settings
+- Admin-only. Issues a fresh app-wide A2A key (`ada_` + 32 random bytes) as a settings
   override and returns it alongside the updated (masked) settings view. Reissuing
   invalidates the previous key immediately. A key pasted in by hand through `PUT /api/settings`
   still works — this endpoint only saves you from inventing one.
@@ -361,7 +371,8 @@ POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 - `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
   array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
   currently effective key for that provider name. Provider `name` must be one of
-  `openai | google | anthropic | xai`, the list holds at most 50 entries, and a name appearing
+  `openai | anthropic | google | xai | bedrock | openrouter` (`SUPPORTED_PROVIDERS`), `auth`
+  is `bearer` (default) or `sigv4`, the list holds at most 50 entries, and a name appearing
   twice is a `400`.
 - `enabledModels` on PUT is also a full replacement list — the model ids `/api/models` may
   offer, stored sorted and deduplicated. An empty array removes the override (every visible
@@ -389,7 +400,8 @@ GET /api/audit?from=2026-08-01&to=2026-08-03
   span costs the same as any other rejection.
 - Newest first. `action` is one of `secret.reveal` | `secret.rotate` | `secret.revoke` |
   `project.admin-override` | `settings.update` | `project.delete` | `registry.delete` |
-  `registry.adopt` (the plugins sync taking an entry another origin created); `target` is
+  `registry.adopt` (the plugins sync taking an entry another origin created) |
+  `artifact.delete` (another person's artifact) | `member.set-tier`; `target` is
   `kind:name`.
 - **Read-only, by construction.** There is no write verb here or anywhere else — rows are
   appended by the acts themselves and expire by TTL (`AUDIT_RETENTION_DAYS`). `detail` never
@@ -578,10 +590,10 @@ GET /api/projects/{name}/a2a
 
 `card` is the Agent Card the project publishes, or `null` while no version is published.
 
-The sync endpoint answers `GET` to a session and requires admin access for `POST`. Registry
-test operations require a session and apply the same SSRF guard used during registration and
-dispatch. Plugins have no create/update routes: the sync is their only writer, and a plugin
-row goes away through the sync's own `remove` selection.
+The sync endpoint answers `GET` to a member and requires admin access for `POST`. Registry
+test operations require the `member` tier and apply the same SSRF guard used during
+registration and dispatch. Plugins have no create/update routes: the sync is their only
+writer, and a plugin row goes away through the sync's own `remove` selection.
 
 The sync follows one rule: **the repository owns what it declared; a person owns deletion.**
 The removal selection is kind-qualified, because the skill and MCP registries may hold the
@@ -653,7 +665,7 @@ Per-project Slack configuration uses these endpoints:
 
 ```
 GET    /api/projects/{name}/slack
-PUT    /api/projects/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts? }
+PUT    /api/projects/{name}/slack   { botToken?, signingSecret?, enabled?, suggestedPrompts?, channelKeywords? }
 DELETE /api/projects/{name}/slack
 POST   /api/projects/{name}/slack/test
 ```
@@ -661,9 +673,14 @@ POST   /api/projects/{name}/slack/test
 `suggestedPrompts` is `{ title, message }[]`, at most four, with `title` capped at 80 characters
 and `message` at 500; blank rows are dropped and a row with only one half — or one over either
 cap — is a 400. Unlike the two credentials it is not a secret and comes back as stored.
+`channelKeywords` is `string[]` — the words that make a channel message the bot's without a
+mention (see [ARCHITECTURE.md](ARCHITECTURE.md#which-events-are-for-the-bot)): at most 20,
+each trimmed and lower-cased at rest, 2–50 characters; blanks and duplicates are dropped, and
+a keyword outside that length is a 400. Omitting the field on `PUT` keeps the stored list.
 
 Slack reads return masked credential state plus `configured`, `eventsPath`, `eventsUrl`,
-`suggestedPrompts` and a generated app manifest — every verb answers that same view.
+`suggestedPrompts`, `channelKeywords` and a generated app manifest — every verb answers that
+same view.
 All four endpoints are limited to the owner and to configured admins (403 for anyone else) — the masked view still exposes the
 bot token / signing secret edges. Masked or omitted secrets are preserved on update, and a
 `PUT` on a non-agent project is a 400 — a Slack bot only attaches to an agent project. So is a
@@ -872,10 +889,12 @@ valid token whose owner's *current* tier may not use API tokens answers `403` (n
 the credential is valid, the policy refuses it), so demoting an owner immediately stops
 their tokens.
 
-All three are bounded by `MAX_RUN_DURATION_MS`, the per-caller concurrency guard, and the
-project's daily cost guard — any of which answers `429` with `Retry-After`. A session run
-is additionally bounded by the caller's tier (concurrency and monthly cost cap); a token
-run is not — token spend belongs to the project, never to a personal budget.
+All three are bounded by `MAX_RUN_DURATION_MS` (a wall-clock deadline that cuts the run
+mid-stream, not a refusal), and admitted through the per-caller concurrency guard and the
+project's cost guard — either of which answers `429` with `Retry-After`. A session run
+is additionally bounded by the caller's tier (concurrency and monthly cost cap, the latter a
+third `429`); a token run is not — token spend belongs to the project, never to a personal
+budget.
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 
@@ -917,8 +936,10 @@ cap, a clipped transfer transcript, a subagent that came back empty. A streamed 
 each of these in a `warning` frame as it happens; a collected body has no later frame, so
 they travel with the answer. Absent means nothing was lost.
 
-For an `image` project, send `{ "prompt", "size?", "quality?", "images?" }` → `{ imageBase64,
-mimeType, model, usage }`. `images` are source pictures as inline bytes
+For an `image` project, send `{ "prompt?", "variables?", "size?", "quality?", "images?" }` →
+`{ imageBase64, mimeType, model, usage }`. `prompt` overrides the version's
+`userPromptTemplate`; omitted, the template rendered with `variables` is the prompt, and an
+empty result either way is a 400. `images` are source pictures as inline bytes
 (`[ { b64, mimeType } ]`, same caps as a chat attachment): with any present the prompt
 **edits** them, with none it draws from scratch. The version's system prompt, when set, is
 prepended to the prompt as the version's persistent style. `stream` does not apply to an
@@ -1035,8 +1056,8 @@ told apart by.
 Owner/admin only, on the same reasoning as traces: project *totals* are open to any
 signed-in user because the catalog is shared, but a breakdown by caller names individuals.
 Range validation matches `/api/usages/summary` (both dates required, `from ≤ to`, ≤ 184
-days), though a refusal here is a bare `{ error }` rather than the `issues` array the other
-range endpoints carry. Subagent transfers are attributed to whoever started the run, not to
+days), though a refusal here is a bare `{ error }` rather than the `issues` array
+`/api/usages/summary` carries. Subagent transfers are attributed to whoever started the run, not to
 the project they transferred into.
 
 ## Triggers
@@ -1159,9 +1180,11 @@ DELETE /api/artifacts/{artifactId}
 → 204 | 403 | 404
 ```
 
-Each row carries `artifactId`, `kind`, `source`, `mimeType`, `byteSize`, `filename?`,
-`projectName`, `versionName`, `actor?`, `producedBy?`, `runId?`, `prompt?`, `createdAt`, and a
-signed `url` (15 minutes; a document's is signed to download under its own name). The URL is
+Each row carries `artifactId`, `kind`, `source`, `key` (the object key), `mimeType`,
+`byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (the person a
+Slack run's output is filed under, resolved from the asker), `ancestry?` (the transfer chain,
+outermost first), `producedBy?`, `runId?`, `prompt?`, `createdAt`, and a signed `url` (15
+minutes; a document's is signed to download under its own name). The URL is
 inlined rather than fetched per tile — pre-signing is a local signature, so a page of them
 costs nothing while a round trip each would make a gallery N+1. It is absent when the address
 could not be minted, and the UI renders that as unavailable rather than a broken image.
@@ -1245,7 +1268,7 @@ no client keys. On an enabled surface a wrong or missing key is `401` — the sh
 compares in constant time, a client key resolves by hash.
 
 The presented key may be the shared `A2A_API_KEY` (runs attributed to `a2a:shared-key`) or a
-**named client key** (`asc_…`, runs attributed to `a2a:{client}` — per-client attribution and
+**named client key** (`adc_…`, runs attributed to `a2a:{client}` — per-client attribution and
 concurrency limits). Client keys are admin-managed:
 
 ```

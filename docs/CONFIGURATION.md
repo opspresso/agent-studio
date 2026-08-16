@@ -37,6 +37,8 @@ header cannot carry. `src/shared/env.ts` owns the rule, and the value it returns
 `STAGE`, `DYNAMODB_TABLE_NAME` and `AWS_REGION` are the exceptions — they take an empty
 value literally, and for `STAGE` that is deliberate: an empty value throws, where falling
 back to `local` would skip `assertAccessControlConfig` on a deployed stage.
+`ARTIFACT_ACCESS_MODE` is read untrimmed: anything but exactly `public` reads as
+`authenticated`.
 In a production Node process, however, leaving `STAGE` absent is itself a boot error. Local
 containers remain explicit with `STAGE=local`; a deployed image cannot become fail-open through
 one missing variable.
@@ -132,7 +134,7 @@ All traffic speaks the OpenAI Chat Completions protocol. Model ids are `provider
 > check-models` reports each channel's reachability, which is the fastest way to see it.
 
 When any provider channel is configured, `GET /api/models` lists only those providers'
-models; with none configured it lists the whole registry.
+models; with none configured it lists every visible (non-`hidden`) model in the registry.
 
 A stored `llmProviders` override on `/settings` **replaces the entire `LLM_PROVIDER_*` env
 set** rather than merging with it — a partial merge would make "remove this provider" an
@@ -211,7 +213,7 @@ setting bounds is spending money under an id nothing can price.
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. The Slack path additionally applies the fixed 3-minute interactive deadline (below), which can only shorten a run. Two derived values move with this one: the run-slot lease (this value plus 60s) and the MCP OAuth token refresh margin (this value plus 5 min). |
+| `MAX_RUN_DURATION_MS` | `600000` (10 min) | — | Wall-clock cap on a single run, every entry point. A hung provider or tool call cannot run — or bill — unbounded. An invalid value is ignored with a warning. The Slack path additionally applies the fixed 3-minute interactive deadline (below), which can only shorten a run. Three derived values move with this one: the run-slot lease (this value plus 60s), the MCP OAuth token refresh margin (this value plus 5 min) and the replay signed-URL lifetime (this value plus 15 min, `src/application/artifact/urlTtl.ts`). |
 | `MAX_CONCURRENT_RUNS_PER_ACTOR` | `10` | — | Runs one caller may have in flight. `0` disables the limit. A member tier with its own `maxConcurrentRuns` (see *Limits fixed in code*) overrides this for that member's own runs — the default `guest` tier carries one; `admin`/`member`, project tokens, and every machine caller inherit this value. |
 | `MAX_CONCURRENT_RUNS_A2A` | `50` | — | Separate ceiling for calls made with the **shared** A2A key, whose actor id is a constant: one identity stands for every machine caller there, and the per-caller limit would otherwise cap the whole A2A surface. A named client key is one caller and sits under `MAX_CONCURRENT_RUNS_PER_ACTOR` like a person. |
 | `SCHEDULE_SCAN_TOKEN` | unset | — | The one credential every ticker presents (`X-Scan-Token`), shared by the three endpoints a CronJob POSTs: `/api/triggers/scan` (schedules), `/api/plugins/sync/scan` (the plugins repo) and `/api/catalog/reindex` (the capability catalog). Unset means this deployment has no ticker: all three answer 503 and schedule triggers never fire — off rather than open. |
@@ -377,7 +379,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | MCP tools declared per run | `120` | `src/domain/llm/toolLimits.ts` |
 | A single MCP tool result | `100,000` chars | `src/infrastructure/mcp/toolManager.ts` |
 | An MCP server's HTTP response | `14.5MB` | `src/infrastructure/mcp/session.ts` |
-| `tools/list` pages read from one MCP server (the tail past them is dropped, with a warning) | `20` | `src/infrastructure/mcp/session.ts` |
+| `tools/list` pages read from one MCP server (reaching the cap fails that discovery — the SDK keeps no partial catalogue) | `64` | `src/infrastructure/mcp/session.ts` |
 | MCP OAuth metadata / token response | `256KB` each | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery cache entries | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
 | A remote agent's (A2A / external) response | `2MB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |

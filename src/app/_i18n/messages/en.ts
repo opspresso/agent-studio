@@ -14,8 +14,9 @@
  * **Error messages are deliberately absent.** `AppError` carries its message as
  * a string through `application` and `domain`, neither of which may import a
  * framework, so translating them means giving every error a code and rewriting
- * 69 throw sites. The console is internal and its errors are read by operators,
- * so they stay in English; this catalogue covers what a page renders on its own.
+ * well over a hundred throw sites. The console is internal and its errors are
+ * read by operators, so they stay in English; this catalogue covers what a page
+ * renders on its own.
  *
  * **Product nouns are not translated**, in either catalogue — Project, Skill,
  * Agent, Tool, Plugin, Chat, Model, MCP. Each is an API resource, a URL

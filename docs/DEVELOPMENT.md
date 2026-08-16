@@ -155,10 +155,10 @@ check connects to. `services:` cannot pass command arguments, so the compose fla
 there, and neither is needed: a fresh container per job is already empty, and one job holds a
 single credential and region.
 
-`.github/workflows/check-models.yml` runs `pnpm check-models --strict --since=30d` weekly (and
+`.github/workflows/check-models.yml` runs `pnpm check-models --strict --since=7d` weekly (and
 on demand) rather than per pull request: it needs live provider APIs and the `LLM_BASE_URL` /
-`LLM_API_KEY` repository secrets, so a provider outage or a fork without secrets must not fail
-PRs.
+`LLM_API_KEY` / `SLACK_WEBHOOK_URL` repository secrets (drift is posted to Slack before the run
+fails), so a provider outage or a fork without secrets must not fail PRs.
 
 ## Tests
 

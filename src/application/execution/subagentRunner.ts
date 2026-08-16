@@ -127,8 +127,9 @@ export function withTranscript(message: string, transcript?: string): string {
 
 /**
  * How deep a chain of local subagent transfers may go. Turn accounting alone
- * does not bound it: a child version carries its own `maxTurn`, so a child can
- * raise the ceiling its parent was running under.
+ * does not bound it: a child's `maxTurn` is clamped to the parent's ceiling
+ * (below), but a cycle of transfers would still spend the whole budget before
+ * that ceiling said anything.
  */
 export const MAX_SUBAGENT_DEPTH = 5;
 

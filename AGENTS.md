@@ -66,7 +66,8 @@ pnpm test:integration                      # CI runs this same pair
 
 Required env for any real run (validated fail-fast at boot by `src/instrumentation.ts`):
 `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY` (32-byte base64). `STAGE=alpha|prod`
-additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`.
+additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`, and `NODE_ENV=production`
+(which the `Dockerfile` sets) refuses to boot without an explicit `STAGE`.
 
 ## The dependency rule
 
@@ -106,6 +107,9 @@ domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 handler assembly over `executionDeps`), and `src/instrumentation.ts` (the boot path, which
 wires the audit sink straight from its adapter — the composition root is not loaded until
 this file decides the runtime is the Node server — and resumes the managed MCP containers).
+Three `lib` modules besides the root reach one adapter each without composing a use case —
+`auth.ts`, `runtime-settings.ts`, `memberAccess.ts` — and `tests/architecture.test.ts` names
+exactly those as `lib`'s wiring modules; every other `lib` file is a leaf.
 
 **A use case is composed once, not per route.** A slice exports a `createXUseCases` factory,
 the composition root calls it, and a route handler imports the bound object — which is what
@@ -163,7 +167,6 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | Whether a configured value is blank | `src/shared/env.ts` |
 | Asking a provider for an embedding | `src/infrastructure/llm/embeddings.ts` |
 | Reaching Bedrock | `src/infrastructure/llm/bedrockClient.ts` |
-| What a model is, and which routes serve it | `MODEL_FAMILIES`/`MODEL_OFFERINGS` in `src/domain/llm/models.ts` |
 | Talking to the vector store | `src/infrastructure/vector/s3VectorsStore.ts` |
 | The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
 | What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |
@@ -175,6 +178,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | What each member tier may spend | `TIER_LIMITS` in `src/domain/member/tiers.ts` |
 | What a 401 from an MCP server means | `src/infrastructure/mcp/session.ts` |
 | The name a provider will accept for an MCP tool | `src/infrastructure/mcp/toolManager.ts` |
+| Reaching `undici` directly | `src/infrastructure/net/publicFetch.ts` — a `dispatcher` is a private contract between a fetch and its `Agent`, and the runtime ships its own undici behind the global `fetch`; mixing the two cost every outbound request a bare `TypeError: fetch failed` |
 | The header that names the calling project to an MCP server | `TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts` |
 | How many agents one dispatch may run | `src/application/llm/agentAssembly.ts` |
 | How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/agentAssembly.ts` |
@@ -214,6 +218,7 @@ same rule applies to:
 | Decision | Owner |
 |---|---|
 | Every DynamoDB key string | `src/infrastructure/db/keys.ts` |
+| What a model is, and which routes serve it | `MODEL_FAMILIES`/`MODEL_OFFERINGS` in `src/domain/llm/models.ts` |
 | Detaching a stream from the consumer that walked away | `src/shared/detachOnReturn.ts` |
 | Reading an HTTP body under a byte ceiling | `src/shared/httpBody.ts` |
 | The name and media type a tool's file is carried under | `safeFileName`/`baseMediaType` in `src/infrastructure/mcp/toolManager.ts` |
@@ -248,7 +253,8 @@ One line each — the linked section is the authority.
 
 - **LLM engine** (`src/application/llm/engine.ts`) — pure logic with **everything injected**
   (channel, `recordUsage`, `callMcpTool`, `loadSkillContent`, `runSubagent`, `generateImage`,
-  `editImage`), so it tests with no network or DB via `tests/fakeChannel.ts`.
+  `editImage`, `fetchUrl`, `readSlack`), so it tests with no network or DB via
+  `tests/fakeChannel.ts`.
   `src/application/execution/runProject.ts` is the composition point that resolves a version's
   skills/MCP tools/subagents and assembles those deps.
   → `src/application/llm/AGENTS.md`, then
@@ -298,13 +304,13 @@ One line each — the linked section is the authority.
   registration breaks a working entry for a reason its owner cannot fix. Discovery cached per
   `url + headers`, managed servers on loopback by provenance, per-project OAuth connections.
   The SSRF guard, the response byte ceiling, the lazy connect and the expired-session retry
-  are the session's own; the SDK supplies none of them. **The SDK is pinned to an exact
-  version** — `2.0.0`, no caret, beside `next` and `react` — because four of its behaviours
-  are load-bearing here and none is covered by semver: which revision
-  `LATEST_PROTOCOL_VERSION` names (a bump into the 2026 era makes the handshake fallback
-  useless), what `mode: "auto"` falls back to, that `listMaxPages` throws rather than
-  truncating, and the `SdkErrorCode` values `unusableServerReason` reads. Widening it to `^`
-  is a protocol change, not a dependency update. →
+  are the session's own; the SDK supplies none of them. **The SDK follows a caret range
+  (`^2.0.0`) like every other dependency, but four of its behaviours are load-bearing here and
+  none is covered by semver**: which revision `LATEST_PROTOCOL_VERSION` names (a bump into the
+  2026 era makes the handshake fallback useless), what `mode: "auto"` falls back to, that
+  `listMaxPages` throws rather than truncating, and the `SdkErrorCode` values
+  `unusableServerReason` reads. An SDK bump — a lockfile refresh included — is therefore a
+  protocol change to check against those four, not a dependency update to wave through. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp)
 - **Capability catalog** — one global index (skills, MCP servers *and* their tools, external
   agents) rebuilt by a CronJob tick, never on a registry write. A version opting into
@@ -460,8 +466,10 @@ One line each — the linked section is the authority.
   module that reads one output axis now reads the other**, which `tests/architecture.test.ts`
   enforces as a pairing rather than a list — what a surface *does* with each is its own
   business. `src/application/artifact/producedFiles.ts` owns turning a reference into an
-  address, the sentence for one that could not be kept, and the `/agent` stream transform that
-  swaps the object key for a signed URL on the way out.
+  address, the sentence for one that could not be kept, and the raw-chunk stream transform
+  (`withAddressedFiles`) that swaps the object key for a signed URL on the way out — applied by
+  `/agent` and streaming `/predict`, a pair `RAW_CHUNK_STREAM_ROUTES` in
+  `tests/architecture.test.ts` bounds because they have to agree.
 - **An attachment that is not an image becomes text, at the surface that received it.** A
   model id here may be served by the default router or by its own provider's
   OpenAI-compatible endpoint, and those disagree about file content parts — while capability
@@ -526,17 +534,17 @@ One line each — the linked section is the authority.
   pages are public. Two things are deliberately *not* translated. **Error messages stay in
   English** — `AppError` carries its message as a string through `application` and
   `domain`, neither of which may import a framework, so translating them means giving every
-  error a code and rewriting 69 throw sites; the console is internal and operators read
-  them. And **product nouns stay in English in both catalogues** — Project, Skill, Agent,
-  Tool, Plugin, Chat, Model, MCP are each an API resource and a URL segment, so a console
-  that renamed its copy would make one thing answer to two words.
+  error a code and rewriting well over a hundred throw sites; the console is internal and
+  operators read them. And **product nouns stay in English in both catalogues** — Project,
+  Skill, Agent, Tool, Plugin, Chat, Model, MCP are each an API resource and a URL segment, so
+  a console that renamed its copy would make one thing answer to two words.
 - **A timestamp is formatted with a locale, never without one.** `toLocaleString()` with no
   argument means the *runtime's* default, so the server writes `8/14/2026` where a Korean
   browser writes `2026. 8. 14.` — a hydration mismatch wherever a date reaches the first
   render, and a format that follows the browser rather than the language the reader chose.
-  `formatDateTime`/`formatShortDateTime` (`src/shared/date.ts`) and `formatDate`
-  (`src/app/_lib/formatDate.ts`) take it; call sites pass `useLocale()`. The parameter is
-  optional only so `utcDay` and its neighbours — storage keys, not prose — stay unchanged.
+  `formatDate`/`formatDateTime`/`formatShortDateTime` (`src/shared/date.ts`) take it; call
+  sites pass `useLocale()`. The parameter is optional only so `utcDay` and its neighbours —
+  storage keys, not prose — stay unchanged.
 - **Docs record the current state, not history.** Completed milestones are deleted from
   `docs/MILESTONES.md`; git log and the per-tag GitHub Release are the record. Do not
   accumulate changelogs in comments or docs.

@@ -118,7 +118,7 @@ export type { ToolResultBudget } from "./toolResultBudget";
  * framing is charged to the group whether or not any answer fits.
  */
 const SECTION_SEPARATOR = "\n\n";
-/** The Slack read tools, as a set — the loop routes all four to one reader. */
+/** The Slack read tools, as a set — the loop routes all six to one reader. */
 const SLACK_TOOL_SET = new Set(SLACK_TOOL_NAMES);
 const DEFAULT_MAX_TURN = 50;
 /**
@@ -2037,7 +2037,7 @@ export async function* runAgent(
           resultName = `${SKILL_TOOL_NAME}: ${skillName}`;
         }
       } else if (builtin && SLACK_TOOL_SET.has(call.name) && deps.readSlack) {
-        // One branch for all four: they differ only in which Slack call they
+        // One branch for all six: they differ only in which Slack call they
         // make, and that choice belongs with the reader that holds the token.
         //
         // Served in call order rather than joining the concurrent pool above.

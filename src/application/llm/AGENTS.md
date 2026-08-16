@@ -225,8 +225,9 @@ surface, so callers keep one import path.
   `turn + 2 >= maxTurn` rejects a transfer (the child starts at `turn + 1` and the parent
   resumes at `turn + 2`, so two turns must remain). The child's own consumption is NOT
   charged against the parent's budget — the parent always resumes at `turn + 2` — but the
-  child's ceiling is clamped to the parent's in `runProject.ts`, so a child version with a
-  larger `maxTurn` cannot raise the limit the run started under.
+  child's ceiling is clamped to the parent's in `subagentRunner.ts`
+  (`Math.min(version.maxTurn ?? maxTurn, maxTurn)`), so a child version with a larger
+  `maxTurn` cannot raise the limit the run started under.
 
 ## Run assembly (`assembleAgentRun`)
 

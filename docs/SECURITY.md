@@ -28,7 +28,7 @@ successful identity-provider login into an authentication failure.
 | Surface | Gate | What it decides |
 |---|---|---|
 | Pages | `src/proxy.ts` | Redirect a signed-out visitor to `/login?next=…` |
-| API routes | `withAuth` / `withAdminAuth` (`src/lib/session.ts`) | 401 without a session; hands `SessionUser` to the handler |
+| API routes | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 401 without a session; 403 below the required tier (`member`, `admin`); hands `SessionUser` to the handler |
 
 `src/proxy.ts` is the single owner of which pages are public — `/` and `/login`. Everything
 else the matcher reaches needs a session, so **a new route defaults to protected**. That
@@ -73,14 +73,18 @@ mutations are gated.
 | Project API token, triggers, MCP connections | owner or configured admin | owner or configured admin |
 | Per-caller usage (`usage/actors`) | owner or configured admin | — |
 | Project usage totals | any signed-in user | — |
-| Skills / MCP servers / external agents | any signed-in user | admin (`withAdminAuth`) |
+| Skills / MCP servers / external agents / plugins | `member` tier or above (`withMemberAuth`; a `guest` gets 403) | admin (`withAdminAuth`) |
 | App settings | admin | admin |
 | Member directory | admin | admin (tier changes, audited as `member.set-tier`) |
 | Chats | owner only (non-owner reads 404) | owner only |
 
 Traces and the Slack config are gated on *read* as well because they expose other users'
 runtime inputs/outputs and masked credential edges. Project *totals* stay open because the
-catalog is shared; a breakdown by caller names individuals, so `usage/actors` does not.
+catalog is shared; a breakdown by caller names individuals, so `usage/actors` does not. The
+capability registries are withheld from the `guest` tier because they catalogue what the
+deployment can reach rather than anything a guest's own work needs — a guest still *runs*
+projects bound to them, since resolution is server-side. A project's `preview` sits behind the
+same rung: it renders the resolved capability names the registries would otherwise withhold.
 
 ### `isAdminEmail` vs `isConfiguredAdmin`
 
@@ -146,7 +150,8 @@ Two consequences of the override are handled rather than assumed away:
 
 Every stored credential — MCP server headers, external-agent headers, per-version header
 overrides, Slack bot token and signing secret, the app-wide A2A key, project API tokens,
-webhook trigger secrets — is AES-256-GCM encrypted with `AES_ENCRYPTION_KEY` and stored
+webhook trigger secrets, and the secret app settings (the LLM API key and the plugins-repo
+GitHub token) — is AES-256-GCM encrypted with `AES_ENCRYPTION_KEY` and stored
 under an `enc:v1:` prefix (`src/infrastructure/crypto/secretEncryption.ts`).
 
 ### Masking on read
@@ -680,11 +685,14 @@ Other properties worth knowing:
 - **Generated images** are stored under an unguessable UUID key with `S3_BUCKET_NAME` set, and
   a chat row keeps the **object key** — never an address. `ARTIFACT_ACCESS_MODE=authenticated`
   (the default) pre-signs URLs at read time with a lifetime chosen for the reader: 15 minutes
-  for the chat view, and the whole run deadline plus a margin for a replay, because the URL is
-  fetched by the *model provider* at whatever point in the run it reaches the turn. The bucket
-  stays private. `public` instead returns a permanent direct S3 URL. That mode requires an
-  explicit public-read bucket policy and exposes the bytes to anyone who obtains the URL;
-  application authentication still protects gallery metadata and deletion, not the object.
+  for the chat view; the whole run deadline plus a margin for a replay, because the URL is
+  fetched by the *model provider* at whatever point in the run it reaches the turn; and seven
+  days — the SigV4 ceiling — for a link written into something durable, a Slack thread or a
+  stored A2A task, held by the audience that could already read the answer it came with
+  (`src/application/artifact/urlTtl.ts`). The bucket stays private. `public` instead returns
+  a permanent direct S3 URL. That mode requires an explicit public-read bucket policy and
+  exposes the bytes to anyone who obtains the URL; application authentication still protects
+  gallery metadata and deletion, not the object.
   - Legacy rows may carry a public `url` and are read back unchanged. Rewriting them
     would change nothing about who can reach those objects, which are already public — so
     **if the bucket was ever public-read, its existing objects still are.** Making it private

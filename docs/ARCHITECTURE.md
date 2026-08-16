@@ -129,7 +129,11 @@ flowchart TB
 ### Composition, in a few deliberate places
 
 Composition is distributed rather than centralised in one file, because the three execution
-surfaces need genuinely different bags. **Five sites compose adapters, and no others may:**
+surfaces need genuinely different bags. **Five sites compose use cases over adapters, and no
+others may.** Three `lib` modules besides the composition root reach an adapter directly —
+`auth.ts` (the Better Auth storage adapter), `runtime-settings.ts` and `memberAccess.ts` (each
+fronting one repository behind a cache) — and `tests/architecture.test.ts` names exactly those
+as `lib`'s wiring modules; every other `lib` file is a leaf.
 
 | Wiring site | Wires |
 |---|---|
@@ -139,14 +143,16 @@ surfaces need genuinely different bags. **Five sites compose adapters, and no ot
 | `src/app/api/a2a/[name]/route.ts` | Per-request A2A assembly: the SDK's request/transport handlers around `ProjectA2aExecutor` over `executionDeps` — per request because the handler is built around one project's card |
 | `src/instrumentation.ts` | The boot path: the audit sink over `auditRepository`, and the managed-MCP resume. A wiring site by construction — the composition root itself is not loaded until this file decides the runtime is the Node server, and the audit sink has to be wired on the **awaited** boot path (see [Audit records](#audit-records)) |
 
-Three DI styles are in use on purpose:
+Two DI styles are in use on purpose:
 
-- **Factory** `createXUseCases(repo)` for the registry slices — their shared CRUD core lives
-  in `src/application/registry/registryUseCases.ts`.
-- **Free functions taking the repo as the first argument** for the project slice.
+- **Factory** `createXUseCases(...)` for the registry slices — their shared CRUD core lives
+  in `src/application/registry/registryUseCases.ts` — and for the project slice
+  (`createProjectUseCases`, `createVersionUseCases`), whose free functions taking the repo as
+  the first argument stay exported for application modules that already hold one; a route
+  takes the bound object.
 - **Deps-bag interfaces** (`ChatDeps`, `ExecutionDeps`, `SlackEventDeps`) for execution paths.
 
-New slices should prefer factory or deps-bag.
+New slices should use one of the two.
 
 ### The rules are mechanical, not aspirational
 
@@ -218,11 +224,12 @@ under a placeholder (see [Artifacts](#artifacts)).
 - **A name-keyed registry entity gets its CRUD from `createKeyedRepository`**
   (`keyedRepository.ts`): single-item partition, SK `META`, listed from the
   `TYPE#<entityType>` GSI1 partition, with create / update / delete each conditioned on
-  whether the partition already exists. Skills, MCP servers and external agents share it, and
-  only the `toItem`/`fromItem` mappers stay per-repository, because only they carry
+  whether the partition already exists. Skills, MCP servers, external agents and plugins share
+  it, and only the `toItem`/`fromItem` mappers stay per-repository, because only they carry
   entity-specific fields. It is the storage-side counterpart of the
-  [registry use-case core](#composition-in-a-few-deliberate-places) — the same three entities,
-  factored at both ends.
+  [registry use-case core](#composition-in-a-few-deliberate-places) — the three registry
+  entities factored at both ends, plus the plugin, whose use case is deliberately not that
+  factory (the sync is its only writer).
 - The published version is a **pointer attribute** `publishedVersion` on the project `META`
   item, not a copy.
 - Chat `META` owns an atomic `nextSeq`; message rows use conditionally-created sequence keys.
@@ -292,7 +299,7 @@ flowchart LR
 
   facade["runProject facades<br/>streamProjectRun · executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → tool loop, llm → single-shot,<br/>image → streamed by streamProjectRun, refused by the completion pair"]
   imageuc["generateImage use case<br/>reached by streamProjectRun, and by the two surfaces<br/>that answer in a shape no chunk stream carries"]
-  bracket["run bracket — openRun<br/>1. daily cost guard, fails open<br/>2. per-caller concurrency slots, fail closed<br/>3. in-flight metric + correlation id"]
+  bracket["run bracket — openRun<br/>1. project cost guard, fails open<br/>2. member tier's monthly cap, fails open<br/>3. per-caller concurrency slots, fail closed<br/>4. in-flight metric + correlation id + artifact recorder"]
   resolve["resolve the version's bindings<br/>skills · MCP sessions · subagents<br/>an unusable binding becomes a warning chunk"]
   engine["engine<br/>runAgent · runPrompt(Stream)"]
   channel["OpenAI-compatible channel"]
@@ -362,7 +369,8 @@ Exactly four functions admit a top-level run — the [admit tier](#request-flow)
 `executeVersion`, `executeVersionStream` and `executeAgent`, plus `generateImage` — and each
 opens a bracket (`src/application/run/runBracket.ts`). The bracket is the single owner
 of everything that wraps a run regardless of how it was started: the in-flight metric, the
-daily cost guard, the per-caller concurrency guard, and the log correlation id.
+project's cost guard, the member tier's monthly cap, the per-caller concurrency guard, the log
+correlation id, and the artifact recorder (see [Artifacts](#artifacts)).
 
 Each of those four used to open the in-flight metric for itself, which is exactly why the
 cost guard had four places it could be forgotten. `tests/architecture.test.ts` now pins the
@@ -405,17 +413,22 @@ settles every project its run spent on, after the usage flush (`flush` reports w
 were), for the same reason the flush precedes the close: the totals have to include the run
 that just spent them.
 
-The two guards fail in opposite directions, on purpose:
+The guards fail in opposite directions, on purpose:
 
 - The **cost guard** protects money, so a storage blip must not stop the platform: it fails
-  **open**.
+  **open**. So does the **member tier's monthly cap** (`memberCostGuard.ts`), which is the same
+  question asked of the person rather than the project — a `user` actor whose tier carries a
+  `monthlyCostCapUsd` (`TIER_LIMITS`) is refused once their own month's rows reach it; machine
+  callers and project tokens have no personal budget and skip it.
 - The **concurrency guard** protects the platform itself, so opening it when the store is
   failing would add load exactly when the store cannot take it: it fails **closed** — and
   costs nothing extra, since every run reads its project and version from the same table and
-  a store that cannot answer was about to fail the run anyway.
+  a store that cannot answer was about to fail the run anyway. A tier's own
+  `maxConcurrentRuns` overrides the deployment-wide per-caller number for that member's runs;
+  the bracket resolves the actor's tier (`resolveActorTier`) once and hands it to both guards.
 
-Cost is checked first: a project over budget should be told so rather than made to queue for
-a slot it would be refused on regardless.
+Cost is checked first — the project's, then the member's: a caller over budget should be told
+so rather than made to queue for a slot it would be refused on regardless.
 
 **Concurrency is a slot index, not a counter** (`src/domain/execution/runSlot.ts`). A counter
 is exact only while every process lives to decrement it; an instance killed mid-run leaks its
@@ -595,14 +608,16 @@ Project { name (slug, immutable id), displayName, description,
 Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fallbackModel?,
           parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
                        callerContext?, structuredOutput?/jsonSchema,
-                       imageGeneration?/imageModel? },
+                       imageGeneration?/imageModel?, urlFetch?, slackWorkspace?,
+                       dynamicCapabilities? },
           mcpList: McpBinding[], skillList: string[],
           subagentList: { name, type: 'local' | 'remote' }[], maxTurn?, createdAt }
 ```
 
-- `CostLimits { alertThresholdUsd?, blockThresholdUsd?, alertSlackChannel? }` — the window is
-  the **UTC day**, because that is the grain the usage row is keyed at; a guard on any other
-  window would need an aggregate that does not exist.
+- `CostLimits { alertThresholdUsd?, blockThresholdUsd?, monthlyAlertThresholdUsd?,
+  monthlyBlockThresholdUsd?, alertSlackChannel? }` — two windows, the **UTC day** (the grain
+  the usage row is keyed at) and the **UTC month**, whose spend is the sum of its daily rows —
+  at most 31 in one partition, one bounded query — so no separate aggregate exists to drift.
 - `McpBinding { name, headers?: Record<string, string | null>, tools?: string[] }` binds the
   version to a registry MCP server. `tools` narrows which of that server's tools the run
   offers. **The URL is always the registry's**; `headers` layers over the server's own headers
@@ -618,12 +633,12 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
   `capabilities.tools`; `structuredOutput` requires the capability). Unknown/custom model ids
   stay allowed with a warning — and are priced at $0 until added to the catalog.
 - Version writes also validate that `mcpList`/`skillList`/`subagentList` entries **resolve**
-  (`VersionRefRepos`, injected by the route from the composition root), and that the project
-  type can actually run them — only `agent` projects do, so a binding added to any other type
-  is rejected rather than stored, shown in the editor and silently ignored at run time. On
-  update only *newly added* entries are checked, so deleting a registry entry never strands
-  the versions that already referenced it, and configuration stored before these rules stays
-  editable and removable.
+  (`VersionRefRepos`, bound once into `versionUseCases` by the composition root), and that the
+  project type can actually run them — only `agent` projects do, so a binding added to any
+  other type is rejected rather than stored, shown in the editor and silently ignored at run
+  time. On update only *newly added* entries are checked, so deleting a registry entry never
+  strands the versions that already referenced it, and configuration stored before these
+  rules stays editable and removable.
 - **Which version a run executes** is owned by `resolveRunnableVersion`
   (`src/application/project/resolveRunnableVersion.ts`): the published pointer always wins;
   only interactive surfaces (chat) opt into falling back to the newest draft; external
@@ -633,8 +648,8 @@ Version { projectName, versionName, systemPrompt, userPromptTemplate, model, fal
 ### LLM engine
 
 `src/application/llm/engine.ts` is **pure logic with everything injected** — channel,
-`recordUsage`, `callMcpTool`, `loadSkillContent`, `runSubagent`, `generateImage`, `editImage`
-— so it is tested with no network and no DB via `tests/fakeChannel.ts`.
+`recordUsage`, `callMcpTool`, `loadSkillContent`, `runSubagent`, `generateImage`, `editImage`,
+`fetchUrl`, `readSlack` — so it is tested with no network and no DB via `tests/fakeChannel.ts`.
 
 The loop keeps two neighbours, and **`engine.ts` is the façade that re-exports both**, so a
 caller keeps one import path and the split stays an internal one:
@@ -660,7 +675,7 @@ flowchart TB
   cut{"provider said<br/>finish_reason length?"}
   outputlimit["warning +<br/>finishReason: output-limit"]
   finished["done: true"]
-  dispatch["announce every call, then dispatch:<br/>builtins in call order · MCP concurrently ≤5<br/>an output-cut turn warns once; arguments that<br/>did not parse get an error result, never a dispatch"]
+  dispatch["announce every call, then dispatch:<br/>builtins in call order · MCP + FetchUrl concurrently ≤5<br/>an output-cut turn warns once; arguments that<br/>did not parse get an error result, never a dispatch"]
   budget["per-turn cap + run context budget<br/>a cut carries a marker, the run warns once"]
   append["ONE assistant message + tool results<br/>+ post-context messages — all charged"]
 
@@ -704,11 +719,15 @@ for a failure — which is what lets consumers read the ending instead of inferr
     remote agent HTTP call; a budget guard `turn + 2 >= maxTurn` rejects the transfer),
     `dispatch_agents` (several subagents at once, answers collected into one budgeted tool
     result — offered to **top-level runs only**, so the number of concurrent children does not
-    grow with transfer depth), `GenerateImage`, and `EditImage`. **Any other name is an MCP
-    tool**, and `BUILTIN_TOOL_NAMES` is reserved during alias allocation so an MCP tool never
-    carries a name a builtin might claim.
-  - The MCP calls of one response run **concurrently** (≤5 in flight) while builtins run in
-    call order; results, tool messages and the assistant `tool_calls` all stay in call order.
+    grow with transfer depth), `GenerateImage`, `EditImage`, `FetchUrl` (a URL the model
+    chose, behind `parameters.urlFetch` — see
+    [SECURITY.md](SECURITY.md#urls-the-model-chose)), and the six Slack read tools behind
+    `parameters.slackWorkspace` (see [Reading the workspace](#reading-the-workspace)). **Any
+    other name is an MCP tool**, and `BUILTIN_TOOL_NAMES` — all twelve — is reserved during
+    alias allocation so an MCP tool never carries a name a builtin might claim.
+  - The MCP calls and `FetchUrl` calls of one response run **concurrently** (one shared pool,
+    ≤5 in flight) while the other builtins run in call order; results, tool messages and the
+    assistant `tool_calls` all stay in call order.
   - One turn's tool-result text is capped (200KB, spent in call order): a truncated result
     says so, and one that no longer fits becomes `Error: …`.
   - Underneath the per-turn caps sits the **run-wide context budget**
@@ -753,8 +772,9 @@ for a failure — which is what lets consumers read the ending instead of inferr
     because that message is its image prompt.
   - Local transfers carry an **ancestry chain**: transferring to a project already on the
     chain, or nesting past depth 5, is refused as an authored error chunk. Turn accounting
-    alone cannot bound this — a child version carries its own `maxTurn` and can raise the
-    ceiling its parent was running under.
+    alone does not bound this — a child continues the parent's turn counter and its own
+    `maxTurn` is clamped to the parent's ceiling (`subagentRunner.ts`), but a cycle would still
+    spend the whole budget before the ceiling said anything.
 - **Fallback**: on a retryable error (429/5xx) from the primary model **before the first
   chunk**, retry once with `fallbackModel`. A mid-stream failure yields an `{error}` chunk and
   does not retry.
@@ -766,13 +786,15 @@ for a failure — which is what lets consumers read the ending instead of inferr
   transfers, while tool args/results re-entering engine context stay masked. **Outbound MCP
   dispatch is not masked** — see [SECURITY.md](SECURITY.md#pii-filtering-and-where-it-stops).
   Off is byte-identical to the unfiltered path.
-- **Cost** is computed from registry pricing at the call site (`calculateCost` /
-  `calculateImageCost` in `src/domain/llm/models.ts`) and passed to `recordUsage`, which hands
-  it to the usage repository's atomic `ADD`. Single-shot runs record per call; agent runs
-  buffer per-turn usage in `createUsageAggregator` and flush once at run end.
+- **Cost** is what the channel charged when it says (`usage.cost_usd`, which a router reports
+  and which alone matches the invoice), else registry pricing computed at the call site
+  (`calculateCost` / `calculateImageCost` in `src/domain/llm/models.ts`); either way it is
+  passed to `recordUsage`, which hands it to the usage repository's atomic `ADD`. Single-shot
+  runs record per call; agent runs buffer per-turn usage in `createUsageAggregator` and flush
+  once at run end.
 - **Model registry** `src/domain/llm/models.ts`:
-  `ModelConfig { id, provider, displayName, pricing { inputPer1M, outputPer1M,
-  cachedInputPer1M?, imageInputPer1M?, imageOutputPer1M?, perImage? },
+  `ModelConfig { id, provider, family, maker, displayName, pricing { inputPer1M, outputPer1M,
+  cachedInputPer1M?, imageInputPer1M?, imageOutputPer1M?, perImage?, perInputImage? },
   capabilities { tools, structuredOutput, imageInput, reasoning, reasoningWithTools?,
   imageGeneration? }, contextWindow, maxTokens, hidden?, wireId? }`. See
   [CONFIGURATION.md](CONFIGURATION.md#model-registry-families-and-offerings) for `wireId` and drift
@@ -862,8 +884,11 @@ person who already has the page, so 15 minutes is generous, while a **replay** h
 the model *provider*, which fetches it at whatever point in a run that may last
 `MAX_RUN_DURATION_MS`. The replay lifetime is therefore derived from the run deadline rather
 than written down, or raising the deadline would silently start failing turns on images the
-user can see in their own transcript. An image that cannot be signed is dropped from the
-message: on the replay path an unfetchable URL fails the whole turn.
+user can see in their own transcript. A third lifetime — seven days, the SigV4 ceiling —
+serves a link written into something durable, a Slack thread or a stored A2A task, and is
+read long after the run (`src/application/artifact/urlTtl.ts` owns all three). An image that
+cannot be signed is dropped from the message: on the replay path an unfetchable URL fails the
+whole turn.
 
 **A chat never deletes an object.** A chat row expires by DynamoDB TTL, which the application
 never observes, so there is no moment at which it could cascade — expiry is the bucket's
@@ -891,11 +916,14 @@ version, actor, transfer chain, correlation id. Attaching it to `generateImage` 
 have covered a quarter of the cases: an image reaches the stream from four producers (an image
 project, the `GenerateImage`/`EditImage` builtins, an image subagent, an MCP tool that returned
 one) and only the first is that use case. `captureRunArtifacts` wraps the engine's stream;
-`generateImage` records its single result directly.
+`generateImage` records its single result directly. A fifth source travels the same axis and is
+the one capture skips: a picture `FetchUrl` brought back carries `fetched` and is delivered,
+never kept — the run read those bytes rather than making them, and only that builtin sets the
+mark, since an MCP tool's picture may as easily have been rendered as read.
 
 | Chunk | What capture does |
 |---|---|
-| `image` | Stores the bytes, **keeps** them, adds `artifactId`/`key`. A live view still renders from the chunk. |
+| `image` | Stores the bytes, **keeps** them, adds `artifactId`/`key`. A live view still renders from the chunk. One marked `fetched` passes through unstored. |
 | `file` | Stores the bytes and **strips** them, leaving name, size and key. A rendered document has nothing to draw, and pushing megabytes of base64 down an SSE connection to produce a download link is pure cost. |
 
 A write that fails never fails the run: the picture was the expensive part, and losing the copy
@@ -909,11 +937,15 @@ every later one into the same one-shot flag.
 |---|---|---|---|---|
 | Artifact | `ARTIFACT#{id}` | `META` | `ARTIFACTPROJECT#{project}` / `{createdAt}#{id}` | `ARTIFACTOWNER#{email}` / `{createdAt}#{id}` |
 
-A Slack, A2A, webhook or schedule run names no mailbox — its actor is a channel id or a
-trigger — so those rows are invisible to the owner index, and the project's own tab is the only
-place they are ever listed or deleted. Projects being a shared catalog, the reverse is also
-true: a person cannot find their own work by reading someone else's project. `artifactOwnerEmail`
-decides, and writes no GSI2 attributes when the answer is nobody.
+An A2A, webhook or schedule run names no mailbox — its actor is a client id or a trigger — so
+those rows are invisible to the owner index, and the project's own tab is the only place they
+are ever listed or deleted. A Slack run's actor is a workspace user id, which the index cannot
+key on either, but the surface can resolve the asker's address, so it does: the artifact is
+filed under the person who asked for it (`ownerEmail`, kept beside the actor rather than
+folded into it, since the actor key decides spend and limits). Projects being a shared
+catalog, the reverse is also true: a person cannot find their own work by reading someone
+else's project. `artifactOwnerEmail` decides, and writes no GSI2 attributes when the answer
+is nobody.
 
 The object key is derived from the row id (`artifacts/{kind}/{id}.{ext}`), which is what lets an
 object and its row find each other; the legacy `images/{uuid}` keys reference nothing, so an
@@ -1274,8 +1306,12 @@ ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), mess
   fields over the trigger's fixed ones — only strings can be substituted into a template, so a
   nested object is dropped rather than rendered as `[object Object]`. `message` serialises it
   into the user turn, which is what an agent project can reason about.
-- **Every refusal is a history row with a status**, including a skip: an operator must be able
-  to tell "it never fired" from "it fired and failed" without reading logs.
+- **Every refusal past the door is a history row with a status**, including a skip (project
+  gone, no published version, a run already in flight): an operator must be able to tell "it
+  never fired" from "it fired and failed" without reading logs. What the door itself turns
+  away — no webhook configured, a wrong secret, a disabled trigger, a duplicate
+  `Idempotency-Key` — leaves no history row: those are the delivery's own answer (`404`,
+  `401`, a `202` with its status), and a wrong secret must not write anything.
 - The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
   last ten minutes and no webhook sender waits that long. An instance lost mid-delivery leaves
   a row stuck in `running`, which the [repair sweep](#repairing-a-lost-firing) finishes as
@@ -1714,7 +1750,7 @@ every turn, so it carries the least that identifies someone, while a tool result
 once. **One `users.info` answers both**, and the cache holds the wider one — caching the
 narrower would make a project using caller context and this tool fetch the same person twice.
 
-The engine routes all four names to one injected reader
+The engine routes all six names to one injected reader
 (`AgentCapabilityDeps.readSlack`), which holds the bot token — so *which* workspace is read is
 never the model's to choose. The composition root binds it: resolving a project's token is the
 Slack slice's knowledge, and reaching for it from execution makes the two slices mutually
@@ -1727,8 +1763,10 @@ What the tools may hand back is bounded twice over — see
 
 ### A2A
 
-**Inbound**: every project with a published version serves a public Agent Card and a JSON-RPC
-endpoint. Task state is persisted per project in the single table (`createA2aTaskStore`), so it
+**Inbound**: on a deployment where the surface is enabled (the shared `A2A_API_KEY` or at
+least one named client key — otherwise both routes answer 503), every project with a
+published version serves a public Agent Card and a JSON-RPC endpoint. Task state is persisted
+per project in the single table (`createA2aTaskStore`), so it
 survives redeploys and is shared across instances, with a terminal-state-guarding conditional
 write so a concurrent complete/cancel never regresses a finished task. Rows are TTL-expired.
 
@@ -1885,8 +1923,9 @@ is actionable, while an empty string reads as "the document is empty".
 become U+FFFD — so the naive decode turns a PDF into replacement characters and reports
 success. It decides on the bytes (a UTF-8 round trip, plus a NUL check for ASCII UTF-16),
 never on the declared content type, which is absent or wrong often enough to lose real files.
-The same decision guards MCP tool results: a non-image `resource.blob` that is not text is now
-named and omitted rather than dumped.
+The same decision guards MCP tool results: a non-image `resource.blob` that is not text
+travels as a `file` chunk (named in the result text as delivered to the user) while it fits
+`MAX_TOOL_FILE_BYTES`, and past that is named and omitted rather than dumped.
 
 ### Audit records
 
