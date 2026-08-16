@@ -26,6 +26,9 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/@swc/helpers/esm/**/*"],
+  },
   experimental: {
     optimizePackageImports: ["@mantine/core", "@mantine/hooks", "@tabler/icons-react"],
     useTypeScriptCli: true,
