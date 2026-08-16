@@ -1403,6 +1403,19 @@ const SINGLE_OWNERS: SingleOwner[] = [
     pattern: /\[\^A-Za-z0-9_-\]/,
     owner: "src/infrastructure/mcp/toolManager.ts",
   },
+  {
+    // Not a duplicated definition but a duplicated *copy of undici*, which is
+    // the same failure one layer down. A `dispatcher` is a private contract
+    // between a fetch implementation and its `Agent`, and the runtime ships its
+    // own undici behind the global `fetch` — so the package may only be reached
+    // where both halves are taken from it together. Mixing them cost every
+    // outbound request a bare `TypeError: fetch failed` on a Node whose bundled
+    // major had drifted from `package.json`, with the real reason
+    // (`invalid onRequestStart method`) buried in a `cause` nothing logged.
+    what: "reaching undici directly",
+    pattern: /from "undici"/,
+    owner: "src/infrastructure/net/publicFetch.ts",
+  },
 ];
 
 describe("single owners", () => {
