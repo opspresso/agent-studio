@@ -139,6 +139,8 @@ describe("model registry invariants", () => {
         (imageOutputPer1M ?? 0) > 0 || (perImage ?? 0) > 0,
         `${model.id}: neither imageOutputPer1M nor perImage is priced`,
       ).toBe(true);
+      expect(model.pricing.perInputImage ?? 0, `${model.id}: negative source image price`)
+        .toBeGreaterThanOrEqual(0);
     }
   });
 

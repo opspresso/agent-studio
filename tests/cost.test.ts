@@ -39,6 +39,15 @@ describe("calculateImageCost", () => {
     expect(calculateImageCost("xai/grok-imagine-image-quality", zeroTokens)).toBe(0.05);
   });
 
+  it("adds the provider's flat charge for source images on edits", () => {
+    expect(calculateImageCost("xai/grok-imagine-image-2.0", {
+      textInputTokens: 0,
+      imageInputTokens: 0,
+      imageOutputTokens: 0,
+      sourceImages: 2,
+    })).toBeCloseTo(0.8, 10);
+  });
+
   it("bills token-rated image models from token usage (perImage stays informational)", () => {
     // gemini-3.1-flash-image: imageOutput 60 per 1M.
     const cost = calculateImageCost("google/gemini-3.1-flash-image", {

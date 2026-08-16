@@ -106,7 +106,10 @@ export function buildImageEditor(
       quality,
       signal,
     });
-    const recorded = toImageUsageRecord(model, result.usage);
+    const recorded = toImageUsageRecord(model, {
+      ...result.usage,
+      sourceImages: images.length,
+    });
     await recordUsageFn({ projectName, model, ...recorded });
     return { b64: result.b64, mimeType: result.mimeType };
   };
@@ -152,7 +155,10 @@ export async function* runImageSubagent(
       sources.length > 0
         ? await deps.imageChannel.editImage({ model, prompt, images: sources, signal })
         : await deps.imageChannel.generateImage({ model, prompt, signal });
-    const recorded = toImageUsageRecord(model, result.usage);
+    const recorded = toImageUsageRecord(model, {
+      ...result.usage,
+      sourceImages: sources.length,
+    });
     await recordUsageFn({ projectName: project.name, model, ...recorded });
     recorder?.observeResult({ content: "", model, usage: recorded });
     yield {

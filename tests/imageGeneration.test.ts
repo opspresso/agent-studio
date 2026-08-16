@@ -315,6 +315,22 @@ describe("generateImage", () => {
     expect(recorded[0]).toMatchObject({ inputTokens: 320, outputTokens: 1000 });
   });
 
+  it("records flat source-image charges for xAI edits", async () => {
+    const { deps, recorded } = fakeDeps();
+
+    await generateImage(deps, {
+      project,
+      version: version("xai/grok-imagine-image-2.0"),
+      prompt: "combine them",
+      images: [
+        { b64: "b25l", mimeType: "image/png" },
+        { b64: "dHdv", mimeType: "image/png" },
+      ],
+    });
+
+    expect(recorded[0]?.costUsd).toBeCloseTo(0.8, 10);
+  });
+
   it("generates when the images list is present but empty", async () => {
     const { deps, edits, prompts } = fakeDeps();
 

@@ -168,7 +168,10 @@ export async function generateImage(
             signal: withRunDeadline(input.signal),
           });
 
-    const recorded = toImageUsageRecord(model, result.usage);
+    const recorded = toImageUsageRecord(model, {
+      ...result.usage,
+      sourceImages: sources.length,
+    });
     // Usage recording is telemetry: the provider has already generated (and
     // billed) the image, so a write failure must not turn that into a 500 and
     // discard the result. Same policy as the engine's recordUsageIfPossible.

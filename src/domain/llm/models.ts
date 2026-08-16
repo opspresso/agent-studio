@@ -75,6 +75,8 @@ export interface ModelPricing {
    * output rate (`imageOutputPer1M` absent/0); informational otherwise.
    */
   perImage?: number;
+  /** Flat charge for each source image supplied to an image edit. */
+  perInputImage?: number;
 }
 
 export interface ModelCapabilities {
@@ -337,7 +339,16 @@ const MODEL_FAMILIES = {
   },
   "gemini-3.6-flash": {
     displayName: "Gemini 3.6 Flash",
-    pricing: { inputPer1M: 1.5, outputPer1M: 7.5, cachedInputPer1M: 0.15 },
+    // Promotional standard rate through 2026-12-31.
+    pricing: { inputPer1M: 0.75, outputPer1M: 3.75, cachedInputPer1M: 0.075 },
+    capabilities: TEXT_CAPABILITIES,
+    contextWindow: GEMINI_CONTEXT,
+    maxTokens: GEMINI_MAX_OUTPUT,
+  },
+  "gemini-3.7-flash": {
+    displayName: "Gemini 3.7 Flash",
+    // Promotional standard rate through 2026-12-31.
+    pricing: { inputPer1M: 0.75, outputPer1M: 3.75, cachedInputPer1M: 0.075 },
     capabilities: TEXT_CAPABILITIES,
     contextWindow: GEMINI_CONTEXT,
     maxTokens: GEMINI_MAX_OUTPUT,
@@ -395,6 +406,13 @@ const MODEL_FAMILIES = {
   "grok-4.5": {
     displayName: "Grok 4.5",
     pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.3 },
+    capabilities: TEXT_CAPABILITIES,
+    contextWindow: 500_000,
+    maxTokens: 64_000,
+  },
+  "grok-4.6": {
+    displayName: "Grok 4.6",
+    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.5 },
     capabilities: TEXT_CAPABILITIES,
     contextWindow: 500_000,
     maxTokens: 64_000,
@@ -463,10 +481,17 @@ const MODEL_FAMILIES = {
   },
   "deepseek-v4-pro": {
     displayName: "DeepSeek V4 Pro",
-    pricing: { inputPer1M: 1.168, outputPer1M: 2.336, cachedInputPer1M: 0.0986 },
+    pricing: { inputPer1M: 1.168, outputPer1M: 2.336, cachedInputPer1M: 0.09855 },
     capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
     contextWindow: 1_048_576,
     maxTokens: 393_216,
+  },
+  "deepseek-v4-pro-0813": {
+    displayName: "DeepSeek V4 Pro 0813",
+    pricing: { inputPer1M: 0.435, outputPer1M: 0.87, cachedInputPer1M: 0.003625 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
+    contextWindow: 1_048_576,
+    maxTokens: 384_000,
   },
   "mimo-v2.5": {
     displayName: "MiMo V2.5",
@@ -518,6 +543,27 @@ const MODEL_FAMILIES = {
     capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
     contextWindow: 1_000_000,
     maxTokens: 131_072,
+  },
+  "qwen3.8-2.4t-a95b": {
+    displayName: "Qwen3.8 2.4T A95B",
+    pricing: { inputPer1M: 2.0, outputPer1M: 6.0, cachedInputPer1M: 0.25 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
+    contextWindow: 1_000_000,
+    maxTokens: 262_144,
+  },
+  "qwen3.8-27b": {
+    displayName: "Qwen3.8 27B",
+    pricing: { inputPer1M: 0.45, outputPer1M: 3.2 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: true, reasoning: true },
+    contextWindow: 262_144,
+    maxTokens: 131_072,
+  },
+  "nemotron-3.5-lightning": {
+    displayName: "Nemotron 3.5 Lightning",
+    pricing: { inputPer1M: 0.1, outputPer1M: 0.25, cachedInputPer1M: 0.05 },
+    capabilities: { tools: true, structuredOutput: true, imageInput: false, reasoning: true },
+    contextWindow: 262_144,
+    maxTokens: 262_144,
   },
   "solar-pro-4": {
     displayName: "Solar Pro 4",
@@ -722,7 +768,7 @@ const MODEL_FAMILIES = {
   },
   "grok-imagine-image": {
     displayName: "Grok Imagine",
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.02 },
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.02, perInputImage: 0.02 },
     capabilities: {
       tools: false,
       structuredOutput: false,
@@ -735,7 +781,20 @@ const MODEL_FAMILIES = {
   },
   "grok-imagine-image-quality": {
     displayName: "Grok Imagine Quality",
-    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.05 },
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.05, perInputImage: 0.1 },
+    capabilities: {
+      tools: false,
+      structuredOutput: false,
+      imageInput: true,
+      reasoning: false,
+      imageGeneration: true,
+    },
+    contextWindow: 32_768,
+    maxTokens: 4_096,
+  },
+  "grok-imagine-image-2.0": {
+    displayName: "Grok Imagine Image 2.0",
+    pricing: { inputPer1M: 0, outputPer1M: 0, perImage: 0.6, perInputImage: 0.1 },
     capabilities: {
       tools: false,
       structuredOutput: false,
@@ -788,6 +847,7 @@ const MODEL_OFFERINGS: ModelOffering[] = [
   { family: "claude-haiku-4.5", provider: "anthropic", wireId: "claude-haiku-4-5" },
   // Google
   { family: "gemini-3.1-pro", provider: "google" },
+  { family: "gemini-3.7-flash", provider: "google" },
   { family: "gemini-3.6-flash", provider: "google" },
   { family: "gemini-3.5-flash", provider: "google" },
   { family: "gemini-3.5-flash-lite", provider: "google" },
@@ -801,6 +861,7 @@ const MODEL_OFFERINGS: ModelOffering[] = [
   { family: "gemini-2.5-flash", provider: "google" },
   { family: "gemini-2.5-flash-lite", provider: "google" },
   // xAI
+  { family: "grok-4.6", provider: "xai" },
   { family: "grok-4.5", provider: "xai" },
   { family: "grok-4.20", provider: "xai" },
   { family: "grok-4.3", provider: "xai" },
@@ -868,12 +929,10 @@ const MODEL_OFFERINGS: ModelOffering[] = [
    * the registry's own prefix is `openrouter`, and what goes on the wire is the
    * vendor's name for the model.
    *
-   * Only two of these restate a price: OpenRouter bills list price for almost
-   * everything it serves, and a route that agrees with the family says nothing.
-   * The two that differ are OpenAI's mid and small 5.6 models, which OpenRouter
-   * publishes at half the direct rate. Cost for this provider does not rest on
-   * these numbers anyway — it reports what a call actually cost and that is what
-   * gets recorded; the registry rate is the estimate shown before a run.
+   * A route restates a price only when OpenRouter's current catalog differs from
+   * the family rate. Cost for this provider does not rest on these estimates —
+   * it reports what a call actually cost and that is what gets recorded — but
+   * the registry still has to show an honest estimate before a run.
    */
   { family: "claude-fable-5", provider: "openrouter", wireId: "anthropic/claude-fable-5" },
   { family: "claude-opus-5", provider: "openrouter", wireId: "anthropic/claude-opus-5" },
@@ -896,20 +955,41 @@ const MODEL_OFFERINGS: ModelOffering[] = [
   { family: "gpt-5.4", provider: "openrouter", wireId: "openai/gpt-5.4" },
   { family: "gpt-5.4-mini", provider: "openrouter", wireId: "openai/gpt-5.4-mini" },
   { family: "gemini-3.6-flash", provider: "openrouter", wireId: "google/gemini-3.6-flash" },
+  {
+    family: "gemini-3.7-flash",
+    provider: "openrouter",
+    wireId: "google/gemini-3.7-flash",
+    pricing: { inputPer1M: 0.375, outputPer1M: 1.875, cachedInputPer1M: 0.0375 },
+  },
+  { family: "grok-4.6", provider: "openrouter", wireId: "x-ai/grok-4.6" },
   { family: "grok-4.5", provider: "openrouter", wireId: "x-ai/grok-4.5" },
   { family: "grok-4.3", provider: "openrouter", wireId: "x-ai/grok-4.3" },
   // The models OpenRouter is itself busiest with — see the families above.
   // `deepseek/deepseek-v4-flash` is the undated alias; it resolves to whichever
   // snapshot OpenRouter has current, which is what a route should follow.
-  { family: "deepseek-v4-flash", provider: "openrouter", wireId: "deepseek/deepseek-v4-flash" },
+  {
+    family: "deepseek-v4-flash",
+    provider: "openrouter",
+    wireId: "deepseek/deepseek-v4-flash",
+    pricing: { inputPer1M: 0.06146, outputPer1M: 0.12292, cachedInputPer1M: 0.012292 },
+  },
   { family: "deepseek-v4-pro", provider: "openrouter", wireId: "deepseek/deepseek-v4-pro" },
+  { family: "deepseek-v4-pro-0813", provider: "openrouter", wireId: "deepseek/deepseek-v4-pro-0813" },
   { family: "mimo-v2.5", provider: "openrouter", wireId: "xiaomi/mimo-v2.5" },
   { family: "hy3", provider: "openrouter", wireId: "tencent/hy3" },
-  { family: "glm-5.2", provider: "openrouter", wireId: "z-ai/glm-5.2" },
+  {
+    family: "glm-5.2",
+    provider: "openrouter",
+    wireId: "z-ai/glm-5.2",
+    pricing: { inputPer1M: 0.308, outputPer1M: 0.968, cachedInputPer1M: 0.0572 },
+  },
   { family: "minimax-m3", provider: "openrouter", wireId: "minimax/minimax-m3" },
   { family: "step-3.7-flash", provider: "openrouter", wireId: "stepfun/step-3.7-flash" },
   { family: "kimi-k3", provider: "openrouter", wireId: "moonshotai/kimi-k3" },
   { family: "qwen3.8-max", provider: "openrouter", wireId: "qwen/qwen3.8-max" },
+  { family: "qwen3.8-2.4t-a95b", provider: "openrouter", wireId: "qwen/qwen3.8-2.4t-a95b" },
+  { family: "qwen3.8-27b", provider: "openrouter", wireId: "qwen/qwen3.8-27b" },
+  { family: "nemotron-3.5-lightning", provider: "openrouter", wireId: "nvidia/nemotron-3.5-lightning" },
   // Upstage. OpenRouter spells the two generations differently — `solar-pro4`
   // against `solar-pro-3` — so the registry keeps one readable form and the
   // wire ids carry theirs, which is the whole job of `wireId`.
@@ -922,6 +1002,7 @@ const MODEL_OFFERINGS: ModelOffering[] = [
   { family: "gemini-3.1-flash-image", provider: "google" },
   { family: "grok-imagine-image", provider: "xai" },
   { family: "grok-imagine-image-quality", provider: "xai" },
+  { family: "grok-imagine-image-2.0", provider: "xai" },
 ];
 
 /** One offering resolved against its family. Overrides are shallow merges. */
@@ -1093,6 +1174,8 @@ export interface ImageCostTokens {
   textInputTokens: number;
   imageInputTokens: number;
   imageOutputTokens: number;
+  /** Source images supplied to an edit; needed by providers that bill each one flat. */
+  sourceImages?: number;
 }
 
 /**
@@ -1106,9 +1189,9 @@ export function calculateImageCost(modelId: string, tokens: ImageCostTokens): nu
     warnUnknownModel(modelId);
     return 0;
   }
-  const { inputPer1M, imageInputPer1M, imageOutputPer1M, perImage } = cfg.pricing;
+  const { inputPer1M, imageInputPer1M, imageOutputPer1M, perImage, perInputImage } = cfg.pricing;
   if (!imageOutputPer1M && perImage) {
-    return perImage;
+    return perImage + (tokens.sourceImages ?? 0) * (perInputImage ?? 0);
   }
   return (
     (tokens.textInputTokens * inputPer1M +
