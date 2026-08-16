@@ -1,18 +1,12 @@
 /*
  * Read-only, not switched off. The disabled fieldset is what inerts the
- * editor for a non-editor, but browsers and Mantine both dim disabled
- * controls toward illegibility — and for someone who cannot edit, that text
- * is the page. The text inside the boxes renders in the theme's dimmed
- * gray instead: clearly gray, still comfortably legible — the same gray
- * every description on the site is read in. Buttons and icons inside stay
- * fully dimmed on purpose: they are actions, and dim is the honest
- * rendering of an action that does nothing.
+ * editor for a non-editor. Global input styles keep its values legible; this
+ * page only changes the cursor because these fields show readable content
+ * rather than an unavailable operation. Buttons and icons keep the disabled
+ * cursor: they are actions, and doing nothing is their actual state.
  */
 .readonlyEditor input:disabled,
 .readonlyEditor textarea:disabled,
 .readonlyEditor select:disabled {
-  opacity: 1;
-  color: var(--mantine-color-dimmed);
-  -webkit-text-fill-color: var(--mantine-color-dimmed);
   cursor: default;
 }

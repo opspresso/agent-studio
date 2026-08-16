@@ -192,6 +192,23 @@ button.mantine-Card-root {
     background-color 140ms ease;
 }
 
+/*
+ * Disabled keeps an input inert, not unreadable. Mantine changes the surface
+ * and cursor already; its additional 0.6 opacity is what makes short values in
+ * compact inputs (a member tier in particular) disappear. Full opacity with
+ * the theme's dimmed ink keeps the state distinct while leaving the value as
+ * legible as the secondary text used throughout the console. The :has branch
+ * covers compound inputs whose visible shell contains the disabled native
+ * input instead of being one itself.
+ */
+.mantine-Input-input:disabled,
+.mantine-Input-input[data-disabled],
+.mantine-Input-input:has(input:disabled) {
+  opacity: 1;
+  color: var(--mantine-color-dimmed);
+  -webkit-text-fill-color: var(--mantine-color-dimmed);
+}
+
 .mantine-Input-input:focus,
 .mantine-Input-input:focus-within {
   border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 62%, transparent);
