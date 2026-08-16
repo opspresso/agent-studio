@@ -17,6 +17,7 @@ function fromItem(item: Record<string, unknown>): Trace {
     projectType: String(item.projectType ?? ""),
     ...(Array.isArray(item.ancestry) ? { ancestry: item.ancestry as string[] } : {}),
     ...(item.actor ? { actor: item.actor as Trace["actor"] } : {}),
+    ...(typeof item.conversation === "string" ? { conversation: item.conversation } : {}),
     status: item.status as Trace["status"],
     spans: (item.spans as Trace["spans"] | undefined) ?? [],
     ...(typeof item.spansDropped === "number" ? { spansDropped: item.spansDropped } : {}),

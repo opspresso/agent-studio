@@ -1,6 +1,7 @@
 import type { RunCaller } from "@/domain/execution/actor";
 import { randomUUID } from "node:crypto";
 import type { Chat, ChatMessage } from "@/domain/chat/types";
+import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatValidationError } from "./errors";
 import {
@@ -104,6 +105,9 @@ export async function createChat(
       ],
       actor: { kind: "user", id: input.userEmail },
       ...(input.caller ? { caller: input.caller } : {}),
+      // The chat is the conversation. Its id is this platform's own, so it needs
+      // no normalising — but it goes through the one builder all the same.
+      conversation: chatConversation(chat.chatId),
       signal: input.signal,
     });
 

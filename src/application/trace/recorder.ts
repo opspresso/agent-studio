@@ -21,6 +21,8 @@ export interface TraceContext {
   ancestry?: string[];
   /** Who caused the run; a subagent inherits its parent's. */
   actor?: RunActor;
+  /** The conversation key (`conversationKey`) the run belongs to, when the surface has one. */
+  conversation?: string;
 }
 
 /** What one transfer contributed, accumulated while its chunks stream by. */
@@ -223,6 +225,7 @@ export class TraceRecorder {
         ? { ancestry: this.context.ancestry }
         : {}),
       ...(this.context.actor ? { actor: this.context.actor } : {}),
+      ...(this.context.conversation ? { conversation: this.context.conversation } : {}),
       status: this.error
         ? "failed"
         : cancelled

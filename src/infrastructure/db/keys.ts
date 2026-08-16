@@ -180,6 +180,16 @@ export const keys = {
   }),
 
   /**
+   * The remote `contextId` an external agent holds for one of this project's
+   * conversations. In the project partition so the cascade delete takes it;
+   * point-read only, so the whole triple is the sort key.
+   */
+  remoteConversation: (projectName: string, agentName: string, conversationKey: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `REMOTECTX#${agentName}#${conversationKey}`,
+  }),
+
+  /**
    * Audit records, partitioned by the UTC day they happened on. A day at a time
    * is how they are read, and it keeps every sensitive act of the deployment's
    * whole history from appending to one partition — the same reason usage rows

@@ -1,6 +1,6 @@
 /** Trace recorder creation, sampling and termination for one run. */
 
-import type { RunActor, RunOrigin } from "@/domain/execution/actor";
+import { conversationKey, type RunActor, type RunConversation, type RunOrigin } from "@/domain/execution/actor";
 import type { ChatMessageInput } from "@/domain/llm/types";
 import type { Project, Version } from "@/domain/project/types";
 import type { TraceRepository } from "@/domain/trace/repository";
@@ -32,6 +32,7 @@ interface TracedRunInput {
   extraMessages?: ChatMessageInput[];
   messages?: ChatMessageInput[];
   actor?: RunActor;
+  conversation?: RunConversation;
 }
 
 /**
@@ -57,7 +58,11 @@ export function sampledTraceRecorder(
     input.project,
     input.version,
     (input.extraMessages ?? input.messages ?? []).length,
-    { ancestry: [input.project.name], ...(input.actor ? { actor: input.actor } : {}) },
+    {
+      ancestry: [input.project.name],
+      ...(input.actor ? { actor: input.actor } : {}),
+      ...(input.conversation ? { conversation: input.conversation } : {}),
+    },
   );
 }
 
@@ -77,6 +82,7 @@ export function createTraceRecorder(
     messageCount,
     ancestry: [...origin.ancestry],
     ...(origin.actor ? { actor: origin.actor } : {}),
+    ...(origin.conversation ? { conversation: conversationKey(origin.conversation) } : {}),
   });
 }
 

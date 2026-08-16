@@ -178,10 +178,12 @@ instance begins draining, so a rollout keeps its last spans.
 
 Traces, usage rows, chats and their messages, artifact rows, trigger deliveries, inbound A2A
 tasks, Slack dedup claims and Better Auth session rows all carry a unix-seconds `expiresAt`,
-as do four fixed-lifetime row kinds: webhook idempotency claims (24h), Slack thread
-engagements (1 day — the window a thread the bot answered in stays "for the bot"), MCP OAuth
-in-flight states (10 min) and run concurrency slots (the lease length — concurrency stays
-correct without TTL, but the rows accumulate one per run).
+as do five fixed-lifetime row kinds: webhook idempotency claims (24h), Slack thread
+engagements (1 day — the window a thread the bot answered in stays "for the bot"), remote
+conversations (7 days, refreshed on use — the window an A2A agent's `contextId` is continued
+for one of our conversations; past it the next transfer starts cold), MCP OAuth in-flight
+states (10 min) and run concurrency slots (the lease length — concurrency stays correct
+without TTL, but the rows accumulate one per run).
 
 > **Enable TTL on the `expiresAt` attribute of the production table.** Nothing in the
 > application does this; `scripts/init-local-table.ts` does it for local only. Without it,

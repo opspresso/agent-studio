@@ -1,4 +1,5 @@
 import type { SlackMessage } from "@/domain/slack/types";
+import { slackConversation } from "@/domain/slack/conversation";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createReplySink } from "@/application/slack/replyStream";
 import { parseSlackCommand, selfUserId } from "@/application/slack/engagement";
@@ -613,6 +614,9 @@ export async function handleSlackEvent(
       throw new EmptyTurnError();
     }
     const messages: ChatMessageInput[] = [...history, { role: "user", content: userContent }];
+    // The thread is the conversation — the same address the engagement row and
+    // the reply itself use, so a follow-up here is one for every consumer.
+    const conversation = slackConversation(event.channel, threadTs);
     for await (const chunk of deps.runAgent({
       project,
       version,
@@ -621,6 +625,7 @@ export async function handleSlackEvent(
       // guessing at a mapping would attribute spend to the wrong person.
       ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
       ...(named.caller ? { caller: named.caller } : {}),
+      ...(conversation ? { conversation } : {}),
       ...(ownerEmail ? { ownerEmail } : {}),
       signal: deadline,
     })) {

@@ -98,6 +98,18 @@ export const RUN_LOG_TTL_SECONDS = RUN_LEASE_SECONDS + 15 * 60;
  */
 export const SLACK_ENGAGEMENT_TTL_SECONDS = SECONDS_PER_DAY;
 
+/**
+ * How long a remote agent's `contextId` is kept for one of our conversations.
+ *
+ * Not retention either — past it, the next transfer from that conversation
+ * starts the remote conversation over, which is what every transfer did before
+ * the row existed. A week rather than the engagement day above: a chat is
+ * picked back up days later where a Slack thread rarely is, and the cost of a
+ * stale hint is one cold start, not a wrong answer. Refreshed on every
+ * transfer, so a live conversation never expires mid-life.
+ */
+export const REMOTE_CONVERSATION_TTL_SECONDS = 7 * SECONDS_PER_DAY;
+
 /** Unix-seconds TTL: `retentionDays` after `baseIso`. Falls back to now for an
  * unparseable base so a row is never written without an expiry. */
 export function expiresAtSeconds(baseIso: string, retentionDays: number): number {

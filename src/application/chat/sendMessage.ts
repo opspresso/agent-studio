@@ -1,5 +1,6 @@
 import type { RunCaller } from "@/domain/execution/actor";
 import type { ChatMessage } from "@/domain/chat/types";
+import { chatConversation } from "@/domain/chat/conversation";
 import type { AttachedDocumentInput, AttachedImage, ChatDeps } from "./deps";
 import { ChatForbiddenError, ChatNotFoundError, ChatValidationError } from "./errors";
 import { resolveMessageImages } from "./resolveImages";
@@ -121,6 +122,9 @@ export async function sendMessage(
       ],
       actor: { kind: "user", id: input.userEmail },
       ...(input.caller ? { caller: input.caller } : {}),
+      // The chat is the conversation. Its id is this platform's own, so it needs
+      // no normalising — but it goes through the one builder all the same.
+      conversation: chatConversation(input.chatId),
       signal: input.signal,
     });
 

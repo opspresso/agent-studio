@@ -1,6 +1,7 @@
 /** A version's MCP bindings resolved into offered tools, and session cleanup. */
 
 import type { Version } from "@/domain/project/types";
+import { conversationKey, type RunOrigin } from "@/domain/execution/actor";
 import type { McpServerConfig } from "@/domain/mcp/toolSession";
 import { BlockedUrlError } from "@/domain/security/urlPolicy";
 import { skipsUrlGuard } from "@/domain/mcp/types";
@@ -37,6 +38,29 @@ export type ResolvedMcp = Awaited<ReturnType<typeof buildMcpTools>>;
  */
 export const TENANT_ID_HEADER = "X-Tenant-Id";
 
+/**
+ * The header every MCP request names its conversation with — the run's
+ * `conversationKey`, when the surface has one.
+ *
+ * Same family as {@link TENANT_ID_HEADER} and the same reasoning for the
+ * generic name, with one deliberate difference in how it travels: it is a
+ * **request** fact rather than an identity one, so it rides
+ * {@link McpServerConfig.contextHeaders} and is stamped on every request
+ * *without* keying the discovery cache. A tenant decides which tools a server
+ * exposes; a conversation never does, and putting it in the identity map would
+ * pay a full discovery per thread for a catalogue that has not changed.
+ *
+ * What a server may do with it: a memory server can tell working notes for
+ * one thread from knowledge shared by the project, and any stateful server can
+ * keep per-conversation context. What it must not do is treat it as
+ * authorization — like the tenant, it authenticates nothing.
+ *
+ * Absent when the run has no conversation (a firing, an API call that sent no
+ * `X-Conversation-Id`) and on the catalog probe and "Test connection", which
+ * have no run.
+ */
+export const CONVERSATION_ID_HEADER = "X-Conversation-Id";
+
 /** What resolving a version's MCP bindings actually reads off the run's deps. */
 export type McpToolDeps = Pick<
   ExecutionDeps,
@@ -47,6 +71,8 @@ export async function buildMcpTools(
   deps: McpToolDeps,
   version: Version,
   signal?: AbortSignal,
+  /** Where the run came from; only its conversation reaches the server, as a header. */
+  origin?: Pick<RunOrigin, "conversation">,
 ): Promise<{
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
@@ -61,6 +87,11 @@ export async function buildMcpTools(
     return { mcpTools: [], mcpServers: [], warnings: [] };
   }
   const descriptionByName = new Map<string, string>();
+  // Per-request context, kept apart from the identity headers on purpose — see
+  // `CONVERSATION_ID_HEADER` for why it must not reach the discovery cache key.
+  const contextHeaders: Record<string, string> = origin?.conversation
+    ? { [CONVERSATION_ID_HEADER]: conversationKey(origin.conversation) }
+    : {};
   const resolved = await Promise.all(
     mcpList.map(
       async (binding): Promise<{ server?: McpServerConfig; description?: string; warning?: string }> => {
@@ -118,7 +149,11 @@ export async function buildMcpTools(
         // above, so a metadata header never counts as "a way to authenticate"
         // a server whose connection is unavailable.
         for (const name of Object.keys(headers)) {
-          if (name.toLowerCase() === TENANT_ID_HEADER.toLowerCase()) {
+          const lower = name.toLowerCase();
+          if (
+            lower === TENANT_ID_HEADER.toLowerCase() ||
+            lower === CONVERSATION_ID_HEADER.toLowerCase()
+          ) {
             delete headers[name];
           }
         }
@@ -129,6 +164,7 @@ export async function buildMcpTools(
             url: mcp.url,
             ...(loopback ? { loopback: true } : {}),
             headers,
+            ...(Object.keys(contextHeaders).length > 0 ? { contextHeaders } : {}),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
           },
           description: mcp.description ?? "",

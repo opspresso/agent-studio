@@ -126,8 +126,87 @@ export interface RunOrigin {
    * the actor does — a subagent is answering the same person as its parent.
    */
   caller?: RunCaller;
+  /**
+   * Which conversation the run belongs to, when the surface has one. Travels the
+   * chain like the two above: a child transferred to from a Slack thread is
+   * still answering in that thread, and a remote agent it hands off to should
+   * be able to tell the second question in it from a first.
+   */
+  conversation?: RunConversation;
   /** Project names on the transfer chain, outermost first. */
   ancestry: readonly string[];
+}
+
+/**
+ * The surface a conversation lives on. Each names its conversations differently
+ * — a chat by its id, Slack by channel and thread, A2A by the client's
+ * `contextId`, an API caller by whatever it put in `X-Conversation-Id` — and
+ * the surface is what keeps those namespaces apart in one key.
+ *
+ * Deliberately not every {@link RunActorKind}: a webhook delivery and a
+ * schedule occurrence are one-shot. Nobody asks a follow-up question in a
+ * firing, so a firing has no conversation rather than a conversation of one.
+ */
+export type RunSurface = "chat" | "slack" | "a2a" | "api";
+
+/**
+ * Where a run's conversation is: the surface, and that surface's own id for it.
+ *
+ * This is the key two things had been missing. An outbound A2A transfer needs
+ * a `contextId` to continue a remote conversation rather than start one per
+ * question, and an MCP server that keeps state — a memory server — needs to
+ * know which conversation is asking. Neither the actor (a person is in many
+ * conversations) nor the ancestry (a chain of projects, not of turns) can
+ * stand in for it, which is why it is its own field rather than a spelling of
+ * either.
+ */
+export interface RunConversation {
+  surface: RunSurface;
+  /**
+   * Stable within the surface, and already made safe by {@link conversationOf}:
+   * printable ASCII, no whitespace, bounded. It lands in a request header and in
+   * a storage key, so it holds only what both accept.
+   */
+  id: string;
+}
+
+/**
+ * Longest id that still reads as one. Generous — a Slack thread address, an
+ * A2A `contextId` a remote client minted, an API caller's own key — but a
+ * bound all the same, because the value travels in a header and a storage key.
+ */
+const MAX_CONVERSATION_ID_LENGTH = 200;
+
+/**
+ * Build a conversation from whatever a surface knows — the single place a
+ * {@link RunConversation} is created, and therefore the single place its id is
+ * made safe to carry.
+ *
+ * An A2A `contextId` and an API caller's header are chosen by somebody else,
+ * so the id is normalised rather than trusted: whitespace and control
+ * characters become `_` (a header cannot carry them; a key would carry them
+ * invisibly), anything outside printable ASCII likewise, and the whole is
+ * bounded. Returns `null` when nothing survives — no conversation is better
+ * than an empty one, which every conversation with no id would share.
+ */
+export function conversationOf(surface: RunSurface, rawId: string | undefined | null): RunConversation | null {
+  const trimmed = rawId?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const id = trimmed.replace(/[^\x21-\x7e]/g, "_").slice(0, MAX_CONVERSATION_ID_LENGTH);
+  return { surface, id };
+}
+
+/**
+ * The conversation's one string form: `surface:id`. What an MCP server is
+ * told, what a remote-context row is keyed by, what a trace records. Qualified
+ * by surface for the same reason {@link actorKey} is by kind — a chat id and an
+ * A2A `contextId` that happen to spell the same must not become one
+ * conversation.
+ */
+export function conversationKey(conversation: RunConversation): string {
+  return `${conversation.surface}:${conversation.id}`;
 }
 
 /**

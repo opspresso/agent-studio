@@ -201,6 +201,7 @@ One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S)
 | Run concurrency slot | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
+| Remote conversation (outbound A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
 | A2A client key | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
 | A2A client key hash (verification) | `A2AKEYHASH#{sha256}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
@@ -1052,8 +1053,15 @@ any spelling — and **after** the OAuth-availability check, so metadata never c
 to authenticate a server whose connection is unavailable. A caller with no project behind it
 sends none: the catalog probe and "Test connection" carry no tenant. Because it rides in the
 same header map, it also keys the [discovery cache](#discovery-cache) per project, so a server
-free to expose different tools per tenant is cached per tenant. The full contract is in
-[SECURITY.md](SECURITY.md#what-an-mcp-server-is-told-about-the-caller).
+free to expose different tools per tenant is cached per tenant. **And names its conversation**,
+as `X-Conversation-Id` (`CONVERSATION_ID_HEADER`, same file) carrying the run's
+`conversationKey` when it has one — the header a memory server needs to tell one thread's
+working notes from the project's shared knowledge. Reserved and stamped after the merge like
+the tenant, but carried in the session's *context* headers rather than its identity headers
+(`McpServerConfig.contextHeaders`), so it reaches every request and **never the discovery
+cache key**: a conversation decides nothing about which tools a server exposes, and keying on
+it would pay a full discovery per thread for a catalogue that has not changed. The full
+contract is in [SECURITY.md](SECURITY.md#what-an-mcp-server-is-told-about-the-caller).
 
 #### Transport and sessions
 
@@ -1779,9 +1787,22 @@ before any request goes out, which is what makes the fallback safe. **The bound 
 not on the whole exchange**: a remote investigation may run far longer than any gap between its
 updates, and the total is capped by the run's own deadline. Past the first event a broken
 stream is reported rather than retried, since the remote is already working and a second send
-would run the delegation twice. A transfer still carries no `contextId`, so a second question
-from the same thread arrives at the remote agent cold (the conversation-key gap in
-[MILESTONES.md](MILESTONES.md) — the key does not exist on `RunOrigin` to carry).
+would run the delegation twice.
+
+**A transfer continues the remote conversation.** The protocol's mechanism is `contextId`: the
+remote mints one on the first message and groups later messages that carry it. Which one to
+carry is answered by `RunOrigin.conversation` — the same key the MCP header names — through a
+row per *transferring project × agent × conversation* (`REMOTECTX#…`, owned by
+`RemoteConversationRepository`, written by `runRemoteSubagent`): the reply's `contextId` is
+remembered after every successful transfer and sent back on the next one from the same
+conversation. Keyed by project on purpose — two projects' bots answering in one Slack thread
+are two callers of the remote agent, and one context would show each the other's turns — and
+by our conversation rather than by the remote's, because the remote's key is what is being
+looked up. It is a hint with a week's TTL, refreshed on use: losing one costs the next transfer
+a cold start, which is exactly what every transfer got before the row existed, and a store
+that cannot be read starts cold rather than failing the transfer. An OpenAI-shaped remote has
+no conversation to continue and is sent none. A run without a conversation — a firing, an API
+call that sent no `X-Conversation-Id` — transfers cold, as before.
 
 SSE framing differs by protocol: `sseResponse` uses the OpenAI `[DONE]` terminator,
 `sseResponseRaw` uses A2A JSON-RPC framing (`src/app/api/_lib/sse.ts`).
@@ -2012,11 +2033,31 @@ is additive — a path that cannot name its caller still records the spend it ca
 
 **The actor is the run's, not the turn's.** `createUsageAggregator` is bound with it once, so
 the calls a subagent transfer makes on another project are still attributed to whoever started
-the run. `RunOrigin { actor?, caller?, ancestry }` carries them down every transfer hop —
-`caller` being who the actor is *in words*, for versions that opt into caller context; a
-subagent is answering, and billing, the same person as its parent, so the values always
-travel together as one rather than as parameters threaded side by side through eight
+the run. `RunOrigin { actor?, caller?, conversation?, ancestry }` carries them down every
+transfer hop — `caller` being who the actor is *in words*, for versions that opt into caller
+context; a subagent is answering, and billing, the same person as its parent, so the values
+always travel together as one rather than as parameters threaded side by side through eight
 signatures.
+
+**`conversation` is which thread the run is in**, `RunConversation { surface, id }`, spelled
+as one key by `conversationKey` (`src/domain/execution/actor.ts`, which also owns
+`conversationOf` — the one place a foreign id is normalised for a header and a storage key).
+Each surface has its own builder and its own spelling, and a firing has none:
+
+| Surface | Key | Built by |
+|---|---|---|
+| chat | `chat:{chatId}` | `chatConversation` (`src/domain/chat/conversation.ts`) |
+| Slack | `slack:{channel}:{threadTs}` — the thread, root message included | `slackConversation` (`src/domain/slack/conversation.ts`) |
+| inbound A2A | `a2a:{clientActorId}:{contextId}` — the caller's grouping, under the caller | `a2aConversation` (`src/domain/a2a/conversation.ts`) |
+| `predict` / `chat/completions` / `agent` | `api:{callerDigest}:{X-Conversation-Id}` — opt-in, scoped to the caller without carrying their email | `requestConversation` (`src/app/api/projects/_lib/conversation.ts`) |
+| webhook / schedule | — | a firing takes no follow-up question, so it is not a conversation of one |
+
+Two consumers read it, and only two: the outbound A2A transfer, which continues the remote
+conversation the first question opened ([A2A](#a2a)), and the MCP header that tells a
+stateful server which conversation is asking ([MCP](#mcp)). Neither the actor (a person is in
+many conversations) nor the ancestry (a chain of projects, not of turns) could stand in for
+it, which is why it is a field of its own. The trace records the key too, so the runs of one
+thread can be read together.
 
 ### Traces
 

@@ -23,6 +23,7 @@ import { mcpRepository } from "@/infrastructure/db/repositories/mcpRepository";
 import { mcpConnectionRepository } from "@/infrastructure/db/repositories/mcpConnectionRepository";
 import { mcpOAuthStateRepository } from "@/infrastructure/db/repositories/mcpOAuthStateRepository";
 import { externalAgentRepository } from "@/infrastructure/db/repositories/externalAgentRepository";
+import { remoteConversationRepository } from "@/infrastructure/db/repositories/remoteConversationRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { createChannel } from "@/infrastructure/llm/channel";
 import { createImageChannel } from "@/infrastructure/llm/imageChannel";
@@ -709,6 +710,10 @@ export const executionDeps: ExecutionDeps = {
     return runtime ? createSlackWorkspaceReader(slackReader, runtime.botToken) : null;
   },
   remoteAgents,
+  // The remote `contextId` a transfer continues, per project × agent ×
+  // conversation. Wired here so a second question from one Slack thread or
+  // chat reaches an A2A agent in the conversation the first one opened.
+  remoteConversations: remoteConversationRepository,
   mcpSessions,
   mcpAuth: mcpAuthProvider,
   mcpConnections: mcpConnectionRepository,

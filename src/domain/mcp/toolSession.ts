@@ -14,6 +14,14 @@ export interface McpServerConfig {
   url: string;
   /** Already-decrypted outbound headers. */
   headers: Record<string, string>;
+  /**
+   * Headers that describe the *request* rather than the server — today the
+   * conversation the run belongs to. Sent on every request like `headers`, but
+   * deliberately not part of the server's identity: discovery is cached per
+   * `url + headers`, and a value that changes per thread must not make every
+   * thread re-discover a catalogue that has not changed.
+   */
+  contextHeaders?: Record<string, string>;
   /** Narrows which of the server's tools this run offers; empty means all. */
   tools?: string[];
   /**
