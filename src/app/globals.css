@@ -209,6 +209,22 @@ button.mantine-Card-root {
   -webkit-text-fill-color: var(--mantine-color-dimmed);
 }
 
+/*
+ * A placeholder invites typing, and a disabled box accepts none — so beside
+ * the rule above, which deliberately makes disabled text as legible as any
+ * other, an empty field reads as one holding a value. That is worst exactly
+ * where the state is used most: `readonlyEditor` shows a non-editor what the
+ * version actually says, and `e.g. gpt-5` in an unset field is the one line on
+ * that page describing nothing. Hidden rather than dimmed — there is no shade
+ * that means "this is a hint, not a value".
+ */
+.mantine-Input-input:disabled::placeholder,
+.mantine-Input-input[data-disabled]::placeholder,
+.mantine-Input-input:has(input:disabled) input::placeholder {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
 .mantine-Input-input:focus,
 .mantine-Input-input:focus-within {
   border-color: color-mix(in oklab, var(--mantine-primary-color-filled) 62%, transparent);
