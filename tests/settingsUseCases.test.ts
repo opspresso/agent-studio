@@ -25,6 +25,7 @@ const ENV_KEYS = [
   "GITHUB_TOKEN",
   "A2A_API_KEY",
   "PUBLIC_BASE_URL",
+  "ARTIFACT_ACCESS_MODE",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -81,6 +82,11 @@ describe("settingsUseCases.getView", () => {
       source: "default",
       secret: false,
     });
+    expect(view.fields.artifactAccessMode).toEqual({
+      value: "authenticated",
+      source: "default",
+      secret: false,
+    });
   });
 });
 
@@ -124,6 +130,30 @@ describe("settingsUseCases.update access-control guards", () => {
 });
 
 describe("settingsUseCases.update", () => {
+  it("stores a public artifact mode override and clears it back to the environment", async () => {
+    process.env.ARTIFACT_ACCESS_MODE = "authenticated";
+    const { repo, current } = fakeRepo();
+    const useCases = createSettingsUseCases(repo);
+
+    let view = await useCases.update({ artifactAccessMode: "public" }, ADMIN);
+    expect(current()?.artifactAccessMode).toBe("public");
+    expect(view.fields.artifactAccessMode?.source).toBe("override");
+
+    view = await useCases.update({ artifactAccessMode: "" }, ADMIN);
+    expect(current()?.artifactAccessMode).toBeUndefined();
+    expect(view.fields.artifactAccessMode?.value).toBe("authenticated");
+    expect(view.fields.artifactAccessMode?.source).toBe("env");
+  });
+
+  it("rejects an unknown artifact access mode at the use-case boundary", async () => {
+    const { repo, current } = fakeRepo();
+
+    await expect(
+      createSettingsUseCases(repo).update({ artifactAccessMode: "private" }, ADMIN),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(current()).toBeNull();
+  });
+
   /**
    * The page posts every field on every save, so one save used to turn all ten
    * into overrides — each reading `override` next to the value it was already

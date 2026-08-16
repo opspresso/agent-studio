@@ -70,6 +70,20 @@ describe("PUT /api/settings", () => {
     expect(useCases.update).not.toHaveBeenCalled();
   });
 
+  it("forwards a valid artifact access mode and rejects unknown values", async () => {
+    const res = await put({ artifactAccessMode: "public" });
+    expect(res.status).toBe(200);
+    expect(useCases.update).toHaveBeenCalledWith(
+      { artifactAccessMode: "public" },
+      "admin@example.com",
+    );
+
+    vi.clearAllMocks();
+    const invalid = await put({ artifactAccessMode: "private" });
+    expect(invalid.status).toBe(400);
+    expect(useCases.update).not.toHaveBeenCalled();
+  });
+
   it("forwards enabledModels, which the /api/models list reads", async () => {
     const body = { enabledModels: ["openai/gpt-5.4"] };
     const res = await put(body);

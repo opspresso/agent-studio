@@ -7,6 +7,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { ArtifactObjectStore } from "@/domain/artifact/objectStore";
 import { config } from "@/lib/config";
+import { getArtifactAccessMode } from "@/lib/runtime-settings";
 
 let s3Client: S3Client | undefined;
 
@@ -29,13 +30,16 @@ export function isObjectStoreConfigured(): boolean {
   return config.objectBucketName !== undefined;
 }
 
+export function artifactPublicUrl(key: string): string {
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  return `https://${requireBucket()}.s3.${config.awsRegion}.amazonaws.com/${encodedKey}`;
+}
+
 /**
  * The bytes behind an artifact row.
  *
- * `private` on the cache header rather than `public`: the bytes are immutable —
- * the key is derived from a UUID and nothing rewrites it — but the response
- * belongs to the one caller whose signature fetched it, and a shared cache has
- * no business holding it for the next one.
+ * The bytes are immutable, but stay out of shared caches in both access modes.
+ * That keeps switching from public back to authenticated meaningful.
  */
 export const artifactObjectStore: ArtifactObjectStore = {
   async put(input) {
@@ -51,12 +55,13 @@ export const artifactObjectStore: ArtifactObjectStore = {
   },
 
   /**
-   * A pre-signed GET URL. The lifetime is the caller's, because the readers need
-   * different ones: a chat view is read by a person with the page already open,
-   * while a replay hands the URL to a model provider that fetches it at some
-   * point inside a run which may last `MAX_RUN_DURATION_MS`.
+   * A direct URL in public mode, otherwise a pre-signed GET URL. The signed
+   * lifetime is the caller's because readers need different ones.
    */
   async sign(key, expiresInSeconds, options) {
+    if (await getArtifactAccessMode() === "public") {
+      return artifactPublicUrl(key);
+    }
     const downloadAs = options?.downloadAs;
     return getSignedUrl(
       // The presigner is typed against its own copy of the smithy client

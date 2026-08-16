@@ -27,6 +27,9 @@ function fromItem(item: Record<string, unknown>): AppSettings {
       settings[field] = value;
     }
   }
+  if (item.artifactAccessMode === "authenticated" || item.artifactAccessMode === "public") {
+    settings.artifactAccessMode = item.artifactAccessMode;
+  }
   if (Array.isArray(item.llmProviders)) {
     settings.llmProviders = item.llmProviders as LlmProviderSetting[];
   }

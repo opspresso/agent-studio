@@ -64,6 +64,7 @@ const SECTIONS: SectionDef[] = [
     title: "General",
     fields: [
       { key: "publicBaseUrl", label: "PUBLIC_BASE_URL", placeholder: "https://studio.example.com" },
+      { key: "artifactAccessMode", label: "ARTIFACT_ACCESS_MODE" },
     ],
   },
   {
@@ -308,6 +309,34 @@ export default function SettingsPage() {
                 {section.fields.map((field) => {
                   const meta = view?.fields[field.key];
                   const source = SOURCE_LABELS[meta?.source ?? "unset"];
+                  if (field.key === "artifactAccessMode") {
+                    return (
+                      <Select
+                        key={field.key}
+                        label={
+                          <Group component="span" gap="xs">
+                            <Text component="span" ff="monospace" fz="sm" fw={500}>
+                              {field.label}
+                            </Text>
+                            <Badge color={source.color}>{source.text}</Badge>
+                          </Group>
+                        }
+                        value={values[field.key] ?? "authenticated"}
+                        onChange={(value) =>
+                          setValues((prev) => ({
+                            ...prev,
+                            [field.key]: value ?? "authenticated",
+                          }))
+                        }
+                        allowDeselect={false}
+                        data={[
+                          { value: "authenticated", label: "Authenticated · presigned URL" },
+                          { value: "public", label: "Public · direct S3 URL" },
+                        ]}
+                        styles={monoInput}
+                      />
+                    );
+                  }
                   return (
                     <TextInput
                       key={field.key}

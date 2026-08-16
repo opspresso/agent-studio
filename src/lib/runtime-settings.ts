@@ -14,7 +14,7 @@
  * shared invalidation signal, which is deliberately out of scope.
  */
 
-import type { AppSettings } from "@/domain/settings/types";
+import type { AppSettings, ArtifactAccessMode } from "@/domain/settings/types";
 import {
   toUnknownModelPolicy,
   type UnknownModelPolicy,
@@ -136,6 +136,11 @@ export async function getA2aApiKey(): Promise<string | undefined> {
 
 export async function getPublicBaseUrl(): Promise<string | undefined> {
   return (await loadSettings())?.publicBaseUrl ?? config.publicBaseUrl;
+}
+
+export async function getArtifactAccessMode(): Promise<ArtifactAccessMode> {
+  const value = (await loadSettings())?.artifactAccessMode ?? process.env.ARTIFACT_ACCESS_MODE;
+  return value === "public" ? "public" : "authenticated";
 }
 
 /**

@@ -395,8 +395,11 @@ liveness is what made this class of failure invisible.
         role's own credentials, so without it **every** image 403s — the gallery and the
         chat transcript alike, including rows written before. `DeleteObject` is what the
         gallery's delete button needs; without it a delete fails and leaves the row.
-- [ ] If `S3_BUCKET_NAME` is set: the bucket is **private** (public-read is no longer needed),
-      with lifecycle rules on `artifacts/image/`, `artifacts/document/` and the legacy
+- [ ] If `S3_BUCKET_NAME` is set: choose `ARTIFACT_ACCESS_MODE`. Keep the bucket private for
+      `authenticated`; for `public`, explicitly allow public `s3:GetObject` on `artifacts/*`
+      and the legacy `images/*`, and confirm S3 Block Public Access permits that policy. In
+      either mode, add lifecycle
+      rules on `artifacts/image/`, `artifacts/document/` and the legacy
       `images/` prefix — see [Row retention](#row-retention). A missing rule on a new prefix
       is a silent leak: the rows expire and the objects do not
 - [ ] LB health check → `/api/ready` (or `/api/health` on a scaled fleet), restart check → `/api/health`

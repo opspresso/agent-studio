@@ -230,13 +230,12 @@ function ArtifactCard({
 }: {
   artifact: ArtifactView;
   showProject: boolean;
-  /** Images only — a document's address is signed to download, never to render. */
+  /** Images only — a document is offered as a download, never rendered. */
   onPreview: () => void;
   onDelete: () => void;
 }) {
-  // A signed URL is minted offline and never checks the object is there, so an
-  // expired or already-deleted one fails at fetch time. Saying so beats a broken
-  // image icon with no explanation.
+  // Address resolution never checks the object is there, so an expired or
+  // already-deleted one fails at fetch time.
   const [gone, setGone] = useState(false);
   const t = useT();
   const locale = useLocale();
@@ -294,10 +293,7 @@ function ArtifactCard({
         )}
 
         <Group gap="xs" mt="auto" justify="space-between">
-          {/* Two labels because two things happen: an image's address renders, so
-              it opens in place; a document's is signed `attachment`, so a browser
-              saves it whatever the link says. One word for both was wrong for
-              one of them. */}
+          {/* Images render in place; documents are offered as a separate link. */}
           {!available ? (
             <span />
           ) : artifact.kind === "image" ? (

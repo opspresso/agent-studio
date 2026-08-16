@@ -26,6 +26,8 @@ export interface LlmProviderSetting {
   auth?: ChannelAuth;
 }
 
+export type ArtifactAccessMode = "authenticated" | "public";
+
 export interface AppSettings {
   adminEmails?: string;
   allowedEmailDomains?: string;
@@ -41,6 +43,8 @@ export interface AppSettings {
   /** Secret. */
   a2aApiKey?: string;
   publicBaseUrl?: string;
+  /** `authenticated` (default) or `public`; controls how stored artifact URLs are resolved. */
+  artifactAccessMode?: string;
   /**
    * `allow` (the default) or `refuse` — whether a run may execute a model the
    * registry cannot price. Stored as the raw string like every other field;

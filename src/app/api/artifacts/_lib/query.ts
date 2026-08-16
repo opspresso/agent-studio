@@ -68,19 +68,17 @@ export function parseArtifactQuery(url: string): ParsedQuery {
 }
 
 export interface ArtifactView extends Artifact {
-  /** A signed address, or absent when signing failed. */
+  /** A readable address, or absent when address resolution failed. */
   url?: string;
 }
 
 /**
  * The rows plus an address for each.
  *
- * Signed inline rather than behind a second request per thumbnail: presigning is
- * a local signature, not a network call, so a page of them costs nothing, while
- * a round trip each would make a gallery N+1.
+ * Resolved inline rather than behind a second request per thumbnail. In
+ * authenticated mode, presigning is local and adds no S3 round trip.
  *
- * A document is signed to download under its own name — the object key is a
- * UUID, and a browser would otherwise save that.
+ * In authenticated mode a document is signed to download under its own name.
  */
 export async function toArtifactViews(
   artifacts: Artifact[],

@@ -145,11 +145,7 @@ export const config = {
   get awsRegion(): string {
     return process.env.AWS_REGION ?? "ap-northeast-2";
   },
-  /**
-   * Private S3 bucket holding what runs produce — generated images and stored
-   * documents. Every read address is pre-signed. Unset disables artifact
-   * persistence: a run still draws, the bytes just reach the surface and stop.
-   */
+  /** S3 bucket holding what runs produce. Unset disables artifact persistence. */
   get objectBucketName(): string | undefined {
     return optionalEnv(process.env.S3_BUCKET_NAME);
   },

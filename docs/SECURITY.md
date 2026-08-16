@@ -678,12 +678,14 @@ Other properties worth knowing:
 - Traces, usage rows, chats, trigger deliveries and inbound A2A tasks all expire via DynamoDB
   TTL — see [OPERATIONS.md](OPERATIONS.md#row-retention).
 - **Generated images** are stored under an unguessable UUID key with `S3_BUCKET_NAME` set, and
-  a chat row keeps the **object key** — never an address. URLs are pre-signed at read time with
-  a lifetime chosen for the reader: 15 minutes for the chat view, and the whole run deadline
-  plus a margin for a replay, because that URL is fetched by the *model provider* at whatever
-  point in the run it reaches the turn. The bucket therefore does not need to be public-read,
-  and a transcript no longer carries a link that works forever for anyone who sees it.
-  - Rows written before this carry a public `url` and are read back unchanged. Rewriting them
+  a chat row keeps the **object key** — never an address. `ARTIFACT_ACCESS_MODE=authenticated`
+  (the default) pre-signs URLs at read time with a lifetime chosen for the reader: 15 minutes
+  for the chat view, and the whole run deadline plus a margin for a replay, because the URL is
+  fetched by the *model provider* at whatever point in the run it reaches the turn. The bucket
+  stays private. `public` instead returns a permanent direct S3 URL. That mode requires an
+  explicit public-read bucket policy and exposes the bytes to anyone who obtains the URL;
+  application authentication still protects gallery metadata and deletion, not the object.
+  - Legacy rows may carry a public `url` and are read back unchanged. Rewriting them
     would change nothing about who can reach those objects, which are already public — so
     **if the bucket was ever public-read, its existing objects still are.** Making it private
     is the operator's step, and old rows stop resolving when it happens.

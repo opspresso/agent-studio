@@ -9,6 +9,7 @@ vi.mock("@/infrastructure/db/repositories/settingsRepository", () => ({
 
 import { settingsRepository } from "@/infrastructure/db/repositories/settingsRepository";
 import {
+  getArtifactAccessMode,
   getAdminEmails,
   getLlmChannelConfig,
   getLlmProviderConfigs,
@@ -30,6 +31,7 @@ const ENV_KEYS = [
   "LLM_API_KEY",
   "LLM_PROVIDER_OPENAI_BASE_URL",
   "LLM_PROVIDER_OPENAI_API_KEY",
+  "ARTIFACT_ACCESS_MODE",
 ] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -53,6 +55,20 @@ afterEach(() => {
 });
 
 describe("runtime settings precedence", () => {
+  it("resolves artifact access securely from DB, env, or the authenticated default", async () => {
+    process.env.ARTIFACT_ACCESS_MODE = "public";
+    stub({ artifactAccessMode: "authenticated", updatedAt: "2026-01-01T00:00:00Z" });
+    await expect(getArtifactAccessMode()).resolves.toBe("authenticated");
+
+    invalidateSettingsCache();
+    stub(null);
+    await expect(getArtifactAccessMode()).resolves.toBe("public");
+
+    invalidateSettingsCache();
+    process.env.ARTIFACT_ACCESS_MODE = "typo";
+    await expect(getArtifactAccessMode()).resolves.toBe("authenticated");
+  });
+
   it("prefers DB overrides, decrypting secrets at read time", async () => {
     process.env.ADMIN_EMAILS = "env@example.com";
     stub({

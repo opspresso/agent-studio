@@ -65,6 +65,12 @@ const fieldSpecs = (env: NodeJS.ProcessEnv): FieldSpec[] => [
     env: () => optionalEnv(env.PUBLIC_BASE_URL) ?? optionalEnv(env.BETTER_AUTH_URL),
   },
   {
+    key: "artifactAccessMode",
+    secret: false,
+    env: () => optionalEnv(env.ARTIFACT_ACCESS_MODE),
+    defaultValue: "authenticated",
+  },
+  {
     key: "unknownModelPolicy",
     secret: false,
     env: () => optionalEnv(env.UNKNOWN_MODEL_POLICY),
@@ -319,6 +325,17 @@ export function createSettingsUseCases(
           continue;
         }
         const value = raw.trim();
+        if (spec.key === "artifactAccessMode" && value !== "") {
+          if (value !== "authenticated" && value !== "public") {
+            throw new ValidationError("Artifact access mode must be authenticated or public");
+          }
+          if (value === spec.env()) {
+            delete next.artifactAccessMode;
+          } else {
+            next.artifactAccessMode = value;
+          }
+          continue;
+        }
         if (value === "") {
           delete next[spec.key];
         } else if (spec.secret) {

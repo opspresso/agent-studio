@@ -12,15 +12,14 @@
  */
 
 /**
- * A signed GET address for a stored object.
+ * A readable GET address for a stored object.
  *
  * The lifetime belongs to the reader, because the readers differ: a chat view is
  * read by a person with the page already open, while a replay hands the URL to a
  * model provider that fetches it at some point inside a run.
  *
- * `downloadAs` sets the filename a browser saves under. Images render inline and
- * pass nothing; a document is something a person takes away, and the object key
- * is a UUID.
+ * The adapter may return a time-limited signed URL or a direct public URL. In
+ * authenticated mode, `downloadAs` sets the filename a browser saves under.
  */
 export type SignObjectUrl = (
   key: string,

@@ -849,14 +849,15 @@ OpenAI-compatible surface carries an `images` extension, predict returns them be
 With no object storage configured a chat image renders during the live stream only, and says so
 rather than leaving a gap.
 
-**A stored image is a key, and its address is minted per read.** The row used to hold a public
-URL, which made a transcript a permanent grant to whoever saw it. `resolveImageUrl`
-(`src/domain/chat/imageRefs.ts`) owns the one compatibility rule — a `key` is signed, a legacy
+**A stored image is a key, and its address is resolved per read.** The row never commits to an
+access policy. `ARTIFACT_ACCESS_MODE=authenticated` resolves the key to a time-limited signed
+URL; `public` resolves it to the direct regional S3 URL. `resolveImageUrl`
+(`src/domain/chat/imageRefs.ts`) owns the one compatibility rule — a `key` is resolved, a legacy
 `url` is passed through — because two readers ask, and a second spelling is how one of them
 quietly stops showing half the images. Both resolve *before* mapping, which is what keeps
 `toEngineMessages` the pure synchronous function its replay contract is tested through.
 
-The two lifetimes differ for a reason that is easy to get backwards: a chat view is read by a
+In authenticated mode the two lifetimes differ for a reason that is easy to get backwards: a chat view is read by a
 person who already has the page, so 15 minutes is generous, while a **replay** hands the URL to
 the model *provider*, which fetches it at whatever point in a run that may last
 `MAX_RUN_DURATION_MS`. The replay lifetime is therefore derived from the run deadline rather
@@ -917,7 +918,8 @@ decides, and writes no GSI2 attributes when the answer is nobody.
 The object key is derived from the row id (`artifacts/{kind}/{id}.{ext}`), which is what lets an
 object and its row find each other; the legacy `images/{uuid}` keys reference nothing, so an
 orphan under that layout can never be identified again. Splitting by kind is for the lifecycle
-rule, which applies to a prefix.
+rule, which applies to a prefix. The storage adapter resolves every reader through the runtime
+artifact access mode: a signed URL for a private bucket or a direct S3 URL for a public one.
 
 **Deletion is object-first.** That order can only leave a row whose preview is broken — which
 pressing delete again resolves, since S3 answers 204 for a key that is not there — while the
