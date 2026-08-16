@@ -1,4 +1,4 @@
-# Model maker logos
+# Brand icons
 
 These SVG files identify the companies that make models listed in the Models console. They do
 not identify the routing provider: a model served through Bedrock or OpenRouter keeps its

@@ -26,7 +26,12 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { IconDownload, IconEye, IconFile, IconTrash } from "@tabler/icons-react";
+import {
+  IconDownload,
+  IconEye,
+  IconFile,
+  IconTrash,
+} from "@tabler/icons-react";
 import { CardGrid } from "@/app/_components/CardGrid";
 import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { useConfirm } from "@/app/_components/useConfirm";
@@ -34,6 +39,10 @@ import { formatShortDateTime } from "@/shared/date";
 import { formatBytes } from "@/app/_lib/formatBytes";
 import { deleteArtifact, type ArtifactPage, type ArtifactQuery, type ArtifactView } from "../api";
 import { useLocale, useT } from "@/app/_i18n/provider";
+import {
+  artifactFileType,
+  type ArtifactFileType,
+} from "@/app/artifacts/_lib/fileType";
 
 type KindFilter = "all" | "image" | "document";
 
@@ -56,6 +65,7 @@ export function ArtifactGallery({
   const [kind, setKind] = useState<KindFilter>("all");
   const [filter, setFilter] = useState("");
   const [preview, setPreview] = useState<ArtifactView | null>(null);
+  const [previewOriginal, setPreviewOriginal] = useState(false);
   const { confirm, confirmModal } = useConfirm();
 
   const query = useCallback(
@@ -126,6 +136,24 @@ export function ArtifactGallery({
     matchesFilter(filter, artifact.filename ?? "", artifact.prompt ?? "", artifact.projectName),
   );
 
+  function closePreview() {
+    setPreview(null);
+    setPreviewOriginal(false);
+  }
+
+  function openPreview(artifact: ArtifactView) {
+    setPreview(artifact);
+    setPreviewOriginal(false);
+  }
+
+  function advancePreview() {
+    if (previewOriginal) {
+      closePreview();
+    } else {
+      setPreviewOriginal(true);
+    }
+  }
+
   return (
     <Stack gap="lg">
       {confirmModal}
@@ -143,18 +171,23 @@ export function ArtifactGallery({
        */}
       <Modal
         opened={preview !== null}
-        onClose={() => setPreview(null)}
+        onClose={closePreview}
         title={
           <Text fw={500} lineClamp={1}>
             {preview?.filename ?? t("artifacts.preview")}
           </Text>
         }
         size="auto"
+        fullScreen={previewOriginal}
         centered
         // On the dialog rather than on its body, so nothing inside can stretch
         // it — a long filename in the header would otherwise do exactly what the
         // prompt did.
-        styles={{ content: { maxWidth: "min(92vw, 60rem)" } }}
+        styles={
+          previewOriginal
+            ? { body: { overflow: "auto" } }
+            : { content: { maxWidth: "min(92vw, 60rem)" } }
+        }
       >
         {preview?.url && (
           <Stack gap="sm">
@@ -162,8 +195,11 @@ export function ArtifactGallery({
               src={preview.url}
               alt={preview.prompt ?? t("artifacts.preview")}
               fit="contain"
-              mah="65vh"
+              mah={previewOriginal ? undefined : "65vh"}
               w="auto"
+              maw={previewOriginal ? "none" : "100%"}
+              onClick={advancePreview}
+              style={{ cursor: previewOriginal ? "zoom-out" : "zoom-in" }}
             />
             {preview.prompt && (
               // Its own scroll region rather than the modal's: a long prompt
@@ -205,7 +241,7 @@ export function ArtifactGallery({
             key={artifact.artifactId}
             artifact={artifact}
             showProject={showProject}
-            onPreview={() => setPreview(artifact)}
+            onPreview={() => openPreview(artifact)}
             onDelete={() => void remove(artifact)}
           />
         ))}
@@ -257,7 +293,7 @@ function ArtifactCard({
         ) : (
           <Paper h={180} style={{ display: "grid", placeItems: "center" }}>
             {available ? (
-              <IconFile size={40} opacity={0.4} />
+              <FileTypeIcon artifact={artifact} />
             ) : (
               <Text fz="sm" c="dimmed" ta="center" px="md">
                 No longer available
@@ -317,5 +353,22 @@ function ArtifactCard({
         </Group>
       </Stack>
     </Card>
+  );
+}
+
+const FILE_TYPE_ICONS: Partial<Record<ArtifactFileType, string>> = {
+  pdf: "/icons/file-types/pdf.svg",
+  docx: "/icons/file-types/docx.svg",
+  pptx: "/icons/file-types/pptx.svg",
+  hwpx: "/icons/file-types/hwpx.svg",
+};
+
+function FileTypeIcon({ artifact }: { artifact: ArtifactView }) {
+  const type = artifactFileType(artifact.mimeType, artifact.filename, artifact.key);
+  const src = FILE_TYPE_ICONS[type];
+  return src ? (
+    <Image src={src} alt={`${type.toUpperCase()} document`} w={64} h={64} fit="contain" />
+  ) : (
+    <IconFile size={48} opacity={0.4} />
   );
 }

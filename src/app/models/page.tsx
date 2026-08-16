@@ -351,7 +351,7 @@ export default function ModelsPage() {
                               style={{ borderRadius: "var(--mantine-radius-sm)", flexShrink: 0 }}
                             >
                               <img
-                                src={`/provider-logos/${model.maker}.svg`}
+                                src={`/icons/brands/${model.maker}.svg`}
                                 alt={`${MODEL_MAKER_LABELS[model.maker]} logo`}
                                 width={24}
                                 height={24}

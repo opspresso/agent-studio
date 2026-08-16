@@ -6,7 +6,7 @@ describe("model maker logos", () => {
   it("has a local SVG for every registered maker", () => {
     for (const maker of Object.keys(MODEL_MAKER_LABELS)) {
       expect(
-        existsSync(`public/provider-logos/${maker}.svg`),
+        existsSync(`public/icons/brands/${maker}.svg`),
         `${maker}: missing maker logo`,
       ).toBe(true);
     }
