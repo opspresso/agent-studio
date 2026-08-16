@@ -89,7 +89,7 @@ function memorySlots(): RunSlotRepository {
         return null;
       }
       held.set(actor, leaseUntilSeconds);
-      return { index: 0 };
+      return { index: 0, token: actor };
     },
     async release(actor, _slot: RunSlot) {
       held.delete(actor);

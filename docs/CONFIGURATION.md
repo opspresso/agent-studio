@@ -37,6 +37,9 @@ header cannot carry. `src/shared/env.ts` owns the rule, and the value it returns
 `STAGE`, `DYNAMODB_TABLE_NAME` and `AWS_REGION` are the exceptions — they take an empty
 value literally, and for `STAGE` that is deliberate: an empty value throws, where falling
 back to `local` would skip `assertAccessControlConfig` on a deployed stage.
+In a production Node process, however, leaving `STAGE` absent is itself a boot error. Local
+containers remain explicit with `STAGE=local`; a deployed image cannot become fail-open through
+one missing variable.
 
 ## Boot-time validation
 
@@ -47,7 +50,7 @@ value.
 | Check | Rule |
 |---|---|
 | `assertRequiredConfig` | `LLM_BASE_URL`, `LLM_API_KEY` and `AES_ENCRYPTION_KEY` must be set, in every stage. |
-| `assertAccessControlConfig` | `STAGE=alpha` or `prod` additionally requires `ADMIN_EMAILS` **and** `ALLOWED_EMAIL_DOMAINS`. |
+| `assertAccessControlConfig` | `NODE_ENV=production` requires an explicit `STAGE`; `STAGE=alpha` or `prod` additionally requires `ADMIN_EMAILS` **and** `ALLOWED_EMAIL_DOMAINS`. |
 
 The second check exists because both lists are fail-open when empty — an unset
 `ALLOWED_EMAIL_DOMAINS` lets any Google account sign in, and an unset `ADMIN_EMAILS` makes
@@ -62,7 +65,7 @@ Google OAuth credentials are deliberately *not* boot-required: the local dev-ses
 
 | Variable | Default | Runtime | Notes |
 |---|---|---|---|
-| `STAGE` | `local` | — | `local` \| `alpha` \| `prod`. Any other value throws at boot. Gates the access-control check above. |
+| `STAGE` | `local` outside production | — | `local` \| `alpha` \| `prod`. Any other value throws at boot, and a production process must set it explicitly. Gates the access-control check above. |
 | `AWS_REGION` | `ap-northeast-2` | — | Region for every AWS client. DynamoDB Local namespaces tables by access key **and** region, so the app and `pnpm init-local-table` must agree. |
 | `DYNAMODB_TABLE_NAME` | `agentdure` | — | The single table. On a shared local DynamoDB this — not the port — is what keeps projects apart. |
 | `DYNAMODB_ENDPOINT` | unset | — | DynamoDB Local only. **Must be empty in alpha/prod**; a leftover value points the app at a localhost that is not there. |
@@ -106,7 +109,7 @@ language will not see this difference and can use any of the three.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | — | Required for real login only. |
 | `ALLOWED_EMAIL_DOMAINS` | empty | **runtime** | Comma-separated domains allowed to sign in. Empty = any domain. |
 | `TRUSTED_PROXY_CIDRS` | empty | — | Comma-separated IPs/CIDR ranges of the reverse proxies in front of this deployment (e.g. the VPC CIDR when ALB + Istio both append to `X-Forwarded-For`). Better Auth strips these hops from the right of the chain to resolve the client IP its rate limiting keys on; empty trusts only a single-value header, so behind two proxies every request falls into one shared bucket. |
-| `ADMIN_EMAILS` | empty | **runtime** | Comma-separated. Grants registry/settings mutation, and grants write access to projects owned by someone else. Empty means *no restriction* for the first and *nobody* for the second — the two questions are answered by different predicates on purpose ([SECURITY.md](SECURITY.md#authorization-model)). |
+| `ADMIN_EMAILS` | empty | **runtime** | Comma-separated. Grants registry/settings mutation and write access to projects owned by someone else. A listed member is promoted to the stored `admin` tier and locked there; removal never auto-demotes. Empty means *no restriction* for registry/settings mutation and *nobody* for project override — the two questions are answered by different predicates on purpose ([SECURITY.md](SECURITY.md#authorization-model)). |
 
 ## LLM channels
 

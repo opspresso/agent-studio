@@ -855,6 +855,102 @@ function toWireToolCall(id: string, name: string, args: Record<string, unknown>)
   return { id, type: "function", function: { name, arguments: JSON.stringify(args) } };
 }
 
+interface PreparedToolCall {
+  call: AccumulatedCall;
+  args: Record<string, unknown>;
+  displayArgs: Record<string, unknown>;
+  malformed: boolean;
+  builtin: boolean;
+}
+
+type SettledToolResult = { ok: McpToolResult } | { err: unknown };
+
+function prepareToolCalls(
+  calls: AccumulatedCall[],
+  builtinNames: Set<string>,
+  filter: PiiFilter | undefined,
+): PreparedToolCall[] {
+  return calls.map((call) => {
+    const parsedArgs = parseToolArguments(call.arguments);
+    const args = parsedArgs ?? {};
+    return {
+      call,
+      args,
+      displayArgs: filter ? (restoreValues(filter, args) as Record<string, unknown>) : args,
+      malformed: parsedArgs === null,
+      builtin: builtinNames.has(call.name),
+    };
+  });
+}
+
+async function dispatchConcurrentTools(
+  deps: AgentDeps,
+  prepared: PreparedToolCall[],
+  urlFetches: number,
+): Promise<{ settled: Map<string, SettledToolResult>; urlFetches: number }> {
+  const mcpDispatch = deps.callMcpTool;
+  const fetchDispatch = deps.fetchUrl;
+  const settled = new Map<string, SettledToolResult>();
+  const mcpCalls = mcpDispatch
+    ? prepared.filter((entry) => !entry.builtin && !entry.malformed)
+    : [];
+  const fetchCalls: PreparedToolCall[] = [];
+  if (fetchDispatch) {
+    for (const entry of prepared) {
+      if (entry.malformed || !entry.builtin || entry.call.name !== FETCH_URL_TOOL_NAME) {
+        continue;
+      }
+      const url = typeof entry.args.url === "string" ? entry.args.url.trim() : "";
+      if (!url) {
+        settled.set(entry.call.id, {
+          ok: { text: `Error: ${FETCH_URL_TOOL_NAME} requires a url.` },
+        });
+      } else if (urlFetches >= MAX_URL_FETCHES_PER_RUN) {
+        settled.set(entry.call.id, {
+          ok: {
+            text: `Error: this run has already read ${MAX_URL_FETCHES_PER_RUN} addresses, which is its limit.`,
+          },
+        });
+      } else {
+        urlFetches += 1;
+        fetchCalls.push(entry);
+      }
+    }
+  }
+  const concurrent = [
+    ...mcpCalls.map((entry) => ({ entry, fetch: false })),
+    ...fetchCalls.map((entry) => ({ entry, fetch: true })),
+  ];
+  if (concurrent.length > 0) {
+    const results = await mapWithLimit(concurrent, MAX_PARALLEL_TOOL_CALLS, async ({ entry, fetch }) => {
+      try {
+        if (!fetch) {
+          return { ok: await mcpDispatch!(entry.call.name, entry.displayArgs) };
+        }
+        const url = String(entry.args.url);
+        const read = await fetchDispatch!(url);
+        return {
+          ok: {
+            text: read.image ? `Image fetched from ${url}.` : framedFetchedUrl(url, read.text, read.note),
+            ...(read.image ? { images: [read.image] } : {}),
+          } satisfies McpToolResult,
+        };
+      } catch (error) {
+        return fetch
+          ? { ok: { text: `Error: could not read that address — ${errorMessage(error)}` } }
+          : { err: error };
+      }
+    });
+    concurrent.forEach(({ entry }, index) => {
+      const result = results[index];
+      if (result) {
+        settled.set(entry.call.id, result);
+      }
+    });
+  }
+  return { settled, urlFetches };
+}
+
 function subagentContextMessage(agentName: string, text: string): string {
   return `For context: the '${agentName}' agent responded with:\n${text}`;
 }
@@ -1470,24 +1566,11 @@ export async function* runAgent(
     // plan at once, and the MCP calls below can overlap.
     // `builtin` is decided by the offered set, not by the dep — an MCP tool that
     // arrived under a builtin's name is only shadowed when that builtin is offered.
-    const prepared = calls.map((call) => {
-      const parsedArgs = parseToolArguments(call.arguments);
-      const args = parsedArgs ?? {};
-      const displayArgs = filter
-        ? (restoreValues(filter, args) as Record<string, unknown>)
-        : args;
-      // A call whose arguments did not parse — half a JSON document when the
-      // provider cut the turn, or a model defect — is announced and answered
-      // but never dispatched: running it with `{}` would report a call the
-      // model never made as a success.
-      return {
-        call,
-        args,
-        displayArgs,
-        malformed: parsedArgs === null,
-        builtin: builtinNames.has(call.name),
-      };
-    });
+    // A call whose arguments did not parse — half a JSON document when the
+    // provider cut the turn, or a model defect — is announced and answered
+    // but never dispatched: running it with `{}` would report a call the
+    // model never made as a success.
+    const prepared = prepareToolCalls(calls, builtinNames, filter);
     for (const { call, args, displayArgs, malformed } of prepared) {
       if (malformed) {
         // The model's own text is the only truthful record of arguments that
@@ -1514,84 +1597,17 @@ export async function* runAgent(
     // moves the turn budget and the image tools mutate the image registry.
     // Failures are settled rather than thrown, so one rejection cannot leave the
     // other in-flight calls' rejections unhandled; each is rethrown in order.
-    const mcpDispatch = deps.callMcpTool;
-    const fetchDispatch = deps.fetchUrl;
-    const mcpSettled = new Map<string, { ok: McpToolResult } | { err: unknown }>();
-    const mcpCalls = mcpDispatch
-      ? prepared.filter((entry) => !entry.builtin && !entry.malformed)
-      : [];
     // `FetchUrl` joins the concurrent set rather than running in call order with
     // the other builtins. The order rule exists because a transfer moves the
     // turn budget and the image tools mutate the registry mid-loop; a fetch does
     // neither — its bytes are registered below, in order, like an MCP tool's.
     // Left sequential, three links in one answer would cost three round trips,
     // which is slower than the server this replaces.
-    const fetchCalls: typeof prepared = [];
-    if (fetchDispatch) {
-      for (const entry of prepared) {
-        if (entry.malformed || !entry.builtin || entry.call.name !== FETCH_URL_TOOL_NAME) {
-          continue;
-        }
-        const url = typeof entry.args.url === "string" ? entry.args.url.trim() : "";
-        if (!url) {
-          // Answered rather than dispatched, and phrased as this engine's own
-          // sentence — the call asked for nothing to read.
-          mcpSettled.set(entry.call.id, {
-            ok: { text: `Error: ${FETCH_URL_TOOL_NAME} requires a url.` },
-          });
-        } else if (urlFetches >= MAX_URL_FETCHES_PER_RUN) {
-          mcpSettled.set(entry.call.id, {
-            ok: {
-              text: `Error: this run has already read ${MAX_URL_FETCHES_PER_RUN} addresses, which is its limit.`,
-            },
-          });
-        } else {
-          urlFetches += 1;
-          fetchCalls.push(entry);
-        }
-      }
-    }
     // One pool, so the concurrency cap means what it says: two pools would let a
     // turn run twice the limit.
-    const concurrent = [
-      ...mcpCalls.map((entry) => ({ entry, fetch: false })),
-      ...fetchCalls.map((entry) => ({ entry, fetch: true })),
-    ];
-    if (concurrent.length > 0) {
-      const settled = await mapWithLimit(concurrent, MAX_PARALLEL_TOOL_CALLS, async ({ entry, fetch }) => {
-        try {
-          if (!fetch) {
-            return { ok: await mcpDispatch!(entry.call.name, entry.displayArgs) };
-          }
-          const url = String(entry.args.url);
-          const read = await fetchDispatch!(url);
-          // Normalised onto the MCP result shape on purpose: everything that
-          // happens to a returned picture — the turn's image budget, the `img_N`
-          // registration, the rejection notice for a model that cannot see one —
-          // is already written once, below, and a second copy would drift.
-          return {
-            ok: {
-              text: read.image ? `Image fetched from ${url}.` : framedFetchedUrl(url, read.text, read.note),
-              ...(read.image ? { images: [read.image] } : {}),
-            } satisfies McpToolResult,
-          };
-        } catch (err) {
-          // A failed fetch is an ordinary answer, not a broken run: unlike an
-          // MCP dispatcher throwing (a transport fault), this is the tool
-          // reporting that the address did not work.
-          if (fetch) {
-            return { ok: { text: `Error: could not read that address — ${errorMessage(err)}` } };
-          }
-          return { err };
-        }
-      });
-      concurrent.forEach(({ entry }, index) => {
-        const result = settled[index];
-        if (result) {
-          mcpSettled.set(entry.call.id, result);
-        }
-      });
-    }
+    const concurrentTools = await dispatchConcurrentTools(deps, prepared, urlFetches);
+    const mcpSettled = concurrentTools.settled;
+    urlFetches = concurrentTools.urlFetches;
 
     const resultBudget = createToolResultBudget(MAX_TOOL_RESULT_CHARS_PER_TURN, contextBudget);
     // Every result this turn leaves through here — see the emitter for why the

@@ -22,6 +22,19 @@ export type SendMessageResult =
   | { ok: true; text: string }
   | { ok: false; error: string };
 
+export function parseAgentReply(body: string): SendMessageResult {
+  let data: { choices?: { message?: { content?: unknown } }[] };
+  try {
+    data = JSON.parse(body) as typeof data;
+  } catch {
+    return { ok: false, error: `malformed reply: ${body.slice(0, 500)}` };
+  }
+  const text = data.choices?.[0]?.message?.content;
+  return typeof text === "string"
+    ? { ok: true, text }
+    : { ok: false, error: "No assistant message in response" };
+}
+
 export async function sendAgentMessage(
   url: string,
   headers: Record<string, string>,
@@ -45,14 +58,7 @@ export async function sendAgentMessage(
       const detail = responseText.slice(0, 500);
       return { ok: false, error: `HTTP ${res.status}${detail ? `: ${detail}` : ""}` };
     }
-    const data = JSON.parse(responseText) as {
-      choices?: { message?: { content?: unknown } }[];
-    };
-    const text = data.choices?.[0]?.message?.content;
-    if (typeof text !== "string") {
-      return { ok: false, error: "No assistant message in response" };
-    }
-    return { ok: true, text };
+    return parseAgentReply(responseText);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       return { ok: false, error: `Request timed out after ${TIMEOUT_MS / 1000}s` };

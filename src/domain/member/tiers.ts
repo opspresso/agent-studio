@@ -8,10 +8,10 @@
  * the two slices. Domain is also client-bundle-safe, which is what lets the
  * Members console offer the same tiers the guards enforce.
  *
- * A tier is *additive to permissions and subtractive to spend*: tier `admin`
- * grants the admin console on top of the `ADMIN_EMAILS` list (the composition
- * lives in `src/lib/memberAccess.ts`), and a tier's limits only ever tighten
- * what the deployment-wide numbers already allow.
+ * Tier `admin` grants the admin console on top of the `ADMIN_EMAILS` list (the
+ * composition lives in `src/lib/memberAccess.ts`). An address in that list is
+ * promoted to the stored `admin` tier, so spend and capability limits still
+ * have one source: the member's stored tier.
  */
 
 export const MEMBER_TIERS = ["admin", "member", "guest"] as const;

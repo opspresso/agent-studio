@@ -5,9 +5,10 @@
  * The two list predicates in `runtime-settings.ts` are untouched on purpose:
  * they answer "what does the *list* say" and keep their empty-list semantics
  * (`isAdminEmail` fail-open, `isConfiguredAdmin` fail-closed) as the
- * bootstrap/backstop. A tier is strictly additive — tier `admin` grants what
- * either predicate grants, and no tier ever takes away what the list gave, so a
- * deployment with no `ADMIN_EMAILS` behaves exactly as it did before tiers.
+ * bootstrap/backstop. Tier `admin` grants what either predicate grants, and a
+ * configured admin address is separately promoted and locked by the member
+ * use cases. A deployment with no `ADMIN_EMAILS` behaves exactly as it did
+ * before tiers.
  *
  * Tier-admin implies *both* predicates: an admin console that could edit
  * settings but not override a project write would be a third predicate nobody
@@ -59,12 +60,18 @@ const TIER_CACHE_TTL_MS = 30_000;
 const TIER_CACHE_MAX_ENTRIES = 1000;
 
 const tierCache = new Map<string, { tier: MemberTier | null; expiresAt: number }>();
+const tierCacheGenerations = new Map<string, number>();
+let tierCacheGeneration = 0;
 
 export function invalidateMemberTierCache(email?: string): void {
   if (email === undefined) {
+    tierCacheGeneration += 1;
+    tierCacheGenerations.clear();
     tierCache.clear();
   } else {
-    tierCache.delete(email.toLowerCase());
+    const key = email.toLowerCase();
+    tierCacheGenerations.set(key, (tierCacheGenerations.get(key) ?? 0) + 1);
+    tierCache.delete(key);
   }
 }
 
@@ -81,6 +88,8 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
   if (cached && cached.expiresAt > now) {
     return cached.tier;
   }
+  const generation = tierCacheGeneration;
+  const keyGeneration = tierCacheGenerations.get(key) ?? 0;
   let tier: MemberTier | null;
   try {
     tier = (await memberRepository.getByEmail(email))?.tier ?? null;
@@ -88,7 +97,12 @@ export async function getMemberTier(email: string): Promise<MemberTier | null> {
     log.warn("authz", `could not read member tier for ${email}; using the admin list alone`, error);
     return null;
   }
+  if (generation !== tierCacheGeneration || keyGeneration !== (tierCacheGenerations.get(key) ?? 0)) {
+    return tier;
+  }
   if (tierCache.size >= TIER_CACHE_MAX_ENTRIES) {
+    tierCacheGeneration += 1;
+    tierCacheGenerations.clear();
     tierCache.clear();
   }
   tierCache.set(key, { tier, expiresAt: now + TIER_CACHE_TTL_MS });

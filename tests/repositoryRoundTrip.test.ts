@@ -85,6 +85,7 @@ import { projectRepository } from "@/infrastructure/db/repositories/projectRepos
 import { versionRepository } from "@/infrastructure/db/repositories/versionRepository";
 import { usageRepository } from "@/infrastructure/db/repositories/usageRepository";
 import { traceRepository } from "@/infrastructure/db/repositories/traceRepository";
+import { runSlotRepository } from "@/infrastructure/db/repositories/runSlotRepository";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 
@@ -160,6 +161,25 @@ describe("project/version atomic writes", () => {
         },
       },
     ]);
+  });
+});
+
+describe("runSlotRepository ownership", () => {
+  it("releases only the acquisition that owns the reused index", async () => {
+    commands.length = 0;
+    const slot = await runSlotRepository.acquire("user:u@example.com", 1, 200);
+
+    expect(slot?.token).toBeTruthy();
+    expect(commands[1]).toMatchObject({
+      Item: { slotIndex: 0, token: slot?.token },
+    });
+
+    await runSlotRepository.release("user:u@example.com", slot!);
+    expect(commands[2]).toMatchObject({
+      ConditionExpression: "#token = :token",
+      ExpressionAttributeNames: { "#token": "token" },
+      ExpressionAttributeValues: { ":token": slot?.token },
+    });
   });
 });
 

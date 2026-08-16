@@ -32,8 +32,8 @@ function signedInAs(email: string) {
   });
 }
 
-// The mocked session carries no `tier`, which normalizes to the default —
-// so every case below also pins that a pre-tier row reads as the default.
+// The mocked session carries no `tier`, which normalizes to the default unless
+// ADMIN_EMAILS makes admin the authoritative stored/effective tier.
 async function me(): Promise<{
   email: string;
   isAdmin: boolean;
@@ -82,7 +82,7 @@ describe("GET /api/me", () => {
       email: ADMIN,
       isAdmin: true,
       isConfiguredAdmin: true,
-      tier: "guest",
+      tier: "admin",
     });
 
     signedInAs(USER);

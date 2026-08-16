@@ -13,6 +13,7 @@
  */
 
 import { DeleteCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { randomUUID } from "node:crypto";
 import { getDocumentClient, getTableName } from "@/infrastructure/db/client";
 import { queryAll } from "@/infrastructure/db/query";
 import { keys } from "@/infrastructure/db/keys";
@@ -53,6 +54,7 @@ export const runSlotRepository: RunSlotRepository = {
       if (index < 0) {
         return null;
       }
+      const token = randomUUID();
       try {
         await getDocumentClient().send(
           new PutCommand({
@@ -62,6 +64,7 @@ export const runSlotRepository: RunSlotRepository = {
               entityType: "RunSlot",
               actor,
               slotIndex: index,
+              token,
               leaseUntil: leaseUntilSeconds,
               // The row must disappear on its own: this is a lease, and an
               // instance that dies must not hold a slot until someone notices.
@@ -71,7 +74,7 @@ export const runSlotRepository: RunSlotRepository = {
             ExpressionAttributeValues: { ":now": nowSeconds },
           }),
         );
-        return { index };
+        return { index, token };
       } catch (error) {
         if ((error as { name?: string }).name !== "ConditionalCheckFailedException") {
           throw error;
@@ -85,8 +88,20 @@ export const runSlotRepository: RunSlotRepository = {
   },
 
   async release(actor, slot): Promise<void> {
-    await getDocumentClient().send(
-      new DeleteCommand({ TableName: getTableName(), Key: keys.runSlot(actor, slot.index) }),
-    );
+    try {
+      await getDocumentClient().send(
+        new DeleteCommand({
+          TableName: getTableName(),
+          Key: keys.runSlot(actor, slot.index),
+          ConditionExpression: "#token = :token",
+          ExpressionAttributeNames: { "#token": "token" },
+          ExpressionAttributeValues: { ":token": slot.token },
+        }),
+      );
+    } catch (error) {
+      if ((error as { name?: string }).name !== "ConditionalCheckFailedException") {
+        throw error;
+      }
+    }
   },
 };

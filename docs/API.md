@@ -436,12 +436,13 @@ is `TIER_LIMITS` in `src/domain/member/tiers.ts`, which the client imports direc
 
 ```
 GET /api/members
-  → 200 { members: [ { id, name, email, image, tier, joinedAt, lastLoginAt } ] }
+  → 200 { members: [ { id, name, email, image, tier, joinedAt, lastLoginAt,
+                       tierLocked } ] }
 
 PUT /api/members/{id}/tier
   { tier: "admin" | "member" | "guest" }
   → 200 { id, name, email, image, tier, joinedAt, lastLoginAt }
-  → 400 unknown tier · 404 no such member
+  → 400 unknown tier · 403 ADMIN_EMAILS tier is locked · 404 no such member
 ```
 
 Admin-only. Members are Better Auth users who have signed in to the workspace, ordered by
@@ -449,9 +450,11 @@ Admin-only. Members are Better Auth users who have signed in to the workspace, o
 for users created before login tracking was introduced until their next successful sign-in.
 
 `tier` defaults to `guest` for every sign-up (rows written before tiers existed read as
-`guest` too). A tier change writes a `member.set-tier` audit row recording old → new. What a
-tier grants and caps is `TIER_LIMITS` in `src/domain/member/tiers.ts`; how tier `admin`
-composes with `ADMIN_EMAILS` is in
+`guest` too). An address in `ADMIN_EMAILS` is promoted to stored tier `admin` at login or the
+next member/profile read; `tierLocked` is true and the update route refuses changes while it
+remains listed. Removing the address never auto-demotes it. An ordinary tier change writes a
+`member.set-tier` audit row recording old → new. What a tier grants and caps is `TIER_LIMITS`
+in `src/domain/member/tiers.ts`; how tier `admin` composes with `ADMIN_EMAILS` is in
 [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
 
 ## Chats

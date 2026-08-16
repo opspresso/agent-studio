@@ -14,6 +14,8 @@
 export interface RunSlot {
   /** Which index was taken; needed to release it. */
   index: number;
+  /** Identifies this acquisition when an expired index is reused. */
+  token: string;
 }
 
 export interface RunSlotRepository {

@@ -1,5 +1,5 @@
 import { tierMayCreateProjects } from "@/domain/member/tiers";
-import { isAdmin, withAuth } from "@/lib/session";
+import { withAuth } from "@/lib/session";
 import { createProjectWithInitialVersion, projectUseCases } from "@/lib/container";
 import { createProjectSchema } from "@/app/api/projects/_lib/schemas";
 import { apiError, invalidRequest } from "@/app/api/_lib/http";
@@ -10,11 +10,11 @@ export const GET = withAuth(async () => {
 });
 
 export const POST = withAuth(async (user, request: Request) => {
-  // A permission gate, and tier is additive to permissions — so an effective
-  // admin passes whatever their stored tier reads as (the `ADMIN_EMAILS`
-  // bootstrap admin's row defaults like everyone else's). The same pair hides
-  // the console's "New project" button; this 403 is the backstop, not the UX.
-  if (!tierMayCreateProjects(user.tier) && !(await isAdmin(user))) {
+  // Project creation is a tier capability. An admin-list entry grants access
+  // to administration, but does not widen the stored tier's spend surface.
+  // The same predicate hides the console's "New project" button; this 403 is
+  // the backstop, not the UX.
+  if (!tierMayCreateProjects(user.tier)) {
     return Response.json({ error: "Your tier does not allow creating projects" }, { status: 403 });
   }
   const parsed = createProjectSchema.safeParse(await request.json().catch(() => null));

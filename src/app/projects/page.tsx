@@ -69,7 +69,7 @@ export default function ProjectsPage() {
         description={t("projects.lede")}
         Icon={IconFolder}
       >
-        {viewer !== null && (viewer.isAdmin || tierMayCreateProjects(viewer.tier)) && (
+        {viewer !== null && tierMayCreateProjects(viewer.tier) && (
           <Button onClick={open}>{t("projects.new")}</Button>
         )}
       </CatalogHeader>

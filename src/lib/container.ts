@@ -110,6 +110,7 @@ import {
   getPluginsRepoConfig,
   getPublicBaseUrl,
   getUnknownModelPolicy,
+  isConfiguredAdmin,
 } from "./runtime-settings";
 import { getMemberTier, isEffectiveConfiguredAdminByEmail } from "./memberAccess";
 import { actorKey, memberEmailFromActorKey, type RunActor } from "@/domain/execution/actor";
@@ -147,7 +148,7 @@ export const artifactStorage = isObjectStoreConfigured()
   : undefined;
 
 export const auditUseCases = createAuditUseCases(auditRepository);
-export const memberUseCases = createMemberUseCases(memberRepository);
+export const memberUseCases = createMemberUseCases(memberRepository, isConfiguredAdmin);
 
 /**
  * Reading and removing what runs produced. Undefined when this deployment keeps

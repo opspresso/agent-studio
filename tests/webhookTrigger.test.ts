@@ -69,10 +69,10 @@ function memorySlots() {
       const now = Math.floor(Date.now() / 1000);
       const lease = held.get(actor);
       if (lease !== undefined && lease > now) {
-        return limit > 1 ? { index: 1 } : null;
+        return limit > 1 ? { index: 1, token: `${actor}:1` } : null;
       }
       held.set(actor, leaseUntilSeconds);
-      return { index: 0 };
+      return { index: 0, token: `${actor}:0` };
     },
     async release(actor, _slot: RunSlot) {
       held.delete(actor);

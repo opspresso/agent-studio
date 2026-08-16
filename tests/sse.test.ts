@@ -3,6 +3,44 @@ import { sseResponse } from "@/app/api/_lib/sse";
 import { apiError } from "@/app/api/_lib/http";
 import { RateLimitedError } from "@/application/errors";
 import { detachOnReturn } from "@/shared/detachOnReturn";
+import { readSse } from "@/app/_lib/sse";
+
+async function collectSse(response: Response): Promise<unknown[]> {
+  const chunks: unknown[] = [];
+  for await (const chunk of readSse(response)) {
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+
+describe("readSse", () => {
+  it("decodes frames split across transport chunks", async () => {
+    const encoder = new TextEncoder();
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"delta":'));
+          controller.enqueue(encoder.encode('"one"}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+    );
+
+    await expect(collectSse(response)).resolves.toEqual([{ delta: "one" }]);
+  });
+
+  it("rejects malformed JSON instead of dropping a data frame", async () => {
+    await expect(collectSse(new Response("data: {bad}\n\n"))).rejects.toThrow(
+      "Malformed SSE data frame",
+    );
+  });
+
+  it("rejects a trailing incomplete frame", async () => {
+    await expect(collectSse(new Response('data: {"delta":"lost"}'))).rejects.toThrow(
+      "SSE stream ended with an incomplete frame",
+    );
+  });
+});
 
 describe("sseResponse", () => {
   /**

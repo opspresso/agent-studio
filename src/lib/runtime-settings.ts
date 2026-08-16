@@ -34,16 +34,23 @@ const DEFAULT_TTL_MS = 5_000;
 const TTL_MS = positiveIntEnv("SETTINGS_CACHE_TTL_MS", DEFAULT_TTL_MS, 1);
 
 let cache: { value: AppSettings | null; fetchedAt: number } | undefined;
+let cacheGeneration = 0;
 
 async function loadSettings(): Promise<AppSettings | null> {
   const now = Date.now();
   if (!cache || now - cache.fetchedAt > TTL_MS) {
-    cache = { value: await settingsRepository.get(), fetchedAt: now };
+    const generation = cacheGeneration;
+    const value = await settingsRepository.get();
+    if (generation === cacheGeneration) {
+      cache = { value, fetchedAt: now };
+    }
+    return value;
   }
   return cache.value;
 }
 
 export function invalidateSettingsCache(): void {
+  cacheGeneration += 1;
   cache = undefined;
 }
 

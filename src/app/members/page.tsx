@@ -12,16 +12,18 @@ import { readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useLocale, useT } from "@/app/_i18n/provider";
 
+type MemberView = Member & { tierLocked: boolean };
+
 export default function MembersPage() {
   const t = useT();
   const locale = useLocale();
   const viewer = useViewer();
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<MemberView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  async function changeTier(member: Member, tier: MemberTier) {
+  async function changeTier(member: MemberView, tier: MemberTier) {
     setSavingId(member.id);
     setError(null);
     try {
@@ -32,7 +34,7 @@ export default function MembersPage() {
           body: JSON.stringify({ tier }),
         }),
       );
-      setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+      setMembers((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to update tier");
     } finally {
@@ -44,7 +46,7 @@ export default function MembersPage() {
     if (!viewer?.isAdmin) return;
     let cancelled = false;
     fetch("/api/members")
-      .then((res) => readJson<{ members: Member[] }>(res))
+      .then((res) => readJson<{ members: MemberView[] }>(res))
       .then((data) => !cancelled && setMembers(data.members))
       .catch((loadError) => !cancelled && setError(loadError instanceof Error ? loadError.message : "Failed to load members"))
       .finally(() => !cancelled && setLoading(false));
@@ -97,7 +99,7 @@ export default function MembersPage() {
                       w={110}
                       data={[...MEMBER_TIERS]}
                       value={member.tier}
-                      disabled={savingId === member.id}
+                      disabled={member.tierLocked || savingId === member.id}
                       allowDeselect={false}
                       aria-label={`Tier of ${member.email}`}
                       onChange={(value) => {

@@ -121,6 +121,24 @@ describe("getMemberTier", () => {
     expect(getByEmail).toHaveBeenCalledTimes(2);
   });
 
+  it("does not let an earlier lookup repopulate the cache after invalidation", async () => {
+    let resolveFirst!: (value: ReturnType<typeof member>) => void;
+    getByEmail
+      .mockImplementationOnce(
+        () => new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValue(member("admin"));
+
+    const staleRead = getMemberTier("u@x.com");
+    invalidateMemberTierCache("u@x.com");
+    resolveFirst(member("guest"));
+    expect(await staleRead).toBe("guest");
+    expect(await getMemberTier("u@x.com")).toBe("admin");
+    expect(getByEmail).toHaveBeenCalledTimes(2);
+  });
+
   it("caches the absence of a member too", async () => {
     getByEmail.mockResolvedValue(null);
     expect(await getMemberTier("machine@x.com")).toBeNull();

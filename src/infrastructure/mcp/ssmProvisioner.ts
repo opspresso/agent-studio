@@ -29,6 +29,8 @@ import type {
 /** Container/entry names are slugs, the same shape the registry already allows. */
 const NAME = MANAGED_NAME;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const AWS_REGION = /^[a-z]{2}(?:-[a-z0-9]+)+-\d+$/;
+const REGISTRY_HOST = /^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|[A-Za-z0-9])(?::[1-9][0-9]{0,4})?$/;
 
 const POLL_INTERVAL_MS = 2_000;
 const COMMAND_TIMEOUT_MS = 300_000;
@@ -76,7 +78,9 @@ export interface SsmProvisionerConfig {
 }
 
 export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvisioner {
-  const client = new SSMClient({ region: config.region });
+  const region = assertSafe(config.region, AWS_REGION, "AWS region");
+  const registry = assertSafe(config.registry, REGISTRY_HOST, "registry host");
+  const client = new SSMClient({ region });
 
   async function run(commands: string[]): Promise<string> {
     const sent = await client.send(
@@ -131,7 +135,7 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
         `chmod 600 ${envFile}`,
         ...envRefs.map(
           (ref) =>
-            `aws ssm get-parameter --name ${ref} --with-decryption --region ${config.region} --query Parameter.Value --output text >> ${envFile}`,
+            `aws ssm get-parameter --name ${ref} --with-decryption --region ${shellQuote(region)} --query Parameter.Value --output text >> ${envFile}`,
         ),
         ...environment.map(([key, value]) => `echo ${shellQuote(`${key}=${value}`)} >> ${envFile}`),
         // In a shared namespace the container listens directly on the port the
@@ -141,9 +145,9 @@ export function createSsmProvisioner(config: SsmProvisionerConfig): McpProvision
         // public one would make a missing ECR permission look like a broken
         // image reference, and `set -e` would stop before the pull that would
         // have worked.
-        ...(image.startsWith(`${config.registry}/`)
+        ...(image.startsWith(`${registry}/`)
           ? [
-              `aws ecr get-login-password --region ${config.region} | docker login --username AWS --password-stdin ${config.registry}`,
+              `aws ecr get-login-password --region ${shellQuote(region)} | docker login --username AWS --password-stdin ${shellQuote(registry)}`,
             ]
           : []),
         `docker pull -q ${image}`,

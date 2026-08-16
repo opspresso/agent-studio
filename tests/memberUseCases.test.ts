@@ -51,6 +51,26 @@ describe("member use cases", () => {
       await expect(useCases.me("u@x.com")).resolves.toEqual(stored);
     });
 
+    it("projects an ADMIN_EMAILS member as admin", async () => {
+      const stored = member({ tier: "guest" });
+      let persistedTier = stored.tier;
+      const useCases = createMemberUseCases(
+        {
+          ...unusedRepositoryRest,
+          list: async () => [],
+          getByEmail: async () => stored,
+          setTier: async (_id, tier) => {
+            persistedTier = tier;
+            return { member: { ...stored, tier }, previousTier: stored.tier };
+          },
+        },
+        async (email) => email === stored.email,
+      );
+
+      await expect(useCases.me(stored.email)).resolves.toEqual({ ...stored, tier: "admin" });
+      expect(persistedTier).toBe("admin");
+    });
+
     it("404s when the row is gone rather than synthesizing one", async () => {
       const useCases = createMemberUseCases({ ...unusedRepositoryRest, list: async () => [] });
       await expect(useCases.me("ghost@x.com")).rejects.toBeInstanceOf(NotFoundError);
@@ -62,7 +82,7 @@ describe("member use cases", () => {
       const events: AuditEvent[] = [];
       setAuditSink({ append: async (event) => void events.push(event), listByDay: async () => [] });
       const repository: MemberRepository = {
-        list: async () => [],
+        list: async () => [member()],
         getByEmail: async () => null,
         setTier: async (id, tier) =>
           id === "u1" ? { member: member({ tier }), previousTier: "member" } : null,
@@ -82,6 +102,24 @@ describe("member use cases", () => {
         target: "member:u@x.com",
         detail: "member → admin",
       });
+    });
+
+    it("refuses changing the tier of an ADMIN_EMAILS member", async () => {
+      const setTier = async () => {
+        throw new Error("must not write");
+      };
+      const useCases = createMemberUseCases(
+        {
+          ...unusedRepositoryRest,
+          list: async () => [member({ tier: "guest" })],
+          setTier,
+        },
+        async () => true,
+      );
+
+      await expect(
+        useCases.setTier({ id: "u1", tier: "member", actorEmail: "boss@x.com" }),
+      ).rejects.toMatchObject({ status: 403 });
     });
 
     it("404s for an unknown member and records nothing", async () => {

@@ -1,5 +1,5 @@
 import { auditTarget, recordAudit } from "@/application/audit/recordAudit";
-import { NotFoundError } from "@/application/errors";
+import { ForbiddenError, NotFoundError } from "@/application/errors";
 import type { MemberRepository } from "@/domain/member/repository";
 import type { MemberTier } from "@/domain/member/tiers";
 import type { Member } from "@/domain/member/types";
@@ -16,17 +16,30 @@ export interface MemberUseCases {
   /**
    * Change one member's tier. Records who did it and what it replaced — a
    * tier decides admin rights and spend limits, which is exactly the kind of
-   * act the audit trail exists for. Self-demotion is deliberately not guarded:
-   * effective admin is the email list OR the tier, so a tier change alone can
-   * never lock the console.
+   * act the audit trail exists for. An address in ADMIN_EMAILS is locked to
+   * admin. Removing it from the list does not demote it; another operator may
+   * then choose its next tier explicitly.
    */
   setTier(args: { id: string; tier: MemberTier; actorEmail: string }): Promise<Member>;
 }
 
-export function createMemberUseCases(repository: MemberRepository): MemberUseCases {
+type AdminEmailCheck = (email: string) => Promise<boolean>;
+
+export function createMemberUseCases(
+  repository: MemberRepository,
+  isAdminEmail: AdminEmailCheck = async () => false,
+): MemberUseCases {
+  const effectiveMember = async (member: Member): Promise<Member> => {
+    if (member.tier === "admin" || !(await isAdminEmail(member.email))) {
+      return member;
+    }
+    return (await repository.setTier(member.id, "admin"))?.member ?? member;
+  };
+
   return {
     async list() {
-      return [...(await repository.list())].sort((a, b) => b.joinedAt.localeCompare(a.joinedAt));
+      const members = await Promise.all((await repository.list()).map(effectiveMember));
+      return members.sort((a, b) => b.joinedAt.localeCompare(a.joinedAt));
     },
 
     async me(email) {
@@ -34,10 +47,17 @@ export function createMemberUseCases(repository: MemberRepository): MemberUseCas
       if (!member) {
         throw new NotFoundError(`No member with email "${email}"`);
       }
-      return member;
+      return effectiveMember(member);
     },
 
     async setTier({ id, tier, actorEmail }) {
+      const member = (await repository.list()).find((candidate) => candidate.id === id);
+      if (!member) {
+        throw new NotFoundError(`No member with id "${id}"`);
+      }
+      if (await isAdminEmail(member.email)) {
+        throw new ForbiddenError(`The tier for ADMIN_EMAILS member "${member.email}" is fixed to admin`);
+      }
       const result = await repository.setTier(id, tier);
       if (!result) {
         throw new NotFoundError(`No member with id "${id}"`);

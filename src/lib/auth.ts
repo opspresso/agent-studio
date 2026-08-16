@@ -6,7 +6,7 @@ import { dynamodbAdapter } from "@/infrastructure/db/authAdapter";
 import { log } from "@/shared/logger";
 import { EMAIL_DOMAIN_NOT_ALLOWED } from "@/shared/signInError";
 import { config } from "./config";
-import { getAllowedEmailDomains } from "./runtime-settings";
+import { getAllowedEmailDomains, isConfiguredAdmin } from "./runtime-settings";
 
 async function assertAllowedEmailDomain(email: string): Promise<void> {
   const allowed = await getAllowedEmailDomains();
@@ -71,8 +71,10 @@ export const auth = betterAuth({
         after: async (session, ctx) => {
           if (ctx) {
             try {
+              const user = await ctx.context.internalAdapter.findUserById(session.userId);
               await ctx.context.internalAdapter.updateUser(session.userId, {
                 lastLoginAt: new Date(),
+                ...(user && await isConfiguredAdmin(user.email) ? { tier: "admin" } : {}),
               });
             } catch (error) {
               log.error("authz", `failed to record login for user ${session.userId}`, error);

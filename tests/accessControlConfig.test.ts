@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { assertAccessControlConfig } from "@/lib/config";
 
-const KEYS = ["STAGE", "ADMIN_EMAILS", "ALLOWED_EMAIL_DOMAINS"] as const;
+const KEYS = ["NODE_ENV", "STAGE", "ADMIN_EMAILS", "ALLOWED_EMAIL_DOMAINS"] as const;
 const ORIGINAL = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 
 function set(name: string, value: string | undefined): void {
@@ -26,8 +26,25 @@ describe("assertAccessControlConfig", () => {
     expect(() => assertAccessControlConfig()).not.toThrow();
   });
 
-  it("treats an unset STAGE as local (fail-open preserved)", () => {
+  it("treats an unset STAGE as local outside production", () => {
+    set("NODE_ENV", "test");
     set("STAGE", undefined);
+    set("ADMIN_EMAILS", undefined);
+    set("ALLOWED_EMAIL_DOMAINS", undefined);
+    expect(() => assertAccessControlConfig()).not.toThrow();
+  });
+
+  it("requires STAGE to be explicit in production", () => {
+    set("NODE_ENV", "production");
+    set("STAGE", undefined);
+    set("ADMIN_EMAILS", undefined);
+    set("ALLOWED_EMAIL_DOMAINS", undefined);
+    expect(() => assertAccessControlConfig()).toThrow(/NODE_ENV=production requires STAGE/);
+  });
+
+  it("allows an explicitly local production container", () => {
+    set("NODE_ENV", "production");
+    set("STAGE", "local");
     set("ADMIN_EMAILS", undefined);
     set("ALLOWED_EMAIL_DOMAINS", undefined);
     expect(() => assertAccessControlConfig()).not.toThrow();

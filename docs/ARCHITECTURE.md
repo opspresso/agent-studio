@@ -420,9 +420,10 @@ a slot it would be refused on regardless.
 **Concurrency is a slot index, not a counter** (`src/domain/execution/runSlot.ts`). A counter
 is exact only while every process lives to decrement it; an instance killed mid-run leaks its
 increment forever, and nothing expires a number. Each of a caller's `0..limit-1` indices is a
-row with a lease, claimed by a conditional write — so the limit is exact rather than a bound
-two concurrent acquires can overshoot, and a dead instance releases its hold when the lease
-runs out. State is shared rather than per-process for the obvious reason: `runMetrics` counts
+row with a lease and an acquisition token, claimed by a conditional write. Release is conditional
+on that token too, so an expired owner cannot delete a later run that reused its index. The limit
+is exact rather than a bound two concurrent acquires or a late release can overshoot, and a dead
+instance releases its hold when the lease runs out. State is shared rather than per-process for the obvious reason: `runMetrics` counts
 *this* instance's runs, so a limit built on it would multiply by the number of instances.
 `a2a` gets its own ceiling because the shared key's actor id is a constant — one identity
 stands for every anonymous machine caller, and the per-caller limit would otherwise become a

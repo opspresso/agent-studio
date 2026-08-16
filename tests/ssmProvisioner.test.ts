@@ -76,6 +76,25 @@ describe("ssm provisioner input handling", () => {
     }
   });
 
+  it("refuses unsafe region and registry configuration before building commands", () => {
+    expect(() =>
+      createSsmProvisioner({
+        instanceId: "i-1",
+        region: "ap-northeast-2; id",
+        registry: REGISTRY,
+        networkContainer: "agentdure",
+      }),
+    ).toThrow(/unsafe AWS region/);
+    expect(() =>
+      createSsmProvisioner({
+        instanceId: "i-1",
+        region: "ap-northeast-2",
+        registry: `${REGISTRY}; id`,
+        networkContainer: "agentdure",
+      }),
+    ).toThrow(/unsafe registry host/);
+  });
+
   it("pulls an image from outside this account's registry without logging in to it", async () => {
     sent.length = 0;
     await provisioner.start({
@@ -96,7 +115,7 @@ describe("ssm provisioner input handling", () => {
     await provisioner.start({ name: "ok", image: `${REGISTRY}/x:v1`, containerPort: 3000 });
 
     const script = sent[0]?.commands.join("\n") ?? "";
-    expect(script).toContain(`docker login --username AWS --password-stdin ${REGISTRY}`);
+    expect(script).toContain(`docker login --username AWS --password-stdin '${REGISTRY}'`);
   });
 
   it("refuses an env reference that is not a parameter path", async () => {

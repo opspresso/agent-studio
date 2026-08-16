@@ -101,19 +101,19 @@ offered every user an edit form for every project, and every save 403'd.
 **Member tiers add a second source, never a second predicate.** A member whose stored `tier`
 is `admin` gets what *both* predicates grant; the composition is `src/lib/memberAccess.ts`'s
 alone (`isEffectiveAdmin` / `isEffectiveConfiguredAdmin`), and the two list predicates above
-keep their empty-list semantics byte-for-byte — `ADMIN_EMAILS` stays the bootstrap and the
-backstop, which is also why a tier self-demotion needs no guard: a tier change alone can
-never lock the console. The tier lives on the Better Auth user row (`input: false`, so no
-auth API lets a user set their own), is written only by `memberRepository.setTier`'s
-single-attribute conditional update, and reaches route handlers on the session — fresh every
-request. The seams that never see a session (the project-write override, the run bracket's
-guards) resolve email → tier through a 30-second per-instance cache, invalidated on the
-instance that served a tier change. What each tier may hold in flight, spend per UTC month,
-and do (create projects, use API tokens) is `TIER_LIMITS` in `src/domain/member/tiers.ts` —
-gates go through its `tierMay*` predicates, never tier-name comparisons. Project creation
-additionally passes for an effective admin whatever their stored tier reads as — tier is
-additive to permissions, and the `ADMIN_EMAILS` bootstrap admin's row defaults like
-everyone else's.
+keep their empty-list semantics byte-for-byte. A configured `ADMIN_EMAILS` address is
+promoted to the stored `admin` tier at login or the next member/profile read, and its tier is
+locked while the address remains configured. Removing it from the list never demotes it;
+another operator must choose a lower tier explicitly. The tier lives on the Better Auth user
+row (`input: false`, so no auth API lets a user set their own), is written only through the
+internal adapter or `memberRepository.setTier`'s single-attribute conditional update, and
+reaches route handlers on the session — fresh every request. The seams that never see a
+session (the project-write override, the run bracket's guards) resolve email → tier through a
+30-second per-instance cache, invalidated on the instance that served a tier change. What each
+tier may hold in flight, spend per UTC month, and do (create projects, use API tokens) is
+`TIER_LIMITS` in `src/domain/member/tiers.ts` — gates go through its `tierMay*` predicates,
+never tier-name comparisons. Project creation follows that tier capability without a separate
+effective-admin bypass.
 
 The monthly cap sums the member's own daily rows from the first of the UTC month, the same
 window and the same rows the profile page reads — one aggregate, so a page cannot report a
@@ -357,8 +357,9 @@ loopback address:
   reports one, and stops the container it named.
 
 The provisioner takes an image reference, a port and an optional **argv array**, never a
-shell command. The local adapter passes argv directly to Docker; the SSM adapter shell-quotes
-every argument before assembling its command.
+shell command. The local adapter passes argv directly to Docker; the SSM adapter validates
+the configured AWS region and registry host, then shell-quotes them and every runtime argument
+before assembling its command.
 
 ### What an MCP server is told about the caller
 
@@ -711,7 +712,8 @@ Other properties worth knowing:
 - **Settings propagation is not instant.** A demoted admin or a rotated A2A key keeps working
   on instances that did not serve the write until their settings cache expires
   (`SETTINGS_CACHE_TTL_MS`, default 5s). Immediate cross-instance revocation would need a
-  shared invalidation signal, which does not exist yet.
+  shared invalidation signal, which does not exist yet. The instance that served the write
+  uses a cache generation, so a read already in flight cannot repopulate the invalidated entry.
 - **Auth rate limiting keys on the client IP**, which behind proxies is resolved through
   `TRUSTED_PROXY_CIDRS` — see
   [CONFIGURATION.md](CONFIGURATION.md#authentication-and-access-control). Left empty behind

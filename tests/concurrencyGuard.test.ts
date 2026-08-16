@@ -57,22 +57,27 @@ const usage: UsageRepository = {
  * each index is held by at most one run, and a lease that has passed is free.
  */
 function memorySlots(now = () => Math.floor(Date.now() / 1000)) {
-  const held = new Map<string, Map<number, number>>();
+  const held = new Map<string, Map<number, { leaseUntil: number; token: string }>>();
+  let nextToken = 0;
   const repo: RunSlotRepository = {
     async acquire(actor, limit, leaseUntilSeconds) {
-      const slots = held.get(actor) ?? new Map<number, number>();
+      const slots = held.get(actor) ?? new Map<number, { leaseUntil: number; token: string }>();
       held.set(actor, slots);
       for (let index = 0; index < limit; index++) {
-        const lease = slots.get(index);
-        if (lease === undefined || lease <= now()) {
-          slots.set(index, leaseUntilSeconds);
-          return { index };
+        const hold = slots.get(index);
+        if (hold === undefined || hold.leaseUntil <= now()) {
+          const token = String(++nextToken);
+          slots.set(index, { leaseUntil: leaseUntilSeconds, token });
+          return { index, token };
         }
       }
       return null;
     },
     async release(actor, slot: RunSlot) {
-      held.get(actor)?.delete(slot.index);
+      const slots = held.get(actor);
+      if (slots?.get(slot.index)?.token === slot.token) {
+        slots.delete(slot.index);
+      }
     },
   };
   return { repo, held };
@@ -144,6 +149,23 @@ describe("acquireRunSlot", () => {
     await expect(acquireRunSlot(d, user)).resolves.toBeDefined();
   });
 
+  it("does not let an expired owner release a reused slot", async () => {
+    let clock = Math.floor(Date.now() / 1000);
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock * 1000);
+    const slots = memorySlots(() => clock);
+    const d = { runSlots: slots.repo, limits: { perActor: 1, a2a: 1 } };
+    try {
+      const expired = await acquireRunSlot(d, user);
+      clock += RUN_LEASE_SECONDS + 1;
+      await acquireRunSlot(d, user);
+      await expired.release();
+
+      await expect(acquireRunSlot(d, user)).rejects.toBeInstanceOf(ConcurrencyLimitError);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("carries a 429 and a Retry-After shorter than the lease", async () => {
     const d = { runSlots: memorySlots().repo, limits: { perActor: 1, a2a: 1 } };
     await acquireRunSlot(d, user);
@@ -203,7 +225,7 @@ describe("acquireRunSlot", () => {
     const d: ConcurrencyGuardDeps = {
       limits: LIMITS,
       runSlots: {
-        acquire: async () => ({ index: 0 }),
+        acquire: async () => ({ index: 0, token: "run-1" }),
         release: async () => {
           throw new Error("delete failed");
         },

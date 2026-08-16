@@ -3,6 +3,7 @@ import { unauthorized } from "@/shared/unauthorized";
 import { headers } from "next/headers";
 import { auth } from "./auth";
 import { isEffectiveAdmin } from "./memberAccess";
+import { isConfiguredAdmin } from "./runtime-settings";
 
 export interface SessionUser {
   id: string;
@@ -24,7 +25,9 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     email: user.email,
     name: user.name,
     image: user.image ?? null,
-    tier: toMemberTier((user as { tier?: unknown }).tier),
+    tier: (await isConfiguredAdmin(user.email))
+      ? "admin"
+      : toMemberTier((user as { tier?: unknown }).tier),
   };
 }
 

@@ -1,14 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemberTier } from "@/domain/member/tiers";
 
-const { createProjectWithInitialVersion, sessionTier, isAdmin } = vi.hoisted(() => ({
+const { createProjectWithInitialVersion, sessionTier } = vi.hoisted(() => ({
   createProjectWithInitialVersion: vi.fn(),
   sessionTier: { value: "member" as string },
-  isAdmin: vi.fn(async () => false),
 }));
 
 vi.mock("@/lib/session", () => ({
-  isAdmin,
   withAuth:
     (handler: (...args: any[]) => unknown) =>
     (...args: any[]) =>
@@ -39,7 +37,6 @@ const signedInAs = (tier: MemberTier) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  isAdmin.mockResolvedValue(false);
   signedInAs("member");
 });
 
@@ -73,20 +70,9 @@ describe("POST /api/projects", () => {
     expect(createProjectWithInitialVersion).not.toHaveBeenCalled();
   });
 
-  it("lets an effective admin create whatever their stored tier reads as", async () => {
-    // The ADMIN_EMAILS bootstrap admin's row defaults like everyone else's;
-    // tier is additive to permissions, so admin-ness passes the gate.
+  it("does not let admin-list access widen a guest tier", async () => {
     signedInAs("guest");
-    isAdmin.mockResolvedValue(true);
-    createProjectWithInitialVersion.mockResolvedValue({
-      name: "my-bot",
-      displayName: "My Bot",
-      description: "",
-      projectType: "agent",
-      ownerEmail: "u@x.com",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    });
-    expect((await POST(postRequest(body))).status).toBe(201);
+    expect((await POST(postRequest(body))).status).toBe(403);
+    expect(createProjectWithInitialVersion).not.toHaveBeenCalled();
   });
 });

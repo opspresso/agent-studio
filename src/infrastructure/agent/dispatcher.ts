@@ -13,7 +13,7 @@ import type {
 import { sendA2aMessage } from "@/infrastructure/a2a/client";
 import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyText } from "@/shared/httpBody";
-import { sendAgentMessage } from "./agentClient";
+import { parseAgentReply, sendAgentMessage } from "./agentClient";
 
 const TRANSFER_TIMEOUT_MS = 120_000;
 /** Matches the probe and the MCP session: no outbound body is read unbounded. */
@@ -39,17 +39,8 @@ async function transferOpenAi(
     const detail = body.slice(0, 500);
     return { ok: false, error: `HTTP ${response.status}${detail ? `: ${detail}` : ""}` };
   }
-  // A 2xx carrying something other than JSON — a proxy interstitial, an HTML
-  // error page — is still a failed transfer. Reported in the same shape as the
-  // branch above, rather than as a raw SyntaxError the parent model would have
-  // to reason about.
-  let data: { choices?: Array<{ message?: { content?: string } }> };
-  try {
-    data = JSON.parse(body) as typeof data;
-  } catch {
-    return { ok: false, error: `malformed reply: ${body.slice(0, 500)}` };
-  }
-  return { ok: true, text: data.choices?.[0]?.message?.content ?? "", images: [] };
+  const parsed = parseAgentReply(body);
+  return parsed.ok ? { ...parsed, images: [] } : parsed;
 }
 
 export const remoteAgentDispatcher: RemoteAgentDispatcher = {

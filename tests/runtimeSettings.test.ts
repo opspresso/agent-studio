@@ -121,6 +121,24 @@ describe("runtime settings precedence", () => {
     expect(await getAdminEmails()).toEqual(["second@example.com"]);
     expect(mockGet).toHaveBeenCalledTimes(2);
   });
+
+  it("does not let an earlier read repopulate the cache after invalidation", async () => {
+    let resolveFirst!: (value: AppSettings) => void;
+    mockGet
+      .mockImplementationOnce(
+        () => new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValue({ adminEmails: "new@example.com", updatedAt: "2026-01-02T00:00:00Z" });
+
+    const staleRead = getAdminEmails();
+    invalidateSettingsCache();
+    resolveFirst({ adminEmails: "old@example.com", updatedAt: "2026-01-01T00:00:00Z" });
+    expect(await staleRead).toEqual(["old@example.com"]);
+    expect(await getAdminEmails()).toEqual(["new@example.com"]);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
 });
 
 /**

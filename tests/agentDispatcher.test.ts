@@ -71,6 +71,18 @@ describe("remoteAgentDispatcher.send", () => {
     expect(reply.ok === false && reply.error).toContain("<!DOCTYPE html>");
   });
 
+  it.each([
+    ["missing choices", {}],
+    ["empty choices", { choices: [] }],
+    ["non-text content", { choices: [{ message: { content: [{ type: "text" }] } }] }],
+  ])("reports %s as a failed reply", async (_name, body) => {
+    stubFetch(JSON.stringify(body));
+
+    const reply = await remoteAgentDispatcher.send(TARGET, "do the thing");
+
+    expect(reply).toEqual({ ok: false, error: "No assistant message in response" });
+  });
+
   it("refuses to buffer an oversized body", async () => {
     stubFetch("x".repeat(2_000_001));
 

@@ -1,7 +1,7 @@
 /**
  * Parse an SSE `Response` body into decoded JSON chunks. Frames are
- * `data: {json}\n\n` and the stream ends on `data: [DONE]`. Malformed frames
- * are ignored. The single client-side SSE reader — server framing lives in
+ * `data: {json}\n\n` and the stream ends on `data: [DONE]`. The single
+ * client-side SSE reader — server framing lives in
  * `src/app/api/_lib/sse.ts`.
  */
 export async function* readSse<T>(response: Response): AsyncGenerator<T> {
@@ -30,11 +30,15 @@ export async function* readSse<T>(response: Response): AsyncGenerator<T> {
         }
         try {
           yield JSON.parse(data) as T;
-        } catch {
-          // Ignore malformed frames.
+        } catch (error) {
+          throw new Error("Malformed SSE data frame", { cause: error });
         }
       }
       boundary = buffer.indexOf("\n\n");
     }
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    throw new Error("SSE stream ended with an incomplete frame");
   }
 }

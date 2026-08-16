@@ -36,6 +36,9 @@ export function assertRequiredConfig(): void {
  * set. `local` keeps the fail-open default for zero-config development.
  */
 export function assertAccessControlConfig(): void {
+  if (process.env.NODE_ENV === "production" && process.env.STAGE === undefined) {
+    throw new Error("NODE_ENV=production requires STAGE to be set explicitly");
+  }
   if (config.stage === "local") {
     return;
   }
