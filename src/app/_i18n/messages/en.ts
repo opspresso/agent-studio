@@ -404,6 +404,10 @@ export const en = {
   "version.dynamicCapabilitiesHint":
     "Searches the registry with this version’s system prompt and the incoming request, and offers what it finds on top of the bindings above. The bindings are always offered in full. An MCP server that needs its own sign-in is offered only once this project has connected it — a connection is made from that server’s own settings and shared by every version, so it counts here even where this version never bound the server.",
 
+  "version.memoryRecall": "Recall memory before each run",
+  "version.memoryRecallHint":
+    "Before the first token, the run asks every bound MCP server that offers a “recall” tool (mcp-memory) about the incoming request and adds what it remembers to the system prompt — so the model starts from what this project already knows instead of having to think of asking. The recall tools stay available as before. Costs one call per run; inert, with a warning, when no bound server offers one.",
+
   // The three tabs of one binding's settings dialog.
   "mcpSettings.tools": "Tools",
   "mcpSettings.toolsNote":

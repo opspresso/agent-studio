@@ -188,6 +188,12 @@ export interface RunAgentInput {
   /** See {@link RunPromptInput.caller}. */
   caller?: RunCaller;
   /**
+   * What the run recalled before this turn — the memory server's answer to the
+   * newest user turn, already bounded. Handed in like the caller: the facade
+   * asks, the engine tells the model. Absent keeps the prompt as it was.
+   */
+  remembered?: string;
+  /**
    * Whether this run may fan out to several agents at once. Set by the top-level
    * execution facade only — a subagent run is never given the tool, so the number
    * of children a request can start does not grow with transfer depth.
@@ -1250,6 +1256,7 @@ export async function* runAgent(
     ...(input.mcpTools ? { mcpTools: input.mcpTools } : {}),
     ...(input.now ? { now: input.now } : {}),
     ...(input.caller ? { caller: input.caller } : {}),
+    ...(input.remembered ? { remembered: input.remembered } : {}),
     ...(input.canDispatch ? { canDispatch: input.canDispatch } : {}),
   });
   /**

@@ -115,6 +115,18 @@ export class ToolManager {
     return this._unauthorizedServers;
   }
 
+  aliasFor(serverName: string, toolName: string): string | undefined {
+    // Walk this server's own aliases and read each one back through the
+    // reverse map: the offered name is what the run calls, the original is
+    // what the caller asked about, and only the pair says which is which.
+    for (const alias of this._toolNamesByServer.get(serverName) ?? []) {
+      if (this.originalNameByAlias.get(alias) === toolName) {
+        return alias;
+      }
+    }
+    return undefined;
+  }
+
   /**
    * Connect to every server and build the tool set. Discovery runs in parallel
    * — servers are independent, and a single unreachable one would otherwise add

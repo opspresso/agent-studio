@@ -126,6 +126,7 @@ function harness(
             warnings: [],
             unauthorizedServers: [],
             callTool: async () => ({}),
+            aliasFor: () => undefined,
             close: async () => {},
           };
         },

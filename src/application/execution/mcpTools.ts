@@ -77,6 +77,13 @@ export async function buildMcpTools(
   mcpTools: import("@/domain/llm/channel").ChannelToolDef[];
   mcpServers: engine.McpServerInfo[];
   callMcpTool?: engine.AgentDeps["callMcpTool"];
+  /**
+   * The offered name of one server's own tool, when this run offers it — the
+   * way a run addresses a tool it knows by its server's name rather than by the
+   * alias the model sees (`memoryRecall.ts` asks for each server's `recall`).
+   * Absent, like `callMcpTool`, when the version binds no server.
+   */
+  aliasFor?: (serverName: string, toolName: string) => string | undefined;
   /** Why a bound server contributed no tools; surfaced to the user by the run. */
   warnings: string[];
   /** Releases the MCP sessions; call in a `finally` once the run is over. */
@@ -245,6 +252,13 @@ export async function buildMcpTools(
     // happen. The model does not have to invent the name for that to matter: a
     // chat replays an earlier run's top-level tool calls, and the earlier run
     // may have had room for a tool this one does not.
+    // Only what this run offers: an alias past the cap above is one the model
+    // was told nothing about, and a run addressing it by server and tool name
+    // would call a tool it said it did not have.
+    aliasFor: (serverName, toolName) => {
+      const alias = toolManager.aliasFor(serverName, toolName);
+      return alias && offered.has(alias) ? alias : undefined;
+    },
     callMcpTool: async (name, args) =>
       offered.has(name)
         ? toolManager.callTool(name, args)

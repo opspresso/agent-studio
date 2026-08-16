@@ -1055,6 +1055,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     alsoAllowedUnder: ["src/app/api/projects/_lib/conversation.ts"],
   },
   {
+    // How a run primes its memory: which tool is asked, with what, and what the
+    // answer becomes. Two run sites (the facade and the local subagent) call it;
+    // a site with its own recall would ask a different question of the same
+    // server, or put the answer somewhere the preview does not know about.
+    what: "how a run primes its memory",
+    pattern: /export async function recallMemories/,
+    owner: "src/application/execution/memoryRecall.ts",
+  },
+  {
     // How a conversation is built from a surface's id and spelled as a key.
     // Every surface has its own builder (`chatConversation`,
     // `slackConversation`, `a2aConversation`, `requestConversation`), and each

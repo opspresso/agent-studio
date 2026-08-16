@@ -33,6 +33,7 @@ export type LogScope =
   | "image"
   | "managed-mcp"
   | "mcp"
+  | "memory"
   | "otel"
   | "plugins"
   | "run"

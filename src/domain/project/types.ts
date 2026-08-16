@@ -145,6 +145,22 @@ export interface VersionParameters {
    * and nothing found by search can displace or truncate them.
    */
   dynamicCapabilities?: boolean;
+  /**
+   * Whether a run asks its memory before the first token.
+   *
+   * A memory server (mcp-memory) keeps what outlives a run, and it can only be
+   * read through a tool — so the model has to remember to ask, and a run that
+   * did not starts from nothing. With this on, the run calls `recall` on every
+   * bound MCP server that offers one, with the newest user turn as the query,
+   * and puts what came back into the system prompt ahead of the conversation.
+   * The tools stay offered as before; this adds the read the model would
+   * otherwise have to think of.
+   *
+   * Opt-in, for the same reason `dynamicCapabilities` is: it sends the request
+   * text to a server before the model has said anything, and it costs one call
+   * per run. Inert when no bound server offers `recall`, which the run reports.
+   */
+  memoryRecall?: boolean;
 }
 
 export interface SubagentRef {

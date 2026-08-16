@@ -1525,6 +1525,42 @@ and the version it hands back, so `buildSubagentRunner` builds its dispatch map 
 list the model was told about. Given the caller's own version instead, a discovered agent sat in
 the transfer enum and answered `Unknown agent` the moment the model used it.
 
+### Memory
+
+What outlives a run is **not this app's to store**. A memory server — mcp-memory, an ordinary
+registry entry — keeps a project's decisions, conventions and facts and offers them as tools
+(`recall`, `remember`, `list_memories`, `forget`), scoped by the tenant header every run sends
+and, since the run learned which conversation it is in, told the conversation too
+(`X-Conversation-Id`, [MCP](#mcp)). A native store beside it would be a second answer to "what
+does this project remember", and the platform's boundary for what a run reaches is MCP.
+
+What the app adds is the one thing a tool cannot do for itself: **ask before the model has to
+think of asking.** A version that opts into `parameters.memoryRecall` has the run call `recall`
+on every bound server that offers one — by that name; a convention rather than a setting,
+because the setting would only ever name this string — with the newest user turn as the query,
+before the first token, and put what came back into the system prompt as a *What you remember*
+block, after the clock and the caller and ahead of the capability sections: a fact about the
+run, framed as background rather than as instructions because a memory is stored text and
+stored text is what a model is talked into things by. `recallMemories`
+(`src/application/execution/memoryRecall.ts`) owns all of it — the tool name, the query bound,
+the prompt budget, the timeout, and the join across several servers — and the engine receives
+the result as an input field (`remembered`), exactly as it receives the caller. A child
+transferred to decides for itself, from its own version, and asks with the transfer message.
+
+Three properties are load-bearing. **A recall never ends a run**: a server that fails, times
+out, or answers `Error:` is a `warning` and the run goes on without it — the answer is worth
+more than the recollection. **The loss is named**: a version with the flag on and no bound
+server offering `recall` warns that it started without a memory, rather than silently reading
+as a version that remembers. And **the preview says what it cannot show**: what is recalled
+depends on the request, which a preview does not have, so it reports the missing block instead
+of showing a prompt one block short. The tools stay offered as before; the recall is in
+addition, and the model may still `remember` and `recall` mid-run.
+
+Two decisions this leaves open, on purpose. *Where a memory attaches* — to the project (what
+mcp-memory does today) or to the conversation — is the server's, which now has both keys.
+And *what is written back* stays the model's, through `remember`, with the conversation and
+the tenant on the request as its provenance; the run itself never writes.
+
 ### Slack
 
 Bots are **per project**: `/api/slack/events/[project]` is the only events endpoint, and it

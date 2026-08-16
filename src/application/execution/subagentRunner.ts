@@ -34,6 +34,7 @@ import { closeMcp } from "./mcpTools";
 import { assertModelsPriceable } from "@/application/run/modelPolicy";
 import { assertWithinCostLimit } from "@/application/usage/costGuard";
 import { buildSkillLoader, createSkillReader, discoveryQueries, resolveRunTools } from "./bindings";
+import { recallMemories, rememberedInput } from "./memoryRecall";
 import { log } from "@/shared/logger";
 import { createTraceRecorder, finishTrace } from "@/application/run/traceLifecycle";
 
@@ -470,6 +471,12 @@ export async function* runLocalSubagent(
       );
     }
     closeMcpSessions = mcp.close;
+    // The child's version decides for itself, like every other opt-in; the
+    // transfer message is its whole request, so it is what the memory is asked.
+    const recalled = runVersion.parameters.memoryRecall
+      ? await recallMemories({ mcp, query: message, signal })
+      : { warnings: [] };
+    warnings.push(...recalled.warnings);
     const childDeps = await buildAgentDeps(
       deps,
       runVersion,
@@ -500,6 +507,7 @@ export async function* runLocalSubagent(
       // See `runPromptSubagent`: this version's own `callerContext` decides,
       // and the caller comes off the origin that descended the chain.
       ...callerFor({ version, ...(origin.caller ? { caller: origin.caller } : {}) }),
+      ...rememberedInput(recalled),
       // Clamped to the parent's ceiling: the child continues the parent's turn
       // counter (`startTurn`), so a child version configured with a larger
       // maxTurn would raise the limit the whole run was started under.
