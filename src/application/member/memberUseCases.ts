@@ -39,7 +39,7 @@ export function createMemberUseCases(
   return {
     async list() {
       const members = await Promise.all((await repository.list()).map(effectiveMember));
-      return members.sort((a, b) => b.joinedAt.localeCompare(a.joinedAt));
+      return members.sort((a, b) => (b.lastLoginAt ?? "").localeCompare(a.lastLoginAt ?? ""));
     },
 
     async me(email) {

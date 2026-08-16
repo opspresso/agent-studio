@@ -27,17 +27,18 @@ afterEach(() => {
 });
 
 describe("member use cases", () => {
-  it("lists newest members first without changing the repository result", async () => {
+  it("lists members by most recent login without changing the repository result", async () => {
     const stored = [
-      member({ id: "old", joinedAt: "2026-01-01T00:00:00.000Z" }),
-      member({ id: "new", joinedAt: "2026-02-01T00:00:00.000Z" }),
+      member({ id: "old", lastLoginAt: "2026-01-01T00:00:00.000Z" }),
+      member({ id: "never" }),
+      member({ id: "recent", lastLoginAt: "2026-02-01T00:00:00.000Z" }),
     ];
     const repository: MemberRepository = { ...unusedRepositoryRest, list: async () => stored };
 
     const result = await createMemberUseCases(repository).list();
 
-    expect(result.map((m) => m.id)).toEqual(["new", "old"]);
-    expect(stored.map((m) => m.id)).toEqual(["old", "new"]);
+    expect(result.map((m) => m.id)).toEqual(["recent", "old", "never"]);
+    expect(stored.map((m) => m.id)).toEqual(["old", "never", "recent"]);
   });
 
   describe("me", () => {
