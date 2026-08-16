@@ -96,9 +96,9 @@ export async function buildMcpTools(
   const descriptionByName = new Map<string, string>();
   // Per-request context, kept apart from the identity headers on purpose — see
   // `CONVERSATION_ID_HEADER` for why it must not reach the discovery cache key.
-  const contextHeaders: Record<string, string> = origin?.conversation
+  const contextHeaders: Record<string, string> | undefined = origin?.conversation
     ? { [CONVERSATION_ID_HEADER]: conversationKey(origin.conversation) }
-    : {};
+    : undefined;
   const resolved = await Promise.all(
     mcpList.map(
       async (binding): Promise<{ server?: McpServerConfig; description?: string; warning?: string }> => {
@@ -171,7 +171,7 @@ export async function buildMcpTools(
             url: mcp.url,
             ...(loopback ? { loopback: true } : {}),
             headers,
-            ...(Object.keys(contextHeaders).length > 0 ? { contextHeaders } : {}),
+            ...(contextHeaders ? { contextHeaders } : {}),
             ...(binding.tools && binding.tools.length > 0 ? { tools: binding.tools } : {}),
           },
           description: mcp.description ?? "",

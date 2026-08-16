@@ -14,6 +14,13 @@ import { conversationOf, type RunConversation } from "@/domain/execution/actor";
  * the key is ever compared against — the project's MCP tenant, and the
  * project's remote-conversation rows.
  */
-export function slackConversation(channel: string, threadTs: string): RunConversation | null {
-  return conversationOf("slack", `${channel}:${threadTs}`);
+export function slackConversation(channel: string, threadTs: string): RunConversation {
+  // Both halves are Slack's own ids — short, ASCII — so the builder never has
+  // anything to refuse; said as an assertion rather than carried as an optional
+  // every caller would have to spread around.
+  const conversation = conversationOf("slack", `${channel}:${threadTs}`);
+  if (!conversation) {
+    throw new Error("A Slack conversation needs a channel and a thread");
+  }
+  return conversation;
 }

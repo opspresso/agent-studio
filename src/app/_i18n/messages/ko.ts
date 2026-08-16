@@ -238,6 +238,7 @@ export const ko: Messages = {
   "project.tab.usage": "사용량",
   "project.tab.artifacts": "Artifacts",
   "project.tab.traces": "트레이스",
+  "trace.inConversation": "대화",
   "project.tab.apiReference": "API 레퍼런스",
   "project.tab.settings": "설정",
 

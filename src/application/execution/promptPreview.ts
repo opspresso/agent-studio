@@ -161,7 +161,7 @@ export async function previewPrompt(
     // recall on has anywhere to recall *from* is the one memory warning an
     // author can act on from the editor.
     const memory =
-      version.parameters.memoryRecall && recallTargets(resolved.mcp).length === 0
+      version.parameters.memoryRecall && recallTargets(resolved.mcp, version).length === 0
         ? { warnings: [noRecallTargetWarning()] }
         : { warnings: [] };
     const { systemPrompt, tools } = engine.assembleAgentRun(agentDeps, {

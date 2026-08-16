@@ -181,11 +181,15 @@ const imageChannel = createImageChannel(resolveTarget);
 export const testModel = createTestModel(channel);
 
 const remoteAgents: RemoteAgentDispatcher = {
-  send: async (target, message, signal) =>
+  // Every argument through, `options` included: this wrapper is what a run's
+  // transfer actually calls, and a `contextId` it swallowed would leave the
+  // continuity the tests prove on the adapter never reaching the wire.
+  send: async (target, message, signal, options) =>
     (await import("@/infrastructure/agent/dispatcher")).remoteAgentDispatcher.send(
       target,
       message,
       signal,
+      options,
     ),
   probe: async (target, message) =>
     (await import("@/infrastructure/agent/dispatcher")).remoteAgentDispatcher.probe(

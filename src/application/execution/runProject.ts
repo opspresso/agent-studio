@@ -34,7 +34,7 @@ import { closeMcp } from "./mcpTools";
 import { buildAgentDeps } from "./subagentRunner";
 import { createTraceRecorder, finishTrace, sampledTraceRecorder } from "@/application/run/traceLifecycle";
 import { callerFor, runClock, runStrategyFor, toEngineParameters, toRunInput } from "./deps";
-import { recallMemories, rememberedInput } from "./memoryRecall";
+import { recallForRun } from "./memoryRecall";
 
 export type {
   ExecutionDeps,
@@ -505,11 +505,15 @@ export async function* executeAgent(
     closeMcpSessions = mcp.close;
     // Before the first token, when the version asked for it: what this project
     // remembers about the request. A recall that fails is a warning below, never
-    // the end of the run — the answer is worth more than the recollection.
-    const recalled = runVersion.parameters.memoryRecall
-      ? await recallMemories({ mcp, query: latestUserText(input.messages) ?? "", signal: runSignal })
-      : { warnings: [] };
-    warnings.push(...recalled.warnings);
+    // the end of the run — the answer is worth more than the recollection. The
+    // version as bound, not as widened: only servers the author bound are asked.
+    const memory = await recallForRun({
+      version: input.version,
+      mcp,
+      query: latestUserText(input.messages) ?? "",
+      signal: runSignal,
+    });
+    warnings.push(...memory.warnings);
     const agentDeps = await buildAgentDeps(
       runDeps,
       runVersion,
@@ -543,7 +547,7 @@ export async function* executeAgent(
       parameters: toEngineParameters(input.version),
       now: startedAt,
       ...callerFor(input),
-      ...rememberedInput(recalled),
+      ...memory.input,
       // Fan-out is offered here and nowhere below it. A child that could dispatch
       // would multiply the number of concurrent runs by transfer depth, and a
       // subagent run does not pass through the run bracket — so nothing but this

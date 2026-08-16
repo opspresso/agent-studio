@@ -89,6 +89,7 @@ export function createOtelTraceExport(config: OtelExportConfig): OtelTraceExport
         "app.project_type": trace.projectType,
         "app.status": trace.status,
         ...(trace.actor ? { "app.actor": `${trace.actor.kind}:${trace.actor.id}` } : {}),
+        ...(trace.conversation ? { "app.conversation": trace.conversation } : {}),
         ...(trace.spansDropped ? { "app.spans_dropped": trace.spansDropped } : {}),
       },
     });
