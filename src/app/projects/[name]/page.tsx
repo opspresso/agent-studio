@@ -356,7 +356,11 @@ export default function PlaygroundPage() {
             </CollapsibleSection>
           )}
 
-          <CollapsibleSection title={t("playground.run")}>
+          {/*
+            Open on arrival: running the version is what the Playground is for,
+            and it is the only panel on this page a guest is offered at all.
+          */}
+          <CollapsibleSection title={t("playground.run")} defaultOpen>
             <RunPanel
               projectName={name}
               versionName={dirty && selectedName === "" ? null : selectedName || null}
