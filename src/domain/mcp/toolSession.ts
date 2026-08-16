@@ -47,6 +47,13 @@ export interface McpToolSession {
    */
   readonly unauthorizedServers: readonly string[];
   callTool(aliasName: string, args: Record<string, unknown>): Promise<McpToolResult>;
+  /**
+   * The offered name of one server's own tool, or nothing when that server did
+   * not contribute it. Aliases are allocated across servers, so a caller that
+   * wants *this server's* `recall` cannot spell it — `recall` may be another
+   * server's, and this one's may be `recall_2`.
+   */
+  aliasFor(serverName: string, toolName: string): string | undefined;
   /** Releases every session. Always called from the facade's `finally`. */
   close(): Promise<void>;
 }

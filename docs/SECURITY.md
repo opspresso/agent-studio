@@ -575,7 +575,12 @@ would have masked it. In practice that is the same provider account the chat cha
 uses, which is why it is documented here rather than treated as a separate exposure — but it
 is a decision to make when turning the flag on, not something the filter covers. A deployment
 that cannot accept it leaves `dynamicCapabilities` off on filtered versions, which is the
-default.
+default. **`memoryRecall` sits at the same spot**: the newest user turn is sent to the bound
+memory server as the `recall` query before the engine constructs the filter — a connected MCP
+server already sees restored tool arguments, so this is the same exposure a turn earlier, and
+the same decision to make when turning the flag on. What comes back enters the *system prompt*
+as recalled text and is not masked either; it is stored text, and what a memory server holds is
+governed by that server's own registration.
 
 Detection is regex-based and covers emails, phone numbers, Korean resident/foreigner
 registration numbers (hyphenated form, with the date half validated) and payment card

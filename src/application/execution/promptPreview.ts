@@ -78,6 +78,15 @@ export async function previewPrompt(
     );
   }
 
+  if (version.parameters.memoryRecall && runStrategyFor(project) === "agent") {
+    // What a run recalls depends on the request, which a preview does not have;
+    // saying so keeps a prompt one block short of the real one from reading as
+    // the real one.
+    warnings.push(
+      "Memory recall is on: a run asks its bound memory server about the request before the first token and adds what it remembers to the system prompt. The preview has no request, so the block is not shown.",
+    );
+  }
+
   if (runStrategyFor(project) === "image") {
     // An image run has no system message — the version's system prompt rides in
     // front of the prompt as its persistent style, and the Playground's own

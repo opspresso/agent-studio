@@ -171,6 +171,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
 | What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |
 | How much a search may add to one run | `DISCOVERY_LIMITS` in `src/application/execution/bindings.ts` |
+| How a run primes its memory — which tool is asked, with what, and what the answer becomes | `recallMemories` / `RECALL_TOOL_NAME` / `MAX_RECALLED_CHARS` in `src/application/execution/memoryRecall.ts` |
 | What a run searches the catalog with | `discoveryQueries` in `src/application/execution/bindings.ts` |
 | Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
 | The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
@@ -320,6 +321,13 @@ One line each — the linked section is the authority.
   the request; bindings are never displaced, and an OAuth-bearing MCP server is added only
   where the project has already connected it. Off entirely without `VECTOR_BUCKET`. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#capability-catalog)
+- **Memory** — what outlives a run lives behind MCP, not in this app: a bound memory server
+  (mcp-memory) offers `recall`/`remember`, is told which project (`X-Tenant-Id`) and which
+  conversation (`X-Conversation-Id`) is asking, and a version that opts into `memoryRecall` has
+  the run ask `recall` with the newest user turn before the first token and put the answer in
+  the system prompt (`src/application/execution/memoryRecall.ts`, the engine knows nothing of
+  it). A second, native store would be two answers to "what does this project remember". →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#memory)
 - **PII filtering** — opt-in per version; bounds what the LLM and engine context see, **not**
   what an MCP server receives, and **not** the request text capability discovery embeds (that
   search runs before the engine constructs the filter). →

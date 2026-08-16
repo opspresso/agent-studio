@@ -105,6 +105,7 @@ export const versionParametersSchema = z.object({
   slackWorkspace: z.boolean().optional(),
   imageModel: z.string().optional(),
   dynamicCapabilities: z.boolean().optional(),
+  memoryRecall: z.boolean().optional(),
 });
 
 export const subagentRefSchema = z.object({

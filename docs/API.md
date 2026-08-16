@@ -245,7 +245,7 @@ POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the pu
 Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
-slackWorkspace?, dynamicCapabilities? }`,
+slackWorkspace?, dynamicCapabilities?, memoryRecall? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
 `subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
 image-capable registry model is rejected with 400, as is a catalog `model` missing a capability
@@ -285,6 +285,19 @@ What was *found* is not a warning — a run logs it, and `POST /api/projects/{na
 returns it as `discovered`, separate from `warnings`. Without `VECTOR_BUCKET` the flag is stored
 and the run says that too, rather than behaving as though the search found nothing. See
 [ARCHITECTURE.md](ARCHITECTURE.md#capability-catalog).
+
+`memoryRecall` makes a run ask its memory before the first token: every bound MCP server that
+offers a `recall` tool (mcp-memory) is called with the newest user turn, and what came back is
+added to the system prompt as a **What you remember** block — framed as background, not as
+instructions — so the model starts from what the project already knows rather than having to
+think of asking. The tools stay offered as before; this adds the read. One call per run, bounded
+(the newest turn is sent at up to 2,000 characters, at most 4,000 characters are kept, and the
+first token waits at most 10s); a server that fails is a `warning` on the run and the run goes on
+without it, and a version with it on but no bound server offering `recall` warns that it started
+without a memory. `POST /api/projects/{name}/preview` cannot show the block — what is recalled
+depends on the request — and says so as a warning. Like `dynamicCapabilities` the request text
+reaches the server before the engine's PII filter is built; see
+[SECURITY.md](SECURITY.md#pii-filtering-and-where-it-stops).
 
 #### MCP bindings and per-version header overrides
 

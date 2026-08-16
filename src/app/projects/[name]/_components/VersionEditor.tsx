@@ -486,6 +486,16 @@ export function VersionEditor({
               onChange={(e) => patchParams({ dynamicCapabilities: e.currentTarget.checked })}
             />
           )}
+          {runsTools && (
+            <Checkbox
+              label={t("version.memoryRecall")}
+              description={t("version.memoryRecallHint")}
+              checked={value.parameters.memoryRecall ?? false}
+              onChange={(e) =>
+                patchParams({ memoryRecall: e.currentTarget.checked ? true : undefined })
+              }
+            />
+          )}
         </Stack>
       )}
     </Stack>
