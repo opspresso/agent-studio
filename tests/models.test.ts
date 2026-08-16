@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MODEL_CONFIGS,
+  MODEL_MAKER_LABELS,
   SUPPORTED_PROVIDERS,
   applyModelConstraints,
   calculateCost,
@@ -51,6 +52,18 @@ describe("model registry invariants", () => {
     }
   });
 
+  it("identifies the model maker independently of its route", () => {
+    for (const model of MODEL_CONFIGS) {
+      expect(MODEL_MAKER_LABELS[model.maker], `${model.id}: unknown maker`).toBeTruthy();
+    }
+    expect(MODEL_CONFIGS.find((model) => model.id === "bedrock/gpt-oss-120b")?.maker).toBe(
+      "openai",
+    );
+    expect(MODEL_CONFIGS.find((model) => model.id === "openrouter/claude-opus-5")?.maker).toBe(
+      "anthropic",
+    );
+  });
+
   /**
    * The point of the family/offering split: one model reached three ways is one
    * name and one window, not three that drift. Derivation makes that true by
@@ -72,6 +85,7 @@ describe("model registry invariants", () => {
         expect(route.displayName, `${family}: routes disagree on the name`).toBe(
           first?.displayName,
         );
+        expect(route.maker, `${family}: routes disagree on the maker`).toBe(first?.maker);
         expect(route.contextWindow, `${family}: routes disagree on the window`).toBe(
           first?.contextWindow,
         );

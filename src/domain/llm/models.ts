@@ -34,6 +34,25 @@ export const SUPPORTED_PROVIDERS = [
 ] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
+export const MODEL_MAKER_LABELS = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+  xai: "xAI",
+  deepseek: "DeepSeek",
+  zhipu: "Z.ai",
+  minimax: "MiniMax",
+  moonshot: "Moonshot AI",
+  qwen: "Alibaba Qwen",
+  nvidia: "NVIDIA",
+  xiaomimimo: "Xiaomi",
+  tencent: "Tencent",
+  stepfun: "StepFun",
+  upstage: "Upstage",
+} as const;
+
+export type ModelMaker = keyof typeof MODEL_MAKER_LABELS;
+
 /**
  * Single-rate by design — one number per token class, the base (sub-threshold,
  * standard-tier) rate. Three providers now publish a second, higher tier this
@@ -84,6 +103,8 @@ export interface ModelConfig {
   provider: string;
   /** The family this offering serves — the id's part after the prefix. */
   family: string;
+  /** The company that made the model, independent of the route serving it. */
+  maker: ModelMaker;
   displayName: string;
   pricing: ModelPricing;
   capabilities: ModelCapabilities;
@@ -729,6 +750,24 @@ const MODEL_FAMILIES = {
 
 type ModelFamilyId = keyof typeof MODEL_FAMILIES;
 
+function makerForFamily(family: ModelFamilyId): ModelMaker {
+  if (family.startsWith("gpt-")) return "openai";
+  if (family.startsWith("claude-")) return "anthropic";
+  if (family.startsWith("gemini-")) return "google";
+  if (family.startsWith("grok-")) return "xai";
+  if (family.startsWith("deepseek-")) return "deepseek";
+  if (family.startsWith("glm-")) return "zhipu";
+  if (family.startsWith("minimax-")) return "minimax";
+  if (family.startsWith("kimi-")) return "moonshot";
+  if (family.startsWith("qwen")) return "qwen";
+  if (family.startsWith("nemotron-")) return "nvidia";
+  if (family.startsWith("mimo-")) return "xiaomimimo";
+  if (family === "hy3") return "tencent";
+  if (family.startsWith("step-")) return "stepfun";
+  if (family.startsWith("solar-")) return "upstage";
+  throw new Error(`Model family "${family}" has no maker`);
+}
+
 const MODEL_OFFERINGS: ModelOffering[] = [
   // OpenAI
   { family: "gpt-5.6-sol", provider: "openai" },
@@ -892,6 +931,7 @@ function deriveModel(offering: ModelOffering): ModelConfig {
     id: `${offering.provider}/${offering.family}`,
     provider: offering.provider,
     family: offering.family,
+    maker: makerForFamily(offering.family),
     displayName: family.displayName,
     pricing: { ...family.pricing, ...offering.pricing },
     capabilities: { ...family.capabilities, ...offering.capabilities },

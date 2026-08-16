@@ -1,21 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Accordion,
   Alert,
   Badge,
+  Box,
   Button,
+  Checkbox,
   Group,
+  Select,
   Stack,
   Switch,
   Table,
   Text,
   Tooltip,
+  UnstyledButton,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
-import { IconCheck, IconCpu } from "@tabler/icons-react";
-import type { ModelConfig } from "@/domain/llm/models";
+import { IconCheck, IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
+import { MODEL_MAKER_LABELS, type ModelConfig } from "@/domain/llm/models";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { BADGE } from "@/app/_components/badgeColors";
@@ -23,6 +26,15 @@ import { modelPriceLabel } from "@/app/_components/modelOptions";
 import { jsonHeaders, readJson } from "@/app/_lib/httpClient";
 import { useViewer } from "@/app/_lib/useViewer";
 import { useT } from "@/app/_i18n/provider";
+import {
+  nextSort,
+  deserializeModelTableState,
+  DEFAULT_MODEL_TABLE_STATE,
+  visibleModelRows,
+  type ModelSortKey,
+  type SortDirection,
+  type FilterCapability,
+} from "./modelTable";
 
 interface CatalogProvider {
   name: string;
@@ -53,14 +65,41 @@ const CAPABILITY_COLUMNS = [
   ["imageGeneration", "Image"],
 ] as const;
 
+function SortableHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onSort,
+}: {
+  label: string;
+  sortKey: ModelSortKey;
+  activeKey: ModelSortKey;
+  direction: SortDirection;
+  onSort: (key: ModelSortKey) => void;
+}) {
+  const active = sortKey === activeKey;
+  return (
+    <Table.Th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+      <UnstyledButton onClick={() => onSort(sortKey)} aria-label={`Sort by ${label}`}>
+        <Group gap={4} wrap="nowrap">
+          <Text fz="sm" fw={600}>{label}</Text>
+          {active && (direction === "asc"
+            ? <IconChevronUp size={14} aria-hidden />
+            : <IconChevronDown size={14} aria-hidden />)}
+        </Group>
+      </UnstyledButton>
+    </Table.Th>
+  );
+}
+
 /**
  * The other providers that serve the same model.
  *
- * The cards below are per provider, because that is what an admin configures
- * and what the "no channel" badge is about. But a model reached three ways is
- * one model, and the thing worth seeing next to a price is that the same thing
- * is available elsewhere at a different one — so each row says where else it
- * lives instead of the reader having to spot the name three cards apart.
+ * A model reached three ways is one model, and the thing worth seeing next to
+ * a price is that the same thing is available elsewhere at a different one —
+ * so each row says where else it lives instead of making the reader compare
+ * repeated names manually.
  */
 function otherRoutes(models: CatalogModel[], model: CatalogModel): string[] {
   return models
@@ -78,20 +117,25 @@ export default function ModelsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
-  /**
-   * Which provider sections are open, remembered per browser.
-   *
-   * Closed is the default because the interesting question on arrival is which
-   * providers this deployment reaches and whether each has a channel — the
-   * badges above answer that — while six open tables of every model push it off
-   * the screen. The hook reads storage *after* mount, so the server and the
-   * first client render agree; opening one is a per-person habit, not a setting,
-   * which is why it lives in the browser and not in the settings row.
-   */
-  const [openProviders, setOpenProviders] = useLocalStorage<string[]>({
-    key: "agentdure.models.open-providers",
-    defaultValue: [],
+  const [tableState, setTableState] = useLocalStorage({
+    key: "agentdure.models.table-state.v1",
+    defaultValue: DEFAULT_MODEL_TABLE_STATE,
+    deserialize: deserializeModelTableState,
   });
+
+  const rows = useMemo(
+    () => visibleModelRows(models, tableState),
+    [models, tableState],
+  );
+  const providerByName = useMemo(
+    () => new Map(providers.map((provider) => [provider.name, provider])),
+    [providers],
+  );
+
+  function sortBy(nextKey: ModelSortKey) {
+    const next = nextSort(tableState.sortKey, tableState.direction, nextKey);
+    setTableState((current) => ({ ...current, ...next }));
+  }
 
   useEffect(() => {
     if (!viewer?.isAdmin) return;
@@ -192,172 +236,195 @@ export default function ModelsPage() {
         <LoadingText />
       ) : (
         <>
-          <Group gap="xs">
-            {providers.map((provider) => (
-              <Badge
-                key={provider.name}
-                color={provider.available ? BADGE.on : BADGE.attention}
-                variant="light"
+          <Group justify="space-between" align="flex-end" wrap="wrap">
+            <Group align="flex-end" wrap="wrap">
+              <Select
+                label="Provider"
+                placeholder="All providers"
+                data={providers.map((provider) => provider.name)}
+                value={tableState.provider}
+                onChange={(provider) => setTableState((current) => ({ ...current, provider }))}
+                searchable
+                clearable
+                w={240}
+              />
+              <Checkbox.Group
+                label="Capabilities"
+                value={tableState.capabilities}
+                onChange={(values) => setTableState((current) => ({
+                  ...current,
+                  capabilities: values as FilterCapability[],
+                }))}
               >
-                {provider.name} ·{" "}
-                {provider.dedicated
-                  ? "dedicated channel"
-                  : provider.available
-                    ? "default channel"
-                    : "unavailable"}
-              </Badge>
-            ))}
-            {source === "override" && (
-              <>
-                <Badge color={BADGE.attention}>selection restricted</Badge>
-                <Button
-                  size="compact-xs"
-                  variant="default"
-                  disabled={busy}
-                  onClick={() =>
-                    void saveEnabled(
-                      [],
-                      models.map((model) => ({ ...model, enabled: true })),
-                      "default",
-                    )
-                  }
-                >
-                  Reset — allow all
-                </Button>
-              </>
-            )}
+                <Group gap="md" h={36}>
+                  {CAPABILITY_COLUMNS.map(([value, label]) => (
+                    <Checkbox key={value} value={value} label={label} />
+                  ))}
+                </Group>
+              </Checkbox.Group>
+            </Group>
+            <Group gap="xs">
+              <Text fz="sm" c="dimmed">
+                {rows.length} {rows.length === 1 ? "model" : "models"}
+              </Text>
+              {source === "override" && (
+                <>
+                  <Badge color={BADGE.attention}>selection restricted</Badge>
+                  <Button
+                    size="compact-xs"
+                    variant="default"
+                    disabled={busy}
+                    onClick={() =>
+                      void saveEnabled(
+                        [],
+                        models.map((model) => ({ ...model, enabled: true })),
+                        "default",
+                      )
+                    }
+                  >
+                    Reset — allow all
+                  </Button>
+                </>
+              )}
+            </Group>
           </Group>
 
-          {/*
-            * A multi-item accordion rather than the shared `CollapsibleSection`:
-            * these open independently and their combined state is what gets
-            * remembered, which a per-section component cannot express.
-            */}
-          <Accordion
-            multiple
-            variant="separated"
-            radius="md"
-            chevronPosition="left"
-            value={openProviders}
-            onChange={setOpenProviders}
-          >
-            {providers
-              .map((provider) => ({
-                provider,
-                rows: models.filter((model) => model.provider === provider.name),
-              }))
-              .filter(({ rows }) => rows.length > 0)
-              .map(({ provider, rows }) => (
-                <Accordion.Item key={provider.name} value={provider.name}>
-                  <Accordion.Control>
-                    <Group gap="sm" wrap="wrap">
-                      <Text fw={600}>{provider.name}</Text>
-                      <Text fz="xs" c="dimmed">
-                        {rows.length} {rows.length === 1 ? "model" : "models"} ·{" "}
-                        {rows.filter((model) => model.enabled).length} enabled
-                      </Text>
-                      {!provider.available && (
-                        <Badge color={BADGE.attention}>
-                          no channel — models here are never offered
+          <Table.ScrollContainer minWidth={1040}>
+            <Table highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <SortableHeader
+                    label="Provider"
+                    sortKey="provider"
+                    activeKey={tableState.sortKey}
+                    direction={tableState.direction}
+                    onSort={sortBy}
+                  />
+                  <SortableHeader
+                    label="Model"
+                    sortKey="name"
+                    activeKey={tableState.sortKey}
+                    direction={tableState.direction}
+                    onSort={sortBy}
+                  />
+                  {CAPABILITY_COLUMNS.map(([key, label]) => (
+                    <Table.Th key={key} ta="center">{label}</Table.Th>
+                  ))}
+                  <SortableHeader
+                    label="Pricing"
+                    sortKey="price"
+                    activeKey={tableState.sortKey}
+                    direction={tableState.direction}
+                    onSort={sortBy}
+                  />
+                  <Table.Th>Enabled</Table.Th>
+                  <Table.Th />
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {rows.map((model) => {
+                  const provider = providerByName.get(model.provider);
+                  return (
+                    <Table.Tr key={model.id}>
+                      <Table.Td>
+                        <Text fz="sm" fw={500}>{model.provider}</Text>
+                        <Badge
+                          size="xs"
+                          color={provider?.available ? BADGE.on : BADGE.attention}
+                          variant="light"
+                        >
+                          {provider?.dedicated
+                            ? "dedicated"
+                            : provider?.available
+                              ? "default"
+                              : "unavailable"}
                         </Badge>
-                      )}
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    <Table.ScrollContainer minWidth={860}>
-                      <Table highlightOnHover>
-                        <Table.Thead>
-                          <Table.Tr>
-                            <Table.Th>Model</Table.Th>
-                            {CAPABILITY_COLUMNS.map(([key, label]) => (
-                              <Table.Th key={key} ta="center">
-                                {label}
-                              </Table.Th>
+                      </Table.Td>
+                      <Table.Td>
+                        <Group gap="sm" wrap="nowrap">
+                          <Tooltip label={MODEL_MAKER_LABELS[model.maker]}>
+                            <Box
+                              w={32}
+                              h={32}
+                              p={4}
+                              bg="white"
+                              style={{ borderRadius: "var(--mantine-radius-sm)", flexShrink: 0 }}
+                            >
+                              <img
+                                src={`/provider-logos/${model.maker}.svg`}
+                                alt={`${MODEL_MAKER_LABELS[model.maker]} logo`}
+                                width={24}
+                                height={24}
+                              />
+                            </Box>
+                          </Tooltip>
+                          <div>
+                            <Text fz="sm" fw={500}>{model.displayName}</Text>
+                            <Text fz="xs" c="dimmed" ff="monospace">{model.id}</Text>
+                            {otherRoutes(models, model).length > 0 && (
+                              <Text fz="xs" c="dimmed">
+                                also via {otherRoutes(models, model).join(", ")}
+                              </Text>
+                            )}
+                          </div>
+                        </Group>
+                      </Table.Td>
+                      {CAPABILITY_COLUMNS.map(([key]) => (
+                        <Table.Td key={key} ta="center">
+                          {model.capabilities[key] ? (
+                            <IconCheck
+                              size={16}
+                              color="var(--mantine-color-teal-6)"
+                              aria-label={t("models.yes")}
+                            />
+                          ) : (
+                            <Text fz="sm" c="dimmed" component="span" aria-label={t("models.no")}>
+                              -
+                            </Text>
+                          )}
+                        </Table.Td>
+                      ))}
+                      <Table.Td>
+                        <Text fz="sm">{modelPriceLabel(model.pricing)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Switch
+                          checked={model.enabled}
+                          disabled={busy}
+                          aria-label={`Enable ${model.id}`}
+                          onChange={(event) => toggleModel(model.id, event.currentTarget.checked)}
+                        />
+                      </Table.Td>
+                      <Table.Td>
+                        <Group gap="xs" wrap="nowrap">
+                          <Button
+                            size="compact-xs"
+                            variant="default"
+                            loading={tests[model.id]?.running}
+                            onClick={() => void runTest(model.id)}
+                          >
+                            Test
+                          </Button>
+                          {tests[model.id]?.result &&
+                            (tests[model.id]?.result?.ok ? (
+                              <Badge color={BADGE.on}>{tests[model.id]?.result?.latencyMs} ms</Badge>
+                            ) : (
+                              <Tooltip
+                                label={tests[model.id]?.result?.error ?? "failed"}
+                                multiline
+                                maw={360}
+                              >
+                                <Badge color={BADGE.broken}>failed</Badge>
+                              </Tooltip>
                             ))}
-                            <Table.Th>Pricing</Table.Th>
-                            <Table.Th>Enabled</Table.Th>
-                            <Table.Th />
-                          </Table.Tr>
-                        </Table.Thead>
-                        <Table.Tbody>
-                          {rows.map((model) => (
-                            <Table.Tr key={model.id}>
-                              <Table.Td>
-                                <Text fz="sm" fw={500}>
-                                  {model.displayName}
-                                </Text>
-                                <Text fz="xs" c="dimmed" ff="monospace">
-                                  {model.id}
-                                </Text>
-                                {otherRoutes(models, model).length > 0 && (
-                                  <Text fz="xs" c="dimmed">
-                                    also via {otherRoutes(models, model).join(", ")}
-                                  </Text>
-                                )}
-                              </Table.Td>
-                              {CAPABILITY_COLUMNS.map(([key]) => (
-                                <Table.Td key={key} ta="center">
-                                  {model.capabilities[key] ? (
-                                    <IconCheck
-                                      size={16}
-                                      color="var(--mantine-color-teal-6)"
-                                      aria-label={t("models.yes")}
-                                    />
-                                  ) : (
-                                    <Text fz="sm" c="dimmed" component="span" aria-label={t("models.no")}>
-                                      -
-                                    </Text>
-                                  )}
-                                </Table.Td>
-                              ))}
-                              <Table.Td>
-                                <Text fz="sm">{modelPriceLabel(model.pricing)}</Text>
-                              </Table.Td>
-                              <Table.Td>
-                                <Switch
-                                  checked={model.enabled}
-                                  disabled={busy}
-                                  aria-label={`Enable ${model.id}`}
-                                  onChange={(event) =>
-                                    toggleModel(model.id, event.currentTarget.checked)
-                                  }
-                                />
-                              </Table.Td>
-                              <Table.Td>
-                                <Group gap="xs" wrap="nowrap">
-                                  <Button
-                                    size="compact-xs"
-                                    variant="default"
-                                    loading={tests[model.id]?.running}
-                                    onClick={() => void runTest(model.id)}
-                                  >
-                                    Test
-                                  </Button>
-                                  {tests[model.id]?.result &&
-                                    (tests[model.id]?.result?.ok ? (
-                                      <Badge color={BADGE.on}>
-                                        {tests[model.id]?.result?.latencyMs} ms
-                                      </Badge>
-                                    ) : (
-                                      <Tooltip
-                                        label={tests[model.id]?.result?.error ?? "failed"}
-                                        multiline
-                                        maw={360}
-                                      >
-                                        <Badge color={BADGE.broken}>failed</Badge>
-                                      </Tooltip>
-                                    ))}
-                                </Group>
-                              </Table.Td>
-                            </Table.Tr>
-                          ))}
-                        </Table.Tbody>
-                      </Table>
-                    </Table.ScrollContainer>
-                  </Accordion.Panel>
-                </Accordion.Item>
-              ))}
-          </Accordion>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         </>
       )}
     </Stack>
