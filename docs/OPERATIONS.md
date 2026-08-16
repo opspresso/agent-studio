@@ -169,7 +169,9 @@ also carries the `actor` that caused the run.
 
 With `OTEL_EXPORTER_OTLP_ENDPOINT` set, every persisted trace is also exported as OTLP spans
 (see [CONFIGURATION.md](CONFIGURATION.md#observability-and-retention)) — same timestamps, the
-app trace id as the `app.trace_id` attribute, and the same bounded metadata. The DynamoDB row
+app trace id as the `app.trace_id` attribute (with `app.actor` and, for a run in a
+conversation, `app.conversation` — the same key the MCP header carries, so a memory server's
+logs and a run's spans can be joined on it), and the same bounded metadata. The DynamoDB row
 stays the record; a collector outage costs `[otel]` log lines (the SDK's internal error
 channel is routed to the app logger), never runs. The export batch is flushed when the
 instance begins draining, so a rollout keeps its last spans.

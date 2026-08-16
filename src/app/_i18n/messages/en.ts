@@ -280,6 +280,7 @@ export const en = {
   "project.tab.usage": "Usage",
   "project.tab.artifacts": "Artifacts",
   "project.tab.traces": "Traces",
+  "trace.inConversation": "conversation",
   "project.tab.apiReference": "API Reference",
   "project.tab.settings": "Settings",
 

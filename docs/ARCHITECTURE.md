@@ -1537,7 +1537,9 @@ does this project remember", and the platform's boundary for what a run reaches 
 What the app adds is the one thing a tool cannot do for itself: **ask before the model has to
 think of asking.** A version that opts into `parameters.memoryRecall` has the run call `recall`
 on every bound server that offers one — by that name; a convention rather than a setting,
-because the setting would only ever name this string — with the newest user turn as the query,
+because the setting would only ever name this string; and *bound* means the version's own
+`mcpList`, not a server discovery added for this request, whose `recall` stays a tool the
+model may call but is not handed every request unasked — with the newest user turn as the query,
 before the first token, and put what came back into the system prompt as a *What you remember*
 block, after the clock and the caller and ahead of the capability sections: a fact about the
 run, framed as background rather than as instructions because a memory is stored text and

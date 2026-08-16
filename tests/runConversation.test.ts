@@ -72,7 +72,7 @@ describe("the surfaces' own spellings", () => {
   });
 
   it("a Slack conversation is the thread", () => {
-    expect(conversationKey(slackConversation("C01", "1723.45")!)).toBe("slack:C01:1723.45");
+    expect(conversationKey(slackConversation("C01", "1723.45"))).toBe("slack:C01:1723.45");
   });
 
   it("an inbound A2A conversation is the contextId under the caller", () => {

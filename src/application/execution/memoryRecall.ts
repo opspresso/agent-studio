@@ -19,9 +19,11 @@
  */
 
 import type * as engine from "@/application/llm/engine";
+import type { Version } from "@/domain/project/types";
 import type { ResolvedMcp } from "./mcpTools";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
+import { cutCodePoints } from "@/shared/utf8Text";
 
 /**
  * The tool a memory server is expected to offer: `recall` taking `{ query }`
@@ -56,19 +58,53 @@ export interface RecallResult {
  * Which servers a run would recall from, without asking any of them — the
  * preview's question. Separate from the recall itself so an empty query is
  * never a way of saying "just look": at run time an empty query is a loss.
+ *
+ * Only the servers the version **bound**: a resolve may have been widened by
+ * discovery, and a server the catalog added for this request is not one the
+ * author decided to hand every request to before the model has said a word.
+ * The discovered server's `recall` stays a tool the model may call.
  */
 export function recallTargets(
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor">,
+  version: Pick<Version, "mcpList">,
 ): Array<{ server: string; alias: string }> {
+  const bound = new Set((version.mcpList ?? []).map((binding) => binding.name));
   return mcp.mcpServers.flatMap((server) => {
-    const alias = mcp.aliasFor?.(server.name, RECALL_TOOL_NAME);
+    const alias = bound.has(server.name) ? mcp.aliasFor?.(server.name, RECALL_TOOL_NAME) : undefined;
     return alias ? [{ server: server.name, alias }] : [];
   });
 }
 
-/** The warning both callers raise when a version recalls and nothing offers it. */
+/**
+ * The warning both callers raise when a version recalls and nothing offers it.
+ * "On this run", because a server may well have the tool and this run may not
+ * be offering it — past the per-run tool cap, or narrowed out by the binding —
+ * and the cap's own warning says which.
+ */
 export function noRecallTargetWarning(): string {
-  return `Memory recall is on, but no bound MCP server offers a '${RECALL_TOOL_NAME}' tool; the run started without a memory.`;
+  return `Memory recall is on, but no bound MCP server offers a '${RECALL_TOOL_NAME}' tool on this run; the run started without a memory.`;
+}
+
+/**
+ * The recall a run makes, gated on its version — what both run sites call, so
+ * the opt-in check, the query and the way the answer reaches the engine are
+ * spelled once. `version` is the version *as bound*, not as widened by
+ * discovery (see {@link recallTargets}); `mcp` is the resolve that ran.
+ */
+export async function recallForRun(input: {
+  version: Version;
+  mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
+  query: string;
+  signal?: AbortSignal;
+}): Promise<{ input: Pick<engine.RunAgentInput, "remembered">; warnings: string[] }> {
+  if (!input.version.parameters.memoryRecall) {
+    return { input: {}, warnings: [] };
+  }
+  const result = await recallMemories(input);
+  return {
+    input: result.remembered ? { remembered: result.remembered } : {},
+    warnings: result.warnings,
+  };
 }
 
 /**
@@ -79,14 +115,18 @@ export function noRecallTargetWarning(): string {
  * was cancelled meanwhile is the one exception, and it propagates as itself.
  */
 export async function recallMemories(input: {
+  /** The version as bound; only its own servers are asked (see {@link recallTargets}). */
+  version: Pick<Version, "mcpList">;
   mcp: Pick<ResolvedMcp, "mcpServers" | "aliasFor" | "callMcpTool">;
   /** The newest user turn as text; nothing to ask with is reported, not asked. */
   query: string;
   signal?: AbortSignal;
 }): Promise<RecallResult> {
   const { mcp } = input;
-  const query = input.query.trim().slice(0, MAX_QUERY_CHARS);
-  const targets = recallTargets(mcp);
+  // `cutCodePoints`, not `slice`: the query goes out as JSON-RPC arguments and
+  // a cut through a surrogate pair is not text a server can read.
+  const query = cutCodePoints(input.query.trim(), MAX_QUERY_CHARS);
+  const targets = recallTargets(mcp, input.version);
   if (targets.length === 0) {
     return { warnings: [noRecallTargetWarning()] };
   }
@@ -106,7 +146,7 @@ export async function recallMemories(input: {
   const answers = await Promise.all(
     targets.map(async ({ server, alias }) => {
       try {
-        const result = await withTimeout(callMcpTool(alias, { query }), input.signal);
+        const result = await settleWithin(callMcpTool(alias, { query }), input.signal);
         return { server, text: result.text.trim() };
       } catch (error) {
         // A run cancelled mid-recall is not a memory server that failed; the
@@ -122,9 +162,14 @@ export async function recallMemories(input: {
       warnings.push(`Memory recall from '${answer.server}' failed; the run started without it: ${answer.error}`);
       continue;
     }
-    // The shared convention for a failed tool call — see the engine's loop.
-    if (answer.text.startsWith("Error: ")) {
-      warnings.push(`Memory recall from '${answer.server}' failed; the run started without it: ${answer.text.slice("Error: ".length)}`);
+    // The shared convention for a failed tool call, read the way the trace
+    // recorder and the tool manager read it (no trailing space): a memory that
+    // itself opens with the word is the price of one convention for every
+    // producer, and a small one.
+    if (answer.text.startsWith("Error:")) {
+      warnings.push(
+        `Memory recall from '${answer.server}' failed; the run started without it: ${answer.text.slice("Error:".length).trim()}`,
+      );
       continue;
     }
     if (answer.text) {
@@ -135,9 +180,10 @@ export async function recallMemories(input: {
     return { warnings };
   }
   const joined = sections.join("\n\n");
+  // Same rule as every other cut here: never through a character.
   const remembered =
     joined.length > MAX_RECALLED_CHARS
-      ? `${joined.slice(0, MAX_RECALLED_CHARS)}\n…[recall truncated at ${MAX_RECALLED_CHARS} characters]`
+      ? `${cutCodePoints(joined, MAX_RECALLED_CHARS)}\n…[recall truncated at ${MAX_RECALLED_CHARS} characters]`
       : joined;
   log.info(
     "memory",
@@ -147,12 +193,16 @@ export async function recallMemories(input: {
 }
 
 /**
- * The call, bounded by the recall's own deadline and by the run's signal. The
- * underlying request is not cancelled — `callMcpTool` owns its own timeout —
- * only stopped being waited for, and both of its outcomes are handled so a
- * late answer is never an unhandled rejection.
+ * The call, bounded by the recall's own deadline and by the run's signal.
+ *
+ * Not `shared/withTimeout`, which knows nothing of a signal: what matters here
+ * is that a Stop press ends the wait *now*, ahead of any deadline, and is read
+ * back as a cancellation rather than as a memory server that failed. The
+ * underlying request is not cancelled — `callMcpTool` owns its own timeout and
+ * honours the run's signal itself — only stopped being waited for, and both of
+ * its outcomes are handled so a late answer is never an unhandled rejection.
  */
-async function withTimeout<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
+async function settleWithin<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   // Already cancelled: nothing to wait for. Checked before a listener is
   // registered, since `abort` will not fire again.
   signal?.throwIfAborted();
@@ -182,9 +232,4 @@ async function withTimeout<T>(pending: Promise<T>, signal?: AbortSignal): Promis
       },
     );
   });
-}
-
-/** What the engine is handed: the recalled text, or nothing. */
-export function rememberedInput(result: RecallResult): Pick<engine.RunAgentInput, "remembered"> {
-  return result.remembered ? { remembered: result.remembered } : {};
 }

@@ -625,7 +625,7 @@ export async function handleSlackEvent(
       // guessing at a mapping would attribute spend to the wrong person.
       ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
       ...(named.caller ? { caller: named.caller } : {}),
-      ...(conversation ? { conversation } : {}),
+      conversation,
       ...(ownerEmail ? { ownerEmail } : {}),
       signal: deadline,
     })) {

@@ -36,10 +36,13 @@ vi.mock("@/infrastructure/net/publicFetch", () => ({
 
 describe("recallMemories", () => {
   const server = (name: string, tools: string[]) => ({ name, description: "", toolNames: tools });
+  /** A version that bound every named server. */
+  const bound = (...names: string[]) => ({ mcpList: names.map((name) => ({ name })) });
 
   it("asks every bound server offering recall, and folds the answers into one block", async () => {
     const calls: Array<{ alias: string; args: Record<string, unknown> }> = [];
     const result = await recallMemories({
+      version: bound("memory", "docs", "notes"),
       mcp: {
         mcpServers: [server("memory", ["recall", "remember"]), server("docs", ["search"]), server("notes", ["recall_1"])],
         aliasFor: (serverName, tool) =>
@@ -62,6 +65,7 @@ describe("recallMemories", () => {
 
   it("names the loss when no bound server offers recall", async () => {
     const result = await recallMemories({
+      version: bound("docs"),
       mcp: {
         mcpServers: [server("docs", ["search"])],
         aliasFor: () => undefined,
@@ -77,6 +81,7 @@ describe("recallMemories", () => {
     // A picture-only turn: the version says it recalls, and nothing did.
     const callMcpTool = vi.fn(async () => ({ text: "x" }));
     const result = await recallMemories({
+      version: bound("memory"),
       mcp: { mcpServers: [server("memory", ["recall"])], aliasFor: () => "recall", callMcpTool },
       query: "   ",
     });
@@ -88,6 +93,7 @@ describe("recallMemories", () => {
   it("a run cancelled mid-recall propagates the cancellation, not a server failure", async () => {
     const controller = new AbortController();
     const pending = recallMemories({
+      version: bound("memory"),
       mcp: {
         mcpServers: [server("memory", ["recall"])],
         aliasFor: () => "recall",
@@ -105,6 +111,7 @@ describe("recallMemories", () => {
     controller.abort();
     await expect(
       recallMemories({
+        version: bound("memory"),
         mcp: {
           mcpServers: [server("memory", ["recall"])],
           aliasFor: () => "recall",
@@ -118,6 +125,7 @@ describe("recallMemories", () => {
 
   it("a server that fails, or answers Error:, is a warning — never the end of the run", async () => {
     const result = await recallMemories({
+      version: bound("a", "b", "c"),
       mcp: {
         mcpServers: [server("a", ["recall"]), server("b", ["recall_1"]), server("c", ["recall_2"])],
         aliasFor: (serverName) => ({ a: "recall", b: "recall_1", c: "recall_2" })[serverName],
@@ -140,8 +148,48 @@ describe("recallMemories", () => {
     ]);
   });
 
+  it("asks only the servers the version bound, not ones a search added", async () => {
+    // A discovered memory server keeps its `recall` as a tool the model may
+    // call; what it does not get is every request handed to it unasked.
+    const calls: string[] = [];
+    const result = await recallMemories({
+      version: bound("memory"),
+      mcp: {
+        mcpServers: [server("memory", ["recall"]), server("found", ["recall_1"])],
+        aliasFor: (serverName) => ({ memory: "recall", found: "recall_1" })[serverName],
+        callMcpTool: async (alias) => {
+          calls.push(alias);
+          return { text: `from ${alias}` };
+        },
+      },
+      query: "q",
+    });
+    expect(calls).toEqual(["recall"]);
+    expect(result.remembered).toBe("from recall");
+  });
+
+  it("never cuts through a character, in the query or in the answer", async () => {
+    let seenQuery = "";
+    const result = await recallMemories({
+      version: bound("memory"),
+      mcp: {
+        mcpServers: [server("memory", ["recall"])],
+        aliasFor: () => "recall",
+        callMcpTool: async (_alias, args) => {
+          seenQuery = String(args.query);
+          return { text: `${"m".repeat(MAX_RECALLED_CHARS - 1)}😀tail` };
+        },
+      },
+      query: `${"q".repeat(1_999)}😀`,
+    });
+    // The 2,000th unit would split the emoji; the cut backs off one instead.
+    expect(seenQuery).toBe("q".repeat(1_999));
+    expect(result.remembered?.startsWith(`${"m".repeat(MAX_RECALLED_CHARS - 1)}\n…[recall`)).toBe(true);
+  });
+
   it("bounds what enters the prompt, and says it did", async () => {
     const result = await recallMemories({
+      version: bound("memory"),
       mcp: {
         mcpServers: [server("memory", ["recall"])],
         aliasFor: () => "recall",

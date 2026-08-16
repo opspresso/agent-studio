@@ -47,6 +47,9 @@ export default function TraceDetailPage() {
           {trace.ancestry && trace.ancestry.length > 1 && (
             <Text fz="sm" c="dimmed">called via <Text component="span" ff="monospace">{trace.ancestry.join(" → ")}</Text></Text>
           )}
+          {trace.conversation && (
+            <Text fz="sm" c="dimmed">{t("trace.inConversation")} <Text component="span" ff="monospace">{trace.conversation}</Text></Text>
+          )}
           <Card><TraceContent trace={trace} /></Card>
         </>
       )}
