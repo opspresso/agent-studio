@@ -101,7 +101,7 @@ deployment checklist asks for. A shorter grace period cuts streams that would ha
 saturated with them still reads as idle CPU.
 
 **A chat run no longer sheds when its reader leaves.** A closed tab means the reader left, not
-stop (see [ARCHITECTURE.md](ARCHITECTURE.md#a-run-outlives-its-connection)), so the gauge now
+stop (see [design/chat.md](design/chat.md#a-run-outlives-its-connection)), so the gauge now
 counts runs nobody is watching — a more honest number, but a page full of users reloading no
 longer drops load. Only a Stop press, or the run deadline, ends one early. Abandoned chat runs
 also bill in full and hold a per-caller run slot until they finish; `MAX_CONCURRENT_RUNS_PER_ACTOR`
@@ -303,7 +303,7 @@ live in the GitOps repository). The contract the ticker has to meet, and nothing
   start at once).
 - **Duplicates are safe.** Any number of tickers may call any instance concurrently; each
   occurrence is claimed with a conditional write and exactly one claim wins
-  ([ARCHITECTURE.md](ARCHITECTURE.md#schedules)).
+  ([design/triggers.md](design/triggers.md#schedules)).
 - **One tick drives at most 8 firings at a time** (`MAX_CONCURRENT_FIRINGS`). A 09:00 shared
   by every project would otherwise become that many simultaneous runs on whichever instance
   served the tick, and the per-caller concurrency guard cannot bound that fan-out — each

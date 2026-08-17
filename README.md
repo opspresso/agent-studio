@@ -72,7 +72,9 @@ There is no lint step; `typecheck` + `test` + `build` are the checks.
 
 | Document | What it answers |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built and **why** — layers, the single-table key map, the execution flow, domain semantics |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built and **why** — layers, the single-table key map, the path from an entry point to the engine |
+| [docs/design/](docs/design/) | One file per subsystem — the engine, MCP, Slack, capabilities, triggers, chat, records, A2A |
+| [docs/OWNERSHIP.md](docs/OWNERSHIP.md) | Every decision with a single owning file, enforced by `tests/architecture.test.ts` |
 | [docs/API.md](docs/API.md) | Every HTTP route, its auth, and its request/response shapes |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable, and the limits fixed in code |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Deploying, probing, scaling, retention, alerting |

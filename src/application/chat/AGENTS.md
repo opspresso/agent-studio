@@ -5,6 +5,10 @@ no AWS/framework imports. Wiring to concrete adapters happens at the route bound
 (`src/app/api/chats/_deps.ts`), which also binds `executeAgent(executionDeps, params)`
 into `ChatDeps.runAgent`.
 
+**This file holds what must not break.** Why a run outlives its connection, why the log is a
+buffer rather than a record, and why the viewport belongs to a library is
+[docs/design/chat.md](../../../docs/design/chat.md).
+
 ## Files
 
 - `deps.ts` — `ChatDeps` port bag + `AgentRunner` (bound engine call).

@@ -545,7 +545,7 @@ Refresh is a compare-and-set on the stored refresh token: providers that rotate 
 the previous one, so the loser of a race uses the winner's token. Only a **refused grant**
 marks a connection `needs_reauth`; a 5xx or timeout leaves it alone. (Refresh timing is a
 design constraint rather than a security one — see
-[ARCHITECTURE.md](ARCHITECTURE.md#oauth).)
+[design/mcp.md](design/mcp.md#oauth).)
 
 A connection **supplies** credentials rather than gating the server. The resolved token is
 applied last at dispatch — over the registry entry's headers and the version's overrides — so

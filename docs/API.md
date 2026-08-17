@@ -284,7 +284,7 @@ connection is added only where the project has already authorized it; otherwise 
 What was *found* is not a warning — a run logs it, and `POST /api/projects/{name}/preview`
 returns it as `discovered`, separate from `warnings`. Without `VECTOR_BUCKET` the flag is stored
 and the run says that too, rather than behaving as though the search found nothing. See
-[ARCHITECTURE.md](ARCHITECTURE.md#capability-catalog).
+[design/capabilities.md](design/capabilities.md#capability-catalog).
 
 `memoryRecall` makes a run ask its memory before the first token: every bound MCP server that
 offers a `recall` tool (mcp-memory) is called with the newest user turn, and what came back is
@@ -689,7 +689,7 @@ POST   /api/projects/{name}/slack/test
 and `message` at 500; blank rows are dropped and a row with only one half — or one over either
 cap — is a 400. Unlike the two credentials it is not a secret and comes back as stored.
 `channelKeywords` is `string[]` — the words that make a channel message the bot's without a
-mention (see [ARCHITECTURE.md](ARCHITECTURE.md#which-events-are-for-the-bot)): at most 20,
+mention (see [design/slack.md](design/slack.md#which-events-are-for-the-bot)): at most 20,
 each trimmed and lower-cased at rest, 2–50 characters; blanks and duplicates are dropped, and
 a keyword outside that length is a 400. Omitting the field on `PUT` keeps the stored list.
 
@@ -927,7 +927,7 @@ declared. Absent, each request is its own conversation, which is what every requ
 before the header existed. Where a surface *has* a thread the platform names it itself: a
 chat is `chat:{chatId}`, a Slack reply `slack:{channel}:{threadTs}`, an inbound A2A message
 `a2a:{client}:{contextId}`. See
-[ARCHITECTURE.md](ARCHITECTURE.md#usage-and-cost-attribution).
+[design/observability.md](design/observability.md#usage-and-cost-attribution).
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 

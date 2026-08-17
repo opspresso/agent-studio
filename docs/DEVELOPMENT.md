@@ -186,8 +186,8 @@ This is the structural gate, and it fails loudly rather than warning. It enforce
    `application` outside the composition root; `components` imports no `infrastructure` or
    `application`.
 2. **Single-owner invariants** — a named decision plus the file that owns it. A second copy
-   fails, *and so does the owner losing the definition*. The list is in
-   [../AGENTS.md](../AGENTS.md#single-owner-invariants).
+   fails, *and so does the owner losing the definition*. The list is
+   [OWNERSHIP.md](OWNERSHIP.md).
 3. **Bounded caller lists**, for the three decisions that have a fixed set of call sites
    rather than an owner: which surfaces start an image run (`IMAGE_RUN_ENTRY_POINTS`), which
    start an agent run by calling `executeAgent` directly (`AGENT_RUN_ENTRY_POINTS`), and where
@@ -267,7 +267,9 @@ Checklist for a new slice:
 |---|---|
 | [../README.md](../README.md) | What it is, how to run it, what it can do |
 | [../AGENTS.md](../AGENTS.md) | Working rules for coding agents (`CLAUDE.md` is a symlink to it) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Design and rationale |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | The shape every run passes through — layers, the table, the request path |
+| [design/](design/) | One file per subsystem: what it decides and why |
+| [OWNERSHIP.md](OWNERSHIP.md) | Every single-owner decision and its owning file |
 | [API.md](API.md) | HTTP contract |
 | [CONFIGURATION.md](CONFIGURATION.md) | Every environment variable and fixed limit |
 | [OPERATIONS.md](OPERATIONS.md) | Deploy, probe, scale, retain |

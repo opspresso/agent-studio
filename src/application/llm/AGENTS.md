@@ -6,6 +6,11 @@ do) — or `pii.ts`. The engine is pure logic with everything injected (`AgentDe
 with no network/DB via `tests/fakeChannel.ts`; `engine.ts` re-exports both modules' public
 surface, so callers keep one import path.
 
+**This file holds what must not break.** Why the loop is shaped this way — what a version
+declares, where the budget's ceiling comes from, why an image dep is an opt-in — is
+[docs/design/execution.md](../../../docs/design/execution.md), and what wraps a run before it
+reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#the-run-bracket).
+
 ## Tool loop (`runAgent`)
 
 - All `tool_calls` of one model response aggregate into **one** assistant message, then all

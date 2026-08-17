@@ -6,14 +6,18 @@ AgentDure is a single Next.js 16 full-stack app: an internal LLM platform for
 prompt / agent / cost management (projects & versions, an LLM engine, agents
 (subagents + external registry), skills, MCP tools, chats, cost dashboard).
 
-**This file is the working contract — what to run, what not to break, and who owns which
-decision.** It is not a description of the system; that is
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). When something here is a summary, the linked
-document is authoritative and this file must not restate it.
+**This file is the working contract — what to run, what not to break, and where a decision
+lives.** It is not a description of the system; that is
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the per-subsystem files under
+[docs/design/](docs/design/). When something here is a summary, the linked document is
+authoritative and this file must not restate it — an entry below earns its place by being a
+**trap an edit falls into**, not by explaining how something works.
 
 | Need | Read |
 |---|---|
-| Why the system is shaped this way | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| The shape every run passes through | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Why one subsystem decides what it does | [docs/design/](docs/design/) — one file each |
+| Who owns a decision that must exist once | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) |
 | An endpoint's contract | [docs/API.md](docs/API.md) |
 | An env var or a fixed limit | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | Deploy / probe / scale / retention | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
@@ -149,107 +153,9 @@ loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for
 ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
 because the engine's builtins are added after the MCP tools are cut and need the room.
 
-| Decision | Owner |
-|---|---|
-| The shape of an MCP tool | `src/domain/mcp/types.ts` |
-| Which hosts may skip the outbound URL guard | `src/domain/mcp/types.ts` |
-| The address a project's client ID metadata document is served at | `clientMetadataUrl` in `src/application/mcp/mcpAuthUseCases.ts` — drift here is fatal by specification: an authorization server refuses when the document's own `client_id` differs from the URL it fetched |
-| Interpreting `plugin.json`/`mcp.json`, and which MCP transports a plugin may bind | `src/domain/plugin/types.ts` |
-| The Agent Plugins name rule | `isPluginName` in `src/domain/plugin/types.ts` |
-| Which storage errors mean a lost conditional write | `src/application/errors.ts` |
-| How an audit row is written | `src/application/audit/recordAudit.ts` |
-| Collapsing an image model's three token counts into a usage row | `src/domain/llm/models.ts` |
-| How an artifact row is written | `src/application/artifact/storeArtifact.ts` |
-| The object key an artifact is stored under | `artifactObjectKey` in `src/domain/artifact/types.ts` |
-| Deleting a stored object | `src/infrastructure/storage/s3ObjectStore.ts` |
-| Constant-time secret comparison | `src/shared/timingSafe.ts` |
-| Parsing a comma-separated config list | `src/shared/parseList.ts` |
-| Whether a configured value is blank | `src/shared/env.ts` |
-| Asking a provider for an embedding | `src/infrastructure/llm/embeddings.ts` |
-| Reaching Bedrock | `src/infrastructure/llm/bedrockClient.ts` |
-| Talking to the vector store | `src/infrastructure/vector/s3VectorsStore.ts` |
-| The key a capability is indexed under | `capabilityKey` in `src/domain/catalog/types.ts` |
-| What text a capability is embedded as | `capabilityText` in `src/domain/catalog/types.ts` |
-| How much a search may add to one run | `DISCOVERY_LIMITS` in `src/application/execution/bindings.ts` |
-| How a run primes its memory — which tool is asked, with what, and what the answer becomes | `recallMemories` / `RECALL_TOOL_NAME` / `MAX_RECALLED_CHARS` in `src/application/execution/memoryRecall.ts` |
-| What a run searches the catalog with | `discoveryQueries` in `src/application/execution/bindings.ts` |
-| Parsing a markdown frontmatter block | `src/shared/frontmatter.ts` |
-| The subagent nesting limit | `src/application/execution/subagentRunner.ts` |
-| The per-run MCP tool cap | `src/domain/llm/toolLimits.ts` |
-| What each member tier may spend | `TIER_LIMITS` in `src/domain/member/tiers.ts` |
-| What a 401 from an MCP server means | `src/infrastructure/mcp/session.ts` |
-| The name a provider will accept for an MCP tool | `src/infrastructure/mcp/toolManager.ts` |
-| Reaching `undici` directly | `src/infrastructure/net/publicFetch.ts` — a `dispatcher` is a private contract between a fetch and its `Agent`, and the runtime ships its own undici behind the global `fetch`; mixing the two cost every outbound request a bare `TypeError: fetch failed` |
-| The header that names the calling project to an MCP server | `TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts` |
-| The header that names the run's conversation to an MCP server | `CONVERSATION_ID_HEADER` in `src/application/execution/mcpTools.ts` — the API layer reads the same spelling *inbound* in `src/app/api/projects/_lib/conversation.ts`, and the API Reference tab (`endpoints.ts`) shows it to a caller; those two files alone |
-| How a run's conversation is built and keyed | `conversationOf` / `conversationKey` in `src/domain/execution/actor.ts`; each surface's spelling is its own builder (`chatConversation`, `slackConversation`, `a2aConversation`, `requestConversation`), and every one goes through these two |
-| How many agents one dispatch may run | `src/application/llm/agentAssembly.ts` |
-| How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/agentAssembly.ts` |
-| Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |
-| Whether a run's trace is sampled | `src/application/run/traceLifecycle.ts` |
-| Evaluating when a schedule fires | `src/domain/trigger/cron.ts` |
-| Where a project's webhook is delivered | `projectWebhookPath` in `src/domain/trigger/types.ts` |
-| The managed-workload name rule | `MANAGED_NAME` in `src/shared/slug.ts` |
-| Merging concurrent generators | `src/shared/mergeGenerators.ts` |
-| Deriving the transfer chain a chunk came from | `src/app/_lib/authorPaths.ts` |
-| A dollar amount, written for a person | `formatUsd` in `src/app/_lib/formatUsd.ts` — enforced as its own rule rather than as a `SINGLE_OWNERS` row: no `${…toFixed(…)}` anywhere in `app` but the two `_lib` formatters |
-| A stored object's size, written for a person | `formatBytes` in `src/app/_lib/formatBytes.ts` |
-| Deriving why a run ended from its chunks | `chunkTermination`/`runTermination` in `src/domain/llm/types.ts` |
-| Collecting what a run lost from its chunks | `collectedWarning` in `src/domain/llm/types.ts` |
-| The 401 response body | `src/shared/unauthorized.ts` |
-| The code a refused sign-in is identified by | `src/shared/signInError.ts` |
-| Writing to the console | `src/shared/logger.ts` |
-| What wraps a top-level run | `src/application/run/runBracket.ts` |
-| Which project type runs which way | `src/application/execution/deps.ts` |
-| Whether a run's prompt may name its caller | `callerFor` in `src/application/execution/deps.ts` |
-| What a tool result has to do, and in what order | `createToolResultEmitter` in `src/application/llm/toolResultBudget.ts` |
-| How the execution facade dispatches an agent project | `src/application/execution/deps.ts` |
-| How a Slack reply is delivered, progress included | `src/application/slack/replyStream.ts` — one report, rendered by whichever mechanism the surface has: a DM's status line or a channel stream's `task_update` axis. Neither is the definition of the other |
-| Which delivered Slack events are for the bot, the loop guard included | `src/application/slack/engagement.ts` |
-| Which messages are a fixed command rather than a question | `parseSlackCommand` in `src/application/slack/engagement.ts` — strict by design: a command changes whether the bot speaks again, and a looser match silences threads nobody asked to silence |
-| The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts`; the streaming chunk shapes it passes are `SlackChunk` in `src/domain/slack/types.ts`, which is where the adapter can also reach them |
-| Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
-| User-document caps | `src/domain/llm/documentLimits.ts` |
-| How a fetched URL is framed in a turn | `framedFetchedUrl` in `src/application/llm/documentParts.ts` |
-| How much of a fetched URL is kept | `MAX_FETCHED_TEXT_CHARS` in `src/application/llm/urlContent.ts` |
-| How an attached document is framed in a turn | `src/application/llm/documentParts.ts` |
-| The name every entry is addressed by | `isSlug` in `src/shared/slug.ts` |
-
-Other decisions with a single owner that the test cannot express as a pattern, but that the
-same rule applies to:
-
-| Decision | Owner |
-|---|---|
-| Every DynamoDB key string | `src/infrastructure/db/keys.ts` |
-| What a model is, and which routes serve it | `MODEL_FAMILIES`/`MODEL_OFFERINGS` in `src/domain/llm/models.ts` |
-| Detaching a stream from the consumer that walked away | `src/shared/detachOnReturn.ts` |
-| Reading an HTTP body under a byte ceiling | `src/shared/httpBody.ts` |
-| The name and media type a tool's file is carried under | `safeFileName`/`baseMediaType` in `src/infrastructure/mcp/toolManager.ts` |
-| Keeping a background timer from holding the process open | `src/shared/unrefTimer.ts` |
-| Paginated list reads | `queryAll()` in `src/infrastructure/db/query.ts` |
-| Which pages are public | `src/proxy.ts` |
-| Whether a chunk is top-level | `isTopLevelChunk()` in `src/domain/llm/types.ts` |
-| Which version a run executes | `resolveRunnableVersion` in `src/application/project/` |
-| User-image caps | `src/domain/llm/imageLimits.ts` |
-| `data:` image encoding | `imageDataUrl`/`parseImageDataUrl` in `src/domain/llm/types.ts` |
-| Turning a stored image reference into an address | `resolveImageUrl` in `src/domain/chat/imageRefs.ts` |
-| Turning a stored file reference into a download address | `resolveFileUrl` in `src/domain/chat/fileRefs.ts` |
-| Offering a file a run produced to a reader | `src/application/artifact/producedFiles.ts` — the test enforces the *pairing* (a module reading one output axis reads the other) and exempts this file by name, since its whole subject is the axis |
-| Signing an outbound request for AWS | `src/infrastructure/llm/awsSigner.ts` — pinned by `tests/awsSigner.test.ts` instead, which fixes the signature it produces |
-| How long a signed object URL lives, per reader | `src/application/artifact/urlTtl.ts` |
-| Who releases a chat's run lease | `teeToRunLog` in `src/application/chat/runLog.ts` |
-| How a chat run reaches the browser | `src/app/api/chats/_lib/detachedRun.ts` |
-| Row TTLs | `src/infrastructure/db/ttl.ts` |
-| The UTC day a usage row is keyed by | `utcDay` in `src/shared/date.ts` |
-| What a repo sync did, and what it left to a person | `src/domain/sync/types.ts` |
-| The brand palette and component defaults | `src/app/theme.ts` |
-| Who owns the chat viewport while a reply streams | `useStickToBottom` in `src/app/chats/_components/ChatThread.tsx` |
-| Pairing a tool call with the result that answered it | `src/app/_lib/toolPairs.ts` |
-| Drawing one tool's traffic as one row | `src/app/_components/ToolRow.tsx` |
-| What a tool call reads as to a person | `describeTool` in `src/app/_lib/toolCalls.ts` |
-| Every string the console shows a person | `src/app/_i18n/messages/en.ts` |
-| Which language a request is served in | `src/app/_i18n/locale.ts` |
-
+**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 92 decisions across two
+tables, the second holding the ones the test cannot express as a pattern but that the same
+rule governs. `tests/architecture.test.ts` is what enforces both.
 ## Subsystem map
 
 One line each — the linked section is the authority.
@@ -261,7 +167,7 @@ One line each — the linked section is the authority.
   `src/application/execution/runProject.ts` is the composition point that resolves a version's
   skills/MCP tools/subagents and assembles those deps.
   → `src/application/llm/AGENTS.md`, then
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#llm-engine)
+  [design/execution.md](docs/design/execution.md#llm-engine)
 - **Run bracket** — the single owner of what wraps a top-level run: the unknown-model refusal
   (ahead of the guards, and a 400 — it says the version is misconfigured, not that the
   platform is busy), the in-flight metric, the cost guard, the per-caller concurrency guard,
@@ -270,13 +176,13 @@ One line each — the linked section is the authority.
 - **Images** — four producers (an `image` project, an agent run's builtins, an image
   subagent, an MCP tool that returned one) over one `ImageChannel` port; source bytes decide
   edit vs generate, and `toImageUsageRecord` is the one collapse into a usage row. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#images)
+  [design/execution.md](docs/design/execution.md#images)
 - **Artifacts** — what a run left behind. Captured at the **run bracket**, not at the image use
   case: all four producers converge on `EngineChunk.image`, and only the first of them is that
   use case. One row per stored object, reachable by project (GSI1) *and* by person (GSI2,
   sparse) — a Slack or trigger run names no mailbox, so the project axis is the only way its
   output is ever listed or deleted. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#artifacts)
+  [design/execution.md](docs/design/execution.md#artifacts)
 - **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in. It owns no
   extraction: text, HTML and PDF all pass through the same `DocumentExtractor` an attachment
   does. The adapter that fetches it is the **only** place an address the *model* chose is
@@ -314,20 +220,20 @@ One line each — the linked section is the authority.
   `listMaxPages` throws rather than truncating, and the `SdkErrorCode` values
   `unusableServerReason` reads. An SDK bump — a lockfile refresh included — is therefore a
   protocol change to check against those four, not a dependency update to wave through. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#mcp)
+  [design/mcp.md](docs/design/mcp.md)
 - **Capability catalog** — one global index (skills, MCP servers *and* their tools, external
   agents) rebuilt by a CronJob tick, never on a registry write. A version opting into
   `dynamicCapabilities` has its lists **widened** before resolution, from the system prompt and
   the request; bindings are never displaced, and an OAuth-bearing MCP server is added only
   where the project has already connected it. Off entirely without `VECTOR_BUCKET`. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#capability-catalog)
+  [design/capabilities.md](docs/design/capabilities.md#capability-catalog)
 - **Memory** — what outlives a run lives behind MCP, not in this app: a bound memory server
   (mcp-memory) offers `recall`/`remember`, is told which project (`X-Tenant-Id`) and which
   conversation (`X-Conversation-Id`) is asking, and a version that opts into `memoryRecall` has
   the run ask `recall` with the newest user turn before the first token and put the answer in
   the system prompt (`src/application/execution/memoryRecall.ts`, the engine knows nothing of
   it). A second, native store would be two answers to "what does this project remember". →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#memory)
+  [design/capabilities.md](docs/design/capabilities.md#memory)
 - **PII filtering** — opt-in per version; bounds what the LLM and engine context see, **not**
   what an MCP server receives, and **not** the request text capability discovery embeds (that
   search runs before the engine constructs the filter). →
@@ -336,18 +242,18 @@ One line each — the linked section is the authority.
   `fetchPublicUrl`. → [SECURITY.md](docs/SECURITY.md#outbound-requests-ssrf)
 - **Slack / A2A / triggers** — per-project bots, both A2A directions, published-only webhook
   and schedule runs deduplicated by conditional claims; a CronJob ticks the schedule scan. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#slack)
+  [design/slack.md](docs/design/slack.md)
 - **Slack engagement** — the bot receives every message in every channel it belongs to, and
   `classifySlackEvent` decides which are for it **ahead of the dedup claim**, so an ignored one
   costs no write and opens no reply. Own message → mention → DM → a thread it answered in
   (a day-long window) → a project keyword → nothing. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#which-events-are-for-the-bot)
+  [design/slack.md](docs/design/slack.md#which-events-are-for-the-bot)
 - **Slack workspace reads** — six read-only tools behind a version opt-in, all routed to one
   injected reader that holds the token. No writes and no email, by construction rather than
   omission. → [SECURITY.md](docs/SECURITY.md#reading-the-slack-workspace)
 - **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it
   plus the transfer chain down every subagent hop. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#usage-and-cost-attribution)
+  [design/observability.md](docs/design/observability.md#usage-and-cost-attribution)
 - **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first
   one. `apiError` (`src/app/api/_lib/http.ts`) maps any of them. →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#error-handling)
@@ -413,44 +319,26 @@ One line each — the linked section is the authority.
   `…[truncated]` marker, and turns past the replay window drop silently by design. Read
   `src/application/chat/AGENTS.md` before
   changing `run.ts` or `messageMapping.ts`; the mechanics are in
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#chat).
-- **A chat run outlives the connection that started it.** The browser hanging up means "the
-  reader left", not "stop": the stream detaches (`src/shared/detachOnReturn.ts`), the run
-  finishes and persists, and the reader can pick it back up. Three things follow, and each
-  one looks like tidying up to undo. **A chat route must not pass an `AbortController` to
-  `sseResponse`** — that is the old behaviour, exactly. **The wrapper that detaches must be
-  the outermost thing the response consumes**, because a plain `async function*` above it
-  swallows the `return()` that carries the disconnect (`mergeGenerators.ts` says why). And
-  **the client must not abort its `fetch` on unmount**, which is the same mistake from the
-  other end. The one way to stop a run is `DELETE /api/chats/{id}/runs/{runId}`, which the
-  run learns by polling — the instance serving the press is not necessarily the one running
-  the answer.
-- **Nothing in the chat view scrolls the viewport on its own.** A reply streams through the
-  store dozens of times a second, so anything keyed on that — a `scrollIntoView` in an effect
-  was the version that shipped — drags the reader back down every time they try to read what
-  scrolled past, and `smooth` on top of it restarts its own animation before finishing, which
-  is what "the screen bounces" turned out to be. `use-stick-to-bottom` owns the viewport
-  instead: it follows only while the reader is already at the bottom, and the only thing that
-  overrules them is sending a message. Three consequences. **The jump-to-latest control keys
-  on `isNearBottom`, not `isAtBottom`** — the latter stays true until the library judges the
-  reader *meant* to leave, and it skips that judgement entirely while content is resizing,
-  which during a reply is always. **Nothing inside the thread may be a scroll container on
-  both axes**: the library finds the viewport by walking up from whatever the pointer is over
-  to the first `overflow: auto|scroll` ancestor, so a code block that is one swallows the
-  wheel and the reader can never escape (see `.markdown pre` in `parts.module.css`). And the
-  **store notifies on a collection window rather than per frame**, because each notification
-  re-renders the thread; `MessageView` is memoised against reference-stable messages for the
-  same reason, since re-parsing every message's markdown per token is what made the reply
-  judder in the first place.
-- **The chat run log is a buffer, not a record**, and it is written **only after the reader
-  leaves** — while someone is attached they are seeing every frame already, so writing them
-  down as well would cost a write every half-second of every run to serve the few that get
-  abandoned. Its ordering is the contract a resume rests on: **persist → terminal entry →
-  release the lease**, which is why the lease release lives in `runLog.ts` rather than in
-  `runAndPersist`. Two consequences worth knowing before changing either: image bytes are
-  never logged (a note goes in their place), and while a window is attached the log is empty,
-  so a *second* window watching the same run sees nothing until the first one closes — which
-  `replayRunLog` says out loud rather than showing as a stall.
+  [design/chat.md](docs/design/chat.md).
+- **A chat run outlives the connection that started it** — the browser hanging up means "the
+  reader left", not "stop" ([design/chat.md](docs/design/chat.md#a-run-outlives-its-connection)
+  says why). Three edits look like tidying up and each one puts the old behaviour back. **A
+  chat route must not pass an `AbortController` to `sseResponse`.** **The wrapper that
+  detaches must be the outermost thing the response consumes**, because a plain
+  `async function*` above it swallows the `return()` that carries the disconnect
+  (`mergeGenerators.ts` says why). And **the client must not abort its `fetch` on unmount**,
+  which is the same mistake from the other end.
+- **Nothing in the chat view scrolls the viewport on its own** — `use-stick-to-bottom` owns
+  it, and the reasoning is in [design/chat.md](docs/design/chat.md#a-run-outlives-its-connection).
+  What that costs a change here: **nothing inside the thread may be a scroll container on both
+  axes** or it swallows the wheel events the library follows (see `.markdown pre` in
+  `parts.module.css`), and the **store notifies on a collection window rather than per frame**
+  — `MessageView` is memoised against reference-stable messages for the same reason, since
+  re-parsing every message's markdown per token is what made the reply judder.
+- **The chat run log is a buffer, not a record.** Its ordering is the contract a resume rests
+  on — **persist → terminal entry → release the lease** — which is why the lease release lives
+  in `runLog.ts` rather than in `runAndPersist`. What it cannot do, and why it is written only
+  after the reader leaves, is in [design/chat.md](docs/design/chat.md#a-run-outlives-its-connection).
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
   composers, API bodies and Slack all read them) and the `data:` encoding in
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.
@@ -506,33 +394,19 @@ One line each — the linked section is the authority.
   vitest.
 - **Secrets on update**: a masked or empty value preserves what is stored; a masked value with
   no stored counterpart is dropped. A mask can only confirm a secret, never create one.
-- **The plugins sync applies the repository; a person owns deletion.**
-  `syncPluginsFromSnapshot` (`src/application/plugin/syncPlugins.ts`) pulls the Agent
-  Plugins repo (`PLUGINS_REPO`) into both registries at once. **A name a plugin declares is
-  the repository's**: whatever the stored entry's origin — this repo, a retired one, or a
-  hand registration with no `source` at all — it is brought to the repository's version
-  automatically on every sync, provenance rewritten with it and a `registry.adopt` audit
-  row left behind. A console edit to a declared name is the anomaly, not the record; the
-  one thing the sync never touches is a hand-registered entry whose name no plugin
-  declares. **Credentials never follow an address**: a URL move drops stored headers and
-  OAuth (`mcpUseCases.apply` owns that, `credentials-reset` reports it) — the repo decides
-  where an entry points, never what it may authenticate as. An unreadable
-  `plugin.json`/`mcp.json` freezes the plugin at its last row instead of orphaning its
-  components, every write is fenced to a per-name `write-failed` skip, and what the
-  repository no longer carries is only reported as orphaned — with the version bindings
-  that would dangle — and deleted when the kind-qualified selection names it (managed
-  entries through the managed use case, so the container stops with the row). **A deletion the sync
-  performs goes through the use case and names the person who asked for the sync** — it
-  takes a required `actorEmail` for that reason, since `remove` is the single owner of the
-  `registry.delete` row and a deletion around it leaves no trace at all. Two asymmetries are
-  load-bearing: skills write straight to the repository (that is how `files` and `source`
-  survive), servers go through `mcpUseCases` (that is how every synced URL faces the SSRF
-  guard); and headers declared in `mcp.json` are never imported — a secret does not belong
-  in git — with the dropped names reported. `stdio`/`sse` servers are reported and skipped,
-  never executed. The console's side of the same contract is
-  `src/app/api/_lib/repoOwned.ts`, the single owner of the 403 a route answers when asked
-  to edit or delete a repo-owned entry — a route-layer policy on purpose, because the sync
-  reaches the same use cases and must stay able to.
+- **The plugins sync applies the repository; a person owns deletion.** The contract is
+  [design/capabilities.md](docs/design/capabilities.md#skills) and, endpoint-side,
+  [API.md](docs/API.md#registry-and-integration-operations). Four things constrain a change to
+  `syncPluginsFromSnapshot` (`src/application/plugin/syncPlugins.ts`). **A deletion the sync
+  performs goes through the use case and names the person who asked for it** — hence the
+  required `actorEmail`, since `remove` is the single owner of the `registry.delete` row and a
+  deletion around it leaves no trace at all. **Two asymmetries are load-bearing**: skills write
+  straight to the repository (that is how `files` and `source` survive) while servers go
+  through `mcpUseCases` (that is how every synced URL faces the SSRF guard). **Headers declared
+  in `mcp.json` are never imported** — a secret does not belong in git — with the dropped names
+  reported. And the console's side of the same contract is `src/app/api/_lib/repoOwned.ts`, the
+  single owner of the 403 a route answers on a repo-owned entry — a route-layer policy on
+  purpose, because the sync reaches the same use cases and must stay able to.
 - **The console speaks English and Korean, and the catalogue is TypeScript for a
   reason.** `src/app/_i18n/messages/en.ts` is the source of truth; `ko.ts` is typed as
   `Record<keyof typeof en, string>`, so a key added to one and not the other fails
