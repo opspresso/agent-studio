@@ -369,6 +369,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Subagent nesting depth | `5` | `src/application/execution/subagentRunner.ts` |
 | Addresses one run may read (`FetchUrl`) | `20` | `src/application/llm/engine.ts` |
 | Bytes one `FetchUrl` may pull | `5 MB` | `src/application/llm/urlContent.ts` |
+| One `FetchUrl` request, before the model is handed a tool error | `15s` | `src/infrastructure/net/httpResource.ts` |
 | Text kept from one fetched address | `90,000` chars | `src/application/llm/urlContent.ts` |
 | HTML source read through before extracting | `500,000` chars | `src/infrastructure/llm/htmlText.ts` |
 | A file one MCP tool result may carry | `10.5 MB` × 4 | `src/infrastructure/mcp/toolManager.ts` |
@@ -387,12 +388,14 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | MCP discovery cache entries | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
 | A remote agent's (A2A / external) response | `2MB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
 | One MCP tool call, before the model is handed a timeout error (a tool may legitimately take minutes) | `120s` | `src/infrastructure/mcp/session.ts` |
-| MCP discovery (`tools/list`) — on the critical path of every run's first token, so it fails fast and costs only that server's tools | `10s` | `src/infrastructure/mcp/session.ts` |
-| Releasing an MCP session at run end | `5s` | `src/infrastructure/mcp/session.ts` |
-| MCP OAuth well-known document / token endpoint | `10s` / `15s` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
+| MCP discovery — on the critical path of every run's first token, so it fails fast and costs only that server's tools. **Per request**: the connect and the `tools/list` each get it (so up to ~20s for one slow server), and the lazy connect at a cache-served session's first tool call gets it too | `10s` | `src/infrastructure/mcp/session.ts` |
+| Releasing an MCP session at run end — per step: the `DELETE` a legacy session sends, then the close | `5s` each | `src/infrastructure/mcp/session.ts` |
+| MCP OAuth well-known documents / token endpoint and RFC 7591 registration (one constant) | `10s` / `15s` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | A transfer to an OpenAI-shaped remote agent | `120s` | `src/infrastructure/agent/dispatcher.ts` |
-| A transfer to an A2A remote agent — **silence**, not the whole exchange: the timer resets on every streamed event, and the run deadline bounds the total | `120s` idle | `src/infrastructure/a2a/client.ts` |
-| The registry's "test message" to an external agent | `60s` | `src/infrastructure/agent/agentClient.ts` |
+| A transfer to an A2A remote agent. On a card that advertises `capabilities.streaming` this bounds **silence**, not the exchange — the timer resets on every streamed event and the run deadline bounds the total; on a card that does not, the blocking `message/send` has no events to reset it, so the same number is the whole-request bound | `120s` | `src/infrastructure/a2a/client.ts` |
+| The registry's "test message" to an external agent — OpenAI-shaped. An `a2a` entry's test goes through the A2A client above under its `120s` idle bound, with no run deadline behind it, so a streaming card is bounded only by silence | `60s` | `src/infrastructure/agent/agentClient.ts` |
+| One Slack Web API call / one Slack file transfer | `30s` / `120s` | `src/infrastructure/slack/client.ts` |
+| One GitHub API request (the plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | Concurrent MCP calls per model response | `5` | `src/application/llm/engine.ts` |
 | Interactive (Slack) run deadline | `3` min | `src/shared/runDeadline.ts` |
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
@@ -420,6 +423,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | `users.list` pages one `SlackUsers` search walks (it reports stopping) | `5` × `200` | `src/application/slack/workspaceRead.ts` |
 | Matches one `SlackUsers` search prints (the rest are counted) | `20` | `src/application/slack/workspaceRead.ts` |
 | Slack reply write cadence (stream / edit) | `1s` / `3s` | `src/application/slack/replyStream.ts` |
+| One streamed Slack `markdown_text` write (Slack's own cap; the edit-in-place fallback is not cut) | `12,000` chars | `src/application/slack/replyStream.ts` |
 | Slack status refresh (Slack expires it at `2m`) | `45s` | `src/application/slack/replyStream.ts` |
 | Slack profile cache (success / failure / entries) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |

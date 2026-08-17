@@ -198,7 +198,7 @@ and **it does not mask what a connected MCP server receives**. Read
 ### Cost, attribution, and guards
 
 Every run records **who caused it** — a user, a project token (as its owner), a Slack user, a
-webhook, or inbound A2A — on the trace and on a per-caller daily usage row, because a shared
+webhook, a schedule, or inbound A2A — on the trace and on a per-caller daily usage row, because a shared
 project catalog means the project name never answered "who spent this".
 
 Each project can set an **alert** threshold (notify once, keep running) and a **block**

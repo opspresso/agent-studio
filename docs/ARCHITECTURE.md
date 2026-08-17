@@ -68,6 +68,8 @@ src/
                     # with one owner
     _lib/           # Browser-side glue the pages share: the transfer chains a chunk came
                     # from, attachment composers, tool-call display, the viewer hook
+    _i18n/          # The two message catalogues (en.ts is the source of truth) and the
+                    # locale cookie the console is served in
   components/       # App chrome: the header the root layout mounts (theme toggle, user
                     # menu), and the landing page's sign-in button
   lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
@@ -206,8 +208,8 @@ One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S)
 | Usage (member per day, per project) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{projectName}` | — | — |
 | Run concurrency slot | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
-| Slack thread engagement (a thread the bot answered in) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
-| Artifact (what a run produced; GSI2 `ARTIFACTOWNER#{email}` / `{createdAt}#{id}`, sparse) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
+| Slack thread engagement (a thread the bot answered in, or was muted in) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
+| Artifact (what a run produced; GSI2 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, sparse) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | Remote conversation (outbound A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
 | A2A client key | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
@@ -223,9 +225,10 @@ delete is one query. `GSI1` serves the heterogeneous "list by kind" patterns —
 catalog listings, `CHATOWNER#{email}` (a user's chats by recency), `USAGEDATE#{date}`
 (cross-project daily cost for the dashboard), `TRACEPROJECT#{name}`,
 `ARTIFACTPROJECT#{name}`. `GSI2` served Better Auth unique-field lookups alone until artifacts
-needed a second axis: `ARTIFACTOWNER#{email}`, written **only** on rows whose actor names a
-mailbox, so a Slack or trigger artifact is simply absent from that index rather than sitting
-under a placeholder (see [Artifacts](design/execution.md#artifacts)).
+needed a second axis: `ARTIFACTOWNER#{email}`, written **only** on rows that name a mailbox —
+the actor's own for a user or a project token, the asker's resolved address for a Slack run —
+so an A2A or trigger artifact is simply absent from that index rather than sitting under a
+placeholder (see [Artifacts](design/execution.md#artifacts)).
 
 ### Conventions
 

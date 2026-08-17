@@ -123,7 +123,9 @@ for a failure — which is what lets consumers read the ending instead of inferr
   subagents at once, offered to **top-level runs only** so the number of concurrent children
   does not grow with transfer depth), `GenerateImage`, `EditImage`, `FetchUrl` (a URL the
   model chose, behind `parameters.urlFetch` — see
-  [SECURITY.md](../SECURITY.md#urls-the-model-chose)), and the six Slack read tools behind
+  [SECURITY.md](../SECURITY.md#urls-the-model-chose); it owns no extraction of its own — text,
+  HTML and PDF pass through the same `DocumentExtractor` an attachment does), and the six
+  Slack read tools behind
   `parameters.slackWorkspace` (see [Reading the workspace](slack.md#reading-the-workspace)).
   **Any other name is an MCP tool**, and `BUILTIN_TOOL_NAMES` — all twelve — is reserved
   during alias allocation so an MCP tool never carries a name a builtin might claim.

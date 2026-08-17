@@ -114,10 +114,12 @@ export function artifactObjectKey(
  * The person an artifact belongs to, or undefined when nobody is named.
  *
  * Only `user` and `project-token` carry an email — a token runs on its owner's
- * behalf. Slack, A2A, webhook and schedule actors identify a channel or a
- * trigger, not a mailbox, so those rows are reachable through their project
- * instead. That is why the owner index is sparse and why the project index is
- * not optional: without it those artifacts could never be listed or deleted.
+ * behalf. A Slack actor is a workspace id, but the surface can resolve the
+ * asker's address and hands it in as `resolved`, which wins. A2A, webhook and
+ * schedule actors identify a client or a trigger, not a mailbox, so those rows
+ * are reachable through their project instead. That is why the owner index is
+ * sparse and why the project index is not optional: without it those artifacts
+ * could never be listed or deleted.
  */
 export function artifactOwnerEmail(
   actor?: RunActor,

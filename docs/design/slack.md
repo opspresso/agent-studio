@@ -20,9 +20,9 @@ back to `chat.postMessage` + `chat.update`, paced at Slack's documented one edit
 seconds and marked with a trailing indicator so an interim state does not read as a finished
 answer. Streaming sends **deltas**, so the sink advances its flushed offset only on a
 successful write: a rejected append is re-sent with the next one instead of being lost. Every
-write is cut at Slack's own cap on one `markdown_text` — 12,000 characters
-(`MAX_STREAM_TEXT` in `replyStream.ts`) — because the first append is deliberately unpaced and
-carries everything so far: a model that answers in one long burst handed Slack a payload over
+streamed write is cut at Slack's own cap on one `markdown_text` — 12,000 characters
+(`MAX_STREAM_TEXT` in `replyStream.ts`; the edit-in-place fallback sends the whole text and is
+not cut) — because the first append is deliberately unpaced and carries everything so far: a model that answers in one long burst handed Slack a payload over
 the limit on the very first write, which was rejected and then re-sent unchanged by every push
 after it, and the answer never arrived. Streaming into a channel additionally names the
 recipient (`recipient_user_id` / `recipient_team_id`); a DM does not.

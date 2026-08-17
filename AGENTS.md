@@ -139,11 +139,11 @@ reached four definitions that had already drifted apart, the DynamoDB conditiona
 name was spelled at seven call sites — only one of which handled the transactional form — and
 the image-usage collapse was derived independently four times.
 
-Each decision below has one owning file. `tests/architecture.test.ts` fails on a second copy
+Each such decision has one owning file. `tests/architecture.test.ts` fails on a second copy
 **and** on the owner losing the definition. Before writing any of these, check whether you are
 about to make copy number two.
 
-**Which layer owns a limit** is a question the table answers case by case, so the rule behind
+**Which layer owns a limit** is a question the list answers case by case, so the rule behind
 it: **a cap something else imposes on us belongs in `domain/`; a cap we chose belongs beside
 the mechanism that spends it.** An image size, a document's extracted characters and the tool
 count one request may declare are all a provider's or a stored item's number — a run only
@@ -168,15 +168,17 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 - **Run bracket** — the one thing every top-level run passes through: model policy, cost guard,
   tier cap, concurrency slot, metric, correlation id, artifact recorder →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
-- **Images** — four producers over one `ImageChannel` port; source bytes decide edit vs generate
-  → [design/execution.md](docs/design/execution.md#images)
+- **Images** — three paths that draw meet at one `ImageChannel` port (an MCP tool's picture is a
+  fourth producer and never touches it); source bytes decide edit vs generate →
+  [design/execution.md](docs/design/execution.md#images)
 - **Artifacts** — what a run left behind, captured at the bracket, one row per stored object →
   [design/execution.md](docs/design/execution.md#artifacts)
 - **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in; the one adapter that
   requests an address the *model* chose → [SECURITY.md](docs/SECURITY.md#urls-the-model-chose)
-- **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2`, every key string from
-  `keys.ts` → [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
-- **Auth & authorization** — `withAuth`/`withAdminAuth` for routes, `src/proxy.ts` for pages;
+- **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2` →
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
+- **Auth & authorization** — `withAuth`/`withMemberAuth`/`withAdminAuth` for routes,
+  `src/proxy.ts` for pages;
   **`isAdminEmail` and `isConfiguredAdmin` are not interchangeable** →
   [SECURITY.md](docs/SECURITY.md#authorization-model)
 - **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, four revealable via POST →
@@ -209,8 +211,9 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   [design/observability.md](docs/design/observability.md#usage-and-cost-attribution)
 - **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first one
   → [ARCHITECTURE.md](docs/ARCHITECTURE.md#error-handling)
-- **Logging** — `src/shared/logger.ts` is the only writer; lines carry the run's correlation id,
-  deliberately *not* the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#logging)
+- **Logging** — `src/shared/logger.ts` is the only writer (`domain`'s one bare `[cost]` warn
+  excepted, since it imports nothing); lines carry the run's correlation id, deliberately *not*
+  the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#logging)
 
 ## Conventions that bite
 
