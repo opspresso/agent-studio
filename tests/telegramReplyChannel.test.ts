@@ -135,6 +135,22 @@ describe("a Telegram reply", () => {
     expect(messages[0]).toBe(`${paragraph}\n`);
   });
 
+  it("never lets an open message reach the cap with its cursor on", async () => {
+    let now = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { telegram, sent, edits } = makeTelegramFake();
+    const sink = createTelegramReplyChannel(telegram, "tok", TARGET);
+    const text = "y".repeat(MAX_MESSAGE_CHARS);
+
+    await sink.push("y");
+    now += 3000;
+    await sink.push(text);
+
+    for (const written of [...sent.map((m) => m.text), ...edits.map((e) => e.text)]) {
+      expect(written.length).toBeLessThanOrEqual(MAX_MESSAGE_CHARS);
+    }
+  });
+
   it("says nothing when nothing was opened and there is nothing to say", async () => {
     const { telegram, sent } = makeTelegramFake();
     const sink = createTelegramReplyChannel(telegram, "tok", TARGET);
