@@ -1,9 +1,5 @@
-import type { ExecuteAgentInput } from "@/application/execution/runProject";
-import type { SignObjectUrl } from "@/domain/artifact/objectStore";
+import type { MessagingDeps } from "@/application/messaging/handleTurn";
 import type { RunCaller } from "@/domain/execution/actor";
-import type { DocumentExtractor } from "@/domain/llm/documentExtractor";
-import type { EngineChunk } from "@/domain/llm/types";
-import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { SlackThreadRepository } from "@/domain/slack/repository";
 import type { SlackReaderPort } from "@/domain/slack/reader";
 import type {
@@ -112,35 +108,20 @@ export interface SlackClientPort extends SlackReaderPort {
   ): Promise<void>;
 }
 
-/** Injected dependencies; wired by the route from the composition root. */
-export interface SlackEventDeps {
-  /** Bound wrapper over `executeAgent(executionDeps, params)` (mirrors ChatDeps.runAgent). */
-  runAgent: (params: ExecuteAgentInput) => AsyncGenerator<EngineChunk>;
-  projects: ProjectRepository;
-  versions: VersionRepository;
+/**
+ * Injected dependencies; wired by the route from the composition root.
+ *
+ * The shared half — the bound run, the repositories, the extractor and the
+ * file signer — is {@link MessagingDeps}, the same bag every chat-bot surface
+ * carries. What is added here is what only Slack needs.
+ */
+export interface SlackEventDeps extends MessagingDeps {
   slack: SlackClientPort;
   /**
    * Where the bot has spoken, so a channel follow-up needs no mention. Written
    * after every channel reply; the event gate is what reads it back.
    */
   threads: SlackThreadRepository;
-  /**
-   * Reads an attached document into the text a turn carries. Required rather
-   * than optional: a deployment that forgot to wire it would drop every attached
-   * file with the same warning the old image-only path used, which is exactly
-   * the silence this replaced.
-   */
-  documents: DocumentExtractor;
-  /**
-   * Signs an address for a file this run produced.
-   *
-   * A thread cannot be handed the bytes — the run bracket stored the document
-   * and stripped the payload before any of this saw it — so a link is what a
-   * reader gets. Optional because a deployment may have no object storage, and
-   * then the reply says so rather than silently answering with prose about a
-   * report nobody can open.
-   */
-  signFile?: SignObjectUrl;
   /**
    * What marks a reply as still being written, on the edit-in-place path only —
    * a streamed reply is marked as unfinished by Slack itself. Injected rather
