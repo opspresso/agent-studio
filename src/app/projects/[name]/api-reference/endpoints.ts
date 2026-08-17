@@ -143,11 +143,16 @@ function pythonSdkExample(opts: {
   messages: unknown;
   variables?: Record<string, string>;
   stream?: boolean;
+  /** Show the conversation header, per call — the SDK's `extra_headers`. */
+  conversation?: boolean;
 }): CodeExample {
   const extraBody = opts.variables ? `,\n    extra_body={"variables": ${JSON.stringify(opts.variables)}}` : "";
+  const extraHeaders = opts.conversation
+    ? `\n    extra_headers={"X-Conversation-Id": "$CONVERSATION_ID"},  # same value on every turn of one conversation`
+    : "";
   const createArgs = `
     model="",  # ignored — the project version selects the model
-    messages=${JSON.stringify(opts.messages)}${extraBody},${opts.stream ? "\n    stream=True," : ""}
+    messages=${JSON.stringify(opts.messages)}${extraBody},${opts.stream ? "\n    stream=True," : ""}${extraHeaders}
 `;
   const call = opts.stream
     ? `stream = client.chat.completions.create(${createArgs})
@@ -172,18 +177,25 @@ function nodeSdkExample(opts: {
   messages: unknown;
   variables?: Record<string, string>;
   stream?: boolean;
+  /** Show the conversation header, per call — the SDK's request options. */
+  conversation?: boolean;
 }): CodeExample {
   const extraBody = opts.variables ? `,\n  variables: ${JSON.stringify(opts.variables)},` : "";
   const createArgs = `
   model: "", // ignored — the project version selects the model
   messages: ${JSON.stringify(opts.messages)}${extraBody},${opts.stream ? "\n  stream: true," : ""}
 `;
+  const requestOptions = opts.conversation
+    ? `, {
+  headers: { "X-Conversation-Id": "$CONVERSATION_ID" }, // same value on every turn of one conversation
+}`
+    : "";
   const call = opts.stream
-    ? `const stream = await client.chat.completions.create({${createArgs}});
+    ? `const stream = await client.chat.completions.create({${createArgs}}${requestOptions});
 for await (const chunk of stream) {
   process.stdout.write(chunk.choices[0].delta.content ?? "");
 }`
-    : `const response = await client.chat.completions.create({${createArgs}});
+    : `const response = await client.chat.completions.create({${createArgs}}${requestOptions});
 console.log(response.choices[0].message.content);`;
   const code = `import OpenAI from "openai";
 
@@ -382,10 +394,10 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             body: { messages: ccMessages, stream: false },
             ...(projectType === "agent" ? { extraHeaders: CONVERSATION_HEADER } : {}),
           }),
-          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages }),
-          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true }),
-          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages }),
-          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true }),
+          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: projectType === "agent" }),
+          pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: projectType === "agent" }),
+          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, conversation: projectType === "agent" }),
+          nodeSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true, conversation: projectType === "agent" }),
         ],
       });
 
