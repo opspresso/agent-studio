@@ -112,19 +112,23 @@ export function createTelegramReplyChannel(
    */
   let editFailures = 0;
 
-  /** Extend the layout so every character of `text` belongs to a segment. */
+  /**
+   * Extend the layout so every character of `text` belongs to a segment. Every
+   * segment leaves room for the cursor, the final one included: while it is
+   * being written it carries one, and a segment sized to the cap without it
+   * would be refused on exactly the push that filled it.
+   */
   function layout(text: string): void {
     if (segments.length === 0) {
       segments.push({ start: 0 });
     }
+    const room = MAX_MESSAGE_CHARS - CURSOR.length;
     for (;;) {
       const last = segments[segments.length - 1];
-      if (!last || text.length - last.start <= MAX_MESSAGE_CHARS) {
+      if (!last || text.length - last.start <= room) {
         return;
       }
-      // With the cursor, an open message is a little longer than its text.
-      const cut = cutPoint(text, last.start, MAX_MESSAGE_CHARS - CURSOR.length);
-      segments.push({ start: cut });
+      segments.push({ start: cutPoint(text, last.start, room) });
     }
   }
 
