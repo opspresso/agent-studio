@@ -87,7 +87,7 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`, and `NODE_ENV=
   contract, and a port would restate its task lifecycle to gain nothing). A second SDK is
   argued for in `tests/architecture.test.ts`, next to that one.
 - `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack,
-  Telegram, A2A, GitHub, net/crypto helpers.
+  Telegram, Teams, A2A, GitHub, net/crypto helpers.
 - `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
   directly**; get repositories and `executionDeps` from a wiring site. A **`"use client"`
   file may not import `application/` or `infrastructure/` at all** — the boundary there is
@@ -105,10 +105,11 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`, and `NODE_ENV=
   put a rule at the bottom. `shared` is for helpers no layer owns (stream plumbing, text
   cutting, timers).
 
-Composition happens at exactly six wiring sites: `src/lib/container.ts` (repositories, the
+Composition happens at exactly seven wiring sites: `src/lib/container.ts` (repositories, the
 domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 `src/app/api/chats/_deps.ts` (`ChatDeps`), `src/app/api/slack/events/_lib/`
 (`SlackEventDeps`), `src/app/api/telegram/webhook/_lib/` (`TelegramEventDeps`),
+`src/app/api/teams/messages/_lib/` (`TeamsEventDeps`),
 `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
 handler assembly over `executionDeps`), and `src/instrumentation.ts` (the boot path, which
 wires the audit sink straight from its adapter — the composition root is not loaded until
@@ -155,7 +156,7 @@ loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for
 ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
 because the engine's builtins are added after the MCP tools are cut and need the room.
 
-**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 102 decisions across two
+**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 108 decisions across two
 tables, the second holding the ones the test cannot express as a pattern but that the same
 rule governs. `tests/architecture.test.ts` is what enforces both.
 
@@ -211,6 +212,9 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 - **Telegram** — per-project bots on the same pipeline; a reply edited in place and split at
   4,096 characters, rendered once with a plain fallback; a transcript store because the Bot API
   hands back no history → [design/telegram.md](docs/design/telegram.md)
+- **Teams** — per-project Azure Bot registrations on the same pipeline; the Bot Framework's
+  token is the whole authentication (signature, issuer, audience, `serviceUrl`); Markdown
+  natively, edits in place, the same transcript store → [design/teams.md](docs/design/teams.md)
 - **A2A** — both directions; a transfer continues the remote conversation →
   [design/agents-a2a.md](docs/design/agents-a2a.md)
 - **Triggers** — one webhook, any number of schedules, published-only, deduplicated by
@@ -250,14 +254,14 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   refusal prevents. Three call sites used to answer the dispatch question for themselves, the
   two non-streaming routes had diverged on the image case, and a fourth copy lived in the
   composition root. A surface that calls `executeAgent` directly — chats, Slack, Telegram,
-  `/agent` — gets the same answer from the facade, which **refuses a non-agent project**: the loop has
+  Teams, `/agent` — gets the same answer from the facade, which **refuses a non-agent project**: the loop has
   nowhere to put an `llm` project's `userPromptTemplate` and would answer from a bare system
   prompt *successfully*. `/agent` was the one caller with no check of its own.
-  **Those four are a bounded list, like the image one** (`AGENT_RUN_ENTRY_POINTS` in
+  **Those five are a bounded list, like the image one** (`AGENT_RUN_ENTRY_POINTS` in
   `tests/architecture.test.ts`), because the cost of `executeAgent` being safe to call
-  directly is that *how a run is entered* has four homes while *which project type runs
+  directly is that *how a run is entered* has five homes while *which project type runs
   which way* has one. A policy belonging at the entry — a per-surface input cap, a rate
-  limit — has to be put in all four, so a fifth is added on purpose.
+  limit — has to be put in all five, so a sixth is added on purpose.
 - **The image use case has a bounded caller list, not an owner.** Three surfaces reach
   `application/image/generateImage` directly because each answers in a shape no other can
   (chunks, `{ imageBase64, model, usage }`, an A2A `image` artifact);

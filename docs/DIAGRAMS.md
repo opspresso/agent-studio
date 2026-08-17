@@ -14,7 +14,7 @@ flowchart TB
   app["<b>app</b><br/>페이지 · API 라우트 핸들러 · 콘솔 컴포넌트"]
   application["<b>application</b><br/>유스케이스 · LLM 엔진 · 실행 파사드 · 표면(chat/slack/telegram/a2a/trigger) · messaging"]
   domain["<b>domain</b><br/>엔티티 · 리포지토리 포트 · 한계값 — 순수 TS"]
-  infrastructure["<b>infrastructure</b><br/>DynamoDB · LLM 채널 · MCP · Slack · Telegram · A2A · S3 · net · crypto"]
+  infrastructure["<b>infrastructure</b><br/>DynamoDB · LLM 채널 · MCP · Slack · Telegram · Teams · A2A · S3 · net · crypto"]
   lib["<b>lib</b><br/>composition root(container.ts) · auth/session · runtime settings · config"]
   shared["<b>shared</b><br/>의존성 없는 헬퍼 — @/ 를 import 하지 않는다"]
 
@@ -34,7 +34,7 @@ flowchart TB
   lib --> shared
 ```
 
-## 2. 요청 흐름 — 아홉 진입점, 하나의 파사드
+## 2. 요청 흐름 — 열 진입점, 하나의 파사드
 
 모든 실행은 `src/application/execution/runProject.ts` 로 모인다. 표면은 *어떻게 들어오는지*
 (HTTP 형태, 인증, 응답 모양)만 결정하고, *어떤 프로젝트 타입이 어떻게 도는지*는 파사드가
@@ -50,6 +50,7 @@ flowchart LR
     chat["POST /api/chats/{id}/messages"]
     slack["POST /api/slack/events/{project}"]
     telegram["POST /api/telegram/webhook/{project}"]
+    teams["POST /api/teams/messages/{project}"]
     a2a["POST /api/a2a/{name} (JSON-RPC)"]
     webhook["POST /api/webhook/{project}"]
     schedule["POST /api/triggers/scan"]
@@ -76,6 +77,7 @@ flowchart LR
   chat -->|"ChatDeps.runAgent"| facade
   slack -->|"handleTurn → runAgent"| facade
   telegram -->|"handleTurn → runAgent"| facade
+  teams -->|"handleTurn → runAgent"| facade
   a2a --> facade
   webhook -->|"triggerRunnerDeps.run"| facade
   schedule -->|"triggerRunnerDeps.run"| facade
@@ -90,7 +92,7 @@ flowchart LR
 ```
 
 응답 모양은 표면마다 다르다: `predict`·`chat/completions` 는 완성 응답(또는 SSE), `agent` 는
-원시 청크 SSE, chat 은 자체 프레임 + 재생 로그, Slack·Telegram 은 플랫폼 메시지, A2A 는 태스크
+원시 청크 SSE, chat 은 자체 프레임 + 재생 로그, Slack·Telegram·Teams 는 플랫폼 메시지, A2A 는 태스크
 이벤트, 트리거는 이력 행. 청크의 계약은
 [ARCHITECTURE.md#enginechunk-계약](ARCHITECTURE.md#enginechunk-계약).
 
@@ -126,24 +128,27 @@ sequenceDiagram
 
 ## 4. 메시징 표면 — 게이트웨이와 어댑터
 
-Slack 과 Telegram 은 같은 파이프라인 위에 있다. 어댑터는 플랫폼이 결정하는 것만 갖고,
+Slack·Telegram·Teams 는 같은 파이프라인 위에 있다. 어댑터는 플랫폼이 결정하는 것만 갖고,
 파이프라인은 플랫폼과 무관한 것을 한 번 갖는다 ([design/messaging.md](design/messaging.md),
-[design/slack.md](design/slack.md), [design/telegram.md](design/telegram.md)).
+[design/slack.md](design/slack.md), [design/telegram.md](design/telegram.md),
+[design/teams.md](design/teams.md)).
 
 ```mermaid
 flowchart LR
   subgraph route["라우트 — app/api/{platform}/…"]
-    verify["플랫폼 인증<br/>Slack: HMAC 서명 · Telegram: secret token"]
-    gate["게이트 (dedup claim 앞)<br/>classifySlackEvent · classifyTelegramUpdate"]
+    verify["플랫폼 인증<br/>Slack: HMAC 서명 · Telegram: secret token · Teams: Bot Framework JWT"]
+    gate["게이트 (dedup claim 앞)<br/>classifySlackEvent · classifyTelegramUpdate · classifyTeamsActivity"]
     tail["admitInboundEvent<br/>claim → 즉시 ack → after() → settle<br/>(app/api/_lib/inboundEvent.ts)"]
   end
-  subgraph adapter["어댑터 — application/slack · application/telegram"]
+  subgraph adapter["어댑터 — application/slack · application/telegram · application/teams"]
     normalise["정규화<br/>이벤트 → text · attachments · history · actor · caller · conversation"]
-    render["ReplyChannel 구현<br/>Slack: 스트림/편집 + 상태선/체크리스트<br/>Telegram: 편집·4,096 분할·typing·HTML 1회 렌더"]
-    after["사후처리<br/>Slack: markEngaged · Telegram: transcript append"]
+    render["ReplyChannel 구현<br/>Slack: 스트림/편집 + 상태선/체크리스트<br/>Telegram: 편집·4,096 분할·HTML 1회 렌더 · Teams: 편집·20,000 분할·Markdown 그대로"]
+    after["사후처리<br/>Slack: markEngaged · Telegram/Teams: transcript append"]
   end
   subgraph shared["공통 — application/messaging"]
     turn["handleTurn<br/>첨부 제한 → turnContent → runAgent → 청크 fold(step/stepDone/push)<br/>→ 그림 · 파일 링크 · 경고 꼬리 → finish"]
+    edit["editInPlaceReply<br/>편집 답변의 장부: 페이싱 · 분할 · 재시도 간격 · 마감"]
+    transcript["transcriptHistory<br/>턴 수·문자 예산 · 턴 상한 · 화자 라벨 옵트인"]
   end
   subgraph ports["포트 — domain/messaging"]
     p1["ReplySink · ReplyChannel"]
@@ -155,6 +160,8 @@ flowchart LR
 
   verify --> gate --> tail --> normalise --> turn --> facade
   render -.-> turn
+  render -.-> edit
+  after -.-> transcript
   turn --> after
   turn -.-> p1
   turn -.-> p2
@@ -162,23 +169,25 @@ flowchart LR
   after -.-> p4
 ```
 
-## 5. 조립 지점 — 여섯 곳
+## 5. 조립 지점 — 일곱 곳
 
-유스케이스는 어댑터 위에 정확히 여섯 곳에서 조립된다. 라우트는 조립된 객체를 받는다
+유스케이스는 어댑터 위에 정확히 일곱 곳에서 조립된다. 라우트는 조립된 객체를 받는다
 ([ARCHITECTURE.md#조립은-의도적으로-고른-몇-곳에서만](ARCHITECTURE.md#조립은-의도적으로-고른-몇-곳에서만)).
 
 ```mermaid
 flowchart TB
-  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · projectSlack/TelegramUseCases<br/>executionDeps · imageDeps · triggerRunnerDeps"]
+  container["src/lib/container.ts<br/>리포지토리 · 도메인 포트 · 레지스트리 슬라이스 · projectSlack/Telegram/TeamsUseCases<br/>executionDeps · imageDeps · triggerRunnerDeps"]
   chatdeps["src/app/api/chats/_deps.ts<br/>ChatDeps (runAgent 바인딩)"]
   slackdeps["src/app/api/slack/events/_lib/<br/>SlackEventDeps"]
   tgdeps["src/app/api/telegram/webhook/_lib/<br/>TelegramEventDeps"]
+  teamsdeps["src/app/api/teams/messages/_lib/<br/>TeamsEventDeps"]
   a2aroute["src/app/api/a2a/[name]/route.ts<br/>요청별 A2A SDK 핸들러 조립"]
   boot["src/instrumentation.ts<br/>부트: 설정 검증 · 감사 싱크 · managed MCP 재개"]
 
   container --> chatdeps
   container --> slackdeps
   container --> tgdeps
+  container --> teamsdeps
   container --> a2aroute
   boot -.->|"런타임이 Node 서버일 때만 로드"| container
 ```
@@ -217,7 +226,7 @@ flowchart LR
   subgraph inbound["인바운드 표면"]
     sev["SLACKEVENT#{eventId}"]
     sthread["SLACKTHREAD#{project}#{channel}#{ts}"]
-    transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TRANSCRIPT#{conversation}#TURN#…"]
+    transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TEAMSACTIVITY#… · TRANSCRIPT#{conversation}#TURN#…"]
     a2atask["A2ATASK#{project}#{taskId}"]
   end
 ```

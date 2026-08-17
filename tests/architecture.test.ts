@@ -1521,6 +1521,57 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/application/telegram/markdown.ts",
   },
   {
+    // Two surfaces deliver a reply by sending a message and editing it, and
+    // the bookkeeping — pacing, the cut into the next message, what a refused
+    // write does to the next one, what the close owes when a write fails — is
+    // the part that goes wrong. Telegram wrote it; Teams takes it. A second
+    // copy of the refused-write backoff is a second copy of every one of those.
+    what: "the edit-in-place reply bookkeeping",
+    pattern: /refusedAt/,
+    owner: "src/application/messaging/editInPlaceReply.ts",
+  },
+  {
+    // What a surface with no platform history remembers of a conversation:
+    // read within a budget, written bounded, names read only for a version
+    // still opted in. Two surfaces need it identically; the drop sentence is
+    // the pattern because it is the half a copy would spell differently.
+    what: "how a chat bot with no platform history reads and writes its transcript",
+    pattern: /Older conversation turns were left out/,
+    owner: "src/application/messaging/transcriptHistory.ts",
+  },
+  {
+    // The Bot Framework has one way to put an answer on screen — send an
+    // activity, then update it — and a second Teams entry point that updated
+    // for itself is a second copy of the transport. The pattern is the update
+    // *call*, not the port method or the adapter.
+    what: "how a Teams reply is delivered",
+    pattern: /teams\.updateActivity\(/,
+    owner: "src/application/teams/replyChannel.ts",
+  },
+  {
+    // Which delivered activities cause a run. Ahead of the dedup claim, like
+    // Slack's and Telegram's, and for the same reason.
+    what: "which Teams activities are for the bot",
+    pattern: /export function classifyTeamsActivity/,
+    owner: "src/application/teams/engagement.ts",
+  },
+  {
+    // The Bot Framework slice this platform uses; three modules take it and the
+    // adapter implements it.
+    what: "the Bot Framework surface this platform uses",
+    pattern: /interface TeamsClientPort/,
+    owner: "src/domain/teams/client.ts",
+  },
+  {
+    // Everything the Teams endpoint trusts rests on one check: the token's
+    // signature against the service's published keys, its issuer, its
+    // audience, and the serviceUrl it was issued for. A second copy of the
+    // key fetch is a second place the check can be wrong.
+    what: "verifying a Bot Framework token",
+    pattern: /login\.botframework\.com/,
+    owner: "src/infrastructure/teams/client.ts",
+  },
+  {
     // Not a duplicated definition but a duplicated *copy of undici*, which is
     // the same failure one layer down. A `dispatcher` is a private contract
     // between a fetch implementation and its `Agent`, and the runtime ships its

@@ -77,6 +77,7 @@ chunk 에도) 일일 행에 `cachedTokens.{model}` 로 들어가고, trace 의 �
 | `project-token` | **소유자의** 이메일 | 토큰은 그 사람으로 인증한다. 기계의 지출을 그 사람 자신의 런과 떼어 놓는 것은 *kind* 이며 — `user` 행만 채우는 그 사람의 개인 tier 예산에서도 빼 놓는다 |
 | `slack` | Slack user id | Slack 은 이메일을 넘겨주지 않고, 매핑을 추측하면 엉뚱한 사람에게 비용을 물린다 |
 | `telegram` | Telegram user id | 같은 이유다. Telegram 은 이름과 username 을 넘겨주는데 둘 다 주소가 아니다 |
+| `teams` | 보낸 사람의 Entra(Azure AD) object id | 대화마다 달라지는 `from.id` 와 달리 사람을 가로질러 같다. Teams 는 봇에게 email 을 주지 않는다 |
 | `a2a` | 상수 `shared-key`, 또는 client key 의 이름 | 공유 키는 아무도 지목하지 못한다. 이름 붙은 client key 는 그 보유자를 지목하므로, 그쪽 런은 client 단위로 귀속되고 한도가 매겨진다 |
 | `webhook` | `{project}:{triggerId}` | — |
 | `schedule` | `{project}:{triggerId}` | — |

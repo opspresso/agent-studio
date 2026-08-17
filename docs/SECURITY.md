@@ -144,7 +144,8 @@ admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘�
 ## 저장된 시크릿
 
 저장되는 모든 자격 증명 — MCP 서버 헤더, 외부 agent 헤더, 버전별 헤더 오버라이드, Slack 봇
-token 과 서명 시크릿, Telegram 봇 token 과 webhook 시크릿, 앱 전역 A2A 키, project API token,
+token 과 서명 시크릿, Telegram 봇 token 과 webhook 시크릿, Teams(Azure Bot) 클라이언트 시크릿,
+앱 전역 A2A 키, project API token,
 webhook trigger 시크릿, 그리고 시크릿인 앱 설정(LLM API 키와 plugins 저장소의 GitHub token) —
 은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM 암호화되어 `enc:v1:` 접두사 아래 저장된다
 (`src/infrastructure/crypto/secretEncryption.ts`).
@@ -217,18 +218,19 @@ project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 �
 
 ## 머신 호출자의 요청 인증
 
-세션 쿠키가 없는 호출자를 인증하는 자격 증명이 여섯 가지 있다:
+세션 쿠키가 없는 호출자를 인증하는 자격 증명이 일곱 가지 있다:
 
 | 표면 | 자격 증명 | 검증 |
 |---|---|---|
 | 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer adt_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
 | Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
 | Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`adg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
+| Teams messaging endpoint | Bot Framework bearer 토큰 (JWT) | RS256 서명을 서비스가 공개한 JWKS(`login.botframework.com`) 로 검증하고, 발급자 `https://api.botframework.com`, audience = 그 봇의 App ID, `exp`/`nbf`(5분 skew), 그리고 **`serviceurl` 클레임 = activity 의 `serviceUrl`** 을 요구한다 — 답은 그 주소로 이 앱의 토큰을 붙여 나가므로. Emulator 토큰은 받지 않는다 (`src/infrastructure/teams/client.ts`) |
 | 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회(actor `a2a:{client}` — 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
 | Webhook trigger | `X-Trigger-Secret` | `cipher.decryptEquals` (상수 시간) |
 | CronJob 틱 — schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 
-**하나의 token 이 세 틱을 모두 연다.** 그래서 여섯 중 가장 넓다. CronJob 이 어떤 schedule 이
+**하나의 token 이 세 틱을 모두 연다.** 그래서 일곱 중 가장 넓다. CronJob 이 어떤 schedule 이
 도래했는지 물을 수 있게 해 주는 그 문자열이 plugins sync 도 실행하고, 그 sync 는 두 레지스트리
 — skill 과 MCP 서버 — 를 모두 쓴다. 저장소가 선언한 이름을 채택하고 provenance 를 그것으로 다시
 쓴다. 그것은 프로브가 아니라 쓰기 자격 증명으로 범위를 잡고 회전시켜라.
@@ -246,8 +248,8 @@ trigger 와 다르게 답할 수 없게 하기 위해서다 — 그 차이는 �
 상수 시간 비교는 소유자가 하나, `src/shared/timingSafe.ts` 이고
 `tests/architecture.test.ts` 가 고정한다.
 
-리플레이 방지: Slack 이벤트는 `event_id` 로, Telegram 업데이트는 project 별 `update_id` 로
-정확히 한 번만 처리되도록 중복 제거된다(조건부 put, 24시간 TTL, 공유된 하나의
+리플레이 방지: Slack 이벤트는 `event_id` 로, Telegram 업데이트는 project·봇별 `update_id` 로,
+Teams activity 는 project·App ID 별 activity id 로 정확히 한 번만 처리되도록 중복 제거된다(조건부 put, 24시간 TTL, 공유된 하나의
 claim-and-settle 저장소). 그 claim 은 나중에 정산되는 **리스** 이므로, 처리 도중 죽은
 인스턴스는 아무도 처리하지 않았는데 처리된 것으로 기록된 이벤트가 아니라 다시 가져갈 수 있는
 claim 을 남긴다. Webhook 배달도 같은 방식으로 `Idempotency-Key` 를 선점한다.
@@ -577,8 +579,8 @@ token 으로 치환되고, 응답에서 원본이 복원된다 — 스트리밍�
 
 `parameters.callerContext` 로 버전별 옵트인. 켜져 있으면 Slack 런은 누가 묻고 있는지를 모델에게
 알려 주고 — 표시 이름, 시간대, 아바타의 URL — 한 스레드에 사람이 둘 이상이면 화자마다 라벨을
-붙인다. Telegram 런은 업데이트가 실어 오는 것으로 같은 일을 한다 — 보낸 사람의 이름, 그리고 그
-밖에는 아무것도 없다. Telegram 은 시간대도 email 도 넘겨주지 않는다.
+붙인다. Telegram 런과 Teams 런은 각자의 이벤트가 실어 오는 것으로 같은 일을 한다 — 보낸 사람의
+이름, 그리고 그 밖에는 아무것도 없다. 둘 다 시간대도 email 도 넘겨주지 않는다.
 
 **이름은 `piiFiltering` 이 마스킹하지 않는 PII 다.** 그 패턴들은 email, 전화번호,
 등록번호/카드 번호에 맞고 사람의 이름은 그 어느 것에도 맞지 않으므로, 호출자 블록이 싣는 것은
@@ -679,11 +681,11 @@ Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 �
 - 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.
 - Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 DynamoDB TTL 로 만료된다 —
   [OPERATIONS.md](OPERATIONS.md#행-보존) 참고.
-- **Telegram 대화 트랜스크립트** 는 project 의 봇과 주고받은 모든 턴의 *텍스트* 를 7일간
-  보관한다 — 대화별로 질문과 답을 — Bot API 가 히스토리를 돌려주지 않아 후속 질문이 그 앞의
+- **Telegram·Teams 대화 트랜스크립트** 는 project 의 봇과 주고받은 모든 턴의 *텍스트* 를 7일간
+  보관한다 — 대화별로 질문과 답을 — 두 플랫폼 모두 히스토리를 돌려주지 않아 후속 질문이 그 앞의
   질문을 실어 날라야 하기 때문이다. 그것은 chat 메시지처럼 저장된 사용자 텍스트다. chat 과 달리
-  그 대화의 다음 런 외에는 아무것도 그것을 읽지 않는다. 보낸 사람의 Telegram 사용자 id 는 턴 옆에
-  저장되고, 보낸 사람의 *이름* 은 버전이 `callerContext` 에 옵트인했을 때만 저장되며, 옵트인을 끈
+  그 대화의 다음 런 외에는 아무것도 그것을 읽지 않는다. 보낸 사람의 플랫폼 사용자 id(Telegram
+  user id, Teams 는 Entra object id)는 턴 옆에 저장되고, 보낸 사람의 *이름* 은 버전이 `callerContext` 에 옵트인했을 때만 저장되며, 옵트인을 끈
   버전은 이전에 저장된 이름도 읽지 않는다. 행은 project 파티션에 있어 project 를 지우면 함께
   지워진다.
 - **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,

@@ -7,7 +7,7 @@
 — 프로덕션 수준의 Next.js 풀스택 애플리케이션 하나다.
 
 프롬프트나 에이전트를 **project** 로 만들고, **version** 으로 다듬고, 하나를 publish 한
-뒤 어디서든 호출한다: 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, webhook, 또는 A2A 로
+뒤 어디서든 호출한다: 콘솔, OpenAI 호환 엔드포인트, Slack, Telegram, Teams, webhook, 또는 A2A 로
 연결된 다른 에이전트. 모든 런은 귀속되고, 값이 매겨지고, 경계가 지어진다.
 
 ## 무엇이 들어 있나
@@ -22,7 +22,7 @@
 | **Chats** | agent project 를 상대로 하는 소유자별 비공개 대화. tool 트래픽과 이미지가 보존된다. |
 | **Cost dashboard** | project 별·model 별 일일 지출 — 그리고 caller 별 귀속. project 카탈로그가 공유되기 때문이다. |
 | **Guards** | project 별 일일·월간 비용 임계값, caller 별 동시 실행 제한, 모든 런에 걸리는 벽시계 데드라인. |
-| **Integrations** | project 별 Slack·Telegram 봇, webhook trigger, 양방향 A2A. |
+| **Integrations** | project 별 Slack·Telegram·Teams 봇, webhook trigger, 양방향 A2A. |
 
 ## 스택
 
@@ -75,7 +75,7 @@ lint 단계는 없다. `typecheck` + `test` + `build` 가 검사다.
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 어떻게 만들어졌고 **왜** 그런가 — 레이어, 단일 테이블 키 맵, 진입점에서 엔진까지의 경로 |
 | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) | 같은 모양을 그림으로 — 레이어, 요청 흐름, 런 브래킷, 메시징 표면, wiring site, 스토리지 |
-| [docs/design/](docs/design/) | 서브시스템마다 파일 하나 — 엔진, MCP, 메시징 표면(Slack, Telegram), capability, trigger, chat, 기록, A2A |
+| [docs/design/](docs/design/) | 서브시스템마다 파일 하나 — 엔진, MCP, 메시징 표면(Slack, Telegram, Teams), capability, trigger, chat, 기록, A2A |
 | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) | 소유 파일이 하나씩 정해진 모든 결정. `tests/architecture.test.ts` 가 강제한다 |
 | [docs/API.md](docs/API.md) | 모든 HTTP 라우트와 그 인증, 그리고 요청/응답 형태 |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | 모든 환경변수, 그리고 코드에 고정된 한계값 |
@@ -92,9 +92,9 @@ lint 단계는 없다. `typecheck` + `test` + `build` 가 검사다.
 각 project 의 **API Reference** 탭이 그 방법을 보여 준다. project 자신의 이름과 publish 된
 버전이 채워져 있고, 엔드포인트마다 복사할 수 있는 curl 예제가 있다. 실행 엔드포인트는 셋을
 쓸 수 있다 — `predict`, `chat/completions`(OpenAI 호환), `agent`(SSE) — 그리고 설정돼 있다면
-A2A·Slack·Telegram 엔드포인트가 더해진다.
+A2A·Slack·Telegram·Teams 엔드포인트가 더해진다.
 
-**Project Settings → API token** 에서 토큰을 발급해 세션 쿠키 대신
+**Project → Integrations → API token** 에서 토큰을 발급해 세션 쿠키 대신
 `Authorization: Bearer <token>` 으로 보내라. 토큰은 그 project 로 범위가 한정되며 소유자로
 인증된다. 전체 계약: [docs/API.md](docs/API.md#실행).
 
@@ -167,7 +167,7 @@ curl -X POST https://<host>/api/webhook/my-project \
 
 ### Slack
 
-각 agent project 는 자기 Slack 앱을 가질 수 있다. **Project Settings → Slack bot** 이
+각 agent project 는 자기 Slack 앱을 가질 수 있다. **Project → Integrations → Slack bot** 이
 project 전용 매니페스트를 만들고, 그 project 의 URL 로 오는 이벤트는 자기 signing secret
 으로 검증되며 언제나 그 project 를 실행한다 — 선택기가 필요 없다. 답변은 메시지 하나로
 스트리밍되고, 스레드 안의 멘션은 그 스레드를 컨텍스트로 함께 나르며, 이미지 첨부는
@@ -182,13 +182,24 @@ project 의 추천 프롬프트(최대 네 개, 같은 설정 패널에서 편�
 ### Telegram
 
 각 agent project 는 자기 Telegram 봇도 가질 수 있고, Slack 과 같은 파이프라인 위에 있다.
-**Project Settings → Telegram bot** 이 @BotFather 에서 받은 토큰을 받아 Telegram 으로
-확인하고, Telegram 이 매 전달마다 되돌려 주는 시크릿과 함께 이 배포에 webhook 을 등록한다.
+**Project → Integrations → Telegram bot** 이 @BotFather 에서 받은 토큰을 받아 Telegram 으로
+확인하고, 봇을 켜면 Telegram 이 매 전달마다 되돌려 주는 시크릿과 함께 이 배포에 webhook 을
+등록한다(끄면 삭제한다).
 개인 채팅에서 봇은 모든 메시지에 답하고, 그룹에서는 멘션되거나 답장을 받았을 때 답한다.
 Telegram 에는 스트리밍도 스레드 히스토리도 없으므로 답변은 그 자리에서 편집되는 메시지
 하나다 — Telegram 의 4,096자를 넘으면 다음 메시지로 이어지고, 렌더링은 끝에 한 번 한다 —
 그리고 대화의 최근 턴들은 일주일 동안 보관되어 후속 질문이 그 앞의 질문을 함께 나른다.
 [docs/design/telegram.md](docs/design/telegram.md) 를 보라.
+
+### Microsoft Teams
+
+세 번째 봇 표면. Azure Bot(Bot Framework)을 등록하고 **Project → Integrations → Microsoft
+Teams bot** 에 Microsoft App ID 와 클라이언트 시크릿을 붙여 넣은 뒤, Azure 에서 봇의 messaging
+endpoint 를 콘솔이 보여 주는 URL 로 가리킨다. 배달마다 Bot Framework 가 서명한 토큰이 인증의
+전부다 — 서명·발급자·audience·`serviceUrl` 을 확인한다. 개인 채팅에서는 모든 메시지에, 채널과
+그룹 채팅에서는 @멘션되었을 때 답하고, 답은 Teams 가 네이티브로 그리는 Markdown 으로 제자리에서
+편집되며, 그림은 메시지 안에 inline 으로 간다. 대화의 최근 턴은 Telegram 과 같은 방식으로
+보관된다. [docs/design/teams.md](docs/design/teams.md) 를 보라.
 
 ### A2A (Agent2Agent)
 

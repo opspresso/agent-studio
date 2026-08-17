@@ -34,8 +34,8 @@ cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리�
 src/
   domain/           # 엔티티 + 리포지토리 포트. 순수 TS. 프레임워크/AWS import 없음.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
-    execution/  security/  slack/  telegram/  messaging/  trigger/  sync/  audit/
-    plugin/  member/  a2a/  catalog/  vector/  artifact/  net/
+    execution/  security/  slack/  telegram/  teams/  messaging/  trigger/  sync/
+    audit/  plugin/  member/  a2a/  catalog/  vector/  artifact/  net/
   application/      # 유스케이스. 도메인 포트에만 의존하고, composition root 에는 절대
                     # 의존하지 않는다 — deps 는 주입되지, 끌어오지 않는다.
     llm/            # 엔진: 툴 루프, 에이전트 런 조립, 툴 결과 예산, PII 마스킹,
@@ -43,9 +43,10 @@ src/
     execution/      # 파사드, 바인딩 + MCP 툴 해석, 서브에이전트, 이미지 툴
     run/            # 최상위 런을 감싸는 것: 브래킷, 동시성 가드, 미등록 모델 정책,
                     # 트레이스 수명주기
-    chat/  slack/  telegram/  a2a/  trigger/  image/
+    chat/  slack/  telegram/  teams/  a2a/  trigger/  image/
                     # 런을 이끄는 표면들, 그리고 이미지 경로
-    messaging/      # 모든 채팅봇 표면이 공유하는 것: 턴 파이프라인과 첨부 제한,
+    messaging/      # 모든 채팅봇 표면이 공유하는 것: 턴 파이프라인, 첨부 제한, 편집으로
+                    # 답을 전달하는 장부, 플랫폼 히스토리가 없는 표면의 transcript 규칙 —
                     # domain/messaging 의 reply 포트 위에서
     artifact/       # 런이 남긴 것: 유일한 행 작성자, 브래킷에서의 캡처, 서명 URL 수명
     audit/          # 감사 행의 유일한 작성자, 그리고 그 흔적을 다시 읽기
@@ -57,8 +58,9 @@ src/
     llm/            # OpenAI 호환 프로바이더 채널, 스트리밍
     mcp/            # MCP HTTP 클라이언트, 세션, 디스커버리 캐시
     vector/         # capability 카탈로그가 인덱싱되는 S3 Vectors 스토어
-    a2a/  agent/  slack/  telegram/  github/  storage/  net/  crypto/  health/
-    telemetry/      # A2A + 외부 에이전트 클라이언트, Slack, Telegram, plugins 저장소
+    a2a/  agent/  slack/  telegram/  teams/  github/  storage/  net/  crypto/
+    health/  telemetry/
+                    # A2A + 외부 에이전트 클라이언트, Slack, Telegram, Teams, plugins 저장소
                     # 클라이언트, S3 아티팩트 스토어, SSRF 가드, AES, readiness 프로브,
                     # OTel 트레이스 내보내기
   app/              # Next.js App Router: 페이지 + 라우트 핸들러 (프레젠테이션)
@@ -114,7 +116,7 @@ flowchart TB
   app["app<br/>페이지 · API 라우트 핸들러"]
   application["application<br/>유스케이스 · LLM 엔진 · 실행 파사드"]
   domain["domain<br/>엔티티 · 리포지토리 포트 — 순수 TS"]
-  infrastructure["infrastructure<br/>DynamoDB · LLM 채널 · MCP · Slack · Telegram · A2A · net · crypto"]
+  infrastructure["infrastructure<br/>DynamoDB · LLM 채널 · MCP · Slack · Telegram · Teams · A2A · net · crypto"]
   lib["lib<br/>composition root · 인증/세션 · 런타임 설정"]
   shared["shared<br/>의존성 없는 헬퍼 — @/ 에서 아무것도 import 하지 않는다"]
 
@@ -137,7 +139,7 @@ flowchart TB
 ### 조립은 의도적으로 고른 몇 곳에서만
 
 조립(composition)은 한 파일에 모으지 않고 분산돼 있다. 실행 표면마다 정말로 다른 bag 이
-필요하기 때문이다. **여섯 곳이 어댑터 위에 유스케이스를 조립하며, 그 외에는 어디서도
+필요하기 때문이다. **일곱 곳이 어댑터 위에 유스케이스를 조립하며, 그 외에는 어디서도
 하면 안 된다.** composition root 말고도 세 개의 `lib` 모듈이 어댑터에 직접 닿는다 —
 `auth.ts`(Better Auth 스토리지 어댑터), `runtime-settings.ts` 와 `memberAccess.ts`(각각
 캐시 뒤에서 리포지토리 하나를 감싼다) — 그리고 `tests/architecture.test.ts` 가 정확히 그
@@ -148,7 +150,8 @@ flowchart TB
 | `src/lib/container.ts` | 리포지토리들, domain 포트들(`SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`), 모든 유스케이스 싱글턴 — 세 개의 registry 슬라이스(`skillUseCases` / `mcpUseCases` / `agentUseCases`)와 그 옆에 얹힌 것들(managed MCP, MCP OAuth, trigger, settings) — 그리고 `executionDeps` / `imageDeps` / `triggerRunnerDeps`. 필수인 LLM 채널과 이미지 채널까지 포함하므로, 주입이 빠지면 조용한 네트워크 호출이 아니라 타입 에러가 된다 |
 | `src/app/api/chats/_deps.ts` | `ChatDeps` bag (바인딩된 `runAgent` + 리포지토리들) |
 | `src/app/api/slack/events/_lib/` | `SlackEventDeps` bag (바인딩된 `runAgent` + `SlackClientPort`), `ChatDeps` 와 같은 모양 |
-| `src/app/api/telegram/webhook/_lib/` | `TelegramEventDeps` bag (바인딩된 `runAgent` + `TelegramClientPort` + transcript 저장소), Slack 쪽과 같은 모양 — 둘 다 모든 chat-bot 표면이 공통으로 지니는 절반인 `MessagingDeps` 를 확장한다 |
+| `src/app/api/telegram/webhook/_lib/` | `TelegramEventDeps` bag (바인딩된 `runAgent` + `TelegramClientPort` + transcript 저장소), Slack 쪽과 같은 모양 — 셋 다 모든 chat-bot 표면이 공통으로 지니는 절반인 `MessagingDeps` 를 확장한다 |
+| `src/app/api/teams/messages/_lib/` | `TeamsEventDeps` bag (바인딩된 `runAgent` + `TeamsClientPort` + transcript 저장소), 같은 모양 |
 | `src/app/api/a2a/[name]/route.ts` | 요청마다 이뤄지는 A2A 조립: `executionDeps` 위의 `ProjectA2aExecutor` 를 감싸는 SDK 의 request/transport 핸들러 — 핸들러가 프로젝트 하나의 카드를 중심으로 만들어지므로 요청 단위다 |
 | `src/instrumentation.ts` | 부팅 경로: `auditRepository` 위의 audit sink, 그리고 managed MCP 재개. 구조상 wiring site 다 — 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
 
@@ -160,7 +163,7 @@ flowchart TB
   함수들은 이미 리포지토리를 쥐고 있는 application 모듈을 위해 계속 export 된 채로 남고,
   라우트는 바인딩된 객체를 받는다.
 - **Deps-bag 인터페이스**(`ChatDeps`, `ExecutionDeps`, `SlackEventDeps`,
-  `TelegramEventDeps`) — 실행 경로용.
+  `TelegramEventDeps`, `TeamsEventDeps`) — 실행 경로용.
 
 새 슬라이스는 둘 중 하나를 써야 한다.
 
@@ -214,7 +217,8 @@ flowchart TB
 | Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
 | Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 봇으로 한정한다) | `PROJECT#{name}` | `TELEGRAMUPDATE#{botId}#{updateId}` | — | — |
 | Telegram 앨범 claim (한 `media_group_id` 에 한 번 답한다) | `PROJECT#{name}` | `TELEGRAMALBUM#{botId}#{mediaGroupId}` | — | — |
-| 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면 — Telegram; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
+| Teams activity 중복 제거 (App ID 로 한정) | `PROJECT#{name}` | `TEAMSACTIVITY#{appId}#{activityId}` | — | — |
+| 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면 — Telegram, Teams; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
 | Artifact (런이 만들어 낸 것. GSI2 는 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, 희소) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A 태스크 (수신) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | 원격 대화 (송신 A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
@@ -280,7 +284,7 @@ artifact 가 두 번째 축을 필요로 하기 전까지는 Better Auth 의 유
 
 ## 요청 흐름
 
-아홉 개의 실행 진입점이 `src/application/execution/runProject.ts` 로 모이고, 이 모듈은
+열 개의 실행 진입점이 `src/application/execution/runProject.ts` 로 모이고, 이 모듈은
 서로 다른 두 질문을 두 층으로 답한다.
 
 | 층 | 함수 | 무엇을 결정하는가 |
@@ -301,19 +305,21 @@ dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층�
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
 | Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
 | Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유) — Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
+| Teams | `/api/teams/messages/[project]` → `handleTeamsActivity` → `handleTurn` | `executeAgent` (`TeamsEventDeps` 경유) — 같은 파이프라인 |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
 | Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`container.ts` 에서 `triggerRunnerDeps.run` 으로 바인딩) — image project 를 거절하지 않고 스트리밍하는 유일한 dispatch 다. firing 의 행은 텍스트를 담으므로, 그림을 그렸다는 사실을 기록한다 |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
 
 ```mermaid
 flowchart LR
-  subgraph surfaces["아홉 개의 진입점"]
+  subgraph surfaces["열 개의 진입점"]
     predict["predict"]
     cc["chat/completions"]
     agentsse["agent SSE"]
     chat["chat 메시지"]
     slack["Slack 이벤트"]
     telegram["Telegram 업데이트"]
+    teams["Teams activity"]
     a2a["A2A JSON-RPC"]
     webhook["webhook trigger"]
     schedule["schedule scan"]
@@ -336,6 +342,7 @@ flowchart LR
   chat --> facade
   slack --> facade
   telegram --> facade
+  teams --> facade
   a2a --> facade
   webhook --> facade
   schedule --> facade
@@ -528,7 +535,7 @@ project 는 자기가 갖고 있지도 않은 시스템 메시지 대신 style �
 ### EngineChunk 계약
 
 `EngineChunk`(`src/domain/llm/types.ts`)는 엔진과 모든 소비자(chat 영속화, Slack 과
-Telegram 이 공유하는 messaging 파이프라인, OpenAI 재구성, A2A, 브라우저 클라이언트) 사이의
+Telegram·Teams 가 공유하는 messaging 파이프라인, OpenAI 재구성, A2A, 브라우저 클라이언트) 사이의
 전송 단위다. top-level chunk 는 **`author` 를 갖지 않는다**. authored 인 것은 subagent
 chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. **`isTopLevelChunk()` 가
 단일 소유된 술어(predicate)이며**, 소비자는 author 의미를 다시 유도하지 말고 그것을 써야
@@ -536,12 +543,12 @@ chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. *
 
 | 필드 | 내보내는 곳 | 소비하는 곳 |
 |---|---|---|
-| `delta.content` / `delta.reasoningContent` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) | top-level 만: chat 영속화, chat 봇의 응답 sink(Slack, Telegram), OpenAI chunk, A2A artifact, 클라이언트 답변 말풍선 |
-| `delta.toolCalls` | 턴이 툴을 요청할 때 엔진이 (표시용 인자와 함께) | 클라이언트의 툴 호출 렌더링, chat 봇의 진행 표시(Slack 의 상태 줄이나 체크리스트, Telegram 의 입력 중 표시) |
+| `delta.content` / `delta.reasoningContent` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) | top-level 만: chat 영속화, chat 봇의 응답 sink(Slack, Telegram, Teams), OpenAI chunk, A2A artifact, 클라이언트 답변 말풍선 |
+| `delta.toolCalls` | 턴이 툴을 요청할 때 엔진이 (표시용 인자와 함께) | 클라이언트의 툴 호출 렌더링, chat 봇의 진행 표시(Slack 의 상태 줄이나 체크리스트, Telegram·Teams 의 입력 중 표시) |
 | `toolResult` | 각 툴이 끝난 뒤 엔진이 | chat 의 툴 행(화면에 표시되고, 최근 N 턴에 대해서는 컨텍스트로 리플레이된다), 클라이언트 툴 패널 |
-| `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram), `Trace.warnings`. 절대 스트림을 끝내지 않는다 |
-| `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(S3), chat 봇의 업로드(Slack, Telegram), OpenAI `images` 확장, 클라이언트 갤러리 |
-| `file` | 그림이 아닌 바이트를 반환한 툴 — 렌더링된 문서, 내보내기 파일 | `image` 의 열 개 소비자가 이것을 절대 보지 않도록 정확히 그 이유로 별도의 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다** — 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다 — `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 uri 로 주소가 매겨진 file part 를 발행하고, messaging 파이프라인은 Slack 이나 Telegram 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
+| `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram, Teams), `Trace.warnings`. 절대 스트림을 끝내지 않는다 |
+| `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(S3), chat 봇의 업로드(Slack, Telegram, Teams), OpenAI `images` 확장, 클라이언트 갤러리 |
+| `file` | 그림이 아닌 바이트를 반환한 툴 — 렌더링된 문서, 내보내기 파일 | `image` 의 열 개 소비자가 이것을 절대 보지 않도록 정확히 그 이유로 별도의 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다** — 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다 — `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 uri 로 주소가 매겨진 file part 를 발행하고, messaging 파이프라인은 Slack·Telegram·Teams 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
 | `usage` | 모델 호출마다 한 번씩 엔진이 | `collectRun` 의 응답 usage. DB 기록은 별개다(엔진 루프 안의 `recordUsage` / 애그리게이터) |
 | `error` | 실패 시 엔진이(스트림 도중 — 재시도 없음). transfer 가 실패하면 authored 로 나간다 | **top-level** 에러만 스트림을 끝낸다. authored 인 것은 거의 모든 소비자가 *버린다*(messaging 파이프라인과 trace recorder 는 예외) — 부모가 그것을 지나쳐 답하기 때문이다. 그래서 실패한 transfer 가 잃은 것은 이 필드가 아니라 그 transfer 의 `warning` 으로 독자에게, "For context" 턴으로 모델에게 닿는다 |
 | `done` | 루프가 툴 호출 없이 끝날 때 엔진이 — 턴 가드가 멈춘 경우는 **아니다** | 아래의 `chunkTermination` 을 통해 읽는다: OpenAI `finish_reason: "stop"`, 클라이언트의 마무리 |
@@ -577,7 +584,7 @@ flowchart LR
   a2aout["A2A 종단 상태<br/>warning 은 상태 메시지에 실려 간다"]
   predictout["predict 논스트리밍<br/>finishReason 필드"]
   chatui["chat — 메시지에 영속화되고,<br/>클라이언트에는 배너로"]
-  slackout["Slack, Telegram — 응답에 붙는 경고 꼬리말"]
+  slackout["Slack, Telegram, Teams — 응답에 붙는 경고 꼬리말"]
   console["playground — 경고 알림"]
   triggerrow["trigger 이력 행<br/>succeeded 상태 옆의 warning"]
 
@@ -629,6 +636,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 | [design/messaging.md](design/messaging.md) | 모든 chat-bot 표면이 공유하는 것 — 턴 파이프라인, 응답 포트, webhook 꼬리 — 과 각 플랫폼 고유의 결정이 시작되는 지점 |
 | [design/slack.md](design/slack.md) | 응답이 어떻게 전달되는지, 받은 메시지 중 어느 것이 봇을 향한 것인지, 런이 워크스페이스에서 무엇을 읽어도 되는지 |
 | [design/telegram.md](design/telegram.md) | 아무것도 스트리밍되지 않는 곳에서 제자리 편집되는 응답, 어느 업데이트가 봇을 향한 것인지, 그리고 후속 질문이 자기 맥락을 싣고 다니는 transcript |
+| [design/teams.md](design/teams.md) | Bot Framework 토큰이 인증의 전부인 이유, Markdown 을 네이티브로 그리는 편집 응답, 어느 activity 가 봇을 향한 것인지 |
 | [design/capabilities.md](design/capabilities.md) | 점진적 공개(progressive disclosure)로 제공되는 Skill, 런이 검색할 수 있는 전역 capability 카탈로그, 그리고 메모리가 어디 사는지 |
 | [design/triggers.md](design/triggers.md) | 하나의 webhook, 개수 제한 없는 schedule, 그리고 인스턴스가 붙든 채 죽은 firing 을 마감하는 스윕 |
 | [design/chat.md](design/chat.md) | 자기 연결보다 오래 사는 런, 리플레이 로그, 그리고 첨부가 턴에 닿는 방식 |
@@ -647,7 +655,7 @@ SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건
 /login                로그인 화면; 페이지 게이트가 로그아웃 방문자를 보내는 곳
 /projects             project 카탈로그 (카드)
 /projects/[name]      오케스트레이션 playground (프롬프트 편집기, 모델 선택, run/stream)
-/projects/[name]/versions | usage | traces | artifacts | api-reference | settings | compare
+/projects/[name]/versions | usage | traces | artifacts | api-reference | integrations | settings | compare
 /chats  /chats/[chatId]
 /artifacts            내 런이 만든 것; project 자체 탭이 나머지를 담는다
 /skills  /tools (MCP)  /agents  /plugins  (각각 + /[name] 상세 페이지)
