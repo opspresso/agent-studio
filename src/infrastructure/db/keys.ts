@@ -165,6 +165,29 @@ export const keys = {
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
   /**
+   * One Telegram update delivered to one project's bot. Qualified by project
+   * because an `update_id` is a counter per bot, not a global id: two bots
+   * receive the same numbers for different messages.
+   */
+  telegramUpdate: (projectName: string, updateId: number | string) => ({
+    PK: `TELEGRAMUPDATE#${projectName}#${updateId}`,
+    SK: "META",
+  }),
+
+  /**
+   * What a chat-bot surface remembers of one conversation, per project — a
+   * partition per conversation so the newest turns are one bounded query,
+   * newest first, and one turn per row so a long conversation never rewrites
+   * a growing item.
+   */
+  transcriptPartition: (projectName: string, conversationKey: string) =>
+    `TRANSCRIPT#${projectName}#${conversationKey}`,
+  transcriptTurn: (projectName: string, conversationKey: string, createdAt: string, seq: string) => ({
+    PK: `TRANSCRIPT#${projectName}#${conversationKey}`,
+    SK: `TURN#${createdAt}#${seq}`,
+  }),
+
+  /**
    * A channel thread this project's bot is engaged in. Point-read only — the
    * gate asks about one thread — so the whole address is the partition and
    * nothing ever queries across them.

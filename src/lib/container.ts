@@ -98,6 +98,7 @@ import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
 import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
 import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClientKeyRepository";
 import { createProjectSlackUseCases, resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
+import { createProjectTelegramUseCases } from "@/application/telegram/projectTelegram";
 import { createSlackWorkspaceReader } from "@/application/slack/workspaceRead";
 import type { SlackReaderPort } from "@/domain/slack/reader";
 import { setAuditSink } from "@/application/audit/recordAudit";
@@ -541,6 +542,22 @@ export const projectSlackUseCases = createProjectSlackUseCases({
   projects: projectRepository,
   cipher: secretCipher,
   authTest: slackAuthTest,
+});
+
+/**
+ * The project-Telegram surface, composed like the Slack one above. The three
+ * Bot API calls it makes are deferred for the same reason `slackAuthTest` is:
+ * a route that wanted a project should not load the Telegram client.
+ */
+export const projectTelegramUseCases = createProjectTelegramUseCases({
+  projects: projectRepository,
+  cipher: secretCipher,
+  getMe: async (botToken) =>
+    (await import("@/infrastructure/telegram/client")).telegramClient.getMe(botToken),
+  setWebhook: async (botToken, args) =>
+    (await import("@/infrastructure/telegram/client")).telegramClient.setWebhook(botToken, args),
+  deleteWebhook: async (botToken) =>
+    (await import("@/infrastructure/telegram/client")).telegramClient.deleteWebhook(botToken),
 });
 
 /**

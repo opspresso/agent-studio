@@ -213,6 +213,10 @@ interface Rule {
 const APP_WIRING_SITES = [
   "src/app/api/chats/_deps.ts",
   "src/app/api/slack/events/_lib/",
+  // The Telegram webhook's bag, mirroring the Slack one: the same bound run
+  // over the same repositories, plus the Bot API client and the transcript
+  // store the surface keeps its history in.
+  "src/app/api/telegram/webhook/_lib/",
   // Assembles the A2A SDK handler over `executionDeps` per request —
   // AGENTS.md's fourth wiring site (the composition root being the first).
   // Absent from this list it passed only because no banned name crossed it yet.
@@ -1727,15 +1731,16 @@ describe("what a run produced", () => {
  *
  * The same shape as the image list above, for the other half of the facade.
  * `executeAgent` is safe to call directly — it refuses a non-agent project
- * itself, which is the check `/agent` was the one caller to lack — so three
- * surfaces do: the `/agent` route, and the two `runAgent` bindings that let a
- * chat and a Slack thread inject the facade at their own wiring site.
+ * itself, which is the check `/agent` was the one caller to lack — so four
+ * surfaces do: the `/agent` route, and the three `runAgent` bindings that let a
+ * chat, a Slack thread and a Telegram chat inject the facade at their own
+ * wiring site.
  *
  * What that costs is that "how a run is entered" has more than one place, while
  * "which project type runs which way" has exactly one (`runStrategyFor`). A
  * policy that belongs at the entry — a per-surface input cap, a rate limit —
- * therefore has three homes and nothing saying where they are. This is that
- * statement, and it is why a fourth is added here on purpose.
+ * therefore has four homes and nothing saying where they are. This is that
+ * statement, and it is why a fifth is added here on purpose.
  *
  * Keyed on the import rather than on the text: `chat/deps.ts` and `slack/types.ts`
  * both name `executeAgent` in a doc comment describing what their injected
@@ -1754,6 +1759,8 @@ const AGENT_RUN_ENTRY_POINTS = [
   "src/app/api/chats/_deps.ts",
   // Binds `SlackEventDeps.runAgent`, the same way.
   "src/app/api/slack/events/_lib/handleEventRequest.ts",
+  // Binds `TelegramEventDeps.runAgent`, the same way.
+  "src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts",
 ];
 
 /**
