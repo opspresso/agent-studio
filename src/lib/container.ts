@@ -98,7 +98,10 @@ import { createApiTokenUseCases } from "@/application/project/apiTokenUseCases";
 import { createA2aClientKeyUseCases } from "@/application/a2a/clientKeyUseCases";
 import { a2aClientKeyRepository } from "@/infrastructure/db/repositories/a2aClientKeyRepository";
 import { createProjectSlackUseCases, resolveProjectSlackRuntime } from "@/application/slack/projectSlack";
-import { createProjectTelegramUseCases } from "@/application/telegram/projectTelegram";
+import {
+  createProjectTelegramUseCases,
+  revokeProjectTelegramWebhook,
+} from "@/application/telegram/projectTelegram";
 import { createSlackWorkspaceReader } from "@/application/slack/workspaceRead";
 import type { SlackReaderPort } from "@/domain/slack/reader";
 import { setAuditSink } from "@/application/audit/recordAudit";
@@ -368,7 +371,15 @@ export const pluginUseCases = createPluginUseCases(pluginRepository);
  * twenty of them imported `projectRepository` from here to hand it straight
  * back to a use case. Composed once now, like every other slice.
  */
-export const projectUseCases = createProjectUseCases(projectRepository);
+export const projectUseCases = createProjectUseCases(projectRepository, {
+  // The bot's webhook is retired before the row holding its token goes: an
+  // address that answers 404 forever is what a deleted project would otherwise
+  // leave Telegram delivering to.
+  beforeDelete: (project) =>
+    revokeProjectTelegramWebhook(secretCipher, project, async (botToken) =>
+      (await import("@/infrastructure/telegram/client")).telegramClient.deleteWebhook(botToken),
+    ),
+});
 // `getMemberTier` is the issuance gate's tier source: a token may only exist
 // for an owner whose tier allows one, and the same resolver answers the
 // authentication-time check in `executionAuth.ts`.

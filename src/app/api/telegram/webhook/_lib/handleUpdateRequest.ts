@@ -27,6 +27,7 @@ const telegramEventDeps: TelegramEventDeps = {
   // decision in the source rather than a field nobody thought about.
   ...(artifactStorage ? { signFile: artifactStorage.objects.sign } : {}),
   transcripts: transcriptRepository,
+  albums: (projectName, botId) => telegramUpdateRepository.forBot(projectName, botId).albums,
 };
 
 /** A payload larger than this is not an update; Telegram's own are a few KB. */
@@ -71,8 +72,9 @@ export async function handleTelegramUpdateRequest(
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const botId = botIdFromToken(binding.botToken);
   const disposition = classifyTelegramUpdate(update, {
-    ...(botIdFromToken(binding.botToken) !== undefined ? { botId: botIdFromToken(binding.botToken) } : {}),
+    ...(botId !== undefined ? { botId } : {}),
     ...(binding.botUsername ? { botUsername: binding.botUsername } : {}),
   });
   if (disposition.kind === "ignore") {
@@ -80,7 +82,10 @@ export async function handleTelegramUpdateRequest(
   }
 
   const admitted = await admitInboundEvent({
-    claims: telegramUpdateRepository.forProject(binding.projectName),
+    // Keyed by bot as well as project: an update id is a counter per bot, and
+    // a project that changes bots must not have the new bot's early updates
+    // refused as duplicates of the old bot's.
+    claims: telegramUpdateRepository.forBot(binding.projectName, botId ?? "unknown").updates,
     eventId: typeof update.update_id === "number" ? String(update.update_id) : undefined,
     scope: "telegram",
     logLabel: `project ${binding.projectName}`,

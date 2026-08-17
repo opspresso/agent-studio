@@ -606,7 +606,7 @@ export const en = {
   "pset.shortcutSends": "What clicking it sends",
   "pset.telegramBot": "Telegram bot",
   "pset.telegramIntro":
-    "Create a bot with @BotFather, paste its token here and save — the token is checked with Telegram and the bot's username is learned from it. Then register the webhook so Telegram delivers messages to this deployment. In a private chat the bot answers every message; in a group it answers when mentioned or replied to.",
+    "Create a bot with @BotFather, paste its token here and save — the token is checked with Telegram and the bot's username is learned from it. Enabling registers the webhook at this deployment and disabling removes it; Register webhook re-points it after a URL change. In a private chat the bot answers every message; in a group it answers when mentioned or replied to.",
   "pset.telegramEnable": "Enable message handling at this URL",
   "pset.telegramRegisterWebhook": "Register webhook",
   "pset.telegramWebhookRegistered": "Webhook registered at",

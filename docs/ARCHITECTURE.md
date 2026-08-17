@@ -212,8 +212,9 @@ flowchart TB
 | 런 동시성 슬롯 | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack 이벤트 중복 제거 | `SLACKEVENT#{eventId}` | `META` | — | — |
 | Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
-| Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 프로젝트마다다) | `TELEGRAMUPDATE#{projectName}#{updateId}` | `META` | — | — |
-| 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면 — Telegram) | `TRANSCRIPT#{projectName}#{conversationKey}` | `TURN#{createdAt ISO}#{seq}` | — | — |
+| Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 봇으로 한정한다) | `PROJECT#{name}` | `TELEGRAMUPDATE#{botId}#{updateId}` | — | — |
+| Telegram 앨범 claim (한 `media_group_id` 에 한 번 답한다) | `PROJECT#{name}` | `TELEGRAMALBUM#{botId}#{mediaGroupId}` | — | — |
+| 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면 — Telegram; project 파티션에 있어 cascade 가 지운다) | `PROJECT#{name}` | `TRANSCRIPT#{conversationKey}#TURN#{createdAt ISO}#{seq}` | — | — |
 | Artifact (런이 만들어 낸 것. GSI2 는 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, 희소) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A 태스크 (수신) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | 원격 대화 (송신 A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |

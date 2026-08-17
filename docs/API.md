@@ -707,9 +707,13 @@ POST   /api/projects/{name}/telegram/webhook
 다섯 모두 소유자와 설정된 admin 으로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
 Telegram(`getMe`)으로 확인하고, Telegram 이 거부하면 400 이다. 마스킹되거나 빈 토큰은 저장된
 것을 유지한다. webhook secret 은 첫 토큰과 함께 이 플랫폼이 발행하며 절대 돌려주지 않는다 —
-그것이 필요한 쪽은 Telegram 뿐이고, `POST …/telegram/webhook` 이 그것을 건네준다. 이 호출은 봇의
-webhook 을 이 배포의 URL 에 등록(또는 이동)하고 `{ ok: true, url }` 로 답한다. `DELETE` 는
-Telegram 에 webhook 을 없애라고 최선을 다해 알리고, 어느 쪽이든 인증 정보는 잊는다. Slack 처럼
+그것이 필요한 쪽은 Telegram 뿐이다. **webhook 은 `PUT` 이 스위치를 따라 관리한다**: `enabled`
+가 켜지면 이 배포의 URL 에 등록하고, 꺼지면 삭제하며, 토큰이 바뀌면 이전 봇의 webhook 을 물리고
+secret 을 새로 발행한 뒤 켜져 있으면 새 봇을 등록한다. 그 Telegram 호출이 실패하면 저장은 그대로
+되고 응답에 `warnings: string[]` 로 말한다. `POST …/telegram/webhook` 은 같은 등록을 명시적으로
+다시 하는 것이고(`PUBLIC_BASE_URL` 이 바뀐 뒤 옮길 때) `{ ok: true, url }` 로 답한다. `DELETE`
+는 Telegram 에 webhook 을 없애라고 최선을 다해 알리고, 어느 쪽이든 인증 정보는 잊는다. project
+를 지울 때도 행이 사라지기 전에 webhook 을 물린다. Slack 처럼
 agent 가 아닌 project 에 대한 `PUT` 은 400 이고, 저장되거나 전달된 토큰 없이 켜는 것도
 마찬가지다. `test` 는 `{ ok: true, botId, botUsername }` 을 돌려주고, Telegram 이 설정되지
 않았거나 꺼져 있으면 `400`, Bot API 실패면 `502` 다. `webhook` 도 같은 방식으로 답한다.

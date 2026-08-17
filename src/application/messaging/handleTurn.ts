@@ -134,26 +134,29 @@ export async function handleTurn(
   // (hung provider or tool) still ends and reports a timeout instead of
   // leaving the status up forever.
   const deadline = AbortSignal.timeout(INTERACTIVE_RUN_TIMEOUT_MS);
-  const attached = input.attachments;
-  const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
-  const readDocuments =
-    attached.length > 0 ? await collectDocuments(deps.documents, attached, warnings) : [];
-  // Assembled by the one function that owns a turn's body, so a chat bot and a
-  // chat put the same message in front of the model.
-  const userContent: string | ContentPart[] = turnContent(readDocuments, input.text, imageParts);
-  // Whatever budget the current message left goes to the newest history images,
-  // so "make the picture I sent blue" still has the picture.
-  const history = await withHistoryImages(
-    input.history,
-    MAX_IMAGE_ATTACHMENTS - imageParts.length,
-    warnings,
-  );
-  // A run can go minutes between chunks — a slow provider, a long tool — and a
-  // surface's status expires on its own clock. Refreshing on chunk arrival
-  // alone would go quiet exactly when the run is slowest, so this runs on its
-  // own clock.
+  // The heartbeat starts *before* the attachments are fetched, not before the
+  // run: a 10MB document, or the history's pictures re-downloaded, is a stretch
+  // of round trips during which nothing else says the bot is working — and on
+  // a surface whose status expires in seconds (Telegram's typing indicator),
+  // that stretch was a bot that received the file and did nothing.
   const stopStatusHeartbeat = reply.keepStatusAlive();
+  let userContent: string | ContentPart[] = "";
+  let history: ChatMessageInput[] = [];
   try {
+    const attached = input.attachments;
+    const imageParts = attached.length > 0 ? await collectImageParts(attached, warnings) : [];
+    const readDocuments =
+      attached.length > 0 ? await collectDocuments(deps.documents, attached, warnings) : [];
+    // Assembled by the one function that owns a turn's body, so a chat bot and a
+    // chat put the same message in front of the model.
+    userContent = turnContent(readDocuments, input.text, imageParts);
+    // Whatever budget the current message left goes to the newest history images,
+    // so "make the picture I sent blue" still has the picture.
+    history = await withHistoryImages(
+      input.history,
+      MAX_IMAGE_ATTACHMENTS - imageParts.length,
+      warnings,
+    );
     // Nothing survived to ask about. A file-only message whose every attachment
     // failed — a scanned PDF is the ordinary case — would otherwise dispatch a
     // user turn with empty content, which providers reject or answer with

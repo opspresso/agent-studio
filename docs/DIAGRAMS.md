@@ -215,9 +215,9 @@ flowchart LR
     slot["RUNSLOT#{actor} / SLOT#nnn"]
   end
   subgraph inbound["인바운드 표면"]
-    sev["SLACKEVENT#{eventId} · TELEGRAMUPDATE#{project}#{updateId}"]
+    sev["SLACKEVENT#{eventId}"]
     sthread["SLACKTHREAD#{project}#{channel}#{ts}"]
-    transcript["TRANSCRIPT#{project}#{conversation} / TURN#…"]
+    transcript["PROJECT 파티션 안: TELEGRAMUPDATE#… · TELEGRAMALBUM#… · TRANSCRIPT#{conversation}#TURN#…"]
     a2atask["A2ATASK#{project}#{taskId}"]
   end
 ```

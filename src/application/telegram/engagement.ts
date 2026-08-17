@@ -19,7 +19,8 @@ import type { TelegramMessage, TelegramUpdate } from "@/application/telegram/typ
  *    below can start a run and a run that answers itself never stops;
  * 3. a **command** this bot understands — answered without a run;
  * 4. a private chat — every message in one is for the bot;
- * 5. a group message that mentions the bot or replies to it — answered;
+ * 5. a group message that mentions the bot, addresses it by name in a command
+ *    it does not know (`/ask@this_bot …`), or replies to it — answered;
  * 6. otherwise nothing.
  *
  * Nothing here costs a read: a group has no engagement row, because a follow-up
@@ -73,7 +74,7 @@ export function messageTextOf(message: TelegramMessage): string {
 export function parseTelegramCommand(
   message: TelegramMessage,
   botUsername: string | undefined,
-): { command: TelegramCommand | "other"; forThisBot: boolean } | null {
+): { command: TelegramCommand | "other"; forThisBot: boolean; addressed: boolean } | null {
   const text = messageTextOf(message);
   const entities = message.entities ?? message.caption_entities ?? [];
   const leading = entities.find((entity) => entity.type === "bot_command" && entity.offset === 0);
@@ -82,22 +83,29 @@ export function parseTelegramCommand(
   }
   const raw = text.slice(1, leading.length);
   const [name = "", addressee] = raw.split("@");
-  const forThisBot =
-    addressee === undefined ||
-    (botUsername !== undefined && addressee.toLowerCase() === botUsername.toLowerCase());
+  // `/cmd@this_bot` names the bot as surely as a mention does.
+  const addressed =
+    addressee !== undefined &&
+    botUsername !== undefined &&
+    addressee.toLowerCase() === botUsername.toLowerCase();
   const command = name.toLowerCase();
   return {
     command: command === "start" || command === "help" ? command : "other",
-    forThisBot,
+    forThisBot: addressee === undefined || addressed,
+    addressed,
   };
 }
 
 /**
- * The text with this bot's own `@mention` removed, wherever it sits.
+ * The text with this bot's own `@mention` removed, wherever it sits — and
+ * nothing else touched: the rest of the message is what the person wrote, and
+ * a pasted code block or a list keeps its line breaks and indentation.
  *
  * Case-insensitive, because Telegram usernames are, and by the entity Telegram
  * marked rather than by string search: a `@name` inside a code span is not a
- * mention and Telegram does not mark it as one.
+ * mention and Telegram does not mark it as one. Only the mention span goes,
+ * plus the one space that separated it from what follows, so `hey @bot what`
+ * reads `hey what` rather than `hey  what`.
  */
 export function stripBotMention(message: TelegramMessage, botUsername: string | undefined): string {
   const text = messageTextOf(message);
@@ -116,9 +124,27 @@ export function stripBotMention(message: TelegramMessage, botUsername: string | 
     .sort((a, b) => b.offset - a.offset);
   let out = text;
   for (const mention of mentions) {
-    out = out.slice(0, mention.offset) + out.slice(mention.offset + mention.length);
+    let end = mention.offset + mention.length;
+    if (mention.offset > 0 && out[mention.offset - 1] === " " && out[end] === " ") {
+      end += 1;
+    }
+    out = out.slice(0, mention.offset) + out.slice(end);
   }
-  return out.replace(/\s+/g, " ").trim();
+  return out.trim();
+}
+
+/** Whether the message carries anything a run could read or, failing that, report. */
+export function hasAttachment(message: TelegramMessage): boolean {
+  return (
+    (message.photo?.length ?? 0) > 0 ||
+    message.document !== undefined ||
+    message.voice !== undefined ||
+    message.audio !== undefined ||
+    message.video !== undefined ||
+    message.animation !== undefined ||
+    message.video_note !== undefined ||
+    message.sticker !== undefined
+  );
 }
 
 function mentionsBot(message: TelegramMessage, identity: TelegramBotIdentity): boolean {
@@ -166,14 +192,15 @@ export function classifyTelegramUpdate(
     return { kind: "command", command: command.command, message };
   }
   const text = stripBotMention(message, identity.botUsername);
-  const hasAttachment = (message.photo?.length ?? 0) > 0 || message.document !== undefined;
-  if (!text && !hasAttachment) {
+  if (!text && !hasAttachment(message)) {
     return { kind: "ignore", because: "nothing to read" };
   }
   if (message.chat.type === "private") {
     return { kind: "run", trigger: "private", message, text };
   }
-  if (mentionsBot(message, identity)) {
+  // A mention, or a command this bot does not know but that was addressed to
+  // it by name — `/ask@painter_bot …` names the bot as surely as `@painter_bot`.
+  if (mentionsBot(message, identity) || command?.addressed) {
     return { kind: "run", trigger: "mention", message, text };
   }
   if (

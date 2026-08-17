@@ -414,7 +414,8 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | 컨텍스트로 리플레이되는 chat 도구 트래픽 | `3` 턴 / `20,000` 자 | `src/application/chat/messageMapping.ts` |
 | 인바운드 webhook / Slack 이벤트 / Telegram update 본문 | 각 `1MB` | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts`, `src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts` |
 | 컨텍스트로 쓰는 Slack 스레드 턴 수 | `50` | `src/application/slack/handleSlackEvent.ts` |
-| 컨텍스트로 쓰는 Telegram transcript 턴 수 / 한 턴에서 유지하는 문자 수 | `50` / `20,000` | `src/application/telegram/handleUpdate.ts` |
+| 컨텍스트로 쓰는 Telegram transcript 턴 수 / 합계 문자 수 / 한 턴에서 유지하는 문자 수 | `50` / `100,000` / `20,000` | `src/application/telegram/handleUpdate.ts` |
+| Telegram 앨범의 캡션 없는 멤버가 claim 전에 기다리는 시간 | `1s` | `src/application/telegram/handleUpdate.ts` |
 | Slack 스레드 제목 | `60` 자 | `src/application/slack/handleSlackEvent.ts` |
 | 모든 chat-bot 표면에서의 이력 이미지 되짚기 범위 | `10` 메시지 | `src/application/messaging/attachments.ts` |
 | 프로젝트당 Slack 추천 프롬프트 수 | `4` | `src/domain/slack/types.ts` |

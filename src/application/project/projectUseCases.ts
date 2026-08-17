@@ -190,13 +190,23 @@ export async function updateProject(
   return updated;
 }
 
+/**
+ * What has to happen outside the table before a project's rows go: today, the
+ * project's Telegram bot webhook, whose token is on the row about to be deleted.
+ * Injected by the composition root; the project slice does not know Telegram.
+ */
+export type BeforeProjectDelete = (project: Project) => Promise<void>;
+
 /** Delete a project. The repository cascades version and usage cleanup. */
 export async function deleteProject(
   repo: ProjectRepository,
   name: string,
   userEmail: string,
+  beforeDelete?: BeforeProjectDelete,
 ): Promise<void> {
   const project = await assertProjectWritable(repo, name, userEmail);
+  // Before the row goes, while what it holds can still be acted on.
+  await beforeDelete?.(project);
   await repo.delete(name);
   // After the delete, and the one record that survives it: the cascade takes
   // every row that could otherwise have said who the project belonged to.
@@ -237,13 +247,16 @@ export interface ProjectUseCases {
   remove(name: string, userEmail: string): Promise<void>;
 }
 
-export function createProjectUseCases(projects: ProjectRepository): ProjectUseCases {
+export function createProjectUseCases(
+  projects: ProjectRepository,
+  hooks: { beforeDelete?: BeforeProjectDelete } = {},
+): ProjectUseCases {
   return {
     list: () => listProjects(projects),
     get: (name) => getProject(projects, name),
     assertWritable: (name, userEmail) => assertProjectWritable(projects, name, userEmail),
     create: (input) => createProject(projects, input),
     update: (name, input, userEmail) => updateProject(projects, name, input, userEmail),
-    remove: (name, userEmail) => deleteProject(projects, name, userEmail),
+    remove: (name, userEmail) => deleteProject(projects, name, userEmail, hooks.beforeDelete),
   };
 }

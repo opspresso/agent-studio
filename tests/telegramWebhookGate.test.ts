@@ -24,7 +24,9 @@ vi.mock("@/infrastructure/telegram/client", () => ({ telegramClient: {} }));
 vi.mock("@/infrastructure/llm/documentExtractor", () => ({ documentExtractor: {} }));
 vi.mock("@/application/execution/runProject", () => ({ executeAgent: () => {} }));
 vi.mock("@/infrastructure/db/repositories/telegramUpdateRepository", () => ({
-  telegramUpdateRepository: { forProject: () => ({ claim, settle }) },
+  telegramUpdateRepository: {
+    forBot: () => ({ updates: { claim, settle }, albums: { claim, settle } }),
+  },
 }));
 vi.mock("@/infrastructure/db/repositories/transcriptRepository", () => ({
   transcriptRepository: {},

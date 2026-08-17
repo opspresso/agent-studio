@@ -165,26 +165,34 @@ export const keys = {
   slackEvent: (eventId: string) => ({ PK: `SLACKEVENT#${eventId}`, SK: "META" }),
 
   /**
-   * One Telegram update delivered to one project's bot. Qualified by project
-   * because an `update_id` is a counter per bot, not a global id: two bots
-   * receive the same numbers for different messages.
+   * One Telegram update delivered to one project's bot, and one album (a
+   * `media_group_id`) the bot answers once. In the project partition so the
+   * cascade delete takes them; qualified by bot because an `update_id` is a
+   * counter per bot, and a project may change bots.
    */
-  telegramUpdate: (projectName: string, updateId: number | string) => ({
-    PK: `TELEGRAMUPDATE#${projectName}#${updateId}`,
-    SK: "META",
+  telegramUpdate: (projectName: string, botId: number | string, updateId: number | string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `TELEGRAMUPDATE#${botId}#${updateId}`,
+  }),
+  telegramAlbum: (projectName: string, botId: number | string, mediaGroupId: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `TELEGRAMALBUM#${botId}#${mediaGroupId}`,
   }),
 
   /**
-   * What a chat-bot surface remembers of one conversation, per project — a
-   * partition per conversation so the newest turns are one bounded query,
-   * newest first, and one turn per row so a long conversation never rewrites
-   * a growing item.
+   * What a chat-bot surface remembers of one conversation. In the project
+   * partition so the cascade delete takes it — a deleted project must not
+   * leave a week of somebody's messages behind — and one turn per row so a
+   * long conversation never rewrites a growing item; the newest turns are one
+   * bounded query on the sort-key prefix, newest first.
    */
-  transcriptPartition: (projectName: string, conversationKey: string) =>
-    `TRANSCRIPT#${projectName}#${conversationKey}`,
+  transcriptTurnPrefix: (projectName: string, conversationKey: string) => ({
+    PK: `PROJECT#${projectName}`,
+    prefix: `TRANSCRIPT#${conversationKey}#TURN#`,
+  }),
   transcriptTurn: (projectName: string, conversationKey: string, createdAt: string, seq: string) => ({
-    PK: `TRANSCRIPT#${projectName}#${conversationKey}`,
-    SK: `TURN#${createdAt}#${seq}`,
+    PK: `PROJECT#${projectName}`,
+    SK: `TRANSCRIPT#${conversationKey}#TURN#${createdAt}#${seq}`,
   }),
 
   /**
