@@ -16,6 +16,7 @@ function ctx(overrides: Partial<ApiReferenceContext> = {}): ApiReferenceContext 
     origin: ORIGIN,
     a2a: null,
     slack: null,
+    telegram: null,
     webhook: null,
     ...overrides,
   };
@@ -178,6 +179,14 @@ describe("buildApiReference — Slack endpoint", () => {
   });
 });
 
+describe("buildApiReference — Telegram endpoint", () => {
+  it("shows the Telegram webhook only when configured (owner view)", () => {
+    expect(ids({ telegram: { configured: true } })).toContain("telegram-webhook");
+    expect(ids({ telegram: { configured: false } })).not.toContain("telegram-webhook");
+    expect(ids({ telegram: null })).not.toContain("telegram-webhook");
+  });
+});
+
 describe("buildApiReference — no real secrets leak into examples", () => {
   // Every string a viewer can copy, across the richest possible context.
   function allStrings(): string[] {
@@ -215,6 +224,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
       ctx({
         a2a: { enabled: true, published: true },
         slack: { configured: true },
+        telegram: { configured: true },
         webhook: { enabled: true },
       }),
     );
@@ -226,6 +236,7 @@ describe("buildApiReference — no real secrets leak into examples", () => {
     expect(codeOf(byId("chat-completions"), "javascript")).toContain(PLACEHOLDERS.token);
     expect(codeOf(byId("a2a-rpc"), "bash")).toContain(PLACEHOLDERS.a2aKey);
     expect(codeOf(byId("slack-events"), "bash")).toContain(PLACEHOLDERS.slackSignature);
+    expect(codeOf(byId("telegram-webhook"), "bash")).toContain(PLACEHOLDERS.telegramSecret);
     expect(codeOf(byId("webhook"), "bash")).toContain(PLACEHOLDERS.webhookSecret);
     // The public Agent Card carries no credential.
     expect(codeOf(byId("a2a-card"), "bash")).not.toContain(PLACEHOLDERS.token);

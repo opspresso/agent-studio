@@ -9,13 +9,20 @@ import { projectWebhookPath } from "@/domain/trigger/types";
  * session cookie, A2A key, or Slack secret.
  */
 
-export type AuthKind = "token" | "a2a-key" | "trigger-secret" | "slack-signature" | "public";
+export type AuthKind =
+  | "token"
+  | "a2a-key"
+  | "trigger-secret"
+  | "slack-signature"
+  | "telegram-secret"
+  | "public";
 
 export const AUTH_LABEL: Record<AuthKind, string> = {
   token: "Bearer token",
   "a2a-key": "X-A2A-Key header",
   "trigger-secret": "X-Trigger-Secret header",
   "slack-signature": "Slack signature",
+  "telegram-secret": "Telegram secret token",
   public: "Public",
 };
 
@@ -26,6 +33,7 @@ export const PLACEHOLDERS = {
   webhookSecret: "$WEBHOOK_SECRET",
   slackSignature: "$SLACK_SIGNATURE",
   slackTimestamp: "$SLACK_TIMESTAMP",
+  telegramSecret: "$TELEGRAM_WEBHOOK_SECRET",
 } as const;
 
 /**
@@ -88,6 +96,8 @@ export interface ApiReferenceContext {
   webhook: { enabled: boolean } | null;
   /** Slack integration status (owner or admin), or null when not visible to the viewer. */
   slack: { configured: boolean } | null;
+  /** Telegram integration status (owner or admin), or null when not visible to the viewer. */
+  telegram: { configured: boolean } | null;
 }
 
 function pretty(value: unknown): string {
@@ -120,6 +130,9 @@ function curlExample(opts: {
     case "slack-signature":
       lines.push(`  -H 'X-Slack-Signature: ${PLACEHOLDERS.slackSignature}'`);
       lines.push(`  -H 'X-Slack-Request-Timestamp: ${PLACEHOLDERS.slackTimestamp}'`);
+      break;
+    case "telegram-secret":
+      lines.push(`  -H 'X-Telegram-Bot-Api-Secret-Token: ${PLACEHOLDERS.telegramSecret}'`);
       break;
     case "public":
       break;
@@ -215,7 +228,7 @@ const USAGE_FIELDS: FieldSpec[] = [
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
-  const { projectName, projectType, publishedVersion, origin, a2a, slack, webhook } = ctx;
+  const { projectName, projectType, publishedVersion, origin, a2a, slack, telegram, webhook } = ctx;
   const abs = (path: string): string => `${origin}${path}`;
   const endpoints: ApiEndpoint[] = [];
 
@@ -543,6 +556,33 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           url: abs(eventsPath),
           auth: "slack-signature",
           body: { type: "event_callback", event: { type: "app_mention", text: "<@bot> hi" } },
+        }),
+      ],
+    });
+  }
+
+  // The Telegram webhook is shown to the owner once a bot is configured.
+  if (telegram && telegram.configured) {
+    const webhookPath = `/api/telegram/webhook/${projectName}`;
+    endpoints.push({
+      id: "telegram-webhook",
+      method: "POST",
+      path: webhookPath,
+      title: "Telegram webhook",
+      description:
+        "Telegram delivers message updates here once the webhook is registered from the settings page. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. A private-chat message always starts a run; in a group only a message that mentions the bot or replies to one of its messages does, and /start and /help are answered without one.",
+      auth: "telegram-secret",
+      streaming: false,
+      errorCodes: [401],
+      codeExamples: [
+        curlExample({
+          method: "POST",
+          url: abs(webhookPath),
+          auth: "telegram-secret",
+          body: {
+            update_id: 1,
+            message: { message_id: 1, chat: { id: 1, type: "private" }, from: { id: 1 }, text: "hi" },
+          },
         }),
       ],
     });
