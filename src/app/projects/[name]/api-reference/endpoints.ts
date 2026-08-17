@@ -28,6 +28,17 @@ export const PLACEHOLDERS = {
   slackTimestamp: "$SLACK_TIMESTAMP",
 } as const;
 
+/**
+ * The optional conversation header the three execution endpoints read, shown
+ * on an agent project's examples: that is where a conversation reaches
+ * something — an A2A transfer, an MCP server — where a prompt project's run
+ * has nothing to continue. The value is the caller's own; the placeholder is
+ * not a credential.
+ */
+const CONVERSATION_HEADER = { "X-Conversation-Id": "$CONVERSATION_ID" } as const;
+const CONVERSATION_NOTE =
+  " Send the same X-Conversation-Id on the follow-up questions of one conversation: the run then carries it — an A2A subagent it transfers to continues the remote conversation the first question opened, and every MCP server it calls is told which conversation is asking. Optional; without it each request is its own conversation.";
+
 /** A request/response field row. `type` is a display string, not a real TS type. */
 export interface FieldSpec {
   name: string;
@@ -248,7 +259,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         title: "Predict",
         description:
           projectType === "agent"
-            ? 'Runs the published version — for an agent project that is the multi-turn tool loop, with its skills, MCP servers and subagents. Set "stream": true for an SSE response.'
+            ? 'Runs the published version — for an agent project that is the multi-turn tool loop, with its skills, MCP servers and subagents. Set "stream": true for an SSE response.' +
+              CONVERSATION_NOTE
             : 'Single-shot run against the published version. Set "stream": true for an SSE response.',
         auth: "token",
         streaming: false,
@@ -296,7 +308,13 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
         }),
         errorCodes: [400, 401, 404],
         codeExamples: [
-          curlExample({ method: "POST", url: abs(predictPath), auth: "token", body: predictBody }),
+          curlExample({
+            method: "POST",
+            url: abs(predictPath),
+            auth: "token",
+            body: predictBody,
+            ...(projectType === "agent" ? { extraHeaders: CONVERSATION_HEADER } : {}),
+          }),
         ],
       });
 
@@ -311,7 +329,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           (projectType === "agent"
             ? "OpenAI-compatible endpoint; agent projects run the multi-turn tool loop. "
             : "OpenAI-compatible completion. ") +
-          'temperature/max_tokens are accepted but ignored — sampling comes from the version. The same endpoint streams when "stream": true (chat.completion.chunk SSE).',
+          'temperature/max_tokens are accepted but ignored — sampling comes from the version. The same endpoint streams when "stream": true (chat.completion.chunk SSE).' +
+          (projectType === "agent" ? CONVERSATION_NOTE : ""),
         auth: "token",
         streaming: false,
         requestFields: [
@@ -361,6 +380,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
             url: abs(ccPath),
             auth: "token",
             body: { messages: ccMessages, stream: false },
+            ...(projectType === "agent" ? { extraHeaders: CONVERSATION_HEADER } : {}),
           }),
           pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages }),
           pythonSdkExample({ baseUrl: abs(versionBase), messages: ccMessages, stream: true }),
@@ -378,7 +398,8 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           path: agentPath,
           title: "Agent stream",
           description:
-            "SSE stream of EngineChunk frames (delta.content, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE].",
+            "SSE stream of EngineChunk frames (delta.content, toolResult, warning, author for subagent turns, error, and a terminal done: true or finishReason naming why the run ended), terminated by data: [DONE]." +
+            CONVERSATION_NOTE,
           auth: "token",
           streaming: true,
           requestFields: [
@@ -392,6 +413,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
               auth: "token",
               body: agentBody,
               streaming: true,
+              extraHeaders: CONVERSATION_HEADER,
             }),
           ],
         });

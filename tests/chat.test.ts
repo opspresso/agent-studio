@@ -5,7 +5,7 @@ import type { ChatRepository } from "@/domain/chat/repository";
 import type { ChatRunLogRepository, RunLogEntry } from "@/domain/chat/runLog";
 import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
 import type { EngineChunk } from "@/domain/llm/types";
-import type { ChatDeps } from "@/application/chat/deps";
+import type { AgentRunner, ChatDeps } from "@/application/chat/deps";
 import { titleFromMessage } from "@/application/chat/title";
 import { toEngineMessages } from "@/application/chat/messageMapping";
 import { runAndPersist, userTurnContent, withLeadingWarnings } from "@/application/chat/run";
@@ -994,6 +994,25 @@ describe("chat image attachments", () => {
     expect(JSON.stringify(seenMessages)).toContain(
       `https://signed.example/images/x.png?ttl=${REPLAY_URL_TTL_SECONDS}`,
     );
+  });
+
+  it("names the chat as the run's conversation, on the first message and every later one", async () => {
+    const seen: string[] = [];
+    const runAgent = (params: Parameters<AgentRunner>[0]) => {
+      seen.push(`${params.conversation.surface}:${params.conversation.id}`);
+      return emptyAgent();
+    };
+    const { repo } = makeChatRepo(chatFixture("owner@x.com"));
+    const deps = makeDeps(repo, { projects: agentProjects, versions: publishedVersions, runAgent });
+    const { stream } = await sendMessage(deps, {
+      chatId: "c1",
+      content: "and now?",
+      userEmail: "owner@x.com",
+    });
+    for await (const _ of stream) {
+      // drain
+    }
+    expect(seen).toEqual(["chat:c1"]);
   });
 
   it("sends the attachment bytes to the engine and persists the uploaded key", async () => {

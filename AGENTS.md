@@ -181,7 +181,7 @@ because the engine's builtins are added after the MCP tools are cut and need the
 | The name a provider will accept for an MCP tool | `src/infrastructure/mcp/toolManager.ts` |
 | Reaching `undici` directly | `src/infrastructure/net/publicFetch.ts` — a `dispatcher` is a private contract between a fetch and its `Agent`, and the runtime ships its own undici behind the global `fetch`; mixing the two cost every outbound request a bare `TypeError: fetch failed` |
 | The header that names the calling project to an MCP server | `TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts` |
-| The header that names the run's conversation to an MCP server | `CONVERSATION_ID_HEADER` in `src/application/execution/mcpTools.ts` — the API layer reads the same spelling *inbound* in `src/app/api/projects/_lib/conversation.ts`, and that file alone |
+| The header that names the run's conversation to an MCP server | `CONVERSATION_ID_HEADER` in `src/application/execution/mcpTools.ts` — the API layer reads the same spelling *inbound* in `src/app/api/projects/_lib/conversation.ts`, and the API Reference tab (`endpoints.ts`) shows it to a caller; those two files alone |
 | How a run's conversation is built and keyed | `conversationOf` / `conversationKey` in `src/domain/execution/actor.ts`; each surface's spelling is its own builder (`chatConversation`, `slackConversation`, `a2aConversation`, `requestConversation`), and every one goes through these two |
 | How many agents one dispatch may run | `src/application/llm/agentAssembly.ts` |
 | How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/agentAssembly.ts` |

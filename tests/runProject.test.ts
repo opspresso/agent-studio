@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sendA2aMessageMock } = vi.hoisted(() => ({
   sendA2aMessageMock: vi.fn(),
@@ -1819,6 +1819,93 @@ describe("executeAgent remote A2A image subagent", () => {
       },
     });
     expect(chunks.some((chunk) => chunk.error)).toBe(false);
+  });
+});
+
+describe("executeAgent remote A2A conversation continuity", () => {
+  beforeEach(() => sendA2aMessageMock.mockReset());
+  function painterDeps(channel: FakeChannel, rows: Map<string, string>) {
+    const { deps } = executionDepsFixture(channel);
+    deps.externalAgents.get = (async (name: string) =>
+      name === "painter-a2a"
+        ? {
+            name,
+            url: "https://agents.example.com/painter",
+            protocol: "a2a",
+            description: "Generates images",
+            headers: {},
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }
+        : null) as ExecutionDeps["externalAgents"]["get"];
+    deps.remoteConversations = {
+      get: async (project, agent, key) => rows.get(`${project}|${agent}|${key}`) ?? null,
+      put: async (project, agent, key, contextId) => {
+        rows.set(`${project}|${agent}|${key}`, contextId);
+      },
+      forget: async (project, agent, key) => {
+        rows.delete(`${project}|${agent}|${key}`);
+      },
+    };
+    return deps;
+  }
+  const transferTurn = () => [
+    [
+      toolCallChunk(0, "call_t", "transfer_to_agent", '{"agent_name":"painter-a2a","message":"draw a cat"}'),
+      usageChunk(1, 1),
+    ],
+    [contentChunk("Done."), usageChunk(1, 1)],
+  ];
+
+  it("sends the remote contextId back on the next run from the same conversation, through the real dispatcher", async () => {
+    // The whole path a run takes: executeAgent → the subagent runner → the
+    // remote transfer → `remoteAgentDispatcher` → the A2A client. A wrapper
+    // dropping the option anywhere along it would pass every unit test and
+    // still send every question cold.
+    const rows = new Map<string, string>();
+    const conversation = { surface: "slack" as const, id: "C1:1723.45" };
+    sendA2aMessageMock
+      .mockResolvedValueOnce({ ok: true, text: "a cat", images: [], contextId: "remote-ctx" })
+      .mockResolvedValueOnce({ ok: true, text: "a cat again", images: [], contextId: "remote-ctx" });
+
+    await collect(
+      executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
+        project: projectFixture(),
+        version: { ...versionFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
+        messages: [{ role: "user", content: "고양이를 그려줘" }],
+        conversation,
+      }),
+    );
+    await collect(
+      executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
+        project: projectFixture(),
+        version: { ...versionFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
+        messages: [{ role: "user", content: "한 마리 더" }],
+        conversation,
+      }),
+    );
+
+    // First from this conversation: cold, four arguments exactly as before.
+    expect(sendA2aMessageMock.mock.calls[0]).toHaveLength(4);
+    // Second: the contextId the first reply named, keyed by project × agent × conversation.
+    expect(sendA2aMessageMock.mock.calls[1]?.[4]).toEqual({ contextId: "remote-ctx" });
+    expect(rows.get(`${projectFixture().name}|painter-a2a|slack:C1:1723.45`)).toBe("remote-ctx");
+  });
+
+  it("transfers cold, and remembers nothing, for a run with no conversation", async () => {
+    const rows = new Map<string, string>();
+    sendA2aMessageMock.mockResolvedValueOnce({ ok: true, text: "a cat", images: [], contextId: "remote-ctx" });
+
+    await collect(
+      executeAgent(painterDeps(new FakeChannel(transferTurn()), rows), {
+        project: projectFixture(),
+        version: { ...versionFixture({ piiFiltering: false }), subagentList: [{ name: "painter-a2a", type: "remote" }] },
+        messages: [{ role: "user", content: "고양이를 그려줘" }],
+      }),
+    );
+
+    expect(sendA2aMessageMock.mock.calls[0]).toHaveLength(4);
+    expect(rows.size).toBe(0);
   });
 });
 
