@@ -1,0 +1,339 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { classifyTelegramUpdate } from "@/application/telegram/engagement";
+import { handleTelegramUpdate } from "@/application/telegram/handleUpdate";
+import type { TelegramEventDeps, TelegramMessage, TelegramUpdate } from "@/application/telegram/types";
+import type { TelegramClientPort } from "@/domain/telegram/client";
+import type { TranscriptTurn } from "@/domain/messaging/transcript";
+import { messageText } from "@/domain/llm/types";
+import type { ChatMessageInput, EngineChunk } from "@/domain/llm/types";
+import type { ExecuteAgentInput } from "@/application/execution/deps";
+import type { Project, Version } from "@/domain/project/types";
+import type { ProjectRepository, VersionRepository } from "@/domain/project/repository";
+
+const NOW = 1_750_000_000_000;
+
+function projectFixture(): Project {
+  return {
+    name: "painter",
+    displayName: "Painter",
+    description: "a bot that paints",
+    projectType: "agent",
+    ownerEmail: "owner@x.com",
+    publishedVersion: "1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function versionFixture(callerContext = false): Version {
+  return {
+    projectName: "painter",
+    versionName: "1",
+    systemPrompt: "",
+    userPromptTemplate: "",
+    model: "openai/gpt-5-mini",
+    parameters: { piiFiltering: false, ...(callerContext ? { callerContext: true } : {}) },
+    mcpList: [],
+    skillList: [],
+    subagentList: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function makeTelegramFake() {
+  const sent: Array<{ chatId: number; text: string; replyTo?: number; threadId?: number }> = [];
+  const edits: Array<{ messageId: number; text: string }> = [];
+  const actions: string[] = [];
+  const downloads: string[] = [];
+  const photos: string[] = [];
+  let nextId = 1;
+  const telegram: TelegramClientPort = {
+    async getMe() {
+      return { id: 42, username: "painter_bot" };
+    },
+    async setWebhook() {},
+    async deleteWebhook() {},
+    async sendMessage(_token, args) {
+      const id = nextId++;
+      sent.push({
+        chatId: args.chatId,
+        text: args.text,
+        ...(args.replyToMessageId !== undefined ? { replyTo: args.replyToMessageId } : {}),
+        ...(args.threadId !== undefined ? { threadId: args.threadId } : {}),
+      });
+      return { messageId: id };
+    },
+    async editMessageText(_token, args) {
+      edits.push({ messageId: args.messageId, text: args.text });
+    },
+    async sendChatAction(_token, args) {
+      actions.push(args.action);
+    },
+    async sendPhoto(_token, args) {
+      photos.push(args.filename);
+    },
+    async downloadFile(_token, fileId) {
+      downloads.push(fileId);
+      return Buffer.from("png-bytes");
+    },
+  };
+  const finalText = () => edits.at(-1)?.text ?? sent.at(-1)?.text ?? "";
+  return { telegram, sent, edits, actions, downloads, photos, finalText };
+}
+
+function makeDeps(chunks: EngineChunk[], telegram: TelegramClientPort, options: { callerContext?: boolean } = {}) {
+  const runs: ExecuteAgentInput[] = [];
+  const remembered: Array<{ key: string; turn: TranscriptTurn }> = [];
+  const stored: TranscriptTurn[] = [];
+  const deps: TelegramEventDeps = {
+    runAgent: async function* (input) {
+      runs.push(input);
+      for (const chunk of chunks) {
+        yield chunk;
+      }
+    },
+    projects: { get: async () => projectFixture() } as unknown as ProjectRepository,
+    versions: {
+      get: async (_project: string, name: string) =>
+        name === projectFixture().publishedVersion ? versionFixture(options.callerContext) : null,
+      list: async () => [],
+    } as unknown as VersionRepository,
+    documents: {
+      extract: async ({ bytes }) => ({ text: Buffer.from(bytes).toString("utf-8") }),
+    },
+    telegram,
+    transcripts: {
+      recent: async () => stored,
+      append: async (_project, key, turn) => {
+        remembered.push({ key, turn });
+      },
+    },
+  };
+  return { deps, runs, remembered, stored };
+}
+
+function message(overrides: Partial<TelegramMessage> = {}): TelegramMessage {
+  return {
+    message_id: 7,
+    date: 0,
+    from: { id: 1, first_name: "Bruce", last_name: "Lee" },
+    chat: { id: 100, type: "private" },
+    text: "hello",
+    ...overrides,
+  };
+}
+
+const BOT = { botId: 42, botUsername: "painter_bot" };
+const BINDING = { projectName: "painter", botToken: "42:tok", botUsername: "painter_bot" };
+
+function dispositionOf(update: TelegramUpdate) {
+  const disposition = classifyTelegramUpdate(update, BOT);
+  if (disposition.kind === "ignore") {
+    throw new Error(`test update was ignored: ${disposition.because}`);
+  }
+  return disposition;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("handleTelegramUpdate", () => {
+  it("runs the bound project with the Telegram user as the actor and the chat as the conversation", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, finalText, sent } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "hi there" } }, { done: true }], telegram);
+
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.actor).toEqual({ kind: "telegram", id: "1" });
+    expect(runs[0]?.conversation).toEqual({ surface: "telegram", id: "100" });
+    expect(runs[0]?.caller).toBeUndefined();
+    const last = runs[0]?.messages.at(-1);
+    expect(last && messageText(last)).toBe("hello");
+    expect(finalText()).toBe("hi there");
+    expect(sent[0]?.replyTo).toBe(7);
+  });
+
+  it("names a forum topic in the conversation and answers in it", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, sent } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "ok" } }, { done: true }], telegram);
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          chat: { id: -5, type: "supergroup", is_forum: true },
+          message_thread_id: 9,
+          text: "@painter_bot hi",
+          entities: [{ type: "mention", offset: 0, length: 12 }],
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(runs[0]?.conversation).toEqual({ surface: "telegram", id: "-5:9" });
+    expect(sent[0]?.threadId).toBe(9);
+    const last = runs[0]?.messages.at(-1);
+    expect(last && messageText(last)).toBe("hi");
+  });
+
+  it("answers /start and /help without a run", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, sent } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ done: true }], telegram);
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({ text: "/start", entities: [{ type: "bot_command", offset: 0, length: 6 }] }),
+      }),
+      BINDING,
+    );
+
+    expect(runs).toEqual([]);
+    expect(sent[0]?.text).toContain("I am Painter");
+    expect(sent[0]?.text).toContain("/help");
+  });
+
+  it("replies with guidance when the project is not a runnable agent", async () => {
+    const { telegram, sent } = makeTelegramFake();
+    const { deps } = makeDeps([], telegram);
+    deps.projects = { get: async () => null } as unknown as ProjectRepository;
+
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
+
+    expect(sent[0]?.text).toContain("Agent project not available");
+  });
+
+  it("carries the remembered conversation as history and writes both new turns down after", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram } = makeTelegramFake();
+    const { deps, runs, remembered, stored } = makeDeps([{ delta: { content: "blue" } }, { done: true }], telegram);
+    stored.push(
+      { role: "user", content: "what colour?", userId: "1", createdAt: "2026-01-01T00:00:00.000Z" },
+      { role: "assistant", content: "which thing?", createdAt: "2026-01-01T00:00:01.000Z" },
+    );
+
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message({ text: "the sky" }) }), BINDING);
+
+    expect(runs[0]?.messages.map((turn: ChatMessageInput) => messageText(turn))).toEqual([
+      "what colour?",
+      "which thing?",
+      "the sky",
+    ]);
+    expect(remembered.map((entry) => [entry.key, entry.turn.role, entry.turn.content])).toEqual([
+      ["telegram:100", "user", "the sky"],
+      ["telegram:100", "assistant", "blue"],
+    ]);
+    // Names are not written down when the version never asked to know them.
+    expect(remembered[0]?.turn.speaker).toBeUndefined();
+  });
+
+  it("still answers, and says so, when the history cannot be read", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { telegram, finalText } = makeTelegramFake();
+    const { deps } = makeDeps([{ delta: { content: "ok" } }, { done: true }], telegram);
+    deps.transcripts = {
+      recent: async () => {
+        throw new Error("table gone");
+      },
+      append: async () => {},
+    };
+
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
+
+    expect(finalText()).toContain("ok");
+    expect(finalText()).toContain("Conversation history unavailable");
+  });
+
+  it("names the caller and labels speakers only when the version asked, and only past one human", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram } = makeTelegramFake();
+    const { deps, runs, remembered, stored } = makeDeps([{ done: true }], telegram, { callerContext: true });
+    stored.push({ role: "user", content: "earlier", userId: "2", speaker: "Ann", createdAt: "2026-01-01T00:00:00.000Z" });
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          chat: { id: -1, type: "group" },
+          text: "@painter_bot now",
+          entities: [{ type: "mention", offset: 0, length: 12 }],
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(runs[0]?.caller).toEqual({ displayName: "Bruce Lee" });
+    expect(runs[0]?.messages.map((turn: ChatMessageInput) => messageText(turn))).toEqual(["Ann: earlier", "Bruce Lee: now"]);
+    // The turn is written down unlabelled — the label is applied when read —
+    // and with its speaker, since the version asked to know.
+    expect(remembered[0]?.turn).toMatchObject({ content: "now", speaker: "Bruce Lee", userId: "1" });
+  });
+
+  it("downloads the largest photo that fits and hands it to the run as an image", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, downloads } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ done: true }], telegram);
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          text: undefined,
+          caption: "what is this?",
+          photo: [
+            { file_id: "small", file_unique_id: "s", width: 90, height: 90, file_size: 1000 },
+            { file_id: "big", file_unique_id: "b", width: 800, height: 800, file_size: 90_000 },
+            { file_id: "huge", file_unique_id: "h", width: 4000, height: 4000, file_size: 9_000_000 },
+          ],
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(downloads).toEqual(["big"]);
+    const last = runs[0]?.messages.at(-1)?.content;
+    expect(Array.isArray(last) && last.some((part) => part.type === "image_url")).toBe(true);
+    expect(last && messageText({ content: last })).toContain("what is this?");
+  });
+
+  it("reads an attached document into the turn as text", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, downloads } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ done: true }], telegram);
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          text: undefined,
+          caption: "summarise",
+          document: { file_id: "doc", file_unique_id: "d", file_name: "notes.txt", mime_type: "text/plain", file_size: 9 },
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(downloads).toEqual(["doc"]);
+    const last = runs[0]?.messages.at(-1);
+    expect(last && messageText(last)).toContain("png-bytes");
+    expect(last && messageText(last)).toContain("summarise");
+  });
+});

@@ -110,6 +110,18 @@ export const SLACK_ENGAGEMENT_TTL_SECONDS = SECONDS_PER_DAY;
  */
 export const REMOTE_CONVERSATION_TTL_SECONDS = 7 * SECONDS_PER_DAY;
 
+/**
+ * How long a conversation transcript's turns are kept, for a surface whose
+ * platform hands back no history (Telegram).
+ *
+ * The same week as the remote-conversation hint above, for the same reason: a
+ * Telegram chat is picked back up days later, and past a week a follow-up that
+ * has lost its context costs one restatement of the question, not a wrong
+ * answer. Per turn rather than per conversation, so a live conversation keeps
+ * its recent turns while its old ones expire underneath.
+ */
+export const TRANSCRIPT_TTL_SECONDS = 7 * SECONDS_PER_DAY;
+
 /** Unix-seconds TTL: `retentionDays` after `baseIso`. Falls back to now for an
  * unparseable base so a row is never written without an expiry. */
 export function expiresAtSeconds(baseIso: string, retentionDays: number): number {

@@ -80,6 +80,27 @@ export interface CostLimits {
   alertSlackChannel?: string;
 }
 
+/**
+ * Per-project Telegram bot credentials. Secrets are AES-encrypted at rest.
+ *
+ * A bot token identifies the bot to Telegram; the webhook secret is what
+ * Telegram echoes back on every delivery (`X-Telegram-Bot-Api-Secret-Token`),
+ * so it is the whole authentication of the events endpoint. Both are this
+ * platform's to keep — the token is Telegram's, the secret is minted here.
+ */
+export interface TelegramIntegration {
+  botToken: string;
+  webhookSecret: string;
+  enabled: boolean;
+  /**
+   * The bot's `@username`, learned from `getMe` when the token was saved. Not a
+   * secret. It is what tells a mention of *this* bot in a group from a mention
+   * of anyone else, and a group message that names nobody from one that names
+   * it — a bot receives both, and only the username separates them.
+   */
+  botUsername?: string;
+}
+
 export interface Project {
   name: string;
   displayName: string;
@@ -89,6 +110,7 @@ export interface Project {
   departmentCode?: string;
   publishedVersion?: string;
   slack?: SlackIntegration;
+  telegram?: TelegramIntegration;
   costLimits?: CostLimits;
   createdAt: string;
   updatedAt: string;

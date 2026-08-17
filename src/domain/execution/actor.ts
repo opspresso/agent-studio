@@ -14,6 +14,8 @@ export type RunActorKind =
   | "project-token"
   /** A Slack mention or DM, identified by the Slack user id. */
   | "slack"
+  /** A Telegram message to a project's bot, identified by the Telegram user id. */
+  | "telegram"
   /** An inbound A2A call, authenticated by the shared app key. */
   | "a2a"
   /** A webhook trigger delivery, identified by `{project}:{triggerId}`. */
@@ -26,8 +28,9 @@ export interface RunActor {
   /**
    * Stable within the kind. An email for `user` and `project-token` (a token
    * runs on its owner's behalf, and the kind is what keeps the two apart), a
-   * Slack user id for `slack`. `a2a` has no caller identity beyond the shared
-   * key, so it carries the constant below rather than pretending to one.
+   * Slack user id for `slack`, a Telegram user id for `telegram`. `a2a` has no
+   * caller identity beyond the shared key, so it carries the constant below
+   * rather than pretending to one.
    */
   id: string;
 }
@@ -139,15 +142,16 @@ export interface RunOrigin {
 
 /**
  * The surface a conversation lives on. Each names its conversations differently
- * — a chat by its id, Slack by channel and thread, A2A by the client's
- * `contextId`, an API caller by whatever it put in `X-Conversation-Id` — and
- * the surface is what keeps those namespaces apart in one key.
+ * — a chat by its id, Slack by channel and thread, Telegram by chat and topic,
+ * A2A by the client's `contextId`, an API caller by whatever it put in
+ * `X-Conversation-Id` — and the surface is what keeps those namespaces apart in
+ * one key.
  *
  * Deliberately not every {@link RunActorKind}: a webhook delivery and a
  * schedule occurrence are one-shot. Nobody asks a follow-up question in a
  * firing, so a firing has no conversation rather than a conversation of one.
  */
-export type RunSurface = "chat" | "slack" | "a2a" | "api";
+export type RunSurface = "chat" | "slack" | "telegram" | "a2a" | "api";
 
 /**
  * Where a run's conversation is: the surface, and that surface's own id for it.

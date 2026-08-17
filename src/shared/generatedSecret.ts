@@ -13,6 +13,7 @@ import { timingSafeEqualString } from "./timingSafe";
  *   adc_…   A2A client key    (per client, admin-managed)
  *   adt_…   project API token (per project, owner-managed)
  *   adw_…   webhook trigger secret (per trigger, owner-managed)
+ *   adg_…   Telegram webhook secret (per project; minted here, handed only to Telegram)
  *
  * The random part is 32 bytes — 256 bits — so the prefix costs no entropy that
  * matters. Verification compares hashes and never looks at the prefix, so
@@ -25,13 +26,15 @@ export type GeneratedSecretKind =
   | "a2aApiKey"
   | "a2aClientKey"
   | "projectApiToken"
-  | "triggerSecret";
+  | "triggerSecret"
+  | "telegramWebhookSecret";
 
 const KIND_CHAR: Record<GeneratedSecretKind, string> = {
   a2aApiKey: "a",
   a2aClientKey: "c",
   projectApiToken: "t",
   triggerSecret: "w",
+  telegramWebhookSecret: "g",
 };
 
 /** The `ad{kind}_` prefix a generated secret of this kind carries. */
