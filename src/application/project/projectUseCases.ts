@@ -205,8 +205,16 @@ export async function deleteProject(
   beforeDelete?: BeforeProjectDelete,
 ): Promise<void> {
   const project = await assertProjectWritable(repo, name, userEmail);
-  // Before the row goes, while what it holds can still be acted on.
-  await beforeDelete?.(project);
+  // Before the row goes, while what it holds can still be acted on — and best
+  // effort by contract: nothing the hook does may make a project undeletable.
+  // The hook already catches its own network failure; this catches the rest
+  // (a credential that no longer decrypts is the case that would otherwise
+  // pin the project forever).
+  try {
+    await beforeDelete?.(project);
+  } catch (error) {
+    log.warn("project", `pre-delete hook failed for ${name}; deleting anyway`, error);
+  }
   await repo.delete(name);
   // After the delete, and the one record that survives it: the cascade takes
   // every row that could otherwise have said who the project belonged to.

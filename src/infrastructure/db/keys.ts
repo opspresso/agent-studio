@@ -182,11 +182,12 @@ export const keys = {
   /**
    * One Bot Framework activity delivered to one project's Teams bot. In the
    * project partition, qualified by app id, for the reasons the Telegram
-   * update is.
+   * update is; the id the caller passes is `{conversationId}#{activityId}`,
+   * because an activity id is unique only within its conversation.
    */
-  teamsActivity: (projectName: string, appId: string, activityId: string) => ({
+  teamsActivity: (projectName: string, appId: string, conversationAndActivityId: string) => ({
     PK: `PROJECT#${projectName}`,
-    SK: `TEAMSACTIVITY#${appId}#${activityId}`,
+    SK: `TEAMSACTIVITY#${appId}#${conversationAndActivityId}`,
   }),
 
   /**

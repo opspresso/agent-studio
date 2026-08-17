@@ -96,8 +96,10 @@ export interface TurnInput {
 export interface TurnOutcome {
   /** The top-level answer as delivered. */
   text: string;
-  /** How many pictures were handed to the surface. */
+  /** How many pictures the surface accepted — attempts that failed are warnings, not deliveries. */
   imagesDelivered: number;
+  /** How many produced files were linked under the answer. */
+  filesDelivered: number;
   /** Everything reported beside the answer, in order. */
   warnings: string[];
 }
@@ -267,9 +269,11 @@ export async function handleTurn(
     "messaging",
     `run done project=${project.name} chars=${text.length} images=${uploads.length} warnings=${warnings.length}`,
   );
+  let imagesDelivered = 0;
   for (const [index, image] of uploads.entries()) {
     try {
       await reply.sendImage(image, index);
+      imagesDelivered += 1;
     } catch (error) {
       log.error("messaging", "image upload failed", error);
       warnings.push(`Image upload failed: ${error instanceof Error ? error.message : "unknown"}`);
@@ -304,5 +308,5 @@ export async function handleTurn(
     ...warnings.map((warning) => reply.warningLine(warning)),
   ].join("\n");
   await reply.finish(text, suffix);
-  return { text, imagesDelivered: uploads.length, warnings };
+  return { text, imagesDelivered, filesDelivered: produced.files.length, warnings };
 }

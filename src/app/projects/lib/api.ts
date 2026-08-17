@@ -373,49 +373,36 @@ export interface ProjectTelegramView {
 }
 
 export async function getProjectTelegram(name: string): Promise<ProjectTelegramView> {
-  const res = await fetch(`/api/projects/${name}/telegram`);
-  if (!res.ok) {
-    throw new Error(`Failed to load Telegram settings (${res.status})`);
-  }
-  return (await res.json()) as ProjectTelegramView;
+  return readJson<ProjectTelegramView>(await fetch(`/api/projects/${name}/telegram`));
 }
 
 export async function updateProjectTelegram(
   name: string,
   update: { botToken?: string; enabled?: boolean },
 ): Promise<ProjectTelegramView> {
-  const res = await fetch(`/api/projects/${name}/telegram`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(update),
-  });
-  const data = (await res.json()) as ProjectTelegramView & { error?: string };
-  if (!res.ok) {
-    throw new Error(data.error ?? `Failed to save Telegram settings (${res.status})`);
-  }
-  return data;
+  return readJson<ProjectTelegramView>(
+    await fetch(`/api/projects/${name}/telegram`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify(update),
+    }),
+  );
 }
 
 export async function disconnectProjectTelegram(name: string): Promise<void> {
-  const res = await fetch(`/api/projects/${name}/telegram`, { method: "DELETE" });
-  if (!res.ok) {
-    throw new Error(`Failed to disconnect Telegram (${res.status})`);
-  }
+  await assertOk(await fetch(`/api/projects/${name}/telegram`, { method: "DELETE" }));
 }
 
+/** Throws with the server's reason when the test could not run; a failed test itself is the body. */
 export async function testProjectTelegram(
   name: string,
-): Promise<{ ok?: boolean; botId?: number; botUsername?: string; error?: string }> {
-  const res = await fetch(`/api/projects/${name}/telegram/test`, { method: "POST" });
-  return (await res.json()) as { ok?: boolean; botId?: number; botUsername?: string; error?: string };
+): Promise<{ ok: true; botId: number; botUsername?: string }> {
+  return readJson(await fetch(`/api/projects/${name}/telegram/test`, { method: "POST" }));
 }
 
 /** Register (or move) the bot's webhook to this deployment. */
-export async function registerProjectTelegramWebhook(
-  name: string,
-): Promise<{ ok?: boolean; url?: string; error?: string }> {
-  const res = await fetch(`/api/projects/${name}/telegram/webhook`, { method: "POST" });
-  return (await res.json()) as { ok?: boolean; url?: string; error?: string };
+export async function registerProjectTelegramWebhook(name: string): Promise<{ ok: true; url: string }> {
+  return readJson(await fetch(`/api/projects/${name}/telegram/webhook`, { method: "POST" }));
 }
 
 export interface ProjectTeamsView {
@@ -431,41 +418,31 @@ export interface ProjectTeamsView {
 }
 
 export async function getProjectTeams(name: string): Promise<ProjectTeamsView> {
-  const res = await fetch(`/api/projects/${name}/teams`);
-  if (!res.ok) {
-    throw new Error(`Failed to load Teams settings (${res.status})`);
-  }
-  return (await res.json()) as ProjectTeamsView;
+  return readJson<ProjectTeamsView>(await fetch(`/api/projects/${name}/teams`));
 }
 
 export async function updateProjectTeams(
   name: string,
   update: { appId?: string; appPassword?: string; tenantId?: string; enabled?: boolean },
 ): Promise<ProjectTeamsView> {
-  const res = await fetch(`/api/projects/${name}/teams`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(update),
-  });
-  const data = (await res.json()) as ProjectTeamsView & { error?: string };
-  if (!res.ok) {
-    throw new Error(data.error ?? `Failed to save Teams settings (${res.status})`);
-  }
-  return data;
+  return readJson<ProjectTeamsView>(
+    await fetch(`/api/projects/${name}/teams`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify(update),
+    }),
+  );
 }
 
 export async function disconnectProjectTeams(name: string): Promise<void> {
-  const res = await fetch(`/api/projects/${name}/teams`, { method: "DELETE" });
-  if (!res.ok) {
-    throw new Error(`Failed to disconnect Teams (${res.status})`);
-  }
+  await assertOk(await fetch(`/api/projects/${name}/teams`, { method: "DELETE" }));
 }
 
+/** Throws with the server's reason when the test could not run. */
 export async function testProjectTeams(
   name: string,
-): Promise<{ ok?: boolean; appId?: string; expiresInSeconds?: number; error?: string }> {
-  const res = await fetch(`/api/projects/${name}/teams/test`, { method: "POST" });
-  return (await res.json()) as { ok?: boolean; appId?: string; expiresInSeconds?: number; error?: string };
+): Promise<{ ok: true; appId: string; expiresInSeconds: number }> {
+  return readJson(await fetch(`/api/projects/${name}/teams/test`, { method: "POST" }));
 }
 
 export interface ProjectTokenStatus {

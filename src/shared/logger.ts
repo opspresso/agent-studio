@@ -37,6 +37,7 @@ export type LogScope =
   | "messaging"
   | "otel"
   | "plugins"
+  | "project"
   | "run"
   | "runDeadline"
   | "settings"

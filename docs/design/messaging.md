@@ -12,8 +12,8 @@ Slack 표면이 첫 번째였고, 그것은 한 파일이었다: 어떤 이벤�
 충족시켰다**: 그 모양은 Slack 에서 이미 알고 있었고, Telegram 은 그 모양의 두 번째 사본이
 아니라 첫 고객이다. Teams 가 세 번째로 왔을 때 두 가지가 더 공유되었다 — 편집으로 답을
 전달하는 표면의 장부(`editInPlaceReply.ts`)와, 플랫폼 히스토리가 없는 표면이 대화를
-기억하는 방식(`transcriptHistory.ts`) — Telegram 이 첫 고객이었고 Teams 는 두 번째 사본을
-쓰는 대신 그것을 받았다.
+기억하는 방식(`transcriptHistory.ts` — 그리고 그 위에서 턴 하나를 도는 `rememberedTurn.ts`)
+— Telegram 이 첫 고객이었고 Teams 는 두 번째 사본을 쓰는 대신 그것을 받았다.
 
 ## 분할
 

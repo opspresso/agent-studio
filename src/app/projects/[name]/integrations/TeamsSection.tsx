@@ -83,13 +83,14 @@ export function TeamsSection({
     setBusy(true);
     setStatus(null);
     setError(null);
-    const result = await testProjectTeams(projectName);
-    if (result.ok) {
+    try {
+      const result = await testProjectTeams(projectName);
       setStatus(`Connected: token issued for ${result.appId}`);
-    } else {
-      setError(result.error ?? "Connection test failed");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Connection test failed");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function disconnect() {

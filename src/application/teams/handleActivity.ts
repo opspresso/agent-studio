@@ -1,12 +1,4 @@
-import { handleTurn } from "@/application/messaging/handleTurn";
-import {
-  attachmentNote,
-  imagesNote,
-  loadTranscriptHistory,
-  rememberTurn,
-  withSpeakerLabels,
-} from "@/application/messaging/transcriptHistory";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
+import { resolveAgentProject, runRememberedTurn } from "@/application/messaging/rememberedTurn";
 import { createTeamsReplyChannel } from "@/application/teams/replyChannel";
 import type { TeamsActivityDisposition } from "@/application/teams/engagement";
 import type {
@@ -15,7 +7,7 @@ import type {
   TeamsCredentials,
   TeamsEventDeps,
 } from "@/application/teams/types";
-import { callerFrom, conversationKey, type RunCaller } from "@/domain/execution/actor";
+import { callerFrom, type RunCaller } from "@/domain/execution/actor";
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import { teamsConversation } from "@/domain/teams/conversation";
 import { log } from "@/shared/logger";
@@ -42,10 +34,11 @@ function callerOf(activity: TeamsActivity): RunCaller | undefined {
  * The message's attachments as the shared pipeline reads them.
  *
  * Two shapes carry bytes. A picture pasted into the message is an `image/*`
- * attachment whose `contentUrl` sits on the conversation's service host and
- * needs the bot's token; a file shared in a personal chat is a
- * `file.download.info` envelope with a pre-authenticated `downloadUrl` and the
- * file's own name and type. The message's `text/html` twin is not an
+ * attachment — Teams says no more than that about its kind, and the pipeline
+ * reads the bytes to find out — whose `contentUrl` sits on the conversation's
+ * service host and needs the bot's token; a file shared in a personal chat is
+ * a `file.download.info` envelope with a pre-authenticated `downloadUrl` and
+ * the file's own name and type. The message's `text/html` twin is not an
  * attachment at all. Anything else is named so the pipeline can say it could
  * not read it.
  */
@@ -84,8 +77,8 @@ function download(deps: TeamsEventDeps, binding: TeamsBotBinding, serviceUrl: st
 }
 
 function nameFor(attachment: TeamsAttachment, index: number): string {
-  const ext = attachment.contentType.startsWith("image/") ? `.${attachment.contentType.slice("image/".length)}` : "";
-  return `attachment-${index + 1}${ext}`;
+  const kind = attachment.contentType.startsWith("image/") ? attachment.contentType.slice("image/".length) : "";
+  return `attachment-${index + 1}${kind && kind !== "*" ? `.${kind}` : ""}`;
 }
 
 /** Teams names a shared file's type by extension (`pdf`, `docx`); the pipeline reads a media type or a name. */
@@ -132,80 +125,33 @@ export async function handleTeamsActivity(
     { ...(deps.sleep ? { sleep: deps.sleep } : {}) },
   );
 
-  const project = await deps.projects.get(binding.projectName);
-  // External surface: published-only, drafts never leak (resolveRunnableVersion policy).
-  const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
-  if (!project || project.projectType !== "agent" || !version) {
-    await reply.say(
-      `Agent project not available: ${binding.projectName} (must exist, be an agent project, and have a published version)`,
-    );
+  const runnable = await resolveAgentProject(deps, binding.projectName, reply);
+  if (!runnable) {
     return;
   }
+  const { project, version } = runnable;
 
   log.info(
     "teams",
     `run start project=${project.name} conversation=${conversationId} activity=${activity.id ?? "?"}`,
   );
 
-  const conversation = teamsConversation(conversationId);
-  const key = conversationKey(conversation);
-  const warnings: string[] = [];
-  // Read before anything is written, like the Slack thread: the reply must
-  // not come back as an assistant turn in this run's own context.
-  const remembered = await loadTranscriptHistory(deps.transcripts, project.name, key, warnings, "teams");
-  await reply.status("is thinking…");
-
   // The Entra object id where Teams gives one — it is the person across every
   // chat they are in — else the conversation-scoped id.
   const userId = activity.from?.aadObjectId ?? activity.from?.id;
-  const namesAllowed = version.parameters.callerContext === true;
-  const named = namesAllowed ? callerOf(activity) : undefined;
-  const { history, label } = withSpeakerLabels(remembered, userId, namesAllowed);
-  const askText = label && named ? `${named.displayName}: ${disposition.text}` : disposition.text;
-  const attachments = attachmentsOf(deps, binding, activity);
-
-  const outcome = await handleTurn(
-    deps,
-    {
-      project,
-      version,
-      text: askText,
-      attachments,
-      history,
-      // The Entra object id, not an email: Teams hands a bot no address.
-      ...(userId ? { actor: { kind: "teams" as const, id: userId } } : {}),
-      ...(named ? { caller: named } : {}),
-      conversation,
-      warnings,
-    },
+  const arrivedAt = activity.timestamp ? new Date(activity.timestamp) : new Date();
+  await runRememberedTurn(deps, {
+    project,
+    version,
     reply,
-  );
-
-  // Written after the reply, because that is what makes it true — and the
-  // question first, so the two land in the order they were said.
-  const now = new Date().toISOString();
-  await rememberTurn(
-    deps.transcripts,
-    project.name,
-    key,
-    {
-      role: "user",
-      content: disposition.text || attachmentNote(attachments.map((attachment) => attachment.name)),
-      ...(userId ? { userId } : {}),
-      ...(named ? { speaker: named.displayName } : {}),
-      createdAt: now,
-    },
-    "teams",
-  );
-  await rememberTurn(
-    deps.transcripts,
-    project.name,
-    key,
-    {
-      role: "assistant",
-      content: outcome.text || imagesNote(outcome.imagesDelivered),
-      createdAt: new Date(Date.parse(now) + 1).toISOString(),
-    },
-    "teams",
-  );
+    conversation: teamsConversation(conversationId),
+    text: disposition.text,
+    attachments: attachmentsOf(deps, binding, activity),
+    // The Entra object id, not an email: Teams hands a bot no address.
+    ...(userId ? { actor: { kind: "teams" as const, id: userId }, userId } : {}),
+    callerOf: () => callerOf(activity),
+    arrivedAt: Number.isNaN(arrivedAt.getTime()) ? new Date() : arrivedAt,
+    warnings: [],
+    scope: "teams",
+  });
 }

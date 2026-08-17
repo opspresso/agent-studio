@@ -5,6 +5,7 @@ import {
 } from "@/application/messaging/editInPlaceReply";
 import type { TeamsClientPort, TeamsCredentials } from "@/application/teams/types";
 import type { ReplyChannel } from "@/domain/messaging/reply";
+import { closeOpenFence } from "@/shared/markdownFence";
 
 /**
  * How a Teams reply is delivered — the single owner of that decision.
@@ -32,8 +33,12 @@ const EDIT_INTERVAL_MS = 2000;
 const TYPING_REFRESH_MS = 3000;
 const CURSOR = " ▌";
 const SOFT_CUT_WINDOW = 1500;
-/** Teams renders an inline picture up to a few MB; past this it is linked as a warning instead. */
-const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
+/**
+ * Teams documents an inline bot picture at 1MB and 1024×1024; past this the
+ * connector refuses the activity, so the refusal is made here, where it can be
+ * said as a warning instead of a failed send.
+ */
+const MAX_INLINE_IMAGE_BYTES = 1024 * 1024;
 
 /** Where a reply goes: the conversation, and the activity it answers. */
 export interface TeamsReplyTarget {
@@ -75,6 +80,10 @@ export function createTeamsReplyChannel(
     async typing() {
       await teams.sendActivity(credentials, target.serviceUrl, target.conversationId, { type: "typing" });
     },
+    // Teams reads the Markdown itself, so a fence the run left open would
+    // swallow the file link and the warnings appended after it just as
+    // Telegram's renderer would; sealed the same way.
+    seal: closeOpenFence,
     limits: {
       maxChars: MAX_MESSAGE_CHARS,
       editIntervalMs: EDIT_INTERVAL_MS,

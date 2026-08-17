@@ -83,26 +83,28 @@ export function TelegramSection({
     setBusy(true);
     setStatus(null);
     setError(null);
-    const result = await testProjectTelegram(projectName);
-    if (result.ok) {
+    try {
+      const result = await testProjectTelegram(projectName);
       setStatus(`Connected: @${result.botUsername ?? result.botId}`);
-    } else {
-      setError(result.error ?? "Connection test failed");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Connection test failed");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function registerWebhook() {
     setBusy(true);
     setStatus(null);
     setError(null);
-    const result = await registerProjectTelegramWebhook(projectName);
-    if (result.ok) {
+    try {
+      const result = await registerProjectTelegramWebhook(projectName);
       setStatus(`${t("pset.telegramWebhookRegistered")} ${result.url}`);
-    } else {
-      setError(result.error ?? "Webhook registration failed");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Webhook registration failed");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function disconnect() {

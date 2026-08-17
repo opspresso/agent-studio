@@ -139,7 +139,20 @@ export function attachmentNote(names: readonly string[]): string {
   return names.length === 0 ? "" : `[sent ${names.join(", ")}]`;
 }
 
-/** What an answer that was only pictures is remembered as. */
-export function imagesNote(count: number): string {
-  return count > 0 ? `[sent ${count} image${count === 1 ? "" : "s"}]` : "";
+/**
+ * What an answer is remembered as when it had no text: the pictures and files
+ * it delivered, or the fact that it delivered nothing. Never empty — a
+ * question written down with no answer after it is a history that lies, and
+ * the model reading two user turns in a row would redo what it already did.
+ */
+export function answerNote(outcome: { imagesDelivered: number; filesDelivered: number }): string {
+  const parts = [
+    ...(outcome.imagesDelivered > 0
+      ? [`${outcome.imagesDelivered} image${outcome.imagesDelivered === 1 ? "" : "s"}`]
+      : []),
+    ...(outcome.filesDelivered > 0
+      ? [`${outcome.filesDelivered} file${outcome.filesDelivered === 1 ? "" : "s"}`]
+      : []),
+  ];
+  return parts.length > 0 ? `[sent ${parts.join(" and ")}]` : "[no answer]";
 }

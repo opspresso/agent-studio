@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { escapeTelegramHtml, markdownToTelegramHtml } from "@/application/telegram/markdown";
+import {
+  escapeTelegramHtml,
+  markdownToTelegramHtml,
+  markdownToTelegramHtmlPieces,
+} from "@/application/telegram/markdown";
 
 describe("markdownToTelegramHtml", () => {
   it("escapes what Telegram would read as markup", () => {
@@ -36,5 +40,20 @@ describe("markdownToTelegramHtml", () => {
 
   it("does not link to anything but http(s)", () => {
     expect(markdownToTelegramHtml("[x](javascript:alert(1))")).toBe("[x](javascript:alert(1))");
+  });
+});
+
+describe("markdownToTelegramHtmlPieces", () => {
+  it("closes a fence on one side of a cut and reopens it on the other, wherever the fence opened", () => {
+    // Opened mid-line — the renderer reads it as a fence, and so must the bookkeeping.
+    const pieces = markdownToTelegramHtmlPieces(["a ```js\ncode", "more\n```\nafter [f](https://x)"]);
+    expect(pieces[0]).toBe('a <pre><code class="language-js">code</code></pre>');
+    expect(pieces[1]).toBe('<pre><code class="language-js">more</code></pre>\nafter <a href="https://x">f</a>');
+  });
+
+  it("appends nothing to a piece whose fences are all closed", () => {
+    expect(markdownToTelegramHtmlPieces(["a ```js\ncode\n```\nafter"])).toEqual([
+      'a <pre><code class="language-js">code</code></pre>\nafter',
+    ]);
   });
 });

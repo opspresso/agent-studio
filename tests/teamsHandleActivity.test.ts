@@ -206,6 +206,72 @@ describe("handleTeamsActivity", () => {
     ]);
   });
 
+  it("reads a pasted picture Teams only calls image/* by its bytes", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { teams } = makeTeamsFake();
+    // A PNG signature, which is what the sniff reads.
+    teams.downloadAttachment = async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
+    const { deps, runs } = makeDeps([{ done: true }], teams);
+
+    await handleTeamsActivity(
+      deps,
+      dispositionOf(
+        activity({
+          text: "what is this?",
+          attachments: [{ contentType: "image/*", contentUrl: "https://smba.trafficmanager.net/emea/v3/attachments/1/views/original" }],
+        }),
+      ),
+      BINDING,
+    );
+
+    const last = runs[0]?.messages.at(-1)?.content;
+    const image = Array.isArray(last) ? last.find((part) => part.type === "image_url") : undefined;
+    expect(image && "image_url" in image && image.image_url.url.startsWith("data:image/png;base64,")).toBe(true);
+  });
+
+  it("remembers the question at the moment it arrived, and an answer that was only a file or nothing at all", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { teams } = makeTeamsFake();
+    const { deps, remembered } = makeDeps([{ done: true }], teams);
+
+    await handleTeamsActivity(
+      deps,
+      dispositionOf(activity({ text: "hello", timestamp: "2026-08-17T01:02:03.000Z" })),
+      BINDING,
+    );
+
+    expect(remembered.map((entry) => [entry.turn.role, entry.turn.content, entry.turn.createdAt])).toEqual([
+      ["user", "hello", "2026-08-17T01:02:03.000Z"],
+      ["assistant", "[no answer]", "2026-08-17T01:02:03.001Z"],
+    ]);
+  });
+
+  it("does not dispatch a bare name when a labelled message carried no text", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { teams } = makeTeamsFake();
+    const { deps, runs, stored } = makeDeps([{ done: true }], teams, { callerContext: true });
+    stored.push({ role: "user", content: "earlier", userId: "aad-2", speaker: "Ann", createdAt: "2026-01-01T00:00:00.000Z" });
+
+    await handleTeamsActivity(
+      deps,
+      dispositionOf(
+        activity({
+          conversation: { id: "19:g@thread.v2", conversationType: "groupChat" },
+          text: "<at>Painter</at>",
+          entities: [{ type: "mention", mentioned: { id: "28:bot" }, text: "<at>Painter</at>" }],
+          attachments: [{ contentType: "video/mp4", contentUrl: "https://smba.trafficmanager.net/emea/v3/attachments/9" }],
+        }),
+      ),
+      BINDING,
+    );
+
+    expect(runs).toEqual([]);
+  });
+
   it("downloads a pasted picture through the conversation's service, and names a shared file by its type", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
