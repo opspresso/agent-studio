@@ -219,6 +219,18 @@ subagent can only answer it mid-stream, so it does, as an authored `error` chunk
 resolved model's provider implements the *edit* endpoint is unknowable until dispatch, which
 is why that refusal is a tool-result error rather than a hidden tool.
 
+**A caller leaving is not the provider failing, and the signal is what says so.** `fetch`
+rejects with whatever the run's signal was aborted *with*, and only a bare `abort()` is the
+DOM's `AbortError` — Next.js aborts `request.signal` with its own `ResponseAborted`, an Error
+with another name and no message. `generateImage` therefore reads `signal.aborted` to tell a
+cancellation from a refusal (`providerFailure`); matched by error name, a person reloading
+through a minute-long xAI generation was logged as `502 Image generation failed for …: ` with
+nothing after the colon. The same rule holds wherever a run's signal reaches an outbound call:
+an A2A transfer reports "cancelled" off the caller's signal and "timed out" off its own idle
+one, and a discovery the caller cancelled is never written to the MCP failure cache — that
+cache is per `url + headers`, so one reload would have replayed "server unavailable" to every
+run of that project for the failure window.
+
 **The port states an intent; the adapter speaks each provider's dialect.** Unlike Chat
 Completions — a de-facto standard every provider implements, which is why
 `src/infrastructure/llm/channel.ts` has no provider branch at all — the Images API is *not*

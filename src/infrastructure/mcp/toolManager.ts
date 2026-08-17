@@ -171,6 +171,16 @@ export class ToolManager {
           setCachedTools(server.url, server.headers, tools, ttlMs);
           return { server, session, tools };
         } catch (error) {
+          // The caller leaving mid-discovery is not the server failing, and it
+          // must not be remembered as one: the failure cache is keyed per
+          // `url + headers`, so a reload during a slow first token would hand
+          // every run of that project a "server unavailable" replay for the
+          // failure window, against a server that never answered wrongly. The
+          // rethrow lands on the `throwIfAborted` below, which is what an
+          // aborted init was always going to reach.
+          if (this.signal?.aborted) {
+            throw error;
+          }
           // A single broken MCP must not abort the whole tool set — but it must
           // not vanish either: without this the tools are simply absent and the
           // run looks like a model that ignored them.

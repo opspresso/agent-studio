@@ -155,6 +155,14 @@ message stays here — and `warn` for a typed `5xx`, whose message the caller al
 the two above. This is why an upstream refusal is greppable at all — while `apiError` answered
 typed errors without logging them, giving a failure a type quietly took it out of the record.
 
+A caller who hangs up before a non-streaming answer (`predict`, `chat/completions`) is a third
+case and is logged as `[api run=…] caller left before the answer` at `info` — neither a
+failure nor a defect, and nothing is sent back because nobody is there. Read it as what it
+is: an image generation on xAI takes about a minute, and a person who reloads through one
+used to leave `Image generation failed for xai/…: ` in the log with **nothing after the
+colon**, which read as the provider refusing. Next aborts the request with an error that has
+no message, and the run's abort was being mapped as if it were the provider's answer.
+
 ## Tracing
 
 Agent runs are **always** traced. Non-agent and image predict runs are sampled at

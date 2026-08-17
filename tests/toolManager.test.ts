@@ -996,6 +996,36 @@ describe("ToolManager session release", () => {
     expect(deletesTo(calls, "https://a.test/mcp")).toHaveLength(1);
   });
 
+  it("does not remember a discovery the caller cancelled as the server failing", async () => {
+    // The failure cache is keyed per url + headers, so a cancelled discovery
+    // written there would answer every later run of that project with a
+    // replayed "unavailable" — for a server that was never asked to finish.
+    const controller = new AbortController();
+    stubMcpFetch({
+      "https://a.test/mcp": {
+        legacy: true,
+        sessionIds: ["sess-a"],
+        listTools: [{ name: "search" }],
+        onRequest: (method) => {
+          if (method === "initialize") {
+            controller.abort();
+          }
+        },
+      },
+    });
+    const manager = new ToolManager(
+      [server("a", "https://a.test/mcp")],
+      undefined,
+      controller.signal,
+    );
+
+    await expect(manager.init()).rejects.toThrow();
+    await manager.close();
+
+    expect(getCachedDiscovery("https://a.test/mcp", {})).toBeUndefined();
+    expect(manager.warnings).toHaveLength(0);
+  });
+
   it("is idempotent: a second close sends nothing", async () => {
     const calls = stubMcpFetch({
       "https://a.test/mcp": {

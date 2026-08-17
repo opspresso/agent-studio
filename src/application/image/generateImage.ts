@@ -209,9 +209,10 @@ export async function generateImage(
       ...(warning ? { warning } : {}),
     };
   } catch (error) {
-    failed = !input.signal?.aborted;
+    const cancelled = input.signal?.aborted === true;
+    failed = !cancelled;
     await finishTrace(recorder, error);
-    throw providerFailure(error, model);
+    throw providerFailure(error, model, cancelled);
   } finally {
     await bracket.close({ failed });
   }
@@ -235,11 +236,21 @@ export async function generateImage(
  * fact the log line did not carry either.
  *
  * An `AppError` passes through untouched: the guards above already chose their
- * status, and a 400 for an unusable model must not become a 502. So does an
- * abort, which is the caller leaving rather than anything failing.
+ * status, and a 400 for an unusable model must not become a 502. So does a
+ * cancellation, which is the caller leaving rather than anything failing.
+ *
+ * Whether the caller left is read off the **signal**, never off the error's
+ * name. `fetch` rejects with whatever the signal was aborted *with*, and only a
+ * bare `abort()` yields the DOM's `AbortError`: Next.js aborts `request.signal`
+ * with its own `ResponseAborted` — an `Error` whose name is not that and whose
+ * message is empty — the moment the browser hangs up. Matched by name, that
+ * arrived here as an upstream failure and left the log reading
+ * `Image generation failed for xai/…: ` with nothing after the colon: a
+ * ~60-second generation the reader reloaded through, filed as the provider
+ * refusing. The signal is the fact; the error is only how it was delivered.
  */
-function providerFailure(error: unknown, model: string): unknown {
-  if (error instanceof AppError || (error instanceof Error && error.name === "AbortError")) {
+function providerFailure(error: unknown, model: string, cancelled: boolean): unknown {
+  if (error instanceof AppError || cancelled) {
     return error;
   }
   return new UpstreamError(

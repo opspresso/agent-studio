@@ -109,6 +109,6 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       ...(produced.files.length > 0 ? { files: produced.files } : {}),
     });
   } catch (error) {
-    return apiError(error);
+    return apiError(error, request);
   }
 };

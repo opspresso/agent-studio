@@ -71,6 +71,6 @@ export const POST = async (request: Request, ctx: RouteContext) => {
       }),
     );
   } catch (error) {
-    return apiError(error);
+    return apiError(error, request);
   }
 };
