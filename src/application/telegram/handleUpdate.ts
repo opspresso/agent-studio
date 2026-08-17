@@ -19,6 +19,15 @@ import { log } from "@/shared/logger";
 
 /** Most recent turns of a conversation carried as context; older turns are dropped. */
 const MAX_HISTORY_TURNS = 50;
+/**
+ * How much of one turn is written down. A turn is kept for the *next*
+ * question's context, and past this a single answer would be most of that
+ * context on its own — and a row is one DynamoDB item, which a very long answer
+ * would otherwise be the first thing to overflow. Cut on a character count,
+ * marked, so the model reads a turn that says it was cut rather than one that
+ * ends mid-sentence.
+ */
+const MAX_TRANSCRIPT_TURN_CHARS = 20_000;
 
 /** Credentials and project binding for a project-dedicated bot. */
 export interface TelegramBotBinding {
@@ -129,8 +138,12 @@ async function remember(
   if (!deps.transcripts || !turn.content) {
     return;
   }
+  const content =
+    turn.content.length > MAX_TRANSCRIPT_TURN_CHARS
+      ? `${turn.content.slice(0, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
+      : turn.content;
   await deps.transcripts
-    .append(project.name, key, turn)
+    .append(project.name, key, { ...turn, content })
     .catch((error) => log.error("telegram", "conversation turn could not be recorded", error));
 }
 

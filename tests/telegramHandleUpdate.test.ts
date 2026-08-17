@@ -237,6 +237,20 @@ describe("handleTelegramUpdate", () => {
     expect(remembered[0]?.turn.speaker).toBeUndefined();
   });
 
+  it("writes down a bounded copy of a very long answer, and says it was cut", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram } = makeTelegramFake();
+    const long = "x".repeat(25_000);
+    const { deps, remembered } = makeDeps([{ delta: { content: long } }, { done: true }], telegram);
+
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
+
+    const answer = remembered.find((entry) => entry.turn.role === "assistant")?.turn.content ?? "";
+    expect(answer.length).toBeLessThan(21_000);
+    expect(answer.endsWith("…[truncated]")).toBe(true);
+  });
+
   it("still answers, and says so, when the history cannot be read", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});
