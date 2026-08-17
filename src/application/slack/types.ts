@@ -5,6 +5,7 @@ import type { SlackReaderPort } from "@/domain/slack/reader";
 import type {
   SlackChunk,
   SlackMessage,
+  SlackMessageContent,
   SlackSuggestedPrompt,
   SlackTaskDisplayMode,
 } from "@/domain/slack/types";
@@ -157,14 +158,16 @@ export interface SlackEventBody {
    * extra `auth.test` round trip.
    */
   authorizations?: Array<{ user_id?: string; is_bot?: boolean }>;
-  event?: {
+  event?: SlackMessageContent & {
     type?: string;
     subtype?: string;
     bot_id?: string;
     user?: string;
+    /** How an app's message is signed — the app's display name, when it set one. */
+    username?: string;
+    bot_profile?: { name?: string };
     channel?: string;
     channel_type?: string;
-    text?: string;
     ts?: string;
     thread_ts?: string;
     files?: SlackEventFile[];

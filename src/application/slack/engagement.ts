@@ -1,4 +1,5 @@
 import type { SlackEventBody } from "@/application/slack/types";
+import { slackMessageText } from "@/domain/slack/messageText";
 
 /**
  * Which delivered Slack events cause a run — the single owner of that decision.
@@ -27,14 +28,27 @@ import type { SlackEventBody } from "@/application/slack/types";
  *
  * Only step 4 needs storage, and only a *threaded* message reaches it — ordinary
  * channel chatter carries no `thread_ts` and is dropped by 6 without a read.
+ *
+ * **Another app's message is a message.** An alerting app posting `[FIRING:1]`
+ * into a channel is the very thing a keyword is registered for, and a workflow
+ * that @-mentions the bot is asking it something. So an app's message passes
+ * steps 2 and 5 like a person's — but not 3 or 4: a follow-up an app posts into
+ * a thread this bot is engaged in is not answered, because two bots engaged in
+ * one thread would otherwise answer each other without end, and the thread
+ * history already reads such messages as context rather than as turns to
+ * respond to. Only the bot's *own* messages are refused outright, told apart by
+ * the app's user id rather than by `bot_id`, which every app's message carries.
  */
 
 /**
  * Message subtypes still worth handling. Subtyped messages are mostly channel
  * bookkeeping (joins, edits, …), but a user's file upload arrives as
- * `file_share` and dropping it would leave the mention unanswered.
+ * `file_share` and dropping it would leave the mention unanswered — and a
+ * message an app posts without a bot user (an incoming webhook, an alerting
+ * app's contact point) arrives as `bot_message`, which is what a keyword is
+ * most often registered to catch.
  */
-const ALLOWED_SUBTYPES = new Set(["file_share"]);
+const ALLOWED_SUBTYPES = new Set(["file_share", "bot_message"]);
 
 /** What the project asked to be woken by, beyond a mention. */
 export interface EngagementPolicy {
@@ -64,24 +78,28 @@ const ignore = (because: string): SlackEventDisposition => ({ kind: "ignore", be
 /**
  * Whether this event is the bot talking to itself.
  *
- * `bot_id` is not enough on its own: a file the bot shares through the external
- * upload flow is attributed to the bot *user*, and `file_share` is an allowed
- * subtype — so the app's own user id is checked too. With `message.channels`
- * subscribed this is no longer a tidy-up but the loop guard: the bot's own
- * reply lands in a thread the bot is engaged in, which is the one shape that
+ * The app's own user id is what decides it, not `bot_id`: every app's message
+ * carries a `bot_id` — an alerting app's, a CI notifier's — and reading it as
+ * "ours" is how the bot stayed silent on the very messages a keyword was
+ * registered for. Everything this bot posts is attributed to its bot user,
+ * including a file shared through the external upload flow (which arrives as an
+ * allowed `file_share` subtype), so the user id covers every shape of its own
+ * message. With `message.channels` subscribed this is the loop guard: the bot's
+ * own reply lands in a thread the bot is engaged in, which is the one shape that
  * would otherwise answer itself forever.
  *
  * `authorizations` is part of every modern `event_callback` envelope. A payload
- * without one falls back to `bot_id` alone, which is what this check was before
- * the field existed.
+ * without one falls back to `bot_id` alone — the rule from before the field
+ * existed — because with no way to tell its own messages from another app's,
+ * staying silent on an app is the cheaper mistake.
  */
 function isOwnMessage(body: SlackEventBody): boolean {
   const event = body.event;
-  if (event?.bot_id) {
-    return true;
-  }
   const self = selfUserId(body);
-  return Boolean(self && event?.user === self);
+  if (self) {
+    return event?.user === self;
+  }
+  return Boolean(event?.bot_id);
 }
 
 /**
@@ -204,9 +222,14 @@ export function classifySlackEvent(
     return { kind: "run", trigger: "mention" };
   }
 
+  // Not ours (decided above), so another app's. It may name the bot or carry a
+  // keyword like anyone else; it is not a DM correspondent, and its thread
+  // replies are not followed up (see the funnel note above).
+  const fromAnotherApp = Boolean(event.bot_id);
+
   // Every message in a DM is addressed to the bot, mention or not.
   if (event.channel_type === "im") {
-    return { kind: "run", trigger: "dm" };
+    return fromAnotherApp ? ignore("another app's message in a DM") : { kind: "run", trigger: "dm" };
   }
 
   // A channel mention arrived as `app_mention` too; that copy is the one that
@@ -221,9 +244,14 @@ export function classifySlackEvent(
   // A follow-up in a thread the bot may still be part of. Only a *reply* can be
   // one, so ordinary channel traffic never reaches the lookup.
   if (event.thread_ts) {
-    return { kind: "engagedThread", channel: event.channel, threadTs: event.thread_ts };
+    return fromAnotherApp
+      ? ignore("another app's thread reply")
+      : { kind: "engagedThread", channel: event.channel, threadTs: event.thread_ts };
   }
-  if (matchesKeyword(event.text ?? "", policy.keywords)) {
+  // Everything the message says, not `text` alone: an alerting app keeps the
+  // title and body in an attachment, and `[FIRING:1]` is registered to be found
+  // there.
+  if (matchesKeyword(slackMessageText(event), policy.keywords)) {
     return { kind: "run", trigger: "keyword" };
   }
   return ignore("not addressed to the bot");

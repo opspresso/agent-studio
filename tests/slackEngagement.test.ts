@@ -85,12 +85,16 @@ describe("which Slack events are for the bot", () => {
     // these were classified as work, that reply would be answered, and the
     // answer answered, without end.
     it("never runs for a message the bot itself posted", () => {
-      expect(classifySlackEvent(channelMessage({ bot_id: "B1", thread_ts: "1.0" }))).toEqual({
+      // The bot's own reply: attributed to its bot user, and carrying the
+      // `bot_id` every app's message carries.
+      expect(
+        classifySlackEvent(channelMessage({ user: SELF, bot_id: "B1", thread_ts: "1.0" })),
+      ).toEqual({
         kind: "ignore",
         because: "the bot's own message",
       });
-      // Attributed to the bot *user* rather than carrying `bot_id` — how a file
-      // shared through the external upload flow comes back.
+      // Attributed to the bot *user* without a `bot_id` — how a file shared
+      // through the external upload flow comes back.
       expect(
         classifySlackEvent(
           channelMessage({ user: SELF, thread_ts: "1.0", subtype: "file_share" }),
@@ -98,18 +102,72 @@ describe("which Slack events are for the bot", () => {
       ).toEqual({ kind: "ignore", because: "the bot's own message" });
     });
 
-    it("refuses another bot's message too", () => {
-      expect(classifySlackEvent(channelMessage({ bot_id: "B_OTHER" })).kind).toBe("ignore");
-    });
-
     it("is decided before the subtype gate and before any keyword", () => {
       // Ordering, not outcome: a keyword the bot's own reply happens to contain
       // must not be what wakes it. `because` names which rule fired.
-      const disposition = classifySlackEvent(channelMessage({ bot_id: "B1", text: "deploy done" }), {
-        keywords: ["deploy"],
-      });
+      const disposition = classifySlackEvent(
+        channelMessage({ user: SELF, bot_id: "B1", text: "deploy done" }),
+        { keywords: ["deploy"] },
+      );
 
       expect(disposition).toEqual({ kind: "ignore", because: "the bot's own message" });
+    });
+  });
+
+  describe("another app's message", () => {
+    // An alerting app's post is the very thing a keyword is registered for, and
+    // it looks nothing like a person's: no `user`, a `bot_id`, the
+    // `bot_message` subtype, and the alert itself in an attachment rather than
+    // in `text`.
+    const alert = (over: Partial<NonNullable<SlackEventBody["event"]>> = {}) =>
+      channelMessage({
+        user: undefined,
+        bot_id: "B_GRAFANA",
+        subtype: "bot_message",
+        username: "Grafana",
+        text: undefined,
+        attachments: [
+          {
+            title: "[FIRING:1] Container OOMKilled (sample-node OOMKilled warning)",
+            text: "container sample-node was OOMKilled",
+            fallback: "[FIRING:1] Container OOMKilled (sample-node OOMKilled warning)",
+          },
+        ],
+        ...over,
+      });
+
+    it("wakes the bot on a keyword found anywhere in what it says", () => {
+      expect(classifySlackEvent(alert(), { keywords: ["[firing:"] })).toEqual({
+        kind: "run",
+        trigger: "keyword",
+      });
+    });
+
+    it("answers a mention from an app", () => {
+      expect(
+        classifySlackEvent(alert({ type: "app_mention", text: `<@${SELF}> triage this` })),
+      ).toEqual({ kind: "run", trigger: "mention" });
+    });
+
+    it("stays out of ordinary app traffic, like anyone else's", () => {
+      expect(classifySlackEvent(alert(), { keywords: ["deploy"] })).toEqual({
+        kind: "ignore",
+        because: "not addressed to the bot",
+      });
+      expect(classifySlackEvent(alert()).kind).toBe("ignore");
+    });
+
+    it("does not follow up an app's reply in an engaged thread, or answer one in a DM", () => {
+      // Two bots engaged in one thread would otherwise answer each other
+      // without end; the app's reply is thread context, not a turn to answer.
+      expect(classifySlackEvent(alert({ thread_ts: "1.0" }))).toEqual({
+        kind: "ignore",
+        because: "another app's thread reply",
+      });
+      expect(classifySlackEvent(alert({ channel_type: "im", channel: "D1" }))).toEqual({
+        kind: "ignore",
+        because: "another app's message in a DM",
+      });
     });
   });
 

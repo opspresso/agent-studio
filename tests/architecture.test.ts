@@ -1066,6 +1066,15 @@ const SINGLE_OWNERS: SingleOwner[] = [
     ],
   },
   {
+    // What a Slack message says — its text, its attachments and its prose
+    // blocks read as one. Three readers (the keyword match, the turn a run
+    // answers, the thread history) have to agree, or a keyword fires on an
+    // alert whose body the run then never sees.
+    what: "what a Slack message says",
+    pattern: /export function slackMessageText/,
+    owner: "src/domain/slack/messageText.ts",
+  },
+  {
     // How a run primes its memory: which tool is asked, with what, and what the
     // answer becomes. Two run sites (the facade and the local subagent) call it;
     // a site with its own recall would ask a different question of the same

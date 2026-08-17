@@ -28,12 +28,47 @@ export const MAX_CHANNEL_KEYWORDS = 20;
 export const MIN_KEYWORD_LENGTH = 2;
 export const MAX_KEYWORD_LENGTH = 50;
 
+/**
+ * What a Slack message *says*, as both the Events API and the Web API spell it
+ * — the fields {@link slackMessageText} reads. An app's message often carries
+ * its content in `attachments` or `blocks` with only a fallback (or nothing)
+ * in `text`: an alert's title and body, a CI result's fields.
+ */
+export interface SlackMessageContent {
+  text?: string;
+  attachments?: SlackAttachment[];
+  blocks?: SlackBlock[];
+}
+
+/** A legacy attachment, narrowed to its readable parts. */
+export interface SlackAttachment {
+  pretext?: string;
+  title?: string;
+  text?: string;
+  fallback?: string;
+  fields?: Array<{ title?: string; value?: string }>;
+}
+
+/**
+ * A Block Kit block, narrowed to the kinds that carry prose. Anything else
+ * (images, dividers, actions, rich text — which Slack mirrors into `text`) is
+ * skipped by type.
+ */
+export interface SlackBlock {
+  type?: string;
+  text?: { text?: string };
+  fields?: Array<{ text?: string }>;
+  elements?: Array<{ type?: string; text?: string }>;
+}
+
 /** A Slack message as the Web API returns it, narrowed to what a run reads. */
-export interface SlackMessage {
+export interface SlackMessage extends SlackMessageContent {
   ts: string;
   user?: string;
   bot_id?: string;
-  text?: string;
+  /** How an app's message is signed — the app's display name, when it set one. */
+  username?: string;
+  bot_profile?: { name?: string };
   /** Attachments on a thread message; present when the bot has files:read. */
   files?: Array<{
     id?: string;

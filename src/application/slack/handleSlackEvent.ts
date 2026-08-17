@@ -1,5 +1,6 @@
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
+import { slackMessageText } from "@/domain/slack/messageText";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
 import { parseSlackCommand, selfUserId } from "@/application/slack/engagement";
@@ -44,6 +45,22 @@ export interface ThreadTurn {
   files: SlackEventFile[];
   /** The human who wrote it, when one did. Absent on the bot's own turns. */
   userId?: string;
+  /**
+   * The app that wrote it, when another app did — its display name, as the
+   * message was signed. Absent on a person's turn and on the bot's own.
+   */
+  appName?: string;
+}
+
+/** How an app signed a message, when it did: `username` first, then its bot profile. */
+function appNameOf(message: Pick<SlackMessage, "username" | "bot_profile">): string | undefined {
+  for (const name of [message.username, message.bot_profile?.name]) {
+    const trimmed = name?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -62,17 +79,19 @@ export function mrkdwnText(text: string): string {
 
 /**
  * Convert thread replies to engine turns: this bot's own turns → assistant,
- * humans → user, **any other app's messages dropped**. A message with no text is
- * kept when it carried files — an image posted on its own is still part of the
- * conversation.
+ * everyone else — humans and **other apps alike** — → user. A message with no
+ * text is kept when it carried files — an image posted on its own is still part
+ * of the conversation.
  *
- * Dropping other bots is the correction, not a filter for noise. `bot_id` alone
- * says "an app wrote this", not "we wrote this", so a thread the bot shares with
- * a CI notifier or an alerting app had that app's messages arriving as *our*
- * assistant turns — the model was shown a deploy bot's output as words it had
- * said itself, and answered follow-ups as though it had. A channel is exactly
- * where several apps post into one thread, which is why this surfaced with
- * `message.channels` rather than before it.
+ * Another app's message is context, not ours. `bot_id` alone says "an app wrote
+ * this", not "we wrote this", so a thread the bot shares with a CI notifier or
+ * an alerting app once had that app's messages arriving as *our* assistant
+ * turns — the model was shown a deploy bot's output as words it had said itself,
+ * and answered follow-ups as though it had. Told apart by our own user id, such
+ * a message is what a person is asking about (the alert the thread hangs under,
+ * the build result being discussed) and reads as a user turn signed with the
+ * app's name — never as something this bot said, and never dropped, since a
+ * follow-up under an alert is a question about the alert.
  *
  * `selfUserId` is our app's user id in this workspace (from the event
  * envelope's `authorizations`). Without one there is no way to tell our
@@ -94,21 +113,18 @@ export function threadToTurns(
   const isOurs = (m: SlackMessage): boolean =>
     selfUserId ? m.user === selfUserId : Boolean(m.bot_id);
   return replies
-    .filter(
-      (m) =>
-        m.ts !== currentTs &&
-        ((m.text ?? "").trim() !== "" || (m.files ?? []).length > 0) &&
-        // Another app's message: not ours to claim, and not a person's turn either.
-        (isOurs(m) || !m.bot_id),
-    )
-    .map((m) => ({
-      message: {
-        role: isOurs(m) ? ("assistant" as const) : ("user" as const),
-        content: (m.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim(),
-      },
-      files: m.files ?? [],
-      ...(m.bot_id || !m.user ? {} : { userId: m.user }),
-    }));
+    .map((m) => ({ m, text: slackMessageText(m).replace(/<@[A-Z0-9]+>/g, "").trim() }))
+    .filter(({ m, text }) => m.ts !== currentTs && (text !== "" || (m.files ?? []).length > 0))
+    .map(({ m, text }) => {
+      const ours = isOurs(m);
+      const appName = !ours && m.bot_id ? appNameOf(m) : undefined;
+      return {
+        message: { role: ours ? ("assistant" as const) : ("user" as const), content: text },
+        files: m.files ?? [],
+        ...(m.bot_id || !m.user ? {} : { userId: m.user }),
+        ...(appName ? { appName } : {}),
+      };
+    });
 }
 
 /**
@@ -127,11 +143,10 @@ export function withSpeakerLabels(
   turns: ThreadTurn[],
   nameByUser: ReadonlyMap<string, string> | undefined,
 ): ThreadTurn[] {
-  if (!nameByUser || nameByUser.size === 0) {
-    return turns;
-  }
   return turns.map((turn) => {
-    const speaker = turn.userId ? nameByUser.get(turn.userId) : undefined;
+    // An app's turn is always signed: its name came with the message, and
+    // without it an alert reads as something the person asking had typed.
+    const speaker = turn.appName ?? (turn.userId ? nameByUser?.get(turn.userId) : undefined);
     const text = typeof turn.message.content === "string" ? turn.message.content : "";
     if (!speaker || !text) {
       return turn;
@@ -276,7 +291,9 @@ export async function handleSlackEvent(
     return;
   }
 
-  const message = (event.text ?? "").replace(/<@[A-Z0-9]+>/g, "").trim();
+  // Everything the message says: an app's alert keeps its body in an
+  // attachment, and `text` alone would hand the run the headline.
+  const message = slackMessageText(event).replace(/<@[A-Z0-9]+>/g, "").trim();
   const projectName = binding.projectName;
   const threadTs = event.thread_ts ?? event.ts;
   // A DM is an agent thread: it has a native status line and a title. A channel
@@ -398,7 +415,14 @@ export async function handleSlackEvent(
   // Labelled on the same terms as the history: leaving the newest turn bare
   // while every older one is named invites the model to attribute the question
   // to whoever spoke last.
-  const currentSpeaker = event.user ? named.nameByUser?.get(event.user) : undefined;
+  // An app that woke the bot — a keyword in an alert, a workflow's mention — is
+  // named the way its thread turns are, so the model knows an alerting app
+  // said this and not a person.
+  const currentSpeaker = event.user
+    ? named.nameByUser?.get(event.user)
+    : event.bot_id
+      ? appNameOf(event)
+      : undefined;
   const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
 
   // From here the turn is the same as any other chat bot's: attachments,

@@ -322,14 +322,15 @@ describe("threadToTurns", () => {
     ]);
   });
 
-  it("claims only its own messages as assistant turns, and drops other apps'", () => {
+  it("claims only its own messages as assistant turns; another app's is a signed user turn", () => {
     // A channel is where several apps post into one thread. Reading `bot_id`
     // alone made a deploy notifier's output arrive as words this bot had said,
-    // and it answered follow-ups as though it had said them.
+    // and it answered follow-ups as though it had said them. Told apart, the
+    // notifier's message is what the person is asking about — kept, as theirs.
     const turns = threadToTurns(
       [
         { ts: "1", user: "U1", text: "did the deploy land?" },
-        { ts: "2", bot_id: "B_CI", text: "Build 4f2c1 FAILED — 3 tests red" },
+        { ts: "2", bot_id: "B_CI", username: "CI", text: "Build 4f2c1 FAILED — 3 tests red" },
         { ts: "3", user: "UBOT", bot_id: "B_OURS", text: "checking now" },
         { ts: "4", user: "U1", text: "and now?" },
       ],
@@ -339,9 +340,35 @@ describe("threadToTurns", () => {
 
     expect(turns.map((t) => t.message)).toEqual([
       { role: "user", content: "did the deploy land?" },
+      { role: "user", content: "Build 4f2c1 FAILED — 3 tests red" },
       { role: "assistant", content: "checking now" },
       { role: "user", content: "and now?" },
     ]);
+    expect(turns.map((t) => t.appName)).toEqual([undefined, "CI", undefined, undefined]);
+    expect(turns[1]?.userId).toBeUndefined();
+  });
+
+  it("reads an app's attachment as the turn's text, since that is where an alert lives", () => {
+    const turns = threadToTurns(
+      [
+        {
+          ts: "1",
+          bot_id: "B_GRAFANA",
+          bot_profile: { name: "Grafana" },
+          text: "",
+          attachments: [{ title: "[FIRING:1] OOMKilled", text: "sample-node was OOMKilled" }],
+        },
+        { ts: "2", user: "U1", text: "why?" },
+      ],
+      "9",
+      "UBOT",
+    );
+
+    expect(turns.map((t) => t.message.content)).toEqual([
+      "[FIRING:1] OOMKilled\nsample-node was OOMKilled",
+      "why?",
+    ]);
+    expect(turns[0]?.appName).toBe("Grafana");
   });
 
   it("keeps the old rule when the envelope names no authorization", () => {

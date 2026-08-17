@@ -679,6 +679,55 @@ describe("handleSlackEvent", () => {
     expect(ran).toBe(true);
   });
 
+  it("runs an alerting app's keyword message on everything it said, signed with the app's name", async () => {
+    // What reached the route was already classified as a keyword run; what the
+    // handler owes it is the alert itself — title and body live in the
+    // attachment, `text` is empty — and who said it, so the model does not
+    // read an alert as words a person typed.
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { slack, calls } = makeSlackFake();
+    const deps = makeDeps([], slack);
+    let seen: ChatMessageInput[] = [];
+    deps.runAgent = async function* (input) {
+      seen = [...input.messages];
+      yield { done: true };
+    };
+
+    await handleSlackEvent(
+      deps,
+      {
+        ...EVENT,
+        authorizations: [{ user_id: "UBOT", is_bot: true }],
+        event: {
+          type: "message",
+          subtype: "bot_message",
+          channel_type: "channel",
+          channel: "C1",
+          ts: "1.0",
+          bot_id: "B_GRAFANA",
+          username: "Grafana",
+          text: "",
+          attachments: [
+            {
+              title: "[FIRING:1] Container OOMKilled (sample-node OOMKilled warning)",
+              text: "container sample-node was OOMKilled",
+              fallback: "[FIRING:1] Container OOMKilled (sample-node OOMKilled warning)",
+            },
+          ],
+        },
+      },
+      BINDING,
+    );
+
+    expect(seen.map((m) => m.content)).toEqual([
+      "Grafana: [FIRING:1] Container OOMKilled (sample-node OOMKilled warning)\ncontainer sample-node was OOMKilled",
+    ]);
+    // Picked up and answered like any channel message: the reaction lands on
+    // the alert, and the reply streams into a thread under it.
+    expect(calls).toEqual(["addReaction", "startStream", "stopStream"]);
+  });
+
   it("still ignores bot messages and bookkeeping subtypes", async () => {
     const { slack, posted } = makeSlackFake();
     const deps = makeDeps([], slack);

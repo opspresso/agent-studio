@@ -65,6 +65,7 @@
 | 실행 파사드가 agent project 를 어떻게 dispatch 하는가 | `src/application/execution/deps.ts` |
 | 진행 상황을 포함해 Slack 답변이 어떻게 전달되는가 | `src/application/slack/replyStream.ts` — 보고는 하나이고, 그것을 렌더하는 것은 표면이 가진 메커니즘이다: DM 의 상태 줄이거나 채널 스트림의 `task_update` 축이다. 어느 쪽도 다른 쪽의 정의가 아니다 |
 | 전달된 Slack 이벤트 중 어떤 것이 봇에게 온 것인가, loop guard 포함 | `src/application/slack/engagement.ts` |
+| Slack 메시지가 무엇을 *말하는가* — `text`·attachment·prose block 을 한 텍스트로 | `src/domain/slack/messageText.ts` 의 `slackMessageText`. 키워드 매칭, 런이 답하는 턴, 스레드 히스토리 셋이 이것을 읽는다 — 경보 앱은 제목과 본문을 attachment 에 두므로 `text` 만 읽는 쪽은 헤드라인만 받는다 |
 | 어떤 메시지가 질문이 아니라 고정된 명령인가 | `src/application/slack/engagement.ts` 의 `parseSlackCommand` — 의도적으로 엄격하다: 명령은 봇이 다시 말할지 여부를 바꾸고, 매칭이 느슨하면 아무도 침묵시켜 달라 하지 않은 스레드를 침묵시킨다 |
 | 런이 사용하는 Slack Web API 표면 | `src/application/slack/types.ts` 의 `SlackClientPort`. 그것이 넘기는 스트리밍 chunk 형태는 `src/domain/slack/types.ts` 의 `SlackChunk` 이고, 어댑터도 거기서 그것들에 닿을 수 있다 |
 | 어댑터가 정규화를 마친 뒤 chat-bot 턴이 어떻게 도는가 — 첨부는 턴 안으로, chunk 는 sink 위로, 꼬리는 한 가지 순서로 | `src/application/messaging/handleTurn.ts` 의 `handleTurn`. Slack·Telegram·Teams 핸들러는 정규화하고 렌더할 뿐, 어느 쪽도 chunk 를 직접 접어 넣지 않는다 |
