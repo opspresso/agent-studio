@@ -1,18 +1,18 @@
-# Records a run leaves
+# 런이 남기는 기록
 
-Three ledgers with different readers: an audit row for a sensitive act, usage rows for what
-was spent and by whom, and a trace for how one run went.
+읽는 사람이 서로 다른 세 개의 원장(ledger) — 민감한 행위에 대한 audit 행, 무엇을 누가
+썼는지에 대한 usage 행, 그리고 한 런이 어떻게 흘러갔는지에 대한 trace.
 
-Retention, sampling and who may read a trace are
-[OPERATIONS.md](../OPERATIONS.md#row-retention). What a trace deliberately does not store is
-[SECURITY.md](../SECURITY.md#data-exposure-and-retention).
+보존 기간, 샘플링, 그리고 누가 trace 를 읽을 수 있는지는
+[OPERATIONS.md](../OPERATIONS.md#행-보존) 다. trace 가 의도적으로 저장하지 *않는*
+것은 [SECURITY.md](../SECURITY.md#데이터-노출과-보존) 다.
 
-## Audit records
+## Audit 기록
 
-A sensitive act leaves a row, not only a log line, and the two are kept side by side because
-they answer to different readers. A log line reaches whoever is already tailing the stream, is
-retained by whatever ships it, and cannot answer "who changed the admin list last quarter". An
-audit row answers exactly that and nothing else.
+민감한 행위는 로그 한 줄만이 아니라 행(row)을 남기고, 둘을 나란히 두는 이유는 서로 다른
+독자에게 답하기 때문이다. 로그 한 줄은 이미 스트림을 지켜보고 있는 사람에게 닿고, 그것을
+실어 나르는 것이 무엇이든 그쪽 정책대로 보존되며, "지난 분기에 admin 목록을 누가 바꿨나"에는
+답하지 못한다. audit 행은 정확히 그 질문에 답하고 그 외에는 답하지 않는다.
 
 ```ts
 AuditEvent { eventId, actorEmail,
@@ -24,112 +24,109 @@ AuditEvent { eventId, actorEmail,
              detail?, createdAt }
 ```
 
-**One writer**, `recordAudit` (`src/application/audit/recordAudit.ts`), pinned by
-`tests/architecture.test.ts`. Every recorded act goes through it; a second writer would spell `target` its
-own way, and a filter that worked for reveals would quietly return nothing for deletions —
-which is the characteristic failure of a drifted audit trail, since it looks like an absence
-of events rather than a bug. The store is **pushed in** by the composition root for the same
-reason `setAdminCheck` is: a call site that had to pass it could forget, and one unrecorded act
-is indistinguishable from one that never happened. `src/instrumentation.ts` wires it on the
-**awaited** boot path rather than leaving it to the composition root's own import: not every
-recording route needs something from the container — the A2A-key reveal needs nothing — and a
-request served before that floating import resolved would reveal a credential and record
-nothing.
+**작성자는 하나**, `recordAudit` (`src/application/audit/recordAudit.ts`) 이며
+`tests/architecture.test.ts` 가 고정한다. 기록되는 모든 행위가 이곳을 지난다. 두 번째
+작성자가 생기면 `target` 을 제 나름대로 적을 것이고, reveal 에는 통하던 필터가 deletion 에는
+조용히 아무것도 돌려주지 않는다 — 어긋난 audit trail 의 전형적인 실패다. 버그가 아니라
+이벤트가 없는 것처럼 보이기 때문이다. 저장소는 `setAdminCheck` 와 같은 이유로 composition
+root 가 **밀어 넣는다**: 그것을 넘겨야 하는 호출 지점은 잊을 수 있고, 기록되지 않은 행위
+하나는 애초에 일어나지 않은 행위와 구별되지 않는다. `src/instrumentation.ts` 는 composition
+root 자신의 import 에 맡기지 않고 **await 되는** 부팅 경로에서 이를 연결한다: 기록하는 모든
+라우트가 컨테이너에서 무언가를 필요로 하지는 않고 — A2A 키 reveal 은 아무것도 필요로 하지
+않는다 — 그 떠 있는(floating) import 가 resolve 되기 전에 처리된 요청은 자격 증명을 노출하고
+아무것도 기록하지 않는다.
 
-**A failed write is logged, not thrown.** The act already happened; refusing it afterwards
-would turn a storage blip into an outage of every sensitive operation at once. The pre-existing
-`log.warn` lines at each site are deliberately kept for exactly this case — they are what
-remains when the audit store is the thing that failed.
+**쓰기 실패는 로그로 남기고 throw 하지 않는다.** 행위는 이미 일어났다. 뒤늦게 거부하면
+저장소의 순간적인 장애가 모든 민감 작업이 한꺼번에 멈추는 장애로 바뀐다. 각 지점에 원래 있던
+`log.warn` 줄들은 바로 이 경우를 위해 의도적으로 남겨 뒀다 — audit 저장소 자체가 고장 났을 때
+남는 것이 그것이다.
 
-`action` is a closed set so the reader is a filter rather than a text search, and so recording
-a new kind of act is a deliberate edit. `detail` never carries a credential: a settings write
-records *which* keys moved, never their values, and two of those keys are secrets.
+`action` 은 닫힌 집합이라 읽는 쪽이 텍스트 검색이 아니라 필터가 되고, 새로운 종류의 행위를
+기록하는 일이 의도적인 편집이 된다. `detail` 은 자격 증명을 절대 담지 않는다: settings 쓰기는
+*어떤* 키가 움직였는지를 기록하고 그 값은 절대 기록하지 않으며, 그 키 중 둘은 secret 이다.
 
-Rows are keyed by the **UTC day** they happened on and read a day at a time, the shape usage
-already uses — it keeps a deployment's whole history from appending to one partition. Nothing
-in the app updates or deletes one; expiry is the table's TTL. A record its subject can amend is
-not a record, and it is what makes a *deleted* project's owner still answerable, since the
-cascade takes every other row that knew.
+행은 그 일이 일어난 **UTC 일자**로 키가 매겨지고 하루씩 읽는다. usage 가 이미 쓰고 있는
+모양이며 — 한 배포의 전체 이력이 한 파티션에 계속 덧붙는 것을 막아 준다. 앱 안의 어떤 것도
+행을 갱신하거나 삭제하지 않는다. 만료는 테이블의 TTL 이 맡는다. 그 대상이 고칠 수 있는 기록은
+기록이 아니고, *삭제된* project 의 소유자에게도 여전히 책임을 물을 수 있게 하는 것이 바로 이
+점이다 — 그 사실을 알고 있던 다른 행은 cascade 가 전부 가져가기 때문이다.
 
-## Usage and cost attribution
+## 사용량과 비용 귀속
 
-Daily per-project per-model aggregates (see the [key map](../ARCHITECTURE.md#dynamodb-single-table-design)). The
-dashboard reads `USAGEDATE#{date}` GSI partitions across a range and regroups client-side by
-project / provider / model.
+project 별·model 별 일일 집계다 ([키 맵](../ARCHITECTURE.md#dynamodb-단일-테이블-설계)
+참고). 대시보드는 범위에 걸쳐 `USAGEDATE#{date}` GSI 파티션을 읽고 클라이언트 쪽에서
+project / provider / model 로 다시 묶는다.
 
-**The cached share of the prompt is one of the metrics**, not something inferred from the
-bill. `calculateCost` has always read `prompt_tokens_details.cached_tokens` to price the
-input, and then dropped the count — so a prompt that stopped being cacheable cost more per
-turn while calls, tokens and the answer all looked exactly as they had. It now rides on
-`UsageInfo` (and therefore the `usage` chunk), into the daily rows as `cachedTokens.{model}`,
-and onto each model span of a trace, where a cache regression is legible per turn: the first
-turn of a run is cold by definition, and a broken cache is every later turn being cold too.
-The breakdown table renders a **blank** where nothing reported one — `0%` would claim a cold
-cache for a channel that simply does not report the field.
+**프롬프트에서 캐시된 비중은 지표 중 하나이고**, 청구서에서 유추하는 값이 아니다.
+`calculateCost` 는 입력 가격을 매기려고 늘 `prompt_tokens_details.cached_tokens` 를 읽었고,
+그다음 그 수치를 버렸다 — 그래서 캐시가 되지 않게 된 프롬프트는 턴마다 비용이 더 들었는데도
+호출 수·토큰·답변은 전과 똑같아 보였다. 이제 그 값은 `UsageInfo` 를 타고(따라서 `usage`
+chunk 에도) 일일 행에 `cachedTokens.{model}` 로 들어가고, trace 의 각 model span 에도 실린다.
+거기서는 캐시 퇴행이 턴 단위로 읽힌다: 런의 첫 턴은 정의상 cold 이고, 캐시가 깨졌다는 것은
+이후의 모든 턴도 cold 라는 뜻이다. 분해 표는 아무것도 보고하지 않은 자리에 **빈 칸**을 그린다
+— `0%` 는 그 필드를 아예 보고하지 않는 channel 에 대해 캐시가 cold 라고 주장하는 셈이 된다.
 
-**Who spent it is a second row, not another dimension on the first.** Projects are a shared
-catalog — any signed-in user may run any project — so the project name does not identify the
-spender. `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names one:
+**누가 썼는지는 두 번째 행이지, 첫 행에 붙는 또 하나의 차원이 아니다.** Project 는 공유
+카탈로그이고 — 로그인한 사용자라면 누구나 어떤 project 든 실행할 수 있다 — 그래서 project
+이름은 지출한 주체를 식별하지 못한다. `RunActor { kind, id }`
+(`src/domain/execution/actor.ts`) 가 그 주체를 지목한다:
 
-| Kind | Id | Why |
+| Kind | Id | 이유 |
 |---|---|---|
-| `user` | email | — |
-| `project-token` | the **owner's** email | A token authenticates as them; the *kind* is what keeps a machine's spend apart from that person's own runs — and out of their personal tier budget, which only `user` rows feed |
-| `slack` | Slack user id | Slack hands over no email, and guessing a mapping would bill the wrong person |
-| `telegram` | Telegram user id | The same reason; Telegram hands over a name and a username, and neither is an address |
-| `a2a` | the constant `shared-key`, or the client key's name | The shared key names nobody; a named client key names its holder, so their runs are attributed and bounded per client |
+| `user` | 이메일 | — |
+| `project-token` | **소유자의** 이메일 | 토큰은 그 사람으로 인증한다. 기계의 지출을 그 사람 자신의 런과 떼어 놓는 것은 *kind* 이며 — `user` 행만 채우는 그 사람의 개인 tier 예산에서도 빼 놓는다 |
+| `slack` | Slack user id | Slack 은 이메일을 넘겨주지 않고, 매핑을 추측하면 엉뚱한 사람에게 비용을 물린다 |
+| `telegram` | Telegram user id | 같은 이유다. Telegram 은 이름과 username 을 넘겨주는데 둘 다 주소가 아니다 |
+| `a2a` | 상수 `shared-key`, 또는 client key 의 이름 | 공유 키는 아무도 지목하지 못한다. 이름 붙은 client key 는 그 보유자를 지목하므로, 그쪽 런은 client 단위로 귀속되고 한도가 매겨진다 |
 | `webhook` | `{project}:{triggerId}` | — |
 | `schedule` | `{project}:{triggerId}` | — |
 
-The split into a separate `ACTOR#{date}#{actor}` row is deliberate. `UsageRow` holds a map per
-metric keyed by model; keying those by `actor|model` instead would grow one item with the
-number of distinct callers, and a busy project would approach the 400KB item limit within a day
-— while the dashboard, which only ever asks for project totals, would pay to read every caller
-on every request. A separate row in the same partition keeps both reads exactly as wide as
-their question, and the project cascade already deletes the whole partition.
+별도의 `ACTOR#{date}#{actor}` 행으로 나눈 것은 의도적이다. `UsageRow` 는 지표마다 model 로
+키가 매겨진 맵을 갖는다. 그것을 대신 `actor|model` 로 키를 매기면 서로 다른 호출자 수만큼
+아이템 하나가 커지고, 바쁜 project 는 하루 안에 400KB 아이템 한도에 근접한다 — 그러면서
+언제나 project 합계만 묻는 대시보드는 매 요청마다 모든 호출자를 읽는 비용을 치른다. 같은
+파티션의 별도 행은 두 읽기 모두를 각자의 질문만큼만 넓게 유지하고, project cascade 는 이미
+파티션 전체를 삭제한다.
 
-The project total is written **first and unconditionally**; the actor row follows. Attribution
-is additive — a path that cannot name its caller still records the spend it caused.
+project 합계는 **먼저, 무조건** 쓰고 actor 행이 뒤따른다. 귀속은 덧붙는 것이다 — 호출자를
+지목하지 못하는 경로도 자기가 유발한 지출은 그대로 기록한다.
 
-**The actor is the run's, not the turn's.** `createUsageAggregator` is bound with it once, so
-the calls a subagent transfer makes on another project are still attributed to whoever started
-the run. `RunOrigin { actor?, caller?, conversation?, ancestry }` carries them down every
-transfer hop — `caller` being who the actor is *in words*, for versions that opt into caller
-context; a subagent is answering, and billing, the same person as its parent, so the values
-always travel together as one rather than as parameters threaded side by side through eight
-signatures.
+**actor 는 런의 것이지 턴의 것이 아니다.** `createUsageAggregator` 는 그것과 한 번 묶이므로,
+subagent transfer 가 다른 project 에서 하는 호출도 여전히 런을 시작한 사람에게 귀속된다.
+`RunOrigin { actor?, caller?, conversation?, ancestry }` 가 모든 transfer hop 을 따라 이들을
+내려보낸다 — `caller` 는 caller context 를 켠 version 을 위해 actor 가 *말로* 누구인지를 담는
+값이다. subagent 는 부모와 같은 사람에게 답하고 같은 사람에게 비용을 물리므로, 값들은 여덟
+개의 시그니처를 나란히 꿰고 지나가는 파라미터가 아니라 언제나 하나로 함께 이동한다.
 
-**`conversation` is which thread the run is in**, `RunConversation { surface, id }`, spelled
-as one key by `conversationKey` (`src/domain/execution/actor.ts`, which also owns
-`conversationOf` — the one place a foreign id is normalised for a header and a storage key).
-Each surface has its own builder and its own spelling, and a firing has none:
+**`conversation` 은 런이 어느 스레드에 있는지다.** `RunConversation { surface, id }` 이고,
+`conversationKey` 가 하나의 키로 표기한다 (`src/domain/execution/actor.ts` — 이 파일은
+`conversationOf` 도 소유한다. 외부 id 가 헤더와 저장 키를 위해 정규화되는 유일한 자리다).
+표면마다 자기 빌더와 자기 표기법을 갖고, firing 에는 없다:
 
-| Surface | Key | Built by |
+| 표면 | Key | 만드는 곳 |
 |---|---|---|
 | chat | `chat:{chatId}` | `chatConversation` (`src/domain/chat/conversation.ts`) |
-| Slack | `slack:{channel}:{threadTs}` — the thread, root message included | `slackConversation` (`src/domain/slack/conversation.ts`) |
-| inbound A2A | `a2a:{clientActorId}:{contextId}` — the caller's grouping, under the caller | `a2aConversation` (`src/domain/a2a/conversation.ts`) |
-| `predict` / `chat/completions` / `agent` | `api:{callerDigest}:{X-Conversation-Id}` — opt-in, scoped to the caller without carrying their email | `requestConversation` (`src/app/api/projects/_lib/conversation.ts`) |
-| webhook / schedule | — | a firing takes no follow-up question, so it is not a conversation of one |
+| Slack | `slack:{channel}:{threadTs}` — 루트 메시지를 포함한 그 스레드 | `slackConversation` (`src/domain/slack/conversation.ts`) |
+| inbound A2A | `a2a:{clientActorId}:{contextId}` — 호출자 아래에 놓인, 호출자의 묶음 | `a2aConversation` (`src/domain/a2a/conversation.ts`) |
+| `predict` / `chat/completions` / `agent` | `api:{callerDigest}:{X-Conversation-Id}` — opt-in 이며, 이메일을 담지 않고 호출자 범위로 한정된다 | `requestConversation` (`src/app/api/projects/_lib/conversation.ts`) |
+| webhook / schedule | — | firing 은 후속 질문을 받지 않으므로, 한 번짜리 대화조차 아니다 |
 
-Two consumers read it, and only two: the outbound A2A transfer, which continues the remote
-conversation the first question opened ([A2A](agents-a2a.md#a2a)), and the MCP header that tells a
-stateful server which conversation is asking ([MCP](mcp.md)). Neither the actor (a person is in
-many conversations) nor the ancestry (a chain of projects, not of turns) could stand in for
-it, which is why it is a field of its own. The trace records the key too — for correlation
-when reading one trace; nothing indexes or filters by it yet, so "every run of this thread" is
-not a query anything answers today.
+이것을 읽는 소비자는 둘, 딱 둘이다: 첫 질문이 연 원격 대화를 이어 가는 outbound A2A transfer
+([A2A](agents-a2a.md#a2a)), 그리고 상태를 갖는 서버에 어느 대화가 묻고 있는지 알려 주는 MCP
+헤더 ([MCP](mcp.md)). actor(한 사람은 여러 대화에 있다)도 ancestry(턴의 사슬이 아니라 project
+의 사슬이다)도 이것을 대신할 수 없고, 그래서 자기 필드로 존재한다. trace 도 이 키를 기록한다
+— trace 하나를 읽을 때 상관 짓기 위해서다. 아직 이것으로 인덱싱하거나 필터링하는 것은 없으니,
+"이 스레드의 모든 런"은 오늘 무엇도 답해 주지 못하는 질의다.
 
-`conversationOf` **encodes rather than replaces**: whitespace, control characters, anything
-outside printable ASCII and `%` itself become `%XX` over their UTF-8 bytes, so a UUID or a
-Slack address reads back unchanged and two different foreign ids — an A2A `contextId`, a
-caller's header — never become one conversation. Replacing them with a placeholder was the
-first version, and it made every Korean word two underscores: two conversations, one memory.
-Past 512 encoded characters there is no conversation rather than a shortened one, for the
-same reason; the API surface answers 400 for that, since a caller that declared a
-conversation and silently ran without one would have no way to know.
+`conversationOf` 는 **치환하지 않고 인코딩한다**: 공백, 제어 문자, 출력 가능한 ASCII 를
+벗어나는 모든 것, 그리고 `%` 자신이 자기 UTF-8 바이트에 대해 `%XX` 가 된다. 그래서 UUID 든
+Slack 주소든 그대로 다시 읽히고, 서로 다른 두 외부 id — A2A `contextId`, 호출자의 헤더 — 가
+하나의 대화가 되는 일이 없다. 그것들을 placeholder 로 치환하는 것이 첫 버전이었고, 그 방식은
+모든 한국어 단어를 밑줄 두 개로 만들었다: 대화는 둘, 메모리는 하나. 인코딩된 512자를 넘으면
+같은 이유로 짧아진 대화가 아니라 대화가 아예 없다. API 표면은 그에 대해 400 을 답하는데,
+대화를 선언해 놓고 조용히 대화 없이 실행된 호출자는 그 사실을 알 방법이 없기 때문이다.
 
-## Traces
+## Trace
 
 ```ts
 Trace     { traceId, projectName, versionName, projectType, actor?, ancestry?, conversation?,
@@ -140,30 +137,28 @@ TraceSpan { spanId, kind: 'model' | 'tool' | 'subagent', name, author?,
             startedAt, endedAt, durationMs, status: 'ok' | 'error', input?, output? }
 ```
 
-Agent runs always persist model/tool/subagent spans; non-agent and image predict runs are
-sampled. Spans keep only bounded metadata — character counts, tokens, cost, duration, subagent
-trace ids. **Raw prompts and tool results are not stored.** Retention, sampling and who may
-read a trace are in [OPERATIONS.md](../OPERATIONS.md#tracing).
+Agent 런은 model/tool/subagent span 을 언제나 저장하고, agent 가 아닌 런과 이미지 predict
+런은 샘플링된다. span 은 한도가 정해진 메타데이터만 담는다 — 문자 수, 토큰, 비용, 소요 시간,
+subagent trace id. **원문 프롬프트와 tool 결과는 저장하지 않는다.** 보존 기간, 샘플링, 누가
+trace 를 읽을 수 있는지는 [OPERATIONS.md](../OPERATIONS.md#트레이싱) 에 있다.
 
-**A trace is assembled from the same chunks the user sees.** `TraceRecorder`
-(`src/application/trace/recorder.ts`) observes the `EngineChunk` stream instead of being
-called from instrumentation points scattered through the loop, so a new tool or builtin is
-traced without anything having to remember it. It reads the ending through `runTermination`,
-which is what keeps a child's turn limit from marking its parent's trace.
+**trace 는 사용자가 보는 것과 같은 chunk 로 조립된다.** `TraceRecorder`
+(`src/application/trace/recorder.ts`) 는 루프 곳곳에 흩어진 계측 지점에서 호출되는 대신
+`EngineChunk` 스트림을 관찰한다. 그래서 새 tool 이나 builtin 은 아무것도 그것을 기억하지
+않아도 trace 에 남는다. 종료는 `runTermination` 을 통해 읽으며, 그것이 자식의 turn limit 이
+부모의 trace 에 찍히는 것을 막아 준다.
 
-**`turn-limit` is a status of its own** because a run that reached its ceiling is not a run
-that finished. Recording it as `completed` made the one run worth investigating read as
-normal on the traces page — and that stays true now that the last turn wraps up rather than
-falling silent: the answer exists, but it was written with the budget spent and without the
-tools the plan was still using.
+**`turn-limit` 은 그 자체로 하나의 상태다.** 상한에 도달한 런은 끝난 런이 아니기 때문이다.
+이것을 `completed` 로 기록하면 정작 조사할 가치가 있는 그 한 건이 trace 페이지에서 정상으로
+읽혔다 — 마지막 턴이 침묵하는 대신 마무리를 짓게 된 지금도 그대로다: 답은 존재하지만, 예산을
+다 쓴 채로 그리고 계획이 여전히 쓰고 있던 tool 없이 쓰인 답이다.
 
-**One transfer is one span, whatever depth it reached.** A subagent entry is keyed by the
-direct child *and* its trace id, so a deeper hop rolls into the transfer that started it while
-two transfers to the same agent stay two spans. The chain is then readable in both directions:
-`ancestry` upwards to the top-level run, a span's subagent trace id downwards into the child's
-own trace.
+**transfer 하나는 어느 깊이까지 갔든 span 하나다.** subagent 항목은 직계 자식 *과* 그 trace id
+로 키가 매겨지므로, 더 깊은 hop 은 그것을 시작한 transfer 로 합쳐지고 같은 agent 로의 두
+transfer 는 두 span 으로 남는다. 그러면 사슬은 양방향으로 읽힌다: `ancestry` 로는 위로
+top-level 런까지, span 의 subagent trace id 로는 아래로 자식 자신의 trace 까지.
 
-**Every accumulator is bounded**, because a trace is a single DynamoDB item: 100 spans, with
-the rest counted in `spansDropped` rather than vanishing; 20 warnings; and 1,000 characters of
-any one error or warning string.
+**모든 누적기에는 한도가 있다.** trace 가 DynamoDB 아이템 하나이기 때문이다: span 100 개,
+나머지는 사라지는 대신 `spansDropped` 에 세어진다. warning 20 개. 그리고 error 나 warning
+문자열 하나당 1,000자.
 

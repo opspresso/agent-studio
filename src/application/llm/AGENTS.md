@@ -9,7 +9,7 @@ surface, so callers keep one import path.
 **This file holds what must not break.** Why the loop is shaped this way — what a version
 declares, where the budget's ceiling comes from, why an image dep is an opt-in — is
 [docs/design/execution.md](../../../docs/design/execution.md), and what wraps a run before it
-reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#the-run-bracket).
+reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래킷).
 
 ## Tool loop (`runAgent`)
 
@@ -170,7 +170,7 @@ reaches here is [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#the-run-bra
     children, and `MAX_DISPATCH_TASKS` plus that asymmetry are the only bounds on how many run.
     Spend is bounded: `subagentRunner` checks the child project's own cost limit where the
     child's version resolves, and the parent settles that project's thresholds after its usage
-    flush (see [ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#the-run-bracket)).
+    flush (see [ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#런-브래킷)).
   - Turn accounting is a transfer's: children start at `turn + 1`, the parent resumes at
     `turn + 2` however many ran, guarded by the same `turn + 2 >= maxTurn`.
   - Children advance through `mergeGenerators` (`src/shared/`), which keeps each one's return

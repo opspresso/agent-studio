@@ -1,122 +1,121 @@
 # Telegram
 
-Per-project bots on the shared [messaging pipeline](messaging.md): how a reply is delivered
-where nothing streams, which of the updates a bot receives are for it, and how a follow-up
-carries the question before it when the platform hands back no history.
+공유 [메시징 파이프라인](messaging.md) 위에 얹은 프로젝트별 봇: 아무것도 스트리밍되지
+않는 곳에서 답이 어떻게 전달되는지, 봇이 받는 update 중 어느 것이 봇을 향한 것인지,
+그리고 플랫폼이 히스토리를 하나도 돌려주지 않을 때 후속 질문이 그 앞의 질문을 어떻게
+나르는지.
 
-The credentials and the webhook are per project, like Slack's — [API.md](../API.md#registry-and-integration-operations)
-has the settings endpoints and what the events endpoint answers; how the webhook is
-authenticated is [SECURITY.md](../SECURITY.md#request-authentication-for-machine-callers).
+자격 증명과 webhook 은 Slack 과 마찬가지로 프로젝트별이다 — 설정 엔드포인트와 이벤트
+엔드포인트가 무엇으로 답하는지는 [API.md](../API.md#레지스트리연동-오퍼레이션) 에
+있고, webhook 이 어떻게 인증되는지는
+[SECURITY.md](../SECURITY.md#머신-호출자의-요청-인증) 에 있다.
 
-Bots are **per project**: `/api/telegram/webhook/[project]` is the only endpoint, registered
-with Telegram by the settings page together with a secret token this platform mints
-(`adg_…`); Telegram echoes it on every delivery, and that echo is the whole authentication.
-The bot's own `@username` is learned from `getMe` when the token is saved and stored beside
-it, because it is what tells a mention of *this* bot in a group from a mention of anyone
-else — and its user id is the number in front of the colon of every bot token, so a reply
-to one of the bot's messages is recognised without a round trip.
+봇은 **프로젝트별**이다: 엔드포인트는 `/api/telegram/webhook/[project]` 하나뿐이고, 설정
+페이지가 이 플랫폼이 발급한 secret token (`adg_…`) 과 함께 Telegram 에 등록한다. Telegram
+은 전달할 때마다 그 토큰을 그대로 되돌려 보내고, 그 echo 가 인증의 전부다. 봇 자신의
+`@username` 은 토큰을 저장할 때 `getMe` 로 알아내 토큰 옆에 함께 저장한다. 그룹에서 *이*
+봇을 부른 mention 과 다른 누군가를 부른 mention 을 구별해 주는 것이 그것이기 때문이다 —
+그리고 봇의 user id 는 모든 bot token 의 콜론 앞 숫자라서, 봇이 보낸 메시지에 달린 답장은
+왕복 호출 없이 알아본다.
 
-## Delivering a reply
+## 답을 전달하기
 
-**Telegram has one way to put a growing answer on screen: send a message, then edit it.**
-There is no streaming call and no status line; what it offers instead is the typing
-indicator, which lasts five seconds and says only that the bot is doing something. So
-progress is the typing indicator kept alive on its own clock (`keepStatusAlive`, every four
-seconds — the case it exists for, a slow provider or a long tool, is exactly the one where
-no chunks arrive), and the answer is a message edited in place, paced at one edit per two
-seconds because Telegram documents about one message a second per chat and refuses bursts.
-`step` and `stepDone` render as the same indicator; what the run is doing shows up in the
-answer.
+**Telegram 에서 자라나는 답을 화면에 올리는 방법은 하나뿐이다: 메시지를 보내고, 그것을
+편집한다.** 스트리밍 호출도 상태 줄도 없다. 대신 있는 것은 5초 동안 유지되고 봇이 뭔가
+하고 있다는 사실만 알려 주는 typing indicator 다. 그래서 진행 상황은 자기 시계로 살려 두는
+typing indicator 이고 (`keepStatusAlive`, 4초마다 — 이것이 존재하는 이유인 느린 provider 나
+오래 걸리는 tool 이야말로 chunk 가 하나도 오지 않는 경우다), 답은 제자리에서 편집되는
+메시지이며, 편집 속도는 2초에 한 번이다. Telegram 이 chat 당 초당 한 메시지 정도를
+문서화하고 있고 버스트를 거부하기 때문이다. `step` 과 `stepDone` 은 같은 indicator 로
+렌더된다. 런이 무엇을 하고 있는지는 답 안에 드러난다.
 
-Two of Telegram's limits shape the rest, and both are owned by
-`src/application/telegram/replyChannel.ts`:
+Telegram 의 제한 두 가지가 나머지를 결정하고, 둘 다
+`src/application/telegram/replyChannel.ts` 가 소유한다:
 
-- **A message holds 4,096 characters.** A longer answer becomes several messages, each
-  opened as the one before it fills — the reader watches the answer continue rather than
-  stop — cut at the last line break in the final 800 characters of the window where there is
-  one, so a paragraph is not split mid-sentence unless the paragraph itself is longer than a
-  message. Only the first message quotes the question. A message still being written ends
-  in a cursor, so a reader arriving mid-run does not take a sentence that stops halfway for
-  the whole answer; the final write removes it.
-- **A message is rendered from HTML, strictly.** An unknown tag, an unbalanced one, or a bare
-  `<` refuses the whole message, and there is no partial rendering. The answer therefore
-  streams as plain text and is rendered **once, at the end** (`markdown.ts` — bold, italic,
-  strikethrough, code spans and fences, links to `http(s)` only, headings as bold, bullets as
-  bullets; everything else escaped and left as written); if Telegram refuses the rendered
-  version, the plain one is sent instead. Formatting can be lost that way; the answer
-  cannot. Every write that fails at the close is posted on its own rather than lost — that
-  failure was silent for a whole release on the Slack surface, and a reader had no way to
-  tell a lost answer from a slow one.
+- **메시지 하나는 4,096자를 담는다.** 그보다 긴 답은 여러 메시지가 되고, 각 메시지는 앞의
+  메시지가 다 차는 순간 열린다 — 독자는 답이 멈추는 것이 아니라 이어지는 것을 본다 —
+  그리고 창의 마지막 800자 안에 줄바꿈이 있으면 그 마지막 줄바꿈에서 자른다. 그래서 문단
+  자체가 메시지 하나보다 길지 않은 한 문단이 문장 도중에 쪼개지지 않는다. 질문을 인용하는
+  것은 첫 메시지뿐이다. 아직 쓰이는 중인 메시지는 커서로 끝난다. 런 도중에 도착한 독자가
+  중간에 멈춘 문장을 답 전체로 오해하지 않게 하기 위해서이며, 마지막 쓰기가 그 커서를
+  지운다.
+- **메시지는 HTML 로, 엄격하게 렌더된다.** 모르는 태그, 짝이 맞지 않는 태그, 벌거벗은 `<`
+  하나면 메시지 전체가 거부되고, 부분 렌더링은 없다. 그래서 답은 평문으로 스트리밍되고
+  **끝에 한 번** 렌더된다 (`markdown.ts` — 굵게, 기울임, 취소선, 코드 스팬과 펜스,
+  `http(s)` 링크만, 제목은 굵게, 불릿은 불릿으로. 그 밖의 모든 것은 escape 해 쓰인 그대로
+  둔다). Telegram 이 렌더된 버전을 거부하면 평문 버전을 대신 보낸다. 그렇게 하면 서식은
+  잃을 수 있지만 답은 잃을 수 없다. 마감에서 실패한 쓰기는 하나도 버리지 않고 따로
+  게시한다 — 그 실패는 Slack 표면에서 한 릴리즈 내내 조용했고, 독자는 잃어버린 답과 느린
+  답을 구별할 방법이 없었다.
 
-The tail is Markdown like the answer, because it is rendered with it in one pass: a produced
-file is a `📎 [name](url)` link, a warning a `⚠️` line. A picture is `sendPhoto` with the
-prompt as its caption.
+꼬리(tail)도 답과 같은 Markdown 이다. 한 번의 렌더에서 답과 함께 처리되기 때문이다:
+생성된 파일은 `📎 [name](url)` 링크, 경고는 `⚠️` 줄이 된다. 그림은 프롬프트를 캡션으로 단
+`sendPhoto` 다.
 
-## Which updates are for the bot
+## 어떤 update 가 봇을 향한 것인가
 
-One function, `classifyTelegramUpdate` (`src/application/telegram/engagement.ts`), and **it
-runs in the route ahead of the dedup claim** — the same cost contract as Slack's: an update
-nobody addressed to the bot costs a secret check and nothing else.
+함수 하나, `classifyTelegramUpdate` (`src/application/telegram/engagement.ts`) 이고,
+**그것은 dedup claim 보다 앞서 라우트에서 실행된다** — Slack 과 같은 비용 계약이다: 아무도
+봇에게 보내지 않은 update 는 secret 검사 하나만 쓰고 그 이상은 쓰지 않는다.
 
-Telegram does part of the deciding itself. A bot in a group receives, by default
-(BotFather's *privacy mode*), only the messages that name it — a command, a mention, a reply
-to one of its messages — so most of what reaches here is for the bot already. Privacy mode
-can be switched off, and then the bot receives everything the group says; the funnel is
-what keeps it from answering all of it:
+판단의 일부는 Telegram 이 직접 한다. 그룹 안의 봇은 기본값(BotFather 의 *privacy mode*)으로는
+자기를 지명한 메시지만 받는다 — 명령, mention, 자기 메시지에 달린 답장 — 그래서 여기까지
+오는 것 대부분은 이미 봇을 향한 것이다. privacy mode 는 끌 수 있고, 그러면 봇은 그룹이
+하는 말 전부를 받는다. 그 전부에 답하지 않게 막는 것이 이 깔때기다:
 
-1. **not a new message** — an edit, a channel post, a service update — nothing; the webhook
-   asks Telegram for `message` updates alone, so these arrive only from an older registration;
-2. **a bot's message**, this bot's own included — nothing, because everything below can start
-   a run and a run that answers itself never stops;
-3. **a command this bot understands** — `/start` and `/help`, bare or addressed
-   (`/help@painter_bot`); one addressed to another bot is nobody's business here, and a
-   command this bot does not know is an ordinary question;
-4. **a private chat** — every message in one is for the bot;
-5. **a group message that mentions the bot or replies to one of its messages** — answered,
-   with the mention taken out of the text;
-6. otherwise nothing.
+1. **새 메시지가 아님** — 편집, 채널 게시물, 서비스 update — 아무것도 하지 않는다.
+   webhook 은 Telegram 에 `message` update 만 요청하므로, 이런 것은 예전 등록에서만
+   도착한다;
+2. **봇의 메시지**, 이 봇 자신의 것을 포함해 — 아무것도 하지 않는다. 아래의 모든 항목이
+   런을 시작시킬 수 있고, 자기 자신에게 답하는 런은 멈추는 법이 없기 때문이다;
+3. **이 봇이 아는 명령** — `/start` 와 `/help`, 맨몸이든 수신자를 붙였든
+   (`/help@painter_bot`). 다른 봇에게 붙인 명령은 여기서 상관할 일이 아니고, 이 봇이 모르는
+   명령은 평범한 질문이다;
+4. **개인 chat** — 그 안의 모든 메시지는 봇을 향한 것이다;
+5. **봇을 mention 했거나 봇의 메시지에 답장한 그룹 메시지** — 답한다. 텍스트에서 mention 은
+   빼고;
+6. 그 밖에는 아무것도 하지 않는다.
 
-Nothing here costs a read. A group has no engagement row and no `!mute`: a follow-up there
-is a reply, and Telegram already tells the bot what a message replies to. A message with no
-text and no attachment is ignored; a photo with no caption is not — it is a question about
-the picture.
+여기 어느 것도 읽기 비용을 쓰지 않는다. 그룹에는 engagement 행도 `!mute` 도 없다: 그룹에서의
+후속은 답장이고, 어떤 메시지에 답장한 것인지는 Telegram 이 이미 봇에게 알려 준다. 텍스트도
+첨부도 없는 메시지는 무시한다. 캡션 없는 사진은 무시하지 않는다 — 그것은 그림에 대한
+질문이다.
 
-## History
+## 히스토리
 
-**The Bot API hands back no history.** A bot sees each update once; there is no call that
-returns a chat's earlier messages, and `reply_to_message` carries one message, not a thread.
-So the only way a follow-up can carry the question before it is for this platform to have
-written both down. That is `ConversationTranscriptRepository`
-(`src/domain/messaging/transcript.ts`, rows under `TRANSCRIPT#{project}#{conversation}`): a
-bounded, expiring record of the turns exchanged in one conversation — the newest 50 are read
-before the run, oldest first, and the question and the answer are appended after it, in
-that order. It is not a chat: nobody reads it back in a console, it is not replayed with its
-tool traffic, and losing it costs the next question its context, not its answer. A read that
-fails is a warning on the reply ("answered without prior context"); a write that fails is
-logged. Turns expire seven days after they are written, each on its own, so a live
-conversation keeps its recent turns while its old ones fall away.
+**Bot API 는 히스토리를 하나도 돌려주지 않는다.** 봇은 각 update 를 한 번 볼 뿐이고, chat
+의 이전 메시지를 돌려주는 호출은 없으며, `reply_to_message` 가 나르는 것은 메시지 하나이지
+스레드가 아니다. 그래서 후속 질문이 그 앞의 질문을 나를 수 있는 유일한 방법은 이 플랫폼이
+둘 다 적어 두는 것이다. 그것이 `ConversationTranscriptRepository`
+(`src/domain/messaging/transcript.ts`, `TRANSCRIPT#{project}#{conversation}` 아래의 행들)
+다: 한 conversation 에서 오간 턴들의, 한계가 있고 만료되는 기록 — 런 전에 최신 50개를
+오래된 것부터 읽고, 런 뒤에 질문과 답을 그 순서로 덧붙인다. 이것은 chat 이 아니다: 콘솔에서
+다시 읽는 사람도 없고, tool 트래픽과 함께 replay 되지도 않으며, 잃어버리면 다음 질문이
+맥락을 잃을 뿐 답을 잃지는 않는다. 읽기가 실패하면 답에 경고가 붙고("answered without prior
+context"), 쓰기가 실패하면 로그에 남는다. 턴은 쓰인 지 7일 뒤에 각자 따로 만료되므로, 살아
+있는 conversation 은 최근 턴을 지키면서 오래된 턴을 떨군다.
 
-A **conversation** is the chat — `telegram:{chatId}` — or, in a forum supergroup, the topic:
-`telegram:{chatId}:{threadId}`. A private chat is one conversation for as long as it exists;
-a plain group is one conversation for everyone in it, which is what it looks like to its
-members too. The same key is what an MCP server is told and what an outbound A2A transfer
-continues under (see [agents-a2a.md](agents-a2a.md)).
+**conversation** 은 chat — `telegram:{chatId}` — 이거나, 포럼형 supergroup 에서는
+토픽이다: `telegram:{chatId}:{threadId}`. 개인 chat 은 그것이 존재하는 내내 하나의
+conversation 이고, 평범한 그룹은 그 안의 모두에게 하나의 conversation 이다 — 구성원들
+눈에도 그렇게 보인다. MCP 서버에 전달되는 키도, 바깥으로 나가는 A2A transfer 가 이어받는
+키도 같은 키다 ([agents-a2a.md](agents-a2a.md) 참고).
 
-**Who is asking** reaches the model only when the version opted in
-(`parameters.callerContext`), and only as much as an update carries: the sender's name, made
-prompt-safe by `callerFrom`; Telegram hands over no timezone and no email, so a Telegram run
-files its artifacts by project alone. The opt-in gates what is *written down* too — a turn's
-speaker name goes into the transcript only for a version that asked to know it — and when a
-group conversation holds more than one human, every human turn is labelled with its speaker,
-the newest included, so a three-way conversation does not reach the model as one person's
-monologue. Images in earlier turns are not carried: the transcript keeps text alone.
+**누가 묻고 있는지**는 Version 이 옵트인했을 때만(`parameters.callerContext`), 그리고
+update 가 나르는 만큼만 모델에 닿는다: 보낸 사람의 이름이고, `callerFrom` 이 프롬프트에
+안전하도록 만든다. Telegram 은 timezone 도 email 도 넘겨주지 않으므로, Telegram 런은 자기
+artifact 를 project 만으로 분류한다. 이 옵트인은 *적어 두는 것* 도 통제한다 — 턴의 화자
+이름은 그것을 알고자 한 Version 에 대해서만 transcript 에 들어간다 — 그리고 그룹
+conversation 에 사람이 둘 이상 있으면 모든 사람 턴에, 가장 최근 턴을 포함해, 화자 라벨이
+붙는다. 세 사람의 대화가 한 사람의 독백으로 모델에 닿지 않게 하기 위해서다. 이전 턴의
+이미지는 나르지 않는다: transcript 는 텍스트만 지킨다.
 
-## Attachments
+## 첨부
 
-A photo arrives in several sizes, smallest first, each its own file; the largest one under
-the image cap is what the model is shown, and when even the smallest is over it, the
-smallest is offered so the size check reports it rather than a silent drop. A document
-arrives with its declared type, name and size, and becomes text like every other surface's
-([chat.md](chat.md#attachments)). Both are fetched in two steps — `getFile` for the path,
-then the file host, with the token in the URL by Telegram's design — bounded while the body
-is read, and nothing logs a file URL.
+사진은 여러 크기로, 작은 것부터, 각각 자기 파일로 도착한다. 이미지 상한 아래에 있는 것 중
+가장 큰 것이 모델에게 보이는 것이고, 가장 작은 것마저 상한을 넘으면 가장 작은 것을 내놓는다.
+그래야 크기 검사가 조용한 누락 대신 그것을 보고한다. document 는 선언된 타입·이름·크기와
+함께 도착해, 다른 모든 표면에서와 마찬가지로 텍스트가 된다
+([chat.md](chat.md#첨부)). 둘 다 두 단계로 가져온다 — 경로를 얻는 `getFile`, 그
+다음 파일 호스트이며, Telegram 의 설계상 토큰이 URL 에 들어간다 — 본문을 읽는 동안 크기가
+제한되고, 어디에서도 파일 URL 을 로그에 남기지 않는다.

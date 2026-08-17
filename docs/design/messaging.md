@@ -1,28 +1,28 @@
-# Messaging surfaces
+# 메시징 표면
 
-What every chat-bot surface — Slack, Telegram, and whatever comes next — shares, and where
-the line sits between that and what each platform decides for itself.
+모든 챗봇 표면 — Slack, Telegram, 그리고 다음에 올 무엇이든 — 이 공유하는 것, 그리고 그것과
+각 플랫폼이 스스로 정하는 것 사이의 경계가 어디인지.
 
-The Slack surface was the first, and it was one file: which events are for the bot, how the
-thread is read, who is asking, how attachments become a turn, how the run's chunks become a
-reply, and what the reply carries beside the answer, all in one handler. Telegram was the
-second, and it needs four of those six exactly as Slack has them. Two copies of a chunk fold
-is how the image and file axes had already drifted apart across six other consumers, so the
-shared part was pulled out before the second surface was written. **The rule of three was
-met early on purpose**: the shape was already known from Slack, and Telegram is the shape's
-first customer, not its second copy.
+Slack 표면이 첫 번째였고, 그것은 한 파일이었다: 어떤 이벤트가 봇에게 온 것인지, 스레드를
+어떻게 읽는지, 누가 묻고 있는지, 첨부가 어떻게 한 턴이 되는지, 런의 chunk 가 어떻게 답변이
+되는지, 그리고 답변이 답 곁에 무엇을 나르는지가 전부 한 핸들러 안에 있었다. Telegram 이
+두 번째였고, 그 여섯 가지 중 넷을 Slack 이 가진 것과 똑같이 필요로 한다. chunk fold 의 사본이
+둘이 되는 것이 바로 다른 소비자 여섯 곳에서 image 축과 file 축이 이미 어긋나 버린 방식이므로,
+두 번째 표면을 쓰기 전에 공유되는 부분을 먼저 떼어냈다. **rule of three 는 일부러 일찍
+충족시켰다**: 그 모양은 Slack 에서 이미 알고 있었고, Telegram 은 그 모양의 두 번째 사본이
+아니라 첫 고객이다.
 
-## The split
+## 분할
 
 ```mermaid
 flowchart LR
-  subgraph adapter["one adapter per platform<br/>application/slack · application/telegram"]
-    gate["which events are for the bot<br/>(ahead of the dedup claim)"]
-    normalise["the platform's event →<br/>text · attachments · history · actor · caller · conversation"]
-    render["ReplyChannel — how a reply is rendered:<br/>the streamed sink, a standalone message,<br/>a picture, the tail's markup"]
+  subgraph adapter["플랫폼마다 어댑터 하나<br/>application/slack · application/telegram"]
+    gate["어떤 이벤트가 봇에게 온 것인가<br/>(dedup claim 보다 앞에서)"]
+    normalise["플랫폼의 이벤트 →<br/>text · attachments · history · actor · caller · conversation"]
+    render["ReplyChannel — 답변을 어떻게 렌더링하는가:<br/>스트리밍되는 sink, 독립 메시지,<br/>그림, 꼬리의 마크업"]
   end
-  subgraph shared["one pipeline · application/messaging"]
-    turn["handleTurn<br/>attachments → turn · run · fold → sink ·<br/>pictures · file links · warnings · finish"]
+  subgraph shared["파이프라인 하나 · application/messaging"]
+    turn["handleTurn<br/>attachments → turn · run · fold → sink ·<br/>그림 · 파일 링크 · 경고 · 마무리"]
   end
   facade["executeAgent"]
   gate --> normalise --> turn
@@ -30,75 +30,73 @@ flowchart LR
   turn --> facade
 ```
 
-**The pipeline owns what does not depend on the platform.** `handleTurn`
-(`src/application/messaging/handleTurn.ts`) takes a normalised turn and a `ReplyChannel` and
-does the rest: it turns the attachments into content parts under the shared limits
-(`attachments.ts` — the one copy of which files are pictures, which are documents, how many
-and how large, and the sentence each dropped one earns), assembles the turn with
-`turnContent`, opens the run's deadline and the status heartbeat, runs the agent, folds each
-chunk onto the sink — text as `push`, tool calls as `step`, tool results as `stepDone`, only
-a top-level error ends the run — and then delivers what sits beside the answer, in this
-order: the pictures (a drawn one over a merely fetched one), links to the files a tool
-produced, and every warning the run raised, "the run finished without producing an answer"
-included when it did. It returns what it delivered so the adapter can log and record.
+**파이프라인은 플랫폼에 의존하지 않는 것을 소유한다.** `handleTurn`
+(`src/application/messaging/handleTurn.ts`) 은 정규화된 턴과 `ReplyChannel` 을 받아 나머지를
+한다: 공유 한도 아래에서 첨부를 content part 로 바꾸고 (`attachments.ts` — 어떤 파일이
+그림이고 어떤 것이 문서인지, 몇 개까지 얼마나 큰 것까지인지, 그리고 버려진 첨부 하나하나가
+받아 마땅한 문장의 유일한 사본이다), `turnContent` 로 턴을 조립하며, 런의 deadline 과 상태
+heartbeat 를 열고, agent 를 실행하고, 각 chunk 를 sink 위로 fold 한다 — 텍스트는 `push` 로,
+tool call 은 `step` 으로, tool result 는 `stepDone` 으로, 그리고 top-level 에러만이 런을
+끝낸다 — 그런 다음 답 곁에 놓이는 것들을 이 순서로 전달한다: 그림 (단지 가져오기만 한 것보다
+그린 것이 우선), tool 이 만들어 낸 파일로 가는 링크, 그리고 런이 올린 모든 경고 — 그런 일이
+있었다면 "런이 답을 만들지 못한 채 끝났다"도 포함해서다. 어댑터가 로그를 남기고 기록할 수
+있도록, 자신이 전달한 것을 돌려준다.
 
-**The adapter owns everything a platform decides.** Which delivered events cause a run, and
-that decision runs in the route *ahead of* the dedup claim so an event nobody addressed
-costs a signature check and nothing else. How history is read — Slack asks the platform,
-Telegram asks the transcript store below. Who is asking, in the shape `callerFrom` accepts.
-The reply target and how a reply is rendered on it. And what happens after the reply: a
-Slack thread records that the bot spoke there; a Telegram conversation writes both turns
-down.
+**어댑터는 플랫폼이 정하는 모든 것을 소유한다.** 전달된 이벤트 중 어느 것이 런을 일으키는지,
+그리고 그 판정은 라우트에서 dedup claim *보다 앞에서* 실행되므로 아무도 부르지 않은 이벤트는
+서명 검사 하나만 쓰고 끝난다. 이력을 어떻게 읽는지 — Slack 은 플랫폼에 묻고, Telegram 은
+아래의 transcript 저장소에 묻는다. 누가 묻고 있는지를 `callerFrom` 이 받는 모양으로. 답변
+대상과 그 위에서 답변이 어떻게 렌더링되는지. 그리고 답변 이후에 일어나는 일: Slack 스레드는
+봇이 거기서 말했다는 것을 기록하고, Telegram 대화는 두 턴을 모두 적어 둔다.
 
-The **ports** are domain vocabulary (`src/domain/messaging/`), because both sides name them
-and neither may import the other:
+**port** 는 domain 어휘다 (`src/domain/messaging/`). 양쪽 모두가 그것을 이름으로 부르고
+어느 쪽도 상대를 import 할 수 없기 때문이다:
 
-| Port | Says |
+| Port | 무엇을 말하는가 |
 |---|---|
-| `ReplySink` | The streamed answer and its progress: `status`, `step`, `stepDone`, `keepStatusAlive`, `push`, `finish`. One report, rendered however the surface can — Slack's status line and task rows, Telegram's typing indicator |
-| `ReplyChannel` | The sink plus what a reply needs the surface to do beside it: `say` a standalone message, `sendImage`, and spell a `fileLink` and a `warningLine` in the surface's own markup — because a link is markup, and a name that is safe in mrkdwn is syntax in HTML |
-| `InboundAttachment` / `HistoryTurn` | What the pipeline reads of a message: a name, a type, a size, and a `download` bound to the platform's credentials — or none, when the platform gave no address, which is reported as such rather than as a failed read |
-| `InboundEventClaims` | Exactly-once admission of a delivery, as a lease settled afterwards. Slack keys it by `event_id`, Telegram by project and `update_id`; one repository (`createInboundClaimRepository`) serves both |
-| `ConversationTranscriptRepository` | What a surface remembers of a conversation when the platform keeps no history it can read back — see [Telegram](telegram.md#history) |
+| `ReplySink` | 스트리밍되는 답과 그 진행 상황: `status`, `step`, `stepDone`, `keepStatusAlive`, `push`, `finish`. 보고는 하나이고 표면이 할 수 있는 방식대로 렌더링된다 — Slack 의 상태 줄과 작업 행, Telegram 의 입력 중 표시 |
+| `ReplyChannel` | sink 에, 답변이 그 곁에서 표면에 요구하는 것을 더한 것: 독립 메시지를 `say`, `sendImage`, 그리고 `fileLink` 와 `warningLine` 을 표면 자신의 마크업으로 적는 것 — 링크는 곧 마크업이고, mrkdwn 에서 안전한 이름이 HTML 에서는 문법이기 때문이다 |
+| `InboundAttachment` / `HistoryTurn` | 파이프라인이 메시지에서 읽는 것: 이름, 타입, 크기, 그리고 플랫폼의 자격 증명에 묶인 `download` — 플랫폼이 주소를 주지 않았다면 없음이며, 그것은 읽기 실패가 아니라 없다는 사실 그대로 보고된다 |
+| `InboundEventClaims` | 전달 한 건을 정확히 한 번만 받아들이는 admission 으로, 나중에 정산되는 lease 의 형태다. Slack 은 `event_id` 로, Telegram 은 project 와 `update_id` 로 키를 만든다. repository 하나 (`createInboundClaimRepository`) 가 둘 다 담당한다 |
+| `ConversationTranscriptRepository` | 플랫폼이 되읽을 수 있는 이력을 보관하지 않을 때, 표면이 대화에 대해 기억하는 것 — [Telegram](telegram.md#히스토리) 참고 |
 
-The **webhook tail** is shared the same way (`src/app/api/_lib/inboundEvent.ts`): after the
-platform's own verification and gate, `admitInboundEvent` claims the event, schedules the
-work in the background under the event's own correlation id, and settles the claim. Every
-platform requires a fast ack and redelivers without one, so the shape is the same; only the
-id, the store and the work differ.
+**webhook 꼬리**도 같은 방식으로 공유된다 (`src/app/api/_lib/inboundEvent.ts`): 플랫폼 자신의
+검증과 gate 를 지나면 `admitInboundEvent` 가 이벤트를 claim 하고, 이벤트 자신의 correlation
+id 아래 백그라운드로 작업을 예약하며, claim 을 정산한다. 모든 플랫폼이 빠른 ack 를 요구하고
+없으면 재전달하므로 모양은 같다. 다른 것은 id 와 저장소와 작업뿐이다.
 
-## What a third surface has to bring
+## 세 번째 표면이 가져와야 하는 것
 
-An adapter is a directory under `application/<platform>` plus a client under
-`infrastructure/<platform>` and a wiring site under `app/api/<platform>/…/_lib/`. It brings:
+어댑터는 `application/<platform>` 아래의 디렉터리 하나에, `infrastructure/<platform>` 아래의
+클라이언트와 `app/api/<platform>/…/_lib/` 아래의 wiring site 를 더한 것이다. 어댑터가
+가져오는 것:
 
-- a **client port** in `domain/<platform>/client.ts` and its fetch adapter;
-- a **gate** — which of the platform's events are for the bot — run in the route before the
-  claim;
-- an **update handler** that resolves the project (published version only; the refusal
-  wording is shared by convention), normalises the event into a `TurnInput`, opens a
-  `ReplyChannel`, says "thinking" once, calls `handleTurn`, and does the platform's
-  bookkeeping after;
-- a **`ReplyChannel`** for the platform's rendering, with the tests every channel has to
-  pass (`tests/messagingTurn.test.ts` states the contract from the pipeline's side);
-- a **settings slice** for the per-project credentials, encrypted like every other secret;
-- one line each in `RunActorKind`, `RunSurface`, `keys.ts`, `ttl.ts`, the logger's scopes,
-  and the two lists in `tests/architecture.test.ts` that bound wiring sites and agent-run
-  entry points — added *on purpose*, which is what the lists are for.
+- `domain/<platform>/client.ts` 의 **클라이언트 port** 와 그 fetch 어댑터,
+- **gate** — 플랫폼의 이벤트 중 어느 것이 봇에게 온 것인지 — claim 보다 앞서 라우트에서
+  실행되는 것,
+- **update handler** — 프로젝트를 해석하고 (published 버전만. 거절 문구는 관례로 공유한다),
+  이벤트를 `TurnInput` 으로 정규화하고, `ReplyChannel` 을 열고, "생각 중"을 한 번 말하고,
+  `handleTurn` 을 호출하며, 그 뒤에 플랫폼의 장부 정리를 하는 것,
+- 플랫폼의 렌더링을 위한 **`ReplyChannel`** 과, 모든 channel 이 통과해야 하는 테스트
+  (`tests/messagingTurn.test.ts` 가 파이프라인 쪽에서 본 계약을 진술한다),
+- 프로젝트별 자격 증명을 위한 **설정 slice**. 다른 모든 시크릿과 마찬가지로 암호화된다,
+- `RunActorKind`, `RunSurface`, `keys.ts`, `ttl.ts`, 로거의 scope, 그리고
+  `tests/architecture.test.ts` 에서 wiring site 와 agent-run 진입점을 한정하는 두 목록에
+  각각 한 줄씩 — *일부러* 추가하는 것이고, 그것이 그 목록이 존재하는 이유다.
 
-What it must **not** bring is a second copy of the fold, the attachment limits or the tail's
-ordering. Those are the pipeline's, and a surface that answers differently in one of them is
-a bug in the surface, not a variant.
+가져오면 **안 되는** 것은 fold 의 두 번째 사본, 첨부 한도의 두 번째 사본, 꼬리의 순서에 대한
+두 번째 사본이다. 그것들은 파이프라인의 것이고, 그중 하나에서 다르게 답하는 표면은 변종이
+아니라 그 표면의 버그다.
 
-## What deliberately stays outside
+## 의도적으로 밖에 남겨 둔 것
 
-Chat, A2A and the triggers each consume the engine's stream too, and each keeps its own
-loop. That is not an oversight this file will grow to cover: a chat *persists and replays*
-tool traffic, an A2A task has a lifecycle, a firing has a history row — their output
-contracts differ from a chat bot's and from each other's, and the facade already offers them
-the two contracts they need (`streamProjectRun` for a chunk consumer, `executeProjectStream`
-/ `executeProject` for a completion). What binds all of them is not a shared loop but the
-pairing rule in `tests/architecture.test.ts`: a module that reads one output axis reads the
-other. Slack's own concepts — the assistant thread's status line, the channel checklist,
-`app_home_opened`, channel keywords, the workspace read tools — stay in Slack's adapter for
-the same reason: they are how Slack renders the shared report, not the report.
+Chat 과 A2A 와 trigger 도 각각 엔진의 스트림을 소비하며, 각자 자기 루프를 유지한다. 그것은
+이 파일이 언젠가 자라서 덮게 될 누락이 아니다: chat 은 tool 트래픽을 *영속화하고 재생하며*,
+A2A task 에는 lifecycle 이 있고, 발화(firing) 에는 이력 행이 있다 — 이들의 출력 계약은
+챗봇의 것과도, 서로의 것과도 다르며, 파사드는 이들에게 필요한 두 계약을 이미 제공한다
+(chunk 소비자에게는 `streamProjectRun`, completion 에는 `executeProjectStream` /
+`executeProject`). 이들 전부를 묶는 것은 공유된 루프가 아니라 `tests/architecture.test.ts`
+의 pairing 규칙이다: 한 출력 축을 읽는 모듈은 다른 축도 읽는다. Slack 자신의 개념들 —
+assistant 스레드의 상태 줄, 채널 체크리스트, `app_home_opened`, 채널 키워드, workspace 읽기
+tool — 도 같은 이유로 Slack 의 어댑터 안에 남는다: 그것들은 공유된 보고를 Slack 이 렌더링하는
+방식이지, 보고 자체가 아니다.
