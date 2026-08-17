@@ -7,7 +7,7 @@ const { getLlmProviderConfigs, getEnabledModels } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/session", () => ({
-  withAdminAuth:
+  withMemberAuth:
     (handler: (user: unknown, ...args: unknown[]) => unknown) =>
     (...args: unknown[]) =>
       handler({ id: "u1", email: "admin@example.com", name: "A", image: null }, ...args),

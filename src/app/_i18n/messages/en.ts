@@ -637,7 +637,7 @@ export const en = {
   // The admin pages, the profile, and the per-project usage tab.
   "admin.adminOnlyAudit": "Audit events are available to admins only.",
   "admin.adminOnlyMembers": "Members are available to admins only.",
-  "admin.adminOnlyModels": "Models are available to admins only.",
+  "models.memberOnly": "Models are available from the member tier up.",
   "audit.lede": "Sensitive administrative actions, newest first.",
   "audit.empty": "No audit events in this range.",
   "members.lede": "People who have signed in to this workspace.",

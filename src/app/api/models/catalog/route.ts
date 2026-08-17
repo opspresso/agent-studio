@@ -1,13 +1,17 @@
 import { getVisibleModels, SUPPORTED_PROVIDERS } from "@/domain/llm/models";
 import { getEnabledModels, getLlmProviderConfigs } from "@/lib/runtime-settings";
-import { withAdminAuth } from "@/lib/session";
+import { withMemberAuth } from "@/lib/session";
 
 /**
  * GET /api/models/catalog — the /models console's full picture: every visible
- * model with its enabled flag (admin-only, because it lists exactly what
- * /api/models hides), and which providers this deployment can dispatch to.
+ * model with its enabled flag, and which providers this deployment can
+ * dispatch to. Read from the member rung, like the other registries the
+ * Intelligence section lists: it names what this deployment can reach,
+ * including the models an admin switched off — which a member may see but
+ * not pick, since `/api/models` still hides them from the pickers. Changing
+ * the selection stays admin's (`PUT /api/settings`), as does the probe.
  */
-export const GET = withAdminAuth(async () => {
+export const GET = withMemberAuth(async () => {
   const [providerConfigs, enabledModels] = await Promise.all([
     getLlmProviderConfigs(),
     getEnabledModels(),

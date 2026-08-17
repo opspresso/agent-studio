@@ -19,6 +19,7 @@ import {
 import { useLocalStorage } from "@mantine/hooks";
 import { IconCheck, IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
 import { MODEL_MAKER_LABELS, type ModelConfig } from "@/domain/llm/models";
+import { tierAtLeast } from "@/domain/member/tiers";
 import { PageHeader } from "@/app/_components/PageHeader";
 import { LoadingText } from "@/app/_components/PageState";
 import { BADGE } from "@/app/_components/badgeColors";
@@ -137,8 +138,11 @@ export default function ModelsPage() {
     setTableState((current) => ({ ...current, ...next }));
   }
 
+  const canRead = viewer !== null && tierAtLeast(viewer.tier, "member");
+  const canEdit = viewer?.isAdmin === true;
+
   useEffect(() => {
-    if (!viewer?.isAdmin) return;
+    if (!canRead) return;
     let cancelled = false;
     fetch("/api/models/catalog")
       .then((res) => readJson<Catalog>(res))
@@ -157,7 +161,7 @@ export default function ModelsPage() {
     return () => {
       cancelled = true;
     };
-  }, [viewer?.isAdmin]);
+  }, [canRead]);
 
   async function saveEnabled(
     enabledIds: string[],
@@ -216,7 +220,7 @@ export default function ModelsPage() {
   }
 
   if (viewer === null) return <LoadingText />;
-  if (!viewer.isAdmin) return <Alert color="gray">{t("admin.adminOnlyModels")}</Alert>;
+  if (!canRead) return <Alert color="gray">{t("models.memberOnly")}</Alert>;
 
   return (
     <Stack gap="lg">
@@ -270,20 +274,22 @@ export default function ModelsPage() {
               {source === "override" && (
                 <>
                   <Badge color={BADGE.attention}>selection restricted</Badge>
-                  <Button
-                    size="compact-xs"
-                    variant="default"
-                    disabled={busy}
-                    onClick={() =>
-                      void saveEnabled(
-                        [],
-                        models.map((model) => ({ ...model, enabled: true })),
-                        "default",
-                      )
-                    }
-                  >
-                    Reset — allow all
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      size="compact-xs"
+                      variant="default"
+                      disabled={busy}
+                      onClick={() =>
+                        void saveEnabled(
+                          [],
+                          models.map((model) => ({ ...model, enabled: true })),
+                          "default",
+                        )
+                      }
+                    >
+                      Reset — allow all
+                    </Button>
+                  )}
                 </>
               )}
             </Group>
@@ -318,7 +324,7 @@ export default function ModelsPage() {
                     onSort={sortBy}
                   />
                   <Table.Th>Enabled</Table.Th>
-                  <Table.Th />
+                  {canEdit && <Table.Th />}
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -388,37 +394,51 @@ export default function ModelsPage() {
                         <Text fz="sm">{modelPriceLabel(model.pricing)}</Text>
                       </Table.Td>
                       <Table.Td>
-                        <Switch
-                          checked={model.enabled}
-                          disabled={busy}
-                          aria-label={`Enable ${model.id}`}
-                          onChange={(event) => toggleModel(model.id, event.currentTarget.checked)}
-                        />
+                        {canEdit ? (
+                          <Switch
+                            checked={model.enabled}
+                            disabled={busy}
+                            aria-label={`Enable ${model.id}`}
+                            onChange={(event) => toggleModel(model.id, event.currentTarget.checked)}
+                          />
+                        ) : model.enabled ? (
+                          <IconCheck
+                            size={16}
+                            color="var(--mantine-color-teal-6)"
+                            aria-label={t("models.yes")}
+                          />
+                        ) : (
+                          <Text fz="sm" c="dimmed" component="span" aria-label={t("models.no")}>
+                            -
+                          </Text>
+                        )}
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs" wrap="nowrap">
-                          <Button
-                            size="compact-xs"
-                            variant="default"
-                            loading={tests[model.id]?.running}
-                            onClick={() => void runTest(model.id)}
-                          >
-                            Test
-                          </Button>
-                          {tests[model.id]?.result &&
-                            (tests[model.id]?.result?.ok ? (
-                              <Badge color={BADGE.on}>{tests[model.id]?.result?.latencyMs} ms</Badge>
-                            ) : (
-                              <Tooltip
-                                label={tests[model.id]?.result?.error ?? "failed"}
-                                multiline
-                                maw={360}
-                              >
-                                <Badge color={BADGE.broken}>failed</Badge>
-                              </Tooltip>
-                            ))}
-                        </Group>
-                      </Table.Td>
+                      {canEdit && (
+                        <Table.Td>
+                          <Group gap="xs" wrap="nowrap">
+                            <Button
+                              size="compact-xs"
+                              variant="default"
+                              loading={tests[model.id]?.running}
+                              onClick={() => void runTest(model.id)}
+                            >
+                              Test
+                            </Button>
+                            {tests[model.id]?.result &&
+                              (tests[model.id]?.result?.ok ? (
+                                <Badge color={BADGE.on}>{tests[model.id]?.result?.latencyMs} ms</Badge>
+                              ) : (
+                                <Tooltip
+                                  label={tests[model.id]?.result?.error ?? "failed"}
+                                  multiline
+                                  maw={360}
+                                >
+                                  <Badge color={BADGE.broken}>failed</Badge>
+                                </Tooltip>
+                              ))}
+                          </Group>
+                        </Table.Td>
+                      )}
                     </Table.Tr>
                   );
                 })}

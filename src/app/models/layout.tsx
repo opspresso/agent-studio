@@ -1,5 +1,8 @@
+import { assertIntelligenceVisible } from "@/app/_lib/intelligenceGate";
+
 export const metadata = { title: "Models" };
 
-export default function ModelsLayout({ children }: { children: React.ReactNode }) {
+export default async function ModelsLayout({ children }: { children: React.ReactNode }) {
+  await assertIntelligenceVisible();
   return children;
 }
