@@ -646,8 +646,8 @@ export const en = {
   "members.neverRecorded": "Never recorded",
   "models.lede":
     "Which LLM providers this deployment reaches, and which models users may pick for their agents.",
-  "models.yes": "yes",
-  "models.no": "no",
+  "models.filter": "Filter models…",
+  "models.empty": "No models are registered.",
   "profile.lede": "Your account, and your own usage across every project.",
   "profile.tierLimits": "Tier limits",
   "profile.monthlyCap": "Monthly cap",

@@ -6,21 +6,22 @@ import {
   Badge,
   Box,
   Button,
+  Card,
   Checkbox,
   Group,
   Select,
   Stack,
   Switch,
-  Table,
   Text,
   Tooltip,
-  UnstyledButton,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
-import { IconCheck, IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronUp, IconCpu } from "@tabler/icons-react";
 import { MODEL_MAKER_LABELS, type ModelConfig } from "@/domain/llm/models";
 import { tierAtLeast } from "@/domain/member/tiers";
-import { PageHeader } from "@/app/_components/PageHeader";
+import { CardGrid } from "@/app/_components/CardGrid";
+import { CatalogHeader } from "@/app/_components/CatalogHeader";
+import { CatalogSearch, matchesFilter } from "@/app/_components/CatalogSearch";
 import { LoadingText } from "@/app/_components/PageState";
 import { BADGE } from "@/app/_components/badgeColors";
 import { modelPriceLabel } from "@/app/_components/modelOptions";
@@ -66,31 +67,53 @@ const CAPABILITY_COLUMNS = [
   ["imageGeneration", "Image"],
 ] as const;
 
-function SortableHeader({
-  label,
-  sortKey,
+/**
+ * The sort control, in the shape a card grid can carry: one button per key,
+ * the active one showing its direction and flipping it when pressed again —
+ * the same rule the table headers followed (`nextSort`), so a preference saved
+ * under the old layout still means what it meant.
+ */
+function SortButtons({
   activeKey,
   direction,
   onSort,
 }: {
-  label: string;
-  sortKey: ModelSortKey;
   activeKey: ModelSortKey;
   direction: SortDirection;
   onSort: (key: ModelSortKey) => void;
 }) {
-  const active = sortKey === activeKey;
+  const keys: Array<[ModelSortKey, string]> = [
+    ["provider", "Provider"],
+    ["name", "Model"],
+    ["price", "Price"],
+  ];
   return (
-    <Table.Th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
-      <UnstyledButton onClick={() => onSort(sortKey)} aria-label={`Sort by ${label}`}>
-        <Group gap={4} wrap="nowrap">
-          <Text fz="sm" fw={600}>{label}</Text>
-          {active && (direction === "asc"
-            ? <IconChevronUp size={14} aria-hidden />
-            : <IconChevronDown size={14} aria-hidden />)}
-        </Group>
-      </UnstyledButton>
-    </Table.Th>
+    <Button.Group>
+      {keys.map(([key, label]) => {
+        const active = key === activeKey;
+        return (
+          <Button
+            key={key}
+            size="xs"
+            variant={active ? "light" : "default"}
+            onClick={() => onSort(key)}
+            aria-label={`Sort by ${label}`}
+            aria-pressed={active}
+            rightSection={
+              active ? (
+                direction === "asc" ? (
+                  <IconChevronUp size={14} aria-hidden />
+                ) : (
+                  <IconChevronDown size={14} aria-hidden />
+                )
+              ) : undefined
+            }
+          >
+            {label}
+          </Button>
+        );
+      })}
+    </Button.Group>
   );
 }
 
@@ -118,6 +141,7 @@ export default function ModelsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
+  const [filter, setFilter] = useState("");
   const [tableState, setTableState] = useLocalStorage({
     key: "agentdure.models.table-state.v1",
     defaultValue: DEFAULT_MODEL_TABLE_STATE,
@@ -125,8 +149,17 @@ export default function ModelsPage() {
   });
 
   const rows = useMemo(
-    () => visibleModelRows(models, tableState),
-    [models, tableState],
+    () =>
+      visibleModelRows(models, tableState).filter((model) =>
+        matchesFilter(
+          filter,
+          model.id,
+          model.displayName,
+          model.provider,
+          MODEL_MAKER_LABELS[model.maker],
+        ),
+      ),
+    [models, tableState, filter],
   );
   const providerByName = useMemo(
     () => new Map(providers.map((provider) => [provider.name, provider])),
@@ -224,11 +257,27 @@ export default function ModelsPage() {
 
   return (
     <Stack gap="lg">
-      <PageHeader
-        title={t("nav.models")}
-        description={t("models.lede")}
-        Icon={IconCpu}
-      />
+      <CatalogHeader title={t("nav.models")} description={t("models.lede")} Icon={IconCpu}>
+        {canEdit && source === "override" && (
+          <Group gap="xs">
+            <Badge color={BADGE.attention}>selection restricted</Badge>
+            <Button
+              size="compact-xs"
+              variant="default"
+              disabled={busy}
+              onClick={() =>
+                void saveEnabled(
+                  [],
+                  models.map((model) => ({ ...model, enabled: true })),
+                  "default",
+                )
+              }
+            >
+              Reset — allow all
+            </Button>
+          </Group>
+        )}
+      </CatalogHeader>
 
       {error && (
         <Alert color="red" variant="light" withCloseButton onClose={() => setError(null)}>
@@ -236,217 +285,155 @@ export default function ModelsPage() {
         </Alert>
       )}
 
-      {loading ? (
-        <LoadingText />
-      ) : (
-        <>
-          <Group justify="space-between" align="flex-end" wrap="wrap">
-            <Group align="flex-end" wrap="wrap">
-              <Select
-                label="Provider"
-                placeholder="All providers"
-                data={providers.map((provider) => provider.name)}
-                value={tableState.provider}
-                onChange={(provider) => setTableState((current) => ({ ...current, provider }))}
-                searchable
-                clearable
-                w={240}
-              />
-              <Checkbox.Group
-                label="Capabilities"
-                value={tableState.capabilities}
-                onChange={(values) => setTableState((current) => ({
+      {models.length > 0 && (
+        <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+          <Group align="flex-end" wrap="wrap" gap="md">
+            <CatalogSearch value={filter} onChange={setFilter} placeholder={t("models.filter")} />
+            <Select
+              aria-label="Provider"
+              placeholder="All providers"
+              data={providers.map((provider) => provider.name)}
+              value={tableState.provider}
+              onChange={(provider) => setTableState((current) => ({ ...current, provider }))}
+              searchable
+              clearable
+              w={200}
+            />
+            <Checkbox.Group
+              aria-label="Capabilities"
+              value={tableState.capabilities}
+              onChange={(values) =>
+                setTableState((current) => ({
                   ...current,
                   capabilities: values as FilterCapability[],
-                }))}
-              >
-                <Group gap="md" h={36}>
-                  {CAPABILITY_COLUMNS.map(([value, label]) => (
-                    <Checkbox key={value} value={value} label={label} />
-                  ))}
-                </Group>
-              </Checkbox.Group>
-            </Group>
-            <Group gap="xs">
-              <Text fz="sm" c="dimmed">
-                {rows.length} {rows.length === 1 ? "model" : "models"}
-              </Text>
-              {source === "override" && (
-                <>
-                  <Badge color={BADGE.attention}>selection restricted</Badge>
-                  {canEdit && (
-                    <Button
-                      size="compact-xs"
-                      variant="default"
-                      disabled={busy}
-                      onClick={() =>
-                        void saveEnabled(
-                          [],
-                          models.map((model) => ({ ...model, enabled: true })),
-                          "default",
-                        )
-                      }
-                    >
-                      Reset — allow all
-                    </Button>
-                  )}
-                </>
-              )}
-            </Group>
+                }))
+              }
+            >
+              <Group gap="md" h={36}>
+                {CAPABILITY_COLUMNS.map(([value, label]) => (
+                  <Checkbox key={value} value={value} label={label} />
+                ))}
+              </Group>
+            </Checkbox.Group>
           </Group>
-
-          <Table.ScrollContainer minWidth={1040}>
-            <Table highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <SortableHeader
-                    label="Provider"
-                    sortKey="provider"
-                    activeKey={tableState.sortKey}
-                    direction={tableState.direction}
-                    onSort={sortBy}
-                  />
-                  <SortableHeader
-                    label="Model"
-                    sortKey="name"
-                    activeKey={tableState.sortKey}
-                    direction={tableState.direction}
-                    onSort={sortBy}
-                  />
-                  {CAPABILITY_COLUMNS.map(([key, label]) => (
-                    <Table.Th key={key} ta="center">{label}</Table.Th>
-                  ))}
-                  <SortableHeader
-                    label="Pricing"
-                    sortKey="price"
-                    activeKey={tableState.sortKey}
-                    direction={tableState.direction}
-                    onSort={sortBy}
-                  />
-                  <Table.Th>Enabled</Table.Th>
-                  {canEdit && <Table.Th />}
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {rows.map((model) => {
-                  const provider = providerByName.get(model.provider);
-                  return (
-                    <Table.Tr key={model.id}>
-                      <Table.Td>
-                        <Text fz="sm" fw={500}>{model.provider}</Text>
-                        <Badge
-                          size="xs"
-                          color={provider?.available ? BADGE.on : BADGE.attention}
-                          variant="light"
-                        >
-                          {provider?.dedicated
-                            ? "dedicated"
-                            : provider?.available
-                              ? "default"
-                              : "unavailable"}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Group gap="sm" wrap="nowrap">
-                          <Tooltip label={MODEL_MAKER_LABELS[model.maker]}>
-                            <Box
-                              w={32}
-                              h={32}
-                              p={4}
-                              bg="white"
-                              style={{ borderRadius: "var(--mantine-radius-sm)", flexShrink: 0 }}
-                            >
-                              <img
-                                src={`/icons/brands/${model.maker}.svg`}
-                                alt={`${MODEL_MAKER_LABELS[model.maker]} logo`}
-                                width={24}
-                                height={24}
-                              />
-                            </Box>
-                          </Tooltip>
-                          <div>
-                            <Text fz="sm" fw={500}>{model.displayName}</Text>
-                            <Text fz="xs" c="dimmed" ff="monospace">{model.id}</Text>
-                            {otherRoutes(models, model).length > 0 && (
-                              <Text fz="xs" c="dimmed">
-                                also via {otherRoutes(models, model).join(", ")}
-                              </Text>
-                            )}
-                          </div>
-                        </Group>
-                      </Table.Td>
-                      {CAPABILITY_COLUMNS.map(([key]) => (
-                        <Table.Td key={key} ta="center">
-                          {model.capabilities[key] ? (
-                            <IconCheck
-                              size={16}
-                              color="var(--mantine-color-teal-6)"
-                              aria-label={t("models.yes")}
-                            />
-                          ) : (
-                            <Text fz="sm" c="dimmed" component="span" aria-label={t("models.no")}>
-                              -
-                            </Text>
-                          )}
-                        </Table.Td>
-                      ))}
-                      <Table.Td>
-                        <Text fz="sm">{modelPriceLabel(model.pricing)}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        {canEdit ? (
-                          <Switch
-                            checked={model.enabled}
-                            disabled={busy}
-                            aria-label={`Enable ${model.id}`}
-                            onChange={(event) => toggleModel(model.id, event.currentTarget.checked)}
-                          />
-                        ) : model.enabled ? (
-                          <IconCheck
-                            size={16}
-                            color="var(--mantine-color-teal-6)"
-                            aria-label={t("models.yes")}
-                          />
-                        ) : (
-                          <Text fz="sm" c="dimmed" component="span" aria-label={t("models.no")}>
-                            -
-                          </Text>
-                        )}
-                      </Table.Td>
-                      {canEdit && (
-                        <Table.Td>
-                          <Group gap="xs" wrap="nowrap">
-                            <Button
-                              size="compact-xs"
-                              variant="default"
-                              loading={tests[model.id]?.running}
-                              onClick={() => void runTest(model.id)}
-                            >
-                              Test
-                            </Button>
-                            {tests[model.id]?.result &&
-                              (tests[model.id]?.result?.ok ? (
-                                <Badge color={BADGE.on}>{tests[model.id]?.result?.latencyMs} ms</Badge>
-                              ) : (
-                                <Tooltip
-                                  label={tests[model.id]?.result?.error ?? "failed"}
-                                  multiline
-                                  maw={360}
-                                >
-                                  <Badge color={BADGE.broken}>failed</Badge>
-                                </Tooltip>
-                              ))}
-                          </Group>
-                        </Table.Td>
-                      )}
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        </>
+          <Group gap="sm" align="center">
+            <Text fz="sm" c="dimmed">
+              {rows.length} {rows.length === 1 ? "model" : "models"}
+            </Text>
+            <SortButtons
+              activeKey={tableState.sortKey}
+              direction={tableState.direction}
+              onSort={sortBy}
+            />
+          </Group>
+        </Group>
       )}
+
+      <CardGrid loading={loading} empty={models.length === 0} emptyText={t("models.empty")}>
+        {rows.map((model) => {
+          const provider = providerByName.get(model.provider);
+          const routes = otherRoutes(models, model);
+          const test = tests[model.id];
+          return (
+            <Card key={model.id} h="100%">
+              <Stack gap="sm" h="100%" justify="space-between">
+                <div>
+                  <Group gap="sm" wrap="nowrap" align="flex-start">
+                    <Tooltip label={MODEL_MAKER_LABELS[model.maker]}>
+                      <Box
+                        w={32}
+                        h={32}
+                        p={4}
+                        bg="white"
+                        style={{ borderRadius: "var(--mantine-radius-sm)", flexShrink: 0 }}
+                      >
+                        <img
+                          src={`/icons/brands/${model.maker}.svg`}
+                          alt={`${MODEL_MAKER_LABELS[model.maker]} logo`}
+                          width={24}
+                          height={24}
+                        />
+                      </Box>
+                    </Tooltip>
+                    <div style={{ minWidth: 0 }}>
+                      <Text fw={500} truncate>
+                        {model.displayName}
+                      </Text>
+                      <Text fz="xs" c="dimmed" ff="monospace" truncate>
+                        {model.id}
+                      </Text>
+                    </div>
+                  </Group>
+                  <Group gap={6} mt="sm" wrap="wrap">
+                    <Badge
+                      size="sm"
+                      variant="light"
+                      color={provider?.available ? BADGE.on : BADGE.attention}
+                    >
+                      {model.provider}
+                      {provider?.dedicated
+                        ? " · dedicated"
+                        : provider?.available
+                          ? ""
+                          : " · unavailable"}
+                    </Badge>
+                    {CAPABILITY_COLUMNS.filter(([key]) => model.capabilities[key]).map(
+                      ([key, label]) => (
+                        <Badge key={key} size="sm" variant="outline" color="gray">
+                          {label}
+                        </Badge>
+                      ),
+                    )}
+                    {!model.enabled && (
+                      <Badge size="sm" variant="light" color={BADGE.attention}>
+                        disabled
+                      </Badge>
+                    )}
+                  </Group>
+                  <Text fz="sm" mt="sm">
+                    {modelPriceLabel(model.pricing)}
+                  </Text>
+                  {routes.length > 0 && (
+                    <Text fz="xs" c="dimmed" mt={4}>
+                      also via {routes.join(", ")}
+                    </Text>
+                  )}
+                </div>
+                {canEdit && (
+                  <Group justify="space-between" align="center" wrap="nowrap">
+                    <Switch
+                      size="sm"
+                      label="Enabled"
+                      checked={model.enabled}
+                      disabled={busy}
+                      aria-label={`Enable ${model.id}`}
+                      onChange={(event) => toggleModel(model.id, event.currentTarget.checked)}
+                    />
+                    <Group gap="xs" wrap="nowrap">
+                      {test?.result &&
+                        (test.result.ok ? (
+                          <Badge color={BADGE.on}>{test.result.latencyMs} ms</Badge>
+                        ) : (
+                          <Tooltip label={test.result.error ?? "failed"} multiline maw={360}>
+                            <Badge color={BADGE.broken}>failed</Badge>
+                          </Tooltip>
+                        ))}
+                      <Button
+                        size="compact-xs"
+                        variant="default"
+                        loading={test?.running}
+                        onClick={() => void runTest(model.id)}
+                      >
+                        Test
+                      </Button>
+                    </Group>
+                  </Group>
+                )}
+              </Stack>
+            </Card>
+          );
+        })}
+      </CardGrid>
     </Stack>
   );
 }
