@@ -282,6 +282,7 @@ export const en = {
   "project.tab.traces": "Traces",
   "trace.inConversation": "conversation",
   "project.tab.apiReference": "API Reference",
+  "project.tab.integrations": "Integrations",
   "project.tab.settings": "Settings",
 
   // The playground: version picker, save, and the publish ask.
@@ -579,6 +580,11 @@ export const en = {
   "managed.pathPlaceholder": "/mcp",
   "managed.urlSetByRuntime": "Set by the managed runtime.",
 
+  // The project's Integrations tab: how other systems reach it.
+  "pint.lede":
+    "How other systems reach this project — the token an API caller presents, the chat platforms whose bots run it, and its A2A exposure. What the project itself is, its cost limits and its triggers stay under Settings.",
+  "pint.ownerOnly": "Only the project owner ({owner}) or an admin can change these integrations.",
+
   // A project's settings tab: the sections and their forms.
   "pset.dangerZone": "Danger zone",
   "pset.a2a": "A2A",
@@ -612,6 +618,13 @@ export const en = {
   "pset.telegramWebhookRegistered": "Webhook registered at",
   "pset.telegramGroupHint":
     "In a group the bot answers only a message that mentions it or replies to one of its own; BotFather's privacy mode can stay on.",
+  "pset.teamsBot": "Microsoft Teams bot",
+  "pset.teamsIntro":
+    "Register an Azure Bot (Bot Framework) with the Teams channel enabled, paste its Microsoft App ID and client secret here, and set the bot's messaging endpoint in Azure to the URL below. In a personal chat the bot answers every message; in a channel or group chat it answers when @mentioned. Test connection acquires a token with the stored credentials.",
+  "pset.teamsAppId": "Microsoft App ID",
+  "pset.teamsAppPassword": "Client secret",
+  "pset.teamsTenantId": "Tenant id (single-tenant apps only)",
+  "pset.teamsEnable": "Enable message handling at this endpoint",
 
   // The project webhook and schedules — the two ways something outside the
   // console starts a run.

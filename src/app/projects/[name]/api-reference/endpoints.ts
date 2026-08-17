@@ -15,6 +15,7 @@ export type AuthKind =
   | "trigger-secret"
   | "slack-signature"
   | "telegram-secret"
+  | "teams-token"
   | "public";
 
 export const AUTH_LABEL: Record<AuthKind, string> = {
@@ -23,6 +24,7 @@ export const AUTH_LABEL: Record<AuthKind, string> = {
   "trigger-secret": "X-Trigger-Secret header",
   "slack-signature": "Slack signature",
   "telegram-secret": "Telegram secret token",
+  "teams-token": "Bot Framework token",
   public: "Public",
 };
 
@@ -34,6 +36,7 @@ export const PLACEHOLDERS = {
   slackSignature: "$SLACK_SIGNATURE",
   slackTimestamp: "$SLACK_TIMESTAMP",
   telegramSecret: "$TELEGRAM_WEBHOOK_SECRET",
+  teamsToken: "$BOT_FRAMEWORK_TOKEN",
 } as const;
 
 /**
@@ -98,6 +101,8 @@ export interface ApiReferenceContext {
   slack: { configured: boolean } | null;
   /** Telegram integration status (owner or admin), or null when not visible to the viewer. */
   telegram: { configured: boolean } | null;
+  /** Teams integration status (owner or admin), or null when not visible to the viewer. */
+  teams: { configured: boolean } | null;
 }
 
 function pretty(value: unknown): string {
@@ -133,6 +138,9 @@ function curlExample(opts: {
       break;
     case "telegram-secret":
       lines.push(`  -H 'X-Telegram-Bot-Api-Secret-Token: ${PLACEHOLDERS.telegramSecret}'`);
+      break;
+    case "teams-token":
+      lines.push(`  -H 'Authorization: Bearer ${PLACEHOLDERS.teamsToken}'`);
       break;
     case "public":
       break;
@@ -228,7 +236,7 @@ const USAGE_FIELDS: FieldSpec[] = [
 ];
 
 export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
-  const { projectName, projectType, publishedVersion, origin, a2a, slack, telegram, webhook } = ctx;
+  const { projectName, projectType, publishedVersion, origin, a2a, slack, telegram, teams, webhook } = ctx;
   const abs = (path: string): string => `${origin}${path}`;
   const endpoints: ApiEndpoint[] = [];
 
@@ -570,7 +578,7 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
       path: webhookPath,
       title: "Telegram webhook",
       description:
-        "Telegram delivers message updates here once the webhook is registered from the settings page. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. A private-chat message always starts a run; in a group only a message that mentions the bot or replies to one of its messages does, and /start and /help are answered without one.",
+        "Telegram delivers message updates here once the bot is enabled on the Integrations tab. Requests are verified with the secret token this platform registered the webhook with — it is not called manually. A private-chat message always starts a run; in a group only a message that mentions the bot or replies to one of its messages does, and /start and /help are answered without one.",
       auth: "telegram-secret",
       streaming: false,
       errorCodes: [401],
@@ -582,6 +590,38 @@ export function buildApiReference(ctx: ApiReferenceContext): ApiEndpoint[] {
           body: {
             update_id: 1,
             message: { message_id: 1, chat: { id: 1, type: "private" }, from: { id: 1 }, text: "hi" },
+          },
+        }),
+      ],
+    });
+  }
+
+  // The Teams messaging endpoint is shown to the owner once a bot is configured.
+  if (teams && teams.configured) {
+    const messagingPath = `/api/teams/messages/${projectName}`;
+    endpoints.push({
+      id: "teams-messages",
+      method: "POST",
+      path: messagingPath,
+      title: "Microsoft Teams messaging endpoint",
+      description:
+        "The Bot Framework delivers Teams activities here — set this URL as the Azure Bot's messaging endpoint. Requests are verified with the token the Bot Framework signs for this bot's App ID and serviceUrl — it is not called manually. A personal-chat message always starts a run; in a channel or group chat only a message that @mentions the bot does.",
+      auth: "teams-token",
+      streaming: false,
+      errorCodes: [401],
+      codeExamples: [
+        curlExample({
+          method: "POST",
+          url: abs(messagingPath),
+          auth: "teams-token",
+          body: {
+            type: "message",
+            id: "1",
+            serviceUrl: "https://smba.trafficmanager.net/emea/",
+            conversation: { id: "a:1", conversationType: "personal" },
+            from: { id: "29:1", name: "Someone" },
+            recipient: { id: "28:app-id" },
+            text: "hi",
           },
         }),
       ],

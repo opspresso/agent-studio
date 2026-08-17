@@ -102,6 +102,7 @@ import {
   createProjectTelegramUseCases,
   revokeProjectTelegramWebhook,
 } from "@/application/telegram/projectTelegram";
+import { createProjectTeamsUseCases } from "@/application/teams/projectTeams";
 import { createSlackWorkspaceReader } from "@/application/slack/workspaceRead";
 import type { SlackReaderPort } from "@/domain/slack/reader";
 import { setAuditSink } from "@/application/audit/recordAudit";
@@ -569,6 +570,18 @@ export const projectTelegramUseCases = createProjectTelegramUseCases({
     (await import("@/infrastructure/telegram/client")).telegramClient.setWebhook(botToken, args),
   deleteWebhook: async (botToken) =>
     (await import("@/infrastructure/telegram/client")).telegramClient.deleteWebhook(botToken),
+});
+
+/**
+ * The project-Teams surface, composed like the two above. The one Bot
+ * Framework call it makes — a token, to prove a registration — is deferred for
+ * the same reason.
+ */
+export const projectTeamsUseCases = createProjectTeamsUseCases({
+  projects: projectRepository,
+  cipher: secretCipher,
+  authenticate: async (credentials) =>
+    (await import("@/infrastructure/teams/client")).teamsClient.authenticate(credentials),
 });
 
 /**

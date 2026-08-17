@@ -240,6 +240,7 @@ export const ko: Messages = {
   "project.tab.traces": "트레이스",
   "trace.inConversation": "대화",
   "project.tab.apiReference": "API 레퍼런스",
+  "project.tab.integrations": "연동",
   "project.tab.settings": "설정",
 
   "playground.loadFailed": "프로젝트를 불러오지 못했습니다",
@@ -506,6 +507,11 @@ export const ko: Messages = {
   "managed.pathPlaceholder": "/mcp",
   "managed.urlSetByRuntime": "관리형 런타임이 설정합니다.",
 
+  // 프로젝트의 연동 탭: 다른 시스템이 이 프로젝트에 닿는 방법.
+  "pint.lede":
+    "다른 시스템이 이 프로젝트에 닿는 방법입니다 — API 호출자가 내는 토큰, 봇이 이 프로젝트를 실행하는 채팅 플랫폼, A2A 노출. 프로젝트 자체·비용 한도·트리거는 설정 탭에 있습니다.",
+  "pint.ownerOnly": "프로젝트 소유자({owner})나 admin 만 이 연동을 바꿀 수 있습니다.",
+
   "pset.dangerZone": "위험 구역",
   "pset.a2a": "A2A",
   "pset.agentCard": "Agent Card",
@@ -538,6 +544,13 @@ export const ko: Messages = {
   "pset.telegramWebhookRegistered": "웹훅 등록 주소",
   "pset.telegramGroupHint":
     "그룹에서는 봇을 멘션하거나 봇의 메시지에 답장한 것에만 답합니다. BotFather 의 privacy mode 는 켜 둔 채로 두어도 됩니다.",
+  "pset.teamsBot": "Microsoft Teams 봇",
+  "pset.teamsIntro":
+    "Teams 채널을 켠 Azure Bot(Bot Framework)을 등록하고, 그 Microsoft App ID 와 클라이언트 시크릿을 여기에 붙여 넣은 뒤, Azure 에서 봇의 messaging endpoint 를 아래 URL 로 설정합니다. 개인 채팅에서는 모든 메시지에, 채널·그룹 채팅에서는 @멘션되었을 때 답합니다. 연결 테스트는 저장된 자격 증명으로 토큰을 받아 봅니다.",
+  "pset.teamsAppId": "Microsoft App ID",
+  "pset.teamsAppPassword": "클라이언트 시크릿",
+  "pset.teamsTenantId": "테넌트 id (단일 테넌트 앱만)",
+  "pset.teamsEnable": "이 endpoint 에서 메시지 처리 활성화",
 
   "webhook.section": "Webhook",
   "webhook.intro":

@@ -1,4 +1,11 @@
 import { handleTurn } from "@/application/messaging/handleTurn";
+import {
+  attachmentNote,
+  imagesNote,
+  loadTranscriptHistory,
+  rememberTurn,
+  withSpeakerLabels,
+} from "@/application/messaging/transcriptHistory";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createTelegramReplyChannel } from "@/application/telegram/replyChannel";
 import { botIdFromToken, type TelegramUpdateDisposition } from "@/application/telegram/engagement";
@@ -10,34 +17,11 @@ import type {
 } from "@/application/telegram/types";
 import { callerFrom, conversationKey, type RunCaller } from "@/domain/execution/actor";
 import { MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
-import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
-import type { TranscriptTurn } from "@/domain/messaging/transcript";
+import type { InboundAttachment } from "@/domain/messaging/inbound";
 import { telegramConversation } from "@/domain/telegram/conversation";
-import type { Project } from "@/domain/project/types";
 import { log } from "@/shared/logger";
 import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 
-/** Most recent turns of a conversation carried as context; older turns are dropped. */
-const MAX_HISTORY_TURNS = 50;
-/**
- * How much of the remembered conversation is carried, in characters. Fifty
- * turns of the size below would be a million characters — several times any
- * model's window — and the engine's context budget charges history but never
- * cuts it, so the bound has to be here, where the history is read. The chat
- * surface bounds its replay the same way (`MAX_HISTORY_CHARS` in
- * `messageMapping.ts`); a smaller number here because a Telegram turn is a
- * message, not a run with tool traffic behind it. What is dropped is reported.
- */
-const MAX_HISTORY_CHARS = 100_000;
-/**
- * How much of one turn is written down. A turn is kept for the *next*
- * question's context, and past this a single answer would be most of that
- * context on its own — and a row is one DynamoDB item, which a very long answer
- * would otherwise be the first thing to overflow. Cut on a character count,
- * marked, so the model reads a turn that says it was cut rather than one that
- * ends mid-sentence.
- */
-const MAX_TRANSCRIPT_TURN_CHARS = 20_000;
 /**
  * How long a caption-less member of an album waits before claiming it, so the
  * captioned member — the one carrying the question — wins the claim when there
@@ -152,109 +136,6 @@ function attachmentsOf(
   return attachments;
 }
 
-/** What a turn that carried no text is remembered as, so the exchange keeps its shape. */
-function attachmentNote(attachments: InboundAttachment[]): string {
-  return attachments.length === 0 ? "" : `[sent ${attachments.map((a) => a.name).join(", ")}]`;
-}
-
-/**
- * The turns this surface remembers of the conversation, oldest first, within
- * a character budget — or none, when there is nothing to remember with or the
- * read failed. Both losses are a warning: an answer given without its context
- * is worth a line, whichever way the context went missing.
- */
-async function loadHistory(
-  deps: TelegramEventDeps,
-  project: Project,
-  key: string,
-  warnings: string[],
-): Promise<TranscriptTurn[]> {
-  if (!deps.transcripts) {
-    return [];
-  }
-  let turns: TranscriptTurn[];
-  try {
-    turns = await deps.transcripts.recent(project.name, key, MAX_HISTORY_TURNS);
-  } catch (error) {
-    log.error("telegram", "conversation history failed", error);
-    warnings.push("Conversation history unavailable; answered without prior context.");
-    return [];
-  }
-  // Newest turns first into the budget; the oldest are what a follow-up is
-  // least about.
-  let spent = 0;
-  let keptFrom = turns.length;
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const size = turns[index]?.content.length ?? 0;
-    if (spent + size > MAX_HISTORY_CHARS) {
-      break;
-    }
-    spent += size;
-    keptFrom = index;
-  }
-  if (keptFrom > 0) {
-    warnings.push(
-      `Older conversation turns were left out to fit the context (${keptFrom} of ${turns.length}).`,
-    );
-  }
-  return turns.slice(keptFrom);
-}
-
-/**
- * Write a turn down for the next question. Best effort: a transcript that
- * could not be written costs the next follow-up its context, and that is not
- * worth failing a run that already answered.
- */
-async function remember(
-  deps: TelegramEventDeps,
-  project: Project,
-  key: string,
-  turn: TranscriptTurn,
-): Promise<void> {
-  if (!deps.transcripts || !turn.content) {
-    return;
-  }
-  const content =
-    turn.content.length > MAX_TRANSCRIPT_TURN_CHARS
-      ? `${turn.content.slice(0, MAX_TRANSCRIPT_TURN_CHARS)}\n…[truncated]`
-      : turn.content;
-  await deps.transcripts
-    .append(project.name, key, { ...turn, content })
-    .catch((error) => log.error("telegram", "conversation turn could not be recorded", error));
-}
-
-/**
- * Prefix each human turn with who wrote it, when more than one human is in
- * the conversation *and this version asked to know who is asking*. A private
- * chat needs no labels; a group with three people reaches the model as one
- * person's monologue without them — but a name is what `callerContext` gates,
- * on the way in and on the way out: a version that turned the opt-in off must
- * not go on reading names an earlier version wrote down.
- */
-function withSpeakerLabels(
-  turns: TranscriptTurn[],
-  currentUserId: string | undefined,
-  namesAllowed: boolean,
-): { history: HistoryTurn[]; label: boolean } {
-  const humans = new Set(turns.filter((turn) => turn.userId).map((turn) => turn.userId));
-  if (currentUserId) {
-    humans.add(currentUserId);
-  }
-  const label = namesAllowed && humans.size > 1;
-  return {
-    label,
-    history: turns.map((turn) => ({
-      message: {
-        role: turn.role,
-        content:
-          label && turn.role === "user" && turn.speaker ? `${turn.speaker}: ${turn.content}` : turn.content,
-      },
-      attachments: [],
-      ...(turn.userId ? { userId: turn.userId } : {}),
-    })),
-  };
-}
-
 /**
  * Whether this update should answer for the album it belongs to.
  *
@@ -361,7 +242,7 @@ export async function handleTelegramUpdate(
   }
   // Read before anything is written, like the Slack thread: the reply must
   // not come back as an assistant turn in this run's own context.
-  const remembered = await loadHistory(deps, project, key, warnings);
+  const remembered = await loadTranscriptHistory(deps.transcripts, project.name, key, warnings, "telegram");
   await reply.status("is thinking…");
 
   const userId = message.from ? String(message.from.id) : undefined;
@@ -397,20 +278,28 @@ export async function handleTelegramUpdate(
   // its shape: an answer with no question in front of it, or a question the
   // record says went unanswered, is a history that lies.
   const now = new Date().toISOString();
-  await remember(deps, project, key, {
-    role: "user",
-    content: disposition.text || attachmentNote(attachments),
-    ...(userId ? { userId } : {}),
-    ...(named ? { speaker: named.displayName } : {}),
-    createdAt: now,
-  });
-  await remember(deps, project, key, {
-    role: "assistant",
-    content:
-      outcome.text ||
-      (outcome.imagesDelivered > 0
-        ? `[sent ${outcome.imagesDelivered} image${outcome.imagesDelivered === 1 ? "" : "s"}]`
-        : ""),
-    createdAt: new Date(Date.parse(now) + 1).toISOString(),
-  });
+  await rememberTurn(
+    deps.transcripts,
+    project.name,
+    key,
+    {
+      role: "user",
+      content: disposition.text || attachmentNote(attachments.map((attachment) => attachment.name)),
+      ...(userId ? { userId } : {}),
+      ...(named ? { speaker: named.displayName } : {}),
+      createdAt: now,
+    },
+    "telegram",
+  );
+  await rememberTurn(
+    deps.transcripts,
+    project.name,
+    key,
+    {
+      role: "assistant",
+      content: outcome.text || imagesNote(outcome.imagesDelivered),
+      createdAt: new Date(Date.parse(now) + 1).toISOString(),
+    },
+    "telegram",
+  );
 }

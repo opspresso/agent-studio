@@ -101,6 +101,24 @@ export interface TelegramIntegration {
   botUsername?: string;
 }
 
+/**
+ * Per-project Microsoft Teams bot credentials — an Azure Bot registration.
+ * Secrets are AES-encrypted at rest.
+ *
+ * The App ID is what the Bot Framework names as the audience of every token it
+ * signs a delivery with, and the password is what this platform trades for a
+ * token to answer with. Nothing is minted here: both come from Azure, and the
+ * messaging endpoint is registered there by the operator, not by this
+ * platform — Azure offers no call for it.
+ */
+export interface TeamsIntegration {
+  appId: string;
+  appPassword: string;
+  /** A single-tenant registration's tenant id; absent for a multi-tenant app. */
+  tenantId?: string;
+  enabled: boolean;
+}
+
 export interface Project {
   name: string;
   displayName: string;
@@ -111,6 +129,7 @@ export interface Project {
   publishedVersion?: string;
   slack?: SlackIntegration;
   telegram?: TelegramIntegration;
+  teams?: TeamsIntegration;
   costLimits?: CostLimits;
   createdAt: string;
   updatedAt: string;
