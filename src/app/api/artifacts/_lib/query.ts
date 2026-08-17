@@ -78,7 +78,9 @@ export interface ArtifactView extends Artifact {
  * Resolved inline rather than behind a second request per thumbnail. In
  * authenticated mode, presigning is local and adds no S3 round trip.
  *
- * In authenticated mode a document is signed to download under its own name.
+ * A document is signed to download under its own name, in both access modes —
+ * which is why a public deployment's document tiles carry a time-limited URL
+ * while its images keep the permanent one.
  */
 export async function toArtifactViews(
   artifacts: Artifact[],

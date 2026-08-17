@@ -58,6 +58,19 @@ describe("artifactObjectStore access modes", () => {
     );
   });
 
+  it("presigns a download in public mode, because S3 refuses response overrides on an anonymous GET", async () => {
+    mocks.getArtifactAccessMode.mockResolvedValue("public");
+    mocks.getSignedUrl.mockResolvedValue("https://signed.example.com/object");
+
+    await expect(
+      artifactObjectStore.sign("artifacts/document/id.pdf", 900, { downloadAs: "보고서.pdf" }),
+    ).resolves.toBe("https://signed.example.com/object");
+    const command = mocks.getSignedUrl.mock.calls[0]?.[1] as { input: Record<string, string> };
+    expect(command.input.ResponseContentDisposition).toBe(
+      `attachment; filename*=UTF-8''${encodeURIComponent("보고서.pdf")}`,
+    );
+  });
+
   it("presigns reads in authenticated mode", async () => {
     mocks.getArtifactAccessMode.mockResolvedValue("authenticated");
     mocks.getSignedUrl.mockResolvedValue("https://signed.example.com/object");

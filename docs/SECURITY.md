@@ -727,7 +727,10 @@ Other properties worth knowing:
   (`src/application/artifact/urlTtl.ts`). The bucket stays private. `public` instead returns
   a permanent direct S3 URL. That mode requires an explicit public-read bucket policy and
   exposes the bytes to anyone who obtains the URL; application authentication still protects
-  gallery metadata and deletion, not the object.
+  gallery metadata and deletion, not the object. **It pre-signs anyway wherever the address
+  is a download rather than a view** — the filename a browser saves under is carried by
+  `ResponseContentDisposition`, which S3 rejects on an anonymous GET, so an unsigned link can
+  only ever save the object under its UUID key.
   - Legacy rows may carry a public `url` and are read back unchanged. Rewriting them
     would change nothing about who can reach those objects, which are already public — so
     **if the bucket was ever public-read, its existing objects still are.** Making it private

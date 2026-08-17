@@ -57,12 +57,21 @@ export const artifactObjectStore: ArtifactObjectStore = {
   /**
    * A direct URL in public mode, otherwise a pre-signed GET URL. The signed
    * lifetime is the caller's because readers need different ones.
+   *
+   * **A filename can only travel inside a signature.** S3 refuses the
+   * `response-*` overrides on an anonymous GET outright — `InvalidRequest:
+   * Request specific response headers cannot be used for anonymous GET
+   * requests` — so appending the disposition to the direct URL is not a
+   * cheaper version of this, it is a 400. Public mode therefore keeps the
+   * permanent direct URL for everything that is *shown* and signs the ones
+   * that are *taken away*; without this a public deployment saved every
+   * document under its object key, which is a UUID.
    */
   async sign(key, expiresInSeconds, options) {
-    if (await getArtifactAccessMode() === "public") {
+    const downloadAs = options?.downloadAs;
+    if (!downloadAs && (await getArtifactAccessMode()) === "public") {
       return artifactPublicUrl(key);
     }
-    const downloadAs = options?.downloadAs;
     return getSignedUrl(
       // The presigner is typed against its own copy of the smithy client
       // interface; the two declare the same private field separately, so

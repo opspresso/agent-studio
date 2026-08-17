@@ -18,8 +18,11 @@
  * read by a person with the page already open, while a replay hands the URL to a
  * model provider that fetches it at some point inside a run.
  *
- * The adapter may return a time-limited signed URL or a direct public URL. In
- * authenticated mode, `downloadAs` sets the filename a browser saves under.
+ * The adapter may return a time-limited signed URL or a direct public URL.
+ * `downloadAs` sets the filename a browser saves under, and asking for one is
+ * also what makes an address time-limited even where the deployment serves
+ * objects publicly: a filename rides on the request's signature, so there is no
+ * such thing as a permanent URL that carries one.
  */
 export type SignObjectUrl = (
   key: string,

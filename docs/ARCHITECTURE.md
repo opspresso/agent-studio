@@ -874,7 +874,10 @@ rather than leaving a gap.
 
 **A stored image is a key, and its address is resolved per read.** The row never commits to an
 access policy. `ARTIFACT_ACCESS_MODE=authenticated` resolves the key to a time-limited signed
-URL; `public` resolves it to the direct regional S3 URL. `resolveImageUrl`
+URL; `public` resolves it to the direct regional S3 URL. An image is *shown*, so it asks for no
+filename and the unsigned address is enough; a **document** is taken away under its own name,
+which S3 will only accept on a signed request, so a document is pre-signed in either mode.
+`resolveImageUrl`
 (`src/domain/chat/imageRefs.ts`) owns the one compatibility rule — a `key` is resolved, a legacy
 `url` is passed through — because two readers ask, and a second spelling is how one of them
 quietly stops showing half the images. Both resolve *before* mapping, which is what keeps
