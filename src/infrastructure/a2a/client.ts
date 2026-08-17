@@ -197,6 +197,7 @@ async function collectStream(
   params: MessageSendParams,
   onEvent: () => void,
   idle: AbortSignal,
+  caller?: AbortSignal,
 ): Promise<StreamCollected> {
   let task: Task | null = null;
   let message: Message | null = null;
@@ -253,7 +254,7 @@ async function collectStream(
     if (task && TERMINAL_STATES.has(task.status.state)) {
       return { result: task };
     }
-    return { result: null, error: errorText(error, idle) };
+    return { result: null, error: errorText(error, idle, caller) };
   }
   // A task is the fuller record whenever there is one: it carries the artifacts,
   // the terminal status and the history the extractors fall through.
@@ -294,17 +295,23 @@ function toResult(result: Message | Task): A2aSendResult {
 }
 
 /**
- * `idle` separates our own bound from the caller's. Both arrive as an
- * `AbortError`, and reporting a run cancelled by its deadline as a 120-second
- * timeout describes a wait that never happened.
+ * `idle` is our own bound, `caller` the run's. Which one fired is read off the
+ * signals rather than off the error: `fetch` rejects with whatever a signal was
+ * aborted *with*, and only a bare `abort()` is the DOM's `AbortError` — a
+ * caller that hung up arrives as Next's `ResponseAborted`, an Error with
+ * another name and no message, which matched by name read as an ordinary
+ * failure with nothing to say. Reporting a run cancelled by its caller as a
+ * 120-second timeout would describe a wait that never happened, so the two are
+ * kept apart here.
  */
-function errorText(error: unknown, idle?: AbortSignal): string {
-  if (error instanceof Error && error.name === "AbortError") {
-    return idle?.aborted
-      ? `Request timed out after ${IDLE_TIMEOUT_MS / 1000}s with no response`
-      : "Request was cancelled";
+function errorText(error: unknown, idle: AbortSignal, caller?: AbortSignal): string {
+  if (idle.aborted) {
+    return `Request timed out after ${IDLE_TIMEOUT_MS / 1000}s with no response`;
   }
-  return error instanceof Error ? error.message : "A2A request failed";
+  if (caller?.aborted) {
+    return "Request was cancelled";
+  }
+  return error instanceof Error && error.message ? error.message : "A2A request failed";
 }
 
 export async function sendA2aMessage(
@@ -348,7 +355,7 @@ export async function sendA2aMessage(
     const client = new A2AClient(card, { fetchImpl });
     keepAwake();
     if (card.capabilities?.streaming) {
-      const streamed = await collectStream(client, params, keepAwake, controller.signal);
+      const streamed = await collectStream(client, params, keepAwake, controller.signal, signal);
       return streamed.result
         ? toResult(streamed.result)
         : { ok: false, error: streamed.error ?? "A2A stream ended with no reply" };
@@ -363,7 +370,7 @@ export async function sendA2aMessage(
     }
     return toResult(response.result);
   } catch (error) {
-    return { ok: false, error: errorText(error, controller.signal) };
+    return { ok: false, error: errorText(error, controller.signal, signal) };
   } finally {
     clearTimeout(idleTimer);
   }

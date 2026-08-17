@@ -44,8 +44,22 @@ export function invalidRequest(error: ZodError): Response {
  * with. `warn` rather than `error` because a 502 is another system's fault and
  * needs no page — `error` stays what it was, the failures this app could not
  * account for at all.
+ *
+ * A route that runs something long passes its `request`, and a caller who
+ * hung up before the answer is then neither of the above: the run's abort
+ * reaches this catch as whatever Next aborted the signal with (its own
+ * `ResponseAborted`, an Error with no message), and mapped like an error it
+ * was an *unhandled* one — `error`-level, for a reload. Nothing is sent, since
+ * nobody is there to read it, and one `info` line says what happened: the
+ * ~60-second image generation a person reloaded through used to leave a 502
+ * in the log with nothing after the colon, and this line is what would have
+ * named it.
  */
-export function apiError(error: unknown): Response {
+export function apiError(error: unknown, request?: Request): Response {
+  if (request?.signal.aborted) {
+    log.info("api", "caller left before the answer");
+    return new Response(null, { status: 499 });
+  }
   const status = statusForError(error);
   if (status !== null) {
     if (status >= 500) {

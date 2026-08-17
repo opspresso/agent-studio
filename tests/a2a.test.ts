@@ -523,6 +523,31 @@ describe("sendA2aMessage", () => {
     expect(await pending).toEqual({ ok: false, error: "Request was cancelled" });
   });
 
+  it("reads a cancellation off the signal, whatever the caller aborted with", async () => {
+    // A real fetch rejects with the abort *reason*, and Next.js aborts
+    // `request.signal` with its own `ResponseAborted` — an Error that is not
+    // named `AbortError` and carries no message. Judged by the error's name,
+    // a caller hanging up read as an ordinary failure with an empty reason.
+    const cancel = new AbortController();
+    const card = agentCard(false);
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input) === CARD_URL) {
+        return card;
+      }
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+      });
+    });
+
+    const pending = sendA2aMessage(RPC_URL, {}, "hello", cancel.signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const responseAborted = new Error();
+    responseAborted.name = "ResponseAborted";
+    cancel.abort(responseAborted);
+
+    expect(await pending).toEqual({ ok: false, error: "Request was cancelled" });
+  });
+
   it("keeps a stream alive past the blocking timeout while events keep arriving", async () => {
     vi.useFakeTimers();
     const sse = manualSse(1);

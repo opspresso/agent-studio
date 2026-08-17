@@ -79,4 +79,36 @@ describe("apiError logging", () => {
 
     expect(body.error).toBe("Internal server error");
   });
+
+  it("treats a caller who hung up as neither a failure nor a defect", () => {
+    // Next aborts `request.signal` with `ResponseAborted` — an Error with no
+    // message — the moment the browser leaves, and the run's abort lands in the
+    // route's catch as that. Read as an error it was an *unhandled* one: a
+    // reload through a slow image generation, filed at `error` level.
+    const info = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const controller = new AbortController();
+    const responseAborted = new Error();
+    responseAborted.name = "ResponseAborted";
+    controller.abort(responseAborted);
+    const request = new Request("https://example.test/api/x", { signal: controller.signal });
+
+    const response = apiError(responseAborted, request);
+
+    expect(response.status).toBe(499);
+    expect(warn).not.toHaveBeenCalled();
+    expect(err).not.toHaveBeenCalled();
+    expect(info.mock.calls[0]?.map(String).join(" ")).toContain("caller left");
+  });
+
+  it("maps as before when the caller is still there", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const request = new Request("https://example.test/api/x");
+
+    const response = apiError(new Error("connect ECONNREFUSED"), request);
+
+    expect(response.status).toBe(500);
+    expect(err).toHaveBeenCalledTimes(1);
+  });
 });

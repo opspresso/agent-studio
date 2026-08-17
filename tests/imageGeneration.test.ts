@@ -446,6 +446,38 @@ describe("a provider refusal is reported as one", () => {
   });
 
   it("does not turn the caller walking away into an upstream failure", async () => {
+    // What a channel sees when the caller's signal aborts mid-request: fetch
+    // rejects with the abort *reason*. Next.js aborts `request.signal` with its
+    // own `ResponseAborted` — an Error whose name is not `AbortError` and whose
+    // message is empty — so a check on the name reads a reload as a provider
+    // refusing with nothing to say. The signal is what decides.
+    const controller = new AbortController();
+    const responseAborted = new Error();
+    responseAborted.name = "ResponseAborted";
+    const { deps } = fakeDeps();
+    const abortingChannel: ImageChannel = {
+      async editImage(): Promise<never> {
+        throw new Error("not this path");
+      },
+      async generateImage(): Promise<never> {
+        controller.abort(responseAborted);
+        throw responseAborted;
+      },
+    };
+
+    const thrown = await generateImage(
+      { ...deps, imageChannel: abortingChannel },
+      { project, version: version("openai/gpt-image-2"), prompt: "a cat", signal: controller.signal },
+    ).catch((error: unknown) => error);
+
+    expect(thrown).toBe(responseAborted);
+    expect(thrown).not.toBeInstanceOf(UpstreamError);
+    expect(statusForError(thrown)).toBeNull();
+  });
+
+  it("still reports a provider that aborted on its own as a failure", async () => {
+    // An AbortError with no aborted caller signal is the adapter's own doing —
+    // the person is still waiting for an answer, and this is it.
     const abort = new Error("The operation was aborted");
     abort.name = "AbortError";
     const deps = refusing(abort);
@@ -456,8 +488,8 @@ describe("a provider refusal is reported as one", () => {
       prompt: "a cat",
     }).catch((error: unknown) => error);
 
-    expect(thrown).not.toBeInstanceOf(UpstreamError);
-    expect(statusForError(thrown)).toBeNull();
+    expect(thrown).toBeInstanceOf(UpstreamError);
+    expect(statusForError(thrown)).toBe(502);
   });
 });
 

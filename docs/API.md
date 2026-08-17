@@ -987,6 +987,9 @@ it was asked of — `Image generation failed for xai/grok-imagine-image: 404 The
 resource was not found.` A collected body is the one execution surface with no `error` frame
 to carry that, so before it was typed the same failure arrived as `500 Internal server error`
 and a version naming a model its provider does not serve was indistinguishable from a crash.
+A caller that closes the connection before the answer gets nothing and is not a `502`: the
+run is cancelled, and the log says the caller left rather than that the provider failed. Plan
+for the wait — an image on xAI takes about a minute.
 
 ### `POST /api/projects/{name}/versions/{version}/chat/completions`
 
