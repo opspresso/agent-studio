@@ -19,14 +19,15 @@ Design rationale for *why* a surface looks like this lives in
   instead of a session cookie; the token acts on the project owner's behalf and is scoped to
   that project (see [Project API token](#project-api-token)). Machine surfaces are gated
   differently: `/api/a2a/*` by `X-A2A-Key`, `/api/slack/events/*` by the Slack signing secret,
-  `/api/webhook/{project}` by the webhook's own secret, `/api/triggers/scan` by the
-  deployment's `SCHEDULE_SCAN_TOKEN`. `/api/health`, `/api/ready` and `/api/metrics` are open.
+  `/api/telegram/webhook/*` by the secret token Telegram echoes, `/api/webhook/{project}` by
+  the webhook's own secret, `/api/triggers/scan` by the deployment's `SCHEDULE_SCAN_TOKEN`. `/api/health`, `/api/ready` and `/api/metrics` are open.
 - **Authorization**: projects are a shared catalog — any signed-in user may read and run any
   project. Only the owner and configured admins may mutate one (update/delete/publish, version
-  create/update, Slack config), otherwise
+  create/update, Slack and Telegram config), otherwise
   `403 { "error": "You do not have permission to modify project \"…\"" }`.
   Project sub-resources that expose other users' runtime data or masked secrets — traces, the
-  Slack config, the API token, triggers, per-caller usage, MCP connections — are limited to
+  Slack and Telegram config, the API token, triggers, per-caller usage, MCP connections — are
+  limited to
   the owner and admins for *reading* as well. Chats are per-owner private (non-owner reads
   return 404). MCP/agent/skill/plugin registries are shared for reads **from the `member`
   tier up** — a `guest` (the tier every sign-up starts as) gets
@@ -89,6 +90,9 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/projects/{name}/triggers/{trigger}/runs` | `GET` | owner |
 | `/api/projects/{name}/slack` | `GET` `PUT` `DELETE` | owner |
 | `/api/projects/{name}/slack/test` | `POST` | owner |
+| `/api/projects/{name}/telegram` | `GET` `PUT` `DELETE` | owner |
+| `/api/projects/{name}/telegram/test` | `POST` | owner |
+| `/api/projects/{name}/telegram/webhook` | `POST` | owner |
 | `/api/projects/{name}/a2a` | `GET` | session |
 | `/api/projects/{name}/mcp-connections` | `GET` | owner |
 | `/api/projects/{name}/mcp-connections/{server}` | `PUT` `DELETE` | owner |
@@ -150,6 +154,7 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | public |
 | `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
+| `/api/telegram/webhook/{project}` | `POST` | `X-Telegram-Bot-Api-Secret-Token` |
 | `/api/webhook/{project}` | `POST` | `X-Trigger-Secret` |
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
@@ -704,6 +709,35 @@ secret: there is nothing to enable. The
 test endpoint returns `{ ok: true, team, botUser }`, `400` when Slack is unconfigured or
 disabled for the project, or `502` for a Slack API failure.
 
+Per-project Telegram configuration uses these endpoints:
+
+```
+GET    /api/projects/{name}/telegram
+PUT    /api/projects/{name}/telegram          { botToken?, enabled? }
+DELETE /api/projects/{name}/telegram
+POST   /api/projects/{name}/telegram/test
+POST   /api/projects/{name}/telegram/webhook
+```
+
+Every verb answers the same view: `enabled`, `configured`, the masked `botToken`, the bot's
+`botUsername` (learned when the token was saved; not a secret), `webhookPath` and
+`webhookUrl`. All five are limited to the owner and to configured admins. A *new* token on
+`PUT` is checked with Telegram (`getMe`) before it is stored and is a 400 when Telegram
+refuses it; a masked or empty token keeps the stored one. The webhook secret is minted by
+this platform with the first token and never returned — Telegram is the only party that
+needs it, and it is handed over by `POST …/telegram/webhook`, which registers (or moves)
+the bot's webhook at this deployment's URL and answers `{ ok: true, url }`. `DELETE` tells
+Telegram to drop the webhook, best effort, and forgets the credentials either way. Like
+Slack, a `PUT` on a non-agent project is a 400, and so is enabling with no token stored or
+supplied. `test` returns `{ ok: true, botId, botUsername }`, `400` when Telegram is
+unconfigured or disabled, or `502` for a Bot API failure; `webhook` answers the same way.
+
+The events endpoint itself, `POST /api/telegram/webhook/{project}`, is what Telegram calls
+(never a person): a body over 1MB is 413, a wrong or missing `X-Telegram-Bot-Api-Secret-Token`
+is 401, an update the bot ignores is `{ ok: true }` with nothing claimed, a redelivery is
+`{ ok: true, duplicate: true }`, and anything else is `{ ok: true }` with the run handled after
+the ack (see [design/telegram.md](design/telegram.md)).
+
 ## Managed MCP servers
 
 A managed server is a container this deployment starts on its own host through SSM Run
@@ -1080,14 +1114,15 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
 `actor` is `{kind}:{id}` — `user:a@example.com`, `project-token:owner@example.com` (a token
 authenticates as its owner, so the kind is what keeps a machine's spend apart from that
 person's own runs — and only the `user:` rows count toward a personal tier budget),
-`slack:U123`, `a2a:shared-key`, and for a trigger firing
+`slack:U123`, `telegram:123456`, `a2a:shared-key`, and for a trigger firing
 `webhook:{project}:{triggerId}` or `schedule:{project}:{triggerId}`. The metric fields are
 per-model maps, exactly as in the summary above.
 
 `display` puts a face on a `slack:` row, resolved through the project's own bot token. It is
 decoration and may be absent for any reason — no Slack bot, a revoked token, a deactivated user,
 a Slack outage — and `actor` is unchanged in every case, because that is the key two callers are
-told apart by.
+told apart by. A `telegram:` row carries no `display`: the Bot API offers no profile lookup by
+user id, so the id is all there is.
 
 Owner/admin only, on the same reasoning as traces: project *totals* are open to any
 signed-in user because the catalog is shared, but a breakdown by caller names individuals.

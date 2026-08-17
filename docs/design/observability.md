@@ -76,6 +76,7 @@ spender. `RunActor { kind, id }` (`src/domain/execution/actor.ts`) names one:
 | `user` | email | — |
 | `project-token` | the **owner's** email | A token authenticates as them; the *kind* is what keeps a machine's spend apart from that person's own runs — and out of their personal tier budget, which only `user` rows feed |
 | `slack` | Slack user id | Slack hands over no email, and guessing a mapping would bill the wrong person |
+| `telegram` | Telegram user id | The same reason; Telegram hands over a name and a username, and neither is an address |
 | `a2a` | the constant `shared-key`, or the client key's name | The shared key names nobody; a named client key names its holder, so their runs are attributed and bounded per client |
 | `webhook` | `{project}:{triggerId}` | — |
 | `schedule` | `{project}:{triggerId}` | — |

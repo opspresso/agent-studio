@@ -149,8 +149,8 @@ Two consequences of the override are handled rather than assumed away:
 ## Secrets at rest
 
 Every stored credential — MCP server headers, external-agent headers, per-version header
-overrides, Slack bot token and signing secret, the app-wide A2A key, project API tokens,
-webhook trigger secrets, and the secret app settings (the LLM API key and the plugins-repo
+overrides, Slack bot token and signing secret, Telegram bot token and webhook secret, the
+app-wide A2A key, project API tokens, webhook trigger secrets, and the secret app settings (the LLM API key and the plugins-repo
 GitHub token) — is AES-256-GCM encrypted with `AES_ENCRYPTION_KEY` and stored
 under an `enc:v1:` prefix (`src/infrastructure/crypto/secretEncryption.ts`).
 
@@ -213,6 +213,7 @@ traceable to what it opens:
 | `adc_` | named A2A client key (admin-managed) |
 | `adt_` | project API token (owner-managed) |
 | `adw_` | webhook trigger secret (owner-managed) |
+| `adg_` | Telegram webhook secret (minted per project; handed to Telegram alone, never revealed) |
 
 The random part is 32 bytes (256 bits), so the prefix costs no entropy that matters.
 Verification never looks at the prefix, so tokens issued under an older spelling — `as*_`,
@@ -224,17 +225,18 @@ never enough to reconstruct the token.
 
 ## Request authentication for machine callers
 
-Five credentials authenticate a caller with no session cookie:
+Six credentials authenticate a caller with no session cookie:
 
 | Surface | Credential | Verification |
 |---|---|---|
 | Execution endpoints (`predict`, `chat/completions`, `agent`) | `Authorization: Bearer adt_…` | Decrypt-and-compare in constant time (or hash compare for a legacy token), scoped to the `{name}` in the path; runs **as the project owner** (`authenticateExecution`) |
 | Slack events | Slack signing secret | HMAC + `timingSafeEqualString`, 5-minute replay window, per-project secret |
+| Telegram webhook | `X-Telegram-Bot-Api-Secret-Token` | `timingSafeEqualString` against the per-project secret this platform registered the webhook with (`adg_…`); Telegram echoes it on every delivery, and there is no signature to check beyond it |
 | Inbound A2A | `X-A2A-Key` | Constant-time compare against the shared `A2A_API_KEY` (actor `a2a:shared-key`), else a hash lookup against the admin-issued **named client keys** (actor `a2a:{client}` — attributed and rate-limited per client). With neither configured the endpoints are off |
 | Webhook triggers | `X-Trigger-Secret` | `cipher.decryptEquals` (constant time) |
 | CronJob ticks — schedule scan (`/api/triggers/scan`), catalog reindex (`/api/catalog/reindex`), plugins sync (`/api/plugins/sync/scan`) | `X-Scan-Token` | `timingSafeEqualString` against `SCHEDULE_SCAN_TOKEN`; unset answers 503, and a refused token logs a warning on all three |
 
-**One token opens all three ticks**, which makes it the widest of the five. The same string
+**One token opens all three ticks**, which makes it the widest of the six. The same string
 that lets a CronJob ask which schedules are due also runs a plugins sync, and that sync
 writes both registries — skills and MCP servers — adopting names the repository declares and
 rewriting provenance with them. Scope and rotate it as a write credential, not as a probe.
@@ -252,10 +254,11 @@ for which triggers exist.
 Constant-time comparison has one owner, `src/shared/timingSafe.ts`, pinned by
 `tests/architecture.test.ts`.
 
-Replay protection: Slack events are deduplicated exactly-once by `event_id` (conditional put,
-24h TTL) whose claim is a **lease** settled afterwards, so an instance that dies mid-processing
-leaves a reclaimable claim rather than an event recorded as handled by nobody. Webhook
-deliveries claim their `Idempotency-Key` the same way.
+Replay protection: Slack events are deduplicated exactly-once by `event_id` and Telegram
+updates by `update_id` per project (conditional put, 24h TTL, one shared claim-and-settle
+repository) whose claim is a **lease** settled afterwards, so an instance that dies
+mid-processing leaves a reclaimable claim rather than an event recorded as handled by nobody.
+Webhook deliveries claim their `Idempotency-Key` the same way.
 
 ## Response headers
 
@@ -611,7 +614,8 @@ Off is byte-identical to the unfiltered path.
 
 Opt-in per version via `parameters.callerContext`. With it on, a Slack run tells the model who
 is asking — display name, timezone, and the avatar's URL — and labels each speaker when a thread
-holds more than one human.
+holds more than one human. A Telegram run does the same with what an update carries — the
+sender's name, and nothing else: Telegram hands over no timezone and no email.
 
 **A name is PII that `piiFiltering` does not mask.** Its patterns match emails, phone and
 registration/card numbers,
@@ -622,7 +626,8 @@ people's names into prompts and into whatever the provider logs.
 
 The opt-in gates the lookup as well as the prompt. A version with it off causes no `users.info`
 call at all, so a project that has not opted in never sends a member's id to Slack's profile
-API. A **transfer carries the caller** to the child (`RunOrigin`), where the child version's
+API — and on Telegram, where the name arrives with the message, it is not written into the
+conversation transcript either (see [Data exposure and retention](#data-exposure-and-retention)). A **transfer carries the caller** to the child (`RunOrigin`), where the child version's
 own opt-in decides again — so a name reaches only versions that asked for one, however many
 hops away, and a project whose owner never opted in never sees it. Resolved profiles are cached in memory per workspace (an hour; a failure, a minute), bounded
 in size, and never persisted.
@@ -718,6 +723,12 @@ Other properties worth knowing:
 - Log lines carry a run correlation id, never prompt content.
 - Traces, usage rows, chats, trigger deliveries and inbound A2A tasks all expire via DynamoDB
   TTL — see [OPERATIONS.md](OPERATIONS.md#row-retention).
+- **Telegram conversation transcripts** keep the *text* of every turn exchanged with a
+  project's bot for seven days — the question and the answer, per conversation — because the
+  Bot API hands back no history and a follow-up has to carry the question before it. It is
+  user text at rest, like a chat message; unlike a chat it is read by nothing but the next
+  run in that conversation. The sender's Telegram user id is stored beside a turn; the
+  sender's *name* only when the version opted into `callerContext`.
 - **Generated images** are stored under an unguessable UUID key with `S3_BUCKET_NAME` set, and
   a chat row keeps the **object key** — never an address. `ARTIFACT_ACCESS_MODE=authenticated`
   (the default) pre-signs URLs at read time with a lifetime chosen for the reader: 15 minutes

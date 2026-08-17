@@ -7,7 +7,7 @@
 management — one production-grade Next.js full-stack application.
 
 Build a prompt or an agent as a **project**, iterate on it in **versions**, publish one, and
-call it from anywhere: the console, an OpenAI-compatible endpoint, Slack, a webhook, or
+call it from anywhere: the console, an OpenAI-compatible endpoint, Slack, Telegram, a webhook, or
 another agent over A2A. Every run is attributed, priced, and bounded.
 
 ## What's in it
@@ -22,7 +22,7 @@ another agent over A2A. Every run is attributed, priced, and bounded.
 | **Chats** | Private per-owner conversations against an agent project, with tool traffic and images preserved. |
 | **Cost dashboard** | Daily per-project, per-model spend — plus per-caller attribution, because the project catalog is shared. |
 | **Guards** | Per-project daily and monthly cost thresholds, per-caller concurrency limits, and a wall-clock deadline on every run. |
-| **Integrations** | Per-project Slack bots, webhook triggers, and A2A in both directions. |
+| **Integrations** | Per-project Slack and Telegram bots, webhook triggers, and A2A in both directions. |
 
 ## Stack
 
@@ -73,7 +73,7 @@ There is no lint step; `typecheck` + `test` + `build` are the checks.
 | Document | What it answers |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it is built and **why** — layers, the single-table key map, the path from an entry point to the engine |
-| [docs/design/](docs/design/) | One file per subsystem — the engine, MCP, Slack, capabilities, triggers, chat, records, A2A |
+| [docs/design/](docs/design/) | One file per subsystem — the engine, MCP, the messaging surfaces (Slack, Telegram), capabilities, triggers, chat, records, A2A |
 | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) | Every decision with a single owning file, enforced by `tests/architecture.test.ts` |
 | [docs/API.md](docs/API.md) | Every HTTP route, its auth, and its request/response shapes |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable, and the limits fixed in code |
@@ -90,7 +90,7 @@ There is no lint step; `typecheck` + `test` + `build` are the checks.
 Each project's **API Reference** tab shows how, with the project's own name and published
 version filled in and a copyable curl example per endpoint. Three execution endpoints are
 available — `predict`, `chat/completions` (OpenAI-compatible), and `agent` (SSE) — plus the
-A2A and Slack endpoints when those are configured.
+A2A, Slack and Telegram endpoints when those are configured.
 
 Generate a token under **Project Settings → API token** and send it as
 `Authorization: Bearer <token>` in place of the session cookie. It is scoped to that project
@@ -175,6 +175,17 @@ agent container shows the project's suggested prompts (up to four, edited in the
 panel), progress appears as Slack's own status line naming each tool rather than as edits to
 the answer, a new thread is titled after the question that opened it, and the reply is a real
 Slack text stream — falling back to editing one message where streaming is unavailable.
+
+### Telegram
+
+Each agent project can have its own Telegram bot too, on the same pipeline as Slack. **Project
+Settings → Telegram bot** takes the token from @BotFather, checks it with Telegram, and
+registers the webhook at this deployment with a secret Telegram echoes on every delivery. In a
+private chat the bot answers every message; in a group it answers when mentioned or replied
+to. Telegram has no streaming and no thread history, so the reply is one message edited in
+place — continued into the next when it outgrows Telegram's 4,096 characters, rendered once at
+the end — and the conversation's recent turns are kept for a week so a follow-up carries the
+question before it. See [docs/design/telegram.md](docs/design/telegram.md).
 
 ### A2A (Agent2Agent)
 

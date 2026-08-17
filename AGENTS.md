@@ -86,7 +86,7 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`, and `NODE_ENV=
   contract, and a port would restate its task lifecycle to gain nothing). A second SDK is
   argued for in `tests/architecture.test.ts`, next to that one.
 - `src/infrastructure/` — adapters: DynamoDB repositories, LLM channel, MCP client, Slack,
-  A2A, GitHub, net/crypto helpers.
+  Telegram, A2A, GitHub, net/crypto helpers.
 - `src/app/` — App Router pages + API route handlers. **Do not import `infrastructure/`
   directly**; get repositories and `executionDeps` from a wiring site. A **`"use client"`
   file may not import `application/` or `infrastructure/` at all** — the boundary there is
@@ -104,10 +104,11 @@ additionally requires `ADMIN_EMAILS` and `ALLOWED_EMAIL_DOMAINS`, and `NODE_ENV=
   put a rule at the bottom. `shared` is for helpers no layer owns (stream plumbing, text
   cutting, timers).
 
-Composition happens at exactly five wiring sites: `src/lib/container.ts` (repositories, the
+Composition happens at exactly six wiring sites: `src/lib/container.ts` (repositories, the
 domain ports, the registry-slice singletons, `executionDeps`/`imageDeps`),
 `src/app/api/chats/_deps.ts` (`ChatDeps`), `src/app/api/slack/events/_lib/`
-(`SlackEventDeps`), `src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
+(`SlackEventDeps`), `src/app/api/telegram/webhook/_lib/` (`TelegramEventDeps`),
+`src/app/api/a2a/[name]/route.ts` (per-request A2A SDK
 handler assembly over `executionDeps`), and `src/instrumentation.ts` (the boot path, which
 wires the audit sink straight from its adapter — the composition root is not loaded until
 this file decides the runtime is the Node server — and resumes the managed MCP containers).
@@ -153,7 +154,7 @@ loop that enforces it. `MAX_MCP_TOOLS_PER_RUN` sat on the wrong side of that for
 ceiling it answers to is OpenAI's 128, not one anyone here picked — it sits at 120 only
 because the engine's builtins are added after the MCP tools are cut and need the room.
 
-**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 92 decisions across two
+**The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 102 decisions across two
 tables, the second holding the ones the test cannot express as a pattern but that the same
 rule governs. `tests/architecture.test.ts` is what enforces both.
 
@@ -199,9 +200,16 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
 - **SSRF guard** — operator URLs checked at registration *and* dispatch, through
   `fetchPublicUrl` → [SECURITY.md](docs/SECURITY.md#outbound-requests-ssrf)
+- **Messaging surfaces** — what every chat bot shares: `handleTurn` runs a normalised turn and
+  delivers the reply through the `ReplyChannel` port; an adapter decides which events are for
+  the bot, how history is read, who is asking, and how a reply is rendered →
+  [design/messaging.md](docs/design/messaging.md)
 - **Slack** — per-project bots; `classifySlackEvent` decides which received messages are for the
   bot **ahead of the dedup claim**; six read-only workspace tools behind an opt-in →
   [design/slack.md](docs/design/slack.md)
+- **Telegram** — per-project bots on the same pipeline; a reply edited in place and split at
+  4,096 characters, rendered once with a plain fallback; a transcript store because the Bot API
+  hands back no history → [design/telegram.md](docs/design/telegram.md)
 - **A2A** — both directions; a transfer continues the remote conversation →
   [design/agents-a2a.md](docs/design/agents-a2a.md)
 - **Triggers** — one webhook, any number of schedules, published-only, deduplicated by
@@ -240,15 +248,15 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   not a flag; a boolean deciding whether a project type is refused would be the bug the
   refusal prevents. Three call sites used to answer the dispatch question for themselves, the
   two non-streaming routes had diverged on the image case, and a fourth copy lived in the
-  composition root. A surface that calls `executeAgent` directly — chats, Slack, `/agent` —
-  gets the same answer from the facade, which **refuses a non-agent project**: the loop has
+  composition root. A surface that calls `executeAgent` directly — chats, Slack, Telegram,
+  `/agent` — gets the same answer from the facade, which **refuses a non-agent project**: the loop has
   nowhere to put an `llm` project's `userPromptTemplate` and would answer from a bare system
   prompt *successfully*. `/agent` was the one caller with no check of its own.
-  **Those three are a bounded list, like the image one** (`AGENT_RUN_ENTRY_POINTS` in
+  **Those four are a bounded list, like the image one** (`AGENT_RUN_ENTRY_POINTS` in
   `tests/architecture.test.ts`), because the cost of `executeAgent` being safe to call
-  directly is that *how a run is entered* has three homes while *which project type runs
+  directly is that *how a run is entered* has four homes while *which project type runs
   which way* has one. A policy belonging at the entry — a per-surface input cap, a rate
-  limit — has to be put in all three, so a fourth is added on purpose.
+  limit — has to be put in all four, so a fifth is added on purpose.
 - **The image use case has a bounded caller list, not an owner.** Three surfaces reach
   `application/image/generateImage` directly because each answers in a shape no other can
   (chunks, `{ imageBase64, model, usage }`, an A2A `image` artifact);
@@ -294,7 +302,7 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   in `runLog.ts` rather than in `runAndPersist`. What it cannot do, and why it is written only
   after the reader leaves, is in [design/chat.md](docs/design/chat.md#a-run-outlives-its-connection).
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
-  composers, API bodies and Slack all read them) and the `data:` encoding in
+  composers, API bodies and the messaging pipeline all read them) and the `data:` encoding in
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.
   Documents have their own caps in `src/domain/llm/documentLimits.ts`, kept separate because
   they bound a different thing: an image is bounded by what a provider accepts, a document by
