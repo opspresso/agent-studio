@@ -110,11 +110,13 @@ export async function updateProjectTeams(
     throw new ValidationError("Teams bots can only be attached to agent projects");
   }
   const stored = project.teams;
-  const appId = (update.appId ?? stored?.appId ?? "").trim();
+  // Lower-cased, because the Bot Framework writes the same GUID lower-case
+  // into every token's audience and a pasted upper-case one must still match.
+  const appId = (update.appId ?? stored?.appId ?? "").trim().toLowerCase();
   if (appId && !GUID.test(appId)) {
     throw new ValidationError("The Microsoft App ID is a GUID");
   }
-  const tenantId = (update.tenantId ?? stored?.tenantId ?? "").trim();
+  const tenantId = (update.tenantId ?? stored?.tenantId ?? "").trim().toLowerCase();
   if (tenantId && !GUID.test(tenantId)) {
     throw new ValidationError("The tenant id is a GUID");
   }

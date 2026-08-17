@@ -78,7 +78,9 @@ export async function handleTeamsActivityRequest(
 
   const admitted = await admitInboundEvent({
     claims: teamsActivityRepository.forBot(binding.projectName, binding.credentials.appId),
-    eventId: activity.id,
+    // An activity id is unique within its conversation and no further — two
+    // chats can stamp the same millisecond — so the conversation qualifies it.
+    eventId: activity.id ? `${activity.conversation?.id ?? ""}#${activity.id}` : undefined,
     scope: "teams",
     logLabel: `project ${binding.projectName}`,
     work: () => handleTeamsActivity(teamsEventDeps, disposition, binding),

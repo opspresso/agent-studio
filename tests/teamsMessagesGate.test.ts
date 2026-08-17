@@ -83,12 +83,13 @@ describe("the Teams messaging endpoint", () => {
     expect(res.status).toBe(400);
   });
 
-  it("claims and handles a personal message, keyed by the activity id, and acks with 202", async () => {
+  it("claims and handles a personal message, keyed by conversation and activity id, and acks with 202", async () => {
     const res = await handleTeamsActivityRequest(request(personal("hi")), BINDING);
     expect(res.status).toBe(202);
-    expect(claim).toHaveBeenCalledWith("act-9", expect.any(Number), expect.any(Number));
+    // An activity id is unique only within its conversation.
+    expect(claim).toHaveBeenCalledWith("a:1#act-9", expect.any(Number), expect.any(Number));
     expect(handled).toEqual([{ kind: "run", text: "hi" }]);
-    expect(settle).toHaveBeenCalledWith("act-9", "done");
+    expect(settle).toHaveBeenCalledWith("a:1#act-9", "done");
   });
 
   it("acks a duplicate delivery without handling it again", async () => {

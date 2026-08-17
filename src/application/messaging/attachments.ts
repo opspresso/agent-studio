@@ -15,6 +15,7 @@ import {
   type ReadDocument,
 } from "@/application/llm/documentParts";
 import { log } from "@/shared/logger";
+import { sniffImageType } from "@/shared/imageSniff";
 
 /**
  * How a messaging surface's attachments become a turn's content — the one
@@ -42,6 +43,14 @@ const HISTORY_IMAGE_LOOKBACK = 10;
 
 function isImage(attachment: InboundAttachment): boolean {
   return attachment.mimeType.startsWith("image/");
+}
+
+/**
+ * A platform that says "a picture" without saying which kind — Teams marks a
+ * pasted image `image/*`. The bytes are asked instead, once they are in hand.
+ */
+function isUnspecifiedImage(attachment: InboundAttachment): boolean {
+  return attachment.mimeType === "image/*" || attachment.mimeType === "image";
 }
 
 /**
@@ -75,7 +84,7 @@ export async function collectImageParts(
   const parts: ContentPart[] = [];
   for (const image of images.slice(0, budget)) {
     const label = image.name;
-    if (!SUPPORTED_TYPES.has(image.mimeType)) {
+    if (!isUnspecifiedImage(image) && !SUPPORTED_TYPES.has(image.mimeType)) {
       warnings.push(`Unsupported image type ${image.mimeType} (${label}).`);
       continue;
     }
@@ -95,9 +104,14 @@ export async function collectImageParts(
         warnings.push(`Image is larger than 5MB (${label}).`);
         continue;
       }
+      const mimeType = isUnspecifiedImage(image) ? sniffImageType(data) : image.mimeType;
+      if (!mimeType) {
+        warnings.push(`Unsupported image type (${label}).`);
+        continue;
+      }
       parts.push({
         type: "image_url",
-        image_url: { url: imageDataUrl({ b64: data.toString("base64"), mimeType: image.mimeType }) },
+        image_url: { url: imageDataUrl({ b64: data.toString("base64"), mimeType }) },
       });
     } catch (error) {
       log.error("messaging", "attachment download failed", error);

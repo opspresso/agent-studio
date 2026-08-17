@@ -1,12 +1,4 @@
-import { handleTurn } from "@/application/messaging/handleTurn";
-import {
-  attachmentNote,
-  imagesNote,
-  loadTranscriptHistory,
-  rememberTurn,
-  withSpeakerLabels,
-} from "@/application/messaging/transcriptHistory";
-import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
+import { resolveAgentProject, runRememberedTurn } from "@/application/messaging/rememberedTurn";
 import { createTelegramReplyChannel } from "@/application/telegram/replyChannel";
 import { botIdFromToken, type TelegramUpdateDisposition } from "@/application/telegram/engagement";
 import type {
@@ -15,7 +7,7 @@ import type {
   TelegramPhotoSize,
   TelegramUser,
 } from "@/application/telegram/types";
-import { callerFrom, conversationKey, type RunCaller } from "@/domain/execution/actor";
+import { callerFrom, type RunCaller } from "@/domain/execution/actor";
 import { MAX_ATTACHMENT_BYTES } from "@/domain/llm/imageLimits";
 import type { InboundAttachment } from "@/domain/messaging/inbound";
 import { telegramConversation } from "@/domain/telegram/conversation";
@@ -195,19 +187,21 @@ export async function handleTelegramUpdate(
   // own — a reply to the bot there is a follow-up in the group's conversation.
   const threadId =
     message.is_topic_message && message.chat.is_forum ? message.message_thread_id : undefined;
-  const target = {
-    chatId: message.chat.id,
-    ...(threadId !== undefined ? { threadId } : {}),
-    replyToMessageId: message.message_id,
-  };
-  const reply = createTelegramReplyChannel(deps.telegram, token, target, {
-    ...(deps.sleep ? { sleep: deps.sleep } : {}),
-  });
+  const reply = createTelegramReplyChannel(
+    deps.telegram,
+    token,
+    {
+      chatId: message.chat.id,
+      ...(threadId !== undefined ? { threadId } : {}),
+      replyToMessageId: message.message_id,
+    },
+    { ...(deps.sleep ? { sleep: deps.sleep } : {}) },
+  );
 
-  const project = await deps.projects.get(binding.projectName);
   // A command is answered whether or not the project has a runnable version:
   // `/start` on a bot that is currently failing should still say what it is.
   if (disposition.kind === "command") {
+    const project = await deps.projects.get(binding.projectName);
     const intro = project?.description?.trim() || `the ${binding.projectName} project`;
     await reply.say(
       disposition.command === "start" ? `Hello — I am ${project?.displayName ?? binding.projectName}, ${intro}.\n\n${HELP}` : HELP,
@@ -215,14 +209,11 @@ export async function handleTelegramUpdate(
     return;
   }
 
-  // External surface: published-only, drafts never leak (resolveRunnableVersion policy).
-  const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
-  if (!project || project.projectType !== "agent" || !version) {
-    await reply.say(
-      `Agent project not available: ${binding.projectName} (must exist, be an agent project, and have a published version)`,
-    );
+  const runnable = await resolveAgentProject(deps, binding.projectName, reply);
+  if (!runnable) {
     return;
   }
+  const { project, version } = runnable;
 
   if (!(await claimsAlbum(deps, binding, message, disposition.text))) {
     log.info("telegram", `album member skipped project=${project.name} chat=${message.chat.id}`);
@@ -234,72 +225,24 @@ export async function handleTelegramUpdate(
     `run start project=${project.name} chat=${message.chat.id} message=${message.message_id}`,
   );
 
-  const conversation = telegramConversation(message.chat.id, threadId);
-  const key = conversationKey(conversation);
   const warnings: string[] = [];
   if (message.media_group_id) {
     warnings.push("This message was part of an album; only the picture it arrived with was read.");
   }
-  // Read before anything is written, like the Slack thread: the reply must
-  // not come back as an assistant turn in this run's own context.
-  const remembered = await loadTranscriptHistory(deps.transcripts, project.name, key, warnings, "telegram");
-  await reply.status("is thinking…");
-
   const userId = message.from ? String(message.from.id) : undefined;
-  // The version's opt-in gates whether a name reaches the model, and so
-  // whether one is written down beside the turn at all — and whether one an
-  // earlier version wrote down is read back.
-  const namesAllowed = version.parameters.callerContext === true;
-  const named = namesAllowed ? callerOf(message.from) : undefined;
-  const { history, label } = withSpeakerLabels(remembered, userId, namesAllowed);
-  const askText = label && named ? `${named.displayName}: ${disposition.text}` : disposition.text;
-  const attachments = attachmentsOf(deps, token, message);
-
-  const outcome = await handleTurn(
-    deps,
-    {
-      project,
-      version,
-      text: askText,
-      attachments,
-      history,
-      // The Telegram user id, not an email: Telegram has none to hand over.
-      ...(userId ? { actor: { kind: "telegram" as const, id: userId } } : {}),
-      ...(named ? { caller: named } : {}),
-      conversation,
-      warnings,
-    },
+  await runRememberedTurn(deps, {
+    project,
+    version,
     reply,
-  );
-
-  // Written after the reply, because that is what makes it true — and the
-  // question first, so the two land in the order they were said. A turn that
-  // carried no text is written down as what it carried, so the exchange keeps
-  // its shape: an answer with no question in front of it, or a question the
-  // record says went unanswered, is a history that lies.
-  const now = new Date().toISOString();
-  await rememberTurn(
-    deps.transcripts,
-    project.name,
-    key,
-    {
-      role: "user",
-      content: disposition.text || attachmentNote(attachments.map((attachment) => attachment.name)),
-      ...(userId ? { userId } : {}),
-      ...(named ? { speaker: named.displayName } : {}),
-      createdAt: now,
-    },
-    "telegram",
-  );
-  await rememberTurn(
-    deps.transcripts,
-    project.name,
-    key,
-    {
-      role: "assistant",
-      content: outcome.text || imagesNote(outcome.imagesDelivered),
-      createdAt: new Date(Date.parse(now) + 1).toISOString(),
-    },
-    "telegram",
-  );
+    conversation: telegramConversation(message.chat.id, threadId),
+    text: disposition.text,
+    attachments: attachmentsOf(deps, token, message),
+    // The Telegram user id, not an email: Telegram has none to hand over.
+    ...(userId ? { actor: { kind: "telegram" as const, id: userId }, userId } : {}),
+    callerOf: () => callerOf(message.from),
+    // Telegram stamps the message with when it was sent, to the second.
+    arrivedAt: new Date(message.date * 1000),
+    warnings,
+    scope: "telegram",
+  });
 }

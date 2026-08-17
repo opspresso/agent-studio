@@ -53,6 +53,12 @@ export interface EditInPlaceTransport {
    * other. Absent means the text is sent as it is, and there is no fallback.
    */
   render?: (pieces: readonly string[]) => string[];
+  /**
+   * The answer made safe to append a tail to — a code fence the run left open
+   * closed, so the file link and the warnings after it read as prose. Absent
+   * means the tail is appended as it is.
+   */
+  seal?: (answer: string) => string;
   /** The platform's answer to an edit that changes nothing; a success for our purposes. */
   isNotModified?: (error: unknown) => boolean;
   limits: EditInPlaceLimits;
@@ -77,7 +83,11 @@ interface Segment {
   refusedAt?: number;
 }
 
-/** Where to end a message that has to be cut at `limit` characters from `from`. */
+/**
+ * Where to end a message that has to be cut at `limit` characters from `from`.
+ * Never between the two halves of a surrogate pair: a lone surrogate is not
+ * UTF-8, and a platform refuses the whole write for one.
+ */
 function cutPoint(text: string, from: number, limit: number, window: number): number {
   const hard = from + limit;
   if (text.length <= hard) {
@@ -92,7 +102,8 @@ function cutPoint(text: string, from: number, limit: number, window: number): nu
   if (space > 0) {
     return hard - window + space + 1;
   }
-  return hard;
+  const code = text.charCodeAt(hard - 1);
+  return code >= 0xd800 && code <= 0xdbff ? hard - 1 : hard;
 }
 
 function withSuffix(text: string, suffix: string): string {
@@ -275,7 +286,7 @@ export function createEditInPlaceReply(transport: EditInPlaceTransport): ReplySi
 
     async finish(fullText, suffix) {
       finished = true;
-      const full = withSuffix(fullText, suffix);
+      const full = withSuffix(suffix && transport.seal ? transport.seal(fullText) : fullText, suffix);
       // Nothing was ever opened and there is nothing to say. Whoever knows what
       // else the run delivered — a picture — decides whether that is a warning.
       if (!full) {

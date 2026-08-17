@@ -210,6 +210,20 @@ describe("handleTelegramUpdate", () => {
     expect(sent[0]?.threadId).toBeUndefined();
   });
 
+  it("stamps the turns with when the message arrived, so concurrent runs are remembered in the order asked", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram } = makeTelegramFake();
+    const { deps, remembered } = makeDeps([{ delta: { content: "ok" } }, { done: true }], telegram);
+
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message({ date: 1_700_000_000 }) }), BINDING);
+
+    expect(remembered.map((entry) => entry.turn.createdAt)).toEqual([
+      new Date(1_700_000_000_000).toISOString(),
+      new Date(1_700_000_000_001).toISOString(),
+    ]);
+  });
+
   it("writes down what a text-less turn carried, on both sides", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

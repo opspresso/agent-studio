@@ -127,6 +127,19 @@ describe("project acts", () => {
       detail: `owned by ${OWNER}`,
     });
   });
+
+  it("still deletes when the pre-delete hook fails — nothing may make a project undeletable", async () => {
+    const repo = projects();
+    let deleted = false;
+    repo.delete = async () => {
+      deleted = true;
+    };
+    await deleteProject(repo, "p", OWNER, async () => {
+      throw new Error("Unsupported state or unable to authenticate data");
+    });
+    expect(deleted).toBe(true);
+    expect(actions()).toEqual(["project.delete"]);
+  });
 });
 
 describe("project API token", () => {

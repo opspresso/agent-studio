@@ -1,11 +1,12 @@
 /** Minimal Bot Framework (Microsoft Teams) client over fetch — no SDK dependency. */
 
-import { createPublicKey, verify as verifySignature } from "node:crypto";
+import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
 import type {
   TeamsClientPort,
   TeamsCredentials,
   TeamsOutboundActivity,
 } from "@/domain/teams/client";
+import { fetchPublicUrl } from "@/infrastructure/net/publicFetch";
 import { readBodyBytes } from "@/shared/httpBody";
 
 /** A signing key as the JWKS document lists it. */
@@ -40,11 +41,23 @@ function teamsFetch(url: string, init: RequestInit = {}, timeoutMs = TEAMS_TIMEO
   return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
 
-/** The token cache: one per app, dropped a minute before it expires. */
+/**
+ * The token cache, dropped a minute before a token expires. Keyed by the whole
+ * credential — app, tenant, and a hash of the secret — not the app alone: a
+ * rotated or mistyped secret must fetch, not read the token the old one
+ * earned, or the console's *Test connection* answers "works" for an hour
+ * after the credentials stopped working.
+ */
 const tokens = new Map<string, { token: string; expiresAt: number }>();
 
+function credentialKey(credentials: TeamsCredentials): string {
+  const secret = createHash("sha256").update(credentials.appPassword).digest("hex").slice(0, 16);
+  return `${credentials.appId}|${credentials.tenantId ?? ""}|${secret}`;
+}
+
 async function appToken(credentials: TeamsCredentials): Promise<{ token: string; expiresInSeconds: number }> {
-  const cached = tokens.get(credentials.appId);
+  const key = credentialKey(credentials);
+  const cached = tokens.get(key);
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
     return { token: cached.token, expiresInSeconds: Math.floor((cached.expiresAt - now) / 1000) };
@@ -72,7 +85,7 @@ async function appToken(credentials: TeamsCredentials): Promise<{ token: string;
     throw new Error(`Teams token request failed: ${data.error_description ?? data.error ?? `HTTP ${res.status}`}`);
   }
   const expiresInSeconds = data.expires_in ?? 3600;
-  tokens.set(credentials.appId, {
+  tokens.set(key, {
     token: data.access_token,
     expiresAt: now + (expiresInSeconds - TOKEN_EXPIRY_MARGIN_SECONDS) * 1000,
   });
@@ -81,23 +94,43 @@ async function appToken(credentials: TeamsCredentials): Promise<{ token: string;
 
 /** The Bot Framework's signing keys, by `kid`, fetched once a day. */
 let signingKeys: { fetchedAt: number; keys: Map<string, SigningKey> } | undefined;
+/** The fetch in flight, so N tokens arriving on a rotation cost one round trip, not N. */
+let signingKeysFetch: Promise<void> | undefined;
+/**
+ * How soon after a fetch an unknown `kid` may cause another. The service
+ * rotates keys rarely; an unknown kid arriving faster than this is a token
+ * nobody signed, and it must not be able to make this process hammer the key
+ * endpoint — every claim below is checked before the signature, and all of
+ * them can be typed by hand.
+ */
+const KEYS_REFETCH_MIN_MS = 60_000;
+
+async function fetchSigningKeys(): Promise<void> {
+  const configuration = (await (await teamsFetch(OPENID_CONFIGURATION)).json()) as { jwks_uri?: string };
+  if (!configuration.jwks_uri) {
+    throw new Error("Bot Framework OpenID configuration names no jwks_uri");
+  }
+  const jwks = (await (await teamsFetch(configuration.jwks_uri)).json()) as { keys?: SigningKey[] };
+  signingKeys = {
+    fetchedAt: Date.now(),
+    keys: new Map((jwks.keys ?? []).filter((key) => key.kid).map((key) => [key.kid as string, key])),
+  };
+}
 
 async function keyFor(kid: string): Promise<SigningKey | undefined> {
-  const stale = !signingKeys || Date.now() - signingKeys.fetchedAt > KEYS_TTL_MS;
-  if (stale || !signingKeys?.keys.has(kid)) {
-    // Refetched on a miss too: the service rotates keys, and a token signed
-    // with a key this process has not seen is the ordinary case after one.
-    const configuration = (await (await teamsFetch(OPENID_CONFIGURATION)).json()) as { jwks_uri?: string };
-    if (!configuration.jwks_uri) {
-      throw new Error("Bot Framework OpenID configuration names no jwks_uri");
-    }
-    const jwks = (await (await teamsFetch(configuration.jwks_uri)).json()) as { keys?: SigningKey[] };
-    signingKeys = {
-      fetchedAt: Date.now(),
-      keys: new Map((jwks.keys ?? []).filter((key) => key.kid).map((key) => [key.kid as string, key])),
-    };
+  const now = Date.now();
+  const stale = !signingKeys || now - signingKeys.fetchedAt > KEYS_TTL_MS;
+  // Refetched on a miss too — the service rotates keys, and a token signed
+  // with a key this process has not seen is the ordinary case after one — but
+  // not more often than the floor, and once for everyone waiting.
+  const missed = signingKeys !== undefined && !signingKeys.keys.has(kid) && now - signingKeys.fetchedAt > KEYS_REFETCH_MIN_MS;
+  if (stale || missed) {
+    signingKeysFetch ??= fetchSigningKeys().finally(() => {
+      signingKeysFetch = undefined;
+    });
+    await signingKeysFetch;
   }
-  return signingKeys.keys.get(kid);
+  return signingKeys?.keys.get(kid);
 }
 
 function base64UrlJson<T>(part: string): T {
@@ -136,8 +169,12 @@ async function verifyBearer(
   if (!payload.iss || !ISSUERS.has(payload.iss)) {
     return { ok: false, reason: `issuer ${payload.iss ?? "missing"}` };
   }
-  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  if (!audiences.includes(expected.appId)) {
+  // A GUID either way, compared as one: the registration is stored as typed
+  // and the service writes it lower-case.
+  const audiences = (Array.isArray(payload.aud) ? payload.aud : [payload.aud]).map((aud) =>
+    (aud ?? "").toLowerCase(),
+  );
+  if (!audiences.includes(expected.appId.toLowerCase())) {
     return { ok: false, reason: "audience is another app" };
   }
   const now = Math.floor(Date.now() / 1000);
@@ -230,11 +267,15 @@ export const teamsClient: TeamsClientPort = {
   },
 
   /**
-   * The bot's token goes only to the conversation's own service host — an
-   * attachment address is untrusted input from the activity, and a token sent
-   * to a host it names is a token handed to whoever named it. A file shared in
-   * a chat comes with a pre-authenticated address on another host and is
-   * fetched bare.
+   * An attachment address is untrusted input from the activity, and it is
+   * treated as one twice over. The bot's token goes only to the conversation's
+   * own service host — the one the verified token vouched for — because a
+   * token sent to a host the activity names is a token handed to whoever named
+   * it. Every other address (a file shared in a chat comes with a
+   * pre-authenticated one on another host) is fetched through the SSRF guard,
+   * like any address this platform did not choose: an activity that names an
+   * internal address must not have it read from inside the network and handed
+   * to the model.
    */
   async downloadAttachment(credentials, serviceUrl, url, maxBytes) {
     let host: string;
@@ -250,11 +291,14 @@ export const teamsClient: TeamsClientPort = {
         return "";
       }
     })();
-    const headers: Record<string, string> = {};
-    if (host === serviceHost) {
-      headers.Authorization = `Bearer ${(await appToken(credentials)).token}`;
-    }
-    const res = await teamsFetch(url, { headers }, TEAMS_TRANSFER_TIMEOUT_MS);
+    const res =
+      host === serviceHost && serviceHost !== ""
+        ? await teamsFetch(
+            url,
+            { headers: { Authorization: `Bearer ${(await appToken(credentials)).token}` } },
+            TEAMS_TRANSFER_TIMEOUT_MS,
+          )
+        : await fetchPublicUrl(url, { signal: AbortSignal.timeout(TEAMS_TRANSFER_TIMEOUT_MS) });
     if (!res.ok) {
       throw new Error(`Teams attachment download failed: ${res.status}`);
     }
@@ -276,4 +320,5 @@ function outbound(activity: TeamsOutboundActivity): Record<string, unknown> {
 export function clearTeamsCaches(): void {
   tokens.clear();
   signingKeys = undefined;
+  signingKeysFetch = undefined;
 }

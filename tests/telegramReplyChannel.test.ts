@@ -181,6 +181,39 @@ describe("a Telegram reply", () => {
     expect(last).toContain('<a href="https://x/y">f.pdf</a>');
   });
 
+  it("closes a fence the run left open before appending the tail, so the link stays a link", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    const { telegram, screen } = makeTelegramFake();
+    const sink = createTelegramReplyChannel(telegram, "tok", TARGET, NO_SLEEP);
+    const answer = "here:\n```js\nlet a = 1";
+
+    await sink.push(answer);
+    await sink.finish(answer, [sink.fileLink({ url: "https://x/y", name: "report.docx" }), sink.warningLine("Agent run timed out")].join("\n"));
+
+    const last = screen().at(-1) ?? "";
+    expect(last).toContain('<a href="https://x/y">report.docx</a>');
+    expect(last).toContain("⚠️ Agent run timed out");
+    expect(last.endsWith("</pre>")).toBe(false);
+  });
+
+  it("never cuts a message between the halves of a surrogate pair", async () => {
+    let now = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { telegram, screen } = makeTelegramFake();
+    const sink = createTelegramReplyChannel(telegram, "tok", TARGET, NO_SLEEP);
+    const text = `x${"😀".repeat(4999)}`;
+
+    await sink.push(text.slice(0, 3));
+    now += 3000;
+    await sink.push(text);
+    await sink.finish(text, "");
+
+    for (const message of screen()) {
+      expect(message.isWellFormed()).toBe(true);
+    }
+    expect(screen().join("")).toBe(text);
+  });
+
   it("never lets an open message reach the cap with its cursor on", async () => {
     let now = NOW;
     vi.spyOn(Date, "now").mockImplementation(() => now);

@@ -1,6 +1,20 @@
 import { createSign, generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearTeamsCaches, teamsClient } from "@/infrastructure/teams/client";
+
+/**
+ * The SSRF guard is faked: it is what an address the activity named goes
+ * through, and its own tests prove what it refuses. Here what matters is
+ * *which* fetch each address takes.
+ */
+const { publicFetches } = vi.hoisted(() => ({ publicFetches: [] as string[] }));
+vi.mock("@/infrastructure/net/publicFetch", () => ({
+  fetchPublicUrl: async (url: string) => {
+    publicFetches.push(url);
+    return new Response("public bytes", { status: 200 });
+  },
+}));
+
+const { clearTeamsCaches, teamsClient } = await import("@/infrastructure/teams/client");
 
 /**
  * The transport, and the one check everything the endpoint trusts rests on:
@@ -64,6 +78,7 @@ function stubFetch(extra: (url: string, init?: RequestInit) => Response | Promis
 
 beforeEach(() => {
   clearTeamsCaches();
+  publicFetches.length = 0;
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -157,16 +172,63 @@ describe("talking to the Bot Framework", () => {
     expect(calls[0]?.url).toBe(`https://login.microsoftonline.com/${APP}/oauth2/v2.0/token`);
   });
 
-  it("sends the bot's token only to the conversation's service host", async () => {
+  it("sends the bot's token only to the conversation's service host, and every other address through the SSRF guard", async () => {
     const calls = stubFetch((url) => {
       if (url.includes("/oauth2/v2.0/token")) {
         return jsonResponse({ access_token: "tok", expires_in: 3600 });
       }
       return new Response("bytes", { status: 200 });
     });
-    await teamsClient.downloadAttachment(CREDS, SERVICE, "https://smba.trafficmanager.net/emea/v3/attachments/1", 100);
-    await teamsClient.downloadAttachment(CREDS, SERVICE, "https://contoso.sharepoint.com/dl/x", 100);
+    const own = await teamsClient.downloadAttachment(CREDS, SERVICE, "https://smba.trafficmanager.net/emea/v3/attachments/1", 100);
+    const shared = await teamsClient.downloadAttachment(CREDS, SERVICE, "https://contoso.sharepoint.com/dl/x", 100);
     const withAuth = calls.filter((c) => (c.init?.headers as Record<string, string> | undefined)?.Authorization);
     expect(withAuth.map((c) => c.url)).toEqual(["https://smba.trafficmanager.net/emea/v3/attachments/1"]);
+    expect(own.toString()).toBe("bytes");
+    // The shared file's address is the activity's word, not the service's:
+    // it never sees the token and goes through the guard like any URL this
+    // platform did not choose.
+    expect(publicFetches).toEqual(["https://contoso.sharepoint.com/dl/x"]);
+    expect(shared.toString()).toBe("public bytes");
+    expect(calls.some((c) => c.url === "https://contoso.sharepoint.com/dl/x")).toBe(false);
+  });
+
+  it("does not answer a rotated or mistyped secret from the cache", async () => {
+    let tokenCalls = 0;
+    stubFetch((url) => {
+      if (url.includes("/oauth2/v2.0/token")) {
+        tokenCalls += 1;
+        return jsonResponse({ access_token: `tok-${tokenCalls}`, expires_in: 3600 });
+      }
+      return undefined;
+    });
+    await teamsClient.authenticate(CREDS);
+    await teamsClient.authenticate(CREDS);
+    expect(tokenCalls).toBe(1);
+    await teamsClient.authenticate({ ...CREDS, appPassword: "rotated" });
+    expect(tokenCalls).toBe(2);
+    await teamsClient.authenticate({ ...CREDS, tenantId: APP });
+    expect(tokenCalls).toBe(3);
+  });
+
+  it("accepts an upper-case App ID against the service's lower-case audience", async () => {
+    stubFetch();
+    const verdict = await teamsClient.verifyRequest(`Bearer ${sign(goodClaims())}`, {
+      appId: APP.toUpperCase(),
+      serviceUrl: SERVICE,
+    });
+    expect(verdict).toEqual({ ok: true });
+  });
+
+  it("does not refetch the signing keys for every unknown kid", async () => {
+    const calls = stubFetch();
+    for (let i = 0; i < 5; i += 1) {
+      await teamsClient.verifyRequest(`Bearer ${sign(goodClaims(), { alg: "RS256", kid: `bogus-${i}` })}`, {
+        appId: APP,
+        serviceUrl: SERVICE,
+      });
+    }
+    // One discovery + one JWKS fetch for the first miss; the rest are answered
+    // "unknown signing key" from what was just fetched.
+    expect(calls.filter((c) => c.url.includes("login.botframework.com"))).toHaveLength(2);
   });
 });

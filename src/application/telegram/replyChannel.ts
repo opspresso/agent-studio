@@ -6,6 +6,7 @@ import {
   type Sleep,
 } from "@/application/messaging/editInPlaceReply";
 import type { ReplyChannel } from "@/domain/messaging/reply";
+import { closeOpenFence } from "@/shared/markdownFence";
 
 /**
  * How a Telegram reply is delivered — the single owner of that decision.
@@ -89,6 +90,7 @@ export function createTelegramReplyChannel(
       await telegram.sendChatAction(token, { chatId: target.chatId, ...thread, action: "typing" });
     },
     render: markdownToTelegramHtmlPieces,
+    seal: closeOpenFence,
     isNotModified,
     limits: {
       maxChars: MAX_MESSAGE_CHARS,

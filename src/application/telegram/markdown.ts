@@ -12,6 +12,8 @@
  * one, so a defect here costs formatting and never the answer.
  */
 
+import { openFenceAfter } from "@/shared/markdownFence";
+
 /** Telegram's HTML entity escape: exactly these three, and nothing else. */
 export function escapeTelegramHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -113,15 +115,6 @@ export function markdownToTelegramHtmlPieces(pieces: readonly string[]): string[
     out.push(markdownToTelegramHtml(open === undefined ? text : `${text}\n\`\`\``));
   }
   return out;
-}
-
-/** The language of the fence `text` leaves open, `""` for a bare one, or nothing when it is closed. */
-function openFenceAfter(text: string): string | undefined {
-  let open: string | undefined;
-  for (const match of text.matchAll(/^[ \t]*\`\`\`([^\n\`]*)$/gm)) {
-    open = open === undefined ? (match[1] ?? "").trim() : undefined;
-  }
-  return open;
 }
 
 function renderProse(markdown: string): string {

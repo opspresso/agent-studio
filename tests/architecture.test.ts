@@ -1572,6 +1572,22 @@ const SINGLE_OWNERS: SingleOwner[] = [
     owner: "src/infrastructure/teams/client.ts",
   },
   {
+    // What a surface with no platform history does around the turn: read what
+    // it remembers, run, write both turns down at the arrival instant. Two
+    // handlers carried it verbatim, comments included; the third would too.
+    what: "the turn a chat bot with no platform history runs",
+    pattern: /export async function runRememberedTurn/,
+    owner: "src/application/messaging/rememberedTurn.ts",
+  },
+  {
+    // Whether a fence is open has to be answered the way the renderer reads
+    // fences — anywhere, not at line starts — or a piece boundary and a tail
+    // disagree with the message the reader sees. One reading.
+    what: "whether a Markdown fence is open",
+    pattern: /export function openFenceAfter/,
+    owner: "src/shared/markdownFence.ts",
+  },
+  {
     // Not a duplicated definition but a duplicated *copy of undici*, which is
     // the same failure one layer down. A `dispatcher` is a private contract
     // between a fetch implementation and its `Agent`, and the runtime ships its

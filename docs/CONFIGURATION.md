@@ -407,7 +407,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | Slack Web API 호출 하나 / Slack 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/slack/client.ts` |
 | Telegram Bot API 호출 하나 / Telegram 파일 전송 하나 | `30s` / `120s` | `src/infrastructure/telegram/client.ts` |
 | Bot Framework(Teams) 호출 하나 / 첨부 전송 하나 | `30s` / `120s` | `src/infrastructure/teams/client.ts` |
-| Bot Framework 서명 키 캐시 / 토큰 시각 skew / 앱 토큰 만료 여유 | `24h` / `5m` / `60s` | `src/infrastructure/teams/client.ts` |
+| Bot Framework 서명 키 캐시 / 모르는 `kid` 에 대한 재조회 최소 간격 / 토큰 시각 skew / 앱 토큰 만료 여유 | `24h` / `60s` / `5m` / `60s` | `src/infrastructure/teams/client.ts` |
 | GitHub API 요청 하나 (plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | 모델 응답당 동시 MCP 호출 수 | `5` | `src/application/llm/engine.ts` |
 | 인터랙티브(Slack, Telegram, Teams) 런 데드라인 | `3` 분 | `src/shared/runDeadline.ts` |
@@ -444,7 +444,7 @@ Agent Card URL 은 `PUBLIC_BASE_URL` 로부터 만들어진다.
 | Slack 프로필 캐시 (성공 / 실패 / 항목 수) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
 | Telegram 메시지 하나 (Telegram 자신의 상한이다. 더 긴 답변은 다음 메시지로 이어지며, 마지막 `800` 자 안에 줄바꿈이 있으면 거기서 자른다) | `4,096` 자 | `src/application/telegram/replyChannel.ts` |
 | Telegram 답변 편집 주기 / typing 갱신 (Telegram 은 typing 을 `5s` 에 만료시킨다) | `2s` / `4s` | `src/application/telegram/replyChannel.ts` |
-| Teams 메시지 하나 (Teams 의 28KB 아래에서 Markdown 과 첨부에 여유를 둔 값. 더 긴 답변은 다음 메시지로 이어진다) / inline 그림 | `20,000` 자 / `4MB` | `src/application/teams/replyChannel.ts` |
+| Teams 메시지 하나 (Teams 의 28KB 아래에서 Markdown 과 첨부에 여유를 둔 값. 더 긴 답변은 다음 메시지로 이어진다) / inline 그림 (Teams 가 문서화한 상한) | `20,000` 자 / `1MB` | `src/application/teams/replyChannel.ts` |
 | Teams 답변 편집 주기 / typing 갱신 | `2s` / `3s` | `src/application/teams/replyChannel.ts` |
 | Telegram·Teams 대화의 턴을 유지하는 기간 | `7` 일 | `src/infrastructure/db/ttl.ts` |
 | usage 요약 질의 범위 | `184` 일 | `src/app/api/usages/summary/validation.ts` |
