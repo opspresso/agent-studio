@@ -12,6 +12,11 @@ Bots are **per project**: `/api/slack/events/[project]` is the only events endpo
 resolves that project's own bot token and signing secret, so an event always runs that project
 and no selector is needed.
 
+The run itself — attachments into a turn, the chunk fold onto the reply, what the reply
+carries beside the answer — is not Slack's: it is the pipeline every chat-bot surface shares
+([messaging.md](messaging.md)), and this file describes what Slack decides *around* it: which
+events are for the bot, how the thread is read, who is asking, and how the reply is rendered.
+
 **How a reply is delivered is one decision, owned by `src/application/slack/replyStream.ts`.**
 The sink it hands back opens on the first output and prefers `chat.startStream` →
 `chat.appendStream` → `chat.stopStream`, which is what the agent surface renders as text

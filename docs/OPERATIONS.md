@@ -141,7 +141,8 @@ of ten prompt and image runs with nothing to correlate on — and sampling does 
 runs worth reading logs for. Where a trace does exist, both ids appear.
 
 Work started outside a request uses the id an operator can already see: a **webhook delivery**
-carries the delivery id from its history row, a **Slack event** carries the Slack event id.
+carries the delivery id from its history row, a **Slack event** carries the Slack event id, a
+**Telegram update** its `update_id`.
 
 `src/shared/logger.ts` owns writing to the console, pinned by `tests/architecture.test.ts`
 with two standing exemptions: `domain`, which imports nothing and so cannot reach the logger —
@@ -187,13 +188,15 @@ instance begins draining, so a rollout keeps its last spans.
 ## Row retention
 
 Traces, usage rows, chats and their messages, artifact rows, trigger deliveries, inbound A2A
-tasks, Slack dedup claims and Better Auth session rows all carry a unix-seconds `expiresAt`,
-as do five fixed-lifetime row kinds: webhook idempotency claims (24h), Slack thread
-engagements (1 day — the window a thread the bot answered in stays "for the bot"), remote
-conversations (7 days, refreshed on use — the window an A2A agent's `contextId` is continued
-for one of our conversations; past it the next transfer starts cold), MCP OAuth in-flight
-states (10 min) and run concurrency slots (the lease length — concurrency stays correct
-without TTL, but the rows accumulate one per run).
+tasks, Slack and Telegram dedup claims and Better Auth session rows all carry a unix-seconds
+`expiresAt`, as do six fixed-lifetime row kinds: webhook idempotency claims (24h), Slack
+thread engagements (1 day — the window a thread the bot answered in stays "for the bot"),
+remote conversations (7 days, refreshed on use — the window an A2A agent's `contextId` is
+continued for one of our conversations; past it the next transfer starts cold), Telegram
+conversation transcript turns (7 days each — the context a follow-up carries, since the Bot
+API hands back no history), MCP OAuth in-flight states (10 min) and run concurrency slots
+(the lease length — concurrency stays correct without TTL, but the rows accumulate one per
+run).
 
 > **Enable TTL on the `expiresAt` attribute of the production table.** Nothing in the
 > application does this; `scripts/init-local-table.ts` does it for local only. Without it,
@@ -376,7 +379,7 @@ one request.
 | MCP registry edits | `MCP_DISCOVERY_CACHE_TTL_MS` / `MCP_MAX_SERVER_TTL_MS` | An edit made on one instance goes unseen on the others for up to that window. |
 | Managed MCP | — | **One app instance per host.** A managed container joins exactly one network namespace. |
 | Metrics counters | — | Per-process. Aggregate across instances at the scrape layer. |
-| Background work (`after()`) | — | A Slack event or trigger firing interrupted by an abrupt instance loss is **not resumed** — a run is not idempotent. Trigger rows of both kinds are repaired to `failed` by the sweep — on every fifth minute's scan tick (`REPAIR_EVERY_MINUTES`, because the sweep walks every project's triggers and reads their history, which is not worth doing every minute), and on the trigger's own next webhook delivery, so a deployment with no ticker configured still ends up with a correct ledger. A lost Slack event is deliberately not repaired — it leaves no row to finish, only a user without an answer. |
+| Background work (`after()`) | — | A Slack event, a Telegram update or a trigger firing interrupted by an abrupt instance loss is **not resumed** — a run is not idempotent. Trigger rows of both kinds are repaired to `failed` by the sweep — on every fifth minute's scan tick (`REPAIR_EVERY_MINUTES`, because the sweep walks every project's triggers and reads their history, which is not worth doing every minute), and on the trigger's own next webhook delivery, so a deployment with no ticker configured still ends up with a correct ledger. A lost Slack event or Telegram update is deliberately not repaired — it leaves no row to finish, only a user without an answer. |
 
 ### Managed MCP after a redeploy
 
@@ -404,7 +407,7 @@ liveness is what made this class of failure invisible.
 - [ ] `DYNAMODB_ENDPOINT` **empty**
 - [ ] `AES_ENCRYPTION_KEY` provisioned as a secret, and backed up — losing it makes every stored credential unreadable
 - [ ] DynamoDB table created with `PK`/`SK`, `GSI1`, `GSI2`, and **TTL enabled on `expiresAt`**
-- [ ] `PUBLIC_BASE_URL` set (Agent Cards, Slack manifests, OAuth callback)
+- [ ] `PUBLIC_BASE_URL` set (Agent Cards, Slack manifests, Telegram webhooks, OAuth callback)
 - [ ] Task/instance role grants DynamoDB, and S3 + SSM if those features are used
 - [ ] If `S3_BUCKET_NAME` is set: the role's S3 grant covers **`artifacts/*` as well as
       `images/*`**, with all three of `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject`.

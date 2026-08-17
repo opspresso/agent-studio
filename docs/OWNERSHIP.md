@@ -41,7 +41,7 @@ whether you are about to make copy number two.**
 | Reaching `undici` directly | `src/infrastructure/net/publicFetch.ts` — a `dispatcher` is a private contract between a fetch and its `Agent`, and the runtime ships its own undici behind the global `fetch`; mixing the two cost every outbound request a bare `TypeError: fetch failed` |
 | The header that names the calling project to an MCP server | `TENANT_ID_HEADER` in `src/application/execution/mcpTools.ts` |
 | The header that names the run's conversation to an MCP server | `CONVERSATION_ID_HEADER` in `src/application/execution/mcpTools.ts` — the API layer reads the same spelling *inbound* in `src/app/api/projects/_lib/conversation.ts`, and the API Reference tab (`endpoints.ts`) shows it to a caller; those two files alone |
-| How a run's conversation is built and keyed | `conversationOf` / `conversationKey` in `src/domain/execution/actor.ts`; each surface's spelling is its own builder (`chatConversation`, `slackConversation`, `a2aConversation`, `requestConversation`), and every one goes through these two |
+| How a run's conversation is built and keyed | `conversationOf` / `conversationKey` in `src/domain/execution/actor.ts`; each surface's spelling is its own builder (`chatConversation`, `slackConversation`, `telegramConversation`, `a2aConversation`, `requestConversation`), and every one goes through these two |
 | How many agents one dispatch may run | `src/application/llm/agentAssembly.ts` |
 | How an agent run's prompt and tool set are assembled | `assembleAgentRun` in `src/application/llm/agentAssembly.ts` |
 | Deriving a run's context budget from the model's window | `src/application/llm/contextBudget.ts` |
@@ -67,6 +67,15 @@ whether you are about to make copy number two.**
 | Which delivered Slack events are for the bot, the loop guard included | `src/application/slack/engagement.ts` |
 | Which messages are a fixed command rather than a question | `parseSlackCommand` in `src/application/slack/engagement.ts` — strict by design: a command changes whether the bot speaks again, and a looser match silences threads nobody asked to silence |
 | The Slack Web API surface a run uses | `SlackClientPort` in `src/application/slack/types.ts`; the streaming chunk shapes it passes are `SlackChunk` in `src/domain/slack/types.ts`, which is where the adapter can also reach them |
+| How a chat-bot turn runs once its adapter has normalised it — attachments into a turn, chunks onto the sink, the tail in one order | `handleTurn` in `src/application/messaging/handleTurn.ts`; the Slack and Telegram handlers normalise and render, and neither folds a chunk itself |
+| Attachment limits and the sentence each dropped attachment earns, on every chat-bot surface | `src/application/messaging/attachments.ts` — the platform contributes the bytes through `InboundAttachment.download` and nothing else |
+| The reply ports every chat-bot surface implements | `ReplySink` / `ReplyChannel` in `src/domain/messaging/reply.ts` — the pipeline calls them, each adapter renders them, neither imports the other |
+| The claim-and-settle contract behind exactly-once inbound events | `createInboundClaimRepository` in `src/infrastructure/db/repositories/inboundClaimRepository.ts`; Slack keys it by `event_id`, Telegram by project and `update_id`, and the port is `InboundEventClaims` in `src/domain/messaging/inboundClaims.ts` |
+| The webhook tail every chat platform shares — claim, ack, work under the event's id, settle | `admitInboundEvent` in `src/app/api/_lib/inboundEvent.ts` |
+| How a Telegram reply is delivered — edited in place, split at 4,096 characters, rendered once with a plain fallback | `src/application/telegram/replyChannel.ts` |
+| Which delivered Telegram updates are for the bot, and which are a command | `classifyTelegramUpdate` / `parseTelegramCommand` in `src/application/telegram/engagement.ts` |
+| The Telegram Bot API surface this platform uses | `TelegramClientPort` in `src/domain/telegram/client.ts`; the adapter is `src/infrastructure/telegram/client.ts` |
+| Rendering an answer's Markdown as Telegram HTML | `markdownToTelegramHtml` in `src/application/telegram/markdown.ts` |
 | Deciding whether bytes are UTF-8 text | `src/shared/utf8Text.ts` |
 | User-document caps | `src/domain/llm/documentLimits.ts` |
 | How a fetched URL is framed in a turn | `framedFetchedUrl` in `src/application/llm/documentParts.ts` |
@@ -108,4 +117,5 @@ same rule applies to:
 | What a tool call reads as to a person | `describeTool` in `src/app/_lib/toolCalls.ts` |
 | Every string the console shows a person | `src/app/_i18n/messages/en.ts` |
 | Which language a request is served in | `src/app/_i18n/locale.ts` |
+| What a chat-bot surface remembers of a conversation when the platform keeps no history | `ConversationTranscriptRepository` in `src/domain/messaging/transcript.ts`; written and read only by the Telegram handler |
 

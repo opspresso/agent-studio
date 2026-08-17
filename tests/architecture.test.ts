@@ -1075,8 +1075,8 @@ const SINGLE_OWNERS: SingleOwner[] = [
   {
     // How a conversation is built from a surface's id and spelled as a key.
     // Every surface has its own builder (`chatConversation`,
-    // `slackConversation`, `a2aConversation`, `requestConversation`), and each
-    // goes through these two — a surface normalising or spelling its own would
+    // `slackConversation`, `telegramConversation`, `a2aConversation`,
+    // `requestConversation`), and each goes through these two — a surface normalising or spelling its own would
     // present a memory server with a key nothing else can match.
     what: "how a run's conversation is built and keyed",
     pattern: /export function conversation(?:Of|Key)\b/,
@@ -1441,6 +1441,82 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "the name a provider will accept for an MCP tool",
     pattern: /\[\^A-Za-z0-9_-\]/,
     owner: "src/infrastructure/mcp/toolManager.ts",
+  },
+  {
+    // What every chat-bot surface does with a run once its adapter has said who
+    // is asking and where the answer goes: attachments into a turn, chunks onto
+    // the sink, the tail in one order. Slack had it inline and Telegram would
+    // have been the second copy — of exactly the fold whose image and file axes
+    // had already drifted apart across six other consumers. A tool result is
+    // the one boundary that ticks a step off, so this call is the pipeline's.
+    what: "how a chat-bot turn runs once its adapter has normalised it",
+    pattern: /\.stepDone\(/,
+    owner: "src/application/messaging/handleTurn.ts",
+  },
+  {
+    // The limits and the sentence each dropped attachment earns, once for every
+    // chat platform: a surface that reported "read only 3 of 5" differently
+    // from its sibling would be two products in one reply.
+    what: "attachment limits and warnings for a chat-bot turn",
+    pattern: /Read only \$\{budget\} of/,
+    owner: "src/application/messaging/attachments.ts",
+  },
+  {
+    // The ports every chat-bot adapter renders. Domain, so the pipeline and the
+    // adapters name it without importing each other; one definition, so a sink
+    // and the channel around it cannot drift into two vocabularies.
+    what: "the reply ports every chat-bot surface implements",
+    pattern: /interface ReplyChannel/,
+    owner: "src/domain/messaging/reply.ts",
+  },
+  {
+    // One conditional put and one conditional update, keyed however the
+    // platform's events are. Slack's version was written before Telegram's; a
+    // second copy of the lease condition is the seven spellings of the
+    // conditional-write error name again.
+    what: "the claim-and-settle contract behind exactly-once inbound events",
+    pattern: /leaseExpiresAt < :now/,
+    owner: "src/infrastructure/db/repositories/inboundClaimRepository.ts",
+  },
+  {
+    // The webhook tail: claim, ack, work in the background under the event's
+    // id, settle. Every platform requires the same shape and each writing its
+    // own is how one of them forgets to settle.
+    what: "the webhook tail every chat platform shares",
+    pattern: /\.settle\(eventId, outcome\)/,
+    owner: "src/app/api/_lib/inboundEvent.ts",
+  },
+  {
+    // Telegram has one way to put a growing answer on screen — send, then edit
+    // — and one message holds 4,096 characters. A second Telegram entry point
+    // that edited for itself is a second copy of the pacing, the split and the
+    // rendered-then-plain fallback. The pattern matches the edit *call*, not
+    // the port method or the adapter that implements it.
+    what: "how a Telegram reply is delivered",
+    pattern: /telegram\.editMessageText\(/,
+    owner: "src/application/telegram/replyChannel.ts",
+  },
+  {
+    // Which delivered updates cause a run. Ahead of the dedup claim, like
+    // Slack's, and for the same reason.
+    what: "which Telegram updates are for the bot",
+    pattern: /export function classifyTelegramUpdate/,
+    owner: "src/application/telegram/engagement.ts",
+  },
+  {
+    // The Bot API slice this platform uses; three modules take it and the
+    // adapter implements it.
+    what: "the Telegram Bot API surface this platform uses",
+    pattern: /interface TelegramClientPort/,
+    owner: "src/domain/telegram/client.ts",
+  },
+  {
+    // Telegram renders HTML strictly and refuses a whole message over one bad
+    // tag, so what an answer's Markdown becomes is decided once, and the reply
+    // channel falls back to plain text when the decision was wrong.
+    what: "rendering an answer's Markdown as Telegram HTML",
+    pattern: /export function markdownToTelegramHtml/,
+    owner: "src/application/telegram/markdown.ts",
   },
   {
     // Not a duplicated definition but a duplicated *copy of undici*, which is

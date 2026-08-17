@@ -34,8 +34,8 @@ llm, agents (subagents + external agent registry), skills, mcp, chat, cost/usage
 src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
-    execution/  security/  slack/  trigger/  sync/  audit/  plugin/  member/
-    a2a/  catalog/  vector/  artifact/  net/
+    execution/  security/  slack/  telegram/  messaging/  trigger/  sync/  audit/
+    plugin/  member/  a2a/  catalog/  vector/  artifact/  net/
   application/      # Use cases. Depends on domain ports only, and never on the
                     # composition root — deps are injected, never pulled.
     llm/            # The engine: tool loop, agent-run assembly, tool-result budgets,
@@ -43,8 +43,10 @@ src/
     execution/      # The facades, binding + MCP tool resolution, subagents, the image tool
     run/            # What wraps a top-level run: the bracket, the concurrency guard,
                     # the unknown-model policy, trace lifecycle
-    chat/  slack/  a2a/  trigger/  image/
+    chat/  slack/  telegram/  a2a/  trigger/  image/
                     # The surfaces that drive a run, and the image path
+    messaging/      # What every chat-bot surface shares: the turn pipeline and the
+                    # attachment limits, over the reply ports in domain/messaging
     artifact/       # What a run left behind: the one row writer, capture at the bracket,
                     # signed-URL lifetimes
     audit/          # The one writer of an audit row, and reading the trail back
@@ -56,13 +58,14 @@ src/
     llm/            # OpenAI-compatible provider channels, streaming
     mcp/            # MCP HTTP client, session, discovery cache
     vector/         # The S3 Vectors store the capability catalog is indexed into
-    a2a/  agent/  slack/  github/  storage/  net/  crypto/  health/  telemetry/
-                    # A2A + external-agent clients, Slack, the plugins-repo client,
+    a2a/  agent/  slack/  telegram/  github/  storage/  net/  crypto/  health/
+    telemetry/      # A2A + external-agent clients, Slack, Telegram, the plugins-repo client,
                     # the S3 artifact store, SSRF guard, AES, readiness probes,
                     # OTel trace export
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
-      _lib/         # Route-handler glue: SSE framing, `apiError`, body size limits
+      _lib/         # Route-handler glue: SSE framing, `apiError`, body size limits, the
+                    # webhook tail every chat platform shares (claim → ack → work → settle)
     _components/    # The shared UI kit: CardGrid, HeaderRows, form styles, code blocks,
                     # copy buttons. A piece of UI that repeats across pages belongs here,
                     # with one owner
@@ -114,7 +117,7 @@ flowchart TB
   app["app<br/>pages · API route handlers"]
   application["application<br/>use cases · LLM engine · execution facade"]
   domain["domain<br/>entities · repository ports — pure TS"]
-  infrastructure["infrastructure<br/>DynamoDB · LLM channel · MCP · Slack · A2A · net · crypto"]
+  infrastructure["infrastructure<br/>DynamoDB · LLM channel · MCP · Slack · Telegram · A2A · net · crypto"]
   lib["lib<br/>composition root · auth/session · runtime settings"]
   shared["shared<br/>dependency-free helpers — imports nothing from @/"]
 
@@ -123,7 +126,7 @@ flowchart TB
   application --> domain
   infrastructure --> domain
   infrastructure --> lib
-  app -->|"only through the wiring sites<br/>container.ts · chats _deps.ts · slack events _lib · per-request A2A assembly · instrumentation.ts"| lib
+  app -->|"only through the wiring sites<br/>container.ts · chats _deps.ts · slack events _lib · telegram webhook _lib · per-request A2A assembly · instrumentation.ts"| lib
   lib --> domain
   lib -->|"container.ts — composes the use cases it wires"| application
   lib -->|"wiring modules only"| infrastructure
@@ -136,8 +139,8 @@ flowchart TB
 
 ### Composition, in a few deliberate places
 
-Composition is distributed rather than centralised in one file, because the three execution
-surfaces need genuinely different bags. **Five sites compose use cases over adapters, and no
+Composition is distributed rather than centralised in one file, because the execution
+surfaces need genuinely different bags. **Six sites compose use cases over adapters, and no
 others may.** Three `lib` modules besides the composition root reach an adapter directly —
 `auth.ts` (the Better Auth storage adapter), `runtime-settings.ts` and `memberAccess.ts` (each
 fronting one repository behind a cache) — and `tests/architecture.test.ts` names exactly those
@@ -148,6 +151,7 @@ as `lib`'s wiring modules; every other `lib` file is a leaf.
 | `src/lib/container.ts` | Repositories; the domain ports (`SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`); every use-case singleton — the three registry slices (`skillUseCases` / `mcpUseCases` / `agentUseCases`) plus the ones layered beside them (managed MCP, MCP OAuth, triggers, settings); `executionDeps` / `imageDeps` / `triggerRunnerDeps` — including the required LLM and image channels, so a missing injection is a type error rather than a silent network call |
 | `src/app/api/chats/_deps.ts` | The `ChatDeps` bag (bound `runAgent` + repositories) |
 | `src/app/api/slack/events/_lib/` | The `SlackEventDeps` bag (bound `runAgent` + `SlackClientPort`), mirroring `ChatDeps` |
+| `src/app/api/telegram/webhook/_lib/` | The `TelegramEventDeps` bag (bound `runAgent` + `TelegramClientPort` + the transcript store), mirroring the Slack one — both extend `MessagingDeps`, the half every chat-bot surface carries |
 | `src/app/api/a2a/[name]/route.ts` | Per-request A2A assembly: the SDK's request/transport handlers around `ProjectA2aExecutor` over `executionDeps` — per request because the handler is built around one project's card |
 | `src/instrumentation.ts` | The boot path: the audit sink over `auditRepository`, and the managed-MCP resume. A wiring site by construction — the composition root itself is not loaded until this file decides the runtime is the Node server, and the audit sink has to be wired on the **awaited** boot path (see [Audit records](design/observability.md#audit-records)) |
 
@@ -158,7 +162,8 @@ Two DI styles are in use on purpose:
   (`createProjectUseCases`, `createVersionUseCases`), whose free functions taking the repo as
   the first argument stay exported for application modules that already hold one; a route
   takes the bound object.
-- **Deps-bag interfaces** (`ChatDeps`, `ExecutionDeps`, `SlackEventDeps`) for execution paths.
+- **Deps-bag interfaces** (`ChatDeps`, `ExecutionDeps`, `SlackEventDeps`, `TelegramEventDeps`)
+  for execution paths.
 
 New slices should use one of the two.
 
@@ -209,6 +214,8 @@ One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S)
 | Run concurrency slot | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
 | Slack thread engagement (a thread the bot answered in, or was muted in) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
+| Telegram update dedup (an `update_id` is a counter per bot, hence per project) | `TELEGRAMUPDATE#{projectName}#{updateId}` | `META` | — | — |
+| Conversation transcript turn (a chat-bot surface with no platform history — Telegram) | `TRANSCRIPT#{projectName}#{conversationKey}` | `TURN#{createdAt ISO}#{seq}` | — | — |
 | Artifact (what a run produced; GSI2 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, sparse) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | Remote conversation (outbound A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
@@ -272,7 +279,7 @@ placeholder (see [Artifacts](design/execution.md#artifacts)).
 
 ## Request flow
 
-Eight execution entry points converge on `src/application/execution/runProject.ts`, which
+Nine execution entry points converge on `src/application/execution/runProject.ts`, which
 answers two separate questions in two tiers.
 
 | Tier | Functions | What it decides |
@@ -291,19 +298,21 @@ dispatch. To trace a request, start at the dispatch tier.
 | OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream) / `executeProject` (non-stream); an image project is refused with 400 — an image has no chat completion |
 | Agent SSE | `POST …/agent` | `executeAgent` |
 | Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent`) |
-| Slack | `/api/slack/events/[project]` → `handleSlackEvent` | `executeAgent` (via `SlackEventDeps`) |
+| Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (via `SlackEventDeps`) |
+| Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (via `TelegramEventDeps`) — the same shared pipeline as Slack ([design/messaging.md](design/messaging.md)) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
 | Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it; a firing's row records that it drew, since the row carries text |
 | Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (same `triggerRunnerDeps.run`) |
 
 ```mermaid
 flowchart LR
-  subgraph surfaces["Eight entry points"]
+  subgraph surfaces["Nine entry points"]
     predict["predict"]
     cc["chat/completions"]
     agentsse["agent SSE"]
     chat["chat messages"]
     slack["Slack events"]
+    telegram["Telegram updates"]
     a2a["A2A JSON-RPC"]
     webhook["webhook trigger"]
     schedule["schedule scan"]
@@ -325,6 +334,7 @@ flowchart LR
   agentsse --> facade
   chat --> facade
   slack --> facade
+  telegram --> facade
   a2a --> facade
   webhook --> facade
   schedule --> facade
@@ -521,21 +531,22 @@ which is shorter than one image generation, and SSE parsers discard comment fram
 ### EngineChunk contract
 
 `EngineChunk` (`src/domain/llm/types.ts`) is the wire unit between the engine and every
-consumer (chat persistence, Slack, OpenAI reshaping, A2A, the browser client). Top-level
+consumer (chat persistence, the messaging pipeline Slack and Telegram share, OpenAI
+reshaping, A2A, the browser client). Top-level
 chunks carry **no `author`**; only subagent chunks are authored, stamped by the `runSubagent`
 wrapper with the subagent's name. **`isTopLevelChunk()` is the single owned predicate** —
 consumers must use it instead of re-deriving author semantics.
 
 | Field | Emitted by | Consumed by |
 |---|---|---|
-| `delta.content` / `delta.reasoningContent` | engine per stream delta (PII-restored) | top-level only: chat persistence, Slack text, OpenAI chunks, A2A artifact, client answer bubble |
-| `delta.toolCalls` | engine when a turn requests tools (display args) | client tool-call rendering; Slack progress indicator |
+| `delta.content` / `delta.reasoningContent` | engine per stream delta (PII-restored) | top-level only: chat persistence, a chat bot's reply sink (Slack, Telegram), OpenAI chunks, A2A artifact, client answer bubble |
+| `delta.toolCalls` | engine when a turn requests tools (display args) | client tool-call rendering; a chat bot's progress (Slack's status line or checklist, Telegram's typing indicator) |
 | `toolResult` | engine after each tool finishes | chat tool rows (displayed, and replayed into context for the last N turns), client tool panel |
-| `warning` | anywhere a run loses something: at setup for a binding it could not use (deleted skill/subagent, unreachable or blocked MCP server, tools past the per-run cap), and mid-run for a turn or output limit, a context-budget cut, a truncated transfer transcript, a failed transfer, a dropped document | chat warning banner, Slack warning suffix, `Trace.warnings`; never ends the stream |
-| `image` | GenerateImage / EditImage builtins, and image-project subagents | consumed **regardless of author** (delegating to an image subagent is how an agent draws): chat image persistence (S3), Slack upload, OpenAI `images` extension, client gallery |
-| `file` | a tool that returned bytes which are not a picture — a rendered document, an export | its own axis precisely so the ten consumers of `image` never see it: chat persists the reference and offers it as a download (`files` on the assistant message, signed per read with the filename to save as), the run log substitutes a note. The bytes are stripped by the bracket that stored them and **never enter the model's context** — the tool result text is what names the file. Its name and media type come from the server, so both are read defensively (`safeFileName`/`baseMediaType`) before anything is built from them. Every surface that reads `image` reads this too — `/predict` and both OpenAI shapes list it as a `files` extension, `/agent` swaps the key for a signed `url` on the frame, A2A publishes a file part addressed by uri, Slack links it under the reply, a trigger's row names it. `producedFiles.ts` owns the resolution; a module reading one axis and not the other fails `tests/architecture.test.ts` |
+| `warning` | anywhere a run loses something: at setup for a binding it could not use (deleted skill/subagent, unreachable or blocked MCP server, tools past the per-run cap), and mid-run for a turn or output limit, a context-budget cut, a truncated transfer transcript, a failed transfer, a dropped document | chat warning banner, a chat bot's warning tail (Slack, Telegram), `Trace.warnings`; never ends the stream |
+| `image` | GenerateImage / EditImage builtins, and image-project subagents | consumed **regardless of author** (delegating to an image subagent is how an agent draws): chat image persistence (S3), a chat bot's upload (Slack, Telegram), OpenAI `images` extension, client gallery |
+| `file` | a tool that returned bytes which are not a picture — a rendered document, an export | its own axis precisely so the ten consumers of `image` never see it: chat persists the reference and offers it as a download (`files` on the assistant message, signed per read with the filename to save as), the run log substitutes a note. The bytes are stripped by the bracket that stored them and **never enter the model's context** — the tool result text is what names the file. Its name and media type come from the server, so both are read defensively (`safeFileName`/`baseMediaType`) before anything is built from them. Every surface that reads `image` reads this too — `/predict` and both OpenAI shapes list it as a `files` extension, `/agent` swaps the key for a signed `url` on the frame, A2A publishes a file part addressed by uri, the messaging pipeline links it under a Slack or Telegram reply, a trigger's row names it. `producedFiles.ts` owns the resolution; a module reading one axis and not the other fails `tests/architecture.test.ts` |
 | `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
-| `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | only a **top-level** error ends the stream. An authored one is *dropped* by nearly every consumer (Slack and the trace recorder excepted) because the parent answers past it — so what a failed transfer lost reaches the reader as that transfer's `warning`, and the model as its "For context" turn, not through this field |
+| `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | only a **top-level** error ends the stream. An authored one is *dropped* by nearly every consumer (the messaging pipeline and the trace recorder excepted) because the parent answers past it — so what a failed transfer lost reaches the reader as that transfer's `warning`, and the model as its "For context" turn, not through this field |
 | `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | read through `chunkTermination` (below): OpenAI `finish_reason: "stop"`, client finalize |
 | `finishReason` | engine when a run ends for a reason `done` cannot say — the turn guard (`turn-limit`) and a provider output cut (`output-limit`), each alongside a `warning` naming it | read through `chunkTermination`/`runTermination`: OpenAI `finish_reason: "length"`, trace status `turn-limit`, A2A terminal status message, predict's `finishReason` field |
 | `author` | subagent chunks only — the **innermost** agent | consumers filter via `isTopLevelChunk`; client shows the running agent |
@@ -570,7 +581,7 @@ flowchart LR
   a2aout["A2A terminal status<br/>warnings ride the status message"]
   predictout["predict non-streaming<br/>finishReason field"]
   chatui["chat — persisted on the message,<br/>banner in the client"]
-  slackout["Slack — warning suffix on the reply"]
+  slackout["Slack, Telegram — warning tail on the reply"]
   console["playground — warning alert"]
   triggerrow["trigger history row<br/>warning beside a succeeded status"]
 
@@ -619,7 +630,9 @@ Slack engagement have never once been answered together.
 |---|---|
 | [design/execution.md](design/execution.md) | What a project and a version are, the engine's tool loop, the three paths that draw a picture, and what a run leaves behind |
 | [design/mcp.md](design/mcp.md) | The registry entry, the session that owns the protocol, the discovery cache, managed containers on loopback, per-project OAuth |
+| [design/messaging.md](design/messaging.md) | What every chat-bot surface shares — the turn pipeline, the reply ports, the webhook tail — and where each platform's own decisions begin |
 | [design/slack.md](design/slack.md) | How a reply is delivered, which received messages are for the bot, what a run may read of the workspace |
+| [design/telegram.md](design/telegram.md) | A reply edited in place where nothing streams, which updates are for the bot, and the transcript a follow-up carries its context in |
 | [design/capabilities.md](design/capabilities.md) | Skills by progressive disclosure, the global capability catalog a run may search, and where memory lives |
 | [design/triggers.md](design/triggers.md) | The one webhook, any number of schedules, and the sweep that closes a firing an instance died holding |
 | [design/chat.md](design/chat.md) | A run that outlives its connection, the replay log, and how an attachment reaches a turn |

@@ -315,6 +315,15 @@ parameter (`slackWorkspace`), off by default.
 events it was installed with, so a channel follow-up and the `SlackChannels` tool stay inert
 until the manifest is applied again and the app reinstalled.
 
+## Telegram
+
+Nothing in the environment. Per-project settings — the bot token and whether the bot is on —
+live on the project (`/projects/{name}/settings`); the webhook secret is minted there and
+handed to Telegram by the *Register webhook* action, which points the bot at
+`PUBLIC_BASE_URL/api/telegram/webhook/{project}` — so `PUBLIC_BASE_URL` has to be the address
+Telegram can reach. BotFather's *privacy mode* may stay on: the bot answers only what names
+it in a group anyway ([design/telegram.md](design/telegram.md)).
+
 ## A2A
 
 | Variable | Default | Runtime | Notes |
@@ -395,9 +404,10 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | A transfer to an A2A remote agent. On a card that advertises `capabilities.streaming` this bounds **silence**, not the exchange — the timer resets on every streamed event and the run deadline bounds the total; on a card that does not, the blocking `message/send` has no events to reset it, so the same number is the whole-request bound | `120s` | `src/infrastructure/a2a/client.ts` |
 | The registry's "test message" to an external agent — OpenAI-shaped. An `a2a` entry's test goes through the A2A client above under its `120s` idle bound, with no run deadline behind it, so a streaming card is bounded only by silence | `60s` | `src/infrastructure/agent/agentClient.ts` |
 | One Slack Web API call / one Slack file transfer | `30s` / `120s` | `src/infrastructure/slack/client.ts` |
+| One Telegram Bot API call / one Telegram file transfer | `30s` / `120s` | `src/infrastructure/telegram/client.ts` |
 | One GitHub API request (the plugins sync) | `15s` | `src/infrastructure/github/client.ts` |
 | Concurrent MCP calls per model response | `5` | `src/application/llm/engine.ts` |
-| Interactive (Slack) run deadline | `3` min | `src/shared/runDeadline.ts` |
+| Interactive (Slack, Telegram) run deadline | `3` min | `src/shared/runDeadline.ts` |
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | Documents per turn / bytes each | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
@@ -409,9 +419,11 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Tool result kept when the run's context budget cuts it | `500` chars minimum | `src/application/llm/toolResultBudget.ts` |
 | Chat history replayed into context | `200` messages / `200,000` chars | `src/application/chat/messageMapping.ts` |
 | Chat tool traffic replayed into context | `3` turns / `20,000` chars | `src/application/chat/messageMapping.ts` |
-| Inbound webhook / Slack event body | `1MB` each | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts` |
+| Inbound webhook / Slack event / Telegram update body | `1MB` each | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts`, `src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts` |
 | Slack thread turns used as context | `50` | `src/application/slack/handleSlackEvent.ts` |
-| Slack thread title / history image lookback | `60` chars / `10` messages | `src/application/slack/handleSlackEvent.ts` |
+| Telegram transcript turns used as context | `50` | `src/application/telegram/handleUpdate.ts` |
+| Slack thread title | `60` chars | `src/application/slack/handleSlackEvent.ts` |
+| History image lookback, on every chat-bot surface | `10` messages | `src/application/messaging/attachments.ts` |
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |
 | Slack prompt title / message / agent description | `80` / `500` / `300` chars | `src/domain/slack/types.ts` |
 | Slack channel keywords per project / length each | `20` / `2`–`50` chars | `src/domain/slack/types.ts` |
@@ -426,6 +438,9 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | One streamed Slack `markdown_text` write (Slack's own cap; the edit-in-place fallback is not cut) | `12,000` chars | `src/application/slack/replyStream.ts` |
 | Slack status refresh (Slack expires it at `2m`) | `45s` | `src/application/slack/replyStream.ts` |
 | Slack profile cache (success / failure / entries) | `1h` / `1m` / `2000` | `src/infrastructure/slack/profileCache.ts` |
+| One Telegram message (Telegram's own cap; a longer answer continues in the next message, cut at a line break in the last `800` chars where one exists) | `4,096` chars | `src/application/telegram/replyChannel.ts` |
+| Telegram reply edit cadence / typing refresh (Telegram expires typing at `5s`) | `2s` / `4s` | `src/application/telegram/replyChannel.ts` |
+| How long a Telegram conversation's turns are kept | `7` days | `src/infrastructure/db/ttl.ts` |
 | Usage summary query range | `184` days | `src/app/api/usages/summary/validation.ts` |
 | Schedule catch-up window (bounds what an outage can fire at once) | `10` min | `src/application/trigger/scanSchedules.ts` |
 | Schedule firings one scan tick drives concurrently | `8` | `src/application/trigger/scanSchedules.ts` |
