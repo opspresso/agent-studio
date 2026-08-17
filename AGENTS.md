@@ -16,6 +16,7 @@ authoritative and this file must not restate it — an entry below earns its pla
 | Need | Read |
 |---|---|
 | The shape every run passes through | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| The same shape as pictures | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) |
 | Why one subsystem decides what it does | [docs/design/](docs/design/) — one file each |
 | Who owns a decision that must exist once | [docs/OWNERSHIP.md](docs/OWNERSHIP.md) |
 | An endpoint's contract | [docs/API.md](docs/API.md) |
