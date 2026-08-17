@@ -17,9 +17,13 @@ const updateSchema = z.object({
  * the bot has to be registered with, so a mutation's response is never a
  * subset of the read the page was built from.
  */
-async function telegramResponse({ view }: ProjectTelegramResult, request: Request) {
+async function telegramResponse({ view, warnings }: ProjectTelegramResult, request: Request) {
   const baseUrl = await resolvePublicBaseUrl(new URL(request.url).origin);
-  return Response.json({ ...view, webhookUrl: `${baseUrl}${view.webhookPath}` });
+  return Response.json({
+    ...view,
+    webhookUrl: `${baseUrl}${view.webhookPath}`,
+    ...(warnings ? { warnings } : {}),
+  });
 }
 
 export const GET = withAuth(async (user, request: Request, ctx: RouteContext) => {
@@ -38,8 +42,9 @@ export const PUT = withAuth(async (user, request: Request, ctx: RouteContext) =>
     return invalidRequest(parsed.error);
   }
   try {
+    const baseUrl = await resolvePublicBaseUrl(new URL(request.url).origin);
     return await telegramResponse(
-      await projectTelegramUseCases.update(name, parsed.data, user.email),
+      await projectTelegramUseCases.update(name, parsed.data, user.email, baseUrl),
       request,
     );
   } catch (error) {

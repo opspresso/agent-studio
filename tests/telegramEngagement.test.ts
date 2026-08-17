@@ -120,6 +120,35 @@ describe("classifyTelegramUpdate", () => {
     expect(classifyTelegramUpdate(someoneElses, BOT)).toMatchObject({ kind: "ignore", because: "a command for another bot" });
   });
 
+  it("answers an unknown command addressed to it by name in a group", () => {
+    const addressed = update({
+      message: message({
+        chat: { id: -1, type: "group" },
+        text: "/ask@painter_bot what is X",
+        entities: [{ type: "bot_command", offset: 0, length: 16 }],
+      }),
+    });
+    expect(runOf(classifyTelegramUpdate(addressed, BOT))).toEqual({
+      trigger: "mention",
+      text: "/ask@painter_bot what is X",
+    });
+    const bare = update({
+      message: message({
+        chat: { id: -1, type: "group" },
+        text: "/ask what is X",
+        entities: [{ type: "bot_command", offset: 0, length: 4 }],
+      }),
+    });
+    expect(classifyTelegramUpdate(bare, BOT)).toMatchObject({ kind: "ignore" });
+  });
+
+  it("answers a caption-less voice note or sticker in a private chat, so the run can say it cannot read it", () => {
+    const voice = update({
+      message: message({ text: undefined, voice: { file_id: "v", file_unique_id: "u", mime_type: "audio/ogg" } }),
+    });
+    expect(runOf(classifyTelegramUpdate(voice, BOT))).toEqual({ trigger: "private", text: "" });
+  });
+
   it("treats a command it does not know as an ordinary question", () => {
     const unknown = update({
       message: message({ text: "/weather Seoul", entities: [{ type: "bot_command", offset: 0, length: 8 }] }),
@@ -148,7 +177,16 @@ describe("parseTelegramCommand / stripBotMention", () => {
       message({ text: "/help me please", entities: [{ type: "bot_command", offset: 0, length: 5 }] }),
       "painter_bot",
     );
-    expect(parsed).toEqual({ command: "help", forThisBot: true });
+    expect(parsed).toEqual({ command: "help", forThisBot: true, addressed: false });
+  });
+
+  it("keeps the message's line breaks and indentation when it strips a mention", () => {
+    const text = "@painter_bot fix this:\n\n```py\ndef f():\n    return 1\n```";
+    const stripped = stripBotMention(
+      message({ text, entities: [{ type: "mention", offset: 0, length: 12 }] }),
+      "painter_bot",
+    );
+    expect(stripped).toBe("fix this:\n\n```py\ndef f():\n    return 1\n```");
   });
 
   it("strips only the entity Telegram marked, case-insensitively", () => {

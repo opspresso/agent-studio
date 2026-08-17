@@ -67,6 +67,11 @@ export function TelegramSection({
       setBotToken(next.botToken);
       setEnabled(next.enabled);
       setStatus(next.botUsername ? `Saved — @${next.botUsername}` : "Saved");
+      // Saved, but Telegram refused the webhook: said here rather than hidden
+      // behind a green "Saved" — the operator has a button to try it again.
+      if (next.warnings && next.warnings.length > 0) {
+        setError(next.warnings.join(" "));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {

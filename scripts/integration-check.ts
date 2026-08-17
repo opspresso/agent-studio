@@ -649,7 +649,7 @@ async function main() {
     // The one repository every chat platform's webhook dedups through, and the
     // same reasoning as the webhook claim above: a `Set`-backed fake cannot tell
     // a working condition expression from one that always wins.
-    const claims = telegramUpdateRepository.forProject(projectName);
+    const claims = telegramUpdateRepository.forBot(projectName, 42).updates;
     const claimNow = Math.floor(Date.now() / 1000);
     assert.equal(await claims.claim("1001", claimNow, claimNow + 600), true, "first delivery claims");
     assert.equal(
@@ -954,7 +954,12 @@ async function main() {
       0,
       "usage rows deleted",
     );
-    pass("project cascade delete (meta + versions + usage)");
+    assert.equal(
+      (await transcriptRepository.recent(projectName, `telegram:${suffix}`, 5)).length,
+      0,
+      "transcript turns deleted with the project",
+    );
+    pass("project cascade delete (meta + versions + usage + transcript)");
   } finally {
     // cleanup non-cascading fixtures
     await skillRepository.delete("integration-skill").catch(() => {});
@@ -969,46 +974,6 @@ async function main() {
       .catch(() => {});
     for (const artifactId of artifactFixtures) {
       await artifactRepository.delete(artifactId).catch(() => {});
-    }
-    {
-      // Transcript turns and inbound claims live outside the project partition,
-      // so the cascade never reaches them.
-      const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
-      const { DeleteCommand, QueryCommand } = await import("@aws-sdk/lib-dynamodb");
-      const { keys } = await import("@/infrastructure/db/keys");
-      for (const conversation of [`telegram:${suffix}`, `telegram:${suffix}-other`]) {
-        const partition = keys.transcriptPartition(projectName, conversation);
-        const rows = await getDocumentClient()
-          .send(
-            new QueryCommand({
-              TableName: getTableName(),
-              KeyConditionExpression: "PK = :pk",
-              ExpressionAttributeValues: { ":pk": partition },
-              ProjectionExpression: "PK, SK",
-            }),
-          )
-          .catch(() => ({ Items: [] as Record<string, unknown>[] }));
-        for (const row of rows.Items ?? []) {
-          await getDocumentClient()
-            .send(
-              new DeleteCommand({
-                TableName: getTableName(),
-                Key: { PK: row.PK as string, SK: row.SK as string },
-              }),
-            )
-            .catch(() => {});
-        }
-      }
-      for (const updateId of ["1001", "1002"]) {
-        await getDocumentClient()
-          .send(
-            new DeleteCommand({
-              TableName: getTableName(),
-              Key: keys.telegramUpdate(projectName, updateId),
-            }),
-          )
-          .catch(() => {});
-      }
     }
     if (auditFixtures.length > 0 || memberDayFixtures.length > 0) {
       const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");

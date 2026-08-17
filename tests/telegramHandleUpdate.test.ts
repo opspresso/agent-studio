@@ -108,6 +108,7 @@ function makeDeps(chunks: EngineChunk[], telegram: TelegramClientPort, options: 
         remembered.push({ key, turn });
       },
     },
+    sleep: async () => {},
   };
   return { deps, runs, remembered, stored };
 }
@@ -170,6 +171,7 @@ describe("handleTelegramUpdate", () => {
         message: message({
           chat: { id: -5, type: "supergroup", is_forum: true },
           message_thread_id: 9,
+          is_topic_message: true,
           text: "@painter_bot hi",
           entities: [{ type: "mention", offset: 0, length: 12 }],
         }),
@@ -181,6 +183,153 @@ describe("handleTelegramUpdate", () => {
     expect(sent[0]?.threadId).toBe(9);
     const last = runs[0]?.messages.at(-1);
     expect(last && messageText(last)).toBe("hi");
+  });
+
+  it("keeps a reply chain in an ordinary group inside the group's conversation", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, sent } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "ok" } }, { done: true }], telegram);
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          chat: { id: -7, type: "supergroup" },
+          // Telegram stamps a reply chain's root here in a non-forum group.
+          message_thread_id: 100,
+          text: "and then?",
+          reply_to_message: message({ from: { id: 42, is_bot: true }, text: "earlier" }),
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(runs[0]?.conversation).toEqual({ surface: "telegram", id: "-7" });
+    expect(sent[0]?.threadId).toBeUndefined();
+  });
+
+  it("writes down what a text-less turn carried, on both sides", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram } = makeTelegramFake();
+    const { deps, remembered } = makeDeps(
+      [{ image: { b64: "AA==", mimeType: "image/png", prompt: "a cat" } }, { done: true }],
+      telegram,
+    );
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          text: undefined,
+          photo: [{ file_id: "p", file_unique_id: "u1", width: 1, height: 1, file_size: 10 }],
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(remembered.map((entry) => [entry.turn.role, entry.turn.content])).toEqual([
+      ["user", "[sent photo-u1.jpg]"],
+      ["assistant", "[sent 1 image]"],
+    ]);
+  });
+
+  it("does not read names an earlier version wrote down once the opt-in is off", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram } = makeTelegramFake();
+    const { deps, runs, stored } = makeDeps([{ done: true }], telegram);
+    stored.push(
+      { role: "user", content: "earlier", userId: "2", speaker: "Ann", createdAt: "2026-01-01T00:00:00.000Z" },
+      { role: "user", content: "and me", userId: "3", speaker: "Bob", createdAt: "2026-01-01T00:00:01.000Z" },
+    );
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          chat: { id: -1, type: "group" },
+          text: "@painter_bot now",
+          entities: [{ type: "mention", offset: 0, length: 12 }],
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(runs[0]?.messages.map((turn: ChatMessageInput) => messageText(turn))).toEqual(["earlier", "and me", "now"]);
+  });
+
+  it("carries the newest turns that fit the character budget, and says what it left out", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, finalText } = makeTelegramFake();
+    const { deps, runs, stored } = makeDeps([{ delta: { content: "ok" } }, { done: true }], telegram);
+    for (let i = 0; i < 12; i += 1) {
+      stored.push({ role: i % 2 ? "assistant" : "user", content: `${i}:${"x".repeat(19_990)}`, createdAt: `2026-01-01T00:00:${String(i).padStart(2, "0")}.000Z` });
+    }
+
+    await handleTelegramUpdate(deps, dispositionOf({ update_id: 1, message: message() }), BINDING);
+
+    const carried = runs[0]?.messages.length ?? 0;
+    // Five 20,000-char turns fit 100,000; the sixth would not, plus the new question.
+    expect(carried).toBe(6);
+    expect(runs[0]?.messages[0] && messageText(runs[0].messages[0]).startsWith("7:")).toBe(true);
+    expect(finalText()).toContain("Older conversation turns were left out");
+  });
+
+  it("names a voice note as an attachment the run could not read", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, finalText } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "hm" } }, { done: true }], telegram);
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({
+        update_id: 1,
+        message: message({
+          text: undefined,
+          caption: "what do you hear?",
+          voice: { file_id: "v", file_unique_id: "u", mime_type: "audio/ogg", file_size: 100 },
+        }),
+      }),
+      BINDING,
+    );
+
+    expect(runs).toHaveLength(1);
+    expect(finalText()).toContain("Ignored 1 attachment(s)");
+  });
+
+  it("answers an album once: the captioned member wins the claim, the others say nothing", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const { telegram, finalText, sent } = makeTelegramFake();
+    const { deps, runs } = makeDeps([{ delta: { content: "two cats" } }, { done: true }], telegram);
+    const claimed = new Set<string>();
+    deps.albums = () => ({
+      claim: async (id) => (claimed.has(id) ? false : (claimed.add(id), true)),
+      settle: async () => {},
+    });
+    const photo = (id: string) => [{ file_id: id, file_unique_id: id, width: 1, height: 1, file_size: 10 }];
+
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({ update_id: 1, message: message({ message_id: 1, text: undefined, caption: "compare", media_group_id: "g1", photo: photo("a") }) }),
+      BINDING,
+    );
+    await handleTelegramUpdate(
+      deps,
+      dispositionOf({ update_id: 2, message: message({ message_id: 2, text: undefined, media_group_id: "g1", photo: photo("b") }) }),
+      BINDING,
+    );
+
+    expect(runs).toHaveLength(1);
+    expect(sent.filter((m) => m.text.includes("two cats"))).toHaveLength(1);
+    expect(finalText()).toContain("part of an album");
   });
 
   it("answers /start and /help without a run", async () => {

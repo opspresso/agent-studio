@@ -12,7 +12,8 @@ import { expiresAtFromNow, notExpired, TRANSCRIPT_TTL_SECONDS } from "../ttl";
 const MAX_LIST_PAGES = 3;
 
 /**
- * A conversation's turns, one row each, in the conversation's own partition.
+ * A conversation's turns, one row each, in the project's partition under a
+ * sort-key prefix that names the conversation.
  *
  * The sort key is the turn's instant plus a random suffix: two turns can land
  * in the same millisecond (a user turn and the reply that answers it are
@@ -56,8 +57,8 @@ export const transcriptRepository: ConversationTranscriptRepository = {
           TableName: getTableName(),
           KeyConditionExpression: "PK = :pk AND begins_with(SK, :turn)",
           ExpressionAttributeValues: {
-            ":pk": keys.transcriptPartition(projectName, conversationKey),
-            ":turn": "TURN#",
+            ":pk": keys.transcriptTurnPrefix(projectName, conversationKey).PK,
+            ":turn": keys.transcriptTurnPrefix(projectName, conversationKey).prefix,
           },
           ScanIndexForward: false,
           Limit: pageLimit,

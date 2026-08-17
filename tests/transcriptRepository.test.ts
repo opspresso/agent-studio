@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 describe("transcriptRepository", () => {
-  it("writes a turn into the conversation's partition, expiring, with only what it was given", async () => {
+  it("writes a turn into the project's partition under the conversation's prefix, expiring, with only what it was given", async () => {
     await transcriptRepository.append("painter", "telegram:100", {
       role: "user",
       content: "hi",
@@ -40,8 +40,8 @@ describe("transcriptRepository", () => {
     });
     const item = sent[0]?.input.Item as Record<string, unknown>;
     expect(sent[0]?.name).toBe("PutCommand");
-    expect(item.PK).toBe("TRANSCRIPT#painter#telegram:100");
-    expect(String(item.SK).startsWith("TURN#2026-08-17T00:00:00.000Z#")).toBe(true);
+    expect(item.PK).toBe("PROJECT#painter");
+    expect(String(item.SK).startsWith("TRANSCRIPT#telegram:100#TURN#2026-08-17T00:00:00.000Z#")).toBe(true);
     expect(item).toMatchObject({ entityType: "transcriptTurn", role: "user", content: "hi", userId: "1" });
     expect(item.speaker).toBeUndefined();
     expect(item.expiresAt).toBe(Math.floor(NOW_MS / 1000) + 7 * 86_400);

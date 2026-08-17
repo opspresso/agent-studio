@@ -368,6 +368,8 @@ export interface ProjectTelegramView {
   botUsername: string;
   webhookPath: string;
   webhookUrl: string;
+  /** What a save could not do on Telegram's side — a webhook it refused. */
+  warnings?: string[];
 }
 
 export async function getProjectTelegram(name: string): Promise<ProjectTelegramView> {

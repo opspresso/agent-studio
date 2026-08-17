@@ -1,5 +1,5 @@
 import type { TelegramClientPort } from "@/application/telegram/types";
-import { markdownToTelegramHtml } from "@/application/telegram/markdown";
+import { markdownToTelegramHtmlPieces } from "@/application/telegram/markdown";
 import type { ReplyChannel } from "@/domain/messaging/reply";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
@@ -62,7 +62,18 @@ interface Segment {
   sent?: string;
   /** Whether that text was the rendered final. */
   final?: boolean;
+  /**
+   * When Telegram last refused a write to this message. A refused write is
+   * retried at the edit cadence, not on every delta: a bot the user has
+   * blocked, or a 429, must not turn a two-thousand-delta answer into two
+   * thousand requests.
+   */
+  refusedAt?: number;
 }
+
+/** Wait a little; injected so a test can decline to. */
+export type Sleep = (ms: number) => Promise<void>;
+const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Where to end a message that has to be cut at `limit` characters from `from`.
@@ -100,7 +111,9 @@ export function createTelegramReplyChannel(
   telegram: TelegramClientPort,
   token: string,
   target: TelegramReplyTarget,
+  opts: { sleep?: Sleep } = {},
 ): ReplyChannel {
+  const sleep = opts.sleep ?? realSleep;
   const segments: Segment[] = [];
   let lastWrite = 0;
   let lastTyping = 0;
@@ -143,23 +156,24 @@ export function createTelegramReplyChannel(
 
   /**
    * Put one segment's text on screen — opening its message the first time,
-   * editing it after. `rendered` sends the HTML rendering and falls back to the
-   * plain text if Telegram refuses it, so a rendering defect costs formatting
-   * and never the answer.
+   * editing it after. `rendered` is the HTML rendering of `text`, sent first
+   * and falling back to the plain text if Telegram refuses it, so a rendering
+   * defect costs formatting and never the answer.
    */
   async function write(
     index: number,
     text: string,
-    opts: { cursor: boolean; rendered: boolean },
+    opts: { cursor: boolean; rendered?: string },
   ): Promise<void> {
     const segment = segments[index];
     if (!segment) {
       return;
     }
     const plain = opts.cursor ? `${text}${CURSOR}` : text;
-    const attempts: Array<{ text: string; parseMode?: "HTML" }> = opts.rendered
-      ? [{ text: markdownToTelegramHtml(text), parseMode: "HTML" }, { text: plain }]
-      : [{ text: plain }];
+    const attempts: Array<{ text: string; parseMode?: "HTML" }> =
+      opts.rendered !== undefined
+        ? [{ text: opts.rendered, parseMode: "HTML" }, { text: plain }]
+        : [{ text: plain }];
     let lastError: unknown;
     for (const attempt of attempts) {
       try {
@@ -190,11 +204,13 @@ export function createTelegramReplyChannel(
           }
         }
         segment.sent = text;
-        segment.final = opts.rendered;
+        segment.final = opts.rendered !== undefined;
+        segment.refusedAt = undefined;
         editFailures = 0;
         return;
       } catch (error) {
         lastError = error;
+        segment.refusedAt = Date.now();
         if (attempt.parseMode) {
           log.warn(
             "telegram",
@@ -253,29 +269,32 @@ export function createTelegramReplyChannel(
         return;
       }
       layout(fullText);
+      const now = Date.now();
+      const refusedRecently = (segment: Segment | undefined): boolean =>
+        segment?.refusedAt !== undefined && now - segment.refusedAt < EDIT_INTERVAL_MS;
       // Every message but the last is full. Written once, plainly; the final
       // rendering comes with the close.
       for (let index = 0; index < segments.length - 1; index += 1) {
         const text = segmentText(fullText, index);
-        if (segments[index]?.sent !== text) {
-          await write(index, text, { cursor: false, rendered: false }).catch(editFailed);
+        if (segments[index]?.sent !== text && !refusedRecently(segments[index])) {
+          await write(index, text, { cursor: false }).catch(editFailed);
         }
       }
       const index = segments.length - 1;
       const text = segmentText(fullText, index);
       const current = segments[index];
-      if (!current || current.sent === text) {
+      if (!current || current.sent === text || refusedRecently(current)) {
         return;
       }
-      const now = Date.now();
       // No pacing on a message's first write: the point of it is that something
-      // shows up quickly. A failure leaves the segment unopened, so the next
-      // push retries with everything accumulated since.
+      // shows up quickly. A failure leaves the segment unopened — and marked as
+      // refused, so the retry comes at the edit cadence with everything
+      // accumulated since, not on the next delta.
       if (current.messageId !== undefined && now - lastWrite < EDIT_INTERVAL_MS) {
         return;
       }
       lastWrite = now;
-      await write(index, text, { cursor: true, rendered: false }).catch(editFailed);
+      await write(index, text, { cursor: true }).catch(editFailed);
     },
 
     async finish(fullText, suffix) {
@@ -287,24 +306,44 @@ export function createTelegramReplyChannel(
         return;
       }
       layout(full);
+      const texts = segments.map((_, index) => segmentText(full, index));
+      // Rendered together, so a code block cut by a message boundary reads as
+      // code on both sides of it.
+      const rendered = markdownToTelegramHtmlPieces(texts);
+      let written = 0;
       for (let index = 0; index < segments.length; index += 1) {
-        const text = segmentText(full, index);
+        const text = texts[index] ?? "";
         const segment = segments[index];
         if (segment?.final && segment.sent === text) {
           continue;
         }
+        // Paced between messages, like every other write: the close of a long
+        // answer is several edits into one chat's budget, and a burst is what
+        // Telegram answers with 429. The first is not delayed — a one-message
+        // reply closes as fast as it streamed.
+        if (written > 0) {
+          const wait = EDIT_INTERVAL_MS - (Date.now() - lastWrite);
+          if (wait > 0) {
+            await sleep(wait);
+          }
+        }
+        written += 1;
+        lastWrite = Date.now();
         try {
-          await write(index, text, { cursor: false, rendered: true });
+          await write(index, text, { cursor: false, rendered: rendered[index] });
         } catch (error) {
           log.error("telegram", "final reply write failed", error);
           // The message on screen still carries the cursor or an older text.
-          // What Telegram never took is posted on its own rather than lost:
-          // that failure was silent for a whole release on the Slack surface.
-          if (segment?.sent !== text) {
+          // What Telegram never took is posted on its own rather than lost —
+          // only the part it never took: `sent` is what it accepted, and a
+          // repeated head would be its own defect. That failure was silent for
+          // a whole release on the Slack surface.
+          const undelivered = text.slice(segment?.sent?.length ?? 0);
+          if (undelivered) {
             await telegram
               .sendMessage(token, {
                 chatId: target.chatId,
-                text,
+                text: undelivered,
                 ...(target.threadId !== undefined ? { threadId: target.threadId } : {}),
               })
               .catch((fallbackError) => log.error("telegram", "fallback reply failed too", fallbackError));

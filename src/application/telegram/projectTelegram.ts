@@ -61,6 +61,8 @@ function maskedView(cipher: SecretCipher, project: Project): ProjectTelegramView
 export interface ProjectTelegramResult {
   project: Project;
   view: ProjectTelegramView;
+  /** What the save could not do on Telegram's side, when anything. */
+  warnings?: string[];
 }
 
 /**
@@ -93,17 +95,37 @@ async function updateProject(
   }
 }
 
+/** The three Bot API calls the settings slice makes; injected so it stays free of the HTTP client. */
+export interface TelegramWebhookCalls {
+  getMe: (botToken: string) => Promise<TelegramBotIdentity>;
+  setWebhook: (
+    botToken: string,
+    args: { url: string; secretToken: string; allowedUpdates: readonly string[] },
+  ) => Promise<void>;
+  deleteWebhook: (botToken: string) => Promise<void>;
+}
+
 /**
- * Save a token, or turn the bot on or off.
+ * Save a token, or turn the bot on or off — and keep Telegram's idea of the
+ * webhook in step with it.
  *
  * A *new* token is checked with Telegram before it is stored — `getMe` is the
  * one call that costs nothing and says both whether the token is real and what
  * the bot is called, and the username is what a group mention is matched
  * against later. A masked or empty token keeps what is stored (a mask can only
- * confirm a secret, never create one). The webhook secret is minted with the
- * first token and kept across token changes: it is this platform's, not
- * Telegram's, and re-minting it would silently invalidate a webhook already
- * registered.
+ * confirm a secret, never create one).
+ *
+ * The webhook follows the switch, because a webhook that does not is a bot
+ * that keeps talking after it was turned off. Enabling registers the webhook
+ * at this deployment; disabling deletes it, so Telegram stops delivering and
+ * holding updates for a bot nobody is answering — otherwise every message to a
+ * disabled bot is retried against a 404 for a day and delivered, late and
+ * billed, the moment the box is ticked again. Replacing the token retires the
+ * old bot's webhook, mints a fresh secret so a delivery from the old bot no
+ * longer verifies even where that delete failed, and registers the new bot when
+ * the switch is on. Every Telegram call but `getMe` is best effort: the
+ * credentials are the operator's decision and are stored regardless, and a
+ * registration that failed is said so in the response rather than hidden.
  */
 export async function updateProjectTelegram(
   repo: ProjectRepository,
@@ -111,32 +133,46 @@ export async function updateProjectTelegram(
   update: ProjectTelegramUpdate,
   userEmail: string,
   cipher: SecretCipher,
-  getMe: (botToken: string) => Promise<TelegramBotIdentity>,
+  calls: TelegramWebhookCalls,
+  /** Where this deployment is reached; the webhook is registered under it. */
+  baseUrl: string,
 ): Promise<ProjectTelegramResult> {
   const project = await assertProjectWritable(repo, name, userEmail);
   if (project.projectType !== "agent") {
     throw new ValidationError("Telegram bots can only be attached to agent projects");
   }
   const stored = project.telegram;
+  const previous = resolveProjectTelegramCredentials(cipher, project);
   let botToken = stored?.botToken ?? "";
   let botUsername = stored?.botUsername;
+  let webhookSecret = stored?.webhookSecret ?? cipher.encrypt(generateSecretValue("telegramWebhookSecret"));
+  let tokenChanged = false;
   const incoming = update.botToken;
   if (incoming !== undefined && incoming !== "" && !cipher.isMasked(incoming)) {
     const token = incoming.trim();
     let identity: TelegramBotIdentity;
     try {
-      identity = await getMe(token);
+      identity = await calls.getMe(token);
     } catch (error) {
       throw new ValidationError(
         `Telegram did not accept the bot token: ${error instanceof Error ? error.message : "unknown"}`,
       );
     }
+    tokenChanged = previous?.botToken !== token;
     botToken = cipher.encrypt(token);
     botUsername = identity.username;
+    if (tokenChanged && previous) {
+      // The old bot must stop delivering here, and must stop being able to:
+      // its webhook goes, and so does the secret it was registered with.
+      await calls
+        .deleteWebhook(previous.botToken)
+        .catch((error) => log.warn("telegram", `could not delete the previous bot's webhook for ${name}`, error));
+      webhookSecret = cipher.encrypt(generateSecretValue("telegramWebhookSecret"));
+    }
   }
   const telegram: TelegramIntegration = {
     botToken,
-    webhookSecret: stored?.webhookSecret ?? cipher.encrypt(generateSecretValue("telegramWebhookSecret")),
+    webhookSecret,
     enabled: update.enabled ?? stored?.enabled ?? false,
     ...(botUsername ? { botUsername } : {}),
   };
@@ -145,7 +181,29 @@ export async function updateProjectTelegram(
   }
   const updated: Project = { ...project, telegram, updatedAt: nextUpdatedAt(project.updatedAt) };
   await updateProject(repo, updated, project.updatedAt);
-  return { project: updated, view: maskedView(cipher, updated) };
+
+  const wasEnabled = stored?.enabled === true;
+  const runtime = resolveProjectTelegramCredentials(cipher, updated);
+  const warnings: string[] = [];
+  if (runtime && telegram.enabled && (!wasEnabled || tokenChanged)) {
+    await calls
+      .setWebhook(runtime.botToken, {
+        url: `${baseUrl}${webhookPathFor(name)}`,
+        secretToken: runtime.webhookSecret,
+        allowedUpdates: ALLOWED_UPDATES,
+      })
+      .catch((error) => {
+        log.warn("telegram", `could not register the webhook for ${name}`, error);
+        warnings.push(
+          `Saved, but Telegram did not accept the webhook: ${error instanceof Error ? error.message : "unknown"}. Use Register webhook to try again.`,
+        );
+      });
+  } else if (runtime && !telegram.enabled && wasEnabled) {
+    await calls
+      .deleteWebhook(runtime.botToken)
+      .catch((error) => log.warn("telegram", `could not delete the webhook for ${name}; Telegram will give up on its own`, error));
+  }
+  return { project: updated, view: maskedView(cipher, updated), ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 /**
@@ -256,6 +314,27 @@ export async function registerProjectTelegramWebhook(
 }
 
 /**
+ * Retire a project's bot webhook, for the moment the project itself is deleted:
+ * the token goes with the row, so this is the last chance to tell Telegram to
+ * stop delivering to an address that will answer 404 forever. Best effort, and
+ * nothing to do for a project without an enabled bot — a disabled one had its
+ * webhook deleted when it was disabled.
+ */
+export async function revokeProjectTelegramWebhook(
+  cipher: SecretCipher,
+  project: Project,
+  deleteWebhook: (botToken: string) => Promise<void>,
+): Promise<void> {
+  const runtime = resolveProjectTelegramRuntime(cipher, project);
+  if (!runtime) {
+    return;
+  }
+  await deleteWebhook(runtime.botToken).catch((error) =>
+    log.warn("telegram", `could not delete the webhook for ${project.name} on delete`, error),
+  );
+}
+
+/**
  * What one Telegram update on this project's endpoint needs before it can be
  * handled: the secret to check it with, the token to answer with, and the
  * username that tells a mention of this bot from anyone else's. Null when the
@@ -289,7 +368,12 @@ export async function resolveTelegramEventBinding(
  */
 export interface ProjectTelegramUseCases {
   get(name: string, userEmail: string): Promise<ProjectTelegramResult>;
-  update(name: string, update: ProjectTelegramUpdate, userEmail: string): Promise<ProjectTelegramResult>;
+  update(
+    name: string,
+    update: ProjectTelegramUpdate,
+    userEmail: string,
+    baseUrl: string,
+  ): Promise<ProjectTelegramResult>;
   disconnect(name: string, userEmail: string): Promise<ProjectTelegramResult>;
   test(
     name: string,
@@ -310,10 +394,15 @@ export function createProjectTelegramUseCases(deps: {
   ) => Promise<void>;
   deleteWebhook: (botToken: string) => Promise<void>;
 }): ProjectTelegramUseCases {
+  const calls: TelegramWebhookCalls = {
+    getMe: deps.getMe,
+    setWebhook: deps.setWebhook,
+    deleteWebhook: deps.deleteWebhook,
+  };
   return {
     get: (name, userEmail) => getProjectTelegram(deps.projects, name, userEmail, deps.cipher),
-    update: (name, update, userEmail) =>
-      updateProjectTelegram(deps.projects, name, update, userEmail, deps.cipher, deps.getMe),
+    update: (name, update, userEmail, baseUrl) =>
+      updateProjectTelegram(deps.projects, name, update, userEmail, deps.cipher, calls, baseUrl),
     disconnect: (name, userEmail) =>
       disconnectProjectTelegram(deps.projects, name, userEmail, deps.cipher, deps.deleteWebhook),
     test: (name, userEmail) =>

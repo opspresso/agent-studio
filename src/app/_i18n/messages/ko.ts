@@ -532,7 +532,7 @@ export const ko: Messages = {
   "pset.shortcutSends": "눌렀을 때 보낼 내용",
   "pset.telegramBot": "Telegram 봇",
   "pset.telegramIntro":
-    "@BotFather 로 봇을 만들고 토큰을 여기에 붙여 넣어 저장합니다. 저장할 때 토큰을 Telegram 에 확인하고 봇의 username 을 알아냅니다. 그다음 웹훅을 등록해야 Telegram 이 이 배포로 메시지를 보냅니다. 개인 채팅에서는 모든 메시지에, 그룹에서는 멘션되거나 답장을 받았을 때 답합니다.",
+    "@BotFather 로 봇을 만들고 토큰을 여기에 붙여 넣어 저장합니다. 저장할 때 토큰을 Telegram 에 확인하고 봇의 username 을 알아냅니다. 활성화하면 이 배포에 웹훅이 등록되고 끄면 삭제됩니다. 주소가 바뀐 뒤에는 웹훅 등록 버튼으로 다시 가리킵니다. 개인 채팅에서는 모든 메시지에, 그룹에서는 멘션되거나 답장을 받았을 때 답합니다.",
   "pset.telegramEnable": "이 URL 에서 메시지 처리 활성화",
   "pset.telegramRegisterWebhook": "웹훅 등록",
   "pset.telegramWebhookRegistered": "웹훅 등록 주소",

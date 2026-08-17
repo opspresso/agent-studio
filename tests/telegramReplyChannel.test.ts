@@ -70,6 +70,7 @@ function makeTelegramFake(options: { refuseHtml?: boolean; failEdits?: boolean }
 }
 
 const TARGET = { chatId: 100, replyToMessageId: 7 };
+const NO_SLEEP = { sleep: async () => {} };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -114,7 +115,7 @@ describe("a Telegram reply", () => {
     let now = NOW;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { telegram, sent, screen } = makeTelegramFake();
-    const sink = createTelegramReplyChannel(telegram, "tok", TARGET);
+    const sink = createTelegramReplyChannel(telegram, "tok", TARGET, NO_SLEEP);
     const paragraph = "x".repeat(3500);
     const text = `${paragraph}\n${paragraph}\n${paragraph}`;
 
@@ -135,11 +136,56 @@ describe("a Telegram reply", () => {
     expect(messages[0]).toBe(`${paragraph}\n`);
   });
 
+  it("retries a refused open at the edit cadence, not on every delta", async () => {
+    let now = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let sends = 0;
+    const { telegram } = makeTelegramFake();
+    telegram.sendMessage = async () => {
+      sends += 1;
+      throw new Error("Telegram sendMessage failed: Forbidden: bot was blocked by the user");
+    };
+    const sink = createTelegramReplyChannel(telegram, "tok", TARGET, NO_SLEEP);
+
+    for (let i = 0; i < 20; i += 1) {
+      await sink.push("x".repeat(i + 1));
+    }
+    expect(sends).toBe(1);
+    now += 2500;
+    await sink.push("y".repeat(30));
+    expect(sends).toBe(2);
+  });
+
+  it("closes a code block cut by a message boundary on both sides", async () => {
+    let now = NOW;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { telegram, screen } = makeTelegramFake();
+    const sink = createTelegramReplyChannel(telegram, "tok", TARGET, NO_SLEEP);
+    const prose = "p".repeat(3900);
+    const code = Array.from({ length: 30 }, (_, i) => `line ${i} < 1`).join("\n");
+    const text = `${prose}\n\`\`\`js\n${code}\n\`\`\`\nafter **bold**`;
+
+    await sink.push(text.slice(0, 50));
+    now += 3000;
+    await sink.push(text);
+    await sink.finish(text, sink.fileLink({ url: "https://x/y", name: "f.pdf" }));
+
+    const messages = screen();
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages[0]).toContain("<pre><code class=\"language-js\">");
+    expect(messages[0]?.endsWith("</code></pre>")).toBe(true);
+    const last = messages.at(-1) ?? "";
+    expect(last.startsWith("<pre><code class=\"language-js\">")).toBe(true);
+    expect(last).toContain("<b>bold</b>");
+    expect(last).toContain('<a href="https://x/y">f.pdf</a>');
+  });
+
   it("never lets an open message reach the cap with its cursor on", async () => {
     let now = NOW;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { telegram, sent, edits } = makeTelegramFake();
-    const sink = createTelegramReplyChannel(telegram, "tok", TARGET);
+    const sink = createTelegramReplyChannel(telegram, "tok", TARGET, NO_SLEEP);
     const text = "y".repeat(MAX_MESSAGE_CHARS);
 
     await sink.push("y");
@@ -181,7 +227,7 @@ describe("a Telegram reply", () => {
     expect(screen()).toEqual(['done\n\n📎 <a href="https://s/k">report v2.docx</a>\n⚠️ a warning']);
   });
 
-  it("posts what Telegram never took when the final write fails", async () => {
+  it("posts only what Telegram never took when the final write fails", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -191,7 +237,9 @@ describe("a Telegram reply", () => {
     await sink.push("the answer");
     await sink.finish("the answer, whole", "");
 
-    expect(sent.map((message) => message.text)).toEqual(["the answer ▌", "the answer, whole"]);
+    // The head is on screen already (with its cursor, which a refused edit
+    // cannot take back); repeating it would be its own defect.
+    expect(sent.map((message) => message.text)).toEqual(["the answer ▌", ", whole"]);
   });
 
   it("keeps the typing indicator alive on its own clock, and stops when told", async () => {

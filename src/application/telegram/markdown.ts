@@ -91,6 +91,39 @@ export function markdownToTelegramHtml(markdown: string): string {
   return out.join("");
 }
 
+/**
+ * Several consecutive pieces of one text, rendered so a fenced code block that
+ * runs across a cut still reads as code on both sides.
+ *
+ * A reply longer than one message is cut on characters, and a cut can land
+ * inside a fence. Rendered alone, the second piece would open with the block's
+ * *closing* fence — read as an opening one — and swallow everything after it
+ * into `<pre>`, the file link and the warnings included. So each piece is told
+ * whether the one before it left a fence open: an open fence is closed at the
+ * end of the piece it started in and reopened, with its language, at the start
+ * of the next. The extra fence lines are markup, not text, so a piece sized to
+ * Telegram's cap stays within it.
+ */
+export function markdownToTelegramHtmlPieces(pieces: readonly string[]): string[] {
+  const out: string[] = [];
+  let open: string | undefined;
+  for (const piece of pieces) {
+    const text = open === undefined ? piece : `\`\`\`${open}\n${piece}`;
+    open = openFenceAfter(text);
+    out.push(markdownToTelegramHtml(open === undefined ? text : `${text}\n\`\`\``));
+  }
+  return out;
+}
+
+/** The language of the fence `text` leaves open, `""` for a bare one, or nothing when it is closed. */
+function openFenceAfter(text: string): string | undefined {
+  let open: string | undefined;
+  for (const match of text.matchAll(/^[ \t]*\`\`\`([^\n\`]*)$/gm)) {
+    open = open === undefined ? (match[1] ?? "").trim() : undefined;
+  }
+  return open;
+}
+
 function renderProse(markdown: string): string {
   if (!markdown) {
     return "";

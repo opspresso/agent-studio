@@ -4,6 +4,7 @@ import {
   registerProjectTelegramWebhook,
   resolveProjectTelegramRuntime,
   resolveTelegramEventBinding,
+  revokeProjectTelegramWebhook,
   testProjectTelegram,
   updateProjectTelegram,
 } from "@/application/telegram/projectTelegram";
@@ -14,7 +15,35 @@ import type { ProjectRepository } from "@/domain/project/repository";
 
 const OWNER = "t@example.com";
 const OTHER = "intruder@example.com";
+const BASE_URL = "https://studio.example.com";
 const getMe = vi.fn(async (_token: string) => ({ id: 42, username: "painter_bot" }));
+
+/** The Bot API calls the slice makes, recorded. */
+function makeCalls(overrides: Partial<Parameters<typeof updateProjectTelegram>[5]> = {}) {
+  const registered: Array<{ token: string; url: string; secretToken: string }> = [];
+  const deleted: string[] = [];
+  const calls: Parameters<typeof updateProjectTelegram>[5] = {
+    getMe,
+    setWebhook: async (token, args) => {
+      registered.push({ token, url: args.url, secretToken: args.secretToken });
+    },
+    deleteWebhook: async (token) => {
+      deleted.push(token);
+    },
+    ...overrides,
+  };
+  return { calls, registered, deleted };
+}
+
+/** `updateProjectTelegram` with the recorded calls and the base URL filled in. */
+function update(
+  repo: ProjectRepository,
+  input: Parameters<typeof updateProjectTelegram>[2],
+  email: string,
+  calls = makeCalls().calls,
+) {
+  return updateProjectTelegram(repo, "bot-proj", input, email, secretCipher, calls, BASE_URL);
+}
 
 beforeAll(() => {
   process.env.AES_ENCRYPTION_KEY ??= Buffer.alloc(32, 5).toString("base64");
@@ -64,16 +93,14 @@ function fakeRepo(initial: Project): { repo: ProjectRepository; current: () => P
 describe("updateProjectTelegram", () => {
   it("checks a new token with Telegram, encrypts it, mints the webhook secret and masks the response", async () => {
     const { repo, current } = fakeRepo(makeProject());
-    const { view } = await updateProjectTelegram(
-      repo,
-      "bot-proj",
-      { botToken: "42:AAHsecrettoken", enabled: true },
-      OWNER,
-      secretCipher,
-      getMe,
-    );
+    const { calls, registered } = makeCalls();
+    const { view } = await update(repo, { botToken: "42:AAHsecrettoken", enabled: true }, OWNER, calls);
 
     expect(getMe).toHaveBeenCalledWith("42:AAHsecrettoken");
+    // Enabled with a token: registered at this deployment, with the minted secret.
+    expect(registered).toHaveLength(1);
+    expect(registered[0]).toMatchObject({ token: "42:AAHsecrettoken", url: `${BASE_URL}/api/telegram/webhook/bot-proj` });
+    expect(registered[0]?.secretToken.startsWith("adg_")).toBe(true);
     expect(view.enabled).toBe(true);
     expect(view.configured).toBe(true);
     expect(view.botUsername).toBe("painter_bot");
@@ -87,35 +114,28 @@ describe("updateProjectTelegram", () => {
 
   it("refuses a token Telegram does not accept, and stores nothing", async () => {
     const { repo, current } = fakeRepo(makeProject());
-    await expect(
-      updateProjectTelegram(
-        repo,
-        "bot-proj",
-        { botToken: "bad" },
-        OWNER,
-        secretCipher,
-        async () => {
-          throw new Error("Telegram getMe failed: Unauthorized");
-        },
-      ),
-    ).rejects.toThrow(ValidationError);
+    const { calls } = makeCalls({
+      getMe: async () => {
+        throw new Error("Telegram getMe failed: Unauthorized");
+      },
+    });
+    await expect(update(repo, { botToken: "bad" }, OWNER, calls)).rejects.toThrow(ValidationError);
     expect(current().telegram).toBeUndefined();
   });
 
   it("keeps the stored token and secret when the input is masked or empty", async () => {
     const { repo, current } = fakeRepo(makeProject());
     const checks = vi.fn(async (token: string) => ({ id: 42, username: `bot_${token}` }));
-    await updateProjectTelegram(repo, "bot-proj", { botToken: "42:first" }, OWNER, secretCipher, checks);
+    const { calls } = makeCalls({ getMe: checks });
+    await update(repo, { botToken: "42:first" }, OWNER, calls);
     const first = current().telegram;
-    const { view } = await updateProjectTelegram(
+    const { view } = await update(
       repo,
-      "bot-proj",
       { botToken: secretCipher.mask(first?.botToken ?? ""), enabled: true },
       OWNER,
-      secretCipher,
-      checks,
+      calls,
     );
-    await updateProjectTelegram(repo, "bot-proj", { botToken: "" }, OWNER, secretCipher, checks);
+    await update(repo, { botToken: "" }, OWNER, calls);
     expect(view.enabled).toBe(true);
     expect(current().telegram?.botToken).toBe(first?.botToken);
     expect(current().telegram?.webhookSecret).toBe(first?.webhookSecret);
@@ -123,33 +143,61 @@ describe("updateProjectTelegram", () => {
     expect(checks.mock.calls).toEqual([["42:first"]]);
   });
 
-  it("keeps the webhook secret across a token change", async () => {
+  it("retires the old bot and re-keys the secret when the token changes, registering the new one when enabled", async () => {
     const { repo, current } = fakeRepo(makeProject());
-    await updateProjectTelegram(repo, "bot-proj", { botToken: "42:first" }, OWNER, secretCipher, getMe);
+    const { calls, registered, deleted } = makeCalls();
+    await update(repo, { botToken: "42:first", enabled: true }, OWNER, calls);
     const secret = current().telegram?.webhookSecret;
-    await updateProjectTelegram(repo, "bot-proj", { botToken: "42:second" }, OWNER, secretCipher, getMe);
-    expect(current().telegram?.webhookSecret).toBe(secret);
+    await update(repo, { botToken: "43:second" }, OWNER, calls);
+    expect(deleted).toEqual(["42:first"]);
+    expect(current().telegram?.webhookSecret).not.toBe(secret);
+    expect(registered.map((r) => r.token)).toEqual(["42:first", "43:second"]);
+    // The same token again is not a change.
+    await update(repo, { botToken: "43:second" }, OWNER, calls);
+    expect(deleted).toEqual(["42:first"]);
+    expect(registered).toHaveLength(2);
+  });
+
+  it("registers the webhook when the bot is enabled and deletes it when disabled", async () => {
+    const { repo } = fakeRepo(makeProject());
+    const { calls, registered, deleted } = makeCalls();
+    await update(repo, { botToken: "42:tok" }, OWNER, calls);
+    expect(registered).toEqual([]);
+    await update(repo, { enabled: true }, OWNER, calls);
+    expect(registered).toHaveLength(1);
+    await update(repo, { enabled: false }, OWNER, calls);
+    expect(deleted).toEqual(["42:tok"]);
+    // Off stays off without another call.
+    await update(repo, { enabled: false }, OWNER, calls);
+    expect(deleted).toHaveLength(1);
+  });
+
+  it("stores the credentials and says so when Telegram refuses the webhook", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { repo, current } = fakeRepo(makeProject());
+    const { calls } = makeCalls({
+      setWebhook: async () => {
+        throw new Error("Telegram setWebhook failed: Bad Request: bad webhook: HTTPS url must be provided");
+      },
+    });
+    const result = await update(repo, { botToken: "42:tok", enabled: true }, OWNER, calls);
+    expect(current().telegram?.enabled).toBe(true);
+    expect(result.warnings?.[0]).toContain("Telegram did not accept the webhook");
   });
 
   it("refuses to enable without a token, and refuses a non-agent project and a non-owner", async () => {
     const { repo } = fakeRepo(makeProject());
-    await expect(
-      updateProjectTelegram(repo, "bot-proj", { enabled: true }, OWNER, secretCipher, getMe),
-    ).rejects.toThrow(ValidationError);
+    await expect(update(repo, { enabled: true }, OWNER)).rejects.toThrow(ValidationError);
     const llm = fakeRepo(makeProject({ projectType: "llm" }));
-    await expect(
-      updateProjectTelegram(llm.repo, "bot-proj", { botToken: "42:x" }, OWNER, secretCipher, getMe),
-    ).rejects.toThrow(ValidationError);
-    await expect(
-      updateProjectTelegram(repo, "bot-proj", { botToken: "42:x" }, OTHER, secretCipher, getMe),
-    ).rejects.toThrow(ForbiddenError);
+    await expect(update(llm.repo, { botToken: "42:x" }, OWNER)).rejects.toThrow(ValidationError);
+    await expect(update(repo, { botToken: "42:x" }, OTHER)).rejects.toThrow(ForbiddenError);
   });
 });
 
 describe("runtime, binding, test and webhook", () => {
   async function configured() {
     const { repo, current } = fakeRepo(makeProject());
-    await updateProjectTelegram(repo, "bot-proj", { botToken: "42:tok", enabled: true }, OWNER, secretCipher, getMe);
+    await update(repo, { botToken: "42:tok", enabled: true }, OWNER);
     return { repo, current };
   }
 
@@ -159,7 +207,7 @@ describe("runtime, binding, test and webhook", () => {
       botToken: "42:tok",
       botUsername: "painter_bot",
     });
-    await updateProjectTelegram(repo, "bot-proj", { enabled: false }, OWNER, secretCipher, getMe);
+    await update(repo, { enabled: false }, OWNER);
     expect(resolveProjectTelegramRuntime(secretCipher, current())).toBeNull();
     expect(await resolveTelegramEventBinding(repo, "bot-proj", secretCipher)).toBeNull();
   });
@@ -213,5 +261,25 @@ describe("runtime, binding, test and webhook", () => {
     });
     expect(deleted).toEqual(["42:tok"]);
     expect(current().telegram).toBeUndefined();
+  });
+});
+
+describe("revokeProjectTelegramWebhook", () => {
+  it("tells Telegram to drop an enabled bot's webhook, and nothing for a disabled or absent one", async () => {
+    const { repo, current } = fakeRepo(makeProject());
+    await update(repo, { botToken: "42:tok", enabled: true }, OWNER);
+    const deleted: string[] = [];
+    await revokeProjectTelegramWebhook(secretCipher, current(), async (token) => {
+      deleted.push(token);
+    });
+    expect(deleted).toEqual(["42:tok"]);
+    await update(repo, { enabled: false }, OWNER);
+    await revokeProjectTelegramWebhook(secretCipher, current(), async (token) => {
+      deleted.push(token);
+    });
+    await revokeProjectTelegramWebhook(secretCipher, makeProject(), async (token) => {
+      deleted.push(token);
+    });
+    expect(deleted).toEqual(["42:tok"]);
   });
 });

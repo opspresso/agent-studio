@@ -1,9 +1,8 @@
 import { handleTurn } from "@/application/messaging/handleTurn";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
 import { createTelegramReplyChannel } from "@/application/telegram/replyChannel";
-import type { TelegramUpdateDisposition } from "@/application/telegram/engagement";
+import { botIdFromToken, type TelegramUpdateDisposition } from "@/application/telegram/engagement";
 import type {
-  TelegramDocument,
   TelegramEventDeps,
   TelegramMessage,
   TelegramPhotoSize,
@@ -16,9 +15,20 @@ import type { TranscriptTurn } from "@/domain/messaging/transcript";
 import { telegramConversation } from "@/domain/telegram/conversation";
 import type { Project } from "@/domain/project/types";
 import { log } from "@/shared/logger";
+import { RUN_LEASE_SECONDS } from "@/shared/runDeadline";
 
 /** Most recent turns of a conversation carried as context; older turns are dropped. */
 const MAX_HISTORY_TURNS = 50;
+/**
+ * How much of the remembered conversation is carried, in characters. Fifty
+ * turns of the size below would be a million characters — several times any
+ * model's window — and the engine's context budget charges history but never
+ * cuts it, so the bound has to be here, where the history is read. The chat
+ * surface bounds its replay the same way (`MAX_HISTORY_CHARS` in
+ * `messageMapping.ts`); a smaller number here because a Telegram turn is a
+ * message, not a run with tool traffic behind it. What is dropped is reported.
+ */
+const MAX_HISTORY_CHARS = 100_000;
 /**
  * How much of one turn is written down. A turn is kept for the *next*
  * question's context, and past this a single answer would be most of that
@@ -28,6 +38,13 @@ const MAX_HISTORY_TURNS = 50;
  * ends mid-sentence.
  */
 const MAX_TRANSCRIPT_TURN_CHARS = 20_000;
+/**
+ * How long a caption-less member of an album waits before claiming it, so the
+ * captioned member — the one carrying the question — wins the claim when there
+ * is one. Album members arrive within milliseconds of each other; a second is
+ * generous, and it is spent in the background after the ack.
+ */
+const ALBUM_GRACE_MS = 1000;
 
 /** Credentials and project binding for a project-dedicated bot. */
 export interface TelegramBotBinding {
@@ -71,13 +88,24 @@ function pickPhoto(sizes: TelegramPhotoSize[]): TelegramPhotoSize | undefined {
   return fitting.at(-1) ?? sizes[0];
 }
 
-/** The message's attachments as the shared pipeline reads them. */
+/**
+ * The message's attachments as the shared pipeline reads them.
+ *
+ * Every kind Telegram can attach is named, not only the two a run can read: a
+ * voice note or a video reaches the pipeline as an attachment with its own
+ * media type, and the pipeline reports it as one it could not read — which is
+ * what Slack does with an unreadable file, and the difference between a bot
+ * that says "I cannot listen to voice notes" and one that answers as if
+ * nothing was sent.
+ */
 function attachmentsOf(
   deps: TelegramEventDeps,
   token: string,
   message: TelegramMessage,
 ): InboundAttachment[] {
   const attachments: InboundAttachment[] = [];
+  const download = (fileId: string) => (maxBytes: number) =>
+    deps.telegram.downloadFile(token, fileId, maxBytes);
   const photo = message.photo && message.photo.length > 0 ? pickPhoto(message.photo) : undefined;
   if (photo) {
     attachments.push({
@@ -85,26 +113,55 @@ function attachmentsOf(
       // Telegram re-encodes every photo it delivers as JPEG.
       mimeType: "image/jpeg",
       ...(photo.file_size !== undefined ? { size: photo.file_size } : {}),
-      download: (maxBytes) => deps.telegram.downloadFile(token, photo.file_id, maxBytes),
+      download: download(photo.file_id),
     });
   }
-  const document: TelegramDocument | undefined = message.document;
-  if (document) {
+  const files: Array<[string, TelegramMessage["document"], string]> = [
+    ["document", message.document, ""],
+    ["voice", message.voice, "audio/ogg"],
+    ["audio", message.audio, "audio/mpeg"],
+    ["video", message.video, "video/mp4"],
+    ["animation", message.animation, "video/mp4"],
+    ["video_note", message.video_note, "video/mp4"],
+  ];
+  for (const [kind, file, defaultMime] of files) {
+    if (!file) {
+      continue;
+    }
     attachments.push({
-      name: document.file_name ?? `document-${document.file_unique_id}`,
-      mimeType: document.mime_type ?? "",
-      ...(document.file_size !== undefined ? { size: document.file_size } : {}),
-      download: (maxBytes) => deps.telegram.downloadFile(token, document.file_id, maxBytes),
+      name: file.file_name ?? `${kind}-${file.file_unique_id}`,
+      mimeType: file.mime_type ?? defaultMime,
+      ...(file.file_size !== undefined ? { size: file.file_size } : {}),
+      download: download(file.file_id),
+    });
+  }
+  const sticker = message.sticker;
+  if (sticker) {
+    attachments.push({
+      name: `sticker-${sticker.file_unique_id}${sticker.is_animated ? ".tgs" : sticker.is_video ? ".webm" : ".webp"}`,
+      // A static sticker is a picture the model can look at; the other two are not.
+      mimeType: sticker.is_animated
+        ? "application/x-tgsticker"
+        : sticker.is_video
+          ? "video/webm"
+          : "image/webp",
+      ...(sticker.file_size !== undefined ? { size: sticker.file_size } : {}),
+      download: download(sticker.file_id),
     });
   }
   return attachments;
 }
 
+/** What a turn that carried no text is remembered as, so the exchange keeps its shape. */
+function attachmentNote(attachments: InboundAttachment[]): string {
+  return attachments.length === 0 ? "" : `[sent ${attachments.map((a) => a.name).join(", ")}]`;
+}
+
 /**
- * The turns this surface remembers of the conversation, oldest first — or
- * none, when there is nothing to remember with or the read failed. A failed
- * read is a warning: the answer will be given without its context, and that is
- * worth a line.
+ * The turns this surface remembers of the conversation, oldest first, within
+ * a character budget — or none, when there is nothing to remember with or the
+ * read failed. Both losses are a warning: an answer given without its context
+ * is worth a line, whichever way the context went missing.
  */
 async function loadHistory(
   deps: TelegramEventDeps,
@@ -115,13 +172,32 @@ async function loadHistory(
   if (!deps.transcripts) {
     return [];
   }
+  let turns: TranscriptTurn[];
   try {
-    return await deps.transcripts.recent(project.name, key, MAX_HISTORY_TURNS);
+    turns = await deps.transcripts.recent(project.name, key, MAX_HISTORY_TURNS);
   } catch (error) {
     log.error("telegram", "conversation history failed", error);
     warnings.push("Conversation history unavailable; answered without prior context.");
     return [];
   }
+  // Newest turns first into the budget; the oldest are what a follow-up is
+  // least about.
+  let spent = 0;
+  let keptFrom = turns.length;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const size = turns[index]?.content.length ?? 0;
+    if (spent + size > MAX_HISTORY_CHARS) {
+      break;
+    }
+    spent += size;
+    keptFrom = index;
+  }
+  if (keptFrom > 0) {
+    warnings.push(
+      `Older conversation turns were left out to fit the context (${keptFrom} of ${turns.length}).`,
+    );
+  }
+  return turns.slice(keptFrom);
 }
 
 /**
@@ -149,18 +225,22 @@ async function remember(
 
 /**
  * Prefix each human turn with who wrote it, when more than one human is in
- * the conversation. A private chat needs no labels; a group with three people
- * reaches the model as one person's monologue without them.
+ * the conversation *and this version asked to know who is asking*. A private
+ * chat needs no labels; a group with three people reaches the model as one
+ * person's monologue without them — but a name is what `callerContext` gates,
+ * on the way in and on the way out: a version that turned the opt-in off must
+ * not go on reading names an earlier version wrote down.
  */
 function withSpeakerLabels(
   turns: TranscriptTurn[],
   currentUserId: string | undefined,
+  namesAllowed: boolean,
 ): { history: HistoryTurn[]; label: boolean } {
   const humans = new Set(turns.filter((turn) => turn.userId).map((turn) => turn.userId));
   if (currentUserId) {
     humans.add(currentUserId);
   }
-  const label = humans.size > 1;
+  const label = namesAllowed && humans.size > 1;
   return {
     label,
     history: turns.map((turn) => ({
@@ -173,6 +253,46 @@ function withSpeakerLabels(
       ...(turn.userId ? { userId: turn.userId } : {}),
     })),
   };
+}
+
+/**
+ * Whether this update should answer for the album it belongs to.
+ *
+ * Telegram delivers an album as one update per picture, sharing a
+ * `media_group_id`, with the caption on at most one of them. Answering each is
+ * three billed runs and three replies for one question, so the album is
+ * claimed once: the captioned member claims at once and wins; a caption-less
+ * member waits a moment first, so it wins only when no member carried the
+ * question. The one that runs reads its own picture and says so — the others
+ * are not fetched, and pretending to have seen them would be worse than saying
+ * one was.
+ */
+async function claimsAlbum(
+  deps: TelegramEventDeps,
+  binding: TelegramBotBinding,
+  message: TelegramMessage,
+  text: string,
+): Promise<boolean> {
+  if (!message.media_group_id || !deps.albums) {
+    return true;
+  }
+  if (!text) {
+    await (deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(ALBUM_GRACE_MS);
+  }
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const claims = deps.albums(binding.projectName, botIdFromToken(binding.botToken) ?? "unknown");
+  try {
+    const won = await claims.claim(message.media_group_id, nowSeconds, nowSeconds + RUN_LEASE_SECONDS);
+    if (won) {
+      // Never reclaimed: an album answered once is answered.
+      await claims.settle(message.media_group_id, "done");
+    }
+    return won;
+  } catch (error) {
+    // The store failing must not silence the bot; the cost is a duplicate reply.
+    log.error("telegram", "album claim failed; answering anyway", error);
+    return true;
+  }
 }
 
 /**
@@ -189,12 +309,19 @@ export async function handleTelegramUpdate(
 ): Promise<void> {
   const { message } = disposition;
   const token = binding.botToken;
+  // A thread id names a forum topic only when Telegram says so; in an ordinary
+  // group it is the root of a reply chain, which is not a conversation of its
+  // own — a reply to the bot there is a follow-up in the group's conversation.
+  const threadId =
+    message.is_topic_message && message.chat.is_forum ? message.message_thread_id : undefined;
   const target = {
     chatId: message.chat.id,
-    ...(message.message_thread_id !== undefined ? { threadId: message.message_thread_id } : {}),
+    ...(threadId !== undefined ? { threadId } : {}),
     replyToMessageId: message.message_id,
   };
-  const reply = createTelegramReplyChannel(deps.telegram, token, target);
+  const reply = createTelegramReplyChannel(deps.telegram, token, target, {
+    ...(deps.sleep ? { sleep: deps.sleep } : {}),
+  });
 
   const project = await deps.projects.get(binding.projectName);
   // A command is answered whether or not the project has a runnable version:
@@ -216,14 +343,22 @@ export async function handleTelegramUpdate(
     return;
   }
 
+  if (!(await claimsAlbum(deps, binding, message, disposition.text))) {
+    log.info("telegram", `album member skipped project=${project.name} chat=${message.chat.id}`);
+    return;
+  }
+
   log.info(
     "telegram",
     `run start project=${project.name} chat=${message.chat.id} message=${message.message_id}`,
   );
 
-  const conversation = telegramConversation(message.chat.id, message.message_thread_id);
+  const conversation = telegramConversation(message.chat.id, threadId);
   const key = conversationKey(conversation);
   const warnings: string[] = [];
+  if (message.media_group_id) {
+    warnings.push("This message was part of an album; only the picture it arrived with was read.");
+  }
   // Read before anything is written, like the Slack thread: the reply must
   // not come back as an assistant turn in this run's own context.
   const remembered = await loadHistory(deps, project, key, warnings);
@@ -231,10 +366,13 @@ export async function handleTelegramUpdate(
 
   const userId = message.from ? String(message.from.id) : undefined;
   // The version's opt-in gates whether a name reaches the model, and so
-  // whether one is written down beside the turn at all.
-  const named = version.parameters.callerContext ? callerOf(message.from) : undefined;
-  const { history, label } = withSpeakerLabels(remembered, userId);
+  // whether one is written down beside the turn at all — and whether one an
+  // earlier version wrote down is read back.
+  const namesAllowed = version.parameters.callerContext === true;
+  const named = namesAllowed ? callerOf(message.from) : undefined;
+  const { history, label } = withSpeakerLabels(remembered, userId, namesAllowed);
   const askText = label && named ? `${named.displayName}: ${disposition.text}` : disposition.text;
+  const attachments = attachmentsOf(deps, token, message);
 
   const outcome = await handleTurn(
     deps,
@@ -242,7 +380,7 @@ export async function handleTelegramUpdate(
       project,
       version,
       text: askText,
-      attachments: attachmentsOf(deps, token, message),
+      attachments,
       history,
       // The Telegram user id, not an email: Telegram has none to hand over.
       ...(userId ? { actor: { kind: "telegram" as const, id: userId } } : {}),
@@ -254,18 +392,25 @@ export async function handleTelegramUpdate(
   );
 
   // Written after the reply, because that is what makes it true — and the
-  // question first, so the two land in the order they were said.
+  // question first, so the two land in the order they were said. A turn that
+  // carried no text is written down as what it carried, so the exchange keeps
+  // its shape: an answer with no question in front of it, or a question the
+  // record says went unanswered, is a history that lies.
   const now = new Date().toISOString();
   await remember(deps, project, key, {
     role: "user",
-    content: disposition.text,
+    content: disposition.text || attachmentNote(attachments),
     ...(userId ? { userId } : {}),
     ...(named ? { speaker: named.displayName } : {}),
     createdAt: now,
   });
   await remember(deps, project, key, {
     role: "assistant",
-    content: outcome.text,
+    content:
+      outcome.text ||
+      (outcome.imagesDelivered > 0
+        ? `[sent ${outcome.imagesDelivered} image${outcome.imagesDelivered === 1 ? "" : "s"}]`
+        : ""),
     createdAt: new Date(Date.parse(now) + 1).toISOString(),
   });
 }
