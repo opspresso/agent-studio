@@ -421,7 +421,7 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | Chat tool traffic replayed into context | `3` turns / `20,000` chars | `src/application/chat/messageMapping.ts` |
 | Inbound webhook / Slack event / Telegram update body | `1MB` each | `src/app/api/webhook/[project]/route.ts`, `src/app/api/slack/events/_lib/handleEventRequest.ts`, `src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts` |
 | Slack thread turns used as context | `50` | `src/application/slack/handleSlackEvent.ts` |
-| Telegram transcript turns used as context | `50` | `src/application/telegram/handleUpdate.ts` |
+| Telegram transcript turns used as context / characters kept of one turn | `50` / `20,000` | `src/application/telegram/handleUpdate.ts` |
 | Slack thread title | `60` chars | `src/application/slack/handleSlackEvent.ts` |
 | History image lookback, on every chat-bot surface | `10` messages | `src/application/messaging/attachments.ts` |
 | Slack suggested prompts per project | `4` | `src/domain/slack/types.ts` |
