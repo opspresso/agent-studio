@@ -10,6 +10,7 @@ import { useConfirm } from "@/app/_components/useConfirm";
 import { A2aSection } from "./A2aSection";
 import { CostLimitsSection } from "./CostLimitsSection";
 import { SlackSection } from "./SlackSection";
+import { TelegramSection } from "./TelegramSection";
 import { SchedulesSection } from "./SchedulesSection";
 import { WebhookSection } from "./WebhookSection";
 import { TokenSection } from "./TokenSection";
@@ -169,6 +170,8 @@ export default function SettingsPage() {
       <SchedulesSection projectName={name} />
 
       <SlackSection projectName={name} projectType={projectType} />
+
+      <TelegramSection projectName={name} projectType={projectType} />
 
       <A2aSection projectName={name} />
 

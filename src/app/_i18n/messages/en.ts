@@ -604,6 +604,14 @@ export const en = {
   "pset.enableEvents": "Enable event handling at this URL",
   "pset.shortcutLabel": "Label",
   "pset.shortcutSends": "What clicking it sends",
+  "pset.telegramBot": "Telegram bot",
+  "pset.telegramIntro":
+    "Create a bot with @BotFather, paste its token here and save — the token is checked with Telegram and the bot's username is learned from it. Then register the webhook so Telegram delivers messages to this deployment. In a private chat the bot answers every message; in a group it answers when mentioned or replied to.",
+  "pset.telegramEnable": "Enable message handling at this URL",
+  "pset.telegramRegisterWebhook": "Register webhook",
+  "pset.telegramWebhookRegistered": "Webhook registered at",
+  "pset.telegramGroupHint":
+    "In a group the bot answers only a message that mentions it or replies to one of its own; BotFather's privacy mode can stay on.",
 
   // The project webhook and schedules — the two ways something outside the
   // console starts a run.

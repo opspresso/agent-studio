@@ -359,6 +359,63 @@ export async function testProjectSlack(
   return (await res.json()) as { ok?: boolean; team?: string; botUser?: string; error?: string };
 }
 
+export interface ProjectTelegramView {
+  enabled: boolean;
+  configured: boolean;
+  /** Masked. */
+  botToken: string;
+  /** The bot's @username once a token has been checked; empty before. */
+  botUsername: string;
+  webhookPath: string;
+  webhookUrl: string;
+}
+
+export async function getProjectTelegram(name: string): Promise<ProjectTelegramView> {
+  const res = await fetch(`/api/projects/${name}/telegram`);
+  if (!res.ok) {
+    throw new Error(`Failed to load Telegram settings (${res.status})`);
+  }
+  return (await res.json()) as ProjectTelegramView;
+}
+
+export async function updateProjectTelegram(
+  name: string,
+  update: { botToken?: string; enabled?: boolean },
+): Promise<ProjectTelegramView> {
+  const res = await fetch(`/api/projects/${name}/telegram`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  const data = (await res.json()) as ProjectTelegramView & { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? `Failed to save Telegram settings (${res.status})`);
+  }
+  return data;
+}
+
+export async function disconnectProjectTelegram(name: string): Promise<void> {
+  const res = await fetch(`/api/projects/${name}/telegram`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`Failed to disconnect Telegram (${res.status})`);
+  }
+}
+
+export async function testProjectTelegram(
+  name: string,
+): Promise<{ ok?: boolean; botId?: number; botUsername?: string; error?: string }> {
+  const res = await fetch(`/api/projects/${name}/telegram/test`, { method: "POST" });
+  return (await res.json()) as { ok?: boolean; botId?: number; botUsername?: string; error?: string };
+}
+
+/** Register (or move) the bot's webhook to this deployment. */
+export async function registerProjectTelegramWebhook(
+  name: string,
+): Promise<{ ok?: boolean; url?: string; error?: string }> {
+  const res = await fetch(`/api/projects/${name}/telegram/webhook`, { method: "POST" });
+  return (await res.json()) as { ok?: boolean; url?: string; error?: string };
+}
+
 export interface ProjectTokenStatus {
   configured: boolean;
   /** Display mask of the stored token; absent on tokens issued before masks. */

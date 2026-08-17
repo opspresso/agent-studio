@@ -7,7 +7,13 @@ import { CopyButton } from "@/app/_components/CopyButton";
 import { LoadingText } from "@/app/_components/PageState";
 import { CodeBlock } from "@/app/_components/CodeBlock";
 import { Badge, Card, Code, Group, SegmentedControl, Stack, Table, Text } from "@mantine/core";
-import { getProject, getProjectA2a, getProjectSlack, listTriggers } from "../../lib/api";
+import {
+  getProject,
+  getProjectA2a,
+  getProjectSlack,
+  getProjectTelegram,
+  listTriggers,
+} from "../../lib/api";
 import { PROJECT_WEBHOOK_ID } from "@/domain/trigger/types";
 import {
   AUTH_LABEL,
@@ -194,9 +200,10 @@ export default function ApiReferencePage() {
         const project = await getProject(name);
         const isOwner = canEditProject(viewer, project.ownerEmail);
 
-        const [a2a, slack, triggers] = await Promise.all([
+        const [a2a, slack, telegram, triggers] = await Promise.all([
           getProjectA2a(name).catch(() => null),
           isOwner ? getProjectSlack(name).catch(() => null) : Promise.resolve(null),
+          isOwner ? getProjectTelegram(name).catch(() => null) : Promise.resolve(null),
           // Owner-gated like Slack: the list carries the webhook's masked secret,
           // and a viewer who cannot read the secret cannot call the endpoint.
           isOwner ? listTriggers(name).catch(() => null) : Promise.resolve(null),
@@ -213,6 +220,7 @@ export default function ApiReferencePage() {
           origin: typeof window === "undefined" ? "" : window.location.origin,
           a2a: a2a ? { enabled: a2a.enabled, published: a2a.published } : null,
           slack: slack ? { configured: slack.configured } : null,
+          telegram: telegram ? { configured: telegram.configured } : null,
           webhook: triggers ? { enabled: webhook?.enabled === true } : null,
         };
 
