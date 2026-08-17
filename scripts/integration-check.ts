@@ -65,6 +65,12 @@ async function main() {
   const { artifactRepository } = await import(
     "@/infrastructure/db/repositories/artifactRepository"
   );
+  const { telegramUpdateRepository } = await import(
+    "@/infrastructure/db/repositories/telegramUpdateRepository"
+  );
+  const { transcriptRepository } = await import(
+    "@/infrastructure/db/repositories/transcriptRepository"
+  );
   const { executionDeps } = await import("@/lib/container");
   const { executeVersion, executeAgent } = await import("@/application/execution/runProject");
   const { encryptHeaders, decryptHeadersForOutbound, encryptSecret, decryptSecret } = await import(
@@ -639,6 +645,57 @@ async function main() {
     );
     pass("webhook exactly-once: conditional claim, redelivery refused, scoped per trigger");
 
+    // ---------- inbound event claim (lease, settle, reclaim) ----------
+    // The one repository every chat platform's webhook dedups through, and the
+    // same reasoning as the webhook claim above: a `Set`-backed fake cannot tell
+    // a working condition expression from one that always wins.
+    const claims = telegramUpdateRepository.forProject(projectName);
+    const claimNow = Math.floor(Date.now() / 1000);
+    assert.equal(await claims.claim("1001", claimNow, claimNow + 600), true, "first delivery claims");
+    assert.equal(
+      await claims.claim("1001", claimNow, claimNow + 600),
+      false,
+      "a redelivery under a live lease is refused",
+    );
+    await claims.settle("1001", "failed");
+    assert.equal(
+      await claims.claim("1001", claimNow, claimNow + 600),
+      true,
+      "a failed attempt leaves the update reclaimable",
+    );
+    await claims.settle("1001", "done");
+    assert.equal(
+      await claims.claim("1001", claimNow + 1, claimNow + 601),
+      false,
+      "a settled update is never reclaimed",
+    );
+    // An expired lease is reclaimable — the instance that held it is gone.
+    assert.equal(await claims.claim("1002", claimNow - 100, claimNow - 50), true, "claim with a past lease");
+    assert.equal(await claims.claim("1002", claimNow, claimNow + 600), true, "an expired lease is taken over");
+    pass("inbound event claim: lease, failed reclaim, settled never, expired taken over");
+
+    // ---------- conversation transcript (newest N, oldest first, per conversation) ----------
+    const conversationKey = `telegram:${suffix}`;
+    for (const [index, content] of ["one", "two", "three"].entries()) {
+      await transcriptRepository.append(projectName, conversationKey, {
+        role: index % 2 === 0 ? "user" : "assistant",
+        content,
+        createdAt: new Date(Date.parse(now) + index * 1000).toISOString(),
+      });
+    }
+    await transcriptRepository.append(projectName, `${conversationKey}-other`, {
+      role: "user",
+      content: "elsewhere",
+      createdAt: now,
+    });
+    const recent = await transcriptRepository.recent(projectName, conversationKey, 2);
+    assert.deepEqual(
+      recent.map((turn) => turn.content),
+      ["two", "three"],
+      "the newest two turns, oldest first, and only this conversation's",
+    );
+    pass("conversation transcript: bounded newest-first read, returned oldest first");
+
     // ---------- trigger history (the repair sweep's bounded window) ----------
     // The bound is a sort-key range, not a filter, and a mocked doc client
     // cannot tell a working KeyConditionExpression from a broken one — which is
@@ -912,6 +969,46 @@ async function main() {
       .catch(() => {});
     for (const artifactId of artifactFixtures) {
       await artifactRepository.delete(artifactId).catch(() => {});
+    }
+    {
+      // Transcript turns and inbound claims live outside the project partition,
+      // so the cascade never reaches them.
+      const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");
+      const { DeleteCommand, QueryCommand } = await import("@aws-sdk/lib-dynamodb");
+      const { keys } = await import("@/infrastructure/db/keys");
+      for (const conversation of [`telegram:${suffix}`, `telegram:${suffix}-other`]) {
+        const partition = keys.transcriptPartition(projectName, conversation);
+        const rows = await getDocumentClient()
+          .send(
+            new QueryCommand({
+              TableName: getTableName(),
+              KeyConditionExpression: "PK = :pk",
+              ExpressionAttributeValues: { ":pk": partition },
+              ProjectionExpression: "PK, SK",
+            }),
+          )
+          .catch(() => ({ Items: [] as Record<string, unknown>[] }));
+        for (const row of rows.Items ?? []) {
+          await getDocumentClient()
+            .send(
+              new DeleteCommand({
+                TableName: getTableName(),
+                Key: { PK: row.PK as string, SK: row.SK as string },
+              }),
+            )
+            .catch(() => {});
+        }
+      }
+      for (const updateId of ["1001", "1002"]) {
+        await getDocumentClient()
+          .send(
+            new DeleteCommand({
+              TableName: getTableName(),
+              Key: keys.telegramUpdate(projectName, updateId),
+            }),
+          )
+          .catch(() => {});
+      }
     }
     if (auditFixtures.length > 0 || memberDayFixtures.length > 0) {
       const { getDocumentClient, getTableName } = await import("@/infrastructure/db/client");

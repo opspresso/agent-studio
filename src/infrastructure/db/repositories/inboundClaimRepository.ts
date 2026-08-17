@@ -25,7 +25,11 @@ export function createInboundClaimRepository(shape: {
 }): InboundEventClaims {
   return {
     /**
-     * Rows written before claims carried state have no `state` attribute and are
+     * Three rows may be taken: none, one whose attempt *failed* — that is what
+     * settling as failed is for, and until the condition said so a failed
+     * attempt was refused as a duplicate forever — and one whose lease ran out
+     * while still `claimed`, because the instance holding it is gone. Rows
+     * written before claims carried state have no `state` attribute and are
      * therefore never reclaimed: an event recorded under the old scheme was
      * processed, and treating it as reclaimable would replay it.
      */
@@ -44,9 +48,13 @@ export function createInboundClaimRepository(shape: {
               expiresAt: nowSeconds + 60 * 60 * 24,
             },
             ConditionExpression:
-              "attribute_not_exists(PK) OR (#state = :claimed AND leaseExpiresAt < :now)",
+              "attribute_not_exists(PK) OR #state = :failed OR (#state = :claimed AND leaseExpiresAt < :now)",
             ExpressionAttributeNames: { "#state": "state" },
-            ExpressionAttributeValues: { ":claimed": "claimed", ":now": nowSeconds },
+            ExpressionAttributeValues: {
+              ":claimed": "claimed",
+              ":failed": "failed",
+              ":now": nowSeconds,
+            },
           }),
         );
         return true;
