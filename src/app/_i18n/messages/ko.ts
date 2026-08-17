@@ -569,8 +569,8 @@ export const ko: Messages = {
   "members.neverRecorded": "기록 없음",
   "models.lede":
     "이 배포가 연결하는 LLM 프로바이더와, 사용자가 에이전트에 고를 수 있는 모델입니다.",
-  "models.yes": "지원",
-  "models.no": "미지원",
+  "models.filter": "Model 검색…",
+  "models.empty": "등록된 model 이 없습니다.",
   "profile.lede": "내 계정과, 모든 프로젝트에 걸친 내 사용량입니다.",
   "profile.tierLimits": "등급 한도",
   "profile.monthlyCap": "월 한도",
