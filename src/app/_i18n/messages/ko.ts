@@ -351,6 +351,8 @@ export const ko: Messages = {
   "version.memoryRecall": "런마다 먼저 메모리 회상",
   "version.memoryRecallHint":
     "첫 토큰 전에, “recall” 도구를 제공하는 바인딩된 MCP 서버(mcp-memory)마다 들어온 요청을 물어 기억하는 내용을 시스템 프롬프트에 넣습니다 — 모델이 물어볼 생각을 해야 하는 대신 프로젝트가 이미 아는 것에서 시작합니다. recall 도구는 그대로 제공됩니다. 런당 호출 한 번이 들고, 제공하는 서버가 없으면 경고와 함께 아무 일도 하지 않습니다.",
+  "version.memoryRecallUnbound":
+    "회상을 켰지만 이 버전의 MCP 바인딩 중 “recall” 도구를 제공할 수 있는 것이 없습니다 — 바인딩이 없거나, 모든 바인딩의 도구 선택에서 빠져 있습니다. 메모리 서버(mcp-memory)를 바인딩하거나 회상을 끄세요. 그때까지 모든 런은 메모리 없이 시작하며 매번 경고합니다.",
 
   "mcpSettings.tools": "도구",
   "mcpSettings.toolsNote":

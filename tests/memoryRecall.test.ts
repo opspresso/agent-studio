@@ -13,6 +13,7 @@ process.env.AES_ENCRYPTION_KEY = Buffer.from("0123456789abcdef0123456789abcdef")
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_RECALLED_CHARS, recallMemories } from "@/application/execution/memoryRecall";
+import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { buildAgentSystemPrompt, rememberedBlock } from "@/application/llm/agentAssembly";
 import { executeAgent } from "@/application/execution/runProject";
 import type { ExecutionDeps } from "@/application/execution/runProject";
@@ -33,6 +34,27 @@ import { conforming, modernResult, protocolPreamble } from "./mcpProtocolStub";
 vi.mock("@/infrastructure/net/publicFetch", () => ({
   fetchPublicUrl: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
 }));
+
+describe("bindingsMayOfferRecall", () => {
+  // The editor's inline warning reads this: certain about what the bindings
+  // alone rule out, silent about what only discovery can say.
+  it("rules out a version that binds nothing", () => {
+    expect(bindingsMayOfferRecall([])).toBe(false);
+  });
+
+  it("rules out bindings whose every tool selection leaves recall out", () => {
+    expect(bindingsMayOfferRecall([{ name: "memory", tools: ["remember"] }, { name: "docs", tools: ["search"] }])).toBe(
+      false,
+    );
+  });
+
+  it("does not rule out a binding that offers all its tools, or one that selects recall", () => {
+    expect(bindingsMayOfferRecall([{ name: "docs" }])).toBe(true);
+    expect(bindingsMayOfferRecall([{ name: "docs", tools: ["search"] }, { name: "memory", tools: ["recall"] }])).toBe(
+      true,
+    );
+  });
+});
 
 describe("recallMemories", () => {
   const server = (name: string, tools: string[]) => ({ name, description: "", toolNames: tools });

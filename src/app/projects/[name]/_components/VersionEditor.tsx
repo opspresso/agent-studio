@@ -42,6 +42,7 @@ import {
 } from "./inputs";
 import type { PickerOption } from "./inputs";
 import type { VersionSave } from "./McpBindingSettings";
+import { bindingsMayOfferRecall } from "@/domain/project/memoryRecall";
 import { SUBAGENT_KIND_COLOR } from "@/app/_components/badgeColors";
 
 type SubagentOption = PickerOption & { type: "local" | "remote" };
@@ -496,6 +497,18 @@ export function VersionEditor({
               }
             />
           )}
+          {runsTools &&
+            value.parameters.memoryRecall === true &&
+            !bindingsMayOfferRecall(value.mcpList) && (
+              // The run's own warning, moved up to where the setting is made:
+              // a version that recalls with nothing bound to answer would
+              // otherwise say so only once a run has started without a memory.
+              // Only what the bindings alone rule out — a bound server that
+              // turns out not to offer the tool is for the preview to report.
+              <Alert color="yellow" variant="light" fz="xs">
+                {t("version.memoryRecallUnbound")}
+              </Alert>
+            )}
         </Stack>
       )}
     </Stack>

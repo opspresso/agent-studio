@@ -19,19 +19,12 @@
  */
 
 import type * as engine from "@/application/llm/engine";
+import { RECALL_TOOL_NAME } from "@/domain/project/memoryRecall";
 import type { Version } from "@/domain/project/types";
 import type { ResolvedMcp } from "./mcpTools";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 import { cutCodePoints } from "@/shared/utf8Text";
-
-/**
- * The tool a memory server is expected to offer: `recall` taking `{ query }`
- * and answering in text. mcp-memory's contract; any server that spells it the
- * same primes the same way. A convention rather than a per-version setting,
- * because the setting would only ever name this string.
- */
-export const RECALL_TOOL_NAME = "recall";
 
 /**
  * How much of a recall may enter the prompt. This platform's own policy: a

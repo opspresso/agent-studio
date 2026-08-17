@@ -409,6 +409,8 @@ export const en = {
   "version.memoryRecall": "Recall memory before each run",
   "version.memoryRecallHint":
     "Before the first token, the run asks every bound MCP server that offers a “recall” tool (mcp-memory) about the incoming request and adds what it remembers to the system prompt — so the model starts from what this project already knows instead of having to think of asking. The recall tools stay available as before. Costs one call per run; inert, with a warning, when no bound server offers one.",
+  "version.memoryRecallUnbound":
+    "Recall is on, but none of this version’s MCP bindings can offer a “recall” tool — none is bound, or every binding’s tool selection leaves it out. Bind a memory server (mcp-memory) or turn recall off; until then every run starts without a memory and says so.",
 
   // The three tabs of one binding's settings dialog.
   "mcpSettings.tools": "Tools",

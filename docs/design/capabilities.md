@@ -171,9 +171,13 @@ discovery 가 추가한 서버를 뜻하지 않는다. 그쪽의 `recall` 은 �
 호출하고, 돌아온 것을 *What you remember* 블록으로 시스템 프롬프트에 넣는다. 자리는 시계와 caller
 뒤, 케이퍼빌리티 절들 앞이다: 런에 대한 사실이며, 지시가 아니라 배경으로 틀 지어진다 — 메모리는
 저장된 텍스트이고, 모델이 무언가에 설득당하는 통로가 바로 저장된 텍스트이기 때문이다.
-`recallMemories` (`src/application/execution/memoryRecall.ts`) 가 그 전부를 소유한다 — 툴 이름,
-쿼리 한도, 프롬프트 예산, 타임아웃, 그리고 여러 서버에 걸친 병합 — 그리고 엔진은 그 결과를 입력
-필드(`remembered`)로 받는다. caller 를 받는 것과 정확히 같은 방식이다. transfer 로 넘겨진 자식은
+`recallMemories` (`src/application/execution/memoryRecall.ts`) 가 그 전부를 소유한다 — 쿼리 한도,
+프롬프트 예산, 타임아웃, 그리고 여러 서버에 걸친 병합 — 그리고 엔진은 그 결과를 입력
+필드(`remembered`)로 받는다. 툴 이름만은 `src/domain/project/memoryRecall.ts` 에 있는데, 버전
+편집기가 같은 이름을 읽기 때문이다: 회상을 켠 버전에 `recall` 을 제공할 수 있는 바인딩이 하나도
+없으면 — 바인딩이 없거나 모든 바인딩의 도구 선택이 그것을 뺐으면 — 편집기가 그 자리에서 경고한다
+(`bindingsMayOfferRecall`). 바인딩만으로 확실한 것만 말하고, 바인딩된 서버가 실제로 그 툴을 제공하는지는
+프리뷰가 물어서 답한다. caller 를 받는 것과 정확히 같은 방식이다. transfer 로 넘겨진 자식은
 자기 버전을 보고 스스로 결정하며, transfer 메시지로 묻는다.
 
 성질 셋이 하중을 진다. **recall 은 결코 런을 끝내지 않는다**: 실패하거나 타임아웃되거나 `Error:` 로
