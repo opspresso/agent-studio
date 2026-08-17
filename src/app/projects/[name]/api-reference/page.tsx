@@ -11,6 +11,7 @@ import {
   getProject,
   getProjectA2a,
   getProjectSlack,
+  getProjectTeams,
   getProjectTelegram,
   listTriggers,
 } from "../../lib/api";
@@ -200,10 +201,11 @@ export default function ApiReferencePage() {
         const project = await getProject(name);
         const isOwner = canEditProject(viewer, project.ownerEmail);
 
-        const [a2a, slack, telegram, triggers] = await Promise.all([
+        const [a2a, slack, telegram, teams, triggers] = await Promise.all([
           getProjectA2a(name).catch(() => null),
           isOwner ? getProjectSlack(name).catch(() => null) : Promise.resolve(null),
           isOwner ? getProjectTelegram(name).catch(() => null) : Promise.resolve(null),
+          isOwner ? getProjectTeams(name).catch(() => null) : Promise.resolve(null),
           // Owner-gated like Slack: the list carries the webhook's masked secret,
           // and a viewer who cannot read the secret cannot call the endpoint.
           isOwner ? listTriggers(name).catch(() => null) : Promise.resolve(null),
@@ -221,6 +223,7 @@ export default function ApiReferencePage() {
           a2a: a2a ? { enabled: a2a.enabled, published: a2a.published } : null,
           slack: slack ? { configured: slack.configured } : null,
           telegram: telegram ? { configured: telegram.configured } : null,
+          teams: teams ? { configured: teams.configured } : null,
           webhook: triggers ? { enabled: webhook?.enabled === true } : null,
         };
 

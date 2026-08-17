@@ -418,6 +418,56 @@ export async function registerProjectTelegramWebhook(
   return (await res.json()) as { ok?: boolean; url?: string; error?: string };
 }
 
+export interface ProjectTeamsView {
+  enabled: boolean;
+  configured: boolean;
+  /** Not a secret. */
+  appId: string;
+  /** Masked. */
+  appPassword: string;
+  tenantId: string;
+  messagingPath: string;
+  messagingUrl: string;
+}
+
+export async function getProjectTeams(name: string): Promise<ProjectTeamsView> {
+  const res = await fetch(`/api/projects/${name}/teams`);
+  if (!res.ok) {
+    throw new Error(`Failed to load Teams settings (${res.status})`);
+  }
+  return (await res.json()) as ProjectTeamsView;
+}
+
+export async function updateProjectTeams(
+  name: string,
+  update: { appId?: string; appPassword?: string; tenantId?: string; enabled?: boolean },
+): Promise<ProjectTeamsView> {
+  const res = await fetch(`/api/projects/${name}/teams`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  const data = (await res.json()) as ProjectTeamsView & { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? `Failed to save Teams settings (${res.status})`);
+  }
+  return data;
+}
+
+export async function disconnectProjectTeams(name: string): Promise<void> {
+  const res = await fetch(`/api/projects/${name}/teams`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`Failed to disconnect Teams (${res.status})`);
+  }
+}
+
+export async function testProjectTeams(
+  name: string,
+): Promise<{ ok?: boolean; appId?: string; expiresInSeconds?: number; error?: string }> {
+  const res = await fetch(`/api/projects/${name}/teams/test`, { method: "POST" });
+  return (await res.json()) as { ok?: boolean; appId?: string; expiresInSeconds?: number; error?: string };
+}
+
 export interface ProjectTokenStatus {
   configured: boolean;
   /** Display mask of the stored token; absent on tokens issued before masks. */

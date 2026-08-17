@@ -3,17 +3,13 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { canEditProject, useViewer } from "@/app/_lib/useViewer";
-import { deleteProject, getProject, updateProject, type ProjectType } from "../../lib/api";
+import { deleteProject, getProject, updateProject } from "../../lib/api";
 import { CollapsibleSection } from "@/app/_components/CollapsibleSection";
 import { LoadingText } from "@/app/_components/PageState";
 import { useConfirm } from "@/app/_components/useConfirm";
-import { A2aSection } from "./A2aSection";
 import { CostLimitsSection } from "./CostLimitsSection";
-import { SlackSection } from "./SlackSection";
-import { TelegramSection } from "./TelegramSection";
 import { SchedulesSection } from "./SchedulesSection";
 import { WebhookSection } from "./WebhookSection";
-import { TokenSection } from "./TokenSection";
 import { Alert, Button, Group, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import { useT } from "@/app/_i18n/provider";
 
@@ -28,7 +24,6 @@ export default function SettingsPage() {
   const [description, setDescription] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
-  const [projectType, setProjectType] = useState<ProjectType>("agent");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -46,7 +41,6 @@ export default function SettingsPage() {
           setDescription(project.description);
           setDepartmentCode(project.departmentCode ?? "");
           setOwnerEmail(project.ownerEmail);
-          setProjectType(project.projectType);
         }
       } catch (e) {
         if (!cancelled) {
@@ -163,17 +157,9 @@ export default function SettingsPage() {
 
       <CostLimitsSection projectName={name} />
 
-      <TokenSection projectName={name} />
-
       <WebhookSection projectName={name} />
 
       <SchedulesSection projectName={name} />
-
-      <SlackSection projectName={name} projectType={projectType} />
-
-      <TelegramSection projectName={name} projectType={projectType} />
-
-      <A2aSection projectName={name} />
 
       <CollapsibleSection title={t("pset.dangerZone")} danger>
         <Stack gap="sm" align="flex-start">

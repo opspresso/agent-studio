@@ -1,8 +1,11 @@
 import type { TelegramClientPort } from "@/application/telegram/types";
 import { markdownToTelegramHtmlPieces } from "@/application/telegram/markdown";
+import {
+  createEditInPlaceReply,
+  type EditInPlaceTransport,
+  type Sleep,
+} from "@/application/messaging/editInPlaceReply";
 import type { ReplyChannel } from "@/domain/messaging/reply";
-import { log } from "@/shared/logger";
-import { unrefTimer } from "@/shared/unrefTimer";
 
 /**
  * How a Telegram reply is delivered — the single owner of that decision.
@@ -11,7 +14,8 @@ import { unrefTimer } from "@/shared/unrefTimer";
  * edit it. There is no streaming call and no status line; what it offers
  * instead is the typing indicator, which lasts five seconds and says only that
  * the bot is doing *something*. So progress is the typing indicator kept alive,
- * and the answer is a message edited in place, paced to what a chat accepts.
+ * and the answer is a message edited in place, paced to what a chat accepts —
+ * the shared edit-in-place machinery, told Telegram's caps and calls.
  *
  * Two of Telegram's limits shape the rest. A message holds **4,096 characters**
  * — a long answer becomes several messages, each opened as the one before it
@@ -32,17 +36,7 @@ export const MAX_MESSAGE_CHARS = 4096;
 const EDIT_INTERVAL_MS = 2000;
 /** The typing indicator expires after five seconds; refreshed inside that. */
 const TYPING_REFRESH_MS = 4000;
-/**
- * A message that is still being written ends in this, so a reader arriving
- * mid-run does not take a sentence that stops halfway for the whole answer.
- * Removed by the final write.
- */
 const CURSOR = " ▌";
-/**
- * Where a message may be cut when the answer outgrows one. The last line break
- * in the final stretch of the window, so a paragraph is not split mid-sentence
- * unless the paragraph itself is longer than a message.
- */
 const SOFT_CUT_WINDOW = 800;
 
 /** Where a reply goes. */
@@ -52,54 +46,6 @@ export interface TelegramReplyTarget {
   threadId?: number;
   /** The message being answered; the first message of the reply quotes it. */
   replyToMessageId?: number;
-}
-
-/** One message of the reply, and where in the full text it starts. */
-interface Segment {
-  start: number;
-  messageId?: number;
-  /** The text Telegram last accepted for this message, cursor excluded. */
-  sent?: string;
-  /** Whether that text was the rendered final. */
-  final?: boolean;
-  /**
-   * When Telegram last refused a write to this message. A refused write is
-   * retried at the edit cadence, not on every delta: a bot the user has
-   * blocked, or a 429, must not turn a two-thousand-delta answer into two
-   * thousand requests.
-   */
-  refusedAt?: number;
-}
-
-/** Wait a little; injected so a test can decline to. */
-export type Sleep = (ms: number) => Promise<void>;
-const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Where to end a message that has to be cut at `limit` characters from `from`.
- */
-function cutPoint(text: string, from: number, limit: number): number {
-  const hard = from + limit;
-  if (text.length <= hard) {
-    return text.length;
-  }
-  const window = text.slice(hard - SOFT_CUT_WINDOW, hard);
-  const newline = window.lastIndexOf("\n");
-  if (newline > 0) {
-    return hard - SOFT_CUT_WINDOW + newline + 1;
-  }
-  const space = window.lastIndexOf(" ");
-  if (space > 0) {
-    return hard - SOFT_CUT_WINDOW + space + 1;
-  }
-  return hard;
-}
-
-function withSuffix(text: string, suffix: string): string {
-  if (!suffix) {
-    return text;
-  }
-  return text ? `${text}\n\n${suffix}` : suffix;
 }
 
 /** Telegram's answer to an edit that changes nothing; a success for our purposes. */
@@ -113,250 +59,56 @@ export function createTelegramReplyChannel(
   target: TelegramReplyTarget,
   opts: { sleep?: Sleep } = {},
 ): ReplyChannel {
-  const sleep = opts.sleep ?? realSleep;
-  const segments: Segment[] = [];
-  let lastWrite = 0;
-  let lastTyping = 0;
-  let finished = false;
-  /**
-   * Edits Telegram has refused in a row. One heals on the next push; a
-   * persistent refusal is the answer not arriving, and reads the same from
-   * outside unless it is said.
-   */
-  let editFailures = 0;
-
-  /**
-   * Extend the layout so every character of `text` belongs to a segment. Every
-   * segment leaves room for the cursor, the final one included: while it is
-   * being written it carries one, and a segment sized to the cap without it
-   * would be refused on exactly the push that filled it.
-   */
-  function layout(text: string): void {
-    if (segments.length === 0) {
-      segments.push({ start: 0 });
-    }
-    const room = MAX_MESSAGE_CHARS - CURSOR.length;
-    for (;;) {
-      const last = segments[segments.length - 1];
-      if (!last || text.length - last.start <= room) {
-        return;
-      }
-      segments.push({ start: cutPoint(text, last.start, room) });
-    }
-  }
-
-  function segmentText(full: string, index: number): string {
-    const segment = segments[index];
-    const next = segments[index + 1];
-    if (!segment) {
-      return "";
-    }
-    return full.slice(segment.start, next?.start);
-  }
-
-  /**
-   * Put one segment's text on screen — opening its message the first time,
-   * editing it after. `rendered` is the HTML rendering of `text`, sent first
-   * and falling back to the plain text if Telegram refuses it, so a rendering
-   * defect costs formatting and never the answer.
-   */
-  async function write(
-    index: number,
-    text: string,
-    opts: { cursor: boolean; rendered?: string },
-  ): Promise<void> {
-    const segment = segments[index];
-    if (!segment) {
-      return;
-    }
-    const plain = opts.cursor ? `${text}${CURSOR}` : text;
-    const attempts: Array<{ text: string; parseMode?: "HTML" }> =
-      opts.rendered !== undefined
-        ? [{ text: opts.rendered, parseMode: "HTML" }, { text: plain }]
-        : [{ text: plain }];
-    let lastError: unknown;
-    for (const attempt of attempts) {
-      try {
-        if (segment.messageId === undefined) {
-          const sent = await telegram.sendMessage(token, {
-            chatId: target.chatId,
-            text: attempt.text,
-            ...(target.threadId !== undefined ? { threadId: target.threadId } : {}),
-            // Only the first message quotes the question; the rest continue it.
-            ...(index === 0 && target.replyToMessageId !== undefined
-              ? { replyToMessageId: target.replyToMessageId }
-              : {}),
-            ...(attempt.parseMode ? { parseMode: attempt.parseMode } : {}),
-          });
-          segment.messageId = sent.messageId;
-        } else {
-          try {
-            await telegram.editMessageText(token, {
-              chatId: target.chatId,
-              messageId: segment.messageId,
-              text: attempt.text,
-              ...(attempt.parseMode ? { parseMode: attempt.parseMode } : {}),
-            });
-          } catch (error) {
-            if (!isNotModified(error)) {
-              throw error;
-            }
-          }
-        }
-        segment.sent = text;
-        segment.final = opts.rendered !== undefined;
-        segment.refusedAt = undefined;
-        editFailures = 0;
-        return;
-      } catch (error) {
-        lastError = error;
-        segment.refusedAt = Date.now();
-        if (attempt.parseMode) {
-          log.warn(
-            "telegram",
-            `rendered reply refused, sending it plain: ${error instanceof Error ? error.message : "unknown"}`,
-          );
-        }
-      }
-    }
-    throw lastError;
-  }
-
-  async function sendTyping(): Promise<void> {
-    if (finished) {
-      return;
-    }
-    const now = Date.now();
-    if (now - lastTyping < TYPING_REFRESH_MS) {
-      return;
-    }
-    lastTyping = now;
-    await telegram
-      .sendChatAction(token, {
+  const thread = target.threadId !== undefined ? { threadId: target.threadId } : {};
+  const transport: EditInPlaceTransport = {
+    async open(text, { first, rendered }) {
+      const sent = await telegram.sendMessage(token, {
         chatId: target.chatId,
-        ...(target.threadId !== undefined ? { threadId: target.threadId } : {}),
-        action: "typing",
-      })
-      .catch(() => {});
-  }
-
-  function editFailed(error: unknown): void {
-    editFailures += 1;
-    if (editFailures === 1 || editFailures % 10 === 0) {
-      log.warn("telegram", `reply edit refused (${editFailures} in a row)`, error);
-    }
-  }
+        text,
+        ...thread,
+        // Only the first message quotes the question; the rest continue it.
+        ...(first && target.replyToMessageId !== undefined
+          ? { replyToMessageId: target.replyToMessageId }
+          : {}),
+        ...(rendered ? { parseMode: "HTML" as const } : {}),
+      });
+      return String(sent.messageId);
+    },
+    async edit(messageId, text, { rendered }) {
+      await telegram.editMessageText(token, {
+        chatId: target.chatId,
+        messageId: Number(messageId),
+        text,
+        ...(rendered ? { parseMode: "HTML" as const } : {}),
+      });
+    },
+    async post(text) {
+      await telegram.sendMessage(token, { chatId: target.chatId, text, ...thread });
+    },
+    async typing() {
+      await telegram.sendChatAction(token, { chatId: target.chatId, ...thread, action: "typing" });
+    },
+    render: markdownToTelegramHtmlPieces,
+    isNotModified,
+    limits: {
+      maxChars: MAX_MESSAGE_CHARS,
+      editIntervalMs: EDIT_INTERVAL_MS,
+      typingRefreshMs: TYPING_REFRESH_MS,
+      softCutWindow: SOFT_CUT_WINDOW,
+      cursor: CURSOR,
+    },
+    scope: "telegram",
+    ...(opts.sleep ? { sleep: opts.sleep } : {}),
+  };
 
   return {
-    // The typing indicator is the whole vocabulary: a status, a step and a
-    // nested step all say "still working", and Telegram has nowhere to put the
-    // words. What the run is doing shows up in the answer.
-    status: () => sendTyping(),
-    step: () => sendTyping(),
-    async stepDone() {},
-
-    keepStatusAlive() {
-      const timer = setInterval(() => {
-        void sendTyping();
-      }, TYPING_REFRESH_MS);
-      // A pending refresh must never be what keeps the process alive.
-      unrefTimer(timer);
-      return () => clearInterval(timer);
-    },
-
-    async push(fullText) {
-      if (!fullText || finished) {
-        return;
-      }
-      layout(fullText);
-      const now = Date.now();
-      const refusedRecently = (segment: Segment | undefined): boolean =>
-        segment?.refusedAt !== undefined && now - segment.refusedAt < EDIT_INTERVAL_MS;
-      // Every message but the last is full. Written once, plainly; the final
-      // rendering comes with the close.
-      for (let index = 0; index < segments.length - 1; index += 1) {
-        const text = segmentText(fullText, index);
-        if (segments[index]?.sent !== text && !refusedRecently(segments[index])) {
-          await write(index, text, { cursor: false }).catch(editFailed);
-        }
-      }
-      const index = segments.length - 1;
-      const text = segmentText(fullText, index);
-      const current = segments[index];
-      if (!current || current.sent === text || refusedRecently(current)) {
-        return;
-      }
-      // No pacing on a message's first write: the point of it is that something
-      // shows up quickly. A failure leaves the segment unopened — and marked as
-      // refused, so the retry comes at the edit cadence with everything
-      // accumulated since, not on the next delta.
-      if (current.messageId !== undefined && now - lastWrite < EDIT_INTERVAL_MS) {
-        return;
-      }
-      lastWrite = now;
-      await write(index, text, { cursor: true }).catch(editFailed);
-    },
-
-    async finish(fullText, suffix) {
-      finished = true;
-      const full = withSuffix(fullText, suffix);
-      // Nothing was ever opened and there is nothing to say. Whoever knows what
-      // else the run delivered — a picture — decides whether that is a warning.
-      if (!full) {
-        return;
-      }
-      layout(full);
-      const texts = segments.map((_, index) => segmentText(full, index));
-      // Rendered together, so a code block cut by a message boundary reads as
-      // code on both sides of it.
-      const rendered = markdownToTelegramHtmlPieces(texts);
-      let written = 0;
-      for (let index = 0; index < segments.length; index += 1) {
-        const text = texts[index] ?? "";
-        const segment = segments[index];
-        if (segment?.final && segment.sent === text) {
-          continue;
-        }
-        // Paced between messages, like every other write: the close of a long
-        // answer is several edits into one chat's budget, and a burst is what
-        // Telegram answers with 429. The first is not delayed — a one-message
-        // reply closes as fast as it streamed.
-        if (written > 0) {
-          const wait = EDIT_INTERVAL_MS - (Date.now() - lastWrite);
-          if (wait > 0) {
-            await sleep(wait);
-          }
-        }
-        written += 1;
-        lastWrite = Date.now();
-        try {
-          await write(index, text, { cursor: false, rendered: rendered[index] });
-        } catch (error) {
-          log.error("telegram", "final reply write failed", error);
-          // The message on screen still carries the cursor or an older text.
-          // What Telegram never took is posted on its own rather than lost —
-          // only the part it never took: `sent` is what it accepted, and a
-          // repeated head would be its own defect. That failure was silent for
-          // a whole release on the Slack surface.
-          const undelivered = text.slice(segment?.sent?.length ?? 0);
-          if (undelivered) {
-            await telegram
-              .sendMessage(token, {
-                chatId: target.chatId,
-                text: undelivered,
-                ...(target.threadId !== undefined ? { threadId: target.threadId } : {}),
-              })
-              .catch((fallbackError) => log.error("telegram", "fallback reply failed too", fallbackError));
-          }
-        }
-      }
-    },
+    ...createEditInPlaceReply(transport),
 
     async say(text) {
       await telegram.sendMessage(token, {
         chatId: target.chatId,
         text,
-        ...(target.threadId !== undefined ? { threadId: target.threadId } : {}),
+        ...thread,
         ...(target.replyToMessageId !== undefined ? { replyToMessageId: target.replyToMessageId } : {}),
       });
     },
@@ -365,7 +117,7 @@ export function createTelegramReplyChannel(
       const ext = image.mimeType === "image/png" ? "png" : "jpg";
       await telegram.sendPhoto(token, {
         chatId: target.chatId,
-        ...(target.threadId !== undefined ? { threadId: target.threadId } : {}),
+        ...thread,
         photo: Buffer.from(image.b64, "base64"),
         filename: `generated-${Date.now()}-${index + 1}.${ext}`,
         ...(image.prompt ? { caption: image.prompt.slice(0, 1024) } : {}),

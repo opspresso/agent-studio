@@ -217,6 +217,8 @@ const APP_WIRING_SITES = [
   // over the same repositories, plus the Bot API client and the transcript
   // store the surface keeps its history in.
   "src/app/api/telegram/webhook/_lib/",
+  // And the Teams messaging endpoint's, over the same shape.
+  "src/app/api/teams/messages/_lib/",
   // Assembles the A2A SDK handler over `executionDeps` per request —
   // AGENTS.md's fourth wiring site (the composition root being the first).
   // Absent from this list it passed only because no banned name crossed it yet.
@@ -561,7 +563,7 @@ describe("the client bundle", () => {
   // satisfied the looser assertion. Update this number when a client component
   // is added or removed — that is the point of it.
   it("is scanned from every client entry point", () => {
-    expect(entries.length).toBe(82);
+    expect(entries.length).toBe(84);
     expect(entries.map((file) => file.path)).toContain(
       "src/app/projects/[name]/_components/PromptPreview.tsx",
     );
@@ -1807,16 +1809,16 @@ describe("what a run produced", () => {
  *
  * The same shape as the image list above, for the other half of the facade.
  * `executeAgent` is safe to call directly — it refuses a non-agent project
- * itself, which is the check `/agent` was the one caller to lack — so four
- * surfaces do: the `/agent` route, and the three `runAgent` bindings that let a
- * chat, a Slack thread and a Telegram chat inject the facade at their own
- * wiring site.
+ * itself, which is the check `/agent` was the one caller to lack — so five
+ * surfaces do: the `/agent` route, and the four `runAgent` bindings that let a
+ * chat, a Slack thread, a Telegram chat and a Teams conversation inject the
+ * facade at their own wiring site.
  *
  * What that costs is that "how a run is entered" has more than one place, while
  * "which project type runs which way" has exactly one (`runStrategyFor`). A
  * policy that belongs at the entry — a per-surface input cap, a rate limit —
- * therefore has four homes and nothing saying where they are. This is that
- * statement, and it is why a fifth is added here on purpose.
+ * therefore has five homes and nothing saying where they are. This is that
+ * statement, and it is why a sixth is added here on purpose.
  *
  * Keyed on the import rather than on the text: `chat/deps.ts` and `slack/types.ts`
  * both name `executeAgent` in a doc comment describing what their injected
@@ -1837,6 +1839,8 @@ const AGENT_RUN_ENTRY_POINTS = [
   "src/app/api/slack/events/_lib/handleEventRequest.ts",
   // Binds `TelegramEventDeps.runAgent`, the same way.
   "src/app/api/telegram/webhook/_lib/handleUpdateRequest.ts",
+  // Binds `TeamsEventDeps.runAgent`, the same way.
+  "src/app/api/teams/messages/_lib/handleActivityRequest.ts",
 ];
 
 /**

@@ -180,6 +180,16 @@ export const keys = {
   }),
 
   /**
+   * One Bot Framework activity delivered to one project's Teams bot. In the
+   * project partition, qualified by app id, for the reasons the Telegram
+   * update is.
+   */
+  teamsActivity: (projectName: string, appId: string, activityId: string) => ({
+    PK: `PROJECT#${projectName}`,
+    SK: `TEAMSACTIVITY#${appId}#${activityId}`,
+  }),
+
+  /**
    * What a chat-bot surface remembers of one conversation. In the project
    * partition so the cascade delete takes it — a deleted project must not
    * leave a week of somebody's messages behind — and one turn per row so a

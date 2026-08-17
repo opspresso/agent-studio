@@ -41,6 +41,7 @@ export type LogScope =
   | "runDeadline"
   | "settings"
   | "slack"
+  | "teams"
   | "telegram"
   | "token"
   | "trace"

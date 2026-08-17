@@ -48,6 +48,7 @@ function fromItem(item: Record<string, unknown>): Project {
     publishedVersion: item.publishedVersion as string | undefined,
     slack: item.slack as Project["slack"] | undefined,
     telegram: item.telegram as Project["telegram"] | undefined,
+    teams: item.teams as Project["teams"] | undefined,
     costLimits: item.costLimits as Project["costLimits"] | undefined,
     createdAt: item.createdAt as string,
     updatedAt: item.updatedAt as string,
