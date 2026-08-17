@@ -1,34 +1,16 @@
 import type { SlackMessage } from "@/domain/slack/types";
 import { slackConversation } from "@/domain/slack/conversation";
 import { resolveRunnableVersion } from "@/application/project/resolveRunnableVersion";
-import { createReplySink } from "@/application/slack/replyStream";
+import { createReplySink, type ReplyTarget } from "@/application/slack/replyStream";
 import { parseSlackCommand, selfUserId } from "@/application/slack/engagement";
 import { handleSlackCommand } from "@/application/slack/handleCommand";
-import {
-  fileRefOf,
-  resolveProducedFiles,
-  type ProducedFileRef,
-} from "@/application/artifact/producedFiles";
-import { RECORD_URL_TTL_SECONDS } from "@/application/artifact/urlTtl";
+import { handleTurn } from "@/application/messaging/handleTurn";
 import type { SlackEventBody, SlackEventDeps, SlackEventFile } from "@/application/slack/types";
 import type { RunCaller } from "@/domain/execution/actor";
-import { collectedWarning, imageDataUrl, isTopLevelChunk } from "@/domain/llm/types";
-import {
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
-  SUPPORTED_IMAGE_TYPES,
-} from "@/domain/llm/imageLimits";
-import type { ChatMessageInput, ContentPart } from "@/domain/llm/types";
-import { documentKind, MAX_DOCUMENT_BYTES } from "@/domain/llm/documentLimits";
-import {
-  readDocuments as readDocumentsFor,
-  turnContent,
-  withinDocumentCount,
-  type AttachedDocument,
-  type ReadDocument,
-} from "@/application/llm/documentParts";
+import type { HistoryTurn, InboundAttachment } from "@/domain/messaging/inbound";
+import type { ReplyChannel } from "@/domain/messaging/reply";
+import type { ChatMessageInput } from "@/domain/llm/types";
 import { log } from "@/shared/logger";
-import { INTERACTIVE_RUN_TIMEOUT_MS } from "@/shared/runDeadline";
 /** How much of the opening question names the thread in the agent's history. */
 const MAX_THREAD_TITLE_LENGTH = 60;
 /**
@@ -55,27 +37,6 @@ const THINKING_MESSAGES = ["is thinking…", "is working through it…", "is sti
 const PICKED_UP_REACTION = "eyes";
 /** Most recent thread turns carried as context; older turns are dropped. */
 const MAX_THREAD_HISTORY_MESSAGES = 50;
-/**
- * Attachment limits — the same ones every other surface enforces. Anything
- * dropped is reported, never silently skipped.
- */
-const MAX_IMAGE_ATTACHMENTS = MAX_ATTACHMENTS;
-const MAX_IMAGE_BYTES = MAX_ATTACHMENT_BYTES;
-const SUPPORTED_TYPES = new Set<string>(SUPPORTED_IMAGE_TYPES);
-/**
- * How many recent turns are searched for images. A thread can be long and its
- * pictures are re-downloaded and re-encoded on every mention, so only the
- * recent context is worth that cost.
- */
-const HISTORY_IMAGE_LOOKBACK = 10;
-
-/**
- * There was nothing to ask. Thrown rather than returned so the one `finally`
- * that stops the status heartbeat still runs, and caught without a warning of
- * its own: the reason every attachment failed is already in `warnings`, and
- * "agent run failed" on top of it would blame the run for not starting.
- */
-class EmptyTurnError extends Error {}
 
 /** One thread turn: the mapped engine message plus the attachments it carried. */
 export interface ThreadTurn {
@@ -180,182 +141,61 @@ export function withSpeakerLabels(
 }
 
 /**
- * Download image attachments as content parts, up to `budget` images. Callers
- * spend the budget on the current message first, then on the newest history.
+ * A Slack file as the shared pipeline reads one: its name for the warnings,
+ * its declared type and size, and a download bound to this bot's token — or
+ * none, when Slack handed no address, which the pipeline reports as such.
  */
-async function collectImageParts(
+function toAttachment(deps: SlackEventDeps, token: string, file: SlackEventFile): InboundAttachment {
+  const url = file.url_private_download ?? file.url_private;
+  return {
+    name: file.name ?? file.id ?? "attachment",
+    mimeType: file.mimetype ?? "",
+    ...(file.size !== undefined ? { size: file.size } : {}),
+    ...(url ? { download: (maxBytes: number) => deps.slack.downloadFile(token, url, maxBytes) } : {}),
+  };
+}
+
+/** A thread turn as the shared pipeline reads one, its files wrapped for download. */
+function toHistoryTurn(deps: SlackEventDeps, token: string, turn: ThreadTurn): HistoryTurn {
+  return {
+    message: turn.message,
+    attachments: turn.files.map((file) => toAttachment(deps, token, file)),
+    ...(turn.userId ? { userId: turn.userId } : {}),
+  };
+}
+
+/**
+ * The reply as the shared pipeline delivers one: the streamed sink, plus what
+ * a Slack thread does with the rest — a standalone post, an upload per picture,
+ * and the mrkdwn a file link and a warning line are spelled in.
+ */
+function slackReplyChannel(
   deps: SlackEventDeps,
   token: string,
-  files: SlackEventFile[],
-  warnings: string[],
-  budget = MAX_IMAGE_ATTACHMENTS,
-): Promise<ContentPart[]> {
-  if (budget <= 0) {
-    return [];
-  }
-  const images = files.filter((file) => (file.mimetype ?? "").startsWith("image/"));
-  // Only files nothing here can read. Documents are counted out because they
-  // have their own path now; calling them "ignored" while they were being read
-  // would report a loss that did not happen.
-  const unreadable = files.filter(
-    (file) =>
-      !(file.mimetype ?? "").startsWith("image/") &&
-      documentKind(file.mimetype ?? "", file.name ?? "") === null,
-  );
-  if (unreadable.length > 0) {
-    warnings.push(
-      `Ignored ${unreadable.length} attachment(s): neither an image nor a readable document.`,
-    );
-  }
-  if (images.length > budget) {
-    warnings.push(`Read only ${budget} of ${images.length} attached images.`);
-  }
-
-  const parts: ContentPart[] = [];
-  for (const file of images.slice(0, budget)) {
-    const label = file.name ?? file.id ?? "attachment";
-    const mimeType = file.mimetype ?? "";
-    if (!SUPPORTED_TYPES.has(mimeType)) {
-      warnings.push(`Unsupported image type ${mimeType} (${label}).`);
-      continue;
-    }
-    if ((file.size ?? 0) > MAX_IMAGE_BYTES) {
-      warnings.push(`Image is larger than 5MB (${label}).`);
-      continue;
-    }
-    const url = file.url_private_download ?? file.url_private;
-    if (!url) {
-      warnings.push(`Attachment has no download url (${label}).`);
-      continue;
-    }
-    try {
-      const data = await deps.slack.downloadFile(token, url, MAX_IMAGE_BYTES);
-      // Slack's declared size can be absent, so the download is bounded too; this
-      // is the same limit restated where the bytes are finally in hand.
-      if (data.byteLength > MAX_IMAGE_BYTES) {
-        warnings.push(`Image is larger than 5MB (${label}).`);
-        continue;
-      }
-      parts.push({
-        type: "image_url",
-        image_url: { url: imageDataUrl({ b64: data.toString("base64"), mimeType }) },
+  target: ReplyTarget,
+): ReplyChannel {
+  return {
+    ...createReplySink(deps.slack, token, target, deps.loadingIndicator),
+    async say(text) {
+      await deps.slack.postMessage(token, {
+        channel: target.channel,
+        thread_ts: target.threadTs,
+        text,
       });
-    } catch (error) {
-      log.error("slack", "attachment download failed", error);
-      warnings.push(
-        `Could not read attachment ${label}: ${error instanceof Error ? error.message : "unknown"}`,
-      );
-    }
-  }
-  return parts;
-}
-
-/**
- * Download the message's document attachments and read them into text parts.
- *
- * Only the current message. An older turn's attachments are left alone: a
- * document is expensive to fetch and parse where an image is not, and unlike
- * "edit the picture I sent earlier" there is no request shape that needs the
- * bytes of a file from three turns ago — the text it contributed is already in
- * the thread.
- *
- * A Slack file lives behind `url_private` and needs this bot's token, which is
- * why no URL-fetching MCP tool can stand in for this.
- */
-async function collectDocuments(
-  deps: SlackEventDeps,
-  token: string,
-  files: SlackEventFile[],
-  warnings: string[],
-): Promise<ReadDocument[]> {
-  const candidates = files.filter(
-    (file) => documentKind(file.mimetype ?? "", file.name ?? "") !== null,
-  );
-  if (candidates.length === 0) {
-    return [];
-  }
-  const downloaded: AttachedDocument[] = [];
-  // Capped before anything is fetched: past the cap these are bytes nobody will
-  // read, and each one may be 10MB through the bot token.
-  for (const file of withinDocumentCount(candidates, warnings)) {
-    const label = file.name ?? file.id ?? "attachment";
-    if ((file.size ?? 0) > MAX_DOCUMENT_BYTES) {
-      warnings.push(`Document is larger than 10MB (${label}).`);
-      continue;
-    }
-    const url = file.url_private_download ?? file.url_private;
-    if (!url) {
-      warnings.push(`Attachment has no download url (${label}).`);
-      continue;
-    }
-    try {
-      const data = await deps.slack.downloadFile(token, url, MAX_DOCUMENT_BYTES);
-      // Slack's declared size can be absent, so the download is bounded too; this
-      // is the same limit restated where the bytes are finally in hand.
-      if (data.byteLength > MAX_DOCUMENT_BYTES) {
-        warnings.push(`Document is larger than 10MB (${label}).`);
-        continue;
-      }
-      downloaded.push({ bytes: data, mimeType: file.mimetype ?? "", name: label });
-    } catch (error) {
-      log.error("slack", "document download failed", error);
-      warnings.push(
-        `Could not read attachment ${label}: ${error instanceof Error ? error.message : "unknown"}`,
-      );
-    }
-  }
-  return readDocumentsFor(deps.documents, downloaded, warnings);
-}
-
-/**
- * Attach the images of earlier thread turns to their own messages, newest turn
- * first until the budget runs out. Without this an "edit the picture I sent
- * earlier" request in a thread would reach the model as text alone.
- */
-async function withHistoryImages(
-  deps: SlackEventDeps,
-  token: string,
-  turns: ThreadTurn[],
-  budget: number,
-  warnings: string[],
-): Promise<ChatMessageInput[]> {
-  const partsByIndex = new Map<number, ContentPart[]>();
-  let remaining = budget;
-  const oldest = Math.max(0, turns.length - HISTORY_IMAGE_LOOKBACK);
-  for (let index = turns.length - 1; index >= oldest && remaining > 0; index -= 1) {
-    const turn = turns[index];
-    // Only a human turn's images are input. The bot's own uploads would come back
-    // as `image_url` parts on an *assistant* message — a shape OpenAI-compatible
-    // providers reject — and would spend the budget on pictures this run drew.
-    if (turn?.message.role !== "user") {
-      continue;
-    }
-    // Only image attachments are relevant here, and an older turn's unrelated
-    // files are not worth reporting on — the user is asking about this turn.
-    const imageFiles = (turn?.files ?? []).filter((file) =>
-      (file.mimetype ?? "").startsWith("image/"),
-    );
-    if (imageFiles.length === 0) {
-      continue;
-    }
-    const parts = await collectImageParts(deps, token, imageFiles, warnings, remaining);
-    if (parts.length > 0) {
-      partsByIndex.set(index, parts);
-      remaining -= parts.length;
-    }
-  }
-
-  return turns.map((turn, index) => {
-    const parts = partsByIndex.get(index);
-    if (!parts) {
-      return turn.message;
-    }
-    const text = typeof turn.message.content === "string" ? turn.message.content : "";
-    return {
-      ...turn.message,
-      content: [...(text ? [{ type: "text" as const, text }] : []), ...parts],
-    };
-  });
+    },
+    async sendImage(image, index) {
+      const ext = image.mimeType === "image/png" ? "png" : "jpg";
+      await deps.slack.uploadImage(token, {
+        channel: target.channel,
+        threadTs: target.threadTs,
+        filename: `generated-${Date.now()}-${index + 1}.${ext}`,
+        data: Buffer.from(image.b64, "base64"),
+        title: image.prompt?.slice(0, 80) ?? "Generated image",
+      });
+    },
+    fileLink: (file) => `:paperclip: <${file.url}|${mrkdwnText(file.name)}>`,
+    warningLine: (warning) => `:warning: ${warning}`,
+  };
 }
 
 /**
@@ -463,12 +303,19 @@ export async function handleSlackEvent(
   const project = await deps.projects.get(projectName);
   // External surface: published-only, drafts never leak (resolveRunnableVersion policy).
   const version = project ? await resolveRunnableVersion(deps.versions, project) : null;
+  const target: ReplyTarget = {
+    channel: event.channel,
+    threadTs,
+    assistantThread: isAssistantThread,
+    ...(!isAssistantThread && event.user && body.team_id
+      ? { recipient: { userId: event.user, teamId: body.team_id } }
+      : {}),
+  };
+  const reply = slackReplyChannel(deps, token, target);
   if (!project || project.projectType !== "agent" || !version) {
-    await deps.slack.postMessage(token, {
-      channel: event.channel,
-      thread_ts: threadTs,
-      text: `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
-    });
+    await reply.say(
+      `Agent project not available: ${projectName} (must exist, be an agent project, and have a published version)`,
+    );
     return;
   }
 
@@ -497,19 +344,6 @@ export async function handleSlackEvent(
     -MAX_THREAD_HISTORY_MESSAGES,
   );
 
-  const sink = createReplySink(
-    deps.slack,
-    token,
-    {
-      channel: event.channel,
-      threadTs,
-      assistantThread: isAssistantThread,
-      ...(!isAssistantThread && event.user && body.team_id
-        ? { recipient: { userId: event.user, teamId: body.team_id } }
-        : {}),
-    },
-    deps.loadingIndicator,
-  );
   // Ahead of every lookup below. Profile resolution is several round trips on a
   // cold cache, and making the user wait for them before anything acknowledges
   // the message is the one thing the status line exists to prevent.
@@ -524,7 +358,7 @@ export async function handleSlackEvent(
       // answer, which is a louder acknowledgement than the one that failed.
       .catch((error) => log.error("slack", "pickup reaction failed", error));
   }
-  await sink.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
+  await reply.status(THINKING_MESSAGES[0] ?? "is thinking…", THINKING_MESSAGES);
 
   // The version's opt-in gates the *lookup*, not just the prompt: a project that
   // did not ask to know who is asking should not be sending anyone's id to
@@ -561,209 +395,35 @@ export async function handleSlackEvent(
       .catch(() => {});
   }
 
-  let text = "";
-  // `fetched` rides along: what the run read is uploaded only when it is all the
-  // run has to show (see below).
-  const images: Array<{ b64: string; mimeType: string; prompt?: string; fetched?: boolean }> = [];
-  // Documents a tool rendered. Not uploaded like the images below them: their
-  // bytes were stripped at the bracket the moment they were stored, so a thread
-  // gets a link. Without this the run answered "here is the report" into a
-  // thread with no report in it.
-  //
-  // References while the run goes, addresses after it: a link signed as the
-  // chunk passed would start expiring minutes before the reply carrying it was
-  // posted, and a run is allowed to last ten of them.
-  const producedRefs: ProducedFileRef[] = [];
-  // Enforced by an abort signal so a run that stops producing chunks entirely
-  // (hung provider or tool) still ends and reports a timeout instead of
-  // leaving the status up forever.
-  const deadline = AbortSignal.timeout(INTERACTIVE_RUN_TIMEOUT_MS);
-  const attached = event.files ?? [];
-  const imageParts = attached.length > 0 ? await collectImageParts(deps, token, attached, warnings) : [];
-  const readDocuments =
-    attached.length > 0 ? await collectDocuments(deps, token, attached, warnings) : [];
   // Labelled on the same terms as the history: leaving the newest turn bare
   // while every older one is named invites the model to attribute the question
   // to whoever spoke last.
   const currentSpeaker = event.user ? named.nameByUser?.get(event.user) : undefined;
   const askText = currentSpeaker && message ? `${currentSpeaker}: ${message}` : message;
-  // Assembled by the one function that owns a turn's body, so Slack and a chat
-  // put the same message in front of the model.
-  const userContent: string | ContentPart[] = turnContent(readDocuments, askText, imageParts);
-  // Whatever budget the current message left goes to the newest thread images,
-  // so "make the picture I sent blue" still has the picture.
-  const history = await withHistoryImages(
+
+  // From here the turn is the same as any other chat bot's: attachments,
+  // the run, and what the reply carries beside the answer are the shared
+  // pipeline's, and only the thread's own bookkeeping below is Slack's.
+  await handleTurn(
     deps,
-    token,
-    turns,
-    MAX_IMAGE_ATTACHMENTS - imageParts.length,
-    warnings,
-  );
-  // A run can go minutes between chunks — a slow provider, a long tool — and
-  // Slack drops a status two minutes after it is set. Refreshing on chunk
-  // arrival alone would go quiet exactly when the run is slowest, so this runs
-  // on its own clock.
-  const stopStatusHeartbeat = sink.keepStatusAlive();
-  try {
-    // Nothing survived to ask about. A file-only message whose every attachment
-    // failed — a scanned PDF is the ordinary case — would otherwise dispatch a
-    // user turn with empty content, which providers reject or answer with
-    // whatever an empty prompt evokes. The warnings already say what happened
-    // and they are the whole answer, so the reply is those alone.
-    if (typeof userContent === "string" && userContent === "") {
-      throw new EmptyTurnError();
-    }
-    const messages: ChatMessageInput[] = [...history, { role: "user", content: userContent }];
-    // The thread is the conversation — the same address the engagement row and
-    // the reply itself use, so a follow-up here is one for every consumer.
-    const conversation = slackConversation(event.channel, threadTs);
-    for await (const chunk of deps.runAgent({
+    {
       project,
       version,
-      messages,
+      text: askText,
+      attachments: (event.files ?? []).map((file) => toAttachment(deps, token, file)),
+      history: turns.map((turn) => toHistoryTurn(deps, token, turn)),
       // The Slack user id, not an email: Slack does not hand one over, and
       // guessing at a mapping would attribute spend to the wrong person.
       ...(event.user ? { actor: { kind: "slack" as const, id: event.user } } : {}),
       ...(named.caller ? { caller: named.caller } : {}),
-      conversation,
+      // The thread is the conversation — the same address the engagement row and
+      // the reply itself use, so a follow-up here is one for every consumer.
+      conversation: slackConversation(event.channel, threadTs),
       ...(ownerEmail ? { ownerEmail } : {}),
-      signal: deadline,
-    })) {
-      if (chunk.error) {
-        warnings.push(chunk.error);
-        // A subagent's failure reaches the parent as a tool error and the parent
-        // often answers anyway (a refused transfer, an unusable child model), so
-        // only a top-level failure ends the run.
-        if (isTopLevelChunk(chunk)) {
-          break;
-        }
-        continue;
-      }
-      // A binding the run could not use. It rides out with the answer rather
-      // than replacing it — the run still produced one. `collectedWarning`
-      // owns which ones count.
-      const warning = collectedWarning(chunk, warnings);
-      if (warning) {
-        warnings.push(warning);
-      }
-      // Tool activity is reported as steps rather than in the answer: a
-      // tool-heavy first turn shows what is happening without spending the
-      // message body on it, and where the surface renders a checklist the steps
-      // accumulate into one.
-      //
-      // Every tool the chunk announced, not just the first: a model that fans
-      // out calls in one response puts them side by side in this array, and
-      // reading index 0 alone reported one of them and hid the rest.
-      //
-      // A subagent's calls are listed too, named by the agent that made them —
-      // the checklist is what the run is doing, and a hand-off's work is still
-      // the run's work.
-      for (const call of chunk.delta?.toolCalls ?? []) {
-        const name = call.function?.name;
-        // Arguments stream in after the name, so a later delta for the same
-        // call carries neither and is not a step of its own.
-        if (call.id && name) {
-          await sink.step(call.id, chunk.author ? `${chunk.author}: ${name}` : name, {
-            nested: !isTopLevelChunk(chunk),
-          });
-        }
-      }
-      // The one real completion boundary a run has. Nothing else may tick a
-      // step off: a status changing means the run stopped saying something, not
-      // that it finished it.
-      if (chunk.toolResult) {
-        await sink.stepDone(
-          chunk.toolResult.toolCallId,
-          // The result names what the call acted on — the skill it loaded, the
-          // server an MCP tool came from — which the call's own name never does.
-          chunk.author ? `${chunk.author}: ${chunk.toolResult.name}` : chunk.toolResult.name,
-        );
-      }
-      if (chunk.image) {
-        images.push(chunk.image);
-      }
-      if (chunk.file) {
-        producedRefs.push(fileRefOf(chunk.file));
-      }
-      const content = chunk.delta?.content;
-      if (content && isTopLevelChunk(chunk)) {
-        text += content;
-        await sink.push(text);
-      }
-    }
-  } catch (error) {
-    if (!(error instanceof EmptyTurnError)) {
-      warnings.push(
-        deadline.aborted
-          ? "Agent run timed out"
-          : error instanceof Error
-            ? error.message
-            : "agent run failed",
-      );
-    }
-  } finally {
-    stopStatusHeartbeat();
-  }
-
-  // A picture the run only *read* is worth posting when it is all the run has
-  // to show — "show me the image at this address" is answered by it. Beside
-  // something the run drew it is the source material, and uploading both turns
-  // "redraw my avatar" into two pictures where one was asked for.
-  //
-  // A thread is where this matters and a chat is not: each upload here is its
-  // own message and its own notification, while a chat renders inline in a
-  // conversation already flowing past.
-  const drawn = images.filter((image) => !image.fetched);
-  const uploads = drawn.length > 0 ? drawn : images;
-
-  log.info(
-    "slack",
-    `run done project=${projectName} chars=${text.length} images=${uploads.length} warnings=${warnings.length}`,
+      warnings,
+    },
+    reply,
   );
-  for (const [index, image] of uploads.entries()) {
-    try {
-      const ext = image.mimeType === "image/png" ? "png" : "jpg";
-      await deps.slack.uploadImage(token, {
-        channel: event.channel,
-        threadTs: threadTs,
-        filename: `generated-${Date.now()}-${index + 1}.${ext}`,
-        data: Buffer.from(image.b64, "base64"),
-        title: image.prompt?.slice(0, 80) ?? "Generated image",
-      });
-    } catch (error) {
-      log.error("slack", "image upload failed", error);
-      warnings.push(`Image upload failed: ${error instanceof Error ? error.message : "unknown"}`);
-    }
-  }
-  // Signed here, one step before the message goes out, and for a window that
-  // suits a record rather than an open page: a thread is read minutes later by
-  // the person who asked and days later by whoever searches the channel.
-  const produced = await resolveProducedFiles(
-    producedRefs,
-    deps.signFile,
-    RECORD_URL_TTL_SECONDS,
-  );
-  for (const warning of produced.warnings) {
-    if (!warnings.includes(warning)) {
-      warnings.push(warning);
-    }
-  }
-  // Only this scope knows whether *anything* reached the thread — the sink sees
-  // the text and not the uploaded images, which is how a run that answered
-  // purely with a picture used to be captioned "(no response)". A produced file
-  // counts for the same reason: it is the deliverable, and the link below is the
-  // only place the thread carries it.
-  if (!text && uploads.length === 0 && producedRefs.length === 0 && warnings.length === 0) {
-    warnings.push("The run finished without producing an answer.");
-  }
-  // Links first, warnings after: one is what the run made and the other is what
-  // it lost, and a reader scanning the end of a reply should meet them in that
-  // order.
-  const suffix = [
-    ...produced.files.map((file) => `:paperclip: <${file.url}|${mrkdwnText(file.name)}>`),
-    ...warnings.map((warning) => `:warning: ${warning}`),
-  ].join("\n");
-  await sink.finish(text, suffix);
 
   // The bot has now spoken here, so the next message in this thread is a
   // follow-up rather than channel noise — recorded after the reply, because

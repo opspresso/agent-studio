@@ -1,4 +1,5 @@
 import type { SlackChunk, SlackClientPort } from "@/application/slack/types";
+import type { ReplySink } from "@/domain/messaging/reply";
 import { log } from "@/shared/logger";
 import { unrefTimer } from "@/shared/unrefTimer";
 
@@ -118,52 +119,12 @@ export interface ReplyTarget {
   recipient?: { userId: string; teamId: string };
 }
 
-export interface ReplySink {
-  /**
-   * What the run is doing now. Throttled and never fatal.
-   *
-   * The caller says it once; the sink picks the rendering the surface has —
-   * the agent thread's status line, or a task on the channel's stream.
-   * `loadingMessages` are rotated by Slack under the status line (at most ten)
-   * and mean nothing to the task axis, which animates on its own.
-   */
-  status(text: string, loadingMessages?: string[]): Promise<void>;
-  /**
-   * A unit of work began — a tool call, a hand-off — identified by something
-   * stable for its lifetime.
-   *
-   * Where the surface renders a checklist this adds a row **per tool, not per
-   * call** — reaching for the same one five times is one row saying five, which
-   * is the sentence a checklist is for. Where it renders one status line, the
-   * step takes the line over.
-   *
-   * `nested` marks work a subagent is doing. It still moves a status line, which
-   * cannot accumulate and would otherwise sit still through a long hand-off; it
-   * earns no checklist row, because the parent's own transfer row already stands
-   * for the whole thing.
-   */
-  step(id: string, title: string, opts?: { nested?: boolean }): Promise<void>;
-  /**
-   * That unit of work finished. `title` replaces the one it opened with when the
-   * ending says more than the beginning did — a tool result names what it acted
-   * on, which the call alone does not.
-   *
-   * Only a real boundary may call this. Nothing else in a run has one: a status
-   * line changing does not mean the last thing it said is *finished*, and a
-   * checklist that ticked items off on that basis would claim the run completed
-   * things it merely stopped mentioning.
-   */
-  stepDone(id: string, title?: string): Promise<void>;
-  /**
-   * Keep the current status from expiring while a run is in flight. Returns the
-   * stopper; call it in a `finally` so a failed run does not leave a timer.
-   */
-  keepStatusAlive(): () => void;
-  /** The answer *so far*. The sink works out what still needs sending. */
-  push(fullText: string): Promise<void>;
-  /** Deliver whatever is left, plus any warnings, and clear the status. */
-  finish(fullText: string, suffix: string): Promise<void>;
-}
+/**
+ * The port this file implements. Owned by `domain/messaging` because it is the
+ * contract every chat-bot surface renders — this file is how *Slack* renders
+ * it, and nothing here is the definition of it.
+ */
+export type { ReplySink } from "@/domain/messaging/reply";
 
 /**
  * A status-line phrase, dressed to stand on its own as a message. Slack renders
