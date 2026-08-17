@@ -71,6 +71,10 @@ const NAV_GROUPS = [
       { href: "/skills", label: "nav.skills", Icon: IconBook2 },
       { href: "/tools", label: "nav.tools", Icon: IconTool },
       { href: "/agents", label: "nav.agents", Icon: IconRobot },
+      // The model registry is a catalogue of what this deployment can reach,
+      // like the four above it — read from the member rung; only the toggles
+      // and the probe on it stay admin's.
+      { href: "/models", label: "nav.models", Icon: IconCpu },
     ],
   },
   {
@@ -79,7 +83,6 @@ const NAV_GROUPS = [
     items: [
       { href: "/members", label: "nav.members", Icon: IconUsers },
       { href: "/audit", label: "nav.audit", Icon: IconShieldCheck },
-      { href: "/models", label: "nav.models", Icon: IconCpu },
       { href: "/settings", label: "nav.settings", Icon: IconSettings },
     ],
   },

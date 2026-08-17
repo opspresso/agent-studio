@@ -62,9 +62,9 @@ export function isAdmin(user: SessionUser): Promise<boolean> {
  * The middle rung of the three wrappers, one per tier: {@link withAuth} asks
  * only for a session, this asks for `member`, {@link withAdminAuth} asks for
  * `admin`. It gates the capability registries the console's Intelligence
- * section reads — skills, MCP tools, external agents, plugins — which are a
- * catalogue of what this deployment can reach rather than anything a guest's
- * own work needs. A guest still *runs* projects bound to those capabilities:
+ * section reads — skills, MCP tools, external agents, plugins, and the model
+ * catalogue — which are a catalogue of what this deployment can reach rather
+ * than anything a guest's own work needs. A guest still *runs* projects bound to those capabilities:
  * resolution happens server-side and never consults the reader's tier.
  *
  * Two routes under those paths are deliberately outside it. The OAuth callback
