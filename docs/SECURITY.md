@@ -555,8 +555,9 @@ with a warning only when they hold nothing.
 
 ## PII filtering, and where it stops
 
-Opt-in per version via `parameters.piiFiltering`. Emails and phone numbers in outbound
-messages and variables are replaced with reversible, format-preserving `[[PII:…]]` tokens
+Opt-in per version via `parameters.piiFiltering`. Emails, phone numbers, Korean registration
+numbers and payment card numbers in outbound messages and variables are replaced with
+reversible, format-preserving `[[PII:…]]` tokens
 before every LLM dispatch, and the originals are restored in responses — streaming included,
 with token-boundary buffering — so the model never sees the real values. The mapping carries
 across subagent transfers.

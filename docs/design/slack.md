@@ -19,9 +19,13 @@ arriving and what Slack rate-limits generously (Tier 4). A workspace that cannot
 back to `chat.postMessage` + `chat.update`, paced at Slack's documented one edit per three
 seconds and marked with a trailing indicator so an interim state does not read as a finished
 answer. Streaming sends **deltas**, so the sink advances its flushed offset only on a
-successful write: a rejected append is re-sent with the next one instead of being lost.
-Streaming into a channel additionally names the recipient (`recipient_user_id` /
-`recipient_team_id`); a DM does not.
+successful write: a rejected append is re-sent with the next one instead of being lost. Every
+write is cut at Slack's own cap on one `markdown_text` — 12,000 characters
+(`MAX_STREAM_TEXT` in `replyStream.ts`) — because the first append is deliberately unpaced and
+carries everything so far: a model that answers in one long burst handed Slack a payload over
+the limit on the very first write, which was rejected and then re-sent unchanged by every push
+after it, and the answer never arrived. Streaming into a channel additionally names the
+recipient (`recipient_user_id` / `recipient_team_id`); a DM does not.
 
 The **agent experience** is answered natively where the surface offers it (a DM, not a channel
 thread): progress goes to `assistant.threads.setStatus` — "is thinking…", then each tool by

@@ -35,7 +35,7 @@ src/
   domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
     execution/  security/  slack/  trigger/  sync/  audit/  plugin/  member/
-    a2a/  catalog/  vector/
+    a2a/  catalog/  vector/  artifact/  net/
   application/      # Use cases. Depends on domain ports only, and never on the
                     # composition root — deps are injected, never pulled.
     llm/            # The engine: tool loop, agent-run assembly, tool-result budgets,
@@ -45,6 +45,8 @@ src/
                     # the unknown-model policy, trace lifecycle
     chat/  slack/  a2a/  trigger/  image/
                     # The surfaces that drive a run, and the image path
+    artifact/       # What a run left behind: the one row writer, capture at the bracket,
+                    # signed-URL lifetimes
     audit/          # The one writer of an audit row, and reading the trail back
     catalog/        # The capability index: reindex, search, query-embedding cache
     project/  registry/  skill/  mcp/  agent/  usage/  trace/  settings/  health/
@@ -55,8 +57,8 @@ src/
     mcp/            # MCP HTTP client, session, discovery cache
     vector/         # The S3 Vectors store the capability catalog is indexed into
     a2a/  agent/  slack/  github/  storage/  net/  crypto/  health/  telemetry/
-                    # A2A + external-agent clients, Slack, the skills- and tools-repo
-                    # clients, S3 image store, SSRF guard, AES, readiness probes,
+                    # A2A + external-agent clients, Slack, the plugins-repo client,
+                    # the S3 artifact store, SSRF guard, AES, readiness probes,
                     # OTel trace export
   app/              # Next.js App Router: pages + route handlers (presentation)
     api/            # Route handlers call application use cases, never repositories directly
@@ -204,6 +206,8 @@ One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S)
 | Usage (member per day, per project) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{projectName}` | — | — |
 | Run concurrency slot | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
 | Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
+| Slack thread engagement (a thread the bot answered in) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
+| Artifact (what a run produced; GSI2 `ARTIFACTOWNER#{email}` / `{createdAt}#{id}`, sparse) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
 | A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
 | Remote conversation (outbound A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
 | A2A client key | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |

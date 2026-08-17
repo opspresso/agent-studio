@@ -156,110 +156,61 @@ because the engine's builtins are added after the MCP tools are cut and need the
 **The list itself is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)** — 92 decisions across two
 tables, the second holding the ones the test cannot express as a pattern but that the same
 rule governs. `tests/architecture.test.ts` is what enforces both.
+
 ## Subsystem map
 
-One line each — the linked section is the authority.
+One line each; the link is the authority. What is worth knowing *before* an edit is under
+[Conventions that bite](#conventions-that-bite), not here.
 
-- **LLM engine** (`src/application/llm/engine.ts`) — pure logic with **everything injected**
-  (channel, `recordUsage`, `callMcpTool`, `loadSkillContent`, `runSubagent`, `generateImage`,
-  `editImage`, `fetchUrl`, `readSlack`), so it tests with no network or DB via
-  `tests/fakeChannel.ts`.
-  `src/application/execution/runProject.ts` is the composition point that resolves a version's
-  skills/MCP tools/subagents and assembles those deps.
-  → `src/application/llm/AGENTS.md`, then
+- **LLM engine** — pure logic, everything injected, tested with no network or DB via
+  `tests/fakeChannel.ts` → `src/application/llm/AGENTS.md`, then
   [design/execution.md](docs/design/execution.md#llm-engine)
-- **Run bracket** — the single owner of what wraps a top-level run: the unknown-model refusal
-  (ahead of the guards, and a 400 — it says the version is misconfigured, not that the
-  platform is busy), the in-flight metric, the cost guard, the per-caller concurrency guard,
-  the correlation id. Exactly four functions admit a run. →
+- **Run bracket** — the one thing every top-level run passes through: model policy, cost guard,
+  tier cap, concurrency slot, metric, correlation id, artifact recorder →
   [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
-- **Images** — four producers (an `image` project, an agent run's builtins, an image
-  subagent, an MCP tool that returned one) over one `ImageChannel` port; source bytes decide
-  edit vs generate, and `toImageUsageRecord` is the one collapse into a usage row. →
-  [design/execution.md](docs/design/execution.md#images)
-- **Artifacts** — what a run left behind. Captured at the **run bracket**, not at the image use
-  case: all four producers converge on `EngineChunk.image`, and only the first of them is that
-  use case. One row per stored object, reachable by project (GSI1) *and* by person (GSI2,
-  sparse) — a Slack or trigger run names no mailbox, so the project axis is the only way its
-  output is ever listed or deleted. →
+- **Images** — four producers over one `ImageChannel` port; source bytes decide edit vs generate
+  → [design/execution.md](docs/design/execution.md#images)
+- **Artifacts** — what a run left behind, captured at the bracket, one row per stored object →
   [design/execution.md](docs/design/execution.md#artifacts)
-- **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in. It owns no
-  extraction: text, HTML and PDF all pass through the same `DocumentExtractor` an attachment
-  does. The adapter that fetches it is the **only** place an address the *model* chose is
-  requested, and the rules there are load-bearing rather than defence in depth. →
-  [SECURITY.md](docs/SECURITY.md#urls-the-model-chose)
-  A picture it brings back travels the same `EngineChunk.image` axis as a drawn one — every
-  surface renders it, the model can edit it — but carries `fetched` and is **not stored**: an
-  artifact is what a run *produced*, and keeping what it read files a person's own avatar in
-  their gallery beside the drawing made from it. Only `FetchUrl` sets that mark; an MCP tool's
-  picture may as easily have been rendered as read, and nothing can tell those apart.
-- **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2`; usage rows are daily
-  per-project-per-model maps updated with atomic `ADD`. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
+- **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in; the one adapter that
+  requests an address the *model* chose → [SECURITY.md](docs/SECURITY.md#urls-the-model-chose)
+- **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2`, every key string from
+  `keys.ts` → [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
 - **Auth & authorization** — `withAuth`/`withAdminAuth` for routes, `src/proxy.ts` for pages;
-  projects are a shared catalog with owner/admin-gated mutations. **`isAdminEmail` and
-  `isConfiguredAdmin` are not interchangeable.** →
+  **`isAdminEmail` and `isConfiguredAdmin` are not interchangeable** →
   [SECURITY.md](docs/SECURITY.md#authorization-model)
-- **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, four revealable via POST.
-  → [SECURITY.md](docs/SECURITY.md#secrets-at-rest)
-- **Runtime settings** — DB override → env fallback, cached process-locally. Never read those
-  env vars directly at dispatch; go through `src/lib/runtime-settings.ts`. →
+- **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, four revealable via POST →
+  [SECURITY.md](docs/SECURITY.md#secrets-at-rest)
+- **Runtime settings** — DB override → env fallback; never read those env vars at dispatch, go
+  through `src/lib/runtime-settings.ts` →
   [CONFIGURATION.md](docs/CONFIGURATION.md#resolution-order)
-- **MCP** — one session owner, an adapter over `@modelcontextprotocol/client` that **probes
-  each server's protocol era** (`2026-07-28`, or the `initialize` handshake for one that has
-  not moved) and gets its OAuth client the same way — metadata document first, RFC 7591
-  registration behind it. Both halves of that are backward compatibility on purpose: a
-  registry entry points at somebody else's deployment, so pinning the revision or dropping
-  registration breaks a working entry for a reason its owner cannot fix. Discovery cached per
-  `url + headers`, managed servers on loopback by provenance, per-project OAuth connections.
-  The SSRF guard, the response byte ceiling, the lazy connect and the expired-session retry
-  are the session's own; the SDK supplies none of them. **The SDK follows a caret range
-  (`^2.0.0`) like every other dependency, but four of its behaviours are load-bearing here and
-  none is covered by semver**: which revision `LATEST_PROTOCOL_VERSION` names (a bump into the
-  2026 era makes the handshake fallback useless), what `mode: "auto"` falls back to, that
-  `listMaxPages` throws rather than truncating, and the `SdkErrorCode` values
-  `unusableServerReason` reads. An SDK bump — a lockfile refresh included — is therefore a
-  protocol change to check against those four, not a dependency update to wave through. →
-  [design/mcp.md](docs/design/mcp.md)
-- **Capability catalog** — one global index (skills, MCP servers *and* their tools, external
-  agents) rebuilt by a CronJob tick, never on a registry write. A version opting into
-  `dynamicCapabilities` has its lists **widened** before resolution, from the system prompt and
-  the request; bindings are never displaced, and an OAuth-bearing MCP server is added only
-  where the project has already connected it. Off entirely without `VECTOR_BUCKET`. →
+- **MCP** — one session owner over `@modelcontextprotocol/client`, probing each server's
+  protocol era; discovery cached per `url + headers`; managed servers on loopback by provenance;
+  per-project OAuth → [design/mcp.md](docs/design/mcp.md)
+- **Capability catalog** — one global index rebuilt by a CronJob tick, never on a registry
+  write; a version opting in has its lists widened, never displaced →
   [design/capabilities.md](docs/design/capabilities.md#capability-catalog)
-- **Memory** — what outlives a run lives behind MCP, not in this app: a bound memory server
-  (mcp-memory) offers `recall`/`remember`, is told which project (`X-Tenant-Id`) and which
-  conversation (`X-Conversation-Id`) is asking, and a version that opts into `memoryRecall` has
-  the run ask `recall` with the newest user turn before the first token and put the answer in
-  the system prompt (`src/application/execution/memoryRecall.ts`, the engine knows nothing of
-  it). A second, native store would be two answers to "what does this project remember". →
-  [design/capabilities.md](docs/design/capabilities.md#memory)
-- **PII filtering** — opt-in per version; bounds what the LLM and engine context see, **not**
-  what an MCP server receives, and **not** the request text capability discovery embeds (that
-  search runs before the engine constructs the filter). →
+- **Memory** — lives behind MCP (mcp-memory), not in this app; `memoryRecall` asks `recall`
+  before the first token → [design/capabilities.md](docs/design/capabilities.md#memory)
+- **PII filtering** — opt-in per version; bounds what the LLM sees, **not** what an MCP server or
+  the catalog's embedding provider receives →
   [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
 - **SSRF guard** — operator URLs checked at registration *and* dispatch, through
-  `fetchPublicUrl`. → [SECURITY.md](docs/SECURITY.md#outbound-requests-ssrf)
-- **Slack / A2A / triggers** — per-project bots, both A2A directions, published-only webhook
-  and schedule runs deduplicated by conditional claims; a CronJob ticks the schedule scan. →
+  `fetchPublicUrl` → [SECURITY.md](docs/SECURITY.md#outbound-requests-ssrf)
+- **Slack** — per-project bots; `classifySlackEvent` decides which received messages are for the
+  bot **ahead of the dedup claim**; six read-only workspace tools behind an opt-in →
   [design/slack.md](docs/design/slack.md)
-- **Slack engagement** — the bot receives every message in every channel it belongs to, and
-  `classifySlackEvent` decides which are for it **ahead of the dedup claim**, so an ignored one
-  costs no write and opens no reply. Own message → mention → DM → a thread it answered in
-  (a day-long window) → a project keyword → nothing. →
-  [design/slack.md](docs/design/slack.md#which-events-are-for-the-bot)
-- **Slack workspace reads** — six read-only tools behind a version opt-in, all routed to one
-  injected reader that holds the token. No writes and no email, by construction rather than
-  omission. → [SECURITY.md](docs/SECURITY.md#reading-the-slack-workspace)
-- **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it
-  plus the transfer chain down every subagent hop. →
+- **A2A** — both directions; a transfer continues the remote conversation →
+  [design/agents-a2a.md](docs/design/agents-a2a.md)
+- **Triggers** — one webhook, any number of schedules, published-only, deduplicated by
+  conditional claims; a CronJob ticks the scan → [design/triggers.md](docs/design/triggers.md)
+- **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it down
+  every transfer hop →
   [design/observability.md](docs/design/observability.md#usage-and-cost-attribution)
-- **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first
-  one. `apiError` (`src/app/api/_lib/http.ts`) maps any of them. →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#error-handling)
-- **Logging** — `src/shared/logger.ts` is the only place that writes to the console; lines
-  carry the run's correlation id, deliberately *not* the trace id (which is sampled). →
-  [OPERATIONS.md](docs/OPERATIONS.md#logging)
+- **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first one
+  → [ARCHITECTURE.md](docs/ARCHITECTURE.md#error-handling)
+- **Logging** — `src/shared/logger.ts` is the only writer; lines carry the run's correlation id,
+  deliberately *not* the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#logging)
 
 ## Conventions that bite
 
@@ -394,6 +345,12 @@ One line each — the linked section is the authority.
   vitest.
 - **Secrets on update**: a masked or empty value preserves what is stored; a masked value with
   no stored counterpart is dropped. A mask can only confirm a secret, never create one.
+- **An `@modelcontextprotocol/client` bump is a protocol change, not a dependency update.**
+  Four of its behaviours are load-bearing and none is covered by semver: which revision
+  `LATEST_PROTOCOL_VERSION` names, what `mode: "auto"` falls back to, that `listMaxPages`
+  throws rather than truncating, and the `SdkErrorCode` values `unusableServerReason` reads.
+  Check all four on any bump — a lockfile refresh included
+  ([design/mcp.md](docs/design/mcp.md#transport-and-sessions) says why each matters).
 - **The plugins sync applies the repository; a person owns deletion.** The contract is
   [design/capabilities.md](docs/design/capabilities.md#skills) and, endpoint-side,
   [API.md](docs/API.md#registry-and-integration-operations). Four things constrain a change to

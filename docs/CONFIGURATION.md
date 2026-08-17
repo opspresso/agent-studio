@@ -386,12 +386,20 @@ pinned by `tests/architecture.test.ts` where a second copy would drift.
 | MCP OAuth metadata / token response | `256KB` each | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
 | MCP discovery cache entries | `200` | `src/infrastructure/mcp/discoveryCache.ts` |
 | A remote agent's (A2A / external) response | `2MB` | `src/infrastructure/agent/dispatcher.ts`, `agentClient.ts` |
+| One MCP tool call, before the model is handed a timeout error (a tool may legitimately take minutes) | `120s` | `src/infrastructure/mcp/session.ts` |
+| MCP discovery (`tools/list`) — on the critical path of every run's first token, so it fails fast and costs only that server's tools | `10s` | `src/infrastructure/mcp/session.ts` |
+| Releasing an MCP session at run end | `5s` | `src/infrastructure/mcp/session.ts` |
+| MCP OAuth well-known document / token endpoint | `10s` / `15s` | `src/infrastructure/mcp/oauthMetadata.ts`, `oauthClient.ts` |
+| A transfer to an OpenAI-shaped remote agent | `120s` | `src/infrastructure/agent/dispatcher.ts` |
+| A transfer to an A2A remote agent — **silence**, not the whole exchange: the timer resets on every streamed event, and the run deadline bounds the total | `120s` idle | `src/infrastructure/a2a/client.ts` |
+| The registry's "test message" to an external agent | `60s` | `src/infrastructure/agent/agentClient.ts` |
 | Concurrent MCP calls per model response | `5` | `src/application/llm/engine.ts` |
 | Interactive (Slack) run deadline | `3` min | `src/shared/runDeadline.ts` |
 | Images per turn / bytes each | `4` / `5MB` | `src/domain/llm/imageLimits.ts` |
 | Documents per turn / bytes each | `4` / `10MB` | `src/domain/llm/documentLimits.ts` |
 | Extracted text kept, per document / per turn | `20,000` / `40,000` chars | `src/domain/llm/documentLimits.ts` |
 | Request body carrying a turn (derived from the attachment caps) | ~`80MB` | `src/app/api/_lib/body.ts` |
+| Skill attachments — bytes per file / files per skill / bytes per skill (a file past any of them is skipped at sync, with the reason reported) | `64KB` / `20` / `200KB` | `src/domain/skill/files.ts` |
 | Request body of a registry or version edit (derived from the skill file caps) | `456KB` | `src/app/api/_lib/body.ts` |
 | Transfer transcript line kept when a turn overflows | `500` chars minimum | `src/application/llm/engine.ts` |
 | Context-budget estimate (ASCII / other / image part / headroom) | `3` chars per token / `1.5` tokens per char / `2,500` tokens / `2,000` tokens | `src/application/llm/contextBudget.ts` |

@@ -201,10 +201,11 @@ Every run records **who caused it** — a user, a project token (as its owner), 
 webhook, or inbound A2A — on the trace and on a per-caller daily usage row, because a shared
 project catalog means the project name never answered "who spent this".
 
-Each project can set a daily **alert** threshold (notify once, keep running) and a **block**
-threshold (refuse every run until 00:00 UTC, with `Retry-After`). Separately,
-`MAX_CONCURRENT_RUNS_PER_ACTOR` bounds how many runs one caller may have in flight. What each
-guard does and does not bound is in
+Each project can set an **alert** threshold (notify once, keep running) and a **block**
+threshold (refuse every run until the window rolls over, with `Retry-After`) over two windows —
+the UTC day and the UTC month. A member's own tier caps their monthly spend as well.
+Separately, `MAX_CONCURRENT_RUNS_PER_ACTOR` bounds how many runs one caller may have in
+flight. What each guard does and does not bound is in
 [docs/OPERATIONS.md](docs/OPERATIONS.md#spend-and-load-guards).
 
 ## Deployment
