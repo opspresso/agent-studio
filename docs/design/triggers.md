@@ -1,11 +1,11 @@
-# Triggers
+# 트리거
 
-Two ways something other than a person starts a run — a webhook delivery and a schedule
-firing — plus the sweep that closes a row an instance died holding.
+사람이 아닌 무언가가 런을 시작하는 두 경로 — webhook 전달(delivery)과 schedule 발화(firing)
+— 그리고 인스턴스가 붙잡은 채 죽은 행을 마감하는 스윕(sweep).
 
-The ticker's contract and what its summary means are
-[OPERATIONS.md](../OPERATIONS.md#schedule-ticker); the delivery endpoints are
-[API.md](../API.md#triggers).
+티커(ticker)의 계약과 그 요약이 뜻하는 바는
+[OPERATIONS.md](../OPERATIONS.md#schedule-티커) 에 있고, 전달 엔드포인트는
+[API.md](../API.md#triggers) 에 있다.
 
 ```ts
 WebhookTrigger  { projectName, triggerId (slug), kind: "webhook", description, enabled,
@@ -14,132 +14,130 @@ WebhookTrigger  { projectName, triggerId (slug), kind: "webhook", description, e
 ScheduleTrigger { …same base…, kind: "schedule", cron, timezone (IANA), message? }
 ```
 
-- **A project has one webhook and any number of schedules.** The webhook is the trigger row
-  under the reserved id `PROJECT_WEBHOOK_ID`, delivered at `POST /api/webhook/{project}` —
-  the project name is the whole address, so nobody names it and the console is a switch that
-  writes the row the first time it goes on. It stays a trigger row because everything a
-  delivery needs already lives there: the secret, the firing history, the idempotency claim,
-  the overlap lease, the project cascade delete. A second entity would have re-derived each
-  of them. The "one webhook" part is structural rather than conventional: `admitDelivery`
-  takes a project name and resolves the id itself, so no caller can address another row, and
-  `create` refuses a webhook under any other id (which would mint a secret with no door) as
-  well as a schedule under this one. `projectWebhookPath` in `src/domain/trigger/types.ts` is
-  the only place the address is built.
-- Triggers and their delivery history both live in the **project partition**, so the project
-  cascade delete already removes them and a trigger's runs are one `begins_with`. Run rows
-  carry a TTL, because a delivery log is not a record to keep.
-- **Published only**, via `resolveRunnableVersion` — a draft is configuration in progress, and
-  an external system firing at one would run whatever an editor happened to have saved.
-- `triggerId` is a slug under the same rule as a project name, normalised client-side by the
-  shared `toSlug` and enforced by the schema.
-- The secret is compared in constant time **before** the enabled flag is read, so a disabled
-  trigger cannot answer a wrong secret differently from an enabled one — that difference is an
-  oracle for which triggers exist.
-- `Idempotency-Key` is claimed with a conditional write (24h TTL), the same shape as the Slack
-  event claim.
-- `allowConcurrent: false` (the default) is enforced by **reusing a run slot**: "at most one
-  in flight, and a dead instance's hold expires" is exactly what `RunSlotRepository` already
-  is. Off by default, because a webhook firing faster than the run takes would otherwise pile
-  runs up until the cost guard notices.
-- `payloadMode` decides what the payload becomes. `variables` flattens its scalar top-level
-  fields over the trigger's fixed ones — only strings can be substituted into a template, so a
-  nested object is dropped rather than rendered as `[object Object]`. `message` serialises it
-  into the user turn, which is what an agent project can reason about.
-- **Every refusal past the door is a history row with a status**, including a skip (project
-  gone, no published version, a run already in flight): an operator must be able to tell "it
-  never fired" from "it fired and failed" without reading logs. What the door itself turns
-  away — no webhook configured, a wrong secret, a disabled trigger, a duplicate
-  `Idempotency-Key` — leaves no history row: those are the delivery's own answer (`404`,
-  `401`, a `202` with its status), and a wrong secret must not write anything.
-- The endpoint answers **202** and runs through `after()`, like the Slack path: a run here can
-  last ten minutes and no webhook sender waits that long. An instance lost mid-delivery leaves
-  a row stuck in `running`, which the [repair sweep](#repairing-a-lost-firing) finishes as
-  `failed` — driven by the scan tick and by the trigger's own next delivery, so a deployment
-  with no ticker is covered too. Slack keeps the gap on purpose: a lost event leaves no row to
-  finish, only a user without an answer, and re-running it collides with the non-idempotence
-  the schedule decision already ruled on.
+- **한 Project 는 webhook 하나와 임의 개수의 schedule 을 갖는다.** webhook 은 예약된 id
+  `PROJECT_WEBHOOK_ID` 아래의 트리거 행이고 `POST /api/webhook/{project}` 로 전달된다 —
+  Project 이름이 주소 전체이므로 아무도 이름을 붙이지 않으며, 콘솔은 처음 켜질 때 그 행을
+  쓰는 스위치다. 이것이 트리거 행으로 남는 이유는 전달에 필요한 모든 것이 이미 거기 살기
+  때문이다: 시크릿, 발화 이력, 멱등성 클레임, 겹침 리스(lease), Project cascade delete.
+  별도 엔티티였다면 그 하나하나를 다시 유도했을 것이다. "webhook 하나"라는 부분은 관례가
+  아니라 구조다: `admitDelivery` 는 Project 이름을 받아 id 를 스스로 해석하므로 어떤
+  호출자도 다른 행을 지목할 수 없고, `create` 는 다른 id 아래의 webhook (문 없는 시크릿을
+  발급하는 꼴이다) 도, 이 id 아래의 schedule 도 거부한다. 주소를 만드는 곳은
+  `src/domain/trigger/types.ts` 의 `projectWebhookPath` 하나뿐이다.
+- 트리거와 그 전달 이력은 둘 다 **project 파티션**에 산다. 그래서 Project cascade delete 가
+  이미 그것들을 제거하고, 한 트리거의 런은 `begins_with` 하나다. 런 행에는 TTL 이 붙는다 —
+  전달 로그는 남겨 둘 기록이 아니기 때문이다.
+- **published 만**, `resolveRunnableVersion` 을 통해 — draft 는 작성 중인 설정이고, 외부
+  시스템이 거기에 발화하면 편집자가 마침 저장해 둔 무엇이든 실행하게 된다.
+- `triggerId` 는 Project 이름과 같은 규칙을 따르는 slug 이고, 클라이언트 쪽에서 공용
+  `toSlug` 로 정규화되며 스키마가 그것을 강제한다.
+- 시크릿은 enabled 플래그를 읽기 **전에** 상수 시간으로 비교된다. 그래야 비활성 트리거가
+  틀린 시크릿에 활성 트리거와 다르게 답하지 못한다 — 그 차이는 어떤 트리거가 존재하는지
+  알려 주는 oracle 이다.
+- `Idempotency-Key` 는 조건부 쓰기(24h TTL)로 클레임되며, Slack 이벤트 클레임과 같은
+  모양이다.
+- `allowConcurrent: false` (기본값) 는 **런 슬롯을 재사용해서** 강제한다: "동시에 최대 하나,
+  그리고 죽은 인스턴스의 점유는 만료된다" 가 바로 `RunSlotRepository` 그 자체다. 기본이
+  꺼짐인 이유는, 런이 걸리는 시간보다 빠르게 발화하는 webhook 이 그러지 않으면 비용 가드가
+  알아챌 때까지 런을 쌓아 올리기 때문이다.
+- `payloadMode` 는 payload 가 무엇이 될지 정한다. `variables` 는 payload 의 최상위 스칼라
+  필드를 트리거의 고정 변수 위에 평탄화한다 — 템플릿에 치환될 수 있는 것은 문자열뿐이므로,
+  중첩 객체는 `[object Object]` 로 렌더되는 대신 버려진다. `message` 는 payload 를 사용자
+  턴으로 직렬화하며, 그것이 agent project 가 추론할 수 있는 형태다.
+- **문을 지난 뒤의 모든 거절은 상태를 가진 이력 행이 된다.** skip (Project 가 사라짐,
+  published 버전 없음, 이미 런이 진행 중) 도 포함이다: 운영자는 로그를 읽지 않고도 "애초에
+  발화하지 않았다" 와 "발화했고 실패했다" 를 구별할 수 있어야 한다. 문 자체가 돌려보내는 것
+  — webhook 미설정, 틀린 시크릿, 비활성 트리거, 중복된 `Idempotency-Key` — 은 이력 행을
+  남기지 않는다: 그것들은 전달 자체의 답(`404`, `401`, 상태를 담은 `202`)이고, 틀린 시크릿은
+  아무것도 쓰지 않아야 한다.
+- 엔드포인트는 **202** 로 답하고 Slack 경로처럼 `after()` 로 실행한다: 여기서 런은 10분까지
+  갈 수 있고 그렇게 오래 기다리는 webhook 발신자는 없다. 전달 도중 인스턴스를 잃으면
+  `running` 에 멈춘 행이 남고, [복구 스윕](#유실된-발화-복구)이 그것을 `failed` 로
+  마감한다 — 스캔 틱과 그 트리거 자신의 다음 전달이 함께 이를 구동하므로, 티커가 없는 배포도
+  커버된다. Slack 은 그 갭을 의도적으로 남겨 둔다: 유실된 이벤트는 마감할 행을 남기지 않고
+  답을 받지 못한 사용자만 남기며, 그것을 다시 실행하는 것은 schedule 결정이 이미 판정한
+  비멱등성과 충돌한다.
 
-## Schedules
+## Schedule
 
-**The scheduler boundary** — the deployment decision this feature waited on — is a
-**Kubernetes CronJob ticking an authenticated endpoint** (`POST /api/triggers/scan`, shared
-token, once a minute). The ticker holds no state and no cron knowledge: which occurrences are
-due, who wins each one, and what runs is all decided in `scanSchedules`, so ticking twice,
-from two places, or late is safe. The alternatives lost on state: EventBridge Scheduler puts
-per-trigger CRUD in the AWS control plane — a second copy of the trigger table that can drift
-from the real one — and a dedicated worker Deployment duplicates the whole runtime for a poll
-loop the app can already serve. Three consumers were weighed, not one: Slack events and
-webhook deliveries share the same ack-then-`after()` durability gap, and a stateless tick
-against claimed work generalises to both — but migrating them is deliberately **not** part of
-this decision; at three consumers it stops being a deployment choice and becomes a rewrite of
-three execution paths. What the tick did take on afterwards is the *ledger* half of that gap
-for webhooks, which needs no migration at all — see below.
+**스케줄러 경계** — 이 기능이 기다리고 있던 배포 결정 — 는 **인증된 엔드포인트를 틱하는
+Kubernetes CronJob** (`POST /api/triggers/scan`, 공유 토큰, 1분에 한 번) 이다. 티커는 상태도
+cron 지식도 갖지 않는다: 어떤 발생(occurrence)이 도래했는지, 각각을 누가 차지하는지, 무엇이
+실행되는지는 전부 `scanSchedules` 에서 결정되므로 두 번 틱하든, 두 곳에서 틱하든, 늦게
+틱하든 안전하다. 대안들은 상태 때문에 졌다: EventBridge Scheduler 는 트리거별 CRUD 를 AWS
+컨트롤 플레인에 둔다 — 진짜 테이블과 어긋날 수 있는 트리거 테이블의 두 번째 사본이다 —
+그리고 전용 worker Deployment 는 앱이 이미 서빙할 수 있는 폴 루프를 위해 런타임 전체를
+복제한다. 저울에 올린 소비자는 하나가 아니라 셋이었다: Slack 이벤트와 webhook 전달은 ack 후
+`after()` 라는 같은 내구성 갭을 공유하고, 클레임된 작업에 대한 무상태 틱은 그 둘 모두로
+일반화된다 — 그러나 그것들을 이관하는 일은 의도적으로 이 결정의 **일부가 아니다**; 소비자가
+셋이 되는 순간 그것은 배포 선택이기를 그만두고 실행 경로 셋을 다시 쓰는 일이 된다. 틱이
+그 뒤에 실제로 떠맡은 것은 webhook 에 대한 그 갭의 *원장(ledger)* 쪽 절반이고, 그쪽은 이관이
+전혀 필요 없다 — 아래를 보라.
 
-- **"Exactly once" is the claim's property, not the ticker's.** Each occurrence (a UTC minute
-  instant) is claimed with the same conditional write that dedups webhook deliveries, key
-  `schedule:{instant}`. Any number of instances may scan concurrently; one write wins.
-- **A claim is permanent — a crashed firing is not re-executed.** A run is not idempotent (its
-  tools have side effects) and the next occurrence is the natural retry. What a lost instance
-  leaves behind is a row stuck in `running`, which the repair sweep below finishes.
-- **One trigger's failure is its own.** Every repository call in the tick is fenced per
-  trigger and per occurrence; a throw after a claim was won writes a skip row — the claim is
-  never offered again — and lands in the summary's `errors` count instead of aborting the
-  tick with earlier claims stranded.
-- **Cron evaluation has one owner**, `src/domain/trigger/cron.ts`: five standard fields read
-  as wall clock in the trigger's IANA timezone, occurrences keyed by UTC instant — so DST
-  needs no special cases (a spring-forward time never occurs; a fall-back time occurs twice,
-  each instant its own claim).
-- The scan looks back a bounded **catch-up window** (10 minutes): a missed tick or a short
-  scanner outage loses nothing, anything older is missed for good — which also bounds how many
-  runs a recovery can start at once. Overlapping windows are safe; the claim deduplicates.
-  Occurrences older than the trigger's **last edit** never fire, so creating or re-enabling a
-  schedule mid-window cannot back-fire instants from before the operator's decision. With
-  overlap disallowed, catch-up runs the **newest** occurrence and records the stale ones as
-  superseded rather than executing them late. One tick's admitted firings are driven through
-  a bounded pool (8), not one background task each.
-- Schedule rows alone carry `GSI1` (`TYPE#SCHEDULE`), so one index query enumerates them
-  across projects and webhook rows stay invisible to the firing scan. The repair sweep below
-  reaches both, by a different route and for a reason.
-- A schedule has **no secret and no payload**: nothing external presents credentials, and
-  every firing runs the trigger's fixed `variables`/`message` against the published version,
-  attributed to the `schedule` actor kind.
+- **"정확히 한 번" 은 클레임의 성질이지 티커의 성질이 아니다.** 각 발생(UTC 분 단위 instant)
+  은 webhook 전달을 dedup 하는 것과 같은 조건부 쓰기로, 키 `schedule:{instant}` 로
+  클레임된다. 인스턴스가 몇 개든 동시에 스캔해도 되고, 쓰기 하나가 이긴다.
+- **클레임은 영구적이다 — 죽어 버린 발화는 재실행되지 않는다.** 런은 멱등이 아니고(그 도구에는
+  부작용이 있다) 다음 발생이 자연스러운 재시도다. 유실된 인스턴스가 남기는 것은 `running` 에
+  멈춘 행이고, 아래의 복구 스윕이 그것을 마감한다.
+- **한 트리거의 실패는 그 트리거의 것이다.** 틱 안의 모든 repository 호출은 트리거별·발생별로
+  울타리가 쳐져 있다. 클레임을 얻은 뒤에 throw 가 나면 skip 행을 쓰고 — 그 클레임은 다시
+  제공되지 않는다 — 앞서 얻은 클레임들을 좌초시킨 채 틱을 중단시키는 대신 요약의 `errors`
+  카운트로 잡힌다.
+- **cron 평가에는 소유자가 하나다**, `src/domain/trigger/cron.ts`: 표준 다섯 필드를 트리거의
+  IANA 타임존 벽시계로 읽고, 발생은 UTC instant 로 키를 잡는다 — 그래서 DST 에 특수 케이스가
+  필요 없다 (봄에 건너뛴 시각은 아예 발생하지 않고, 가을에 되돌아온 시각은 두 번 발생하며 각
+  instant 가 저마다의 클레임이다).
+- 스캔은 한정된 **catch-up 윈도**(10분)만큼만 뒤를 돌아본다: 틱을 한 번 놓치거나 스캐너가
+  잠깐 죽어도 잃는 것이 없고, 그보다 오래된 것은 영영 놓친 것이 된다 — 이는 복구가 한 번에
+  시작할 수 있는 런의 수도 함께 제한한다. 윈도가 겹쳐도 안전하다; 클레임이 중복을 제거한다.
+  트리거의 **마지막 편집**보다 오래된 발생은 결코 발화하지 않으므로, 윈도 중간에 schedule 을
+  만들거나 다시 켜도 운영자의 결정 이전 instant 로 소급 발화할 수 없다. 겹침이 허용되지 않을
+  때 catch-up 은 **가장 최근** 발생을 실행하고, 낡은 것들은 뒤늦게 실행하는 대신 superseded
+  로 기록한다. 한 틱이 승인한 발화들은 각각 백그라운드 태스크 하나씩이 아니라 한정된 풀(8)로
+  구동된다.
+- schedule 행만이 `GSI1` (`TYPE#SCHEDULE`) 을 갖는다. 그래서 인덱스 쿼리 하나로 Project 를
+  가로질러 그것들을 열거할 수 있고, webhook 행은 발화 스캔에 보이지 않는다. 아래의 복구
+  스윕은 다른 경로로, 그럴 이유가 있어서 둘 다에 닿는다.
+- schedule 에는 **시크릿도 payload 도 없다**: 외부에서 자격 증명을 제시하는 것이 없고, 모든
+  발화는 트리거의 고정된 `variables`/`message` 를 published 버전에 대해 실행하며 `schedule`
+  actor kind 로 귀속된다.
 
-## Repairing a lost firing
+## 유실된 발화 복구
 
-Both kinds acknowledge first and run in `after()`, so an instance killed mid-firing leaves a
-row claiming a run is in flight when nothing is. `repairLostRuns`
-(`src/application/trigger/repairLostRuns.ts`) is the single owner of when that row is dead and
-what closes it, for **both** kinds: a `running` row older than `RUN_LEASE_SECONDS` plus a
-ten-minute margin is finished as `failed`. The margin is not a tick's worth of slack —
-`startedAt` is stamped when the firing is *admitted*, not when the backgrounded run starts, so
-it has to cover the distance between the two. Repairing late is cosmetic; repairing a live run
-brands a healthy instance as lost.
+두 종류 모두 먼저 ack 하고 `after()` 안에서 실행하므로, 발화 도중 죽은 인스턴스는 실제로는
+아무것도 없는데 런이 진행 중이라고 주장하는 행을 남긴다. `repairLostRuns`
+(`src/application/trigger/repairLostRuns.ts`) 는 그 행이 언제 죽은 것인지와 무엇이 그것을
+마감하는지에 대한 단일 소유자이며, **두 종류 모두**에 대해 그렇다: `RUN_LEASE_SECONDS` 에
+10분의 여유를 더한 것보다 오래된 `running` 행은 `failed` 로 마감된다. 이 여유분은 틱
+한 번어치의 슬랙이 아니다 — `startedAt` 은 백그라운드 런이 시작될 때가 아니라 발화가
+*승인될* 때 찍히므로, 그 둘 사이의 거리를 덮어야 한다. 늦게 복구하는 것은 겉모습의 문제지만,
+살아 있는 런을 복구하면 건강한 인스턴스를 유실된 것으로 낙인찍는다.
 
-It corrects the **ledger, not the work**. Re-running is what the schedule crash policy already
-ruled out, and a webhook has no next occurrence to retry into anyway.
+이것이 바로잡는 것은 **원장이지 작업이 아니다**. 재실행은 schedule 의 크래시 정책이 이미
+배제한 것이고, 어차피 webhook 에는 재시도해 들어갈 다음 발생이 없다.
 
-**Two callers, because one tick is not a guarantee.** The scan sweeps every project on a gated
-tick; a webhook delivery sweeps its own trigger as it finishes. The second is what covers a
-deployment that serves webhooks and configures no ticker at all — a supported shape
-([OPERATIONS.md](../OPERATIONS.md)), and one where the tick-only sweep would leave every stranded
-row `running` forever. The delivery's sweep runs after its own row is closed and reads a window
-a whole lease in the past, so it can neither delay the sender nor mistake its own firing for
-wreckage. It costs one bounded query per delivery — paid on every firing rather than on a tick,
-which is the price of not depending on a component the deployment may not have.
+**호출자가 둘인 이유는 틱 하나가 보장이 아니기 때문이다.** 스캔은 게이트된 틱마다 모든
+Project 를 훑고, webhook 전달은 자기 일을 끝내면서 자기 트리거를 훑는다. 두 번째는 webhook 은
+서비스하면서 티커는 전혀 설정하지 않는 배포 — 지원되는 형태이며
+([OPERATIONS.md](../OPERATIONS.md)), 틱만으로 스윕하면 좌초된 행이 전부 영원히 `running` 으로
+남는 배포 — 를 커버하는 쪽이다. 전달의 스윕은 자기 행을 마감한 뒤에 돌고 리스 하나만큼 과거의
+윈도를 읽으므로, 발신자를 지연시킬 수도 없고 자기 자신의 발화를 잔해로 오인할 수도 없다. 비용은
+전달마다 한정된 쿼리 하나 — 틱이 아니라 매 발화마다 지불하는 것이고, 그것이 배포가 갖고 있지
+않을 수도 있는 컴포넌트에 의존하지 않는 값이다.
 
-**The window is bounded by start time, not by recency.** `listRuns` takes a `startedBefore`
-bound that maps onto the sort key, because the row a sweep is looking for is by definition old:
-a trigger taking ten deliveries a minute writes hundreds of rows inside one lease, and the
-newest fifty of those never include the one that needs finishing — it only sinks further the
-longer it stays stranded. Bounding the query costs the same read and asks the right question.
+**윈도는 최신순이 아니라 시작 시각으로 한정된다.** `listRuns` 는 정렬 키에 대응되는
+`startedBefore` 경계를 받는다. 스윕이 찾는 행은 정의상 오래된 것이기 때문이다: 1분에 열 건의
+전달을 받는 트리거는 리스 하나 안에서 수백 개의 행을 쓰고, 그중 최신 50개에는 마감이 필요한
+그 행이 결코 들어 있지 않다 — 좌초된 채 오래 있을수록 더 가라앉을 뿐이다. 쿼리를 경계 짓는
+것은 같은 읽기 비용으로 올바른 질문을 던진다.
 
-**The sweep walks projects rather than an index**, which is the design decision here. Schedule
-rows carry `TYPE#SCHEDULE` because the tick fires them every minute — enumeration is that
-scan's hot path. Repair is the opposite: gated to every fifth minute, and run only to find
-wreckage. Granting webhook rows a matching index would cover only rows written *after* it
-existed, and a webhook trigger predating the repair is exactly the one most likely to have
-stranded a row already — so the index would miss the rows it was added for. `projects.list()`
-plus one trigger query per project reads everything that exists today and needs no backfill.
-Each project and each trigger is fenced: one unreadable partition costs the sweep a count in
-`errors`, not the tick.
-
+**스윕은 인덱스가 아니라 Project 를 걸어 다니고**, 그것이 여기서의 설계 결정이다. schedule
+행이 `TYPE#SCHEDULE` 을 갖는 이유는 틱이 그것들을 매분 발화시키기 때문이다 — 열거가 그 스캔의
+핫 패스다. 복구는 그 반대다: 5분에 한 번으로 게이트되고, 오직 잔해를 찾기 위해서만 돈다.
+webhook 행에 짝이 되는 인덱스를 부여해도 그것이 존재한 *이후에* 쓰인 행만 커버하는데, 복구
+기능보다 먼저 있던 webhook 트리거야말로 이미 행을 좌초시켜 두었을 가능성이 가장 높은 바로 그
+트리거다 — 그러니 그 인덱스는 자기가 추가된 이유인 행들을 놓치게 된다. `projects.list()` 에
+Project 당 트리거 쿼리 하나면 오늘 존재하는 모든 것을 읽고 백필도 필요 없다. Project 마다,
+트리거마다 울타리가 쳐져 있다: 읽을 수 없는 파티션 하나는 스윕에 `errors` 카운트 하나를
+물릴 뿐, 틱을 물리지 않는다.

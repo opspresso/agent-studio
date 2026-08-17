@@ -1,131 +1,131 @@
-# Development
+# 개발
 
-Setting up, running, and verifying AgentDure locally.
+AgentDure 를 로컬에서 셋업하고, 실행하고, 검증하는 방법.
 
-Related: [CONFIGURATION.md](CONFIGURATION.md) for every variable,
-[ARCHITECTURE.md](ARCHITECTURE.md) for the layer rules the tests enforce, and
-[../AGENTS.md](../AGENTS.md) for the conventions a change has to respect.
+관련 문서: 모든 변수는 [CONFIGURATION.md](CONFIGURATION.md), 테스트가 강제하는 레이어 규칙은
+[ARCHITECTURE.md](ARCHITECTURE.md), 변경이 지켜야 하는 관례는
+[../AGENTS.md](../AGENTS.md) 를 보라.
 
-## Prerequisites
+## 사전 준비
 
 - **Node.js 24+** (`engines: >=24`)
-- **pnpm 11.10.0**, pinned via `packageManager` — use corepack rather than a global install
-- **Docker**, for DynamoDB Local
+- **pnpm 11.10.0**, `packageManager` 로 고정 — 전역 설치 대신 corepack 을 쓴다
+- **Docker**, DynamoDB Local 용
 
 ```bash
 corepack enable && corepack prepare pnpm@11.10.0 --activate
 pnpm install
 ```
 
-## Environment
+## 환경
 
 ```bash
 cp .env.example .env.local
 ```
 
-The minimum for a real run is `LLM_BASE_URL`, `LLM_API_KEY` and `AES_ENCRYPTION_KEY`
-(32-byte base64 — `openssl rand -base64 32`). `src/instrumentation.ts` validates these at
-boot, so a missing one fails at startup rather than on the first request. Google OAuth
-credentials are only needed for real login; the dev-session script below bypasses OAuth.
+실제 런에 필요한 최소값은 `LLM_BASE_URL`, `LLM_API_KEY`, `AES_ENCRYPTION_KEY`
+(32바이트 base64 — `openssl rand -base64 32`) 다. `src/instrumentation.ts` 가 이들을 부팅
+시점에 검증하므로, 빠진 값이 있으면 첫 요청이 아니라 기동 단계에서 실패한다. Google OAuth
+자격 증명은 실제 로그인에만 필요하다 — 아래의 dev-session 스크립트는 OAuth 를 우회한다.
 
-See [CONFIGURATION.md](CONFIGURATION.md) for the full list.
+전체 목록은 [CONFIGURATION.md](CONFIGURATION.md) 를 보라.
 
-## Local DynamoDB
+## 로컬 DynamoDB
 
 ```bash
 docker compose up -d dynamodb        # dev instance on :8083
-pnpm init-local-table                # create the table + GSIs
+pnpm init-local-table                # 테이블 + GSI 생성
 pnpm dev                             # http://localhost:3000
 ```
 
-> **Both DynamoDB Local containers are shared with every other project on this machine.**
-> `compose.yaml` pins the compose project name to `localdev`, so `docker compose up -d
-> dynamodb` from another repository finds these already up and leaves them alone.
+> **DynamoDB Local 컨테이너 두 개는 이 머신의 다른 모든 프로젝트와 공유된다.**
+> `compose.yaml` 이 compose 프로젝트 이름을 `localdev` 로 고정하므로, 다른 저장소에서
+> `docker compose up -d dynamodb` 를 실행하면 이미 떠 있는 이것들을 찾아내고 그대로 둔다.
 >
-> **Table names, not ports, keep the projects apart.** Never widen a cleanup past
-> `DYNAMODB_TABLE_NAME`, and never run `docker compose down -v` (the volume belongs to every
-> project) or `--remove-orphans` (it would take out containers another repository started).
+> **프로젝트를 갈라놓는 것은 포트가 아니라 테이블 이름이다.** 정리 범위를
+> `DYNAMODB_TABLE_NAME` 너머로 넓히지 말고, `docker compose down -v` (볼륨은 모든 프로젝트의
+> 것이다) 나 `--remove-orphans` (다른 저장소가 띄운 컨테이너까지 없앤다) 는 절대 실행하지 마라.
 
-DynamoDB Local namespaces tables by access key and region *unless started with `-sharedDb`* —
-which both `compose.yaml` services are, so a region or credential mismatch between the app and
-`init-local-table` does not split them into invisible parallel table sets.
+DynamoDB Local 은 *`-sharedDb` 로 시작하지 않는 한* 액세스 키와 리전으로 테이블 네임스페이스를
+나눈다 — `compose.yaml` 의 두 서비스는 모두 그 옵션으로 뜨므로, 앱과 `init-local-table` 사이에
+리전이나 자격 증명이 어긋나도 서로 보이지 않는 평행 테이블 집합으로 갈라지지 않는다.
 
-`init-local-table` refuses to run against a non-local endpoint, so alpha/prod can never be
-touched by it.
+`init-local-table` 은 로컬이 아닌 엔드포인트를 향해서는 실행을 거부하므로, alpha/prod 가 여기에
+건드려지는 일은 있을 수 없다.
 
-## Working without real credentials
+## 실제 자격 증명 없이 작업하기
 
 ```bash
-# Mock OpenAI-compatible LLM server, then set LLM_BASE_URL=http://127.0.0.1:8002/v1
+# 모의 OpenAI 호환 LLM 서버; 그다음 LLM_BASE_URL=http://127.0.0.1:8002/v1 로 설정
 pnpm tsx scripts/mock-llm.ts
 
-# Create a dev user + session and print a signed session cookie
+# 개발용 사용자 + 세션을 만들고 서명된 세션 쿠키를 출력
 pnpm tsx --env-file=.env.local scripts/dev-session.ts
 
-# Seed sample skills (existing skills of the same name are left untouched)
+# 샘플 skill 시드 (같은 이름의 기존 skill 은 건드리지 않는다)
 pnpm tsx --env-file=.env.local scripts/seed-skills.ts
 ```
 
-## Commands
+## 명령
 
 ```bash
 pnpm dev              # next dev
-pnpm build            # production build (standalone) — validates route handlers + instrumentation
+pnpm build            # 프로덕션 빌드 (standalone) — 라우트 핸들러 + instrumentation 검증
 pnpm typecheck        # tsc --noEmit, strict + noUncheckedIndexedAccess
 pnpm test             # vitest run
 pnpm test:watch       # vitest watch
-pnpm test:integration # repository + engine check against local DynamoDB
-pnpm check-models     # diff the model registry against what the channels serve
+pnpm test:integration # 로컬 DynamoDB 에 대한 리포지토리 + 엔진 검사
+pnpm check-models     # 모델 레지스트리와 채널이 서빙하는 것의 차이
 ```
 
 ```bash
-# a single test file, or by test name
+# 테스트 파일 하나, 또는 테스트 이름으로
 pnpm exec vitest run tests/engine.test.ts
 pnpm exec vitest run -t "streamWithFallback"
 ```
 
-**There is no lint step** — no ESLint config exists. `typecheck` + `test` are the checks.
-`build` is a third: it is what catches an invalid route handler signature or a broken
-instrumentation import.
+**lint 단계는 없다** — ESLint 설정 자체가 존재하지 않는다. 검사는 `typecheck` + `test` 다.
+`build` 가 세 번째다: 잘못된 라우트 핸들러 시그니처나 깨진 instrumentation import 를 잡아내는
+것이 이 단계다.
 
-## Scripts
+## 스크립트
 
-| Script | Purpose |
+| 스크립트 | 용도 |
 |---|---|
-| `scripts/init-local-table.ts` | Create the single table with `GSI1`/`GSI2` on DynamoDB Local. Refuses non-local endpoints. |
-| `scripts/dev-session.ts` | Write a dev user + session straight to DynamoDB and print a signed session cookie — exercises authenticated routes without the OAuth round-trip. |
-| `scripts/mock-llm.ts` | Standalone mock OpenAI-compatible server on `127.0.0.1:8002` (`MOCK_LLM_PORT`). Streams and non-streams; requests a `Skill` tool call once when tools are offered *and* the messages mention `skill named "<slug>"`. `MOCK_LLM_CHUNKS` and `MOCK_LLM_DELAY_MS` pad and slow the answer into a long streaming reply — the only way to see what a chat window does while one arrives; the defaults keep the one-line answer the integration check expects. |
-| `scripts/seed-skills.ts` | Seed sample skills, idempotently. |
-| `scripts/integration-check.ts` | End-to-end repository round-trips + the engine (single-shot and agent loop). |
-| `scripts/check-models.ts` | Diff `src/domain/llm/models.ts` against the ids the configured channels serve. |
-| `scripts/backfill-artifacts.ts` | One-off: give objects stored under the pre-artifact `images/<uuid>` layout the rows that make them listable and deletable. Idempotent (the id is derived from the key), never touches an object or the chat message it read, and reports without writing unless passed `--apply`. |
-| `scripts/restore-chat-image-refs.ts` | One-off: rewrite legacy chat image `url`s left pointing at the pre-rebrand bucket to the `key` the current bucket holds, which `resolveImageUrl` signs per read. Confirms each object exists first, writes a rollback file, and needs `--apply` to touch a row. |
+| `scripts/init-local-table.ts` | DynamoDB Local 에 `GSI1`/`GSI2` 를 갖춘 단일 테이블을 생성한다. 로컬이 아닌 엔드포인트는 거부한다. |
+| `scripts/dev-session.ts` | 개발용 사용자와 세션을 DynamoDB 에 바로 써 넣고 서명된 세션 쿠키를 출력한다 — OAuth 왕복 없이 인증이 필요한 라우트를 시험한다. |
+| `scripts/mock-llm.ts` | `127.0.0.1:8002` (`MOCK_LLM_PORT`) 에서 도는 독립 실행형 OpenAI 호환 mock 서버. 스트리밍과 비스트리밍을 모두 지원하고, 도구가 제공되고 *동시에* 메시지가 `skill named "<slug>"` 를 언급할 때 `Skill` 도구 호출을 한 번 요청한다. `MOCK_LLM_CHUNKS` 와 `MOCK_LLM_DELAY_MS` 는 답변을 부풀리고 늦춰 긴 스트리밍 응답으로 만든다 — 답이 도착하는 동안 chat 창이 무엇을 하는지 볼 수 있는 유일한 방법이다. 기본값은 통합 체크가 기대하는 한 줄 답변을 유지한다. |
+| `scripts/seed-skills.ts` | 샘플 Skill 을 멱등하게 시드한다. |
+| `scripts/integration-check.ts` | 저장소 왕복 전 구간 + 엔진(단발 실행과 agent 루프). |
+| `scripts/check-models.ts` | `src/domain/llm/models.ts` 를 설정된 채널들이 서빙하는 id 와 대조한다. |
+| `scripts/backfill-artifacts.ts` | 일회성: artifact 이전의 `images/<uuid>` 레이아웃으로 저장된 오브젝트에, 목록 조회와 삭제를 가능하게 하는 행을 붙인다. 멱등하고(id 를 key 에서 파생한다), 오브젝트나 그것을 읽어 온 chat 메시지는 절대 건드리지 않으며, `--apply` 를 주지 않으면 쓰지 않고 보고만 한다. |
+| `scripts/restore-chat-image-refs.ts` | 일회성: 리브랜딩 이전 버킷을 가리킨 채 남아 있는 레거시 chat 이미지의 `url` 을, 현재 버킷이 들고 있는 `key` 로 다시 쓴다 — 그 key 는 `resolveImageUrl` 이 읽을 때마다 서명한다. 각 오브젝트가 존재하는지 먼저 확인하고, 롤백 파일을 쓰며, 행을 건드리려면 `--apply` 가 필요하다. |
 
 ### `check-models`
 
-The registry is hand-maintained because pricing, context windows and capability flags exist
-only in each provider's documentation. Model **ids** are the part that goes stale silently —
-a provider ships a model, nobody notices, and the first symptom is a run booked at $0.
+레지스트리를 손으로 관리하는 이유는 가격, 컨텍스트 윈도우, capability 플래그가 각 provider 의
+문서에만 존재하기 때문이다. 조용히 낡는 부분은 모델 **id** 다 — provider 가 모델을 내놓고,
+아무도 눈치채지 못하고, 첫 증상은 $0 으로 기록된 런이다.
 
 ```bash
-pnpm check-models              # report both directions; always exits 0
-pnpm check-models --since=90d  # only models released in the last 90 days
-pnpm check-models --strict     # exit 1 on drift, or if a channel failed to answer
+pnpm check-models              # 양방향 보고; 항상 0 으로 종료
+pnpm check-models --since=90d  # 최근 90일 안에 출시된 모델만
+pnpm check-models --strict     # 드리프트가 있거나 채널이 응답하지 못하면 1 로 종료
 ```
 
-`--strict` fails on a registered model that no channel serves, and on a channel that did not
-answer — a check that could not run must not read as all clear. It deliberately does **not**
-fail on served-but-unregistered ids: that list is the provider's whole catalog minus this
-app's curated selection (embeddings, realtime, internal codenames), so gating on it would be
-an exit code that can never be green. Adding `--since` makes newly released models count,
-which is the form worth putting in CI.
+`--strict` 는 어느 채널도 서빙하지 않는 등록 모델에서, 그리고 응답하지 않은 채널에서 실패한다 —
+실행되지 못한 검사가 이상 없음으로 읽혀서는 안 된다. 반면 서빙되지만 등록되지 않은 id 에서는
+의도적으로 **실패하지 않는다**: 그 목록은 provider 의 전체 카탈로그에서 이 앱이 골라 담은
+선택(embedding, realtime, 내부 코드네임)을 뺀 것이라, 그것으로 게이팅하면 결코 초록이 될 수 없는
+종료 코드가 된다. `--since` 를 붙이면 새로 릴리즈된 모델이 세어지고, CI 에 넣을 만한 형태는
+그쪽이다.
 
-It reads a `sigv4` channel through the same signer the runtime dispatches with, so a Bedrock
-channel needs AWS credentials in the environment (`AWS_PROFILE=opspresso` locally) — without
-them it reports as a failed channel. A router channel makes the unregistered list long by
-nature: OpenRouter serves hundreds of ids, so use `--since` when reading that half.
+`sigv4` 채널은 런타임이 디스패치할 때 쓰는 것과 같은 서명자를 통해 읽으므로, Bedrock 채널에는
+환경에 AWS 자격 증명이 있어야 한다 (로컬에서는 `AWS_PROFILE=opspresso`) — 없으면 실패한 채널로
+보고된다. 라우터 채널은 본질적으로 미등록 목록을 길게 만든다: OpenRouter 는 수백 개의 id 를
+서빙하므로, 그쪽 절반을 읽을 때는 `--since` 를 쓰라.
 
-## Integration check
+## 통합 체크
 
 ```bash
 docker compose up -d dynamodb-test
@@ -133,155 +133,149 @@ pnpm init-local-table:test
 pnpm test:integration
 ```
 
-It runs against a **separate** instance on `:8084` and the `agentdure-test` table, because
-it writes fixtures and cascade-deletes them. Do not pass `--env-file=.env.local` — the script
-refuses to run against `:8083`, and the table name is the second layer under that guard. The
-`dynamodb-test` container is `-inMemory`, so it is wiped on every start and
-`init-local-table:test` has to recreate the table.
+이 검사는 `:8084` 의 **별도** 인스턴스와 `agentdure-test` 테이블을 상대로 돈다. 픽스처를 쓰고
+그것을 cascade 로 지우기 때문이다. `--env-file=.env.local` 을 넘기지 마라 — 스크립트는 `:8083` 을
+상대로는 실행을 거부하고, 테이블 이름이 그 가드 아래의 두 번째 층이다. `dynamodb-test` 컨테이너는
+`-inMemory` 라서 시작할 때마다 비워지고, 그래서 `init-local-table:test` 가 테이블을 다시 만들어야
+한다.
 
-It lives outside vitest because it needs real network and real storage, which every unit test
-is forbidden from touching.
+이 검사가 vitest 밖에 사는 이유는 실제 네트워크와 실제 스토리지가 필요하기 때문이고, 그 둘은 모든
+단위 테스트가 건드리는 것이 금지된 대상이다.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+`.github/workflows/ci.yml` 은 `main` 으로의 모든 push 와 모든 pull request 에서 돈다:
 
 ```
 typecheck → test → init-local-table:test + test:integration → build
 ```
 
-A `dynamodb-local` service container is exposed on host port `8084` — the port the integration
-check connects to. `services:` cannot pass command arguments, so the compose flags are absent
-there, and neither is needed: a fresh container per job is already empty, and one job holds a
-single credential and region.
+`dynamodb-local` 서비스 컨테이너가 호스트 포트 `8084` 로 노출된다 — 통합 체크가 접속하는
+포트다. `services:` 는 커맨드 인자를 넘길 수 없어서 compose 의 플래그들이 거기에는 없는데, 둘 다
+필요하지 않다: job 마다 새로 뜨는 컨테이너는 이미 비어 있고, 한 job 은 자격 증명과 리전을 하나씩만
+갖는다.
 
-`.github/workflows/check-models.yml` runs `pnpm check-models --strict --since=7d` weekly (and
-on demand) rather than per pull request: it needs live provider APIs and the `LLM_BASE_URL` /
-`LLM_API_KEY` / `SLACK_WEBHOOK_URL` repository secrets (drift is posted to Slack before the run
-fails), so a provider outage or a fork without secrets must not fail PRs.
+`.github/workflows/check-models.yml` 은 `pnpm check-models --strict --since=7d` 를 pull request
+마다가 아니라 주 1회(그리고 필요할 때 수동으로) 돌린다: 살아 있는 provider API 와 `LLM_BASE_URL` /
+`LLM_API_KEY` / `SLACK_WEBHOOK_URL` 저장소 시크릿이 필요하기 때문이다(드리프트는 런이 실패하기 전에
+Slack 으로 전송된다). provider 장애나 시크릿 없는 fork 가 PR 을 실패시켜서는 안 된다.
 
-## Tests
+## 테스트
 
-Unit tests live under `tests/`. Conventions:
+단위 테스트는 `tests/` 아래에 산다. 관례:
 
-- **Mock at boundaries.** `fetch` via `vi.stubGlobal`, the DynamoDB doc client via
-  `vi.mock("@/infrastructure/db/client")`. Do not mock application code to test application
-  code.
-- **Deterministic.** No real `Date.now`, timers, randomness or network. The engine is
-  testable this way because everything it needs is injected — see `tests/fakeChannel.ts`.
-- Repository behaviour against real storage belongs in `scripts/integration-check.ts`, not in
-  a vitest file.
+- **경계에서 mock 한다.** `fetch` 는 `vi.stubGlobal` 로, DynamoDB doc client 는
+  `vi.mock("@/infrastructure/db/client")` 로. application 코드를 테스트하려고 application 코드를
+  mock 하지 마라.
+- **결정적이어야 한다.** 진짜 `Date.now`, 타이머, 난수, 네트워크는 쓰지 않는다. 엔진이 이렇게
+  테스트 가능한 것은 필요한 모든 것이 주입되기 때문이다 — `tests/fakeChannel.ts` 를 보라.
+- 실제 스토리지를 상대로 한 저장소 동작은 vitest 파일이 아니라 `scripts/integration-check.ts` 에
+  속한다.
 
 ### `tests/architecture.test.ts`
 
-This is the structural gate, and it fails loudly rather than warning. It enforces:
+이것이 구조 게이트이고, 경고하는 대신 요란하게 실패한다. 강제하는 것:
 
-1. **Thirteen layer rules**, each with an **empty allowlist** — `domain` imports nothing else
-   and no framework/AWS/auth library; `application` imports no `infrastructure` or `app`,
-   nothing from `lib` beyond its pure leaves, and nothing outside the domain and the standard
-   library; `infrastructure` imports no `application` or `app`; `shared` imports nothing from
-   `@/` but its own siblings, and no package outside the standard library; adapters and use
-   cases do not import the composition root; `app` imports no `infrastructure` outside its
-   wiring sites; `lib` imports no `infrastructure` outside its wiring modules and no
-   `application` outside the composition root; `components` imports no `infrastructure` or
-   `application`.
-2. **Single-owner invariants** — a named decision plus the file that owns it. A second copy
-   fails, *and so does the owner losing the definition*. The list is
-   [OWNERSHIP.md](OWNERSHIP.md).
-3. **Bounded caller lists**, for the three decisions that have a fixed set of call sites
-   rather than an owner: which surfaces start an image run (`IMAGE_RUN_ENTRY_POINTS`), which
-   start an agent run by calling `executeAgent` directly (`AGENT_RUN_ENTRY_POINTS`), and where
-   a version's tools are resolved (`TOOL_RESOLUTION_SITES`, each of which must also name
-   `discoveryQueries` — resolving without them silently disables capability discovery), plus
-   where a run's bytes are captured (`ARTIFACT_CAPTURE_SITES`, paired with a second check that
-   fails any `openRun` caller which does not also capture — a fifth entry point that forgot
-   would drop its output silently). A further entry is added to any of them on purpose, which
-   is what the list buys.
-4. **Both output axes travel together** — a module that reads `EngineChunk.image` reads
-   `EngineChunk.file` too, enforced as a pairing rather than a list, with the modules whose
-   subject really is one axis exempted by name. Every route answering in raw chunks is checked
-   for addressing both.
-5. **URLs the model chose** — exactly one adapter fetches them, it never imports
-   `skipsUrlGuard` (honouring the internal-host exemption there would turn one prompt
-   injection into a read of a cluster-internal service), and it attaches no credential of this
-   deployment's.
-6. **A dollar amount is never written by hand** — no `${…toFixed(…)}` anywhere in `app`
-   outside `formatUsd`/`formatBytes`, which is how the dashboard once showed a `$0.00` total
-   over rows adding to `$0.0043`. Scoped to `app` because that is where the owner is
-   reachable: the cost guards format dollars in `application`, which may not import `@/app`.
-7. **Composition** — a repository the routes no longer compose reaches no route handler, `app`
-   composes only at its wiring sites, the application slice graph has no cycles, and the
-   composition root decides every optional `ExecutionDeps` field by name.
-8. **Configuration reads** — `process.env` is not reached from domain, shared, the adapters or
-   the use cases; config arrives injected. One file is excepted by name, and the exception is
-   itself checked for still being true.
-9. **The client bundle** — what a `"use client"` entry can reach transitively. The entry count
-   is asserted exactly rather than as merely non-empty, because a scan that has gone blind
-   reads just like a clean pass.
-10. **React event handling**, two rules. No `currentTarget` read inside a `setState` updater —
-   React nulls `SyntheticEvent.currentTarget` once the handler returns, so a deferred read
-   throws whenever React batches. And no block-rooted Mantine component (`Badge`, `Group`,
-   `Stack`, …) inside a `<Text>` or `<Title>` — those render a `<p>`/`<h*>`, which a browser
-   *closes* where a `<div>` opens inside it, so the server's HTML and React's tree disagree
-   and hydration fails. `component="span"` on the inner one, or `component="div"` on the
-   outer, is the fix and is what the rule looks for.
-11. **Edge runtime compatibility** — imports that would pull `node:crypto` or the AWS SDK into
-    the edge bundle.
-12. **Create modals reset what they declare** — every field a create modal holds in `useState`
-    is cleared before `onCreated()`, so a reopened modal never shows the previous entry's
-    values.
-13. **The scanner's own tests**, so a rule that silently stopped matching is caught.
+1. **레이어 규칙 열세 개**, 각각 **빈 허용 목록**을 갖는다 — `domain` 은 다른 무엇도, 프레임워크·
+   AWS·인증 라이브러리도 import 하지 않는다. `application` 은 `infrastructure` 나 `app` 을,
+   `lib` 의 순수 leaf 를 넘어선 무엇도, 도메인과 표준 라이브러리 바깥의 무엇도 import 하지 않는다.
+   `infrastructure` 는 `application` 이나 `app` 을 import 하지 않는다. `shared` 는 자기 형제를 빼면
+   `@/` 에서 아무것도, 표준 라이브러리 바깥의 어떤 패키지도 import 하지 않는다. 어댑터와 use case
+   는 composition root 를 import 하지 않는다. `app` 은 자기 wiring site 바깥에서 `infrastructure`
+   를 import 하지 않는다. `lib` 은 자기 wiring 모듈 바깥에서 `infrastructure` 를, composition root
+   바깥에서 `application` 을 import 하지 않는다. `components` 는 `infrastructure` 나 `application`
+   을 import 하지 않는다.
+2. **단일 소유자 불변식** — 이름 붙인 결정과 그것을 소유한 파일. 사본이 하나 더 생기면 실패하고,
+   *소유자가 정의를 잃어도 마찬가지로 실패한다*. 목록은 [OWNERSHIP.md](OWNERSHIP.md) 다.
+3. **한정된 호출자 목록**. 소유자가 아니라 고정된 호출 지점 집합을 갖는 세 결정을 위한 것이다:
+   어느 표면이 이미지 런을 시작하는가(`IMAGE_RUN_ENTRY_POINTS`), 어느 표면이 `executeAgent` 를
+   직접 불러 agent 런을 시작하는가(`AGENT_RUN_ENTRY_POINTS`), 그리고 버전의 도구가 어디서 resolve
+   되는가(`TOOL_RESOLUTION_SITES` — 각 지점은 `discoveryQueries` 도 함께 명시해야 한다. 그것 없이
+   resolve 하면 capability discovery 가 조용히 꺼진다). 여기에 런의 바이트가 어디서 캡처되는가
+   (`ARTIFACT_CAPTURE_SITES`)가 더해지고, 이것은 캡처까지 하지 않는 `openRun` 호출자를 실패시키는
+   두 번째 검사와 짝을 이룬다 — 잊어버린 다섯 번째 진입점은 자기 출력을 조용히 흘려버릴 것이다.
+   이 목록들에 항목이 더해지는 것은 의도적인 행위이고, 목록이 사는 값이 바로 그것이다.
+4. **두 출력 축은 함께 다닌다** — `EngineChunk.image` 를 읽는 모듈은 `EngineChunk.file` 도 읽는다.
+   목록이 아니라 짝짓기로 강제하며, 주제가 정말로 한 축뿐인 모듈은 이름으로 예외 처리한다. raw
+   chunk 로 답하는 모든 라우트는 둘 다 주소로 바꾸는지 검사된다.
+5. **모델이 고른 URL** — 정확히 하나의 어댑터만 그것을 가져오고, 그 어댑터는 `skipsUrlGuard` 를
+   절대 import 하지 않으며(거기서 내부 호스트 예외를 존중하면 프롬프트 인젝션 한 번이 클러스터
+   내부 서비스에 대한 읽기로 바뀐다), 이 배포의 자격 증명은 아무것도 붙이지 않는다.
+6. **달러 금액은 절대 손으로 쓰지 않는다** — `formatUsd`/`formatBytes` 를 뺀 `app` 어디에도
+   `${…toFixed(…)}` 는 없다. 합계가 `$0.0043` 인 행들 위에 대시보드가 총계로 `$0.00` 을 보여 준 적이
+   있는데, 그게 그 이유다. `app` 으로 범위를 한정한 것은 소유자에 닿을 수 있는 곳이 거기이기
+   때문이다: 비용 가드는 `application` 에서 달러를 포맷하는데, 그 레이어는 `@/app` 을 import 할 수
+   없다.
+7. **조립** — 라우트가 더 이상 조립하지 않는 저장소는 어떤 라우트 핸들러에도 닿지 않고, `app` 은
+   자기 wiring site 에서만 조립하며, application 슬라이스 그래프에는 순환이 없고, composition root
+   는 선택적인 `ExecutionDeps` 필드를 전부 이름으로 결정한다.
+8. **설정 읽기** — `process.env` 는 domain, shared, 어댑터, use case 어디에서도 닿지 않는다. 설정은
+   주입되어 도착한다. 파일 하나가 이름으로 예외 처리돼 있고, 그 예외 자체가 여전히 참인지도
+   검사된다.
+9. **클라이언트 번들** — `"use client"` 진입점이 전이적으로 닿을 수 있는 범위. 진입점 개수는 단지
+   비어 있지 않다는 정도가 아니라 정확한 수로 단언한다. 눈이 멀어 버린 스캔은 깨끗한 통과와 똑같이
+   읽히기 때문이다.
+10. **React 이벤트 처리**, 규칙 두 개. `setState` 업데이터 안에서 `currentTarget` 을 읽지 않는다 —
+   핸들러가 반환되면 React 가 `SyntheticEvent.currentTarget` 을 null 로 만들기 때문에, 미뤄진 읽기는
+   React 가 배칭할 때마다 throw 한다. 그리고 `<Text>` 나 `<Title>` 안에 블록 루트를 갖는 Mantine
+   컴포넌트(`Badge`, `Group`, `Stack`, …)를 두지 않는다 — 그것들은 `<p>`/`<h*>` 를 렌더하는데,
+   브라우저는 그 안에서 `<div>` 가 열리는 자리에서 그 태그를 *닫아* 버리므로 서버의 HTML 과 React 의
+   트리가 어긋나 hydration 이 실패한다. 안쪽에 `component="span"` 을, 또는 바깥쪽에
+   `component="div"` 를 주는 것이 해법이고 규칙이 찾는 것도 그것이다.
+11. **Edge 런타임 호환성** — `node:crypto` 나 AWS SDK 를 edge 번들로 끌어들일 import.
+12. **생성 모달은 자기가 선언한 것을 초기화한다** — 생성 모달이 `useState` 로 들고 있는 모든 필드는
+    `onCreated()` 전에 비워지므로, 다시 연 모달이 직전 항목의 값을 보여 주는 일이 없다.
+13. **스캐너 자신의 테스트**. 조용히 매칭을 멈춘 규칙을 잡아내기 위해서다.
 
-> When one of these fails, **fix the import — do not widen the rule.** The allowlists are
-> empty on purpose: adding a violation is meant to be a visible decision, not a quiet one.
+> 이 중 하나가 실패하면 **규칙을 넓히지 말고 import 를 고쳐라.** 허용 목록이 비어 있는 것은
+> 의도된 것이다: 위반을 추가하는 일은 조용한 결정이 아니라 눈에 보이는 결정이어야 한다.
 
-## Adding to the codebase
+## 코드베이스에 추가하기
 
-| Adding… | Goes in | Wire it at |
+| 추가하는 것… | 들어갈 위치 | 조립 지점 |
 |---|---|---|
-| An entity or repository port | `src/domain/<slice>/` | — (pure TS, no imports from `@/` beyond `domain`) |
-| A use case | `src/application/<slice>/` | It receives deps; it must not import `container.ts` |
-| An adapter (DB, HTTP, cloud) | `src/infrastructure/<slice>/` | `src/lib/container.ts` |
-| A route handler | `src/app/api/…/route.ts` | Pull repositories and `executionDeps` from a wiring site, never `infrastructure/` directly |
-| Shared UI | `src/app/_components/` | — |
-| A dependency-free helper | `src/shared/` | — |
+| 엔티티나 저장소 포트 | `src/domain/<slice>/` | — (순수 TS, `domain` 을 넘어선 `@/` import 없음) |
+| use case | `src/application/<slice>/` | deps 를 주입받는다. `container.ts` 를 import 해서는 안 된다 |
+| 어댑터 (DB, HTTP, 클라우드) | `src/infrastructure/<slice>/` | `src/lib/container.ts` |
+| 라우트 핸들러 | `src/app/api/…/route.ts` | 저장소와 `executionDeps` 는 wiring site 에서 가져온다. 절대 `infrastructure/` 를 직접 쓰지 않는다 |
+| 공용 UI | `src/app/_components/` | — |
+| 의존성 없는 헬퍼 | `src/shared/` | — |
 
-Checklist for a new slice:
+새 슬라이스를 위한 체크리스트:
 
-- [ ] Domain types carry no framework or AWS imports.
-- [ ] Key strings come from `src/infrastructure/db/keys.ts`, never hand-written.
-- [ ] List queries paginate through `queryAll()` — a single Query page caps at 1MB and an
-      unpaginated list silently truncates.
-- [ ] New rows that grow without bound carry an `expiresAt` from `src/infrastructure/db/ttl.ts`.
-- [ ] A new execution entry point calls the facade rather than re-encoding the projectType
-      dispatch, and opens the run bracket — `streamProjectRun` for a consumer that takes a run
-      as chunks, image included; `executeProjectStream`/`executeProject` for one that answers
-      with a completion, which refuse an image project.
-- [ ] A decision that now exists in two places gets a single owner and an entry in
-      `SINGLE_OWNERS`.
-- [ ] `pnpm typecheck && pnpm test && pnpm build` pass.
+- [ ] 도메인 타입은 프레임워크나 AWS import 를 갖지 않는다.
+- [ ] 키 문자열은 `src/infrastructure/db/keys.ts` 에서 온다. 절대 손으로 쓰지 않는다.
+- [ ] 목록 쿼리는 `queryAll()` 로 페이지네이션한다 — 단일 Query 페이지는 1MB 에서 잘리고,
+      페이지네이션하지 않은 목록은 조용히 truncate 된다.
+- [ ] 한없이 늘어나는 새 행은 `src/infrastructure/db/ttl.ts` 에서 온 `expiresAt` 을 갖는다.
+- [ ] 새 실행 진입점은 projectType 디스패치를 다시 구현하는 대신 파사드를 호출하고, 런 브래킷을
+      연다 — 런을 chunk 로 받는 소비자(이미지 포함)에게는 `streamProjectRun`, completion 으로
+      답하는 소비자에게는 `executeProjectStream`/`executeProject` 이고, 후자는 이미지 project 를
+      거부한다.
+- [ ] 이제 두 곳에 존재하게 된 결정은 단일 소유자와 `SINGLE_OWNERS` 항목을 갖는다.
+- [ ] `pnpm typecheck && pnpm test && pnpm build` 가 통과한다.
 
-## Documentation
+## 문서
 
-| File | Role |
+| 파일 | 역할 |
 |---|---|
-| [../README.md](../README.md) | What it is, how to run it, what it can do |
-| [../AGENTS.md](../AGENTS.md) | Working rules for coding agents (`CLAUDE.md` is a symlink to it) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | The shape every run passes through — layers, the table, the request path |
-| [design/](design/) | One file per subsystem: what it decides and why |
-| [OWNERSHIP.md](OWNERSHIP.md) | Every single-owner decision and its owning file |
-| [API.md](API.md) | HTTP contract |
-| [CONFIGURATION.md](CONFIGURATION.md) | Every environment variable and fixed limit |
-| [OPERATIONS.md](OPERATIONS.md) | Deploy, probe, scale, retain |
-| [SECURITY.md](SECURITY.md) | Auth, secrets, SSRF, PII |
-| [MILESTONES.md](MILESTONES.md) | Remaining work (Korean) |
+| [../README.md](../README.md) | 무엇인지, 어떻게 실행하는지, 무엇을 할 수 있는지 |
+| [../AGENTS.md](../AGENTS.md) | 코딩 에이전트를 위한 작업 규칙 (`CLAUDE.md` 가 이 파일의 symlink 다) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 모든 런이 지나는 형태 — 레이어, 테이블, 요청 경로 |
+| [design/](design/) | 서브시스템마다 한 파일: 무엇을 결정하고 왜 그런지 |
+| [OWNERSHIP.md](OWNERSHIP.md) | 모든 단일 소유자 결정과 그것을 소유한 파일 |
+| [API.md](API.md) | HTTP 계약 |
+| [CONFIGURATION.md](CONFIGURATION.md) | 모든 환경변수와 고정 한계값 |
+| [OPERATIONS.md](OPERATIONS.md) | 배포, 프로브, 스케일, 보존 |
+| [SECURITY.md](SECURITY.md) | 인증, 시크릿, SSRF, PII |
+| [MILESTONES.md](MILESTONES.md) | 남은 작업 (한국어) |
 
-Two subsystems carry their own local `AGENTS.md`, and they are the authority for the
-invariants inside them — read them before editing those files:
+서브시스템 둘은 자기만의 로컬 `AGENTS.md` 를 갖고 있고, 그 안의 불변식에 대해서는 그 파일이
+정본이다 — 해당 파일들을 고치기 전에 읽어라:
 
-- `src/application/llm/AGENTS.md` — the tool loop, system-prompt assembly, author contract,
-  fallback semantics, PII boundaries, usage recording.
-- `src/application/chat/AGENTS.md` — chat persistence, replay, and the history budgets.
+- `src/application/llm/AGENTS.md` — 도구 루프, 시스템 프롬프트 조립, author 계약, fallback 시맨틱,
+  PII 경계, usage 기록.
+- `src/application/chat/AGENTS.md` — chat 영속화, 리플레이, 히스토리 예산.
 
-Documentation records the **current** state, not change history: completed milestones are
-deleted from `MILESTONES.md`, and git log plus the per-tag GitHub Release is the record.
+문서는 변경 이력이 아니라 **현재** 상태를 기록한다: 완료된 마일스톤은 `MILESTONES.md` 에서
+삭제하고, 이력은 git log 와 태그별 GitHub Release 가 남긴다.

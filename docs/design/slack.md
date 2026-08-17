@@ -1,261 +1,249 @@
 # Slack
 
-Per-project bots: how a reply is delivered, which of the messages a bot receives are for it,
-what a run may read of the workspace, and who the model is told is asking.
+프로젝트별 봇: 답장이 어떻게 전달되는지, 봇이 받는 메시지 중 무엇이 봇에게 온 것인지,
+런이 워크스페이스에서 무엇을 읽을 수 있는지, 그리고 모델에게 누가 묻고 있다고 알려주는지.
 
-What those reads are allowed to hand back, and why the workspace tools are a per-version
-opt-in, is [SECURITY.md](../SECURITY.md#reading-the-slack-workspace). Per-project settings
-live on the project, not in the environment —
-[CONFIGURATION.md](../CONFIGURATION.md#slack).
+그 읽기가 무엇을 돌려줄 수 있는지, 그리고 워크스페이스 도구가 왜 버전별 opt-in 인지는
+[SECURITY.md](../SECURITY.md#slack-워크스페이스-읽기) 에 있다. 프로젝트별 설정은 환경이
+아니라 프로젝트에 있다 — [CONFIGURATION.md](../CONFIGURATION.md#slack).
 
-Bots are **per project**: `/api/slack/events/[project]` is the only events endpoint, and it
-resolves that project's own bot token and signing secret, so an event always runs that project
-and no selector is needed.
+봇은 **프로젝트별**이다: `/api/slack/events/[project]` 가 유일한 이벤트 엔드포인트이며, 그
+프로젝트 자신의 봇 토큰과 signing secret 을 해석한다. 그래서 이벤트는 언제나 그 프로젝트를
+실행하고 선택자는 필요 없다.
 
-The run itself — attachments into a turn, the chunk fold onto the reply, what the reply
-carries beside the answer — is not Slack's: it is the pipeline every chat-bot surface shares
-([messaging.md](messaging.md)), and this file describes what Slack decides *around* it: which
-events are for the bot, how the thread is read, who is asking, and how the reply is rendered.
+런 자체 — 첨부를 턴에 넣는 것, chunk 를 답장에 접어 넣는 것, 답장이 답 옆에 무엇을 싣는지 —
+는 Slack 의 것이 아니다. 그것은 모든 챗봇 표면이 공유하는 파이프라인이고
+([messaging.md](messaging.md)), 이 문서는 Slack 이 그 *주변에서* 결정하는 것을 설명한다:
+어떤 이벤트가 봇에게 온 것인지, 스레드를 어떻게 읽는지, 누가 묻고 있는지, 답장을 어떻게
+렌더링하는지.
 
-**How a reply is delivered is one decision, owned by `src/application/slack/replyStream.ts`.**
-The sink it hands back opens on the first output and prefers `chat.startStream` →
-`chat.appendStream` → `chat.stopStream`, which is what the agent surface renders as text
-arriving and what Slack rate-limits generously (Tier 4). A workspace that cannot stream falls
-back to `chat.postMessage` + `chat.update`, paced at Slack's documented one edit per three
-seconds and marked with a trailing indicator so an interim state does not read as a finished
-answer. Streaming sends **deltas**, so the sink advances its flushed offset only on a
-successful write: a rejected append is re-sent with the next one instead of being lost. Every
-streamed write is cut at Slack's own cap on one `markdown_text` — 12,000 characters
-(`MAX_STREAM_TEXT` in `replyStream.ts`; the edit-in-place fallback sends the whole text and is
-not cut) — because the first append is deliberately unpaced and carries everything so far: a model that answers in one long burst handed Slack a payload over
-the limit on the very first write, which was rejected and then re-sent unchanged by every push
-after it, and the answer never arrived. Streaming into a channel additionally names the
-recipient (`recipient_user_id` / `recipient_team_id`); a DM does not.
+**답장이 어떻게 전달되는지는 하나의 결정이고, `src/application/slack/replyStream.ts` 가
+소유한다.** 그것이 돌려주는 sink 는 첫 출력에서 열리며 `chat.startStream` →
+`chat.appendStream` → `chat.stopStream` 을 우선한다. 이것이 agent 표면이 텍스트가 도착하는
+것으로 렌더링하는 방식이고, Slack 이 넉넉하게 rate limit 하는 방식(Tier 4)이다. 스트리밍할 수
+없는 워크스페이스는 `chat.postMessage` + `chat.update` 로 물러나며, Slack 이 문서화한 3초당 1회
+편집으로 속도를 맞추고 끝에 표시를 달아 중간 상태가 완성된 답으로 읽히지 않게 한다. 스트리밍은
+**delta** 를 보내므로, sink 는 쓰기가 성공했을 때만 flush 된 offset 을 전진시킨다. 거부된
+append 는 사라지지 않고 다음 것과 함께 다시 보내진다. 스트리밍되는 모든 쓰기는
+`markdown_text` 하나에 대한 Slack 자신의 상한 — 12,000자 (`replyStream.ts` 의
+`MAX_STREAM_TEXT`; 제자리 편집 fallback 은 전체 텍스트를 보내고 잘리지 않는다) — 에서 잘린다.
+첫 append 는 의도적으로 속도 조절 없이 지금까지의 전부를 싣기 때문이다: 한 번에 길게 쏟아내는
+모델이 맨 첫 쓰기에서 상한을 넘는 payload 를 Slack 에 넘겼고, 그것이 거부된 뒤 이어지는 모든
+push 가 그대로 다시 보냈으며, 답은 끝내 도착하지 않았다. 채널로 스트리밍할 때는 수신자를
+추가로 명시한다(`recipient_user_id` / `recipient_team_id`). DM 은 그러지 않는다.
 
-The **agent experience** is answered natively where the surface offers it (a DM, not a channel
-thread): progress goes to `assistant.threads.setStatus` — "is thinking…", then each tool by
-name — rather than overwriting the message body, and the opening question of a new thread names
-it via `assistant.threads.setTitle`. The thinking status carries `loading_messages`, which Slack
-rotates as an animated indicator, and **a heartbeat re-sends it every 45 seconds**: Slack expires
-a status two minutes after it is set, and a run may take longer, so a status set once would
-vanish while the agent was still working. The heartbeat runs on its own clock rather than on
-chunk arrival, because the case it exists for — a slow provider, a long tool — is exactly the one
-where no chunks arrive. Opening the agent container is its own event, handled by
-`handleThreadStart` rather than by a run: `app_home_opened` on the Messages tab (the agent
-messaging experience) pins the project's suggested prompts, and the legacy
-`assistant_thread_started` also introduces the project, because unlike `app_home_opened` it
-fires once per thread rather than on every visit. `app_context_changed` is deliberately not
-subscribed to — acting on the channel a user is looking at needs per-user context storage that
-does not exist. **A channel has no status line, but it is not without a
-rendering** — a stream carries two independent axes, and progress goes on the other one. The
-run reports what it is doing once; the sink picks the mechanism the surface has: a DM gets
-`assistant.threads.setStatus`, a channel gets a `task_update` chunk on the open stream
-(`task_display_mode: "timeline"`, declared at `chat.startStream` because it describes the
-message rather than a chunk). Slack renders and animates that task, and the answer keeps
-streaming into the same message's text.
+**agent 경험**은 표면이 제공하는 곳(채널 스레드가 아니라 DM)에서 네이티브로 답한다: 진행
+상황은 메시지 본문을 덮어쓰는 대신 `assistant.threads.setStatus` 로 간다 — "is thinking…",
+그다음 각 도구의 이름 — 그리고 새 스레드의 첫 질문은 `assistant.threads.setTitle` 로 그
+스레드의 이름이 된다. thinking 상태는 `loading_messages` 를 싣고 Slack 은 그것을 애니메이션
+표시로 돌려 보여주며, **heartbeat 가 45초마다 그것을 다시 보낸다**: Slack 은 상태를 설정한 지
+2분이 지나면 만료시키는데 런은 그보다 오래 걸릴 수 있어서, 한 번만 설정한 상태는 agent 가 아직
+일하는 중에 사라져 버린다. heartbeat 는 chunk 도착이 아니라 자기 시계로 돈다. 그것이 존재하는
+이유가 되는 경우 — 느린 provider, 오래 걸리는 도구 — 가 바로 chunk 가 도착하지 않는
+경우이기 때문이다. agent 컨테이너를 여는 것은 그 자체로 하나의 이벤트이며, 런이 아니라
+`handleThreadStart` 가 처리한다: Messages 탭(agent 메시징 경험)의 `app_home_opened` 는
+프로젝트의 suggested prompts 를 고정하고, 레거시인 `assistant_thread_started` 는 프로젝트
+소개까지 한다. `app_home_opened` 와 달리 방문할 때마다가 아니라 스레드당 한 번 발생하기
+때문이다. `app_context_changed` 는 의도적으로 구독하지 않는다 — 사용자가 보고 있는 채널을
+근거로 행동하려면 존재하지 않는 사용자별 컨텍스트 저장소가 필요하다. **채널에는 상태 줄이
+없지만, 그렇다고 렌더링이 없는 것은 아니다** — 스트림은 독립된 두 축을 나르고, 진행 상황은
+다른 축으로 간다. 런은 자기가 무엇을 하는지 한 번 보고하고, sink 가 그 표면이 가진 메커니즘을
+고른다: DM 은 `assistant.threads.setStatus` 를, 채널은 열린 스트림 위의 `task_update` chunk 를
+받는다 (`task_display_mode: "timeline"` 은 chunk 가 아니라 메시지를 서술하므로
+`chat.startStream` 에서 선언한다). Slack 은 그 task 를 렌더링하고 애니메이션하며, 답은 같은
+메시지의 텍스트로 계속 스트리밍된다.
 
-It is a **checklist**: the ambient row ("is thinking…") under a constant id while the run is
-still deciding, then a row **per tool** — opened when a call is announced, ticked off when its
-result comes back. The ambient row closes as soon as the first step opens, because a row
-spinning above a list that is visibly moving reads as a stuck run.
+그것은 **체크리스트**다: 런이 아직 판단 중인 동안에는 고정된 id 아래의 주변 행
+("is thinking…"), 그다음에는 **도구마다** 한 행 — 호출이 announce 될 때 열리고 결과가 돌아올 때
+체크된다. 첫 단계가 열리는 즉시 주변 행은 닫힌다. 눈에 띄게 움직이는 목록 위에서 계속 도는
+행은 멈춘 런처럼 읽히기 때문이다.
 
-**Per tool, not per call**, and a subagent's calls get no row at all. A row per call is what a
-checklist looks like before anyone uses it: five reads of the same channel became five identical
-rows, and one hand-off became a row per tool the child ran — twenty rows for work a reader would
-describe in three. So repeats collapse into one row that counts them (`SlackHistory ×5`), and the
-parent's own `transfer_to_agent` row stands for the whole hand-off, closing when the child
-returns. The decorated title a result carries is only shown while a row stands for a single
-call; past that the count is what the row says, and one result's detail would misdescribe it.
+**호출마다가 아니라 도구마다**이고, subagent 의 호출은 행을 아예 받지 않는다. 호출마다 한 행은
+아무도 써 보기 전의 체크리스트 모양이다: 같은 채널을 다섯 번 읽으면 똑같은 행 다섯 개가 됐고,
+한 번의 hand-off 는 자식이 실행한 도구마다 한 행이 됐다 — 읽는 사람이라면 세 줄로 서술할 일에
+스무 행이었다. 그래서 반복은 그것을 세는 한 행으로 접히고(`SlackHistory ×5`), 부모 자신의
+`transfer_to_agent` 행이 hand-off 전체를 대표하며 자식이 돌아올 때 닫힌다. 결과가 싣고 오는
+꾸며진 제목은 그 행이 단일 호출을 대표하는 동안에만 보여준다. 그 뒤로 행이 말하는 것은
+횟수이고, 결과 하나의 세부는 그것을 잘못 서술하게 된다.
 
-A nested step still **moves a DM's status line**, which cannot accumulate and would otherwise sit
-still through a long hand-off — a status that stops moving is how a working run comes to look
-like a stuck one. Which is the sink's decision to make, not the caller's: same report, different
-rendering.
+중첩된 단계도 **DM 의 상태 줄은 움직인다**. 상태 줄은 쌓일 수 없어서 그러지 않으면 긴
+hand-off 내내 가만히 있게 되는데 — 움직이지 않는 상태야말로 돌고 있는 런이 멈춘 런처럼 보이게
+되는 경로다. 그것은 호출자가 아니라 sink 가 내릴 결정이다: 같은 보고, 다른 렌더링.
 
-**Only a real boundary may tick a row off**, which is the whole constraint. `status` has none —
-a line changing means the run stopped saying something, not that it finished it — so a
-checklist driven by status changes would claim the run completed things it merely stopped
-mentioning. A tool result is a boundary, so steps close as the run goes; anything still open at
-the end is closed on its own `chat.appendStream` just before the stop, since a step left
-`in_progress` on a finished message reads as a run that never came back.
+**진짜 경계만이 행을 체크할 수 있다**는 것이 제약의 전부다. `status` 에는 경계가 없다 — 줄이
+바뀌었다는 것은 런이 무언가를 말하기를 그만뒀다는 뜻이지 그것을 끝냈다는 뜻이 아니다 — 그래서
+status 변화로 굴러가는 체크리스트는 런이 그저 언급을 멈춘 일들을 완료했다고 주장하게 된다.
+도구 결과는 경계이므로 단계들은 런이 진행되는 대로 닫힌다. 끝까지 열려 있는 것은 stop 직전에
+자기 몫의 `chat.appendStream` 으로 닫는다. 끝난 메시지에 `in_progress` 로 남은 단계는 끝내
+돌아오지 않은 런처럼 읽히기 때문이다.
 
-**A stream has a mode, and Slack decides it.** `chat.startStream` fixes whether the message
-speaks `markdown_text` (a top-level argument) or `chunks`; the other one later is
-`streaming_mode_mismatch`, and both on one call is
-`cannot_provide_both_markdown_text_and_chunks`. A channel is therefore **always chunks** — its
-progress rows are chunks and they open the message before any text exists — so the answer
-travels as a `markdown_text` *chunk*, which is a listed chunk type and is how Slack means one
-message to carry both axes. A DM has no rows and stays on the plain argument.
+**스트림에는 모드가 있고, 그것을 정하는 것은 Slack 이다.** `chat.startStream` 이 그 메시지가
+`markdown_text`(최상위 인자)로 말하는지 `chunks` 로 말하는지를 고정한다. 나중에 다른 쪽을 쓰면
+`streaming_mode_mismatch` 이고, 한 호출에 둘 다 쓰면
+`cannot_provide_both_markdown_text_and_chunks` 이다. 그래서 채널은 **언제나 chunks** 다 — 진행
+행이 chunk 이고 그것들이 텍스트가 존재하기도 전에 메시지를 열기 때문이다 — 따라서 답은
+`markdown_text` *chunk* 로 이동한다. 이것은 목록에 있는 chunk 타입이고, 한 메시지가 두 축을
+모두 싣게 하려는 Slack 의 방식이다. DM 에는 행이 없으므로 평범한 인자에 머무른다.
 
-That was learned twice, in production both times, because `push` swallows a failed append: a
-channel's every text append was rejected and only the final close ever logged, so the answer was
-silently dropped and then re-posted by the fallback below as a plain message. The test fakes
-enforce both rules now — passing tests had been accepting calls Slack rejects.
+이것은 두 번 배웠고 두 번 다 프로덕션에서였다. `push` 가 실패한 append 를 삼키기 때문이다:
+채널의 텍스트 append 가 전부 거부됐는데 로그에 남은 것은 마지막 close 뿐이었고, 그래서 답은
+조용히 버려진 뒤 아래의 fallback 이 평범한 메시지로 다시 올렸다. 이제 테스트 fake 가 두 규칙을
+모두 강제한다 — 통과하던 테스트가 Slack 이 거부하는 호출을 받아주고 있었다.
 
-The close therefore carries the unfinished rows *and* the last of the answer in one call, since
-in this mode both are chunks. If it fails anyway, whatever Slack never took is posted as a plain
-message — that failure was silent for a release, and a reader had no way to tell a lost answer
-from a slow one.
+그래서 close 는 끝나지 않은 행들 *과* 답의 마지막 조각을 한 호출에 싣는다. 이 모드에서는 둘 다
+chunk 이기 때문이다. 그래도 실패하면 Slack 이 끝내 받지 않은 것은 평범한 메시지로 올린다 — 그
+실패는 한 릴리즈 동안 조용했고, 읽는 사람은 잃어버린 답과 느린 답을 구별할 방법이 없었다.
 
-The two surfaces phrase the same step differently, and the sink owns that: a checklist row
-stands alone and keeps the bare name (`Skill: deep-research`), while the DM's status line and
-the text-note fallback need a verb, because Slack renders the line after the app's name
+두 표면은 같은 단계를 다르게 표현하고, 그것은 sink 의 몫이다: 체크리스트 행은 혼자 서 있으므로
+이름만 그대로 둔다(`Skill: deep-research`). 반면 DM 의 상태 줄과 텍스트 노트 fallback 에는
+동사가 필요하다. Slack 이 그 줄을 앱 이름 뒤에 렌더링하기 때문이다
 ("AgentDure is using search…").
 
-That shape is the fix for a deeper problem than the missing animation. Modelling status as *the
-DM mechanism* left the channel nothing but text to imitate it with; text had to live in the
-reply body; and a note in the reply could not be replaced by what it stood in for, because
-`chat.appendStream` only ever adds. So every channel run that reported progress was pushed onto
-edit-in-place and gave up streaming altogether — one edit per three seconds instead of a hundred
-appends a minute, and none of Slack's native rendering. The axes are independent, so none of
-that follows any more. The **text note survives as the fallback** for a workspace that cannot
-stream at all, which is the only place it was ever the right answer. Either way, a run whose
-answer never arrives as text (a picture, an upload) takes its message back rather than leave the
-thread captioned as still working — closing the stream first, since deleting one Slack still
-considers open leaves it mid-write.
+이 모양은 애니메이션이 없다는 것보다 깊은 문제에 대한 해결이다. status 를 *DM 의 메커니즘* 으로
+모델링하면 채널에는 그것을 흉내 낼 텍스트밖에 남지 않았고, 그 텍스트는 답장 본문에 있어야 했고,
+답장 안의 노트는 그것이 대신하던 것으로 교체될 수 없었다. `chat.appendStream` 은 더하기만 하기
+때문이다. 그래서 진행 상황을 보고하는 채널 런은 전부 제자리 편집으로 밀려나 스트리밍을 통째로
+포기했다 — 분당 append 백 번 대신 3초당 편집 한 번, 그리고 Slack 의 네이티브 렌더링은 하나도
+없이. 두 축은 독립이므로 이제 그중 무엇도 따라오지 않는다. **텍스트 노트는 fallback 으로
+살아남는다** — 아예 스트리밍할 수 없는 워크스페이스를 위한 것이고, 애초에 그것이 옳은 답이었던
+유일한 자리다. 어느 쪽이든, 답이 끝내 텍스트로 도착하지 않는 런(그림, 업로드)은 스레드에 아직
+작업 중이라는 캡션을 남겨 두는 대신 자기 메시지를 회수한다 — 스트림을 먼저 닫고서인데, Slack 이
+아직 열려 있다고 보는 메시지를 지우면 쓰기 도중 상태로 남기 때문이다.
 
-Suggested prompts are per-project configuration (`SlackIntegration.suggestedPrompts`, at most
-four — `src/domain/slack/types.ts` owns the shape and the cap). They reach Slack twice: in the
-generated manifest's `features.agent_view`, and at runtime through
-`assistant.threads.setSuggestedPrompts`. The runtime path is what lets a prompt change take
-effect on its own, but it depends on the manifest: an app whose Slack config predates the
-`app_home_opened` subscription never receives the event, so its prompts only ever come from the
-manifest and changing them means applying the manifest again.
+Suggested prompts 는 프로젝트별 설정이다(`SlackIntegration.suggestedPrompts`, 최대 네 개 —
+모양과 상한은 `src/domain/slack/types.ts` 가 소유한다). 이것은 Slack 에 두 번 도달한다: 생성된
+manifest 의 `features.agent_view` 로, 그리고 런타임에
+`assistant.threads.setSuggestedPrompts` 로. 런타임 경로가 프롬프트 변경을 스스로 반영되게 하는
+쪽이지만, 그것은 manifest 에 의존한다: Slack 설정이 `app_home_opened` 구독보다 오래된 앱은 그
+이벤트를 아예 받지 못하므로, 그 앱의 프롬프트는 오직 manifest 에서만 오고 바꾸려면 manifest 를
+다시 적용해야 한다.
 
-**Who is asking** reaches the model only when the version opts in
-(`parameters.callerContext`). The opt-in gates the *lookup*, not just the prompt — a project
-that did not ask does not send anyone's id to Slack's profile API either. With it on,
-`users.info` resolves the asker through `callerFrom`, the single place a `RunCaller` is built
-and its attacker-controlled name is made prompt-safe (name, timezone, avatar **URL**;
-deliberately no email — see [SECURITY.md](../SECURITY.md#caller-context)). The engine renders it as
-a caller block next to the run clock, and when a thread holds more than one human every turn —
-including the newest — is prefixed with its speaker. One human needs no labels.
+**누가 묻고 있는지**는 버전이 opt-in 했을 때만 모델에 도달한다(`parameters.callerContext`).
+이 opt-in 은 프롬프트만이 아니라 *조회* 를 막는다 — 요청하지 않은 프로젝트는 누구의 id 도
+Slack 의 프로필 API 로 보내지 않는다. 켜져 있으면 `users.info` 가 `callerFrom` 을 통해 질문자를
+해석한다. `callerFrom` 은 `RunCaller` 가 만들어지고 공격자가 제어하는 이름이 프롬프트에
+안전해지는 단 하나의 자리다(이름, 시간대, 아바타 **URL**; 이메일은 의도적으로 없다 —
+[SECURITY.md](../SECURITY.md#호출자-컨텍스트) 참고). 엔진은 그것을 런 시계 옆의 caller 블록으로
+렌더링하고, 스레드에 사람이 둘 이상이면 모든 턴 — 가장 최근 것 포함 — 앞에 발화자를 붙인다.
+사람이 하나면 라벨은 필요 없다.
 
-Resolution happens **after** the status line goes out and over **the turns that survived the
-history slice**, not the whole thread Slack returned: a cold cache is several round trips, and
-neither the acknowledgement nor a dropped turn should pay for them. Profiles are cached per
-workspace, bounded in size (`src/infrastructure/slack/profileCache.ts`), and a failed lookup
-costs the reply nothing.
+해석은 상태 줄이 나간 **뒤에**, 그리고 Slack 이 돌려준 스레드 전체가 아니라 **history slice 를
+살아남은 턴들** 에 대해 일어난다: 차가운 캐시는 왕복 여러 번이고, 확인 응답도 버려진 턴도 그
+비용을 치를 이유가 없다. 프로필은 워크스페이스별로 캐시되고 크기가 제한되며
+(`src/infrastructure/slack/profileCache.ts`), 조회 실패는 답장에 아무 비용도 지우지 않는다.
 
-A mention inside a thread carries the thread (its 50 most recent turns) as multi-turn context.
-Image attachments are downloaded with the bot token — the mention's own images first, then
-whatever budget is left goes to the newest images in the 10 most recent turns of the thread, so
-"make the picture I sent blue" still has the picture without re-fetching a long thread's whole
-history. Only humans' pictures count; the bot's own uploads are skipped, and anything skipped is
-reported in the reply.
+스레드 안의 멘션은 그 스레드(가장 최근 50턴)를 멀티턴 컨텍스트로 싣는다. 이미지 첨부는 봇
+토큰으로 내려받는다 — 멘션 자신의 이미지가 먼저이고, 남은 예산은 스레드의 가장 최근 10턴에 있는
+최신 이미지들로 간다. 그래서 "내가 보낸 그림을 파랗게 해줘" 는 긴 스레드의 이력 전체를 다시
+가져오지 않고도 여전히 그 그림을 갖는다. 사람의 그림만 센다. 봇 자신의 업로드는 건너뛰고,
+건너뛴 것은 답장에 보고한다.
 
-**Document attachments** are read into the turn as text (see [Attachments](chat.md#attachments)), and
-only from the current message: a document is expensive to fetch and parse where an image is
-not, and its text is already in the thread from the turn that sent it. A Slack file lives
-behind `url_private` and needs this bot's token, which is why no URL-fetching MCP tool can
-stand in for reading one. A file that is neither an image nor a readable document is the only
-thing still reported as ignored.
+**문서 첨부**는 텍스트로 턴에 읽어 들이며([첨부](chat.md#첨부) 참고), 오직 현재
+메시지에서만 읽는다: 문서는 이미지와 달리 가져오고 파싱하는 비용이 크고, 그 텍스트는 그것을
+보낸 턴을 통해 이미 스레드에 있다. Slack 파일은 `url_private` 뒤에 살고 이 봇의 토큰이
+필요한데, URL 을 가져오는 어떤 MCP 도구도 그 읽기를 대신할 수 없는 이유가 그것이다. 이미지도
+아니고 읽을 수 있는 문서도 아닌 파일만이 여전히 무시됐다고 보고되는 유일한 대상이다.
 
-Each download is bounded **while it is read** (`readBodyBytes`), with the cap passed per call
-because an image's ceiling is not a document's. The size check beside it reads Slack's declared
-`size`, which Slack may omit — so on its own it is a measurement taken once the memory is
-already spent.
+각 다운로드는 **읽는 도중에** 제한되며(`readBodyBytes`), 상한은 호출마다 넘긴다. 이미지의
+천장은 문서의 천장이 아니기 때문이다. 그 옆의 크기 검사는 Slack 이 선언한 `size` 를 읽는데
+Slack 이 그것을 생략할 수도 있다 — 그래서 그것만으로는 메모리를 이미 다 쓴 뒤에 하는 측정이다.
 
-Events are deduplicated exactly-once via `slackEventRepository.claim` (a conditional put) whose
-claim is a **lease** settled by `settle` — an instance that dies mid-processing leaves a
-reclaimable claim rather than an event recorded as handled by nobody.
+이벤트는 `slackEventRepository.claim`(조건부 put)으로 정확히 한 번만 처리되도록 중복 제거되고,
+그 claim 은 `settle` 이 정산하는 **lease** 다 — 처리 도중에 죽은 인스턴스는 아무도 처리하지
+않은 것으로 기록된 이벤트가 아니라 다시 가져갈 수 있는 claim 을 남긴다.
 
-## Which events are for the bot
+## 어떤 이벤트가 봇에게 온 것인가
 
-The app subscribes to `message.channels` and `message.groups`, so it receives **every message in
-every channel it was invited to** — not the workspace, but far more than is for it. Deciding
-which of those to answer is one function, `classifySlackEvent`
-(`src/application/slack/engagement.ts`), and **it runs in the route ahead of the dedup claim**.
-That ordering is the cost contract: a message nobody addressed costs a signature check and
-nothing else — no write, no run, and no reply that would have to be taken back. It is also what
-answers *a run that decides not to answer*: a channel run opens its reply as a progress note the
-moment it starts, so a decision made inside the run could only ever retract something already on
-screen. Made here it is not a run at all.
+앱은 `message.channels` 와 `message.groups` 를 구독하므로 **초대받은 모든 채널의 모든 메시지**
+를 받는다 — 워크스페이스 전체는 아니지만, 봇에게 온 것보다는 훨씬 많다. 그중 무엇에 답할지
+결정하는 것은 함수 하나, `classifySlackEvent`(`src/application/slack/engagement.ts`)이고,
+**그것은 dedup claim 보다 앞서 라우트에서 실행된다**. 그 순서가 비용 계약이다: 아무도 봇에게
+건네지 않은 메시지는 서명 검증 한 번 말고는 아무 비용도 들지 않는다 — 쓰기도, 런도, 나중에
+회수해야 할 답장도 없다. 그것은 또한 *답하지 않기로 하는 런* 에 대한 답이기도 하다: 채널 런은
+시작하는 순간 진행 노트로 답장을 열기 때문에, 런 안에서 내린 결정은 이미 화면에 나간 것을
+취소하는 일밖에 되지 못한다. 여기서 내리면 애초에 런이 아니다.
 
-The funnel, in order:
+깔때기는 순서대로:
 
-1. **the bot's own message** — first, because everything below can start a run, and with
-   `message.channels` subscribed the bot's own reply lands in a thread it is engaged in, which is
-   the one shape that answers itself forever. `bot_id` is not enough on its own (a file shared
-   through the external upload flow is attributed to the bot *user*), so the app's own id from
-   `authorizations` is checked too;
-2. **an `app_mention`** — always answered;
-3. **a DM** — every message in one is addressed to the bot, mention or not;
-4. **a thread the bot already answered in** — the only branch that needs storage;
-5. **a keyword the project named** (`SlackIntegration.channelKeywords`, case-insensitive
-   substring — substring because Korean glues particles onto nouns and a word-boundary rule would
-   never fire);
-6. otherwise nothing.
+1. **봇 자신의 메시지** — 아래의 모든 것이 런을 시작할 수 있고, `message.channels` 를 구독한
+   상태에서는 봇 자신의 답장이 봇이 참여 중인 스레드에 떨어지기 때문에 맨 앞이다. 그것은 영원히
+   자기 자신에게 답하는 유일한 모양이다. `bot_id` 만으로는 충분하지 않아서(외부 업로드 흐름으로
+   공유된 파일은 봇 *사용자* 에게 귀속된다) `authorizations` 의 앱 자신의 id 도 함께 확인한다;
+2. **`app_mention`** — 언제나 답한다;
+3. **DM** — DM 안의 모든 메시지는 멘션이든 아니든 봇에게 온 것이다;
+4. **봇이 이미 답한 적 있는 스레드** — 저장소가 필요한 유일한 분기다;
+5. **프로젝트가 지정한 키워드** (`SlackIntegration.channelKeywords`, 대소문자를 가리지 않는 부분
+   문자열 — 부분 문자열인 이유는 한국어가 명사에 조사를 붙여 쓰기 때문에 단어 경계 규칙은 결코
+   걸리지 않기 때문이다);
+6. 그 외에는 아무것도 아니다.
 
-Only step 4 costs a read, and only a *reply* reaches it: ordinary channel traffic carries no
-`thread_ts` and is dropped by step 6 without touching the database. Engagement is a row per
-channel thread (`slackThreadRepository`) with a day-long window
-(`SLACK_ENGAGEMENT_TTL_SECONDS`) refreshed on every reply, written after the reply because that
-is what makes it true. A DM writes none — every message in one already qualifies.
+읽기 비용이 드는 것은 4단계뿐이고, 거기에 도달하는 것은 *답글* 뿐이다: 평범한 채널 트래픽은
+`thread_ts` 를 갖지 않아 데이터베이스를 건드리지 않고 6단계에서 버려진다. engagement 는 채널
+스레드마다 한 행이고(`slackThreadRepository`) 하루짜리 창(`SLACK_ENGAGEMENT_TTL_SECONDS`)을
+가지며 답장마다 갱신되고, 답장 뒤에 쓰인다. 그래야 그것이 참이 되기 때문이다. DM 은 아무것도
+쓰지 않는다 — DM 안의 모든 메시지는 이미 자격을 갖췄다.
 
-**A channel mention arrives twice**, once as `app_mention` and once as the `message.channels` the
-same text produces, under two event ids the claim cannot join. The mention is the canonical
-delivery, so the `message` copy is dropped. This is applied to channels only: whether
-`app_mention` also fires in a DM is not something the gate depends on.
+**채널 멘션은 두 번 도착한다.** 한 번은 `app_mention` 으로, 한 번은 같은 텍스트가 만들어 내는
+`message.channels` 로, claim 이 이어 붙일 수 없는 두 개의 이벤트 id 아래에서. 멘션이 정본
+전달이므로 `message` 사본은 버린다. 이것은 채널에만 적용한다: DM 에서도 `app_mention` 이
+발생하는지 여부에 이 게이트는 의존하지 않는다.
 
-## Commands, and being told to stop
+## 명령, 그리고 멈추라는 말을 들었을 때
 
-Three messages are answered without a run: `!help`, `!mute` and `!unmute`. Answered directly
-because the answer is a constant, and because two of them change *whether the bot speaks again*
-— which no amount of prompting makes reliable. A person silencing a thread has to be obeyed,
-not interpreted. That is also why a command has to stand alone: `!mute this thread please` is an
-ordinary request, since guessing at intent is how the bot stops answering somebody who never
-asked it to.
+세 가지 메시지는 런 없이 답한다: `!help`, `!mute`, `!unmute`. 직접 답하는 이유는 답이
+상수이기 때문이고, 그중 둘은 *봇이 다시 말하는지 여부* 를 바꾸기 때문이다 — 아무리 프롬프트를
+써도 그것은 신뢰할 수 있게 되지 않는다. 스레드를 조용히 시키는 사람에게는 해석이 아니라
+복종해야 한다. 명령이 홀로 서 있어야 하는 이유도 그것이다: `!mute this thread please` 는 평범한
+요청이다. 의도를 짐작하는 것이야말로 봇이 그런 적 없는 사람에게 답하기를 멈추는
+경로이기 때문이다.
 
-`!mute` sets a flag on the same engagement row, which `isEngaged` reads — so a muted thread
-falls out of the funnel at step 4 and costs nothing more. **Muting needs no opposite to undo
-it**: `markEngaged` clears the flag and runs after every ordinary reply, so a direct mention
-brings the bot back on its own. Muting is per thread; a top-level `!mute` is answered with where
-to put it rather than with silence, and in a DM it is answered with the fact that a DM answers
-everything.
+`!mute` 는 같은 engagement 행에 플래그를 세우고 `isEngaged` 가 그것을 읽는다 — 그래서 음소거된
+스레드는 4단계에서 깔때기 밖으로 떨어지고 그 이상 비용이 들지 않는다. **음소거를 되돌리는 데
+반대말은 필요 없다**: `markEngaged` 가 플래그를 지우고 평범한 답장마다 실행되므로, 직접 멘션하면
+봇은 스스로 돌아온다. 음소거는 스레드 단위다. 최상위에서의 `!mute` 에는 침묵이 아니라 그것을
+어디에 써야 하는지로 답하고, DM 에서는 DM 이 모든 것에 답한다는 사실로 답한다.
 
-Commands are handled *ahead of the project lookup*, because `!mute` has to work on a bot that is
-currently failing — which is exactly when someone reaches for it.
+명령은 *프로젝트 조회보다 앞에서* 처리한다. `!mute` 는 지금 고장 나 있는 봇에서도 동작해야
+하는데 — 사람이 그것에 손을 뻗는 때가 바로 그때이기 때문이다.
 
-## Saying it was picked up
+## 접수했다고 말하기
 
-A channel run reacts to the message it started from (`:eyes:`) before anything else. A reply
-lives in a thread, which is somewhere nobody is necessarily looking yet, and several people may
-be talking at once — so the only acknowledgement that says *this message, and I have it* is one
-on the message itself. It matters most where nothing was addressed to the bot explicitly. A DM
-gets none: every message there is for the bot and the thread has a native status line.
+채널 런은 무엇보다 먼저 자기가 시작된 메시지에 리액션을 단다(`:eyes:`). 답장은 스레드 안에
+사는데 그곳은 아직 아무도 보고 있지 않을 수 있는 곳이고, 여러 사람이 동시에 말하고 있을 수도
+있다 — 그래서 *이 메시지, 그리고 내가 받았다* 를 말하는 유일한 확인 응답은 메시지 자체에 다는
+것이다. 봇에게 명시적으로 건넨 것이 아무것도 없는 곳에서 가장 중요하다. DM 은 받지 않는다:
+그곳의 모든 메시지는 봇에게 온 것이고 스레드에는 네이티브 상태 줄이 있다.
 
-Never fatal, and not even a warning in the reply: the run answering is a louder acknowledgement
-than the one that failed.
+결코 치명적이지 않고, 답장의 warning 조차 되지 않는다: 런이 답하는 것 자체가 실패한 확인 응답
+보다 더 큰 확인 응답이다.
 
-## Reading the workspace
+## 워크스페이스 읽기
 
-A version may opt into six read-only tools (`parameters.slackWorkspace`): `SlackHistory`,
-`SlackThread`, `SlackUser`, `SlackUsers`, `SlackChannels` and `SlackReactions`. The bot already
-holds the scopes; what was missing was a way for a *run* to spend them.
+버전은 읽기 전용 도구 여섯 개에 opt-in 할 수 있다(`parameters.slackWorkspace`):
+`SlackHistory`, `SlackThread`, `SlackUser`, `SlackUsers`, `SlackChannels`, `SlackReactions`.
+봇은 이미 스코프를 갖고 있다. 없던 것은 *런* 이 그것을 쓸 방법이었다.
 
-Two of them exist because **Slack addresses everything by id while people use names**:
-`SlackChannels` turns `#deploy` into a channel id, and `SlackUsers` does the same for a person —
-by walking `users.list` and filtering, since a bot gets no name search. That walk is bounded and
-*says when it stopped*, because a search that quietly missed someone is worse than one that
-admits it. `SlackReactions` is there because a team often answers with an emoji rather than a
-reply, so "who has seen this" is unanswerable from a transcript alone.
+그중 둘이 존재하는 이유는 **Slack 은 모든 것을 id 로 지목하는데 사람은 이름을 쓰기** 때문이다:
+`SlackChannels` 는 `#deploy` 를 채널 id 로 바꾸고, `SlackUsers` 는 사람에 대해 같은 일을 한다 —
+봇에게는 이름 검색이 주어지지 않으므로 `users.list` 를 훑고 걸러내는 방식으로. 그 훑기는 제한돼
+있고 *언제 멈췄는지 말한다*. 누군가를 조용히 놓친 검색은 그것을 인정하는 검색보다 나쁘기
+때문이다. `SlackReactions` 가 있는 이유는 팀이 답글 대신 이모지로 답하는 일이 잦아서 "누가 이걸
+봤는가" 는 대화 기록만으로는 답할 수 없기 때문이다.
 
-`SlackUser` returns the whole profile — name, job title, timezone, the status line where
-"OOO until Friday" lives, the avatar, and whether the account is an app or deactivated. The
-caller block gets a narrower view of the same lookup: it is spliced into the system prompt on
-every turn, so it carries the least that identifies someone, while a tool result is asked for
-once. **One `users.info` answers both**, and the cache holds the wider one — caching the
-narrower would make a project using caller context and this tool fetch the same person twice.
+`SlackUser` 는 프로필 전체를 돌려준다 — 이름, 직함, 시간대, "OOO until Friday" 같은 것이 사는
+상태 줄, 아바타, 그리고 그 계정이 앱인지 비활성화됐는지. caller 블록은 같은 조회의 더 좁은
+시야를 받는다: 그것은 매 턴 시스템 프롬프트에 끼워 넣어지므로 누군가를 식별하는 최소한만 싣고,
+도구 결과는 한 번 요청될 뿐이다. **`users.info` 하나가 둘 다에 답하고**, 캐시는 넓은 쪽을
+담는다 — 좁은 쪽을 캐시하면 caller context 와 이 도구를 함께 쓰는 프로젝트가 같은 사람을 두 번
+가져오게 된다.
 
-The engine routes all six names to one injected reader
-(`AgentCapabilityDeps.readSlack`), which holds the bot token — so *which* workspace is read is
-never the model's to choose. The composition root binds it: resolving a project's token is the
-Slack slice's knowledge, and reaching for it from execution makes the two slices mutually
-dependent, which `tests/architecture.test.ts` refuses. `SlackReaderPort`
-(`src/domain/slack/reader.ts`) is the read half both sides can name, and `SlackClientPort`
-extends it rather than restating it.
+엔진은 여섯 이름 전부를 주입된 reader 하나(`AgentCapabilityDeps.readSlack`)로 보내고, 그
+reader 가 봇 토큰을 쥐고 있다 — 그래서 *어느* 워크스페이스를 읽는지는 결코 모델이 고를 몫이
+아니다. composition root 가 그것을 묶는다: 프로젝트의 토큰을 해석하는 것은 Slack 슬라이스의
+지식이고, 실행 쪽에서 그것에 손을 뻗으면 두 슬라이스가 서로 의존하게 되는데
+`tests/architecture.test.ts` 가 그것을 거부한다. `SlackReaderPort`
+(`src/domain/slack/reader.ts`)는 양쪽 모두가 이름 부를 수 있는 읽기 절반이고,
+`SlackClientPort` 는 그것을 다시 쓰는 대신 확장한다.
 
-What the tools may hand back is bounded twice over — see
-[SECURITY.md](../SECURITY.md#reading-the-slack-workspace).
-
+도구가 돌려줄 수 있는 것은 두 겹으로 제한된다 —
+[SECURITY.md](../SECURITY.md#slack-워크스페이스-읽기) 참고.

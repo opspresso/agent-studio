@@ -1,83 +1,82 @@
-# API Reference
+# API 레퍼런스
 
-The HTTP contract for AgentDure: every route, how it authenticates, and the request /
-response shapes and error cases for the non-obvious ones.
+AgentDure 의 HTTP 계약: 모든 라우트, 각각이 어떻게 인증하는지, 그리고 자명하지 않은
+것들의 요청 / 응답 형태와 에러 케이스.
 
-Design rationale for *why* a surface looks like this lives in
-[ARCHITECTURE.md](ARCHITECTURE.md); the authorization model is spelled out in
-[SECURITY.md](SECURITY.md).
+어떤 표면이 *왜* 이런 모습인지에 대한 설계 근거는
+[ARCHITECTURE.md](ARCHITECTURE.md) 에 있고, 인가(authorization) 모델은
+[SECURITY.md](SECURITY.md) 에 정리돼 있다.
 
-## Conventions
+## 규약
 
-- **Content type**: requests and responses are JSON unless noted; streaming responses are
-  `text/event-stream`.
-- **Auth**: application routes require a Better Auth session cookie (Google OAuth login; for
-  local dev, `scripts/dev-session.ts` prints one). Missing/invalid session →
-  `401 { "error": "Unauthorized" }`. The login flow itself lives under `/api/auth/*`
-  (Better Auth catch-all). The three execution endpoints (`predict`, `chat/completions`,
-  `agent`) additionally accept a **per-project API token** via `Authorization: Bearer <token>`
-  instead of a session cookie; the token acts on the project owner's behalf and is scoped to
-  that project (see [Project API token](#project-api-token)). Machine surfaces are gated
-  differently: `/api/a2a/*` by `X-A2A-Key`, `/api/slack/events/*` by the Slack signing secret,
-  `/api/telegram/webhook/*` by the secret token Telegram echoes, `/api/webhook/{project}` by
-  the webhook's own secret, `/api/triggers/scan` by the deployment's `SCHEDULE_SCAN_TOKEN`. `/api/health`, `/api/ready` and `/api/metrics` are open.
-- **Authorization**: projects are a shared catalog — any signed-in user may read and run any
-  project. Only the owner and configured admins may mutate one (update/delete/publish, version
-  create/update, Slack and Telegram config), otherwise
-  `403 { "error": "You do not have permission to modify project \"…\"" }`.
-  Project sub-resources that expose other users' runtime data or masked secrets — traces, the
-  Slack and Telegram config, the API token, triggers, per-caller usage, MCP connections — are
-  limited to
-  the owner and admins for *reading* as well. Chats are per-owner private (non-owner reads
-  return 404). MCP/agent/skill/plugin registries are shared for reads **from the `member`
-  tier up** — a `guest` (the tier every sign-up starts as) gets
-  `403 { "error": "This resource is not available to your account" }` (`withMemberAuth`);
-  mutations require membership in `ADMIN_EMAILS` when set (unset allows any signed-in user),
-  otherwise `403 { "error": "Only admins can modify this resource" }`. Project creation is
-  likewise a tier capability: a tier without it gets
-  `403 { "error": "Your tier does not allow creating projects" }`.
-- **Errors**: `{ "error": string }`, with an extra `issues` array on schema-validation
-  failures. Status codes: `400` (bad input), `401` (no session), `403` (not owner/admin),
-  `404` (missing), `409` (name conflict), `413` (payload too large), `429` (refused for now —
-  see below), `500` (unhandled), `502` (an upstream this app called failed), `503` (a feature
-  this deployment did not configure).
-- **Retry-After**: a `429` always carries it, in seconds. The refusal knows when it stops
-  being true — a daily cost block lasts until 00:00 UTC — so the caller is told rather than
-  left to guess and retry into the same wall.
-- **List responses**: resource collections (`projects`, `skills`, `mcps`, `agents`) return a
-  bare array; `chats`, `models`, `usages/summary`, `triggers`, `connections` wrap theirs in an
-  object (`{ chats }`, `{ models }`, `{ items }`, `{ triggers }`, `{ connections }`).
-- **Names** are slugs (`^[a-z0-9-]+$`), validated by `parseName`, which throws a
-  `ValidationError` → `400`.
-- **SSE framing**: each event is `data: {json}\n\n`; every stream `sseResponse` serves —
-  the OpenAI-style ones and the chat streams alike — ends with `data: [DONE]\n\n` (only the
-  A2A endpoint's JSON-RPC stream omits it). On a mid-stream failure a final
-  `data: {"error":"…"}` frame is sent.
-  `chat/completions` streams always carry exactly one `finish_reason` chunk: `stop` when the
-  model finished on its own, `length` when the run ended at a limit — its turn budget, or the
-  provider cutting the response at its output cap — read from the termination the engine
-  announces, so a cancellation or a mid-stream error is never dressed up as a length stop.
-  The non-streaming response reports the same two values.
+- **Content type**: 따로 언급하지 않는 한 요청과 응답은 JSON 이다. 스트리밍 응답은
+  `text/event-stream` 이다.
+- **Auth**: 애플리케이션 라우트는 Better Auth 세션 쿠키를 요구한다 (Google OAuth 로그인.
+  로컬 개발에서는 `scripts/dev-session.ts` 가 하나 출력해 준다). 세션이 없거나 유효하지 않으면 →
+  `401 { "error": "Unauthorized" }`. 로그인 플로우 자체는 `/api/auth/*` 아래에 있다
+  (Better Auth catch-all). 실행 엔드포인트 셋(`predict`, `chat/completions`,
+  `agent`)은 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 오는 **project 별 API 토큰**도
+  받는다. 토큰은 project 소유자를 대신해 동작하며 그 project 범위로 한정된다
+  (참고: [Project API 토큰](#project-api-토큰)). 기계 표면은 게이트가 다르다:
+  `/api/a2a/*` 는 `X-A2A-Key`, `/api/slack/events/*` 는 Slack signing secret,
+  `/api/telegram/webhook/*` 는 Telegram 이 되돌려 주는 secret token, `/api/webhook/{project}` 는
+  그 webhook 자신의 secret, `/api/triggers/scan` 은 배포의 `SCHEDULE_SCAN_TOKEN` 이다. `/api/health`, `/api/ready`, `/api/metrics` 는 열려 있다.
+- **Authorization**: project 는 공유 카탈로그다 — 로그인한 사용자라면 누구나 어떤 project 든
+  읽고 실행할 수 있다. 변경(수정/삭제/publish, version 생성/수정, Slack·Telegram 설정)은
+  소유자와 설정된 admin 만 할 수 있고, 그 외에는
+  `403 { "error": "You do not have permission to modify project \"…\"" }` 이다.
+  다른 사용자의 런타임 데이터나 마스킹된 secret 을 드러내는 project 하위 리소스 — 트레이스,
+  Slack·Telegram 설정, API 토큰, trigger, 호출자별 사용량, MCP 연결 — 은
+  *읽기*도 소유자와 admin 으로 제한된다. Chat 은 소유자에게만 비공개다 (소유자가 아닌 읽기는
+  404 를 돌려준다). MCP/agent/skill/plugin 레지스트리와 모델 카탈로그(`/api/models/catalog`)는
+  **`member` tier 이상**에게 읽기가 공유된다 — 모든 가입자가 시작하는 tier 인 `guest` 는
+  `403 { "error": "This resource is not available to your account" }` 을 받는다 (`withMemberAuth`).
+  변경은 `ADMIN_EMAILS` 가 설정돼 있으면 그 목록에 속해야 하고 (설정되지 않았으면 로그인한
+  사용자 누구나 허용), 그렇지 않으면 `403 { "error": "Only admins can modify this resource" }` 이다.
+  project 생성도 마찬가지로 tier 능력이다: 그 능력이 없는 tier 는
+  `403 { "error": "Your tier does not allow creating projects" }` 을 받는다.
+- **Errors**: `{ "error": string }` 이고, 스키마 검증 실패에는 `issues` 배열이 추가로 붙는다.
+  상태 코드: `400` (잘못된 입력), `401` (세션 없음), `403` (소유자/admin 아님),
+  `404` (없음), `409` (이름 충돌), `413` (페이로드 과대), `429` (지금은 거절 —
+  아래 참조), `500` (처리되지 않음), `502` (이 앱이 호출한 상류가 실패), `503` (이 배포가
+  설정하지 않은 기능).
+- **Retry-After**: `429` 는 항상 이 헤더를 초 단위로 실어 보낸다. 그 거절은 언제 더 이상
+  참이 아니게 되는지를 안다 — 일일 비용 차단은 00:00 UTC 까지 지속된다 — 그래서 호출자가
+  짐작해서 같은 벽에 다시 부딪히게 두지 않고 알려 준다.
+- **List responses**: 리소스 컬렉션(`projects`, `skills`, `mcps`, `agents`)은 벌거벗은
+  배열을 돌려준다. `chats`, `models`, `usages/summary`, `triggers`, `connections` 는 각자의
+  것을 객체로 감싼다 (`{ chats }`, `{ models }`, `{ items }`, `{ triggers }`, `{ connections }`).
+- **Names** 는 slug (`^[a-z0-9-]+$`) 이고 `parseName` 이 검증한다. 실패 시
+  `ValidationError` 를 던져 `400` 이 된다.
+- **SSE framing**: 각 이벤트는 `data: {json}\n\n` 이다. `sseResponse` 가 서빙하는 모든
+  스트림은 — OpenAI 형식의 것들과 chat 스트림 모두 — `data: [DONE]\n\n` 으로 끝난다 (A2A
+  엔드포인트의 JSON-RPC 스트림만 이것을 생략한다). 스트림 도중 실패하면 마지막에
+  `data: {"error":"…"}` 프레임이 나간다.
+  `chat/completions` 스트림은 항상 정확히 하나의 `finish_reason` chunk 를 싣는다: 모델이
+  스스로 끝냈으면 `stop`, 런이 한계에서 끝났으면 — 턴 예산이거나, 프로바이더가 출력 상한에서
+  응답을 끊은 것 — `length` 다. 엔진이 알리는 종료 사유에서 읽어 오므로, 취소나 스트림 도중
+  에러가 length 정지로 둔갑하는 일은 없다.
+  비스트리밍 응답도 같은 두 값을 보고한다.
 
-## Route index
+## 라우트 색인
 
-`session` = Better Auth session cookie. `member` = session + the `member` tier or above
-(`withMemberAuth`; a `guest` gets 403). `admin` = session + membership in the effective admin
-list. `owner` = the project's owner or a configured admin.
+`session` = Better Auth 세션 쿠키. `member` = 세션 + `member` tier 이상
+(`withMemberAuth`. `guest` 는 403 을 받는다). `admin` = 세션 + 유효 admin 목록에 속함.
+`owner` = 그 project 의 소유자 또는 설정된 admin.
 
 ### Projects
 
-| Route | Methods | Auth |
+| 라우트 | 메서드 | 권한 |
 |---|---|---|
-| `/api/projects` | `GET` `POST` | session / session + a tier that may create projects |
+| `/api/projects` | `GET` `POST` | session / session + project 를 만들 수 있는 tier |
 | `/api/projects/{name}` | `GET` `PUT` `DELETE` | session / owner |
 | `/api/projects/{name}/versions` | `GET` `POST` | session / owner |
 | `/api/projects/{name}/versions/{version}` | `GET` `PUT` `DELETE` | session / owner |
 | `/api/projects/{name}/publish` | `POST` | owner |
 | `/api/projects/{name}/preview` | `POST` | member |
-| `/api/projects/{name}/versions/{version}/predict` | `POST` | session or project token |
-| `/api/projects/{name}/versions/{version}/chat/completions` | `POST` | session or project token |
-| `/api/projects/{name}/versions/{version}/agent` | `POST` | session or project token |
+| `/api/projects/{name}/versions/{version}/predict` | `POST` | session 또는 project 토큰 |
+| `/api/projects/{name}/versions/{version}/chat/completions` | `POST` | session 또는 project 토큰 |
+| `/api/projects/{name}/versions/{version}/agent` | `POST` | session 또는 project 토큰 |
 | `/api/projects/{name}/token` | `GET` `POST` `DELETE` | owner |
 | `/api/projects/{name}/token/reveal` | `POST` | owner |
 | `/api/projects/{name}/artifacts` | `GET` | owner |
@@ -99,9 +98,9 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/projects/{name}/mcp-connections/{server}/authorize` | `POST` | owner |
 | `/api/projects/{name}/mcp-connections/{server}/tools` | `POST` | owner |
 
-### Registries
+### 레지스트리
 
-| Route | Methods | Auth |
+| 라우트 | 메서드 | 권한 |
 |---|---|---|
 | `/api/skills`, `/api/mcps`, `/api/agents` | `GET` `POST` | member / admin |
 | `/api/skills/{name}`, `/api/mcps/{name}`, `/api/agents/{name}` | `GET` `PUT` `DELETE` | member / admin |
@@ -114,23 +113,23 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/mcps/managed/{name}` | `GET` `PUT` `DELETE` | admin |
 | `/api/mcps/managed/{name}/restart` | `POST` | admin |
 | `/api/mcps/oauth/callback` | `GET` | session |
-| `/api/mcps/oauth/client-metadata/{project}` | `GET` | **public** |
+| `/api/mcps/oauth/client-metadata/{project}` | `GET` | **공개** |
 | `/api/agents/{name}/message` | `POST` | member |
 
-### Chats, usage, platform
+### Chat·사용량·플랫폼
 
-| Route | Methods | Auth |
+| 라우트 | 메서드 | 권한 |
 |---|---|---|
 | `/api/chats` | `GET` `POST` | session |
-| `/api/chats/{chatId}` | `GET` `DELETE` | owner of the chat |
-| `/api/chats/{chatId}/messages` | `POST` | owner of the chat |
-| `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | owner of the chat |
-| `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | owner of the chat |
+| `/api/chats/{chatId}` | `GET` `DELETE` | 그 chat 의 소유자 |
+| `/api/chats/{chatId}/messages` | `POST` | 그 chat 의 소유자 |
+| `/api/chats/{chatId}/runs/{runId}` | `GET` `DELETE` | 그 chat 의 소유자 |
+| `/api/chats/{chatId}/runs/{runId}/stream` | `GET` | 그 chat 의 소유자 |
 | `/api/artifacts` | `GET` | session |
-| `/api/artifacts/{artifactId}` | `DELETE` | creator, project owner, or admin |
+| `/api/artifacts/{artifactId}` | `DELETE` | 생성자, project 소유자, 또는 admin |
 | `/api/usages/summary` | `GET` | session |
 | `/api/models` | `GET` | session |
-| `/api/models/catalog` | `GET` | admin |
+| `/api/models/catalog` | `GET` | member |
 | `/api/models/test` | `POST` | admin |
 | `/api/me` | `GET` | session |
 | `/api/me/profile` | `GET` | session |
@@ -145,13 +144,13 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/settings/a2a-keys/{name}/reveal` | `POST` | admin |
 | `/api/audit` | `GET` | admin |
 
-### Unauthenticated / machine surfaces
+### 비인증 / 기계 표면
 
-| Route | Methods | Gate |
+| 라우트 | 메서드 | 게이트 |
 |---|---|---|
-| `/api/auth/{...all}` | `GET` `POST` | the Better Auth login flow itself |
+| `/api/auth/{...all}` | `GET` `POST` | Better Auth 로그인 플로우 자신 |
 | `/api/a2a` | `GET` | session |
-| `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | public |
+| `/api/a2a/{project}/.well-known/agent-card.json` | `GET` | 공개 |
 | `/api/a2a/{project}` | `POST` | `X-A2A-Key` |
 | `/api/slack/events/{project}` | `POST` | Slack signing secret |
 | `/api/telegram/webhook/{project}` | `POST` | `X-Telegram-Bot-Api-Secret-Token` |
@@ -159,13 +158,13 @@ list. `owner` = the project's owner or a configured admin.
 | `/api/triggers/scan` | `POST` | `X-Scan-Token` |
 | `/api/catalog/reindex` | `POST` | `X-Scan-Token` |
 | `/api/plugins/sync/scan` | `POST` | `X-Scan-Token` |
-| `/api/health` | `GET` | open |
-| `/api/ready` | `GET` | open |
-| `/api/metrics` | `GET` | open |
+| `/api/health` | `GET` | 열림 |
+| `/api/ready` | `GET` | 열림 |
+| `/api/metrics` | `GET` | 열림 |
 
-## Resource CRUD — projects, skills, mcps, agents
+## 리소스 CRUD — projects, skills, mcps, agents
 
-All four follow the same shape. Example (skills):
+넷 다 같은 형태를 따른다. 예 (skills):
 
 ```
 GET    /api/skills            → 200 [ { name, description, source?, files, updatedAt }, … ]
@@ -175,47 +174,45 @@ PUT    /api/skills/{name}     → 200 {…}                 | 404 | 400
 DELETE /api/skills/{name}     → 204                     | 404
 ```
 
-- Names are slugs (`^[a-z0-9-]+$`).
-- `mcps`/`agents` store `headers` AES-encrypted and return them masked (length-preserving;
-  9–20 chars reveal 2 at each end, 21+ reveal 4); a masked
-  or empty value on update preserves the stored secret. Their `url` is SSRF-guarded — a
-  private/loopback/link-local/metadata target (or non-http(s) scheme) is rejected with `400`.
-- `mcps` also accept an optional `content` (markdown operator notes). `description` is the
-  one-line summary the model sees in an agent run's server table; `content` is console-only
-  and never reaches the model.
-- `agents` carry a `protocol` (`openai` | `a2a`, default `openai`) that decides how
-  `POST /api/agents/{name}/message` and an outbound transfer address the remote.
-- A **managed** MCP entry is refused by the shared registry routes it does not own:
-  `DELETE /api/mcps/{name}` is `400` (delete it through `/api/mcps/managed/{name}`, so the
-  container stops with the row), and a `PUT` that moves its `url` is `400` — the address comes
-  from the provisioner.
-- `GET /api/skills` returns summaries — `{ name, description, source?, files: count,
-  updatedAt }` — because the list pages render a card, not a document; the full entity
-  (markdown `content`, the attachment `files[]` themselves) comes from
-  `GET /api/skills/{name}`. `source?` is the provenance of a repo-synced entry, e.g.
-  `github:opspresso/agent-plugins#devops` — the repo and the plugin that declared it.
-- **A `source`-bearing entry is repo-owned, and the console refuses to compete with the
-  repository over it (`403`)**: a skill's `PUT`/`DELETE` entirely; an MCP entry's `url`,
-  `description`, `content` and its `DELETE` — a headers-only `PUT` still passes, because
-  credentials are console-owned and never in git (OAuth likewise). A managed synced entry
-  keeps its workload fields (`image`, ports, env) editable. Deletion of a repo-owned entry
-  happens through the plugins sync's orphan selection.
-- `projects` mutations are owner-gated (403). `POST /api/projects` body:
+- 이름은 slug (`^[a-z0-9-]+$`) 다.
+- `mcps`/`agents` 는 `headers` 를 AES 로 암호화해 저장하고 마스킹해서 돌려준다 (길이 보존.
+  9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). 업데이트 때 마스킹된 값이나 빈 값은
+  저장된 secret 을 보존한다. 이들의 `url` 은 SSRF 가드를 받는다 —
+  private/loopback/link-local/metadata 대상(또는 http(s) 가 아닌 scheme)은 `400` 으로 거절된다.
+- `mcps` 는 선택적인 `content` (markdown 운영자 노트) 도 받는다. `description` 은 agent 런의
+  서버 표에서 모델이 보는 한 줄 요약이고, `content` 는 콘솔 전용이라 모델에 절대 닿지 않는다.
+- `agents` 는 `protocol` (`openai` | `a2a`, 기본값 `openai`) 을 갖는데, 이것이
+  `POST /api/agents/{name}/message` 와 아웃바운드 transfer 가 원격을 어떻게 호출할지를 정한다.
+- **managed** MCP 항목은 그것을 소유하지 않은 공유 레지스트리 라우트에서 거절된다:
+  `DELETE /api/mcps/{name}` 은 `400` 이고 (`/api/mcps/managed/{name}` 을 통해 지워야 컨테이너가
+  행과 함께 멈춘다), `url` 을 옮기는 `PUT` 도 `400` 이다 — 그 주소는 프로비저너가 준다.
+- `GET /api/skills` 는 요약을 돌려준다 — `{ name, description, source?, files: count,
+  updatedAt }` — 목록 페이지가 렌더링하는 것은 문서가 아니라 카드이기 때문이다. 전체 엔티티
+  (markdown `content`, 첨부 `files[]` 자체) 는
+  `GET /api/skills/{name}` 에서 온다. `source?` 는 repo 에서 sync 된 항목의 출처다. 예:
+  `github:opspresso/agent-plugins#devops` — 그것을 선언한 repo 와 plugin.
+- **`source` 를 가진 항목은 repo 소유이고, 콘솔은 그것을 두고 저장소와 경쟁하기를 거부한다
+  (`403`)**: skill 은 `PUT`/`DELETE` 전부, MCP 항목은 `url`·`description`·`content` 와 그
+  `DELETE` 다 — headers 만 바꾸는 `PUT` 은 여전히 통과하는데, 인증 정보는 콘솔 소유이고 git 에
+  들어가지 않기 때문이다 (OAuth 도 마찬가지). sync 된 managed 항목은 워크로드 필드
+  (`image`, 포트, env) 를 계속 수정할 수 있다. repo 소유 항목의 삭제는 plugins sync 의 orphan
+  선택을 거쳐 일어난다.
+- `projects` 변경은 소유자 게이트를 받는다 (403). `POST /api/projects` 본문:
 
 ```json
 { "name": "my-bot", "displayName": "My Bot", "description": "",
   "projectType": "llm | agent | image", "departmentCode": "OPT-optional" }
 ```
 
-  Creation also writes the project's initial version `"1"` — empty prompts, the deployment's
-  first offered model that fits the project type — so chat and the playground work from the
-  first minute. The initial version is **not published**: publishing stays a deliberate act
-  (the console offers it after a save while the project is unpublished). With no offered
-  model that fits, the project is created without a version, exactly as before.
+  생성은 project 의 초기 version `"1"` 도 함께 쓴다 — 빈 프롬프트, 그 project 타입에 맞는
+  배포의 첫 제공 모델 — 그래서 chat 과 playground 가 첫 순간부터 동작한다. 초기 version 은
+  **publish 되지 않는다**: publish 는 의도적인 행위로 남는다 (project 가 publish 되지 않은
+  동안 콘솔이 저장 후에 그것을 제안한다). 맞는 제공 모델이 하나도 없으면 project 는 version
+  없이 생성되며, 이는 이전과 정확히 같다.
 
-#### Cost limits
+#### 비용 한도
 
-`PUT /api/projects/{name}` also carries the project's spend guards:
+`PUT /api/projects/{name}` 은 그 project 의 지출 가드도 함께 싣는다:
 
 ```json
 { "costLimits": { "alertThresholdUsd": 20, "blockThresholdUsd": 50,
@@ -223,23 +220,20 @@ DELETE /api/skills/{name}     → 204                     | 404
                   "alertSlackChannel": "C0123456789" } }
 ```
 
-Sent whole — the object replaces what was stored, `null` clears the guards, and omitting the
-field leaves them untouched. A partial merge would make "drop the block threshold, keep the
-alert" unexpressible. Every threshold is optional and independent; within each window the
-alert may not exceed the block (above it the alert could never fire on its own, because the
-block stops the spending that would reach it).
+통째로 보낸다 — 이 객체가 저장된 것을 대체하고, `null` 은 가드를 지우며, 필드를 생략하면
+그대로 둔다. 부분 병합이면 "block 임계값은 없애고 alert 는 유지"를 표현할 수 없게 된다. 모든
+임계값은 선택이고 서로 독립이다. 각 창(window) 안에서 alert 는 block 을 넘을 수 없다 (넘으면
+alert 는 혼자서는 절대 발화하지 못하는데, block 이 거기 도달할 지출을 멈추기 때문이다).
 
-Spend is the sum of every model's `costUsd` on the project's UTC-day usage rows — one row for
-the daily window, the month's rows summed for the monthly one. Once a block threshold is
-reached every execution entry point answers
-`429 { "error": "Project \"…\" has reached its daily cost limit …" }` (or `monthly`) with
-`Retry-After` set to the seconds until the window rolls over — 00:00 UTC for the day, the
-first of the next month for the month. Crossing a threshold posts once per window to
-`alertSlackChannel` using the project's own Slack bot; without a channel or bot the
-thresholds still block. See [OPERATIONS.md](OPERATIONS.md#cost-guard--fails-open) for
-what the guard does and does not bound.
+지출은 project 의 UTC-일 사용량 행에 있는 모든 모델의 `costUsd` 합이다 — 일간 창은 한 행,
+월간은 그 달의 행들을 합산한다. block 임계값에 도달하면 모든 실행 진입점이
+`429 { "error": "Project \"…\" has reached its daily cost limit …" }` (또는 `monthly`) 로
+답하고, `Retry-After` 에는 창이 넘어갈 때까지의 초가 담긴다 — 일간은 00:00 UTC, 월간은 다음 달
+1일이다. 임계값을 넘으면 project 자신의 Slack 봇으로 `alertSlackChannel` 에 창당 한 번
+알린다. 채널이나 봇이 없어도 임계값은 여전히 차단한다. 가드가 무엇을 한계 지우고 무엇은
+그러지 못하는지는 [OPERATIONS.md](OPERATIONS.md#비용-가드--fail-open) 를 보라.
 
-### Versions & publish
+### Version 과 publish
 
 ```
 GET|POST /api/projects/{name}/versions
@@ -247,69 +241,67 @@ GET|PUT|DELETE /api/projects/{name}/versions/{version} ({version} = a name or "p
 POST     /api/projects/{name}/publish   { "versionName": "3" }   → sets the published pointer
 ```
 
-Version body: `systemPrompt`, `userPromptTemplate`, `model` (required, `provider/model`),
+Version 본문: `systemPrompt`, `userPromptTemplate`, `model` (필수, `provider/model`),
 `fallbackModel?`, `parameters { temperature?, maxTokens?, reasoningEffort?, piiFiltering,
 structuredOutput?, jsonSchema?, imageGeneration?, imageModel?, callerContext?, urlFetch?,
 slackWorkspace?, dynamicCapabilities?, memoryRecall? }`,
 `mcpList[{ name, headers?, tools? }]`, `skillList[]`,
-`subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. An `imageModel` that is not an
-image-capable registry model is rejected with 400, as is a catalog `model` missing a capability
-the version needs — `tools` for an `agent` project, `structuredOutput` for that parameter (an id
-the catalog does not carry is warned about, not refused). `mcpList`/`skillList`/`subagentList`
-entries must resolve to registered MCP servers, skills, agents, or projects — a dangling
-reference is rejected with 400 — and only an `agent` project may carry them at all. On update
-only *newly added* entries are checked, so a version stays editable after a registry entry it
-already referenced is deleted. Naming the same server, skill or agent **twice** in one list is
-rejected with 400 on every write, an update resubmitting a stored list included: a duplicate
-binding opens the server's session twice and the second row silently overwrites the first
-everywhere the run keys by name.
+`subagentList[{ name, type: "local"|"remote" }]`, `maxTurn?`. 이미지 능력이 없는 레지스트리
+모델을 `imageModel` 로 주면 400 으로 거절되고, 그 version 이 필요로 하는 능력이 없는 카탈로그
+`model` 도 마찬가지다 — `agent` project 에는 `tools`, 그 파라미터에는 `structuredOutput` 이
+필요하다 (카탈로그에 없는 id 는 거절이 아니라 경고 대상이다).
+`mcpList`/`skillList`/`subagentList` 항목은 등록된 MCP 서버·skill·agent·project 로 해석돼야
+한다 — 대롱거리는 참조는 400 으로 거절된다 — 그리고 애초에 `agent` project 만 이들을 가질 수
+있다. 업데이트에서는 *새로 추가된* 항목만 검사하므로, 이미 참조하던 레지스트리 항목이
+삭제된 뒤에도 version 은 계속 수정 가능하다. 한 목록에서 같은 서버·skill·agent 를 **두 번**
+지정하는 것은 저장된 목록을 그대로 다시 제출하는 업데이트를 포함해 모든 쓰기에서 400 으로
+거절된다: 중복 바인딩은 그 서버의 세션을 두 번 열고, 런이 이름으로 키를 잡는 모든 곳에서 둘째
+행이 첫째를 조용히 덮어쓴다.
 
-`callerContext` names the person asking in the system prompt, **on the surfaces that have
-one**: the console chat and Playground, a session-authenticated run of `predict`, `agent` or
-`chat/completions`, and Slack (which additionally supplies the caller's timezone from their
-profile). A project **API token** carries no caller — it acts on the owner's behalf but nobody
-is at the other end — and neither do trigger firings or inbound A2A. An image project is
-unaffected: its prompt is the rendered template, with no system prompt for the block to live
-in. `POST /api/projects/{name}/preview` shows the block exactly when a run from that page
-would carry it. The caller **travels a transfer chain** — a subagent is answering the same
-person as its parent — and each version's own opt-in decides its own prompt: a parent that
-does not name the caller is not a statement about the project it transfers to.
+`callerContext` 는 시스템 프롬프트에서 묻는 사람의 이름을 밝힌다. **그런 사람이 있는
+표면에서만** 그렇다: 콘솔 chat 과 Playground, 세션으로 인증된 `predict`·`agent`·
+`chat/completions` 런, 그리고 Slack (여기서는 호출자의 프로필에서 시간대까지 추가로
+제공한다). project **API 토큰**은 호출자를 싣지 않고 — 소유자를 대신해 동작하지만 반대편에는
+아무도 없다 — trigger 발화나 인바운드 A2A 도 마찬가지다. image project 는 영향을 받지 않는다:
+그 프롬프트는 렌더링된 템플릿이고, 그 블록이 들어갈 시스템 프롬프트가 없다.
+`POST /api/projects/{name}/preview` 는 그 페이지에서 시작한 런이 그 블록을 실을 때에만 정확히
+그것을 보여 준다. 호출자는 **transfer 사슬을 타고 간다** — subagent 는 자기 부모와 같은 사람에게
+답하고 있다 — 그리고 각 version 자신의 opt-in 이 자기 프롬프트를 결정한다: 호출자를 밝히지 않는
+부모가 자기가 transfer 하는 project 에 대해 무언가를 말하는 것은 아니다.
 
-`POST /api/projects/{name}/preview` takes an optional `message` — the request to preview
-against, at most 8,000 characters. Only discovery reads it (an agent run's user turn comes from
-the conversation), but *which* capabilities a run finds depends on what it is being asked, so
-without one the preview shows the floor every run starts from rather than the shape of a
-particular one.
+`POST /api/projects/{name}/preview` 는 선택적인 `message` 를 받는다 — 무엇을 기준으로
+미리 볼지, 최대 8,000자다. 이것을 읽는 것은 discovery 뿐이지만 (agent 런의 사용자 턴은 대화에서
+온다), 런이 *어떤* 능력을 찾아내는지는 무엇을 요청받았는지에 달려 있다. 그래서 이것이 없으면
+미리보기는 특정한 런의 모습이 아니라 모든 런이 출발하는 바닥을 보여 준다.
 
-`dynamicCapabilities` lets a run reach skills, MCP servers and agents this version never bound,
-found by searching the global catalog with the version's system prompt and the request being
-answered. It is **additive**: the bindings above are resolved first and in full, and nothing a
-search finds can displace or truncate them. An MCP server that requires its own OAuth
-connection is added only where the project has already authorized it; otherwise the run says so.
-What was *found* is not a warning — a run logs it, and `POST /api/projects/{name}/preview`
-returns it as `discovered`, separate from `warnings`. Without `VECTOR_BUCKET` the flag is stored
-and the run says that too, rather than behaving as though the search found nothing. See
-[design/capabilities.md](design/capabilities.md#capability-catalog).
+`dynamicCapabilities` 는 런이 이 version 이 한 번도 바인딩하지 않은 skill·MCP 서버·agent 에
+닿게 해 준다. version 의 시스템 프롬프트와 지금 답하고 있는 요청으로 전역 카탈로그를 검색해
+찾는다. 이것은 **덧붙이는 것이다**: 위의 바인딩이 먼저 온전히 해석되고, 검색이 찾은 어떤 것도
+그것을 밀어내거나 잘라낼 수 없다. 자기 OAuth 연결이 필요한 MCP 서버는 그 project 가 이미
+인가해 둔 경우에만 추가되고, 그렇지 않으면 런이 그렇다고 말한다. *찾아낸* 것은 warning 이
+아니다 — 런은 그것을 로그에 남기고, `POST /api/projects/{name}/preview` 는 `warnings` 와 분리해
+`discovered` 로 돌려준다. `VECTOR_BUCKET` 이 없으면 플래그는 저장되고 런이 그 사실도 말한다.
+검색이 아무것도 못 찾은 것처럼 굴지 않는다. [design/capabilities.md](design/capabilities.md#케이퍼빌리티-카탈로그)
+를 보라.
 
-`memoryRecall` makes a run ask its memory before the first token: every bound MCP server that
-offers a `recall` tool (mcp-memory) is called with the newest user turn, and what came back is
-added to the system prompt as a **What you remember** block — framed as background, not as
-instructions — so the model starts from what the project already knows rather than having to
-think of asking. The tools stay offered as before; this adds the read. One call per run, bounded
-(the newest turn is sent at up to 2,000 characters, at most 4,000 characters are kept, and the
-first token waits at most 10s); a server that fails is a `warning` on the run and the run goes on
-without it, and a version with it on but no bound server offering `recall` warns that it started
-without a memory. `POST /api/projects/{name}/preview` cannot show the block — what is recalled
-depends on the request — and says so as a warning. Like `dynamicCapabilities` the request text
-reaches the server before the engine's PII filter is built; see
-[SECURITY.md](SECURITY.md#pii-filtering-and-where-it-stops).
+`memoryRecall` 은 런이 첫 토큰 전에 자기 메모리에 묻게 한다: `recall` 도구를 제공하는 모든
+바인딩된 MCP 서버(mcp-memory)를 가장 최근 사용자 턴으로 호출하고, 돌아온 것을 시스템 프롬프트에
+**What you remember** 블록으로 넣는다 — 지시가 아니라 배경으로 틀 지어서 — 그래서 모델은 물어볼
+생각을 해내야 하는 대신 project 가 이미 아는 것에서 출발한다. 도구는 이전처럼 계속 제공된다.
+이것은 읽기를 더하는 것이다. 런당 한 번 호출하며 한계가 있다 (가장 최근 턴을 최대 2,000자까지
+보내고, 최대 4,000자를 보관하며, 첫 토큰은 최대 10초까지 기다린다). 실패한 서버는 런의
+`warning` 이 되고 런은 그것 없이 계속 간다. 이것을 켰지만 `recall` 을 제공하는 바인딩된 서버가
+없는 version 은 메모리 없이 시작했다고 경고한다. `POST /api/projects/{name}/preview` 는 그
+블록을 보여 줄 수 없고 — 무엇이 회상되는지는 요청에 달려 있다 — 그 사실을 warning 으로 말한다.
+`dynamicCapabilities` 와 마찬가지로 요청 텍스트는 엔진의 PII 필터가 만들어지기 전에 서버에
+닿는다. [SECURITY.md](SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳) 를 보라.
 
-#### MCP bindings and per-version header overrides
+#### MCP 바인딩과 version 별 헤더 오버라이드
 
-Each `mcpList` entry binds the version to a registry MCP server. The URL is always the
-registry's; only headers may be redefined, so the same server can be called with different
-credentials from different projects without registering it twice. `tools` narrows which of
-that server's tools the run offers (absent or empty = all of them).
+각 `mcpList` 항목은 그 version 을 레지스트리의 MCP 서버에 바인딩한다. URL 은 언제나
+레지스트리의 것이고 헤더만 재정의할 수 있다. 그래서 같은 서버를 두 번 등록하지 않고도 서로 다른
+project 에서 서로 다른 인증 정보로 호출할 수 있다. `tools` 는 그 서버의 도구 중 런이 제공할
+것을 좁힌다 (없거나 비어 있으면 = 전부).
 
 ```json
 "mcpList": [
@@ -319,26 +311,25 @@ that server's tools the run offers (absent or empty = all of them).
 ]
 ```
 
-- A string value replaces a registry default or adds a new header; `null` removes a registry
-  default for this version. Matching is case-insensitive, as HTTP header names are.
-- `X-Tenant-Id` and `X-Conversation-Id` are **reserved**. Every spelling of either is dropped
-  after the merge; the calling project's name is stamped in the first's place, and the run's
-  conversation key — when the run has one — in the second's, so no binding can name another
-  project's tenant or another conversation. See
-  [SECURITY.md](SECURITY.md#what-an-mcp-server-is-told-about-the-caller).
-- Omitting `headers` (or sending `{}`) uses the registry headers unchanged.
-- A bare string entry — `"mcpList": ["shared-mcp"]`, the shape before overrides existed — is
-  still accepted and normalizes to `{ "name": "shared-mcp" }`.
-- Override values are AES-encrypted at rest and returned masked (same rule as registry
-  headers); a masked or empty value on update preserves the stored secret, and a masked
-  value under a header with no stored counterpart is dropped. `null` markers are returned
-  as-is — a removal is not a secret.
-- Editing overrides is limited to the owner and to admins, like every other version write.
+- 문자열 값은 레지스트리 기본값을 대체하거나 새 헤더를 더한다. `null` 은 이 version 에 한해
+  레지스트리 기본값을 제거한다. HTTP 헤더 이름이 그렇듯 매칭은 대소문자를 가리지 않는다.
+- `X-Tenant-Id` 와 `X-Conversation-Id` 는 **예약돼 있다**. 둘 중 어느 것이든 모든 표기가
+  병합 후에 버려진다. 첫째 자리에는 호출하는 project 의 이름이, 둘째 자리에는 — 런이 대화를
+  가질 때 — 그 런의 대화 키가 찍힌다. 그래서 어떤 바인딩도 다른 project 의 tenant 나 다른
+  대화를 지칭할 수 없다.
+  [SECURITY.md](SECURITY.md#mcp-서버가-호출자에-대해-듣는-것) 를 보라.
+- `headers` 를 생략하면 (또는 `{}` 를 보내면) 레지스트리 헤더를 그대로 쓴다.
+- 벌거벗은 문자열 항목 — `"mcpList": ["shared-mcp"]`, 오버라이드가 생기기 전의 형태 — 도
+  여전히 받아들여지고 `{ "name": "shared-mcp" }` 로 정규화된다.
+- 오버라이드 값은 저장 시 AES 로 암호화되고 마스킹돼 돌아온다 (레지스트리 헤더와 같은 규칙).
+  업데이트 때 마스킹된 값이나 빈 값은 저장된 secret 을 보존하고, 저장된 짝이 없는 헤더 아래의
+  마스킹된 값은 버려진다. `null` 표식은 그대로 돌아온다 — 제거는 secret 이 아니다.
+- 오버라이드 편집은 다른 모든 version 쓰기와 마찬가지로 소유자와 admin 으로 제한된다.
 
-A run declares at most 120 MCP tools in total and reports what it had to leave out as a
-`warning` chunk.
+한 런은 통틀어 최대 120개의 MCP 도구를 선언하고, 빼놓아야 했던 것을 `warning` chunk 로
+보고한다.
 
-### Prompt preview
+### 프롬프트 미리보기
 
 ```
 POST /api/projects/{name}/preview
@@ -346,20 +337,19 @@ POST /api/projects/{name}/preview
 → 200 { messages: [ { role, content } ], … }
 ```
 
-Assembles what the draft in the editor **would** send — system prompt, skill table, connected
-MCP server table, rendered template — without running it.
+에디터 안의 초안이 **보냈을** 것을 조립한다 — 시스템 프롬프트, skill 표, 연결된 MCP 서버 표,
+렌더링된 템플릿 — 실행하지는 않고.
 
-Member-gated (`withMemberAuth`), not owner-gated: the assembled text names resolved skills and
-MCP servers — the same registry a `guest` is refused — so it sits behind that rung rather than
-the session alone. The draft's MCP bindings can attach chosen headers to a registered server,
-but that is not an authority the gate could reserve — any member binds the same registry
-server with the same headers from a project of their own. A masked
-header resolves only against this project's stored binding for the same server name, so a
-non-owner's preview sends nothing a run they may already start would not; and the assembled
-text is composed of what `GET /versions` already answers with a session. The URL always comes
-from the registry, so the SSRF surface is a run's.
+소유자 게이트가 아니라 member 게이트다 (`withMemberAuth`): 조립된 텍스트는 해석된 skill 과
+MCP 서버의 이름을 담는다 — `guest` 가 거절당하는 바로 그 레지스트리다 — 그래서 세션만이 아니라
+그 단 뒤에 놓인다. 초안의 MCP 바인딩은 등록된 서버에 선택한 헤더를 붙일 수 있지만, 그것은 이
+게이트가 따로 챙길 수 있는 권한이 아니다 — 어떤 member 든 자기 project 에서 같은 레지스트리
+서버를 같은 헤더로 바인딩한다. 마스킹된 헤더는 같은 서버 이름에 대한 이 project 의 저장된
+바인딩에 대해서만 해석되므로, 소유자가 아닌 사람의 미리보기는 그가 이미 시작할 수 있는 런이
+보내지 않을 것을 아무것도 보내지 않는다. 그리고 조립된 텍스트는 `GET /versions` 가 세션만으로도
+이미 답하는 것으로 구성된다. URL 은 언제나 레지스트리에서 오므로 SSRF 표면은 런의 것이다.
 
-## App settings
+## 앱 설정
 
 ```
 GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
@@ -368,79 +358,78 @@ GET /api/settings → 200 { fields: { <key>: { value, source, secret } },
 PUT /api/settings → 200 {…same shape…} | 400
 ```
 
-- Admin-only (both verbs). Keys: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
+- 두 동사 모두 admin 전용이다. 키: `adminEmails`, `allowedEmailDomains`, `llmBaseUrl`,
   `llmApiKey`, `pluginsRepo`, `pluginsRepoBranch`, `githubToken`, `a2aApiKey`,
   `publicBaseUrl`, `artifactAccessMode` (`authenticated` | `public` | `""`),
-  `unknownModelPolicy` (`allow` | `refuse` | `""`) — those two are validated as enums.
-  `pluginsRepo` is the other key with a shape of its own — `owner/repo`, or empty to
-  clear it; the rest are bounded strings.
+  `unknownModelPolicy` (`allow` | `refuse` | `""`) — 이 둘은 enum 으로 검증된다.
+  `pluginsRepo` 는 자기만의 형태를 가진 나머지 하나의 키다 — `owner/repo`, 또는 비우면
+  지운다. 나머지는 길이가 제한된 문자열이다.
 
 ```
 POST /api/settings/a2a-key        → 200 { key, view }   (raw key)
 POST /api/settings/a2a-key/reveal → 200 { key }         (raw key)
 ```
 
-- Admin-only. Issues a fresh app-wide A2A key (`ada_` + 32 random bytes) as a settings
-  override and returns it alongside the updated (masked) settings view. Reissuing
-  invalidates the previous key immediately. A key pasted in by hand through `PUT /api/settings`
-  still works — this endpoint only saves you from inventing one.
-- `/reveal` returns the *effective* key in plaintext — the stored override decrypted, or the
-  env value when there is no override — or `404` when none is configured. A POST although it
-  reads, for the same reason as the project token: the body is a live credential. Every
-  reveal leaves an audit row and a server-side log line naming the caller.
-- `llmProviders` on PUT is a full replacement list (per-provider LLM channels); an empty
-  array removes the override (`LLM_PROVIDER_*` env fallback). A masked `apiKey` keeps the
-  currently effective key for that provider name. Provider `name` must be one of
-  `openai | anthropic | google | xai | bedrock | openrouter` (`SUPPORTED_PROVIDERS`), `auth`
-  is `bearer` (default) or `sigv4`, the list holds at most 50 entries, and a name appearing
-  twice is a `400`.
-- `enabledModels` on PUT is also a full replacement list — the model ids `/api/models` may
-  offer, stored sorted and deduplicated. An empty array removes the override (every visible
-  model offered — there is no env fallback); an id the registry does not carry is a `400`. It
-  has no slot in the GET view; `/api/models/catalog` is where it is read back.
-- `source` is `override` (DB) | `env` | `default` | `unset`. Secret values are always masked
-  (length-preserving; 9–20 chars reveal 2 at each end, 21+ reveal 4); a masked value on
-  PUT keeps the stored secret, an empty string removes the override (env fallback). Setting `adminEmails` to a list that excludes
-  the caller is rejected with `400`. So is an `adminEmails` or `allowedEmailDomains` value that
-  is not empty but parses to no entries at all (`","`): removing the override is what the empty
-  string is for, and reading that as the same thing would leave the deployment ungated.
+- admin 전용. 앱 전역 A2A 키(`ada_` + 랜덤 32바이트)를 새로 발급해 설정 오버라이드로 저장하고,
+  갱신된 (마스킹된) 설정 뷰와 함께 돌려준다. 재발급은 이전 키를 즉시 무효화한다.
+  `PUT /api/settings` 로 손수 붙여 넣은 키도 여전히 동작한다 — 이 엔드포인트는 키를 지어내는
+  수고를 덜어 줄 뿐이다.
+- `/reveal` 은 *유효한* 키를 평문으로 돌려준다 — 저장된 오버라이드를 복호화한 것, 또는
+  오버라이드가 없으면 env 값 — 아무것도 설정돼 있지 않으면 `404` 다. 읽기인데도 POST 인 이유는
+  project 토큰과 같다: 본문이 살아 있는 인증 정보다. 모든 reveal 은 감사 행과, 호출자를 밝히는
+  서버 측 로그 한 줄을 남긴다.
+- PUT 의 `llmProviders` 는 전체 교체 목록이다 (프로바이더별 LLM 채널). 빈 배열은 오버라이드를
+  제거한다 (`LLM_PROVIDER_*` env 로 폴백). 마스킹된 `apiKey` 는 그 프로바이더 이름에 대해
+  지금 유효한 키를 유지한다. 프로바이더 `name` 은
+  `openai | anthropic | google | xai | bedrock | openrouter` (`SUPPORTED_PROVIDERS`) 중
+  하나여야 하고, `auth` 는 `bearer` (기본) 또는 `sigv4` 이며, 목록은 최대 50개까지고, 같은
+  이름이 두 번 나오면 `400` 이다.
+- PUT 의 `enabledModels` 도 전체 교체 목록이다 — `/api/models` 가 제공해도 되는 모델 id 들로,
+  정렬·중복 제거해 저장된다. 빈 배열은 오버라이드를 제거한다 (보이는 모델 전부가 제공된다 —
+  env 폴백은 없다). 레지스트리에 없는 id 는 `400` 이다. 이것은 GET 뷰에 자리가 없다.
+  다시 읽는 곳은 `/api/models/catalog` 다.
+- `source` 는 `override` (DB) | `env` | `default` | `unset` 이다. secret 값은 언제나 마스킹된다
+  (길이 보존. 9–20자는 양끝 2자씩, 21자 이상은 4자씩 드러낸다). PUT 의 마스킹된 값은 저장된
+  secret 을 유지하고, 빈 문자열은 오버라이드를 제거한다 (env 폴백). 호출자를 제외하는 목록으로
+  `adminEmails` 를 설정하는 것은 `400` 으로 거절된다. 비어 있지는 않은데 파싱하면 항목이 하나도
+  없는 `adminEmails`·`allowedEmailDomains` 값(`","`)도 마찬가지다: 오버라이드 제거는 빈 문자열이
+  하는 일이고, 저것을 같은 것으로 읽으면 배포가 게이트 없이 남는다.
 
-## Audit trail
+## 감사 기록
 
 ```
 GET /api/audit?from=2026-08-01&to=2026-08-03
   → 200 { events: [ { eventId, actorEmail, action, target, detail?, createdAt } ] }
 ```
 
-- Admin-only: the rows name people. `from` defaults to today, `to` to `from`; both are UTC
-  days (`YYYY-MM-DD`). A range spans at most **31 days** — rows are stored one partition per
-  day and read the same way, so the span is the query count. `400` on a malformed day, a day
-  the calendar does not have (`2026-02-31`, `2026-13-01`), a reversed range, or one wider than
-  that. The width is refused from the dates rather than from an enumerated range, so an absurd
-  span costs the same as any other rejection.
-- Newest first. `action` is one of `secret.reveal` | `secret.rotate` | `secret.revoke` |
+- admin 전용이다: 행들이 사람의 이름을 담는다. `from` 의 기본값은 오늘, `to` 의 기본값은
+  `from` 이며 둘 다 UTC 일(`YYYY-MM-DD`)이다. 범위는 최대 **31일**이다 — 행은 하루에 파티션
+  하나로 저장되고 같은 방식으로 읽히므로, 폭이 곧 쿼리 수다. 잘못된 형식의 날짜, 달력에 없는
+  날짜(`2026-02-31`, `2026-13-01`), 뒤집힌 범위, 또는 그보다 넓은 범위는 `400` 이다. 폭은
+  범위를 열거해서가 아니라 날짜에서 바로 거절하므로, 터무니없는 폭도 다른 거절과 같은 비용이다.
+- 최신순이다. `action` 은 `secret.reveal` | `secret.rotate` | `secret.revoke` |
   `project.admin-override` | `settings.update` | `project.delete` | `registry.delete` |
-  `registry.adopt` (the plugins sync taking an entry another origin created) |
-  `artifact.delete` (another person's artifact) | `member.set-tier`; `target` is
-  `kind:name`.
-- **Read-only, by construction.** There is no write verb here or anywhere else — rows are
-  appended by the acts themselves and expire by TTL (`AUDIT_RETENTION_DAYS`). `detail` never
-  carries a credential: a settings write records which keys moved, never their values.
+  `registry.adopt` (plugins sync 가 다른 출처가 만든 항목을 넘겨받는 것) |
+  `artifact.delete` (다른 사람의 artifact) | `member.set-tier` 중 하나다. `target` 은
+  `kind:name` 이다.
+- **구조상 읽기 전용이다.** 여기에도 다른 어디에도 쓰기 동사는 없다 — 행은 행위 자체가 덧붙이고
+  TTL(`AUDIT_RETENTION_DAYS`)로 만료된다. `detail` 은 인증 정보를 절대 싣지 않는다: 설정 쓰기는
+  어떤 키가 움직였는지를 기록하고 그 값은 절대 기록하지 않는다.
 
-## Viewer
+## 뷰어
 
 ```
 GET /api/me → 200 { email, isAdmin, isConfiguredAdmin, tier }
 ```
 
-`tier` is the member's tier, so the console gates tier-scoped actions (creating a project)
-through the same `tierMay*` predicates the routes enforce. Both flags are sent because they
-answer different questions and the console needs both:
-`isAdmin` (may mutate shared registries and app settings — an empty `ADMIN_EMAILS` means *no
-restriction*) and `isConfiguredAdmin` (may write a project owned by someone else — an empty
-list means *nobody*). Neither is derivable in the browser, and inferring one from the other is
-what once offered every signed-in user an edit form that 403'd on save. See
-[SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
+`tier` 는 그 멤버의 tier 이고, 그래서 콘솔은 tier 범위의 행동(project 생성)을 라우트가 강제하는
+것과 같은 `tierMay*` 술어로 게이트한다. 두 플래그를 다 보내는 이유는 서로 다른 질문에 답하고
+콘솔이 둘 다 필요로 하기 때문이다:
+`isAdmin` (공유 레지스트리와 앱 설정을 변경해도 되는가 — 빈 `ADMIN_EMAILS` 는 *제한 없음*을
+뜻한다) 과 `isConfiguredAdmin` (남이 소유한 project 를 써도 되는가 — 빈 목록은 *아무도 안 됨*을
+뜻한다). 둘 다 브라우저에서 유도할 수 없고, 하나를 다른 하나에서 추론한 것이 한때 로그인한 모든
+사용자에게 저장 시 403 이 나는 편집 폼을 내주었던 원인이다.
+[SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin) 를 보라.
 
 ```
 GET /api/me/profile
@@ -451,20 +440,20 @@ GET /api/me/usage?from=2026-08-01&to=2026-08-13
   → 200 { items: [ { email, date, calls, inputTokens, outputTokens, cachedTokens, costUsd } ] }
 ```
 
-The signed-in user's own row and spend — always the session user, so neither takes an email
-and neither needs a further gate. `monthToDateUsd` is what the tier cap bounds (spend since
-the first of the UTC month), computed server-side so the page cannot report a total the
-guard would disagree with whatever range its picker is set to.
+로그인한 사용자 자신의 행과 지출이다 — 언제나 세션 사용자이므로 둘 다 이메일을 받지 않고 둘 다
+추가 게이트가 필요 없다. `monthToDateUsd` 는 tier 상한이 한계 짓는 값(UTC 월 1일 이후의 지출)이며,
+서버 측에서 계산된다. 그래서 페이지의 선택기가 어떤 범위로 맞춰져 있든 가드가 동의하지 않을 총액을
+보고할 수 없다.
 
-`/api/me/usage` is the range read behind the profile's chart and table: one row per UTC day
-*per project*, metrics as per-model maps, and the same range validation the usage summary
-uses (`from`/`to` required, 184 days maximum). The project is on the row so the profile can
-group a person's own spend by project, model or provider — the same control the overview
-and a project's usage tab carry. The spend counted is the member's own console runs (`user:`
-actors) — project-token runs spend against their project, not this budget. What a tier caps
-is `TIER_LIMITS` in `src/domain/member/tiers.ts`, which the client imports directly.
+`/api/me/usage` 는 프로필의 차트와 표 뒤에 있는 범위 읽기다: UTC 일마다 *project 별* 한 행,
+지표는 모델별 맵, 그리고 사용량 요약이 쓰는 것과 같은 범위 검증(`from`/`to` 필수, 최대 184일)이다.
+행에 project 가 있으므로 프로필은 한 사람 자신의 지출을 project·모델·프로바이더별로 묶을 수 있다 —
+개요와 project 의 사용량 탭이 갖는 것과 같은 컨트롤이다. 여기 세는 지출은 그 멤버 자신의 콘솔
+런(`user:` actor)이다 — project 토큰 런은 이 예산이 아니라 자기 project 에 지출한다. tier 가
+무엇을 상한 짓는지는 `src/domain/member/tiers.ts` 의 `TIER_LIMITS` 이고, 클라이언트가 그것을
+직접 import 한다.
 
-## Members
+## 멤버
 
 ```
 GET /api/members
@@ -477,21 +466,21 @@ PUT /api/members/{id}/tier
   → 400 unknown tier · 403 ADMIN_EMAILS tier is locked · 404 no such member
 ```
 
-Admin-only. Members are Better Auth users who have signed in to the workspace, ordered by
-`joinedAt` newest first. `lastLoginAt` is updated when a new session is created. It is `null`
-for users created before login tracking was introduced until their next successful sign-in.
+admin 전용이다. 멤버는 이 워크스페이스에 로그인한 적이 있는 Better Auth 사용자이고,
+`joinedAt` 최신순으로 정렬된다. `lastLoginAt` 은 새 세션이 만들어질 때 갱신된다. 로그인 추적이
+도입되기 전에 만들어진 사용자는 다음 로그인에 성공할 때까지 `null` 이다.
 
-`tier` defaults to `guest` for every sign-up (rows written before tiers existed read as
-`guest` too). An address in `ADMIN_EMAILS` is promoted to stored tier `admin` at login or the
-next member/profile read; `tierLocked` is true and the update route refuses changes while it
-remains listed. Removing the address never auto-demotes it. An ordinary tier change writes a
-`member.set-tier` audit row recording old → new. What a tier grants and caps is `TIER_LIMITS`
-in `src/domain/member/tiers.ts`; how tier `admin` composes with `ADMIN_EMAILS` is in
-[SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin).
+`tier` 는 모든 가입에 대해 `guest` 가 기본값이다 (tier 가 존재하기 전에 쓰인 행도 `guest` 로
+읽힌다). `ADMIN_EMAILS` 에 있는 주소는 로그인 시점이나 다음 멤버/프로필 읽기에서 저장 tier
+`admin` 으로 승격된다. 목록에 남아 있는 동안 `tierLocked` 는 true 이고 업데이트 라우트는 변경을
+거절한다. 주소를 목록에서 빼도 자동으로 강등되는 일은 없다. 평범한 tier 변경은 이전 → 이후를
+기록하는 `member.set-tier` 감사 행을 쓴다. tier 가 무엇을 허용하고 상한 짓는지는
+`src/domain/member/tiers.ts` 의 `TIER_LIMITS` 이고, tier `admin` 이 `ADMIN_EMAILS` 와 어떻게
+합쳐지는지는 [SECURITY.md](SECURITY.md#isadminemail-vs-isconfiguredadmin) 에 있다.
 
 ## Chats
 
-Chats are private to their owner and run only against agent projects.
+Chat 은 소유자에게만 비공개이고, agent project 에 대해서만 실행된다.
 
 ```
 GET    /api/chats                            → { chats }
@@ -504,70 +493,65 @@ GET    /api/chats/{chatId}/runs/{runId}      → { active }
 DELETE /api/chats/{chatId}/runs/{runId}      → { cancelled }
 ```
 
-Both run streams open with a head frame — `{ chat?, runId, userSeq }`, carrying the new
-`chatId` on a create — and close with `{ "ended": true }`. That last frame is the only thing
-that distinguishes a finished run from a dropped connection; a body that simply stops looks
-identical. The head frame is sent before the run produces anything, so the response commits
-to `200 text/event-stream` immediately: the client always learns `chatId`/`runId` even when
-the model's first token is a minute out, and a refusal raised by the run itself (the daily
-cost guard, the concurrency guard) arrives as an `{error}` frame on that stream rather than
-as a `429`. Streams otherwise use the standard SSE framing and persist user, assistant, tool,
-and image display data. A project with neither a published version nor a runnable draft is
-rejected with `400`.
+두 런 스트림 모두 head 프레임으로 시작하고 — `{ chat?, runId, userSeq }`, 새로 만들 때는 새
+`chatId` 를 싣는다 — `{ "ended": true }` 로 닫힌다. 끝난 런과 끊긴 연결을 구별해 주는 것은 그
+마지막 프레임뿐이다. 그냥 멈춘 본문은 둘이 똑같아 보인다. head 프레임은 런이 무언가를 내놓기
+전에 나가므로 응답은 즉시 `200 text/event-stream` 으로 확정된다: 모델의 첫 토큰이 1분 뒤에
+나오더라도 클라이언트는 언제나 `chatId`/`runId` 를 알게 되고, 런 자신이 일으킨 거절(일일 비용
+가드, 동시성 가드)은 `429` 가 아니라 그 스트림의 `{error}` 프레임으로 도착한다. 그 밖에는
+스트림은 표준 SSE framing 을 쓰고 사용자·어시스턴트·도구·이미지 표시 데이터를 저장한다.
+publish 된 version 도 실행 가능한 초안도 없는 project 는 `400` 으로 거절된다.
 
-**A run outlives the connection that started it.** Hanging up means the reader left, not
-stop: the run finishes and persists either way. `GET /api/chats/{chatId}` reports
-`activeRun: { runId }` while one is in flight, and
-`GET /api/chats/{chatId}/runs/{runId}/stream` replays everything it has produced so far and
-then follows it live — always from the start, so there is no cursor to keep. Note that a run
-writes nothing down while a reader is attached, so a *second* viewer of the same run sees no
-content until the first disconnects; the stream says so rather than appearing stalled.
+**런은 자신을 시작한 연결보다 오래 산다.** 끊는 것은 읽는 사람이 떠났다는 뜻이지 멈추라는 뜻이
+아니다: 어느 쪽이든 런은 끝까지 가고 저장된다. `GET /api/chats/{chatId}` 는 런이 진행 중인
+동안 `activeRun: { runId }` 를 알려 주고,
+`GET /api/chats/{chatId}/runs/{runId}/stream` 은 그 런이 지금까지 내놓은 전부를 재생한 뒤
+실시간으로 따라간다 — 언제나 처음부터이므로 유지할 커서가 없다. 다만 읽는 사람이 붙어 있는
+동안 런은 아무것도 기록하지 않으므로, 같은 런의 *두 번째* 관람자는 첫 번째가 연결을 끊을 때까지
+아무 내용도 보지 못한다. 스트림은 멈춘 것처럼 보이는 대신 그렇다고 말해 준다.
 
-`GET /api/chats/{chatId}/runs/{runId}` answers `{ active }` — whether that run still holds the
-chat. It is what a reader asks after a stream ended without the `{ "ended": true }` frame:
-reconnect, or take the answer from the conversation. `GET /api/chats/{chatId}` answers the
-same question through `activeRun`, but ships the whole thread and signs every image in it on
-the way, which is a lot to send to compare one id on a connection already known to be bad.
+`GET /api/chats/{chatId}/runs/{runId}` 는 `{ active }` 로 답한다 — 그 런이 아직 그 chat 을
+쥐고 있는지다. 스트림이 `{ "ended": true }` 프레임 없이 끝난 뒤 읽는 사람이 묻는 것이 이것이다:
+다시 연결할지, 아니면 대화에서 답을 가져올지. `GET /api/chats/{chatId}` 도 `activeRun` 으로 같은
+질문에 답하지만 스레드 전체를 실어 보내며 그 안의 모든 이미지에 서명까지 한다. 이미 나쁘다고
+알려진 연결에서 id 하나를 비교하려고 보내기엔 너무 많다.
 
-`DELETE /api/chats/{chatId}/runs/{runId}` is the only way to end a run early. It records the
-request and answers `{ cancelled: true }`; `{ cancelled: false }` means the run had already
-finished, which is not an error. Both run routes reject a `runId` that is not a UUID with
-`400`. A stopped run ends like a finished one — what had streamed is persisted, the stream
-closes with `{ "ended": true }`, and the reader gets a `warning` frame rather than an
-`error`.
+`DELETE /api/chats/{chatId}/runs/{runId}` 는 런을 일찍 끝내는 유일한 방법이다. 요청을 기록하고
+`{ cancelled: true }` 로 답한다. `{ cancelled: false }` 는 런이 이미 끝나 있었다는 뜻이고, 그것은
+에러가 아니다. 두 런 라우트 모두 UUID 가 아닌 `runId` 는 `400` 으로 거절한다. 중단된 런은 끝난
+런처럼 마무리된다 — 스트리밍된 것은 저장되고, 스트림은 `{ "ended": true }` 로 닫히며, 읽는
+사람은 `error` 가 아니라 `warning` 프레임을 받는다.
 
-`images` are the user's attachments as inline bytes — `[ { b64, mimeType } ]`, at most 4 per
-turn, 5MB each, `image/png|jpeg|gif|webp`. They reach the model as content parts and are
-stored (when object storage is configured) as the **object key** on the user message; a read
-answers with a URL signed for that response, never one that keeps working afterwards. An image
-whose address cannot be minted is left out of the message rather than returned broken.
+`images` 는 사용자의 첨부를 인라인 바이트로 담은 것이다 — `[ { b64, mimeType } ]`, 턴당 최대
+4개, 각각 5MB, `image/png|jpeg|gif|webp`. 모델에는 content part 로 닿고, (오브젝트 스토리지가
+설정돼 있으면) 사용자 메시지에 **object key** 로 저장된다. 읽기는 그 응답을 위해 서명된 URL 로
+답하며, 그 뒤로도 계속 동작하는 URL 은 절대 아니다. 주소를 만들 수 없는 이미지는 깨진 채로
+돌아오는 대신 메시지에서 빠진다.
 
-`documents` are files to read rather than look at — `[ { b64, mimeType, name } ]`, at most 4
-per turn, 10MB each: PDF, plus text, Markdown, CSV/TSV, JSON, YAML, XML and HTML. `name` is
-required and carries the decision when `mimeType` is `application/octet-stream`, which is how
-uploads commonly arrive; an unreadable type is rejected with `400`. The server extracts the
-**text** — a PDF's text layer, a text file's contents — and the turn carries that. The file
-itself is never stored; the extracted text is, as `documents: [ { name, text, note? } ]` on
-the user message, which is what lets a follow-up question still have the document. Up to
-20,000 characters are kept per document and 40,000 across a turn; anything left out is
-reported as a `warning`, as is a document that could not be read at all (a scan with no text
-layer, a password-protected PDF).
+`documents` 는 보는 것이 아니라 읽는 파일이다 — `[ { b64, mimeType, name } ]`, 턴당 최대 4개,
+각각 10MB: PDF 와 텍스트, Markdown, CSV/TSV, JSON, YAML, XML, HTML 이다. `name` 은 필수이고,
+`mimeType` 이 `application/octet-stream` 일 때 — 업로드는 흔히 이렇게 도착한다 — 판단을 떠맡는다.
+읽을 수 없는 타입은 `400` 으로 거절된다. 서버는 **텍스트**를 추출하고 — PDF 의 텍스트 레이어,
+텍스트 파일의 내용 — 턴은 그것을 싣는다. 파일 자체는 절대 저장되지 않는다. 저장되는 것은 추출된
+텍스트이며, 사용자 메시지의 `documents: [ { name, text, note? } ]` 로 들어간다. 후속 질문이
+여전히 그 문서를 갖고 있게 해 주는 것이 이것이다. 문서당 최대 20,000자, 한 턴 통틀어 40,000자를
+보관한다. 빠진 것은 `warning` 으로 보고되고, 아예 읽을 수 없었던 문서(텍스트 레이어가 없는 스캔,
+암호로 보호된 PDF)도 마찬가지다.
 
-A turn needs text or at least one attachment of either kind (all empty → `400`). Every route
-that carries a turn — both chat routes, `predict`, `agent`, `chat/completions` and A2A — caps
-the request body at the largest a legitimate turn can be (every attachment at its own limit
-plus room for prose) and answers `413` above it, checked against the declared length before the
-body is read rather than after it is in memory. Registry and version edits are bounded far more
-tightly, by what a skill's whole file set weighs.
+한 턴에는 텍스트나 두 종류 중 하나의 첨부가 최소 하나는 있어야 한다 (전부 비면 → `400`). 턴을
+싣는 모든 라우트 — chat 라우트 둘, `predict`, `agent`, `chat/completions`, A2A — 는 요청 본문을
+정당한 턴이 가질 수 있는 최대치(모든 첨부가 각자의 한도에 산문이 들어갈 여유를 더한 것)로
+제한하고 그것을 넘으면 `413` 으로 답한다. 본문이 메모리에 올라온 뒤가 아니라 선언된 길이로 미리
+검사한다. 레지스트리와 version 편집은 skill 의 전체 파일 묶음 무게에 맞춰 훨씬 더 빡빡하게
+제한된다.
 
-The chat read (`GET /api/chats/{chatId}`) returns each document's `name` and `note` with an
-empty `text`: the extracted text is what a *later turn* replays, read server-side, and
-shipping it to the browser would put tens of thousands of characters per turn on the wire for
-a view that renders neither.
+chat 읽기(`GET /api/chats/{chatId}`)는 각 문서의 `name` 과 `note` 를 돌려주고 `text` 는 비운다:
+추출된 텍스트는 *나중 턴*이 재생하는 것이고 서버 측에서 읽히므로, 그것을 브라우저로 보내면 둘 중
+아무것도 렌더링하지 않는 화면을 위해 턴당 수만 자를 선로에 올리게 된다.
 
-## Registry and integration operations
+## 레지스트리·연동 오퍼레이션
 
-These endpoints support the console's operational actions in addition to resource CRUD:
+이 엔드포인트들은 리소스 CRUD 외에 콘솔의 운영 행동을 뒷받침한다:
 
 ```
 GET  /api/plugins
@@ -590,11 +574,11 @@ POST /api/plugins/sync/scan          (X-Scan-Token: SCHEDULE_SCAN_TOKEN)
 → 202 { started } | 200 { upToDate } | 401 | 503
 ```
 
-`/sync/scan` is the CronJob tick: it compares the branch head against the last report and
-answers `upToDate` without paying for a snapshot when nothing merged (unless that report
-carried a `write-failed` skip — only a re-run repairs one). A tick syncs as `scheduler`,
-never deletes (removal selections exist only in the console), and shares the schedule
-ticker's token — one CronJob credential per deployment.
+`/sync/scan` 은 CronJob 의 tick 이다: 브랜치 head 를 마지막 리포트와 비교해, 머지된 것이 없으면
+스냅샷 비용을 치르지 않고 `upToDate` 로 답한다 (그 리포트가 `write-failed` skip 을 싣고 있었다면
+예외다 — 그것은 다시 돌려야만 복구된다). tick 은 `scheduler` 로서 sync 하고, 절대 삭제하지
+않으며 (제거 선택은 콘솔에만 있다), schedule ticker 의 토큰을 공유한다 — 배포당 CronJob 인증
+정보는 하나다.
 
 ```
 
@@ -608,16 +592,17 @@ GET /api/projects/{name}/a2a
 → { enabled, published, cardUrl, card }
 ```
 
-`card` is the Agent Card the project publishes, or `null` while no version is published.
+`card` 는 그 project 가 publish 하는 Agent Card 이고, publish 된 version 이 없는 동안에는
+`null` 이다.
 
-The sync endpoint answers `GET` to a member and requires admin access for `POST`. Registry
-test operations require the `member` tier and apply the same SSRF guard used during
-registration and dispatch. Plugins have no create/update routes: the sync is their only
-writer, and a plugin row goes away through the sync's own `remove` selection.
+sync 엔드포인트는 `GET` 은 member 에게 답하고 `POST` 는 admin 권한을 요구한다. 레지스트리 테스트
+오퍼레이션은 `member` tier 를 요구하고, 등록과 dispatch 때 쓰는 것과 같은 SSRF 가드를 적용한다.
+Plugin 에는 생성/수정 라우트가 없다: sync 가 유일한 writer 이고, plugin 행은 sync 자신의
+`remove` 선택을 거쳐 사라진다.
 
-The sync follows one rule: **the repository owns what it declared; a person owns deletion.**
-The removal selection is kind-qualified, because the skill and MCP registries may hold the
-same name:
+sync 는 한 가지 규칙을 따른다: **저장소는 자기가 선언한 것을 소유하고, 삭제는 사람이
+소유한다.** 제거 선택은 종류(kind)로 한정된다. skill 레지스트리와 MCP 레지스트리가 같은 이름을
+가질 수 있기 때문이다:
 
 ```
 POST /api/plugins/sync  { "remove"?: { "skills"?: ["name"], "mcpServers"?: ["name"],
@@ -630,58 +615,56 @@ POST /api/plugins/sync  { "remove"?: { "skills"?: ["name"], "mcpServers"?: ["nam
         skipped, orphanedPlugins, removedPlugins }
 ```
 
-Per kind, in each plugin's section:
+종류별로, 각 plugin 의 섹션 안에서:
 
-- **created** — in the repository, not in the registry. Imported outright, with
-  `source: "github:<repo>#<plugin>"`.
-- **overwritten** — in both and differing; brought to the repository's version
-  **automatically**, with `fields` naming what moved. `source` among them is an adoption: an
-  entry created by another origin (the retired skills/tools repos, a different plugin) — or
-  by hand, with no source at all — changed hands, which also leaves a `registry.adopt`
-  audit row. A console edit to a name the repo declares is replaced on the next sync — the
-  repo is the source of truth. A hand-registered entry whose name no plugin declares is
-  never touched. **Credentials never follow an address**: a URL move drops the entry's
-  stored headers and OAuth block (reported as `credentials-reset`) rather than send the old
-  host's secrets wherever the repository now points.
-- **unchanged** — in both and already in agreement; nothing was written, so `updatedAt` does
-  not move.
-- **orphaned** — created by a sync of this repository and no longer declared by any plugin in
-  it, attributed to the plugin its source names (a section is synthesized for one that
-  vanished entirely), with `boundTo` listing the `project/version` bindings that would
-  dangle. **Nothing is deleted** unless the name is in the matching `remove` list — an MCP
-  entry holds credentials, and a file disappearing from a branch is not reason enough to
-  destroy them. An unreadable `plugin.json`/`mcp.json` orphans nothing: the plugin freezes
-  at its last good state until the file parses again. Deleting a managed entry routes
-  through the managed use case so the container stops with the row; a deletion leaves a
-  `registry.delete` audit row naming the admin who asked, exactly as from the console.
-- **skipped** — `[{ name, reason, detail? }]` with `reason` one of `bad-name`, `invalid-url`
-  (the outbound guard's message in `detail`), `managed-url` (a managed MCP entry's address
-  comes from the provisioner, so the document's was ignored while its other fields applied),
-  `conflict` (a mid-sync race, either direction), `attachment` (a skill synced but one of
-  its files did not), `invalid-manifest` (an unusable `mcp.json`, or an unusable server
-  entry inside one), `invalid-skill` (a SKILL.md outside the Agent Skills spec),
-  `unsupported-transport` (`stdio`/`sse` — reported, never executed), `headers-dropped` (the
-  server synced but mcp.json's declared headers were not imported; `detail` lists their
-  names only), `duplicate-name` (two plugins claim the name; every claimant is skipped),
-  `credentials-reset` (see above), `write-failed` (one write was fenced off; the rest of the
-  sync continued and the next run converges).
+- **created** — 저장소에는 있고 레지스트리에는 없다. `source: "github:<repo>#<plugin>"` 과 함께
+  그대로 가져온다.
+- **overwritten** — 양쪽에 있고 서로 다르다. **자동으로** 저장소의 것으로 맞추며, `fields` 가
+  무엇이 움직였는지를 밝힌다. 그중 `source` 는 입양(adoption)이다: 다른 출처가 만든 항목(퇴역한
+  skills/tools 저장소, 다른 plugin) — 또는 source 가 아예 없이 손으로 만든 항목 — 의 손이 바뀐
+  것이고, 이것은 `registry.adopt` 감사 행도 남긴다. repo 가 선언하는 이름에 가한 콘솔 편집은
+  다음 sync 에서 대체된다 — repo 가 진실의 출처다. 어떤 plugin 도 선언하지 않는 이름으로 손수
+  등록된 항목은 절대 건드리지 않는다. **인증 정보는 주소를 따라가지 않는다**: URL 이 옮겨지면
+  저장소가 지금 가리키는 곳 어디로든 옛 호스트의 secret 을 보내는 대신, 그 항목의 저장된 헤더와
+  OAuth 블록을 버린다 (`credentials-reset` 으로 보고된다).
+- **unchanged** — 양쪽에 있고 이미 일치한다. 아무것도 쓰지 않았으므로 `updatedAt` 도 움직이지
+  않는다.
+- **orphaned** — 이 저장소의 sync 가 만들었고 그 안의 어떤 plugin 도 더 이상 선언하지 않는 것.
+  자기 source 가 지목하는 plugin 에 귀속되며 (완전히 사라진 plugin 을 위해서는 섹션이
+  합성된다), `boundTo` 는 대롱거리게 될 `project/version` 바인딩을 나열한다. 이름이 대응하는
+  `remove` 목록에 있지 않는 한 **아무것도 삭제되지 않는다** — MCP 항목은 인증 정보를 쥐고 있고,
+  파일이 브랜치에서 사라졌다는 것은 그것을 파괴할 충분한 이유가 아니다. 읽을 수 없는
+  `plugin.json`/`mcp.json` 은 아무것도 orphan 으로 만들지 않는다: 그 plugin 은 파일이 다시
+  파싱될 때까지 마지막으로 정상이던 상태에 얼어붙는다. managed 항목의 삭제는 managed use case 를
+  거치므로 컨테이너가 행과 함께 멈춘다. 삭제는 콘솔에서와 똑같이, 요청한 admin 의 이름을 담은
+  `registry.delete` 감사 행을 남긴다.
+- **skipped** — `[{ name, reason, detail? }]` 이고 `reason` 은 다음 중 하나다: `bad-name`,
+  `invalid-url` (아웃바운드 가드의 메시지가 `detail` 에 담긴다), `managed-url` (managed MCP
+  항목의 주소는 프로비저너가 주므로 문서의 주소는 무시하고 나머지 필드는 적용했다),
+  `conflict` (sync 도중의 경합, 어느 방향이든), `attachment` (skill 은 sync 됐지만 그 파일 중
+  하나가 안 됐다), `invalid-manifest` (쓸 수 없는 `mcp.json`, 또는 그 안의 쓸 수 없는 서버
+  항목), `invalid-skill` (Agent Skills 스펙을 벗어난 SKILL.md),
+  `unsupported-transport` (`stdio`/`sse` — 보고만 하고 절대 실행하지 않는다),
+  `headers-dropped` (서버는 sync 됐지만 mcp.json 이 선언한 헤더는 가져오지 않았다. `detail` 은
+  그 이름만 나열한다), `duplicate-name` (두 plugin 이 그 이름을 주장한다. 주장한 쪽 모두
+  건너뛴다), `credentials-reset` (위 참조), `write-failed` (쓰기 하나가 차단됐다. sync 의 나머지는
+  계속됐고 다음 실행이 수렴시킨다).
 
-The top-level `skipped` carries what no plugin owns — an unusable `plugin.json`, a plugin
-root nested inside another, a plugin name two roots claim. `orphanedPlugins` lists plugin
-rows the repository no longer carries; removing one (via `remove.plugins`) deletes only the
-row — its components surface individually as orphans, each its own decision.
+최상위 `skipped` 는 어떤 plugin 도 소유하지 않는 것을 싣는다 — 쓸 수 없는 `plugin.json`, 다른
+plugin 루트 안에 중첩된 plugin 루트, 두 루트가 주장하는 plugin 이름. `orphanedPlugins` 는 저장소가
+더 이상 갖고 있지 않은 plugin 행을 나열한다. 그중 하나를 제거하면 (`remove.plugins` 로) 그 행만
+지워진다 — 구성 요소는 각각 orphan 으로 따로 드러나며, 저마다 별개의 결정이다.
 
-A write replaces only what the documents own — a skill's description, content and
-attachments; an MCP entry's `url`, `description`, `content` (from the plugin's
-`org.opspresso.agentdure/mcp/<name>.md` extension document) and `source`. Encrypted
-headers, a discovered OAuth block and a managed entry's provisioned address are never
-touched, and a field the documents do not carry leaves the stored one alone. Moving an MCP
-entry's address drops the OAuth block read from the old one, so Discover has to be re-run.
+쓰기는 문서가 소유한 것만 대체한다 — skill 의 description·content·첨부, MCP 항목의 `url`,
+`description`, `content` (plugin 의 `org.opspresso.agentdure/mcp/<name>.md` 확장 문서에서
+온다), `source`. 암호화된 헤더, 발견된 OAuth 블록, managed 항목의 프로비저닝된 주소는 절대
+건드리지 않고, 문서가 싣지 않은 필드는 저장된 것을 그대로 둔다. MCP 항목의 주소를 옮기면 옛
+주소에서 읽었던 OAuth 블록이 버려지므로 Discover 를 다시 돌려야 한다.
 
-An upstream failure (GitHub unreachable, a truncated tree) answers `502` through `apiError`
-like every other route; a missing `PLUGINS_REPO` or `GITHUB_TOKEN` answers `503`.
+상류 실패(GitHub 도달 불가, 잘린 트리)는 다른 모든 라우트와 마찬가지로 `apiError` 를 통해
+`502` 로 답한다. `PLUGINS_REPO` 나 `GITHUB_TOKEN` 이 없으면 `503` 이다.
 
-Per-project Slack configuration uses these endpoints:
+project 별 Slack 설정은 이 엔드포인트들을 쓴다:
 
 ```
 GET    /api/projects/{name}/slack
@@ -690,26 +673,26 @@ DELETE /api/projects/{name}/slack
 POST   /api/projects/{name}/slack/test
 ```
 
-`suggestedPrompts` is `{ title, message }[]`, at most four, with `title` capped at 80 characters
-and `message` at 500; blank rows are dropped and a row with only one half — or one over either
-cap — is a 400. Unlike the two credentials it is not a secret and comes back as stored.
-`channelKeywords` is `string[]` — the words that make a channel message the bot's without a
-mention (see [design/slack.md](design/slack.md#which-events-are-for-the-bot)): at most 20,
-each trimmed and lower-cased at rest, 2–50 characters; blanks and duplicates are dropped, and
-a keyword outside that length is a 400. Omitting the field on `PUT` keeps the stored list.
+`suggestedPrompts` 는 `{ title, message }[]` 이고 최대 4개다. `title` 은 80자, `message` 는
+500자로 제한된다. 빈 행은 버려지고, 한쪽만 채운 행이나 어느 한도든 넘긴 행은 400 이다. 두 인증
+정보와 달리 이것은 secret 이 아니라서 저장된 그대로 돌아온다.
+`channelKeywords` 는 `string[]` 이다 — 멘션 없이도 채널 메시지를 봇의 것으로 만드는 단어들이다
+([design/slack.md](design/slack.md#어떤-이벤트가-봇에게-온-것인가) 참조): 최대 20개, 저장 시 각각
+공백을 정리하고 소문자로 바꾸며, 2–50자다. 빈 값과 중복은 버려지고, 그 길이를 벗어난 키워드는
+400 이다. `PUT` 에서 이 필드를 생략하면 저장된 목록을 유지한다.
 
-Slack reads return masked credential state plus `configured`, `eventsPath`, `eventsUrl`,
-`suggestedPrompts`, `channelKeywords` and a generated app manifest — every verb answers that
-same view.
-All four endpoints are limited to the owner and to configured admins (403 for anyone else) — the masked view still exposes the
-bot token / signing secret edges. Masked or omitted secrets are preserved on update, and a
-`PUT` on a non-agent project is a 400 — a Slack bot only attaches to an agent project. So is a
-`PUT` sending `enabled: true` with neither a stored nor a supplied bot token and signing
-secret: there is nothing to enable. The
-test endpoint returns `{ ok: true, team, botUser }`, `400` when Slack is unconfigured or
-disabled for the project, or `502` for a Slack API failure.
+Slack 읽기는 마스킹된 인증 정보 상태와 함께 `configured`, `eventsPath`, `eventsUrl`,
+`suggestedPrompts`, `channelKeywords`, 그리고 생성된 앱 manifest 를 돌려준다 — 모든 동사가 그
+같은 뷰로 답한다.
+네 엔드포인트 모두 소유자와 설정된 admin 으로 제한된다 (그 외에는 403) — 마스킹된 뷰도 봇
+토큰 / signing secret 의 양끝은 드러내기 때문이다. 마스킹되거나 생략된 secret 은 업데이트에서
+보존되고, agent 가 아닌 project 에 대한 `PUT` 은 400 이다 — Slack 봇은 agent project 에만
+붙는다. 저장된 것도 보낸 것도 없는 상태에서 봇 토큰과 signing secret 없이 `enabled: true` 를
+보내는 `PUT` 도 마찬가지다: 켤 것이 없다.
+테스트 엔드포인트는 `{ ok: true, team, botUser }` 를 돌려주고, 그 project 에 Slack 이 설정되지
+않았거나 꺼져 있으면 `400`, Slack API 실패면 `502` 다.
 
-Per-project Telegram configuration uses these endpoints:
+project 별 Telegram 설정은 이 엔드포인트들을 쓴다:
 
 ```
 GET    /api/projects/{name}/telegram
@@ -719,32 +702,31 @@ POST   /api/projects/{name}/telegram/test
 POST   /api/projects/{name}/telegram/webhook
 ```
 
-Every verb answers the same view: `enabled`, `configured`, the masked `botToken`, the bot's
-`botUsername` (learned when the token was saved; not a secret), `webhookPath` and
-`webhookUrl`. All five are limited to the owner and to configured admins. A *new* token on
-`PUT` is checked with Telegram (`getMe`) before it is stored and is a 400 when Telegram
-refuses it; a masked or empty token keeps the stored one. The webhook secret is minted by
-this platform with the first token and never returned — Telegram is the only party that
-needs it, and it is handed over by `POST …/telegram/webhook`, which registers (or moves)
-the bot's webhook at this deployment's URL and answers `{ ok: true, url }`. `DELETE` tells
-Telegram to drop the webhook, best effort, and forgets the credentials either way. Like
-Slack, a `PUT` on a non-agent project is a 400, and so is enabling with no token stored or
-supplied. `test` returns `{ ok: true, botId, botUsername }`, `400` when Telegram is
-unconfigured or disabled, or `502` for a Bot API failure; `webhook` answers the same way.
+모든 동사가 같은 뷰로 답한다: `enabled`, `configured`, 마스킹된 `botToken`, 봇의
+`botUsername` (토큰을 저장할 때 알아낸 것. secret 이 아니다), `webhookPath`, `webhookUrl`.
+다섯 모두 소유자와 설정된 admin 으로 제한된다. `PUT` 의 *새* 토큰은 저장하기 전에
+Telegram(`getMe`)으로 확인하고, Telegram 이 거부하면 400 이다. 마스킹되거나 빈 토큰은 저장된
+것을 유지한다. webhook secret 은 첫 토큰과 함께 이 플랫폼이 발행하며 절대 돌려주지 않는다 —
+그것이 필요한 쪽은 Telegram 뿐이고, `POST …/telegram/webhook` 이 그것을 건네준다. 이 호출은 봇의
+webhook 을 이 배포의 URL 에 등록(또는 이동)하고 `{ ok: true, url }` 로 답한다. `DELETE` 는
+Telegram 에 webhook 을 없애라고 최선을 다해 알리고, 어느 쪽이든 인증 정보는 잊는다. Slack 처럼
+agent 가 아닌 project 에 대한 `PUT` 은 400 이고, 저장되거나 전달된 토큰 없이 켜는 것도
+마찬가지다. `test` 는 `{ ok: true, botId, botUsername }` 을 돌려주고, Telegram 이 설정되지
+않았거나 꺼져 있으면 `400`, Bot API 실패면 `502` 다. `webhook` 도 같은 방식으로 답한다.
 
-The events endpoint itself, `POST /api/telegram/webhook/{project}`, is what Telegram calls
-(never a person): a body over 1MB is 413, a wrong or missing `X-Telegram-Bot-Api-Secret-Token`
-is 401, an update the bot ignores is `{ ok: true }` with nothing claimed, a redelivery is
-`{ ok: true, duplicate: true }`, and anything else is `{ ok: true }` with the run handled after
-the ack (see [design/telegram.md](design/telegram.md)).
+이벤트 엔드포인트 자체인 `POST /api/telegram/webhook/{project}` 는 Telegram 이 호출하는 것이다
+(사람이 아니다): 본문이 1MB 를 넘으면 413, `X-Telegram-Bot-Api-Secret-Token` 이 틀리거나 없으면
+401, 봇이 무시하는 업데이트는 아무것도 claim 하지 않은 `{ ok: true }`, 재전송은
+`{ ok: true, duplicate: true }`, 그 밖의 것은 `{ ok: true }` 이고 런은 ack 이후에 처리된다
+([design/telegram.md](design/telegram.md) 참조).
 
-## Managed MCP servers
+## 관리형 MCP 서버
 
-A managed server is a container this deployment starts on its own host through SSM Run
-Command and reaches on loopback. All four endpoints are **admin-only**, and all four answer
-`503 { "error": "This deployment is not configured to run managed MCP servers." }` when
-`MANAGED_MCP_INSTANCE_ID` / `MANAGED_MCP_REGISTRY` are unset — the feature is off rather than
-half-enabled.
+managed 서버는 이 배포가 SSM Run Command 로 자기 호스트에서 직접 띄우고 loopback 으로 닿는
+컨테이너다. 네 엔드포인트 모두 **admin 전용**이고, `MANAGED_MCP_INSTANCE_ID` /
+`MANAGED_MCP_REGISTRY` 가 설정돼 있지 않으면 넷 다
+`503 { "error": "This deployment is not configured to run managed MCP servers." }` 로 답한다 —
+반쯤 켜진 상태가 아니라 기능이 꺼진 것이다.
 
 ```
 POST   /api/mcps/managed              → 201 { …registry entry… }   | 409 | 400 | 503
@@ -754,7 +736,7 @@ DELETE /api/mcps/managed/{name}       → 204                        | 404 | 403
 POST   /api/mcps/managed/{name}/restart → 202 (no body)            | 404 | 400 | 409 (restart in flight)
 ```
 
-Create body:
+생성 본문:
 
 ```json
 { "name": "my-tool", "image": "…/my-mcp:1.4.0", "containerPort": 8080,
@@ -763,45 +745,44 @@ Create body:
   "description": ""?, "content": ""?, "headers": {}? }
 ```
 
-- `name` is a slug (`^[a-z0-9][a-z0-9-]{0,62}$`) because it is also the container's name.
-- `args` is an **argv array**, never a shell command; at most 64 entries, each ≤1024 chars and
-  free of control characters. `{{PORT}}` in an argument is substituted with the effective
-  listen port, for images that do not honour the `PORT` environment variable.
-- `environment` values are encrypted in the registry row, masked on reads, and decrypted only
-  when building the workload spec. `PORT` is rejected — the runtime owns it. Use `envRefs`
-  when the value should stay in Parameter Store instead. Keys are `^[A-Za-z_][A-Za-z0-9_]*$`
-  and values run to 16,384 characters.
-- `endpointPath` defaults to `/mcp` and must be an absolute path with no query, fragment or
-  whitespace (`^\/(?!\/)[^\s?#]*$`); anything else is a `400`.
-- The `403` on `PUT`/`DELETE` is the repo-owned refusal every registry route answers: a synced
-  entry's `description` and `content` belong to the repository, while its workload fields
-  (`image`, ports, env) stay editable here.
-- `image` may come from any registry the host can pull from; `MANAGED_MCP_REGISTRY` is the one
-  `docker login` authenticates against, and the login is skipped for anything else.
-- `containerPort` is a request, not a guarantee: only an adapter that publishes a port mapping
-  can honour it. The deployed adapter shares a network namespace instead, so it tells the
-  container which port to bind (`PORT`) and ignores the stored value.
+- `name` 은 slug (`^[a-z0-9][a-z0-9-]{0,62}$`) 다. 컨테이너의 이름이기도 하기 때문이다.
+- `args` 는 셸 명령이 아니라 **argv 배열**이다. 최대 64개, 각각 1024자 이하이며 제어 문자가
+  없어야 한다. 인자 안의 `{{PORT}}` 는 실제 listen 포트로 치환된다. `PORT` 환경변수를 존중하지
+  않는 이미지를 위한 것이다.
+- `environment` 값은 레지스트리 행에서 암호화되고, 읽을 때 마스킹되며, 워크로드 스펙을 만들 때만
+  복호화된다. `PORT` 는 거절된다 — 그것은 런타임이 소유한다. 값이 Parameter Store 에 남아 있어야
+  하면 대신 `envRefs` 를 쓰라. 키는 `^[A-Za-z_][A-Za-z0-9_]*$` 이고 값은 16,384자까지 간다.
+- `endpointPath` 의 기본값은 `/mcp` 이고, query·fragment·공백이 없는 절대 경로여야 한다
+  (`^\/(?!\/)[^\s?#]*$`). 그 밖의 것은 `400` 이다.
+- `PUT`/`DELETE` 의 `403` 은 모든 레지스트리 라우트가 답하는 repo 소유 거절이다: sync 된 항목의
+  `description` 과 `content` 는 저장소의 것이고, 워크로드 필드(`image`, 포트, env)는 여기서 계속
+  수정할 수 있다.
+- `image` 는 호스트가 pull 할 수 있는 어떤 레지스트리에서 와도 된다. `MANAGED_MCP_REGISTRY` 는
+  `docker login` 이 인증하는 그 하나이고, 그 밖의 것에는 로그인을 건너뛴다.
+- `containerPort` 는 요청이지 보장이 아니다: 포트 매핑을 게시하는 어댑터만이 그것을 존중할 수
+  있다. 배포된 어댑터는 대신 네트워크 네임스페이스를 공유하므로, 컨테이너에 어느 포트로 bind 할지
+  (`PORT`) 알려 주고 저장된 값은 무시한다.
 
-`GET` reports what is **actually running**, which the stored entry cannot say on its own.
-`running` and `reachable` are separate on purpose: "running and unreachable" is a real state —
-a container stranded in a network namespace by a redeploy is healthy to `docker inspect` and
-addressable by nobody — and reporting only the first is what let one look healthy for half a
-day.
+`GET` 은 **실제로 돌고 있는 것**을 보고한다. 저장된 항목만으로는 말할 수 없는 것이다.
+`running` 과 `reachable` 이 따로인 것은 일부러 그런 것이다: "돌고 있지만 닿을 수 없음"은 실재하는
+상태다 — 재배포로 네트워크 네임스페이스에 고립된 컨테이너는 `docker inspect` 에는 건강해 보이고
+아무도 주소로 닿을 수 없다 — 그리고 앞의 것만 보고했던 것이 하나를 반나절 동안 건강해 보이게 둔
+원인이다.
 
-`PUT` updates stored settings and restarts automatically when the workload spec changed.
-`DELETE` removes the container and the entry together; neither outlives the other.
+`PUT` 은 저장된 설정을 갱신하고, 워크로드 스펙이 바뀌었으면 자동으로 재시작한다.
+`DELETE` 는 컨테이너와 항목을 함께 제거한다. 어느 쪽도 다른 쪽보다 오래 남지 않는다.
 
-`POST …/restart` re-creates the container against the namespace this app has *now* — the
-recovery after a redeploy stranded it. It answers **202 with no body**: starting a container
-polls the runtime for minutes, far longer than any client will wait, so the caller polls `GET`
-for the outcome. No body, because the stored entry carries encrypted header values and this is
-not a read path that masks them.
+`POST …/restart` 는 이 앱이 *지금* 가진 네임스페이스에 대고 컨테이너를 다시 만든다 — 재배포가
+그것을 고립시킨 뒤의 복구다. **본문 없는 202** 로 답한다: 컨테이너를 띄우는 일은 런타임을 몇 분
+동안 폴링하는 것이고 이는 어떤 클라이언트가 기다릴 시간보다도 훨씬 길다. 그래서 결과는 호출자가
+`GET` 을 폴링해서 가져간다. 본문이 없는 이유는 저장된 항목이 암호화된 헤더 값을 싣고 있는데
+여기는 그것을 마스킹하는 읽기 경로가 아니기 때문이다.
 
 ## MCP OAuth
 
-Two halves with different owners: the **registry entry's** authorization-server metadata is
-operator configuration (admin), while the **credentials** that use it are per project (owner)
-— which is why one shared entry can back a different provider app in each project.
+소유자가 서로 다른 두 반쪽이다: **레지스트리 항목**의 authorization-server 메타데이터는 운영자
+설정(admin)이고, 그것을 쓰는 **인증 정보**는 project 별(owner)이다 — 그래서 공유된 항목 하나가
+project 마다 다른 프로바이더 앱을 뒷받침할 수 있다.
 
 ### Discovery (admin)
 
@@ -812,19 +793,20 @@ POST   /api/mcps/{name}/auth   { "authorizationServer": "https://…"? }
 DELETE /api/mcps/{name}/auth   → 204     (return the entry to static-header behaviour)
 ```
 
-Follows RFC 9728 protected-resource metadata → RFC 8414 authorization-server metadata, with
-every discovered endpoint re-validated through the SSRF policy and required to be `https`.
-When the resource advertises more than one authorization server the call returns `choose`;
-repeat it with `authorizationServer` set to one of the advertised values.
+RFC 9728 protected-resource 메타데이터 → RFC 8414 authorization-server 메타데이터 순으로
+따라가며, 발견된 모든 엔드포인트를 SSRF 정책으로 다시 검증하고 `https` 일 것을 요구한다.
+리소스가 authorization server 를 하나보다 많이 광고하면 이 호출은 `choose` 를 돌려준다.
+광고된 값 중 하나를 `authorizationServer` 에 넣어 다시 호출하라.
 
-A server that publishes no usable document — or cannot be reached — answers **400** with the
-candidate URLs it tried and why each failed. Reaching an entry on a
-[declared internal host](SECURITY.md#declared-internal-hosts) works here as it does for a run.
+쓸 만한 문서를 게시하지 않는 서버 — 또는 닿을 수 없는 서버 — 는 시도한 후보 URL 들과 각각이 왜
+실패했는지를 담아 **400** 으로 답한다.
+[선언된 내부 호스트](SECURITY.md#선언된-내부-호스트) 의 항목에 닿는 것은 런에서와 마찬가지로
+여기서도 동작한다.
 
-Editing the entry's **URL** drops the `auth` block outright — it was read out of the old
-address's well-known documents.
+항목의 **URL** 을 수정하면 `auth` 블록은 그대로 버려진다 — 그것은 옛 주소의 well-known 문서에서
+읽어 온 것이었다.
 
-### Connections (owner)
+### 연결 (owner)
 
 ```
 GET    /api/projects/{name}/mcp-connections
@@ -843,64 +825,62 @@ POST   /api/projects/{name}/mcp-connections/{server}/tools
 → 200 { tools } | 502 { error }
 ```
 
-- `status` is `needs_auth` | `connected` | `needs_reauth`. Only a **refused grant** moves a
-  connection to `needs_reauth`; a 5xx or timeout leaves it alone.
-- `clientSecret` is masked on read and **tokens are never returned** — unlike the A2A key and
-  the project API token there is no reveal path, because a token has no reason to be
-  displayed. On write, an omitted or masked value keeps what is stored; an **empty** one
-  clears it, which is the only way back from a confidential client to a public one.
-- `clientRegistered` is `true` when the credentials came from RFC 7591 dynamic registration
-  rather than being entered by hand.
-- `/authorize` **returns** the provider URL rather than issuing a `3xx`: the caller is the
-  console's `fetch`, which would follow a redirect itself instead of sending the user.
-- A registry entry with no `auth` block has nothing to connect to, so `PUT` and `/authorize`
-  answer `400`; `/authorize` also `400`s with no public base URL configured, when the server
-  offers no dynamic registration and no client was entered by hand, and when the stored
-  credentials were issued by a different issuer than the entry now names. `DELETE` answers
-  `404` when the project has no connection to that server; `/tools` needs no connection to
-  run, and its `404` means the registry entry itself is gone.
-- `/tools` lists the server's tools **as this project sees them** — with the project's own
-  connection and the binding's header overlay. Distinct from the registry's own
-  `POST /api/mcps/{name}/tools` probe, which carries only the entry's static headers and can
-  do nothing but 401 against an OAuth server. Owner-gated for the same reason: it spends the
-  project's connection. Its `502` also covers the two refusals that never reach the server — a
-  URL the outbound guard blocks, and a connection whose credential cannot be resolved.
+- `status` 는 `needs_auth` | `connected` | `needs_reauth` 다. 연결을 `needs_reauth` 로 옮기는
+  것은 **거부된 grant** 뿐이다. 5xx 나 타임아웃은 그대로 둔다.
+- `clientSecret` 은 읽을 때 마스킹되고 **토큰은 절대 돌려주지 않는다** — A2A 키나 project API
+  토큰과 달리 reveal 경로가 없는데, 토큰은 표시될 이유가 없기 때문이다. 쓰기에서 생략되거나
+  마스킹된 값은 저장된 것을 유지한다. **빈** 값은 그것을 지우며, 이것이 confidential 클라이언트에서
+  public 클라이언트로 돌아가는 유일한 길이다.
+- `clientRegistered` 는 인증 정보가 손으로 입력된 것이 아니라 RFC 7591 동적 등록에서 왔을 때
+  `true` 다.
+- `/authorize` 는 `3xx` 를 내는 대신 프로바이더 URL 을 **돌려준다**: 호출자는 콘솔의 `fetch` 이고,
+  그것은 사용자를 보내는 대신 리다이렉트를 자기가 따라가 버릴 것이기 때문이다.
+- `auth` 블록이 없는 레지스트리 항목은 연결할 대상이 없으므로 `PUT` 과 `/authorize` 는 `400` 으로
+  답한다. `/authorize` 는 공개 base URL 이 설정되지 않았을 때, 서버가 동적 등록을 제공하지 않고
+  손으로 입력한 클라이언트도 없을 때, 그리고 저장된 인증 정보가 지금 그 항목이 지목하는 것과 다른
+  issuer 에서 발급됐을 때도 `400` 이다. `DELETE` 는 그 project 가 그 서버에 연결을 갖고 있지
+  않으면 `404` 로 답한다. `/tools` 는 실행에 연결이 필요 없고, 그 `404` 는 레지스트리 항목 자체가
+  사라졌다는 뜻이다.
+- `/tools` 는 **이 project 가 보는 대로** 그 서버의 도구를 나열한다 — project 자신의 연결과 그
+  바인딩의 헤더 오버레이를 얹어서. 레지스트리 자신의 `POST /api/mcps/{name}/tools` 프로브와는
+  구별된다. 그쪽은 항목의 정적 헤더만 싣기 때문에 OAuth 서버에 대해서는 401 밖에 낼 수 없다.
+  소유자 게이트인 이유도 같다: 그 project 의 연결을 소비한다. 그 `502` 는 서버에 아예 닿지 않는
+  두 거절도 포함한다 — 아웃바운드 가드가 막는 URL, 그리고 인증 정보를 해석할 수 없는 연결이다.
 
-### Callback
+### 콜백
 
 ```
 GET /api/mcps/oauth/callback?code=…&state=…&iss=…    (session)
 ```
 
-The authorization server redirects the **browser** here, so it answers a small self-closing
-HTML page rather than JSON: it `postMessage`s the outcome to its opener and closes, and still
-reads sensibly if it was opened in a plain tab. Status is `200` either way — the status
-describes serving the page; the outcome is in the message. `Cache-Control: no-store`, since it
-carries a one-time result.
+authorization server 가 **브라우저**를 여기로 리다이렉트하므로, 이 엔드포인트는 JSON 이 아니라
+스스로 닫히는 작은 HTML 페이지로 답한다: 결과를 opener 에게 `postMessage` 하고 닫히며, 평범한
+탭에서 열렸더라도 읽을 만하게 보인다. 어느 쪽이든 상태 코드는 `200` 이다 — 상태 코드는 페이지를
+서빙한 일을 말하고, 결과는 메시지 안에 있다. 일회성 결과를 싣기 때문에
+`Cache-Control: no-store` 다.
 
-The callback validates RFC 9207 `iss` before the code is redeemed and re-checks project
-ownership, which can change while the user is at the provider. See
-[SECURITY.md](SECURITY.md#mcp-oauth) for the full set of checks.
+콜백은 code 를 교환하기 전에 RFC 9207 `iss` 를 검증하고, 사용자가 프로바이더에 가 있는 동안
+바뀔 수 있는 project 소유권을 다시 확인한다. 검사 전체는
+[SECURITY.md](SECURITY.md#mcp-oauth) 를 보라.
 
-### Client ID metadata document
+### Client ID 메타데이터 문서
 
 ```
 GET /api/mcps/oauth/client-metadata/{project}          (public)
 ```
 
-A project's OAuth Client ID Metadata Document, which an authorization server fetches to
-resolve a `client_id` that is a URL (protocol `2026-07-28`, which deprecates dynamic
-registration — still the fallback for a server that does not accept a document).
-**Unauthenticated on purpose** — the reader is that server, arriving with no session — and it
-carries no secret: the deployment's name, and the single redirect URI it accepts. `404` for a
-name that is not a slug, `503` when no public base URL is configured, and
-`Cache-Control: public, max-age=300`.
+그 project 의 OAuth Client ID Metadata Document 다. authorization server 가 URL 인
+`client_id` 를 해석하려고 가져간다 (프로토콜 `2026-07-28`. 이 개정은 동적 등록을 deprecate 하지만,
+문서를 받아들이지 않는 서버에는 여전히 그것이 폴백이다).
+**일부러 비인증이다** — 읽는 쪽이 세션 없이 도착하는 그 서버다 — 그리고 secret 을 싣지 않는다:
+배포의 이름과, 받아들이는 단 하나의 redirect URI 뿐이다. slug 가 아닌 이름은 `404`, 공개 base
+URL 이 설정되지 않았으면 `503`, 그리고 `Cache-Control: public, max-age=300` 이다.
 
-## Project API token
+## Project API 토큰
 
-A per-project token lets external callers reach the execution endpoints with
-`Authorization: Bearer <token>` instead of a session cookie. The token is stored
-AES-256-GCM encrypted (not hashed) so the owner can read it back on request.
+project 별 토큰은 외부 호출자가 세션 쿠키 대신 `Authorization: Bearer <token>` 으로 실행
+엔드포인트에 닿게 해 준다. 토큰은 해시가 아니라 AES-256-GCM 으로 암호화해 저장되므로, 소유자가
+요청하면 다시 읽어 볼 수 있다.
 
 ```
 GET    /api/projects/{name}/token          → { configured, masked?, createdAt?, revealable? }
@@ -909,68 +889,62 @@ POST   /api/projects/{name}/token/reveal   → { token, createdAt }           (r
 DELETE /api/projects/{name}/token          → 204
 ```
 
-Tokens are `adt_` + 32 random bytes (base64url). `masked` is the display mask recorded at
-generation (`adt_••••…••wXyZ`) — the token itself stays unrecoverable, so this is the only
-way the console can show *which* token is set without decrypting. It is absent on tokens
-issued before masks were recorded; those keep working, since verification never looks at
-the prefix.
+토큰은 `adt_` + 랜덤 32바이트(base64url)다. `masked` 는 생성 시점에 기록된 표시용 마스크
+(`adt_••••…••wXyZ`)다 — 토큰 자체는 복구 불가능하게 남으므로, 콘솔이 복호화하지 않고 *어느*
+토큰이 설정돼 있는지 보여 줄 수 있는 유일한 방법이 이것이다. 마스크를 기록하기 전에 발급된
+토큰에는 없다. 검증이 접두사를 보는 일이 없으므로 그런 토큰도 계속 동작한다.
 
-All four are limited to the owner and to configured admins (403 for anyone else). `POST` generates or regenerates the token —
-regeneration overwrites the previous one, which stops working immediately. The token is
-scoped to its project (validated against the `{name}` in the request path).
+넷 다 소유자와 설정된 admin 으로 제한된다 (그 외에는 403). `POST` 는 토큰을 생성하거나 재생성한다 —
+재생성은 이전 토큰을 덮어쓰고, 그 토큰은 즉시 동작을 멈춘다. 토큰은 자기 project 범위로 한정된다
+(요청 경로의 `{name}` 에 대해 검증된다).
 
-Generation is additionally gated on the **owner's tier**: a tier that may not use API
-tokens (`TIER_LIMITS` in `src/domain/member/tiers.ts` — today `guest`) answers `403`
-whoever asks, admin included, because the token would authenticate as that owner. The
-matching gate at authentication time is on the execution endpoints below.
+생성에는 **소유자의 tier** 게이트가 추가로 걸린다: API 토큰을 쓸 수 없는 tier
+(`src/domain/member/tiers.ts` 의 `TIER_LIMITS` — 오늘로는 `guest`) 는 admin 을 포함해 누가
+요청하든 `403` 으로 답한다. 그 토큰이 그 소유자로서 인증하게 되기 때문이다. 인증 시점의 대응
+게이트는 아래 실행 엔드포인트에 있다.
 
-`/reveal` is a POST although it reads: the body is a live credential, so it stays out of
-caches, history and prefetches. `revealable` is `false` for a token issued before encrypted
-storage — only its hash exists, so `/reveal` answers `400` with instructions to regenerate.
-Verification accepts both forms (decrypt-and-compare in constant time, or hash comparison
-for a legacy token). Every reveal is logged server-side with the caller's email.
+`/reveal` 은 읽기인데도 POST 다: 본문이 살아 있는 인증 정보라서 캐시·히스토리·프리페치 밖에
+머물러야 한다. 암호화 저장 이전에 발급된 토큰은 `revealable` 이 `false` 다 — 해시만 존재하므로
+`/reveal` 은 재생성하라는 안내와 함께 `400` 으로 답한다. 검증은 두 형태를 모두 받아들인다
+(상수 시간 복호화-비교, 또는 레거시 토큰의 해시 비교). 모든 reveal 은 호출자의 이메일과 함께
+서버 측에 로그된다.
 
-## Execution
+## 실행
 
-The three endpoints below authenticate with either the session cookie or a project API
-token (`Authorization: Bearer <token>`). A token authenticates as the project owner; a
-valid token whose owner's *current* tier may not use API tokens answers `403` (not `401` —
-the credential is valid, the policy refuses it), so demoting an owner immediately stops
-their tokens.
+아래 세 엔드포인트는 세션 쿠키 또는 project API 토큰(`Authorization: Bearer <token>`)으로
+인증한다. 토큰은 project 소유자로서 인증한다. 유효하지만 그 소유자의 *현재* tier 가 API 토큰을
+쓸 수 없는 토큰은 `403` 으로 답한다 (`401` 이 아니다 — 인증 정보는 유효하고 정책이 거절하는
+것이다). 그래서 소유자를 강등하면 그의 토큰은 즉시 멈춘다.
 
-All three are bounded by `MAX_RUN_DURATION_MS` (a wall-clock deadline that cuts the run
-mid-stream, not a refusal), and admitted through the per-caller concurrency guard and the
-project's cost guard — either of which answers `429` with `Retry-After`. A session run
-is additionally bounded by the caller's tier (concurrency and monthly cost cap, the latter a
-third `429`); a token run is not — token spend belongs to the project, never to a personal
-budget.
+셋 다 `MAX_RUN_DURATION_MS` 로 한계 지어지고 (거절이 아니라 런을 스트림 도중에 끊는 벽시계
+데드라인이다), 호출자별 동시성 가드와 그 project 의 비용 가드를 거쳐 admit 된다 — 둘 중 어느
+쪽이든 `Retry-After` 와 함께 `429` 로 답한다. 세션 런은 호출자의 tier 로도 한계 지어지고
+(동시성과 월간 비용 상한. 후자는 세 번째 `429` 다), 토큰 런은 그렇지 않다 — 토큰의 지출은
+개인 예산이 아니라 언제나 project 에 속한다.
 
-**`X-Conversation-Id`** (optional, all three) names the conversation the request belongs
-to. The three endpoints have no thread of their own, so continuity is the caller's to
-declare: send the same value on the follow-up questions of one conversation and the run
-carries it as `RunOrigin.conversation` — an A2A subagent it transfers to continues the
-remote conversation the first question opened, and every MCP server it calls is told the
-key (`X-Conversation-Id: api:{caller}:{value}`). `{caller}` is a 16-hex digest of the
-calling actor keyed with this deployment's own secret — two callers sending `1` are in two
-conversations, no email travels, and the digest means nothing outside this deployment. The
-value is percent-encoded where it has to be (whitespace, control characters, anything
-outside printable ASCII, and `%`), which changes nothing about a UUID or a plain key and
-keeps two different values two conversations; at most 495 characters once encoded, and a
-longer header answers `400` rather than silently running without the conversation it
-declared. Absent, each request is its own conversation, which is what every request was
-before the header existed. Where a surface *has* a thread the platform names it itself: a
-chat is `chat:{chatId}`, a Slack reply `slack:{channel}:{threadTs}`, an inbound A2A message
-`a2a:{client}:{contextId}`. See
-[design/observability.md](design/observability.md#usage-and-cost-attribution).
+**`X-Conversation-Id`** (선택, 셋 모두) 는 그 요청이 속한 대화를 지목한다. 이 세 엔드포인트는
+자기 스레드가 없으므로 연속성은 호출자가 선언할 몫이다: 한 대화의 후속 질문들에 같은 값을 보내면
+런은 그것을 `RunOrigin.conversation` 으로 싣는다 — 그 런이 transfer 하는 A2A subagent 는 첫
+질문이 연 원격 대화를 이어 가고, 그 런이 호출하는 모든 MCP 서버는 그 키를 전달받는다
+(`X-Conversation-Id: api:{caller}:{value}`). `{caller}` 는 호출하는 actor 를 이 배포 자신의
+secret 으로 키잉해 만든 16자리 hex 다이제스트다 — `1` 을 보내는 두 호출자는 두 개의 대화에 있고,
+이메일은 전혀 이동하지 않으며, 그 다이제스트는 이 배포 밖에서는 아무 의미가 없다. 값은 필요한
+곳에서 퍼센트 인코딩된다 (공백, 제어 문자, 출력 가능한 ASCII 밖의 모든 것, 그리고 `%`). 이는
+UUID 나 평범한 키에 대해서는 아무것도 바꾸지 않으면서 서로 다른 두 값을 두 개의 대화로 유지한다.
+인코딩 후 최대 495자이고, 그보다 긴 헤더는 자기가 선언한 대화 없이 조용히 실행되는 대신 `400` 으로
+답한다. 없으면 각 요청이 저마다의 대화이며, 이는 이 헤더가 생기기 전 모든 요청이 그랬던 것과
+같다. 표면이 스레드를 *가진* 곳에서는 플랫폼이 직접 이름을 붙인다: chat 은 `chat:{chatId}`,
+Slack 답글은 `slack:{channel}:{threadTs}`, 인바운드 A2A 메시지는 `a2a:{client}:{contextId}` 다.
+[design/observability.md](design/observability.md#사용량과-비용-귀속) 를 보라.
 
 ### `POST /api/projects/{name}/versions/{version}/predict`
 
-Runs the version. `{version}` may be `published`.
+그 version 을 실행한다. `{version}` 은 `published` 여도 된다.
 
-The endpoint dispatches on `projectType`, like `chat/completions`: an `llm` project runs one
-completion with server-side `{{var}}` template rendering, and an **`agent` project runs its
-multi-turn tool loop** with the version's MCP tools, skills and subagents. `variables` are
-therefore ignored for an agent project — an agent run has no prompt template to render.
+이 엔드포인트는 `chat/completions` 처럼 `projectType` 에 따라 dispatch 한다: `llm` project 는
+서버 측 `{{var}}` 템플릿 렌더링과 함께 completion 하나를 실행하고, **`agent` project 는 그
+version 의 MCP 도구·skill·subagent 로 멀티턴 도구 루프를 실행한다**. 그래서 agent project 에서는
+`variables` 가 무시된다 — agent 런에는 렌더링할 프롬프트 템플릿이 없다.
 
 ```json
 // request (llm project)
@@ -980,70 +954,65 @@ therefore ignored for an agent project — an agent run has no prompt template t
 // response
 { "result": "…assistant text…", "model": "openai/gpt-5-mini",
   "usage": { "inputTokens": 12, "outputTokens": 34, … },
-  "finishReason": "completed",  // why the run ended: "turn-limit" / "output-limit" mark a partial answer
-  "warnings": [ "Skill 'x' is no longer in the registry; it was not offered." ]?,  // only when the run lost something
-  "images": [ { "b64": "…", "mimeType": "image/png" } ]?,  // only when the run drew something
-  "files": [ { "name": "report.docx", "mimeType": "…", "byteSize": 2048, "url": "https://…" } ]?  // only when a tool produced one
+  "finishReason": "completed",  // 런이 끝난 이유: "turn-limit" / "output-limit" 은 부분 답을 뜻한다
+  "warnings": [ "Skill 'x' is no longer in the registry; it was not offered." ]?,  // 런이 무언가를 잃었을 때만
+  "images": [ { "b64": "…", "mimeType": "image/png" } ]?,  // 런이 무언가를 그렸을 때만
+  "files": [ { "name": "report.docx", "mimeType": "…", "byteSize": 2048, "url": "https://…" } ]?  // 툴이 파일을 만들었을 때만
 }
 ```
 
-`files` are documents a tool rendered — the bytes are kept as artifacts and stripped from the
-run's stream, so this carries a **signed download address** rather than the file. The
-signature is short-lived (15 minutes for an API response, seven days where the link goes into
-a durable record — a Slack thread, a stored A2A task); the artifact itself stays in the
-project's gallery. On a deployment with no object storage the bytes are never stripped, so a
-raw-chunk surface delivers the file inline on its frame instead. A
-file this deployment could not keep or could not sign is reported in `warnings` instead of
-being listed, because a document the run produced and the caller was never told about reads
-as the platform having lost it.
+`files` 는 도구가 만들어 낸 문서다 — 바이트는 artifact 로 보관되고 런의 스트림에서 떼어내지므로,
+여기 실리는 것은 파일이 아니라 **서명된 다운로드 주소**다. 서명은 수명이 짧다 (API 응답에는 15분,
+링크가 지속되는 기록으로 들어가는 곳 — Slack 스레드, 저장된 A2A task — 에는 7일). artifact 자체는
+그 project 의 갤러리에 남는다. 오브젝트 스토리지가 없는 배포에서는 바이트를 떼어내지 않으므로,
+raw-chunk 표면은 대신 자기 프레임에 파일을 인라인으로 실어 보낸다. 이 배포가 보관하지 못했거나
+서명하지 못한 파일은 나열되는 대신 `warnings` 로 보고된다. 런이 만들어 냈는데 호출자에게 존재조차
+알려 주지 않은 문서는 플랫폼이 그것을 잃어버린 것으로 읽히기 때문이다.
 
-`warnings` is what the run reported losing on the way to that answer — a binding no
-longer in the registry, an MCP server the outbound guard blocked, tools past the per-run
-cap, a clipped transfer transcript, a subagent that came back empty. A streamed run says
-each of these in a `warning` frame as it happens; a collected body has no later frame, so
-they travel with the answer. Absent means nothing was lost.
+`warnings` 는 그 답에 이르는 길에 런이 무엇을 잃었다고 보고했는지다 — 더 이상 레지스트리에 없는
+바인딩, 아웃바운드 가드가 막은 MCP 서버, 런당 상한을 넘은 도구들, 잘린 transfer 전사, 빈손으로
+돌아온 subagent. 스트리밍된 런은 이런 것들을 그때그때 `warning` 프레임으로 말한다. 모아서 주는
+본문에는 나중의 프레임이 없으므로 이것들이 답과 함께 이동한다. 없으면 잃은 것이 없다는 뜻이다.
 
-For an `image` project, send `{ "prompt?", "variables?", "size?", "quality?", "images?" }` →
-`{ imageBase64, mimeType, model, usage }`. `prompt` overrides the version's
-`userPromptTemplate`; omitted, the template rendered with `variables` is the prompt, and an
-empty result either way is a 400. `images` are source pictures as inline bytes
-(`[ { b64, mimeType } ]`, same caps as a chat attachment): with any present the prompt
-**edits** them, with none it draws from scratch. The version's system prompt, when set, is
-prepended to the prompt as the version's persistent style. `stream` does not apply to an
-image project — there is one picture and one body — and is ignored there.
+`image` project 에는 `{ "prompt?", "variables?", "size?", "quality?", "images?" }` 를 보내면 →
+`{ imageBase64, mimeType, model, usage }` 를 받는다. `prompt` 는 그 version 의
+`userPromptTemplate` 을 덮어쓴다. 생략하면 `variables` 로 렌더링한 템플릿이 프롬프트가 되고,
+어느 쪽이든 결과가 비면 400 이다. `images` 는 인라인 바이트로 담은 원본 그림이다
+(`[ { b64, mimeType } ]`, chat 첨부와 같은 상한). 하나라도 있으면 프롬프트는 그것을 **편집**하고,
+없으면 처음부터 그린다. 그 version 의 시스템 프롬프트는 설정돼 있으면 version 의 지속적인 스타일로서
+프롬프트 앞에 붙는다. `stream` 은 image project 에 적용되지 않고 — 그림 하나에 본문 하나다 —
+거기서는 무시된다.
 
-For every other project type, `"stream": true` answers with SSE `EngineChunk` frames (the
-same contract `/agent` documents below, file frames addressed the same way) instead of the
-JSON body above.
+그 밖의 모든 project 타입에서 `"stream": true` 는 위의 JSON 본문 대신 SSE `EngineChunk` 프레임으로
+답한다 (아래 `/agent` 가 문서화하는 것과 같은 계약이고, file 프레임도 같은 방식으로 주소가 붙는다).
 
-A run this endpoint could not finish answers `502` with what the provider said and the model
-it was asked of — `Image generation failed for xai/grok-imagine-image: 404 The requested
-resource was not found.` A collected body is the one execution surface with no `error` frame
-to carry that, so before it was typed the same failure arrived as `500 Internal server error`
-and a version naming a model its provider does not serve was indistinguishable from a crash.
-A caller that closes the connection before the answer gets nothing and is not a `502`: the
-run is cancelled, and the log says the caller left rather than that the provider failed. Plan
-for the wait — an image on xAI takes about a minute.
+이 엔드포인트가 끝내지 못한 런은 프로바이더가 뭐라고 했는지와 어느 모델에 요청한 것인지를 담아
+`502` 로 답한다 — `Image generation failed for xai/grok-imagine-image: 404 The requested
+resource was not found.` 모아서 주는 본문은 그것을 실어 나를 `error` 프레임이 없는 유일한 실행
+표면이라, 이렇게 명시하기 전에는 같은 실패가 `500 Internal server error` 로 도착했고 프로바이더가
+서빙하지 않는 모델을 지목한 version 은 크래시와 구별되지 않았다. 답이 나오기 전에 연결을 닫은
+호출자는 아무것도 받지 못하고 그것은 `502` 가 아니다: 런은 취소되고, 로그는 프로바이더가 실패했다고가
+아니라 호출자가 떠났다고 말한다. 기다림을 감안하라 — xAI 에서 이미지 하나는 1분쯤 걸린다.
 
 ### `POST /api/projects/{name}/versions/{version}/chat/completions`
 
-OpenAI Chat Completions-compatible. `agent` projects run the multi-turn tool loop; `llm`
-projects do a single completion. An `image` project is refused with `400` — an image has no
-chat completion; run it through `/predict`.
+OpenAI Chat Completions 호환이다. `agent` project 는 멀티턴 도구 루프를 실행하고, `llm`
+project 는 completion 하나를 한다. `image` project 는 `400` 으로 거절된다 — 이미지에는 chat
+completion 이 없다. 그것은 `/predict` 로 실행하라.
 
 ```json
 // request
 { "model": "ignored-routes-by-version", "messages": [ { "role": "user", "content": "hi" } ],
   "variables": {}?, "stream": false }
-// `temperature`/`max_tokens` are accepted but ignored — sampling comes from the
-// version's stored `parameters`.
-// response: an OpenAI chat.completion object (or chat.completion.chunk SSE when stream=true)
+// `temperature`/`max_tokens` 는 받지만 무시한다 — 샘플링은 version 에 저장된
+// `parameters` 에서 온다.
+// 응답: OpenAI chat.completion 객체 (stream=true 면 chat.completion.chunk SSE)
 ```
 
-**Image input.** A message body may be OpenAI content parts instead of a string. Image bytes
-travel inline as a `data:image/…;base64,…` url; a remote image must be `https://`. One payload
-is capped at 10MB, and the version's model must have the `imageInput` capability — otherwise
-`400`, and a `fallbackModel` that cannot read images is skipped for that request.
+**이미지 입력.** 메시지 본문은 문자열 대신 OpenAI content part 여도 된다. 이미지 바이트는
+`data:image/…;base64,…` url 로 인라인 이동한다. 원격 이미지는 `https://` 여야 한다. 페이로드
+하나는 10MB 로 제한되고, 그 version 의 모델은 `imageInput` 능력을 가져야 한다 — 아니면 `400`
+이며, 이미지를 읽을 수 없는 `fallbackModel` 은 그 요청에서 건너뛴다.
 
 ```json
 { "messages": [ { "role": "user", "content": [
@@ -1052,43 +1021,41 @@ is capped at 10MB, and the version's model must have the `imageInput` capability
 ] } ] }
 ```
 
-**Image output.** Images produced by a run (the `GenerateImage` / `EditImage` builtins, or an
-`image` subagent) have no place in the OpenAI schema, so they ride along as an extension:
-`images: [ { b64, mimeType, prompt? } ]` on the completion object, and `choices[0].delta.images`
-frames in a stream. Clients that do not know the field simply ignore it.
+**이미지 출력.** 런이 만들어 낸 이미지(`GenerateImage` / `EditImage` 빌트인, 또는 `image`
+subagent)는 OpenAI 스키마에 자리가 없으므로 확장으로 함께 실려 간다: completion 객체의
+`images: [ { b64, mimeType, prompt? } ]`, 그리고 스트림에서는 `choices[0].delta.images`
+프레임이다. 이 필드를 모르는 클라이언트는 그냥 무시한다.
 
-**File output.** Same treatment again, with one difference that matters: a document is
-*taken away* rather than drawn, so it travels as an address — `files: [ { name, mimeType,
-byteSize?, url } ]` on the completion object and `choices[0].delta.files` frames in a stream.
-See `/predict` above for what the address is and how long it lives.
+**파일 출력.** 같은 취급을 다시 하되 중요한 차이가 하나 있다: 문서는 그려지는 것이 아니라
+*가져가는* 것이므로 주소로 이동한다 — completion 객체의 `files: [ { name, mimeType,
+byteSize?, url } ]` 와 스트림의 `choices[0].delta.files` 프레임이다. 그 주소가 무엇이고 얼마나
+사는지는 위 `/predict` 를 보라.
 
-**What the run lost.** Same treatment, same reason: `warnings: [ "…" ]` on the completion
-object and `choices[0].delta.warnings` frames in a stream. These are the losses a run
-reports as it goes (see `/predict` above); without them a degraded run and a clean one are
-the same response on this surface.
+**런이 잃은 것.** 같은 취급, 같은 이유다: completion 객체의 `warnings: [ "…" ]` 와 스트림의
+`choices[0].delta.warnings` 프레임이다. 런이 진행하면서 보고하는 손실이며 (위 `/predict` 참조),
+이것이 없으면 이 표면에서는 성능이 깎인 런과 깨끗한 런이 같은 응답이 된다.
 
 ### `POST /api/projects/{name}/versions/{version}/agent`
 
-Agent SSE stream. Body `{ "messages": [ … ] }`. Emits `EngineChunk` frames
-(`delta.content`, `toolResult`, `warning`, `image`, `file`, `author` for subagent turns,
-`error`, and a terminal `done: true` or `finishReason` naming why the run ended) then
-`data: [DONE]`. The full field contract is in
-[ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-contract).
+Agent SSE 스트림이다. 본문은 `{ "messages": [ … ] }`. `EngineChunk` 프레임을 내보낸다
+(`delta.content`, `toolResult`, `warning`, `image`, `file`, subagent 턴에는 `author`,
+`error`, 그리고 런이 왜 끝났는지를 밝히는 종단 `done: true` 또는 `finishReason`). 그다음
+`data: [DONE]` 이다. 필드 계약 전체는
+[ARCHITECTURE.md](ARCHITECTURE.md#enginechunk-계약) 에 있다.
 
-A `file` frame leaves this endpoint **addressed**: the object key and artifact id the run
-bracket put on it are replaced by a short-lived signed `url`, since those two are the
-platform's own bookkeeping and a caller holding them can do nothing with them. A file that
-could not be signed arrives as a `warning` frame instead of a `file` frame naming a document
-nothing can fetch.
+`file` 프레임은 이 엔드포인트를 **주소가 붙은 채로** 떠난다: 런 브래킷이 붙여 둔 object key 와
+artifact id 는 수명이 짧은 서명 `url` 로 대체된다. 그 둘은 플랫폼 자신의 장부이고 호출자가 그것을
+쥐어 봐야 할 수 있는 일이 없기 때문이다. 서명할 수 없었던 파일은, 아무것도 가져올 수 없는 문서를
+지목하는 `file` 프레임 대신 `warning` 프레임으로 도착한다.
 
-**Agent projects only** — 400 for any other type. The tool loop has nowhere to put an
-`llm` project's `userPromptTemplate`, and an `image` project's model does not serve
-completions; use `/predict` for either.
+**agent project 만** — 그 밖의 타입은 400 이다. 도구 루프에는 `llm` project 의
+`userPromptTemplate` 을 놓을 자리가 없고, `image` project 의 모델은 completion 을 서빙하지
+않는다. 둘 다 `/predict` 를 쓰라.
 
-A transfer to a project already on the current transfer chain, or beyond 5 levels of
-nesting, is refused as an authored error chunk rather than recursing.
+이미 현재 transfer 사슬에 있는 project 로의 transfer, 또는 5단계 중첩을 넘는 transfer 는 재귀하는
+대신 author 가 붙은 error chunk 로 거절된다.
 
-## Usage
+## 사용량
 
 ```
 GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
@@ -1098,12 +1065,12 @@ GET /api/usages/summary?from=2026-01-01&to=2026-01-31[&project=my-bot]
 → 400 { "error": "…" }   (bad/oversized range: max 184 days, from ≤ to)
 ```
 
-`cachedTokens` is the part of `inputTokens` the provider served from its own prompt cache,
-already priced at the cached rate. It is `{}` for a day recorded before the field existed and
-for a channel that does not report `prompt_tokens_details` — which is why the console renders
-a blank rather than `0%`: a cache nobody reports on is not a cold one.
+`cachedTokens` 는 `inputTokens` 중 프로바이더가 자기 프롬프트 캐시에서 서빙한 부분이며, 이미
+캐시 단가로 값이 매겨져 있다. 이 필드가 존재하기 전에 기록된 날과 `prompt_tokens_details` 를
+보고하지 않는 채널에 대해서는 `{}` 다 — 콘솔이 `0%` 가 아니라 빈칸을 렌더링하는 이유가 이것이다:
+아무도 보고하지 않는 캐시는 차가운 캐시가 아니다.
 
-### Per-caller spend
+### 호출자별 지출
 
 ```
 GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
@@ -1111,38 +1078,36 @@ GET /api/projects/{name}/usage/actors?from=2026-07-01&to=2026-07-31
                      costUsd, display?: { name, avatarUrl? } }, … ] }
 ```
 
-`actor` is `{kind}:{id}` — `user:a@example.com`, `project-token:owner@example.com` (a token
-authenticates as its owner, so the kind is what keeps a machine's spend apart from that
-person's own runs — and only the `user:` rows count toward a personal tier budget),
-`slack:U123`, `telegram:123456`, `a2a:shared-key`, and for a trigger firing
-`webhook:{project}:{triggerId}` or `schedule:{project}:{triggerId}`. The metric fields are
-per-model maps, exactly as in the summary above.
+`actor` 는 `{kind}:{id}` 다 — `user:a@example.com`, `project-token:owner@example.com` (토큰은
+자기 소유자로서 인증하므로, 기계의 지출을 그 사람 자신의 런과 갈라 두는 것이 kind 다 — 그리고
+개인 tier 예산에 계산되는 것은 `user:` 행뿐이다),
+`slack:U123`, `telegram:123456`, `a2a:shared-key`, 그리고 trigger 발화에는
+`webhook:{project}:{triggerId}` 또는 `schedule:{project}:{triggerId}` 다. 지표 필드는 위 요약과
+정확히 같이 모델별 맵이다.
 
-`display` puts a face on a `slack:` row, resolved through the project's own bot token. It is
-decoration and may be absent for any reason — no Slack bot, a revoked token, a deactivated user,
-a Slack outage — and `actor` is unchanged in every case, because that is the key two callers are
-told apart by. A `telegram:` row carries no `display`: the Bot API offers no profile lookup by
-user id, so the id is all there is.
+`display` 는 `slack:` 행에 얼굴을 붙여 준다. 그 project 자신의 봇 토큰으로 해석한다. 장식이며
+어떤 이유로든 없을 수 있다 — Slack 봇 없음, 회수된 토큰, 비활성화된 사용자, Slack 장애 — 그리고
+어느 경우에도 `actor` 는 그대로다. 두 호출자를 구별하는 키가 그것이기 때문이다. `telegram:` 행은
+`display` 를 싣지 않는다: Bot API 는 사용자 id 로 프로필을 조회하는 방법을 제공하지 않으므로 있는
+것은 id 뿐이다.
 
-Owner/admin only, on the same reasoning as traces: project *totals* are open to any
-signed-in user because the catalog is shared, but a breakdown by caller names individuals.
-Range validation matches `/api/usages/summary` (both dates required, `from ≤ to`, ≤ 184
-days), though a refusal here is a bare `{ error }` rather than the `issues` array
-`/api/usages/summary` carries. Subagent transfers are attributed to whoever started the run, not to
-the project they transferred into.
+트레이스와 같은 이유로 소유자/admin 전용이다: project *총계*는 카탈로그가 공유되므로 로그인한
+사용자 누구에게나 열려 있지만, 호출자별 분해는 개인의 이름을 담는다. 범위 검증은
+`/api/usages/summary` 와 같다 (두 날짜 모두 필수, `from ≤ to`, 184일 이하). 다만 여기의 거절은
+`/api/usages/summary` 가 싣는 `issues` 배열이 아니라 벌거벗은 `{ error }` 다. subagent transfer 는
+transfer 해 들어간 project 가 아니라 런을 시작한 사람에게 귀속된다.
 
 ## Triggers
 
-A project has **one webhook**, addressed by the project name alone, and any number of
-**schedules**, each named. Both are trigger rows and share everything below; the webhook is
-stored under the reserved id `webhook` (`PROJECT_WEBHOOK_ID`), and `create` enforces both
-halves of that with a 400 — a webhook may take no other id, and a schedule may not take this
-one. The first is what keeps a minted secret from existing with no address to use it at, since
-`/api/webhook/{project}` resolves that id and nothing else. The console has no "create a
-webhook" step for the same reason: Settings → Webhook is a switch, and turning it on the first
-time is what writes the row.
+한 project 는 project 이름만으로 주소가 정해지는 **webhook 하나**와, 각각 이름을 가진 임의 개수의
+**schedule** 을 갖는다. 둘 다 trigger 행이고 아래 내용을 전부 공유한다. webhook 은 예약된 id
+`webhook` (`PROJECT_WEBHOOK_ID`) 아래 저장되고, `create` 는 그 양쪽을 400 으로 강제한다 —
+webhook 은 다른 id 를 가질 수 없고, schedule 은 이 id 를 가질 수 없다. 앞의 것은 발행된 secret 이
+그것을 쓸 주소도 없이 존재하는 일을 막아 준다. `/api/webhook/{project}` 가 해석하는 것은 그 id
+하나뿐이기 때문이다. 콘솔에 "webhook 만들기" 단계가 없는 것도 같은 이유다: Settings → Webhook 은
+스위치이고, 그것을 처음 켜는 것이 그 행을 쓴다.
 
-Configuration (owner/admin):
+설정 (owner/admin):
 
 ```
 GET    /api/projects/{name}/triggers                     → 200 { triggers: [ … ] }
@@ -1153,22 +1118,21 @@ POST   /api/projects/{name}/triggers/{trigger}/reveal    → 200 { secret, creat
 GET    /api/projects/{name}/triggers/{trigger}/runs?limit=20 → 200 { runs: [ … ] }   (1–100)
 ```
 
-Create body: `{ triggerId (slug), kind?, description?, enabled?, variables?, payloadMode?,
-allowConcurrent?, cron?, timezone?, message? }`. `kind` defaults to `webhook`; a `schedule`
-requires `cron` (five fields) and `timezone` (IANA), and each kind refuses the other's fields
-with 400 rather than ignoring them — `rotateSecret`/`payloadMode` belong to webhooks,
-`cron`/`timezone`/`message` to schedules. `triggerId` follows the same rule as a project name
-(`^[a-z0-9-]+$`); the console normalises what you type through the same `toSlug` helper the
-project form uses, and the API rejects anything else regardless of client.
+생성 본문: `{ triggerId (slug), kind?, description?, enabled?, variables?, payloadMode?,
+allowConcurrent?, cron?, timezone?, message? }`. `kind` 의 기본값은 `webhook` 이다. `schedule` 은
+`cron` (다섯 필드) 과 `timezone` (IANA) 을 요구하고, 각 kind 는 상대의 필드를 무시하는 대신 400
+으로 거절한다 — `rotateSecret`/`payloadMode` 는 webhook 의 것이고,
+`cron`/`timezone`/`message` 는 schedule 의 것이다. `triggerId` 는 project 이름과 같은 규칙
+(`^[a-z0-9-]+$`) 을 따른다. 콘솔은 입력한 것을 project 폼이 쓰는 것과 같은 `toSlug` 헬퍼로
+정규화하고, API 는 클라이언트가 무엇이든 그 밖의 것을 거절한다.
 
-Ordinary reads return `secretMasked` only (webhooks; a schedule has no secret). The secret is
-stored AES-encrypted rather than hashed, so — exactly like a project API token — it can be
-**read back** through `POST …/reveal` (a POST because the body is a live credential;
-owner/admin only, and every reveal is logged with the caller's email). `PUT` with
-`rotateSecret: true` re-issues it and returns the new one; the previous secret stops working
-immediately.
+평범한 읽기는 `secretMasked` 만 돌려준다 (webhook 에 한한다. schedule 에는 secret 이 없다).
+secret 은 해시가 아니라 AES 로 암호화해 저장되므로 — project API 토큰과 정확히 같이 —
+`POST …/reveal` 로 **다시 읽을 수 있다** (본문이 살아 있는 인증 정보라서 POST 다. 소유자/admin
+전용이고, 모든 reveal 은 호출자의 이메일과 함께 로그된다). `rotateSecret: true` 를 담은 `PUT` 은
+그것을 재발급하고 새 것을 돌려준다. 이전 secret 은 즉시 동작을 멈춘다.
 
-Delivery (no session — the secret is the authentication):
+전달 (세션 없음 — secret 이 인증이다):
 
 ```
 POST /api/webhook/{project}
@@ -1180,27 +1144,26 @@ POST /api/webhook/{project}
 → 401 (wrong or missing secret) | 404 (no webhook on this project) | 400 (bad JSON) | 413 (>1MB)
 ```
 
-This is the **only** delivery address. `admitDelivery` resolves the row from the project name
-itself and takes no trigger id, so nothing outside can name which webhook a delivery lands on.
+이것이 **유일한** 전달 주소다. `admitDelivery` 는 project 이름 자체에서 그 행을 해석하고 trigger
+id 를 받지 않으므로, 바깥의 무엇도 전달이 어느 webhook 에 떨어질지 지목할 수 없다.
 
-`202` even for the refusals a caller cannot fix by retrying: the delivery was accepted and
-its outcome is recorded, which is where an operator looks. Only `accepted` starts a run.
+호출자가 재시도로 고칠 수 없는 거절에도 `202` 다: 전달은 받아들여졌고 그 결과가 기록됐으며,
+운영자가 보는 곳이 거기다. 런을 시작하는 것은 `accepted` 뿐이다.
 
-The endpoint answers immediately and runs in the background — a run can last ten minutes and
-no webhook sender waits that long, so the result is on the delivery's history row rather than
-in the response. A trigger always runs the project's **published** version. A `succeeded` row
-may carry a `warning` — what the run reported without failing (a turn or budget limit it hit,
-a binding it could not use): a firing is unattended, and the row is its only channel for it.
+이 엔드포인트는 즉시 답하고 배경에서 실행한다 — 런은 10분까지 갈 수 있고 그만큼 기다리는 webhook
+발신자는 없으므로, 결과는 응답이 아니라 그 전달의 이력 행에 있다. trigger 는 언제나 그 project 의
+**publish 된** version 을 실행한다. `succeeded` 행도 `warning` 을 실을 수 있다 — 런이 실패하지
+않고 보고한 것(부딪힌 턴·예산 한계, 쓸 수 없었던 바인딩)이다: 발화는 지켜보는 사람이 없고, 그
+행이 그것을 위한 유일한 통로다.
 
-`payloadMode: "message"` (the default) serialises the payload into the user turn — what an
-agent project reads. `"variables"` flattens the payload's scalar top-level fields over the
-trigger's fixed `variables` for a prompt template; non-scalar fields are dropped rather than
-rendered as `[object Object]`.
+`payloadMode: "message"` (기본값) 는 페이로드를 사용자 턴으로 직렬화한다 — agent project 가 읽는
+것이다. `"variables"` 는 프롬프트 템플릿을 위해 페이로드의 최상위 스칼라 필드를 trigger 의 고정
+`variables` 위에 펼친다. 스칼라가 아닌 필드는 `[object Object]` 로 렌더링되는 대신 버려진다.
 
-`allowConcurrent` is false by default: a second delivery while one is still running is
-recorded as `skipped` rather than piling runs up.
+`allowConcurrent` 의 기본값은 false 다: 하나가 아직 돌고 있는 동안 온 두 번째 전달은 런을 쌓아
+올리는 대신 `skipped` 로 기록된다.
 
-Scheduler tick (no session — the shared token is the authentication):
+스케줄러 tick (세션 없음 — 공유 토큰이 인증이다):
 
 ```
 POST /api/triggers/scan
@@ -1209,15 +1172,15 @@ POST /api/triggers/scan
 → 401 (wrong or missing token) | 503 (SCHEDULE_SCAN_TOKEN not configured)
 ```
 
-What a Kubernetes CronJob calls once a minute. The ticker holds no state: which occurrences
-are due and who wins each one is decided server-side, per occurrence, with a conditional
-write — so ticking twice, from several places, or late never double-fires. Admitted firings
-run in the background exactly like webhook deliveries; their outcomes land on the trigger's
-history rows (`scheduledFor` carries the occurrence). `alreadyClaimed` counts occurrences
-another tick had already won — expected noise from overlapping windows, not an anomaly. The
-same summary is logged server-side on every tick, which is what an operator alerts on.
+Kubernetes CronJob 이 1분에 한 번 호출하는 것이다. ticker 는 상태를 쥐지 않는다: 어느 발생분이
+도래했는지와 각각을 누가 차지하는지는 조건부 쓰기로 발생분마다 서버 측에서 결정된다 — 그래서 두 번
+ticking 하든, 여러 곳에서 하든, 늦게 하든 절대 이중 발화하지 않는다. admit 된 발화는 webhook 전달과
+정확히 같이 배경에서 실행되고, 그 결과는 그 trigger 의 이력 행에 남는다 (`scheduledFor` 가 발생분을
+싣는다). `alreadyClaimed` 는 다른 tick 이 이미 차지한 발생분의 수다 — 겹치는 창에서 나오는 예상된
+잡음이지 이상 징후가 아니다. 같은 요약이 매 tick 마다 서버 측에 로그되며, 운영자가 알림을 거는 것이
+그것이다.
 
-Catalog reindex (same shared token, a separate CronJob):
+카탈로그 reindex (같은 공유 토큰, 별도 CronJob):
 
 ```
 POST /api/catalog/reindex
@@ -1228,19 +1191,18 @@ POST /api/catalog/reindex
        deployment missing it gets this rather than a 401) | 503 (VECTOR_BUCKET not configured)
 ```
 
-Rebuilds the global capability index from the registries — every skill, every MCP server and
-the tools it offers, every external agent — and deletes what they no longer have. The work runs
-in the background, so the outcome is a log line (`indexed`, `removed`, `undiscovered`) rather
-than the response body. Ticking twice is safe: keys are derived from the entry, so a second
-pass writes the same records. Hourly is ample — a faster tick only probes every MCP server more
-often. See [OPERATIONS.md](OPERATIONS.md#catalog-reindex).
+전역 capability 인덱스를 레지스트리에서 다시 만든다 — 모든 skill, 모든 MCP 서버와 그것이 제공하는
+도구, 모든 외부 agent — 그리고 이제 그들에게 없는 것은 지운다. 작업은 배경에서 돌아가므로 결과는
+응답 본문이 아니라 로그 한 줄(`indexed`, `removed`, `undiscovered`)이다. 두 번 ticking 해도
+안전하다: 키가 항목에서 유도되므로 두 번째 패스는 같은 레코드를 쓴다. 시간당 한 번이면 충분하다 —
+더 빠른 tick 은 모든 MCP 서버를 더 자주 찔러 볼 뿐이다.
+[OPERATIONS.md](OPERATIONS.md#카탈로그-재색인) 를 보라.
 
 ## Artifacts
 
-What runs produced — images and documents — with an address for each. Present only when
-`S3_BUCKET_NAME` is configured; every route below answers `404 {error}` otherwise, rather than
-an empty list, because "you have made nothing" is a different claim from "nothing was ever
-being kept".
+런이 만들어 낸 것 — 이미지와 문서 — 을 각각의 주소와 함께 담는다. `S3_BUCKET_NAME` 이 설정돼
+있을 때만 존재한다. 그렇지 않으면 아래 모든 라우트가 빈 목록이 아니라 `404 {error}` 로 답하는데,
+"당신은 만든 것이 없다"와 "애초에 아무것도 보관되고 있지 않았다"는 서로 다른 주장이기 때문이다.
 
 ```
 GET /api/artifacts?[kind=image|document][&source=generated|attachment][&limit=24][&before=…][&from=2026-08-01&to=2026-08-12]
@@ -1251,27 +1213,25 @@ DELETE /api/artifacts/{artifactId}
 → 204 | 403 | 404
 ```
 
-Each row carries `artifactId`, `kind`, `source`, `key` (the object key), `mimeType`,
-`byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (the person a
-Slack run's output is filed under, resolved from the asker), `ancestry?` (the transfer chain,
-outermost first), `producedBy?`, `runId?`, `prompt?`, `createdAt`, and a signed `url` (15
-minutes; a document's is signed to download under its own name). The URL is
-inlined rather than fetched per tile — pre-signing is a local signature, so a page of them
-costs nothing while a round trip each would make a gallery N+1. It is absent when the address
-could not be minted, and the UI renders that as unavailable rather than a broken image.
+각 행은 `artifactId`, `kind`, `source`, `key` (object key), `mimeType`,
+`byteSize`, `filename?`, `projectName`, `versionName`, `actor?`, `ownerEmail?` (Slack 런의
+출력이 누구 앞으로 정리되는지. 물어본 사람에서 해석한다), `ancestry?` (transfer 사슬. 바깥쪽이
+먼저), `producedBy?`, `runId?`, `prompt?`, `createdAt`, 그리고 서명된 `url` (15분. 문서의 것은
+자기 이름으로 내려받도록 서명된다) 을 싣는다. URL 은 타일마다 가져오는 대신 인라인으로 들어간다 —
+사전 서명은 로컬 서명이라 한 페이지치가 비용이 들지 않는 반면, 각각 왕복하면 갤러리가 N+1 이 된다.
+주소를 만들 수 없으면 없으며, UI 는 그것을 깨진 이미지가 아니라 사용 불가로 렌더링한다.
 
-**The two listings are not two views of one set.** `/api/artifacts` reads the owner index,
-which only holds rows whose actor names an email — a Slack, A2A, webhook or schedule run does
-not. Those are reachable only through their project, which is therefore the only place they can
-be deleted from. `from`/`to` are UTC days validated as real dates; `before` is the previous
-page's `nextBefore`.
+**두 목록은 한 집합의 두 가지 뷰가 아니다.** `/api/artifacts` 는 소유자 인덱스를 읽는데, 여기에는
+actor 가 이메일을 지목하는 행만 들어 있다 — Slack·A2A·webhook·schedule 런은 그렇지 않다. 그런
+것들은 자기 project 를 통해서만 닿을 수 있고, 그래서 지울 수 있는 곳도 거기뿐이다. `from`/`to` 는
+실재하는 날짜로 검증되는 UTC 일이고, `before` 는 이전 페이지의 `nextBefore` 다.
 
-Deletion is permitted to the creator, to the project's owner, and to configured admins.
-Removing someone else's output records an `artifact.delete` audit row; removing your own does
-not. A chat message keeps its own copy of the object key, so an image deleted here renders as
-unavailable in the transcript that showed it — the confirmation says so before the fact.
+삭제는 생성자, 그 project 의 소유자, 그리고 설정된 admin 에게 허용된다. 남의 출력을 지우면
+`artifact.delete` 감사 행이 기록되고, 자기 것을 지우면 그렇지 않다. chat 메시지는 object key 의
+사본을 자기가 갖고 있으므로, 여기서 지운 이미지는 그것을 보여 주던 전사에서 사용 불가로 렌더링된다
+— 확인 절차가 그렇게 되기 전에 그 사실을 말해 준다.
 
-## Traces
+## 트레이스
 
 ```
 GET /api/projects/{name}/traces?limit=50[&from=2026-07-01&to=2026-07-31]
@@ -1280,29 +1240,28 @@ GET /api/projects/{name}/traces/{traceId}
 → 200 { …the trace itself, unwrapped… } | 404
 ```
 
-`from`/`to` (YYYY-MM-DD, inclusive) filter the list by trace date via the GSI1 date key; a
-malformed day or a reversed range is a `400`. `limit` defaults to 50 and is clamped to 1–100.
-A `traceId` that belongs to another project is a `404`, not someone else's trace.
+`from`/`to` (YYYY-MM-DD, 양끝 포함) 는 GSI1 날짜 키로 목록을 트레이스 날짜로 거른다. 잘못된
+형식의 날짜나 뒤집힌 범위는 `400` 이다. `limit` 의 기본값은 50 이고 1–100 으로 제한된다.
+다른 project 에 속한 `traceId` 는 남의 트레이스가 아니라 `404` 다.
 
-Both endpoints are limited to the owner and to configured admins (403 for anyone else) — traces hold other users' runtime
-inputs/outputs. Agent runs are always traced. Text and image predict runs are sampled
-according to `TRACE_SAMPLE_RATE` (0–1, default `0.1`). Trace spans contain model token/cost
-summaries, tool input/output sizes, and local subagent trace links; raw prompts and tool
-results are not persisted. Each trace also carries `actor` — who caused the run — and a
-subagent's trace carries the actor of the top-level run that reached it, since the transfer
-was not a second person's decision. A trace of a run that was in a conversation carries
-`conversation`, the run's conversation key (`chat:{id}`, `slack:{channel}:{thread}`, …);
-recorded for correlation, not yet indexed or filterable.
+두 엔드포인트 모두 소유자와 설정된 admin 으로 제한된다 (그 외에는 403) — 트레이스는 다른 사용자의
+런타임 입력/출력을 담고 있다. agent 런은 언제나 트레이싱된다. 텍스트와 이미지 predict 런은
+`TRACE_SAMPLE_RATE` (0–1, 기본 `0.1`) 에 따라 샘플링된다. 트레이스 span 은 모델 토큰/비용 요약,
+도구 입출력 크기, 로컬 subagent 트레이스 링크를 담는다. 원본 프롬프트와 도구 결과는 저장되지
+않는다. 각 트레이스는 `actor` — 그 런을 일으킨 사람 — 도 싣고, subagent 의 트레이스는 자기에게
+닿은 top-level 런의 actor 를 싣는다. 그 transfer 는 두 번째 사람의 결정이 아니었기 때문이다.
+대화 안에 있던 런의 트레이스는 그 런의 대화 키인 `conversation` 을 싣는다 (`chat:{id}`,
+`slack:{channel}:{thread}`, …). 상관 분석을 위해 기록될 뿐 아직 인덱싱되거나 필터할 수 있는 것은
+아니다.
 
 ## Models
 
 `GET /api/models` → `{ "models": [ { id, provider, displayName, pricing, capabilities, … } ] }`
-(the registry from `src/domain/llm/models.ts`, hidden entries excluded). When per-provider
-LLM channels are configured (settings override or `LLM_PROVIDER_*` env), only those
-providers' models are listed; with none configured every model is listed. An `enabledModels`
-settings override (managed on the `/models` console page) then narrows the list to the ids it
-names. Enabled is a selection-time filter only: a version already holding a disabled model
-keeps running.
+(`src/domain/llm/models.ts` 의 레지스트리이고, 숨김 항목은 제외한다). 프로바이더별 LLM 채널이
+설정돼 있으면 (설정 오버라이드 또는 `LLM_PROVIDER_*` env) 그 프로바이더들의 모델만 나열되고,
+아무것도 설정돼 있지 않으면 모든 모델이 나열된다. 그다음 `enabledModels` 설정 오버라이드 (콘솔의
+`/models` 페이지에서 관리한다) 가 목록을 그것이 지목하는 id 들로 좁힌다. enabled 는 선택 시점의
+필터일 뿐이다: 이미 비활성 모델을 쥐고 있는 version 은 계속 실행된다.
 
 ```
 GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ],
@@ -1311,19 +1270,23 @@ GET  /api/models/catalog → 200 { providers: [ { name, available, dedicated } ]
 POST /api/models/test    → 200 { ok, latencyMs, error? } | 400
 ```
 
-- Both admin-only. `catalog` is the unfiltered picture behind `/models`: every visible model
-  with its enabled flag (it lists exactly what `/api/models` hides), and per provider whether
-  this deployment can dispatch to it — `dedicated` means a per-provider channel is configured;
-  with none, every provider is `available` through the default channel.
-- `test` sends one tiny completion (`maxTokens` 16, 15s timeout) through the real channel —
-  provider resolution, base URL, API key and wire-id rewriting included. A failed probe is the
-  `200` body (`ok: false` with the upstream error), not a `5xx`; only an id the registry does
-  not carry is a `400`. The probe runs outside the run bracket, so it records no usage row.
+- `catalog` 는 `member` 등급부터 읽을 수 있고 (`withMemberAuth` — Intelligence 섹션의 다른
+  레지스트리들과 같은 계단이다: 이 배포가 닿을 수 있는 것의 목록이다), `test` 는 admin 전용이다.
+  `catalog` 는 `/models` 뒤의 걸러지지 않은 그림이다: 보이는 모든 모델과 그 enabled 플래그
+  (`/api/models` 가 숨기는 것을 정확히 나열한다 — member 는 꺼진 모델을 볼 수는 있어도 고를 수는
+  없다), 그리고 프로바이더별로 이 배포가 거기로 dispatch 할 수 있는지다 — `dedicated` 는
+  프로바이더별 채널이 설정돼 있다는 뜻이다. 하나도 없으면 모든 프로바이더가 기본 채널을 통해
+  `available` 이다. 선택을 바꾸는 것(`PUT /api/settings` 의 `enabledModels`)은 admin 의 일로 남는다.
+- `test` 는 진짜 채널로 아주 작은 completion 하나를 보낸다 (`maxTokens` 16, 15초 타임아웃) —
+  프로바이더 해석, base URL, API 키, wire-id 치환까지 포함해서다. 실패한 프로브는 `5xx` 가 아니라
+  `200` 본문이다 (`ok: false` 와 상류 에러). 레지스트리에 없는 id 만 `400` 이다. 프로브는 런
+  브래킷 밖에서 돌아가므로 사용량 행을 기록하지 않는다.
 
-## A2A (inbound)
+## A2A (인바운드)
 
-Enabled by `A2A_API_KEY`, or by at least one named client key with no shared key at all. Each
-project with a published version then serves a public Agent Card and a JSON-RPC endpoint.
+`A2A_API_KEY` 로 켜지거나, 공유 키가 아예 없어도 이름 붙은 클라이언트 키가 하나 이상 있으면
+켜진다. 그러면 publish 된 version 을 가진 각 project 가 공개 Agent Card 와 JSON-RPC 엔드포인트를
+서빙한다.
 
 ```
 GET  /api/a2a                                           (session) → { enabled, projects }
@@ -1332,17 +1295,17 @@ POST /api/a2a/{project}     X-A2A-Key: <key>            (JSON-RPC: message/send,
                                                          tasks/get, tasks/cancel)
 ```
 
-`GET /api/a2a` lists the published projects exposed over A2A: `enabled` reports whether the
-surface is on — a shared `A2A_API_KEY` or at least one named client key — and each project
-entry carries `{ name, displayName, description, cardUrl }`.
+`GET /api/a2a` 는 A2A 로 노출된 publish 된 project 들을 나열한다: `enabled` 는 그 표면이 켜져
+있는지를 알려 주고 — 공유 `A2A_API_KEY` 또는 이름 붙은 클라이언트 키 하나 이상 — 각 project
+항목은 `{ name, displayName, description, cardUrl }` 을 싣는다.
 
-`503` (not configured) answers only when the surface is off entirely: no shared key **and**
-no client keys. On an enabled surface a wrong or missing key is `401` — the shared key
-compares in constant time, a client key resolves by hash.
+`503` (설정되지 않음) 은 표면이 완전히 꺼져 있을 때만 답한다: 공유 키도 없고 **그리고** 클라이언트
+키도 없을 때다. 켜져 있는 표면에서 키가 틀리거나 없으면 `401` 이다 — 공유 키는 상수 시간으로
+비교하고, 클라이언트 키는 해시로 해석한다.
 
-The presented key may be the shared `A2A_API_KEY` (runs attributed to `a2a:shared-key`) or a
-**named client key** (`adc_…`, runs attributed to `a2a:{client}` — per-client attribution and
-concurrency limits). Client keys are admin-managed:
+제시된 키는 공유 `A2A_API_KEY` (런은 `a2a:shared-key` 에 귀속) 이거나 **이름 붙은 클라이언트
+키** (`adc_…`, 런은 `a2a:{client}` 에 귀속 — 클라이언트별 귀속과 동시성 한도) 일 수 있다.
+클라이언트 키는 admin 이 관리한다:
 
 ```
 GET    /api/settings/a2a-keys                  (admin) → { items: [{ name, description?, masked, createdAt }] }
@@ -1351,16 +1314,15 @@ DELETE /api/settings/a2a-keys/{name}           (admin) → { ok: true } | 404   
 POST   /api/settings/a2a-keys/{name}/reveal    (admin) → { key, createdAt }                     audited
 ```
 
-A client key's `name` is a slug of at most 64 characters and `shared-key` is reserved for the
-app-wide key, each a `400`; a name already issued is a `409`.
+클라이언트 키의 `name` 은 최대 64자의 slug 이고 `shared-key` 는 앱 전역 키를 위해 예약돼 있다.
+각각 어기면 `400` 이다. 이미 발급된 이름은 `409` 다.
 
-Agent Card URLs are built from `PUBLIC_BASE_URL`. Task state (`message/send` →
-`tasks/get`/`tasks/cancel`) is persisted per project in DynamoDB, so it survives redeploys and
-is shared across instances; a terminal-state-guarding conditional write keeps a concurrent
-complete/cancel from regressing a finished task. Rows expire via TTL
-(`A2A_TASK_RETENTION_DAYS`, default 1 day).
+Agent Card URL 은 `PUBLIC_BASE_URL` 로 만들어진다. Task 상태(`message/send` →
+`tasks/get`/`tasks/cancel`)는 project 별로 DynamoDB 에 저장되므로 재배포를 넘어 살아남고 인스턴스
+간에 공유된다. 종단 상태를 지키는 조건부 쓰기가, 동시에 일어난 complete/cancel 이 끝난 task 를
+되돌리는 것을 막는다. 행은 TTL(`A2A_TASK_RETENTION_DAYS`, 기본 1일)로 만료된다.
 
-## Platform endpoints
+## 플랫폼 엔드포인트
 
 ```
 GET /api/health   → 200 (static)
@@ -1370,16 +1332,15 @@ GET /api/ready    → 200 { ready: true, checks: { db, llm } }
 GET /api/metrics  → 200 text/plain; version=0.0.4
 ```
 
-`/api/health` is liveness — a static 200 answering "is the process serving", dependency-free
-so a downstream blip does not trigger a restart. `/api/ready` is readiness — it probes
-DynamoDB and the LLM channel (short timeout, details not surfaced) and returns 503 when a
-downstream is unreachable or the instance is draining after SIGTERM.
+`/api/health` 는 liveness 다 — "프로세스가 서빙하고 있는가"에 답하는 정적 200 이고, 의존성이
+없어서 하류의 순간적인 문제가 재시작을 유발하지 않는다. `/api/ready` 는 readiness 다 — DynamoDB 와
+LLM 채널을 찔러 보고 (짧은 타임아웃, 상세는 드러내지 않는다), 하류에 닿을 수 없거나 인스턴스가
+SIGTERM 이후 draining 중이면 503 을 돌려준다.
 
-`/api/metrics` is a Prometheus scrape exposing `agentdure_active_runs`,
+`/api/metrics` 는 Prometheus scrape 이고 `agentdure_active_runs`,
 `agentdure_runs_{started,finished,failed}_total`, `agentdure_run_duration_seconds`,
-`agentdure_unknown_model_calls_total`, `agentdure_unknown_models` and
-`agentdure_draining`. No metric is labelled by project, user or model.
+`agentdure_unknown_model_calls_total`, `agentdure_unknown_models`,
+`agentdure_draining` 을 노출한다. 어떤 지표에도 project·사용자·모델 라벨은 붙지 않는다.
 
-All three are unauthenticated and dependency-light on purpose — they are probed by
-infrastructure that has no session. See [OPERATIONS.md](OPERATIONS.md#health-probes) for how
-to wire them.
+셋 다 일부러 비인증이고 의존성이 가볍다 — 세션이 없는 인프라가 이것들을 찔러 보기 때문이다.
+연결하는 방법은 [OPERATIONS.md](OPERATIONS.md#헬스-프로브) 를 보라.

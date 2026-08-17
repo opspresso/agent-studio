@@ -1,333 +1,333 @@
-# Architecture
+# 아키텍처
 
-**The shape every run passes through**, and why it has that shape — the layers, the one
-table, the path from an entry point to the engine, and how a failure travels back out. It is
-the document to read before changing code.
+**모든 런이 지나는 형태**, 그리고 왜 그 형태인지 — 레이어, 하나의 테이블, 진입점에서
+엔진까지의 경로, 그리고 실패가 어떻게 밖으로 되돌아 나오는지를 다룬다. 코드를 고치기 전에
+읽을 문서다.
 
-What each *subsystem* decides is one file each in [`design/`](design/), indexed under
-[Subsystems](#subsystems) below. This file is what they all sit inside.
+각 *서브시스템*이 무엇을 결정하는지는 [`design/`](design/) 에 파일 하나씩으로 있고, 아래
+[서브시스템](#서브시스템)에 색인돼 있다. 이 파일은 그것들이 모두 그 안에 놓이는 바탕이다.
 
-It deliberately does *not* cover: the HTTP contract ([API.md](API.md)), environment variables
-([CONFIGURATION.md](CONFIGURATION.md)), deployment and observability
-([OPERATIONS.md](OPERATIONS.md)), or the security model ([SECURITY.md](SECURITY.md)).
+의도적으로 다루지 *않는* 것: HTTP 계약([API.md](API.md)),
+환경변수([CONFIGURATION.md](CONFIGURATION.md)), 배포와 관측
+([OPERATIONS.md](OPERATIONS.md)), 보안 모델([SECURITY.md](SECURITY.md)).
 
-**Where to start**: read this file top-to-bottom — it is short enough to — then trace one
-request through the code. Execution starts at `src/application/execution/runProject.ts` — the
-facade every entry point calls, an [image](design/execution.md#images) project excepted — and
-descends into `src/application/llm/engine.ts`, the tool loop. The
-[Request flow](#request-flow) section is the map.
+**어디서 시작할 것인가**: 이 파일을 처음부터 끝까지 읽어라 — 그럴 만큼 짧다 — 그다음 요청
+하나를 코드로 따라가라. 실행은 `src/application/execution/runProject.ts` 에서 시작한다 —
+모든 진입점이 호출하는 파사드이며, [image](design/execution.md#images) project 만 예외다 —
+그리고 툴 루프인 `src/application/llm/engine.ts` 로 내려간다.
+[요청 흐름](#요청-흐름) 절이 그 지도다.
 
-AgentDure is a single Next.js 16 full-stack application covering the domains **project,
-llm, agents (subagents + external agent registry), skills, mcp, chat, cost/usage**.
+AgentDure 는 **project, llm, agents(subagent + 외부 agent registry), skills, mcp, chat,
+cost/usage** 도메인을 아우르는 하나의 Next.js 16 풀스택 애플리케이션이다.
 
-## Stack
+## 스택
 
-- Node.js 24, pnpm 11 (`packageManager` pinned)
+- Node.js 24, pnpm 11 (`packageManager` 로 고정)
 - Next.js 16 App Router, React 19, TypeScript strict (`noUncheckedIndexedAccess`)
 - Mantine 9 (`@mantine/core` + hooks/form/notifications/charts, `@tabler/icons-react`)
-- Better Auth 1.6 + Google OAuth (custom DynamoDB adapter)
-- AWS DynamoDB single-table design
+- Better Auth 1.6 + Google OAuth (커스텀 DynamoDB 어댑터)
+- AWS DynamoDB 단일 테이블 설계
 
-## Layers
+## 레이어
 
 ```
 src/
-  domain/           # Entities + repository ports. Pure TS. No framework/AWS imports.
+  domain/           # 엔티티 + 리포지토리 포트. 순수 TS. 프레임워크/AWS import 없음.
     project/  llm/  chat/  skill/  mcp/  agent/  usage/  settings/  trace/
     execution/  security/  slack/  telegram/  messaging/  trigger/  sync/  audit/
     plugin/  member/  a2a/  catalog/  vector/  artifact/  net/
-  application/      # Use cases. Depends on domain ports only, and never on the
-                    # composition root — deps are injected, never pulled.
-    llm/            # The engine: tool loop, agent-run assembly, tool-result budgets,
-                    # PII masking, context budget, document parts
-    execution/      # The facades, binding + MCP tool resolution, subagents, the image tool
-    run/            # What wraps a top-level run: the bracket, the concurrency guard,
-                    # the unknown-model policy, trace lifecycle
+  application/      # 유스케이스. 도메인 포트에만 의존하고, composition root 에는 절대
+                    # 의존하지 않는다 — deps 는 주입되지, 끌어오지 않는다.
+    llm/            # 엔진: 툴 루프, 에이전트 런 조립, 툴 결과 예산, PII 마스킹,
+                    # 컨텍스트 예산, 문서 파트
+    execution/      # 파사드, 바인딩 + MCP 툴 해석, 서브에이전트, 이미지 툴
+    run/            # 최상위 런을 감싸는 것: 브래킷, 동시성 가드, 미등록 모델 정책,
+                    # 트레이스 수명주기
     chat/  slack/  telegram/  a2a/  trigger/  image/
-                    # The surfaces that drive a run, and the image path
-    messaging/      # What every chat-bot surface shares: the turn pipeline and the
-                    # attachment limits, over the reply ports in domain/messaging
-    artifact/       # What a run left behind: the one row writer, capture at the bracket,
-                    # signed-URL lifetimes
-    audit/          # The one writer of an audit row, and reading the trail back
-    catalog/        # The capability index: reindex, search, query-embedding cache
+                    # 런을 이끄는 표면들, 그리고 이미지 경로
+    messaging/      # 모든 채팅봇 표면이 공유하는 것: 턴 파이프라인과 첨부 제한,
+                    # domain/messaging 의 reply 포트 위에서
+    artifact/       # 런이 남긴 것: 유일한 행 작성자, 브래킷에서의 캡처, 서명 URL 수명
+    audit/          # 감사 행의 유일한 작성자, 그리고 그 흔적을 다시 읽기
+    catalog/        # capability 인덱스: reindex, 검색, 쿼리 임베딩 캐시
     project/  registry/  skill/  mcp/  agent/  usage/  trace/  settings/  health/
     plugin/  member/
-  infrastructure/   # Adapters (app-facing code reaches them via the composition root).
-    db/             # Single-table client, key builders, repositories
-    llm/            # OpenAI-compatible provider channels, streaming
-    mcp/            # MCP HTTP client, session, discovery cache
-    vector/         # The S3 Vectors store the capability catalog is indexed into
+  infrastructure/   # 어댑터 (app 쪽 코드는 composition root 를 통해 닿는다).
+    db/             # 단일 테이블 클라이언트, 키 빌더, 리포지토리
+    llm/            # OpenAI 호환 프로바이더 채널, 스트리밍
+    mcp/            # MCP HTTP 클라이언트, 세션, 디스커버리 캐시
+    vector/         # capability 카탈로그가 인덱싱되는 S3 Vectors 스토어
     a2a/  agent/  slack/  telegram/  github/  storage/  net/  crypto/  health/
-    telemetry/      # A2A + external-agent clients, Slack, Telegram, the plugins-repo client,
-                    # the S3 artifact store, SSRF guard, AES, readiness probes,
-                    # OTel trace export
-  app/              # Next.js App Router: pages + route handlers (presentation)
-    api/            # Route handlers call application use cases, never repositories directly
-      _lib/         # Route-handler glue: SSE framing, `apiError`, body size limits, the
-                    # webhook tail every chat platform shares (claim → ack → work → settle)
-    _components/    # The shared UI kit: CardGrid, HeaderRows, form styles, code blocks,
-                    # copy buttons. A piece of UI that repeats across pages belongs here,
-                    # with one owner
-    _lib/           # Browser-side glue the pages share: the transfer chains a chunk came
-                    # from, attachment composers, tool-call display, the viewer hook
-    _i18n/          # The two message catalogues (en.ts is the source of truth) and the
-                    # locale cookie the console is served in
-  components/       # App chrome: the header the root layout mounts (theme toggle, user
-                    # menu), and the landing page's sign-in button
-  lib/              # Cross-cutting glue: composition root (container.ts), auth/session,
-                    # the viewer flags the console gates on (viewer.ts), config +
-                    # runtime-settings, public URLs, run metrics
-  shared/           # Dependency-free helpers (dates, slugs, timeouts, PKCE, constant-time
-                    # compare, logger). The bottom of the graph: imports nothing from `@/`
-  proxy.ts          # The page sign-in gate, and the single owner of which pages are public
+    telemetry/      # A2A + 외부 에이전트 클라이언트, Slack, Telegram, plugins 저장소
+                    # 클라이언트, S3 아티팩트 스토어, SSRF 가드, AES, readiness 프로브,
+                    # OTel 트레이스 내보내기
+  app/              # Next.js App Router: 페이지 + 라우트 핸들러 (프레젠테이션)
+    api/            # 라우트 핸들러는 application 유스케이스를 부르지, 리포지토리를 직접 부르지 않는다
+      _lib/         # 라우트 핸들러 접착제: SSE 프레이밍, `apiError`, 본문 크기 제한, 모든
+                    # 채팅 플랫폼이 공유하는 웹훅 꼬리 (claim → ack → work → settle)
+    _components/    # 공유 UI 키트: CardGrid, HeaderRows, 폼 스타일, 코드 블록, 복사 버튼.
+                    # 페이지마다 반복되는 UI 조각은 여기, 소유자 하나로
+    _lib/           # 페이지들이 공유하는 브라우저 쪽 접착제: 청크가 온 transfer 체인,
+                    # 첨부 컴포저, 툴 호출 표시, viewer 훅
+    _i18n/          # 두 메시지 카탈로그 (en.ts 가 정본) 와 콘솔이 제공되는 로케일 쿠키
+  components/       # 앱 크롬: 루트 레이아웃이 마운트하는 헤더 (테마 토글, 사용자 메뉴),
+                    # 랜딩 페이지의 로그인 버튼
+  lib/              # 횡단 접착제: composition root (container.ts), auth/session,
+                    # 콘솔이 게이트하는 viewer 플래그 (viewer.ts), config +
+                    # runtime-settings, 공개 URL, 런 메트릭
+  shared/           # 의존성 없는 헬퍼 (날짜, slug, 타임아웃, PKCE, 상수시간 비교, 로거).
+                    # 그래프의 바닥: `@/` 에서 아무것도 import 하지 않는다
+  proxy.ts          # 페이지 로그인 게이트, 그리고 어느 페이지가 공개인지의 단일 소유자
   instrumentation.ts
-                    # Boot, before the server accepts connections: fail-fast config
-                    # validation, shutdown signal handlers, the audit sink, and the
-                    # managed-MCP repair sweep
+                    # 부트, 서버가 연결을 받기 전: fail-fast 설정 검증, 종료 시그널
+                    # 핸들러, 감사 싱크, managed MCP 복구 스윕
 ```
 
-The last two are modules, not layers: they are what runs *around* a request rather than in
-one, and each is owned elsewhere — [SECURITY.md](SECURITY.md#two-gates-on-purpose) for the page
-gate, [CONFIGURATION.md](CONFIGURATION.md#boot-time-validation) and
-[OPERATIONS.md](OPERATIONS.md#draining) for what boot checks and how the process winds down.
+마지막 둘은 레이어가 아니라 모듈이다: 요청 *안*이 아니라 요청 *둘레*에서 도는 것들이고,
+각각의 소유자는 다른 문서에 있다 — 페이지 게이트는
+[SECURITY.md](SECURITY.md#두-개의-게이트-의도적으로), 부팅이 무엇을 검사하고 프로세스가 어떻게
+내려가는지는 [CONFIGURATION.md](CONFIGURATION.md#부팅-시-검증) 와
+[OPERATIONS.md](OPERATIONS.md#draining).
 
-**Dependency rule: `app → application → domain ← infrastructure`.**
+**의존성 규칙: `app → application → domain ← infrastructure`.**
 
-- `domain` imports nothing from `@/` beyond `domain` — no framework, no AWS SDK, no auth
-  library, not even `shared`.
-- `application` receives its dependencies. It must never import the composition root: deps
-  are *injected*, never pulled. Third-party packages are banned from it the same way, and by
-  the same shape of rule as `domain`'s — stated positively, as **the domain and the standard
-  library and nothing else**, because a blocklist only names the dependencies somebody
-  already regretted. `@a2a-js/sdk` is the one named exception: the A2A protocol *is* the
-  contract its executor implements, and a port would restate the task lifecycle in our own
-  types to gain nothing.
-- `infrastructure` imports no `application` and no `app`, and reads no `process.env` — a
-  setting an adapter needs is declared in `lib/config.ts`, which owns the parse and the
-  warning. Read at module scope it would be a process-wide constant nothing declared, nobody
-  injected, and the boot validation never checked.
-- `src/lib` is a cross-cutting leaf both application and infrastructure may import (config,
-  runtime-settings, session); `domain` never does.
-- Route handlers and pages must not import `infrastructure/` directly — only through a
-  wiring site.
+- `domain` 은 `@/` 에서 `domain` 외에는 아무것도 import 하지 않는다 — 프레임워크도, AWS
+  SDK 도, 인증 라이브러리도, `shared` 조차도 안 된다.
+- `application` 은 의존성을 *받는다*. composition root 를 절대 import 하면 안 된다 —
+  의존성은 *주입*되는 것이지 끌어오는 것이 아니다. 서드파티 패키지도 같은 방식으로,
+  `domain` 과 같은 모양의 규칙으로 금지된다 — 긍정형으로 서술해 **domain 과 표준
+  라이브러리, 그 외에는 아무것도**다. 블록리스트는 이미 누군가 후회한 의존성만 이름
+  붙이기 때문이다. `@a2a-js/sdk` 가 유일하게 명시된 예외다: A2A 프로토콜 *자체*가 그
+  executor 가 구현하는 계약이고, 포트를 두면 태스크 생명주기를 우리 타입으로 다시
+  적으면서 얻는 것이 없다.
+- `infrastructure` 는 `application` 도 `app` 도 import 하지 않고, `process.env` 도 읽지
+  않는다 — 어댑터에 필요한 설정은 `lib/config.ts` 가 선언하며, 파싱과 경고를 그쪽이
+  소유한다. 모듈 스코프에서 읽으면 아무도 선언하지 않고, 아무도 주입하지 않았으며, 부팅
+  검증이 한 번도 확인하지 않은 프로세스 전역 상수가 된다.
+- `src/lib` 은 application 과 infrastructure 양쪽이 import 해도 되는 횡단 리프다(config,
+  runtime-settings, session). `domain` 은 절대 하지 않는다.
+- 라우트 핸들러와 페이지는 `infrastructure/` 를 직접 import 하면 안 된다 — 오직 wiring
+  site 를 통해서만 한다.
 
 ```mermaid
 flowchart TB
-  app["app<br/>pages · API route handlers"]
-  application["application<br/>use cases · LLM engine · execution facade"]
-  domain["domain<br/>entities · repository ports — pure TS"]
-  infrastructure["infrastructure<br/>DynamoDB · LLM channel · MCP · Slack · Telegram · A2A · net · crypto"]
-  lib["lib<br/>composition root · auth/session · runtime settings"]
-  shared["shared<br/>dependency-free helpers — imports nothing from @/"]
+  app["app<br/>페이지 · API 라우트 핸들러"]
+  application["application<br/>유스케이스 · LLM 엔진 · 실행 파사드"]
+  domain["domain<br/>엔티티 · 리포지토리 포트 — 순수 TS"]
+  infrastructure["infrastructure<br/>DynamoDB · LLM 채널 · MCP · Slack · Telegram · A2A · net · crypto"]
+  lib["lib<br/>composition root · 인증/세션 · 런타임 설정"]
+  shared["shared<br/>의존성 없는 헬퍼 — @/ 에서 아무것도 import 하지 않는다"]
 
   app --> application
   app --> domain
   application --> domain
   infrastructure --> domain
   infrastructure --> lib
-  app -->|"only through the wiring sites<br/>container.ts · chats _deps.ts · slack events _lib · telegram webhook _lib · per-request A2A assembly · instrumentation.ts"| lib
+  app -->|"오직 wiring site 를 통해서만<br/>container.ts · chats _deps.ts · slack events _lib · telegram webhook _lib · 요청마다 조립되는 A2A · instrumentation.ts"| lib
   lib --> domain
-  lib -->|"container.ts — composes the use cases it wires"| application
-  lib -->|"wiring modules only"| infrastructure
-  application -.->|"pure leaves only — runMetrics"| lib
+  lib -->|"container.ts — 자기가 wiring 하는 유스케이스를 조립한다"| application
+  lib -->|"wiring 모듈만"| infrastructure
+  application -.->|"순수 리프만 — runMetrics"| lib
   app --> shared
   application --> shared
   infrastructure --> shared
   lib --> shared
 ```
 
-### Composition, in a few deliberate places
+### 조립은 의도적으로 고른 몇 곳에서만
 
-Composition is distributed rather than centralised in one file, because the execution
-surfaces need genuinely different bags. **Six sites compose use cases over adapters, and no
-others may.** Three `lib` modules besides the composition root reach an adapter directly —
-`auth.ts` (the Better Auth storage adapter), `runtime-settings.ts` and `memberAccess.ts` (each
-fronting one repository behind a cache) — and `tests/architecture.test.ts` names exactly those
-as `lib`'s wiring modules; every other `lib` file is a leaf.
+조립(composition)은 한 파일에 모으지 않고 분산돼 있다. 실행 표면마다 정말로 다른 bag 이
+필요하기 때문이다. **여섯 곳이 어댑터 위에 유스케이스를 조립하며, 그 외에는 어디서도
+하면 안 된다.** composition root 말고도 세 개의 `lib` 모듈이 어댑터에 직접 닿는다 —
+`auth.ts`(Better Auth 스토리지 어댑터), `runtime-settings.ts` 와 `memberAccess.ts`(각각
+캐시 뒤에서 리포지토리 하나를 감싼다) — 그리고 `tests/architecture.test.ts` 가 정확히 그
+셋만을 `lib` 의 wiring 모듈로 지정한다. 나머지 `lib` 파일은 전부 리프다.
 
-| Wiring site | Wires |
+| Wiring site | 조립하는 것 |
 |---|---|
-| `src/lib/container.ts` | Repositories; the domain ports (`SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`); every use-case singleton — the three registry slices (`skillUseCases` / `mcpUseCases` / `agentUseCases`) plus the ones layered beside them (managed MCP, MCP OAuth, triggers, settings); `executionDeps` / `imageDeps` / `triggerRunnerDeps` — including the required LLM and image channels, so a missing injection is a type error rather than a silent network call |
-| `src/app/api/chats/_deps.ts` | The `ChatDeps` bag (bound `runAgent` + repositories) |
-| `src/app/api/slack/events/_lib/` | The `SlackEventDeps` bag (bound `runAgent` + `SlackClientPort`), mirroring `ChatDeps` |
-| `src/app/api/telegram/webhook/_lib/` | The `TelegramEventDeps` bag (bound `runAgent` + `TelegramClientPort` + the transcript store), mirroring the Slack one — both extend `MessagingDeps`, the half every chat-bot surface carries |
-| `src/app/api/a2a/[name]/route.ts` | Per-request A2A assembly: the SDK's request/transport handlers around `ProjectA2aExecutor` over `executionDeps` — per request because the handler is built around one project's card |
-| `src/instrumentation.ts` | The boot path: the audit sink over `auditRepository`, and the managed-MCP resume. A wiring site by construction — the composition root itself is not loaded until this file decides the runtime is the Node server, and the audit sink has to be wired on the **awaited** boot path (see [Audit records](design/observability.md#audit-records)) |
+| `src/lib/container.ts` | 리포지토리들, domain 포트들(`SecretCipher`, `UrlPolicy`, `RemoteAgentDispatcher`, `McpToolProbe`, `McpSessionFactory`), 모든 유스케이스 싱글턴 — 세 개의 registry 슬라이스(`skillUseCases` / `mcpUseCases` / `agentUseCases`)와 그 옆에 얹힌 것들(managed MCP, MCP OAuth, trigger, settings) — 그리고 `executionDeps` / `imageDeps` / `triggerRunnerDeps`. 필수인 LLM 채널과 이미지 채널까지 포함하므로, 주입이 빠지면 조용한 네트워크 호출이 아니라 타입 에러가 된다 |
+| `src/app/api/chats/_deps.ts` | `ChatDeps` bag (바인딩된 `runAgent` + 리포지토리들) |
+| `src/app/api/slack/events/_lib/` | `SlackEventDeps` bag (바인딩된 `runAgent` + `SlackClientPort`), `ChatDeps` 와 같은 모양 |
+| `src/app/api/telegram/webhook/_lib/` | `TelegramEventDeps` bag (바인딩된 `runAgent` + `TelegramClientPort` + transcript 저장소), Slack 쪽과 같은 모양 — 둘 다 모든 chat-bot 표면이 공통으로 지니는 절반인 `MessagingDeps` 를 확장한다 |
+| `src/app/api/a2a/[name]/route.ts` | 요청마다 이뤄지는 A2A 조립: `executionDeps` 위의 `ProjectA2aExecutor` 를 감싸는 SDK 의 request/transport 핸들러 — 핸들러가 프로젝트 하나의 카드를 중심으로 만들어지므로 요청 단위다 |
+| `src/instrumentation.ts` | 부팅 경로: `auditRepository` 위의 audit sink, 그리고 managed MCP 재개. 구조상 wiring site 다 — 이 파일이 런타임을 Node 서버라고 판단하기 전까지 composition root 자체가 로드되지 않고, audit sink 는 **await 되는** 부팅 경로에서 wiring 돼야 하기 때문이다 ([감사 기록](design/observability.md#audit-기록) 참고) |
 
-Two DI styles are in use on purpose:
+두 가지 DI 스타일을 의도적으로 함께 쓴다:
 
-- **Factory** `createXUseCases(...)` for the registry slices — their shared CRUD core lives
-  in `src/application/registry/registryUseCases.ts` — and for the project slice
-  (`createProjectUseCases`, `createVersionUseCases`), whose free functions taking the repo as
-  the first argument stay exported for application modules that already hold one; a route
-  takes the bound object.
-- **Deps-bag interfaces** (`ChatDeps`, `ExecutionDeps`, `SlackEventDeps`, `TelegramEventDeps`)
-  for execution paths.
+- **팩토리** `createXUseCases(...)` — registry 슬라이스용(공유 CRUD 코어는
+  `src/application/registry/registryUseCases.ts` 에 있다)과 project 슬라이스용
+  (`createProjectUseCases`, `createVersionUseCases`). 리포지토리를 첫 인자로 받는 자유
+  함수들은 이미 리포지토리를 쥐고 있는 application 모듈을 위해 계속 export 된 채로 남고,
+  라우트는 바인딩된 객체를 받는다.
+- **Deps-bag 인터페이스**(`ChatDeps`, `ExecutionDeps`, `SlackEventDeps`,
+  `TelegramEventDeps`) — 실행 경로용.
 
-New slices should use one of the two.
+새 슬라이스는 둘 중 하나를 써야 한다.
 
-### The rules are mechanical, not aspirational
+### 규칙은 기계적이며, 희망 사항이 아니다
 
-`tests/architecture.test.ts` enforces every layer rule above with an **empty allowlist**,
-plus a set of named **single-owner invariants** that fail when a second copy of a decision
-appears — and also when the owner *loses* the definition, which would otherwise read as a
-pass. The owner list is [OWNERSHIP.md](OWNERSHIP.md).
+`tests/architecture.test.ts` 는 위의 모든 레이어 규칙을 **빈 허용 목록**으로 강제하고,
+거기에 더해 이름 붙인 **단일 소유자 불변식** 묶음을 강제한다 — 어떤 결정의 사본이 두 번째로
+등장하면 실패하고, 소유자가 그 정의를 *잃어버려도* 실패한다(그렇지 않으면 통과로 읽힐
+것이기 때문이다). 소유자 목록은 [OWNERSHIP.md](OWNERSHIP.md) 다.
 
-The single-owner rules exist because this is the failure the codebase actually kept hitting:
-`McpTool` reached four definitions that had already drifted apart, the DynamoDB
-conditional-write error name was spelled out at seven call sites — only one of which handled
-the transactional form — and the image-usage collapse was derived independently four times.
+단일 소유자 규칙이 있는 이유는 이 코드베이스가 실제로 계속 겪은 실패가 그것이기
+때문이다: `McpTool` 은 이미 서로 어긋난 정의 네 개에 이르렀고, DynamoDB 조건부 쓰기 에러
+이름은 일곱 개 호출 지점에 적혀 있었는데 그중 트랜잭션 형태를 처리한 것은 하나뿐이었으며,
+이미지 usage 접기(collapse)는 각각 따로 네 번 유도됐다.
 
-**Adding a violation is not quietly possible. Fix the import; do not widen the rule.**
+**위반을 조용히 추가하는 것은 불가능하다. import 를 고쳐라. 규칙을 넓히지 마라.**
 
-## DynamoDB single-table design
+## DynamoDB 단일 테이블 설계
 
-One table (`DYNAMODB_TABLE_NAME`, default `agentdure`), keys `PK` (S) / `SK` (S), with
-`GSI1` (`GSI1PK`/`GSI1SK`) and `GSI2` (`GSI2PK`/`GSI2SK`). All items carry `entityType`.
+테이블 하나(`DYNAMODB_TABLE_NAME`, 기본값 `agentdure`), 키는 `PK` (S) / `SK` (S) 이며
+`GSI1`(`GSI1PK`/`GSI1SK`)과 `GSI2`(`GSI2PK`/`GSI2SK`)를 둔다. 모든 아이템은 `entityType`
+을 갖는다.
 
-| Entity | PK | SK | GSI1PK | GSI1SK |
+| 엔티티 | PK | SK | GSI1PK | GSI1SK |
 |---|---|---|---|---|
-| Auth (better-auth model rows) | `AUTH#{model}#{id}` | `ITEM` | `AUTH#{model}` | `{id}` |
-| Auth unique lock (email, token, …) | `AUTHUNIQUE#{model}#{field}#{value}` | `LOCK` | — | — |
+| Auth (better-auth 모델 행) | `AUTH#{model}#{id}` | `ITEM` | `AUTH#{model}` | `{id}` |
+| Auth 유니크 락 (email, token, …) | `AUTHUNIQUE#{model}#{field}#{value}` | `LOCK` | — | — |
 | Project | `PROJECT#{name}` | `META` | `TYPE#PROJECT` | `{name}` |
 | Project version | `PROJECT#{name}` | `VERSION#{versionName}` | — | — |
-| Project API token | `PROJECT#{name}` | `APITOKEN` | — | — |
-| Project MCP OAuth connection | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
-| MCP OAuth authorization in flight | `MCPOAUTH#{state}` | `META` | — | — |
-| Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule only: `TYPE#SCHEDULE` | schedule only: `{name}#{triggerId}` |
-| Trigger run (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
-| Trigger dedup claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
+| Project API 토큰 | `PROJECT#{name}` | `APITOKEN` | — | — |
+| Project 의 MCP OAuth 연결 | `PROJECT#{name}` | `MCPCONN#{server}` | — | — |
+| 진행 중인 MCP OAuth 인가 | `MCPOAUTH#{state}` | `META` | — | — |
+| Trigger (webhook / schedule) | `PROJECT#{name}` | `TRIGGER#{triggerId}` | schedule 만: `TYPE#SCHEDULE` | schedule 만: `{name}#{triggerId}` |
+| Trigger 런 (delivery / firing) | `PROJECT#{name}` | `TRIGGERRUN#{triggerId}#{startedAt}#{runId}` | — | — |
+| Trigger 중복 제거 claim (`Idempotency-Key` / `schedule:{instant}`) | `TRIGGERIDEM#{name}#{triggerId}#{key}` | `META` | — | — |
 | Chat | `CHAT#{chatId}` | `META` | `CHATOWNER#{email}` | `{updatedAt ISO}` |
-| Chat message | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
-| Chat run log (replay buffer, short TTL) | `CHAT#{chatId}` | `RUNLOG#{runId}#{seq zero-padded 6}` | — | — |
+| Chat 메시지 | `CHAT#{chatId}` | `MSG#{seq zero-padded 6}` | — | — |
+| Chat 런 로그 (리플레이 버퍼, 짧은 TTL) | `CHAT#{chatId}` | `RUNLOG#{runId}#{seq zero-padded 6}` | — | — |
 | Skill | `SKILL#{name}` | `META` | `TYPE#SKILL` | `{name}` |
-| MCP server | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
-| External agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
+| MCP 서버 | `MCP#{name}` | `META` | `TYPE#MCP` | `{name}` |
+| 외부 Agent (registry) | `AGENT#{name}` | `META` | `TYPE#AGENT` | `{name}` |
 | Plugin | `PLUGIN#{name}` | `META` | `TYPE#PLUGIN` | `{name}` |
-| Plugins-sync report (per source repo) | `PLUGINSYNC#{repo}` | `REPORT` | — | — |
-| Plugins-sync lease | `PLUGINSYNC#{repo}` | `LOCK` | — | — |
-| Usage (daily per project) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
-| Usage (daily per caller) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
-| Usage monthly-threshold claim | `USAGE#{projectName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
-| Usage (member per day, per project) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{projectName}` | — | — |
-| Run concurrency slot | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
-| Slack event dedup | `SLACKEVENT#{eventId}` | `META` | — | — |
-| Slack thread engagement (a thread the bot answered in, or was muted in) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
-| Telegram update dedup (an `update_id` is a counter per bot, hence per project) | `TELEGRAMUPDATE#{projectName}#{updateId}` | `META` | — | — |
-| Conversation transcript turn (a chat-bot surface with no platform history — Telegram) | `TRANSCRIPT#{projectName}#{conversationKey}` | `TURN#{createdAt ISO}#{seq}` | — | — |
-| Artifact (what a run produced; GSI2 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, sparse) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
-| A2A task (inbound) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
-| Remote conversation (outbound A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
-| A2A client key | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
-| A2A client key hash (verification) | `A2AKEYHASH#{sha256}` | `META` | — | — |
+| Plugins-sync 리포트 (소스 repo 별) | `PLUGINSYNC#{repo}` | `REPORT` | — | — |
+| Plugins-sync 리스 | `PLUGINSYNC#{repo}` | `LOCK` | — | — |
+| Usage (프로젝트별 일간) | `USAGE#{projectName}` | `DATE#{yyyy-MM-dd}` | `USAGEDATE#{yyyy-MM-dd}` | `{projectName}` |
+| Usage (호출자별 일간) | `USAGE#{projectName}` | `ACTOR#{yyyy-MM-dd}#{kind}:{id}` | — | — |
+| Usage 월간 임계값 claim | `USAGE#{projectName}` | `MONTHCLAIM#{yyyy-MM}` | — | — |
+| Usage (멤버별, 일별, 프로젝트별) | `USAGEMEMBER#{email}` | `DATE#{yyyy-MM-dd}#{projectName}` | — | — |
+| 런 동시성 슬롯 | `RUNSLOT#{kind}:{id}` | `SLOT#{index zero-padded 3}` | — | — |
+| Slack 이벤트 중복 제거 | `SLACKEVENT#{eventId}` | `META` | — | — |
+| Slack 스레드 참여 (봇이 답한, 또는 음소거된 스레드) | `SLACKTHREAD#{projectName}#{channel}#{threadTs}` | `META` | — | — |
+| Telegram 업데이트 중복 제거 (`update_id` 는 봇마다의 카운터이므로 프로젝트마다다) | `TELEGRAMUPDATE#{projectName}#{updateId}` | `META` | — | — |
+| 대화 transcript 턴 (플랫폼 히스토리가 없는 chat-bot 표면 — Telegram) | `TRANSCRIPT#{projectName}#{conversationKey}` | `TURN#{createdAt ISO}#{seq}` | — | — |
+| Artifact (런이 만들어 낸 것. GSI2 는 `ARTIFACTOWNER#{email}` / `{createdAt ISO}#{artifactId}`, 희소) | `ARTIFACT#{artifactId}` | `META` | `ARTIFACTPROJECT#{projectName}` | `{createdAt ISO}#{artifactId}` |
+| A2A 태스크 (수신) | `A2ATASK#{projectName}#{taskId}` | `META` | — | — |
+| 원격 대화 (송신 A2A `contextId`) | `PROJECT#{name}` | `REMOTECTX#{agentName}#{conversationKey}` | — | — |
+| A2A 클라이언트 키 | `A2ACLIENT#{name}` | `META` | `TYPE#A2ACLIENT` | `{name}` |
+| A2A 클라이언트 키 해시 (검증용) | `A2AKEYHASH#{sha256}` | `META` | — | — |
 | Trace | `TRACE#{traceId}` | `META` | `TRACEPROJECT#{projectName}` | `{createdAt ISO}#{traceId}` |
-| Trace deletion reference | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
-| Audit record | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
-| App settings (env overrides) | `SETTINGS#app` | `META` | — | — |
+| Trace 삭제 참조 | `PROJECT#{name}` | `TRACE#{createdAt}#{traceId}` | — | — |
+| 감사 기록 | `AUDIT#{yyyy-MM-dd}` | `{createdAt ISO}#{eventId}` | — | — |
+| 앱 설정 (환경변수 오버라이드) | `SETTINGS#app` | `META` | — | — |
 
-**Why one table and two GSIs.** Primary-key access covers everything item-scoped: a project
-and its versions share a partition, a chat and its messages share a partition, so a cascade
-delete is one query. `GSI1` serves the heterogeneous "list by kind" patterns — `TYPE#*`
-catalog listings, `CHATOWNER#{email}` (a user's chats by recency), `USAGEDATE#{date}`
-(cross-project daily cost for the dashboard), `TRACEPROJECT#{name}`,
-`ARTIFACTPROJECT#{name}`. `GSI2` served Better Auth unique-field lookups alone until artifacts
-needed a second axis: `ARTIFACTOWNER#{email}`, written **only** on rows that name a mailbox —
-the actor's own for a user or a project token, the asker's resolved address for a Slack run —
-so an A2A or trigger artifact is simply absent from that index rather than sitting under a
-placeholder (see [Artifacts](design/execution.md#artifacts)).
+**왜 테이블 하나에 GSI 둘인가.** 아이템 범위의 모든 접근은 기본 키로 충분하다: 프로젝트와
+그 버전들이 파티션을 공유하고, chat 과 그 메시지들이 파티션을 공유하므로 캐스케이드 삭제가
+쿼리 하나다. `GSI1` 은 이질적인 "종류별 목록" 패턴을 담당한다 — `TYPE#*` 카탈로그 목록,
+`CHATOWNER#{email}`(사용자의 chat 을 최신순으로), `USAGEDATE#{date}`(대시보드를 위한
+프로젝트 횡단 일간 비용), `TRACEPROJECT#{name}`, `ARTIFACTPROJECT#{name}`. `GSI2` 는
+artifact 가 두 번째 축을 필요로 하기 전까지는 Better Auth 의 유니크 필드 조회만 담당했다:
+`ARTIFACTOWNER#{email}` 은 메일함을 지목하는 행에만 **한정해서** 기록된다 — 사용자나
+프로젝트 토큰이면 actor 자신의 주소, Slack 런이면 질문한 사람의 해석된 주소 — 그래서 A2A
+나 trigger 의 artifact 는 자리표시자 아래 놓이는 대신 그 인덱스에 아예 없다
+([Artifacts](design/execution.md#artifacts) 참고).
 
-### Conventions
+### 관례
 
-- **Key strings come from `src/infrastructure/db/keys.ts`.** Never hand-write one elsewhere.
-- **A name-keyed registry entity gets its CRUD from `createKeyedRepository`**
-  (`keyedRepository.ts`): single-item partition, SK `META`, listed from the
-  `TYPE#<entityType>` GSI1 partition, with create / update / delete each conditioned on
-  whether the partition already exists. Skills, MCP servers, external agents and plugins share
-  it, and only the `toItem`/`fromItem` mappers stay per-repository, because only they carry
-  entity-specific fields. It is the storage-side counterpart of the
-  [registry use-case core](#composition-in-a-few-deliberate-places) — the three registry
-  entities factored at both ends, plus the plugin, whose use case is deliberately not that
-  factory (the sync is its only writer).
-- The published version is a **pointer attribute** `publishedVersion` on the project `META`
-  item, not a copy.
-- Chat `META` owns an atomic `nextSeq`; message rows use conditionally-created sequence keys.
-- Auth unique fields are claimed transactionally with a dedicated lock item. `GSI2` remains a
-  compatibility lookup for rows created before the locks existed, and now also carries the
-  sparse artifact-owner index.
-- Trace creation transactionally writes a project-partition deletion reference; project
-  deletion marks the project first, preventing new versions/traces before child cleanup.
-- **Usage rows use atomic `ADD` per model** — `calls.{model}`, `inputTokens.{model}`,
-  `outputTokens.{model}`, `cachedTokens.{model}`, `costUsd.{model}` — in two steps:
-  `SET … if_not_exists` to materialise the maps, then `ADD` on the nested number attributes.
-  A map added after rows exist materialises on each row's next write, so older days read as
-  `{}` and are not backfilled. They also carry the cost
-  guard's once-per-day notification claims (`alertedAt`, `blockedAt`), taken with a
-  conditional write. Those claims live here rather than on the project item because that
-  item's `updatedAt` is the optimistic-concurrency condition for every project write — a
-  background marker there would fail a concurrent edit — and because a usage row already
-  expires on its own date, which retires the marker with it.
-- **Rows that grow without bound carry `expiresAt`** (`src/infrastructure/db/ttl.ts`), the
-  table's TTL attribute. Retention windows and the requirement to enable TTL on the
-  production table are in [OPERATIONS.md](OPERATIONS.md#row-retention).
-- **List queries paginate.** Most go through `queryAll()` (`src/infrastructure/db/query.ts`):
-  a single Query page caps at 1MB, so an unpaginated list silently truncates. `chatRepository`
-  runs its own `LastEvaluatedKey` loops; `traceRepository` is intentionally bounded top-N via
-  `Limit` and pulls up to five pages to fill that limit with **live** rows, because DynamoDB
-  applies `Limit` before the app-side expired-row filter — bounded, so a partition of expired
-  rows cannot turn one list into a scan.
+- **키 문자열은 `src/infrastructure/db/keys.ts` 에서 온다.** 다른 곳에서 직접 손으로 쓰지
+  마라.
+- **이름을 키로 갖는 registry 엔티티는 CRUD 를 `createKeyedRepository` 에서 받는다**
+  (`keyedRepository.ts`): 아이템 하나짜리 파티션, SK 는 `META`, 목록은
+  `TYPE#<entityType>` GSI1 파티션에서 읽으며, create / update / delete 각각이 파티션이
+  이미 존재하는지를 조건으로 건다. Skill, MCP 서버, 외부 agent, plugin 이 이것을 공유하고,
+  리포지토리마다 남는 것은 `toItem`/`fromItem` 매퍼뿐이다 — 엔티티 고유 필드를 지닌 것은
+  그것들뿐이기 때문이다. 이는 [registry 유스케이스 코어](#조립은-의도적으로-고른-몇-곳에서만)
+  의 저장소 쪽 짝이다 — registry 엔티티 셋이 양쪽 끝에서 공통화됐고, 여기에 plugin 이
+  더해진다. plugin 의 유스케이스는 의도적으로 그 팩토리가 아니다(sync 가 유일한
+  writer 이므로).
+- 발행된 버전은 사본이 아니라 프로젝트 `META` 아이템의 **포인터 속성** `publishedVersion`
+  이다.
+- Chat `META` 가 원자적 `nextSeq` 를 소유한다. 메시지 행은 조건부로 생성되는 시퀀스 키를
+  쓴다.
+- Auth 의 유니크 필드는 전용 락 아이템으로 트랜잭션 claim 된다. `GSI2` 는 락이 생기기 전에
+  만들어진 행을 위한 호환 조회로 남아 있고, 이제는 희소한 artifact-owner 인덱스도 함께
+  담는다.
+- Trace 생성은 프로젝트 파티션에 삭제 참조를 트랜잭션으로 함께 쓴다. 프로젝트 삭제는
+  프로젝트를 먼저 표시해, 자식 정리 전에 새 버전·trace 가 생기는 것을 막는다.
+- **Usage 행은 모델별로 원자적 `ADD` 를 쓴다** — `calls.{model}`, `inputTokens.{model}`,
+  `outputTokens.{model}`, `cachedTokens.{model}`, `costUsd.{model}` — 두 단계로: 먼저
+  `SET … if_not_exists` 로 맵을 실체화하고, 그다음 중첩된 숫자 속성에 `ADD` 한다. 행이
+  이미 존재한 뒤에 추가된 맵은 각 행의 다음 쓰기 때 실체화되므로, 지난 날짜는 `{}` 로
+  읽히고 소급 채워지지 않는다. 이 행들은 비용 가드의 하루 한 번짜리 알림 claim(`alertedAt`,
+  `blockedAt`)도 함께 지니며, 조건부 쓰기로 취득된다. 그 claim 이 프로젝트 아이템이 아니라
+  여기 사는 이유는, 프로젝트 아이템의 `updatedAt` 이 모든 프로젝트 쓰기의 낙관적 동시성
+  조건이라 거기에 백그라운드 마커를 두면 동시 편집을 실패시키기 때문이고, 또 usage 행은
+  이미 자기 날짜에 만료되므로 마커도 함께 물러나기 때문이다.
+- **무한히 늘어나는 행은 `expiresAt` 를 갖는다**(`src/infrastructure/db/ttl.ts`). 테이블의
+  TTL 속성이다. 보존 기간과 프로덕션 테이블에서 TTL 을 켜야 한다는 요구 사항은
+  [OPERATIONS.md](OPERATIONS.md#행-보존) 에 있다.
+- **목록 쿼리는 페이지네이션한다.** 대부분은 `queryAll()`
+  (`src/infrastructure/db/query.ts`)을 거친다: Query 한 페이지는 1MB 에서 잘리므로,
+  페이지네이션하지 않은 목록은 조용히 잘린다. `chatRepository` 는 자체
+  `LastEvaluatedKey` 루프를 돌리고, `traceRepository` 는 의도적으로 `Limit` 으로 상위 N
+  개로 제한하되 그 한도를 **살아 있는** 행으로 채우기 위해 최대 다섯 페이지까지
+  당겨온다 — DynamoDB 가 앱 쪽 만료 행 필터보다 `Limit` 을 먼저 적용하기 때문이다. 그렇게
+  경계를 두었으므로 만료된 행으로 가득한 파티션이 목록 하나를 스캔으로 바꿔 놓지 못한다.
 
-## Request flow
+## 요청 흐름
 
-Nine execution entry points converge on `src/application/execution/runProject.ts`, which
-answers two separate questions in two tiers.
+아홉 개의 실행 진입점이 `src/application/execution/runProject.ts` 로 모이고, 이 모듈은
+서로 다른 두 질문을 두 층으로 답한다.
 
-| Tier | Functions | What it decides |
+| 층 | 함수 | 무엇을 결정하는가 |
 |---|---|---|
-| **Dispatch** — what an entry point calls | `streamProjectRun` for a surface that takes a run as chunks; `executeProjectStream` / `executeProject` for one that answers with a completion; `executeAgent` for the surfaces that only ever run agent projects | which strategy a `projectType` runs |
-| **Admit** — what starts a run | `executeVersion` / `executeVersionStream` for the single-shot path, `executeAgent` for the tool loop | the [run bracket](#the-run-bracket); an agent run additionally resolves the version's skills, MCP tools and subagents from repositories, assembles the injected engine deps, and flushes usage at the end |
+| **Dispatch** — 진입점이 무엇을 호출하는가 | 런을 chunk 로 받는 표면에는 `streamProjectRun`, 완료(completion)로 답하는 표면에는 `executeProjectStream` / `executeProject`, 언제나 agent project 만 실행하는 표면에는 `executeAgent` | 어떤 `projectType` 이 어떤 전략으로 도는가 |
+| **Admit** — 무엇이 런을 시작하는가 | 단발 경로는 `executeVersion` / `executeVersionStream`, 툴 루프는 `executeAgent` | [런 브래킷](#런-브래킷). agent 런은 여기에 더해 버전의 skill·MCP tool·subagent 를 리포지토리에서 해석하고, 주입되는 엔진 deps 를 조립하며, 끝에 usage 를 flush 한다 |
 
-`executeAgent` is in both tiers — an agent surface calls it directly, and it opens its own
-bracket. **Nothing outside this module calls `executeVersion` or `executeVersionStream`**, and
-nothing should: arriving at one directly is exactly how a caller skips the `projectType`
-dispatch. To trace a request, start at the dispatch tier.
+`executeAgent` 는 두 층 모두에 있다 — agent 표면이 직접 호출하고, 자기 브래킷을 연다.
+**이 모듈 밖에서는 아무것도 `executeVersion` 이나 `executeVersionStream` 을 호출하지
+않으며**, 앞으로도 그래야 한다: 거기에 직접 도달하는 것이야말로 호출자가 `projectType`
+dispatch 를 건너뛰는 방식이다. 요청을 추적하려면 dispatch 층에서 시작하라.
 
-| Entry point | Caller | Facade used |
+| 진입점 | 호출자 | 사용하는 파사드 |
 |---|---|---|
-| Predict | `POST …/predict` | `executeProjectStream` (stream) / `executeProject` (non-stream) — so an agent project runs its tool loop here too, and `variables` (which only a prompt template consumes) are ignored for it; image projects → `generateImage`, which edits the request's source `images` when any are sent and generates otherwise |
-| OpenAI-compatible | `POST …/chat/completions` | `executeProjectStream` (stream) / `executeProject` (non-stream); an image project is refused with 400 — an image has no chat completion |
+| Predict | `POST …/predict` | `executeProjectStream`(스트림) / `executeProject`(논스트림) — 그래서 agent project 도 여기서 툴 루프를 돌고, (프롬프트 템플릿만 소비하는) `variables` 는 그 경우 무시된다. image project 는 → `generateImage`, 요청에 source `images` 가 오면 편집하고 아니면 생성한다 |
+| OpenAI 호환 | `POST …/chat/completions` | `executeProjectStream`(스트림) / `executeProject`(논스트림). image project 는 400 으로 거절된다 — 이미지에는 chat completion 이 없다 |
 | Agent SSE | `POST …/agent` | `executeAgent` |
-| Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (bound as `ChatDeps.runAgent`) |
-| Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (via `SlackEventDeps`) |
-| Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (via `TelegramEventDeps`) — the same shared pipeline as Slack ([design/messaging.md](design/messaging.md)) |
+| Chat | `POST /api/chats/[chatId]/messages` | `executeAgent` (`ChatDeps.runAgent` 로 바인딩) |
+| Slack | `/api/slack/events/[project]` → `handleSlackEvent` → `handleTurn` | `executeAgent` (`SlackEventDeps` 경유) |
+| Telegram | `/api/telegram/webhook/[project]` → `handleTelegramUpdate` → `handleTurn` | `executeAgent` (`TelegramEventDeps` 경유) — Slack 과 같은 공유 파이프라인 ([design/messaging.md](design/messaging.md)) |
 | A2A | `POST /api/a2a/[name]` → executor | `executeProjectStream` |
-| Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (bound in `container.ts` as `triggerRunnerDeps.run`) — the one dispatch that streams an image project rather than refusing it; a firing's row records that it drew, since the row carries text |
-| Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (same `triggerRunnerDeps.run`) |
+| Webhook trigger | `POST /api/webhook/[project]` → `executeDelivery` | `streamProjectRun` (`container.ts` 에서 `triggerRunnerDeps.run` 으로 바인딩) — image project 를 거절하지 않고 스트리밍하는 유일한 dispatch 다. firing 의 행은 텍스트를 담으므로, 그림을 그렸다는 사실을 기록한다 |
+| Schedule trigger | `POST /api/triggers/scan` → `scanSchedules` → `executeFiring` | `streamProjectRun` (같은 `triggerRunnerDeps.run`) |
 
 ```mermaid
 flowchart LR
-  subgraph surfaces["Nine entry points"]
+  subgraph surfaces["아홉 개의 진입점"]
     predict["predict"]
     cc["chat/completions"]
     agentsse["agent SSE"]
-    chat["chat messages"]
-    slack["Slack events"]
-    telegram["Telegram updates"]
+    chat["chat 메시지"]
+    slack["Slack 이벤트"]
+    telegram["Telegram 업데이트"]
     a2a["A2A JSON-RPC"]
     webhook["webhook trigger"]
     schedule["schedule scan"]
   end
 
-  facade["runProject facades<br/>streamProjectRun · executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → tool loop, llm → single-shot,<br/>image → streamed by streamProjectRun, refused by the completion pair"]
-  imageuc["generateImage use case<br/>reached by streamProjectRun, and by the two surfaces<br/>that answer in a shape no chunk stream carries"]
-  bracket["run bracket — openRun<br/>1. project cost guard, fails open<br/>2. member tier's monthly cap, fails open<br/>3. per-caller concurrency slots, fail closed<br/>4. in-flight metric + correlation id + artifact recorder"]
-  resolve["resolve the version's bindings<br/>skills · MCP sessions · subagents<br/>an unusable binding becomes a warning chunk"]
-  engine["engine<br/>runAgent · runPrompt(Stream)"]
-  channel["OpenAI-compatible channel"]
-  imagechannel["image channel"]
-  tools["MCP tools ≤5 concurrent · Skill loads<br/>transfer_to_agent / dispatch_agents · image builtins"]
-  usage["usage recording<br/>agent runs buffer, flush once → atomic ADD"]
-  trace["trace recorder<br/>agent runs always, others sampled"]
+  facade["runProject 파사드<br/>streamProjectRun · executeProjectStream · executeProject · executeAgent<br/>projectType dispatch: agent → 툴 루프, llm → 단발,<br/>image → streamProjectRun 은 스트리밍, completion 짝은 거절"]
+  imageuc["generateImage 유스케이스<br/>streamProjectRun 이 닿고, chunk 스트림이 나르지 못하는<br/>모양으로 답하는 두 표면도 닿는다"]
+  bracket["런 브래킷 — openRun<br/>1. 프로젝트 비용 가드, fail open<br/>2. 멤버 tier 의 월간 상한, fail open<br/>3. 호출자별 동시성 슬롯, fail closed<br/>4. in-flight 메트릭 + correlation id + artifact recorder"]
+  resolve["버전의 바인딩 해석<br/>skill · MCP 세션 · subagent<br/>쓸 수 없는 바인딩은 warning chunk 가 된다"]
+  engine["엔진<br/>runAgent · runPrompt(Stream)"]
+  channel["OpenAI 호환 채널"]
+  imagechannel["이미지 채널"]
+  tools["MCP tool 동시 5개 이하 · Skill 로드<br/>transfer_to_agent / dispatch_agents · 이미지 빌트인"]
+  usage["usage 기록<br/>agent 런은 버퍼링, 한 번 flush → 원자적 ADD"]
+  trace["trace 기록<br/>agent 런은 항상, 나머지는 샘플링"]
 
   predict --> facade
   cc --> facade
@@ -343,247 +343,242 @@ flowchart LR
   facade -.-> imageuc
   facade --> bracket
   imageuc --> bracket
-  bracket -->|"agent run"| resolve --> engine
-  bracket -->|"llm single-shot"| engine
-  bracket -->|"image run"| imagechannel
+  bracket -->|"agent 런"| resolve --> engine
+  bracket -->|"llm 단발"| engine
+  bracket -->|"image 런"| imagechannel
   engine <--> channel
   engine <--> tools
   engine --> usage
   engine --> trace
 ```
 
-The dashed edges are the image branch: every image-capable surface asks `runStrategyFor`
-and hands an `image` project to `generateImage` *before* asking the facade, which refuses it.
-The bracket admits both paths — it is what wraps a top-level run however it started.
+점선 엣지가 이미지 분기다: 이미지를 그릴 수 있는 표면은 모두 `runStrategyFor` 에 물어보고,
+`image` project 라면 파사드에 묻기 *전에* `generateImage` 에 넘긴다. 파사드는 그것을
+거절하기 때문이다. 브래킷은 두 경로를 모두 admit 한다 — 어떻게 시작됐든 top-level 런을
+감싸는 것이 브래킷이다.
 
-`generateImage` (`src/application/image/generateImage.ts`) sits outside this module but starts
-a run the same way — the facade, the predict route and the A2A executor reach it directly,
-which is why it joins the admitting functions below. `collectRun`, which drains an
-agent stream into one collected answer, stays here, where `executeProject` uses it for the
-non-stream agent case.
+`generateImage`(`src/application/image/generateImage.ts`)는 이 모듈 밖에 있지만 런을 같은
+방식으로 시작한다 — 파사드, predict 라우트, A2A executor 가 직접 닿으며, 그래서 아래의
+admit 하는 함수 목록에 함께 들어간다. agent 스트림을 하나의 수집된 답으로 비워 내는
+`collectRun` 은 여기에 남아 있고, `executeProject` 가 논스트림 agent 경우에 그것을 쓴다.
 
-`executeProjectStream` (and `executeProject`, its non-streaming counterpart) is the
-canonical `projectType` → strategy dispatch: `agent` runs the multi-turn tool loop, `llm`
-runs a single-shot completion, and an `image` project is refused — its run is the dedicated
-`generateImage` use case.
+`executeProjectStream`(과 그 논스트리밍 짝인 `executeProject`)이 정본
+`projectType` → 전략 dispatch 다: `agent` 는 멀티턴 툴 루프를 돌고, `llm` 은 단발 완료를
+돌리며, `image` project 는 거절된다 — 그 런은 전용 `generateImage` 유스케이스다.
 
-`streamProjectRun` is the same dispatch for a surface that consumes a run as chunks: it
-streams an image project instead of refusing it. The pair is **two contracts, not a flag** —
-which one a surface calls is that surface declaring whether an image project is something it
-can run at all. `/chat/completions` calls the refusing one because an image has no chat
-completion — there is nothing to send back. The trigger runner calls the streaming one
-because there is something: the picture is billed, traced, and recorded on the firing's row,
-which carries text and says so rather than closing as an empty success. A boolean deciding
-whether a project type is refused would be the defect the refusal exists to prevent; a second
-name is not.
+`streamProjectRun` 은 런을 chunk 로 소비하는 표면을 위한 같은 dispatch 다: image project 를
+거절하는 대신 스트리밍한다. 이 짝은 **플래그가 아니라 두 개의 계약**이다 — 표면이 둘 중
+어느 쪽을 호출하는지가 곧 그 표면이 image project 를 애초에 실행할 수 있는지를 선언하는
+것이다. `/chat/completions` 는 이미지에 chat completion 이 없으므로 거절하는 쪽을 호출한다 —
+돌려보낼 것이 없다. trigger runner 는 돌려줄 것이 있으므로 스트리밍하는 쪽을 호출한다:
+그림은 과금되고 trace 되며 firing 의 행에 기록되는데, 그 행은 텍스트를 담으므로 빈 성공으로
+닫히는 대신 그렇게 적는다. 어떤 project type 이 거절되는지를 boolean 하나로 정하는 것은
+거절이 막으려는 바로 그 결함이 될 것이다. 두 번째 이름을 두는 것은 그렇지 않다.
 
-**New entry points should call one of these instead of re-encoding the decision** — three
-call sites used to ask it for themselves, the two non-streaming routes had diverged on the
-image case, and a fourth copy lived in `container.ts`, where it also assembled the image
-chunks by hand and left out the run's ending. A subagent transfer dispatches on
-the same axis inside `runLocalSubagent`: an `image` child generates, a prompt child runs its
-user prompt template with the transfer message as the user turn, and only an `agent` child
-enters the tool loop.
+**새 진입점은 이 결정을 다시 인코딩하지 말고 이 중 하나를 호출해야 한다** — 예전에는 세 개의
+호출 지점이 각자 그것을 물었고, 논스트리밍 라우트 둘은 이미지 경우에서 서로 어긋나 있었으며,
+네 번째 사본은 `container.ts` 안에 있었다. 거기서는 이미지 chunk 까지 손으로 조립하면서 런의
+끝맺음을 빠뜨렸다. subagent transfer 도 `runLocalSubagent` 안에서 같은 축으로
+dispatch 한다: `image` 자식은 생성하고, prompt 자식은 transfer 메시지를 사용자 턴으로 삼아
+자기 user prompt 템플릿을 돌리며, `agent` 자식만 툴 루프에 들어간다.
 
-### The run bracket
+### 런 브래킷
 
-Exactly four functions admit a top-level run — the [admit tier](#request-flow)'s
-`executeVersion`, `executeVersionStream` and `executeAgent`, plus `generateImage` — and each
-opens a bracket (`src/application/run/runBracket.ts`). The bracket is the single owner
-of everything that wraps a run regardless of how it was started: the in-flight metric, the
-project's cost guard, the member tier's monthly cap, the per-caller concurrency guard, the log
-correlation id, and the artifact recorder (see [Artifacts](design/execution.md#artifacts)).
+정확히 네 함수가 top-level 런을 admit 한다 — [admit 층](#요청-흐름)의
+`executeVersion`, `executeVersionStream`, `executeAgent`, 그리고 `generateImage` — 그리고
+각각이 브래킷(`src/application/run/runBracket.ts`)을 연다. 브래킷은 런이 어떻게
+시작됐든 그 런을 감싸는 모든 것의 단일 소유자다: in-flight 메트릭, 프로젝트의 비용 가드,
+멤버 tier 의 월간 상한, 호출자별 동시성 가드, 로그 correlation id, 그리고 artifact
+recorder([Artifacts](design/execution.md#artifacts) 참고).
 
-Each of those four used to open the in-flight metric for itself, which is exactly why the
-cost guard had four places it could be forgotten. `tests/architecture.test.ts` now pins the
-bracket, so a fifth entry point that skips it is missing its metric as loudly as its guard.
+예전에는 그 넷이 각자 in-flight 메트릭을 열었고, 그것이 바로 비용 가드를 빠뜨릴 수 있는
+자리가 네 곳이었던 이유다. 이제 `tests/architecture.test.ts` 가 브래킷을 고정하므로,
+그것을 건너뛴 다섯 번째 진입점은 가드만큼이나 요란하게 메트릭도 빠뜨리게 된다.
 
-It is *not* "the execution facade", because `generateImage` is not in one: the predict route
-and the A2A executor call that module directly, each answering in a shape no chunk stream
-carries. A surface that only needs chunks — the trigger runner is the one — reaches it through
-`streamProjectRun` instead.
+이것은 "실행 파사드"가 *아니다*. `generateImage` 는 파사드 안에 없기 때문이다: predict
+라우트와 A2A executor 가 그 모듈을 직접 호출하며, 각각 chunk 스트림이 나르지 못하는 모양으로
+답한다. chunk 만 필요한 표면 — trigger runner 가 그것이다 — 은 대신
+`streamProjectRun` 을 통해 닿는다.
 
-**Order is load-bearing at both ends.** The guards run **before** the metric opens, so a
-refused run is never counted, traced, or recorded. `close()` runs **after** the caller has
-flushed its usage — an agent run buffers usage until the end, so a settle before the flush
-would always read a total that excludes the run being settled.
+**순서는 양쪽 끝에서 모두 하중을 진다.** 가드는 메트릭이 열리기 **전에** 돌아서, 거절된
+런은 절대 집계되지도, trace 되지도, 기록되지도 않는다. `close()` 는 호출자가 usage 를
+flush 한 **다음에** 돈다 — agent 런은 usage 를 끝까지 버퍼링하므로, flush 보다 먼저 settle
+하면 정산 대상인 그 런이 빠진 합계를 언제나 읽게 된다.
 
-One policy runs ahead of both guards: **whether the version's models can be priced at all**
-(`modelPolicy.ts`). An id the registry does not carry still dispatches and is booked at $0, so
-a deployment whose usage rows become an invoice can set `UNKNOWN_MODEL_POLICY=refuse` and have
-the run turned away before anything is spent — primary and fallback alike, since a fallback
-carries the whole run whenever the primary is rate-limited. It is first because it is the one
-refusal that costs nothing to decide and says the *configuration* is wrong rather than that
-the platform is busy; a misconfigured version should not first queue for a slot. Default
-`allow` is byte-identical to the behaviour every deployment has had, and the policy is
-injected into the bracket rather than read there, because `application` may not reach
-`src/lib/runtime-settings.ts`.
+두 가드보다 앞서 도는 정책이 하나 있다: **버전의 모델에 값을 매길 수 있는가**
+(`modelPolicy.ts`). 레지스트리가 갖고 있지 않은 id 도 dispatch 는 되고 $0 으로 장부에
+올라가므로, usage 행이 곧 청구서가 되는 배포는 `UNKNOWN_MODEL_POLICY=refuse` 로 두어 아무것도
+쓰이기 전에 런을 돌려보낼 수 있다 — primary 든 fallback 이든 마찬가지다. primary 가 rate
+limit 에 걸릴 때마다 fallback 이 런 전체를 지기 때문이다. 이것이 첫 번째인 이유는, 판단
+비용이 전혀 들지 않는 유일한 거절이면서 플랫폼이 바쁘다는 말이 아니라 *설정*이 잘못됐다고
+말하는 거절이기 때문이다 — 잘못 설정된 버전이 슬롯을 얻으려고 먼저 줄을 설 이유는 없다.
+기본값 `allow` 는 모든 배포가 지금까지 겪어 온 동작과 바이트 단위로 동일하고, 이 정책은
+브래킷에서 읽는 대신 브래킷으로 주입된다. `application` 은 `src/lib/runtime-settings.ts`
+에 닿을 수 없기 때문이다.
 
-**A subagent transfer is not a bracket, but it is not free either.** A child never opens one —
-it is not a top-level run, and the concurrency guard deliberately does not apply, since fan-out
-is bounded instead by `MAX_DISPATCH_TASKS`, the transfer depth limit, and the rule that a child
-is never offered `dispatch_agents`. The two policies that bound *spend* do apply, checked where
-the child's version resolves (`subagentRunner.ts`): the model policy, because an unpriced child
-leaks exactly as much as an unpriced parent, and the **child project's** daily cost guard,
-because a transfer is a whole run on another project with its own tool loop and its own usage
-rows — and its parent's admission said nothing about that project's budget.
+**subagent transfer 는 브래킷이 아니지만, 공짜도 아니다.** 자식은 브래킷을 절대 열지
+않는다 — top-level 런이 아니고, 동시성 가드는 의도적으로 적용되지 않는다. 팬아웃은 대신
+`MAX_DISPATCH_TASKS`, transfer 깊이 제한, 그리고 자식에게는 `dispatch_agents` 를 절대
+제공하지 않는다는 규칙으로 제한되기 때문이다. *지출*을 제한하는 두 정책은 적용되며, 자식의
+버전이 해석되는 자리(`subagentRunner.ts`)에서 검사된다: 값이 매겨지지 않은 자식은 값이
+매겨지지 않은 부모와 정확히 같은 만큼 새므로 모델 정책이 적용되고, transfer 는 자기 툴
+루프와 자기 usage 행을 가진 다른 프로젝트에서의 온전한 런이므로 **자식 프로젝트의** 일일
+비용 가드가 적용된다 — 부모의 admit 은 그 프로젝트의 예산에 대해 아무 말도 하지 않았다.
 
-Admission alone was not enough. `settleCostLimit` is what claims the block and alert
-notifications, and it ran only for the project the bracket opened — so a project reached only
-through transfers accrued spend, began refusing at its threshold, and told nobody. The parent
-settles every project its run spent on, after the usage flush (`flush` reports which they
-were), for the same reason the flush precedes the close: the totals have to include the run
-that just spent them.
+admit 만으로는 충분하지 않았다. block 과 alert 알림을 claim 하는 것은
+`settleCostLimit` 인데, 이것이 브래킷이 연 프로젝트에 대해서만 돌았다 — 그래서 transfer 로만
+도달되는 프로젝트는 지출을 쌓고, 자기 임계값에서 거절을 시작했으며, 아무에게도 알리지
+않았다. 이제 부모가 자기 런이 지출한 모든 프로젝트를 usage flush 뒤에 settle 하며(`flush`
+가 그것이 어느 프로젝트였는지 알려 준다), 이유는 flush 가 close 보다 앞서는 것과 같다:
+합계에는 방금 그 돈을 쓴 런이 포함돼 있어야 한다.
 
-The guards fail in opposite directions, on purpose:
+두 가드는 의도적으로 서로 반대 방향으로 실패한다:
 
-- The **cost guard** protects money, so a storage blip must not stop the platform: it fails
-  **open**. So does the **member tier's monthly cap** (`memberCostGuard.ts`), which is the same
-  question asked of the person rather than the project — a `user` actor whose tier carries a
-  `monthlyCostCapUsd` (`TIER_LIMITS`) is refused once their own month's rows reach it; machine
-  callers and project tokens have no personal budget and skip it.
-- The **concurrency guard** protects the platform itself, so opening it when the store is
-  failing would add load exactly when the store cannot take it: it fails **closed** — and
-  costs nothing extra, since every run reads its project and version from the same table and
-  a store that cannot answer was about to fail the run anyway. A tier's own
-  `maxConcurrentRuns` overrides the deployment-wide per-caller number for that member's runs;
-  the bracket resolves the actor's tier (`resolveActorTier`) once and hands it to both guards.
+- **비용 가드**는 돈을 지키므로 저장소가 잠깐 흔들린다고 플랫폼이 멈춰서는 안 된다:
+  **fail open** 이다. **멤버 tier 의 월간 상한**(`memberCostGuard.ts`)도 마찬가지인데,
+  이것은 프로젝트가 아니라 사람에게 같은 질문을 던지는 것이다 — tier 에
+  `monthlyCostCapUsd`(`TIER_LIMITS`)가 있는 `user` actor 는 자기 그달의 행이 그 값에
+  이르면 거절된다. 기계 호출자와 프로젝트 토큰은 개인 예산이 없으므로 건너뛴다.
+- **동시성 가드**는 플랫폼 자체를 지키므로, 저장소가 실패하는 중에 열어 주면 저장소가
+  감당할 수 없는 바로 그때 부하를 더하게 된다: **fail closed** 다 — 그리고 추가 비용도
+  들지 않는다. 모든 런은 어차피 같은 테이블에서 자기 프로젝트와 버전을 읽고, 답하지 못하는
+  저장소라면 그 런은 어차피 실패할 참이었기 때문이다. tier 자신의 `maxConcurrentRuns` 는
+  그 멤버의 런에 대해 배포 전역의 호출자별 값을 덮어쓴다. 브래킷은 actor 의
+  tier(`resolveActorTier`)를 한 번 해석해 두 가드에 모두 넘긴다.
 
-Cost is checked first — the project's, then the member's: a caller over budget should be told
-so rather than made to queue for a slot it would be refused on regardless.
+비용을 먼저 검사한다 — 프로젝트 것을 먼저, 그다음 멤버 것을: 예산을 초과한 호출자에게는
+어차피 거절될 슬롯을 기다리게 하는 대신 그 사실을 알려 주어야 한다.
 
-**Concurrency is a slot index, not a counter** (`src/domain/execution/runSlot.ts`). A counter
-is exact only while every process lives to decrement it; an instance killed mid-run leaks its
-increment forever, and nothing expires a number. Each of a caller's `0..limit-1` indices is a
-row with a lease and an acquisition token, claimed by a conditional write. Release is conditional
-on that token too, so an expired owner cannot delete a later run that reused its index. The limit
-is exact rather than a bound two concurrent acquires or a late release can overshoot, and a dead
-instance releases its hold when the lease runs out. State is shared rather than per-process for the obvious reason: `runMetrics` counts
-*this* instance's runs, so a limit built on it would multiply by the number of instances.
-`a2a` gets its own ceiling because the shared key's actor id is a constant — one identity
-stands for every anonymous machine caller, and the per-caller limit would otherwise become a
-cap on the whole A2A surface. A **named client key** is exactly the case where that reasoning
-does not apply: its actor is one caller, so it takes the ordinary per-caller limit.
+**동시성은 카운터가 아니라 슬롯 인덱스다**(`src/domain/execution/runSlot.ts`). 카운터는
+모든 프로세스가 감소시킬 때까지 살아 있는 동안에만 정확하다. 런 도중에 죽은 인스턴스는
+자기 증가분을 영원히 흘리고, 숫자는 아무것도 만료시키지 않는다. 호출자의 `0..limit-1`
+인덱스 각각은 리스와 획득 토큰을 가진 행이며, 조건부 쓰기로 claim 된다. 해제도 그 토큰을
+조건으로 걸기 때문에, 만료된 소유자가 그 인덱스를 재사용한 나중 런을 지울 수 없다. 그래서
+한도는 동시 획득 둘이나 늦은 해제가 넘어설 수 있는 느슨한 경계가 아니라 정확한 값이고,
+죽은 인스턴스는 리스가 다하면 자기 점유를 놓는다. 상태를 프로세스별이 아니라 공유로 둔
+이유는 뻔하다: `runMetrics` 는 *이* 인스턴스의 런을 세므로, 그 위에 세운 한도는 인스턴스
+수만큼 곱해진다. `a2a` 에 자기 상한이 따로 있는 이유는 공유 키의 actor id 가 상수이기
+때문이다 — 하나의 신원이 모든 익명 기계 호출자를 대표하므로, 그러지 않으면 호출자별 한도가
+A2A 표면 전체의 상한이 돼 버린다. **이름이 붙은 클라이언트 키**는 그 논리가 적용되지 않는
+정확한 사례다: 그 actor 는 호출자 하나이므로 일반적인 호출자별 한도를 받는다.
 
-The cost guard (`src/application/usage/costGuard.ts`) reads one day's row with a single
-primary-key `GetItem` — or, when a monthly threshold is configured, one bounded query over
-the month's daily rows, which carries today's row too and so serves both windows in one read
-— sums every model's `costUsd`, and refuses with `CostLimitExceededError` — a
-`RateLimitedError`, so `apiError` emits `Retry-After` set to the seconds until the window
-rolls over, which is exactly when the refusal stops being true.
+비용 가드(`src/application/usage/costGuard.ts`)는 기본 키 `GetItem` 한 번으로 하루치 행을
+읽거나 — 월간 임계값이 설정돼 있으면 그달의 일간 행들에 대한 경계 있는 쿼리 한 번으로 읽고,
+이 쿼리는 오늘 행도 함께 담으므로 읽기 한 번으로 두 창(window)을 모두 감당한다 — 모든
+모델의 `costUsd` 를 합산해 `CostLimitExceededError` 로 거절한다. 이것은
+`RateLimitedError` 이므로 `apiError` 가 `Retry-After` 를 창이 넘어갈 때까지의 초로 실어
+보내는데, 그 시점이 바로 거절이 더는 참이 아니게 되는 때다.
 
-Operational tuning for both guards is in [OPERATIONS.md](OPERATIONS.md#spend-and-load-guards).
+두 가드의 운영 튜닝은 [OPERATIONS.md](OPERATIONS.md#지출-가드와-부하-가드) 에 있다.
 
 ```mermaid
 sequenceDiagram
-  participant C as Client
-  participant R as Route handler (withAuth)
+  participant C as 클라이언트
+  participant R as 라우트 핸들러 (withAuth)
   participant X as runProject.executeAgent
   participant E as engine.runAgent
-  participant T as Tools (MCP / Skill / subagent / image)
-  C->>R: POST …/agent (messages)
+  participant T as 툴 (MCP / Skill / subagent / image)
+  C->>R: POST …/agent (메시지)
   R->>X: executeAgent(executionDeps, {project, version, messages})
-  X->>X: resolve skills / subagents / MCP tools (parallel)
+  X->>X: skill / subagent / MCP tool 해석 (병렬)
   X->>E: runAgent(agentDeps, input)
-  loop until no tool_calls or turn guard
-    E->>E: channel stream (fallback: retry once before first chunk)
+  loop tool_calls 가 없거나 턴 가드가 멈출 때까지
+    E->>E: 채널 스트림 (fallback: 첫 chunk 전에 한 번 재시도)
     E-->>R: EngineChunk (delta / toolCalls / usage)
-    E->>T: dispatch tool calls (offered builtins in order, MCP concurrently)
-    T-->>E: tool results
+    E->>T: 툴 호출 dispatch (제공된 빌트인은 순서대로, MCP 는 동시에)
+    T-->>E: 툴 결과
   end
   E-->>R: EngineChunk {done}
-  R-->>C: SSE frames (data: {json}, terminal [DONE])
-  X->>X: usage aggregator flush (finally)
+  R-->>C: SSE 프레임 (data: {json}, 종단 [DONE])
+  X->>X: usage 애그리게이터 flush (finally)
 ```
 
-### Preview assembles what a run would send, without sending it
+### 프리뷰는 런이 보낼 것을 보내지 않고 조립한다
 
-`previewPrompt` (`src/application/execution/promptPreview.ts`) answers "what will the model
-actually read", which for an agent project is never the text in the editor: the system prompt
-gains the skill table, the connected-MCP-server table with its aliased tool names, the transfer
-instructions and the image section only at dispatch.
+`previewPrompt`(`src/application/execution/promptPreview.ts`)는 "모델이 실제로 무엇을 읽게
+되는가"에 답한다. agent project 에서 그 답은 에디터에 적힌 텍스트가 결코 아니다: 시스템
+프롬프트는 dispatch 시점에서야 skill 표, 별칭이 붙은 tool 이름이 담긴 연결된 MCP 서버 표,
+transfer 지시문, 이미지 절을 얻는다.
 
-It gets that right by **calling the engine's own builders** rather than reproducing them. A
-second renderer is a copy, and this copy would drift silently — a preview that disagrees with
-the run looks exactly like one that is right. For the same reason it **opens real MCP
-sessions**, as a run does: aliases are allocated against live tool lists, so nothing else
-yields the names the model will see. Those sessions are released before it returns. It reads
-the same `runStrategyFor` axis too, so an image project previews its style-plus-template
-prompt — composed by `composeImagePrompt`, exactly as a run composes it — rather than a
-system message it has none of.
+이것을 제대로 맞추는 방법은 **엔진 자신의 빌더를 호출**하는 것이지 그것을 재현하는 것이
+아니다. 두 번째 렌더러는 곧 사본이고, 이 사본은 조용히 어긋날 것이다 — 런과 어긋난 프리뷰는
+맞는 프리뷰와 겉모습이 똑같다. 같은 이유로 프리뷰는 런이 그러듯 **실제 MCP 세션을 연다**:
+별칭은 살아 있는 tool 목록을 상대로 할당되므로, 모델이 보게 될 이름을 내놓는 것은 그것밖에
+없다. 그 세션들은 반환 전에 해제된다. 프리뷰는 같은 `runStrategyFor` 축도 읽으므로, image
+project 는 자기가 갖고 있지도 않은 시스템 메시지 대신 style 과 템플릿이 합쳐진 프롬프트를
+프리뷰한다 — 런이 조립하는 것과 똑같이 `composeImagePrompt` 가 조립한다.
 
-PII masking is the one thing it does not apply: masking rewrites content per run and what it
-masks depends on the turn's own text, which a preview does not have. A version with the filter
-on is told so as a warning instead — the same channel that reports an agent version's unused
-user-prompt template.
+프리뷰가 적용하지 않는 것이 하나 있다면 PII 마스킹이다: 마스킹은 런마다 내용을 다시 쓰고,
+무엇을 가릴지는 그 턴 자신의 텍스트에 달려 있는데 프리뷰에는 그것이 없다. 필터를 켠 버전은
+대신 그 사실을 warning 으로 듣는다 — agent 버전의 쓰이지 않는 user prompt 템플릿을 알리는
+것과 같은 채널이다.
 
-### SSE responses pull the first chunk before answering
+### SSE 응답은 답하기 전에 첫 chunk 를 당겨온다
 
-Streaming entry points call the generator's first `next()` **before constructing the
-`Response`** (`src/app/api/_lib/sse.ts`). A run refused by a guard throws on that first call,
-before producing anything; building the response first would send `200 text/event-stream` and
-then deliver the refusal as a data frame, so an SSE caller would never see the 429 or its
-`Retry-After`. Holding one chunk lets the throw reach `apiError`; beyond that the data frames
-are unchanged, though the stream also carries a `: keepalive` comment frame every 15s — idle
-middleboxes (the ALB in front of the deployed app) cut a connection with no bytes for 60s,
-which is shorter than one image generation, and SSE parsers discard comment frames.
+스트리밍 진입점은 **`Response` 를 구성하기 전에** 제너레이터의 첫 `next()` 를
+호출한다(`src/app/api/_lib/sse.ts`). 가드에 거절된 런은 아무것도 만들어 내기 전인 그 첫
+호출에서 throw 한다. 응답을 먼저 만들면 `200 text/event-stream` 을 보낸 뒤 거절을 data
+프레임으로 전달하게 되어, SSE 호출자는 429 도 그 `Retry-After` 도 영영 보지 못한다. chunk
+하나를 붙들고 있으면 그 throw 가 `apiError` 에 닿는다. 그 밖에 data 프레임은 달라지지
+않지만, 스트림은 15초마다 `: keepalive` 주석 프레임도 함께 나른다 — 유휴 중간
+장비(배포된 앱 앞의 ALB)는 60초 동안 바이트가 없는 연결을 끊는데 그것은 이미지 생성 한 번보다
+짧고, SSE 파서는 주석 프레임을 버리기 때문이다.
 
-### EngineChunk contract
+### EngineChunk 계약
 
-`EngineChunk` (`src/domain/llm/types.ts`) is the wire unit between the engine and every
-consumer (chat persistence, the messaging pipeline Slack and Telegram share, OpenAI
-reshaping, A2A, the browser client). Top-level
-chunks carry **no `author`**; only subagent chunks are authored, stamped by the `runSubagent`
-wrapper with the subagent's name. **`isTopLevelChunk()` is the single owned predicate** —
-consumers must use it instead of re-deriving author semantics.
+`EngineChunk`(`src/domain/llm/types.ts`)는 엔진과 모든 소비자(chat 영속화, Slack 과
+Telegram 이 공유하는 messaging 파이프라인, OpenAI 재구성, A2A, 브라우저 클라이언트) 사이의
+전송 단위다. top-level chunk 는 **`author` 를 갖지 않는다**. authored 인 것은 subagent
+chunk 뿐이며, `runSubagent` 래퍼가 subagent 의 이름을 찍어 준다. **`isTopLevelChunk()` 가
+단일 소유된 술어(predicate)이며**, 소비자는 author 의미를 다시 유도하지 말고 그것을 써야
+한다.
 
-| Field | Emitted by | Consumed by |
+| 필드 | 내보내는 곳 | 소비하는 곳 |
 |---|---|---|
-| `delta.content` / `delta.reasoningContent` | engine per stream delta (PII-restored) | top-level only: chat persistence, a chat bot's reply sink (Slack, Telegram), OpenAI chunks, A2A artifact, client answer bubble |
-| `delta.toolCalls` | engine when a turn requests tools (display args) | client tool-call rendering; a chat bot's progress (Slack's status line or checklist, Telegram's typing indicator) |
-| `toolResult` | engine after each tool finishes | chat tool rows (displayed, and replayed into context for the last N turns), client tool panel |
-| `warning` | anywhere a run loses something: at setup for a binding it could not use (deleted skill/subagent, unreachable or blocked MCP server, tools past the per-run cap), and mid-run for a turn or output limit, a context-budget cut, a truncated transfer transcript, a failed transfer, a dropped document | chat warning banner, a chat bot's warning tail (Slack, Telegram), `Trace.warnings`; never ends the stream |
-| `image` | GenerateImage / EditImage builtins, and image-project subagents | consumed **regardless of author** (delegating to an image subagent is how an agent draws): chat image persistence (S3), a chat bot's upload (Slack, Telegram), OpenAI `images` extension, client gallery |
-| `file` | a tool that returned bytes which are not a picture — a rendered document, an export | its own axis precisely so the ten consumers of `image` never see it: chat persists the reference and offers it as a download (`files` on the assistant message, signed per read with the filename to save as), the run log substitutes a note. The bytes are stripped by the bracket that stored them and **never enter the model's context** — the tool result text is what names the file. Its name and media type come from the server, so both are read defensively (`safeFileName`/`baseMediaType`) before anything is built from them. Every surface that reads `image` reads this too — `/predict` and both OpenAI shapes list it as a `files` extension, `/agent` swaps the key for a signed `url` on the frame, A2A publishes a file part addressed by uri, the messaging pipeline links it under a Slack or Telegram reply, a trigger's row names it. `producedFiles.ts` owns the resolution; a module reading one axis and not the other fails `tests/architecture.test.ts` |
-| `usage` | engine once per model call | `collectRun` response usage; DB recording is separate (`recordUsage` / aggregator inside the engine loop) |
-| `error` | engine on failure (mid-stream — no retry); authored when a transfer fails | only a **top-level** error ends the stream. An authored one is *dropped* by nearly every consumer (the messaging pipeline and the trace recorder excepted) because the parent answers past it — so what a failed transfer lost reaches the reader as that transfer's `warning`, and the model as its "For context" turn, not through this field |
-| `done` | engine when the loop ends without tool calls — **not** when the turn guard stops it | read through `chunkTermination` (below): OpenAI `finish_reason: "stop"`, client finalize |
-| `finishReason` | engine when a run ends for a reason `done` cannot say — the turn guard (`turn-limit`) and a provider output cut (`output-limit`), each alongside a `warning` naming it | read through `chunkTermination`/`runTermination`: OpenAI `finish_reason: "length"`, trace status `turn-limit`, A2A terminal status message, predict's `finishReason` field |
-| `author` | subagent chunks only — the **innermost** agent | consumers filter via `isTopLevelChunk`; client shows the running agent |
-| `authorPath` | subagent chunks only — the chain, outermost first | client renders `sample-agent → simple-image`; the trace recorder groups a transfer by its first element |
-| `authorDone` | the `runSubagent` wrapper when an authored run returns | consumers stop showing that chain as active |
-| `traceId` | subagent chunks (stamped by `runProject`) | client correlates a chunk to its subagent's trace |
+| `delta.content` / `delta.reasoningContent` | 엔진이 스트림 delta 마다 (PII 복원된 상태로) | top-level 만: chat 영속화, chat 봇의 응답 sink(Slack, Telegram), OpenAI chunk, A2A artifact, 클라이언트 답변 말풍선 |
+| `delta.toolCalls` | 턴이 툴을 요청할 때 엔진이 (표시용 인자와 함께) | 클라이언트의 툴 호출 렌더링, chat 봇의 진행 표시(Slack 의 상태 줄이나 체크리스트, Telegram 의 입력 중 표시) |
+| `toolResult` | 각 툴이 끝난 뒤 엔진이 | chat 의 툴 행(화면에 표시되고, 최근 N 턴에 대해서는 컨텍스트로 리플레이된다), 클라이언트 툴 패널 |
+| `warning` | 런이 무언가를 잃는 모든 자리: 셋업 시점에는 쓸 수 없었던 바인딩(삭제된 skill/subagent, 도달 불가하거나 차단된 MCP 서버, 런당 상한을 넘은 tool), 런 도중에는 턴 또는 출력 한도, 컨텍스트 예산 절단, 잘린 transfer transcript, 실패한 transfer, 버려진 document | chat 경고 배너, chat 봇의 경고 꼬리말(Slack, Telegram), `Trace.warnings`. 절대 스트림을 끝내지 않는다 |
+| `image` | GenerateImage / EditImage 빌트인, 그리고 image project subagent | **author 와 무관하게** 소비된다(agent 가 그림을 그리는 방법이 곧 image subagent 에 위임하는 것이다): chat 이미지 영속화(S3), chat 봇의 업로드(Slack, Telegram), OpenAI `images` 확장, 클라이언트 갤러리 |
+| `file` | 그림이 아닌 바이트를 반환한 툴 — 렌더링된 문서, 내보내기 파일 | `image` 의 열 개 소비자가 이것을 절대 보지 않도록 정확히 그 이유로 별도의 축이다: chat 은 참조를 영속화하고 다운로드로 제공하며(assistant 메시지의 `files`, 저장될 파일 이름과 함께 읽을 때마다 서명된다), 런 로그는 대신 메모를 넣는다. 바이트는 그것을 저장한 브래킷이 걷어내며 **모델의 컨텍스트에 절대 들어가지 않는다** — 파일을 지목하는 것은 툴 결과 텍스트다. 이름과 media type 은 서버에서 오므로, 그것으로 무언가를 만들기 전에 둘 다 방어적으로 읽는다(`safeFileName`/`baseMediaType`). `image` 를 읽는 모든 표면은 이것도 읽는다 — `/predict` 와 두 OpenAI 모양은 `files` 확장으로 싣고, `/agent` 는 프레임에서 키를 서명된 `url` 로 바꾸며, A2A 는 uri 로 주소가 매겨진 file part 를 발행하고, messaging 파이프라인은 Slack 이나 Telegram 응답 아래 링크하며, trigger 의 행은 그것을 이름으로 적는다. 해석은 `producedFiles.ts` 가 소유한다. 한 축을 읽으면서 다른 축을 읽지 않는 모듈은 `tests/architecture.test.ts` 를 실패시킨다 |
+| `usage` | 모델 호출마다 한 번씩 엔진이 | `collectRun` 의 응답 usage. DB 기록은 별개다(엔진 루프 안의 `recordUsage` / 애그리게이터) |
+| `error` | 실패 시 엔진이(스트림 도중 — 재시도 없음). transfer 가 실패하면 authored 로 나간다 | **top-level** 에러만 스트림을 끝낸다. authored 인 것은 거의 모든 소비자가 *버린다*(messaging 파이프라인과 trace recorder 는 예외) — 부모가 그것을 지나쳐 답하기 때문이다. 그래서 실패한 transfer 가 잃은 것은 이 필드가 아니라 그 transfer 의 `warning` 으로 독자에게, "For context" 턴으로 모델에게 닿는다 |
+| `done` | 루프가 툴 호출 없이 끝날 때 엔진이 — 턴 가드가 멈춘 경우는 **아니다** | 아래의 `chunkTermination` 을 통해 읽는다: OpenAI `finish_reason: "stop"`, 클라이언트의 마무리 |
+| `finishReason` | `done` 이 말할 수 없는 이유로 런이 끝날 때 엔진이 — 턴 가드(`turn-limit`)와 프로바이더의 출력 절단(`output-limit`), 각각 그것을 이름 붙인 `warning` 과 함께 | `chunkTermination`/`runTermination` 을 통해 읽는다: OpenAI `finish_reason: "length"`, trace 상태 `turn-limit`, A2A 종단 상태 메시지, predict 의 `finishReason` 필드 |
+| `author` | subagent chunk 만 — **가장 안쪽** agent | 소비자는 `isTopLevelChunk` 로 거른다. 클라이언트는 지금 도는 agent 를 보여 준다 |
+| `authorPath` | subagent chunk 만 — 바깥쪽부터 나열한 체인 | 클라이언트는 `sample-agent → simple-image` 로 렌더링한다. trace recorder 는 첫 원소로 transfer 를 묶는다 |
+| `authorDone` | authored 런이 반환될 때 `runSubagent` 래퍼가 | 소비자는 그 체인을 더 이상 활성으로 표시하지 않는다 |
+| `traceId` | subagent chunk (`runProject` 가 찍는다) | 클라이언트가 chunk 를 그 subagent 의 trace 에 연결한다 |
 
-> **Why a run ended is announced, never inferred.** `RunTerminationReason`
-> (`completed` / `turn-limit` / `output-limit` / `cancelled` / `error`) lives in
-> `src/domain/llm/types.ts`; `chunkTermination()` is the owned reader of the raw
-> fields and `runTermination()` composes it with the author gate — consumers that
-> asked the two questions separately were one forgotten gate away from reading a
-> child's ending as the stream's. Reasoning from the *absence* of `done` is what
-> used to report a cancellation as `finish_reason: "length"`, and ignoring the
-> provider's own `finish_reason` is what reported a response cut at `max_tokens`
-> as a normal stop (`output-limit` now says it, engine-read from the channel).
-> Normal completion stays `done: true` on the wire (byte-identical to the
-> pre-reason contract); `cancelled` never appears as a chunk, because a cancelled
-> generator throws or is returned — only the consumer's own signal can say it.
-> Only a **top-level** termination speaks for the stream: an authored one is a
-> child's, absorbed into the parent's tool result, its stream-end already said by
-> `authorDone`.
+> **런이 왜 끝났는지는 선언되는 것이지 추론되는 것이 아니다.** `RunTerminationReason`
+> (`completed` / `turn-limit` / `output-limit` / `cancelled` / `error`)은
+> `src/domain/llm/types.ts` 에 있다. 원시 필드를 읽는 소유된 리더는
+> `chunkTermination()` 이고, `runTermination()` 이 그것을 author 게이트와 합성한다 —
+> 두 질문을 따로 물었던 소비자들은 게이트 하나만 잊으면 자식의 끝맺음을 스트림의
+> 끝맺음으로 읽게 되는 자리에 있었다. `done` 의 *부재*로부터 추론하는 것이 취소를
+> `finish_reason: "length"` 로 보고하던 원인이었고, 프로바이더 자신의
+> `finish_reason` 을 무시하는 것이 `max_tokens` 에서 잘린 응답을 정상 종료로
+> 보고하던 원인이었다(이제는 채널에서 엔진이 읽어 온 `output-limit` 이 그것을 말한다).
+> 정상 완료는 전송상 `done: true` 그대로다(reason 이 생기기 전 계약과 바이트 단위로
+> 동일하다). `cancelled` 는 chunk 로 절대 나타나지 않는다. 취소된 제너레이터는 throw
+> 하거나 return 되기 때문이고, 그것을 말할 수 있는 것은 소비자 자신의 신호뿐이다.
+> 스트림을 대변하는 것은 **top-level** 종료뿐이다: authored 인 것은 자식의 것이고,
+> 부모의 툴 결과로 흡수되며, 그 스트림의 끝은 이미 `authorDone` 이 말했다.
 
 ```mermaid
 flowchart LR
-  engine["engine announces the ending"]
-  term["top-level termination<br/>done · finishReason · error<br/>read through runTermination"]
-  warning["warning chunks<br/>the human-readable half"]
+  engine["엔진이 끝맺음을 선언한다"]
+  term["top-level 종료<br/>done · finishReason · error<br/>runTermination 을 통해 읽는다"]
+  warning["warning chunk<br/>사람이 읽는 쪽 절반"]
 
-  openai["OpenAI surfaces<br/>finish_reason stop / length"]
-  tracestatus["trace status<br/>completed · turn-limit · failed · cancelled"]
-  a2aout["A2A terminal status<br/>warnings ride the status message"]
-  predictout["predict non-streaming<br/>finishReason field"]
-  chatui["chat — persisted on the message,<br/>banner in the client"]
-  slackout["Slack, Telegram — warning tail on the reply"]
-  console["playground — warning alert"]
-  triggerrow["trigger history row<br/>warning beside a succeeded status"]
+  openai["OpenAI 표면<br/>finish_reason stop / length"]
+  tracestatus["trace 상태<br/>completed · turn-limit · failed · cancelled"]
+  a2aout["A2A 종단 상태<br/>warning 은 상태 메시지에 실려 간다"]
+  predictout["predict 논스트리밍<br/>finishReason 필드"]
+  chatui["chat — 메시지에 영속화되고,<br/>클라이언트에는 배너로"]
+  slackout["Slack, Telegram — 응답에 붙는 경고 꼬리말"]
+  console["playground — 경고 알림"]
+  triggerrow["trigger 이력 행<br/>succeeded 상태 옆의 warning"]
 
   engine --> term
   engine --> warning
@@ -597,120 +592,120 @@ flowchart LR
   warning --> triggerrow
 ```
 
-## Error handling
+## 에러 처리
 
-Two deliberate strategies coexist, split by whether a stream has started.
+의도적으로 두 전략이 공존하며, 스트림이 시작됐는지 여부로 갈린다.
 
-**HTTP path (before a stream starts)** — use cases throw `AppError` subclasses
+**HTTP 경로(스트림이 시작되기 전)** — 유스케이스는 `AppError` 하위 클래스를 throw 한다
 (`src/application/errors.ts`: Validation / NotFound / Forbidden / Conflict / RateLimited /
-Upstream — the last a 502 for another system's failure; chat adds `Chat*` subclasses on the
-same base). `RateLimitedError` carries the seconds to wait,
-because the thing that knows *why* a request was refused is the only thing that knows when it
-stops being refused; `apiError` (`src/app/api/_lib/http.ts`) turns that into `Retry-After` and
-maps any thrown error, falling back to a generic 500. `parseName` validates `[name]` params as
-slugs by throwing `ValidationError`. The registry slices share this contract via
-`createRegistryUseCases`: missing → `NotFoundError`, duplicate create → `ConflictError`,
-SSRF-blocked URL at the write boundary → `ValidationError` (`assertAllowedUrl` wraps the
-infrastructure `SsrfError`, which stays layer-local).
+Upstream — 마지막 것은 다른 시스템의 실패에 대한 502 다. chat 은 같은 베이스 위에 `Chat*`
+하위 클래스를 더한다). `RateLimitedError` 는 기다려야 할 초를 함께 지닌다. 요청이 *왜*
+거절됐는지 아는 것만이 언제 거절이 풀리는지도 알기 때문이다. `apiError`
+(`src/app/api/_lib/http.ts`)가 그것을 `Retry-After` 로 바꾸고, throw 된 모든 에러를
+매핑하며, 해당 없는 것은 일반 500 으로 떨어뜨린다. `parseName` 은 `[name]` 파라미터를
+slug 로 검증하며 `ValidationError` 를 throw 한다. registry 슬라이스들은
+`createRegistryUseCases` 를 통해 이 계약을 공유한다: 없음 → `NotFoundError`, 중복 생성 →
+`ConflictError`, 쓰기 경계에서 SSRF 로 차단된 URL → `ValidationError`(`assertAllowedUrl`
+가 infrastructure 의 `SsrfError` 를 감싸며, 그 에러는 레이어 안에 머문다).
 
-**In-stream path (after the first chunk)** — failures are values, not exceptions. The engine
-yields an `{error}` chunk and does not retry; subagent failures yield an *authored* error
-chunk the parent may still answer from; and dispatch guards degrade instead of failing the
-run — an SSRF-blocked or unreachable MCP server is skipped with a `warning`, and a hung MCP
-request aborts after its timeout and becomes a tool-error string the model can react to.
+**스트림 내 경로(첫 chunk 이후)** — 실패는 예외가 아니라 값이다. 엔진은 `{error}` chunk 를
+yield 하고 재시도하지 않는다. subagent 실패는 *authored* 에러 chunk 를 yield 하며 부모는
+그것을 딛고도 답할 수 있다. 그리고 dispatch 가드는 런을 실패시키는 대신 기능을 낮춰 진행한다 —
+SSRF 로 차단됐거나 도달 불가한 MCP 서버는 `warning` 과 함께 건너뛰고, 멈춰 버린 MCP 요청은
+타임아웃 뒤 중단되어 모델이 반응할 수 있는 툴 에러 문자열이 된다.
 
-## Subsystems
+## 서브시스템
 
-Everything above is the shape every run passes through. What each subsystem *decides* — and
-why it decided it that way — is one file each, in [`design/`](design/). They are separate
-files because they are separate subjects: a question about MCP sessions and a question about
-Slack engagement have never once been answered together.
+여기까지가 모든 런이 지나는 형태다. 각 서브시스템이 무엇을 *결정하는지* — 그리고 왜 그렇게
+결정했는지 — 는 [`design/`](design/) 에 파일 하나씩으로 있다. 별개의 파일인 이유는 별개의
+주제이기 때문이다: MCP 세션에 대한 질문과 Slack 참여에 대한 질문이 함께 답해진 적은 단 한
+번도 없다.
 
-| File | Answers |
+| 파일 | 답하는 것 |
 |---|---|
-| [design/execution.md](design/execution.md) | What a project and a version are, the engine's tool loop, the three paths that draw a picture, and what a run leaves behind |
-| [design/mcp.md](design/mcp.md) | The registry entry, the session that owns the protocol, the discovery cache, managed containers on loopback, per-project OAuth |
-| [design/messaging.md](design/messaging.md) | What every chat-bot surface shares — the turn pipeline, the reply ports, the webhook tail — and where each platform's own decisions begin |
-| [design/slack.md](design/slack.md) | How a reply is delivered, which received messages are for the bot, what a run may read of the workspace |
-| [design/telegram.md](design/telegram.md) | A reply edited in place where nothing streams, which updates are for the bot, and the transcript a follow-up carries its context in |
-| [design/capabilities.md](design/capabilities.md) | Skills by progressive disclosure, the global capability catalog a run may search, and where memory lives |
-| [design/triggers.md](design/triggers.md) | The one webhook, any number of schedules, and the sweep that closes a firing an instance died holding |
-| [design/chat.md](design/chat.md) | A run that outlives its connection, the replay log, and how an attachment reaches a turn |
-| [design/observability.md](design/observability.md) | The audit row, the usage rows and their attribution, and the trace |
-| [design/agents-a2a.md](design/agents-a2a.md) | A registry entry for an outside endpoint, and both directions of A2A |
+| [design/execution.md](design/execution.md) | project 와 version 이 무엇인지, 엔진의 툴 루프, 그림을 그리는 세 경로, 그리고 런이 남기는 것 |
+| [design/mcp.md](design/mcp.md) | registry 항목, 프로토콜을 소유하는 세션, discovery 캐시, 루프백 위의 managed 컨테이너, 프로젝트별 OAuth |
+| [design/messaging.md](design/messaging.md) | 모든 chat-bot 표면이 공유하는 것 — 턴 파이프라인, 응답 포트, webhook 꼬리 — 과 각 플랫폼 고유의 결정이 시작되는 지점 |
+| [design/slack.md](design/slack.md) | 응답이 어떻게 전달되는지, 받은 메시지 중 어느 것이 봇을 향한 것인지, 런이 워크스페이스에서 무엇을 읽어도 되는지 |
+| [design/telegram.md](design/telegram.md) | 아무것도 스트리밍되지 않는 곳에서 제자리 편집되는 응답, 어느 업데이트가 봇을 향한 것인지, 그리고 후속 질문이 자기 맥락을 싣고 다니는 transcript |
+| [design/capabilities.md](design/capabilities.md) | 점진적 공개(progressive disclosure)로 제공되는 Skill, 런이 검색할 수 있는 전역 capability 카탈로그, 그리고 메모리가 어디 사는지 |
+| [design/triggers.md](design/triggers.md) | 하나의 webhook, 개수 제한 없는 schedule, 그리고 인스턴스가 붙든 채 죽은 firing 을 마감하는 스윕 |
+| [design/chat.md](design/chat.md) | 자기 연결보다 오래 사는 런, 리플레이 로그, 그리고 첨부가 턴에 닿는 방식 |
+| [design/observability.md](design/observability.md) | 감사 행, usage 행과 그 귀속(attribution), 그리고 trace |
+| [design/agents-a2a.md](design/agents-a2a.md) | 외부 엔드포인트에 대한 registry 항목, 그리고 A2A 의 양방향 |
 
-Two subsystems additionally carry their **invariants** beside the code, and those files are
-the authority for what must hold when editing them: `src/application/llm/AGENTS.md` (the tool
-loop) and `src/application/chat/AGENTS.md` (persistence and replay). The `design/` file says
-why; the `AGENTS.md` says what not to break.
+두 서브시스템은 여기에 더해 자기 **불변식**을 코드 옆에 두고 있으며, 그 파일들이 해당
+코드를 고칠 때 무엇이 유지돼야 하는지의 권위다: `src/application/llm/AGENTS.md`(툴 루프)와
+`src/application/chat/AGENTS.md`(영속화와 리플레이). `design/` 파일은 왜인지를 말하고,
+`AGENTS.md` 는 무엇을 깨면 안 되는지를 말한다.
 
 ## UI
 
 ```
-/                     overview when signed in, landing page otherwise
-/login                sign-in screen; where the page gate sends a signed-out visitor
-/projects             project catalog (cards)
-/projects/[name]      orchestration playground (prompt editor, model picker, run/stream)
+/                     로그인 상태면 overview, 아니면 랜딩 페이지
+/login                로그인 화면; 페이지 게이트가 로그아웃 방문자를 보내는 곳
+/projects             project 카탈로그 (카드)
+/projects/[name]      오케스트레이션 playground (프롬프트 편집기, 모델 선택, run/stream)
 /projects/[name]/versions | usage | traces | artifacts | api-reference | settings | compare
 /chats  /chats/[chatId]
-/artifacts            what your runs produced; a project's own tab holds the rest
-/skills  /tools (MCP)  /agents  /plugins  (each + /[name] detail page)
-/dashboard            redirects to `/`, which carries the cost dashboard as its last section
-/profile              your own tier, what it caps, and this UTC month's spend
-/members              admin-only workspace member list with join and last-login times
-/models               admin-only model registry, with a per-model reachability test
-/audit                admin-only sensitive-action audit trail
-/settings             admin-only runtime env-var overrides
+/artifacts            내 런이 만든 것; project 자체 탭이 나머지를 담는다
+/skills  /tools (MCP)  /agents  /plugins  (각각 + /[name] 상세 페이지)
+/dashboard            `/` 로 리다이렉트, `/` 가 마지막 섹션으로 비용 대시보드를 담는다
+/profile              내 tier, 그것이 제한하는 것, 이번 UTC 달의 지출
+/members              admin 전용 워크스페이스 멤버 목록, 가입·마지막 로그인 시각 포함
+/models               모델 레지스트리, member tier 이상 읽기 가능; enable 토글과
+                      모델별 도달성 테스트는 admin 전용
+/audit                admin 전용 민감 작업 감사 추적
+/settings             admin 전용 런타임 env-var 오버라이드
 ```
 
-The console speaks **English and Korean**, resolved from a cookie rather than a route segment
-(`src/app/_i18n/`): `en.ts` is the source of truth and `ko.ts` is typed against it, so a key
-added to one and not the other fails `pnpm typecheck` instead of rendering an English string
-inside a Korean page. Error messages and the product nouns stay English in both catalogues;
-[../AGENTS.md](../AGENTS.md#conventions-that-bite) has the reasoning and the rules a new
-string has to follow. Mantine components provide the structure and the styling; the theme in
-`src/app/theme.ts` is the **single owner** of the brand palette and of the component defaults
-that used to be hand-written class constants, so a button or input is never styled at the call
-site. Anything Mantine cannot express — the chart palette, the code block's syntax colours, the
-chat bubble's edges — lives in a CSS module or in `globals.css` and reads Mantine's CSS
-variables, never a hardcoded neutral.
+콘솔은 **영어와 한국어**를 쓰며, 라우트 세그먼트가 아니라 쿠키로 결정된다
+(`src/app/_i18n/`): `en.ts` 가 정본이고 `ko.ts` 는 그것에 대해 타입이 매겨져 있어서, 한쪽에만
+추가되고 다른 쪽에 없는 키는 한국어 페이지 안에 영어 문자열을 렌더링하는 대신 `pnpm
+typecheck` 를 실패시킨다. 에러 메시지와 제품 명사는 두 카탈로그 모두에서 영어로 남는다.
+근거와 새 문자열이 따라야 할 규칙은 [../AGENTS.md](../AGENTS.md#conventions-that-bite) 에
+있다. 구조와 스타일은 Mantine 컴포넌트가 제공한다. `src/app/theme.ts` 의 테마가 브랜드
+팔레트와, 예전에는 손으로 쓴 클래스 상수였던 컴포넌트 기본값의 **단일 소유자**이므로, 버튼이나
+입력이 호출 지점에서 스타일링되는 일은 없다. Mantine 이 표현할 수 없는 것 — 차트 팔레트, 코드
+블록의 문법 색, chat 말풍선의 모서리 — 은 CSS 모듈이나 `globals.css` 에 살면서 Mantine 의
+CSS 변수를 읽지, 하드코딩된 중립색을 읽지 않는다.
 
-The header offers system/light/dark themes through `useMantineColorScheme`, with
-`ColorSchemeScript` applying the stored preference before first paint. The control renders the
-default until mount: the preference exists only in the browser, so showing it during SSR would
-be a hydration mismatch.
+헤더는 `useMantineColorScheme` 을 통해 system/light/dark 테마를 제공하고,
+`ColorSchemeScript` 가 저장된 선호를 첫 페인트 전에 적용한다. 컨트롤은 마운트 전까지
+기본값을 렌더링한다: 선호는 브라우저에만 있으므로 SSR 중에 그것을 보여 주면 하이드레이션
+불일치가 되기 때문이다.
 
-**Who the chrome is drawn for is resolved on the server**, in the root layout, and handed to
-`AppLayout` as a prop (`resolveViewer` in `src/lib/viewer.ts` owns the flags, and
-`GET /api/me` is the same call for the pages that ask after mounting). The nav used to read
-`useSession()`, which has no cookie during SSR and answers `isPending` — counted as signed in,
-so the server drew the whole navigation for every visitor and a signed-out one watched it
-disappear once the session resolved. That is a hydration mismatch, a visible flash, and the
-shape of the workspace handed to someone `src/proxy.ts` turns away. The consequence is that a
-per-viewer shell cannot be prerendered, so **every page route renders on demand**; the
-prerendered ones were only ever a shell built for nobody, which React discarded on hydration
-anyway. Collapsing the navbar is not enough either — a collapsed navbar is still in the
-document, so its contents are not rendered at all when nobody is signed in.
+**크롬(chrome)을 누구를 위해 그리는지는 서버에서 해석되고**, 루트 레이아웃에서 `AppLayout`
+에 prop 으로 넘어간다(플래그는 `src/lib/viewer.ts` 의 `resolveViewer` 가 소유하고,
+마운트 후에 묻는 페이지에게는 `GET /api/me` 가 같은 호출이다). 예전에 nav 는
+`useSession()` 을 읽었는데, SSR 중에는 쿠키가 없어 `isPending` 으로 답하고 그것이 로그인
+상태로 세어졌다. 그래서 서버는 모든 방문자에게 내비게이션 전체를 그렸고, 로그아웃 상태의
+방문자는 세션이 해석되는 순간 그것이 사라지는 것을 지켜봤다. 그것은 하이드레이션 불일치이자
+눈에 보이는 깜빡임이며, `src/proxy.ts` 가 돌려보내는 사람에게 워크스페이스의 모양을 건네주는
+일이다. 그 결과 뷰어별 셸은 프리렌더될 수 없으므로 **모든 페이지 라우트는 요청 시점에
+렌더링된다**. 프리렌더돼 있던 것들은 애초에 아무도 아닌 사람을 위해 만든 셸이었고, React 가
+하이드레이션에서 어차피 버렸다. navbar 를 접는 것만으로도 부족하다 — 접힌 navbar 도 문서
+안에는 있으므로, 아무도 로그인하지 않았을 때는 그 내용을 아예 렌더링하지 않는다.
 
-Each project's **API Reference** tab documents how to call that project from outside the
-console, with its own name and published version filled in, a copyable curl example per
-endpoint, and Python/Node.js SDK samples for the OpenAI-compatible endpoint. Credentials appear
-only as `$PROJECT_API_TOKEN`-style placeholders.
+각 프로젝트의 **API Reference** 탭은 콘솔 밖에서 그 프로젝트를 호출하는 방법을 문서화한다.
+자기 이름과 발행된 버전이 채워져 있고, 엔드포인트마다 복사 가능한 curl 예제가 있으며,
+OpenAI 호환 엔드포인트에는 Python/Node.js SDK 샘플이 있다. 자격 증명은
+`$PROJECT_API_TOKEN` 같은 자리표시자로만 나타난다.
 
-## Glossary
+## 용어
 
-The word "agent" is overloaded; these are the distinct concepts.
+"agent" 라는 단어는 과부하돼 있다. 다음이 서로 구별되는 개념들이다.
 
-- **agent project** (`projectType: 'agent'`) — a studio project that runs the multi-turn tool
-  loop.
-- **subagent** (`SubagentRef` on a version) — another project (local) or registry agent
-  (remote) a run can transfer to via the `transfer_to_agent` builtin.
-- **external agent** (`ExternalAgent`) — a registry entry for an outside endpoint
-  (OpenAI-compatible or A2A), usable as a remote subagent.
-- **MCP server** (`McpServer`, the `/tools` UI page) — a registered MCP endpoint whose tools
-  the engine can call. "Tools" alone refers to the OpenAI tool-calling mechanism.
-- **actor** (`RunActor`) — who caused a run, for attribution. Not the project it ran.
-- **run bracket** — what wraps a top-level run: guards, metric, correlation id.
-- Invocation verbs: routes say **predict**, the facade says **execute**
-  (`executeVersion`/`executeAgent`/`executeProjectStream`), the engine says **run**
-  (`runPrompt`/`runAgent`). Same pipeline, three altitude levels.
+- **agent project** (`projectType: 'agent'`) — 멀티턴 툴 루프를 도는 studio project.
+- **subagent** (버전 위의 `SubagentRef`) — 런이 `transfer_to_agent` 빌트인으로 넘어갈 수
+  있는 다른 project(로컬)나 registry agent(원격).
+- **external agent** (`ExternalAgent`) — 외부 엔드포인트(OpenAI 호환 또는 A2A)에 대한
+  registry 항목. 원격 subagent 로 쓸 수 있다.
+- **MCP server** (`McpServer`, UI 의 `/tools` 페이지) — 엔진이 그 tool 을 호출할 수 있는
+  등록된 MCP 엔드포인트. "Tools" 만 쓰면 OpenAI 의 tool calling 메커니즘을 가리킨다.
+- **actor** (`RunActor`) — 귀속을 위해, 누가 런을 일으켰는지. 그 런이 돌린 project 가
+  아니다.
+- **런 브래킷** — top-level 런을 감싸는 것: 가드, 메트릭, correlation id.
+- 호출 동사: 라우트는 **predict** 라 하고, 파사드는 **execute** 라 하며
+  (`executeVersion`/`executeAgent`/`executeProjectStream`), 엔진은 **run** 이라 한다
+  (`runPrompt`/`runAgent`). 같은 파이프라인의 세 가지 고도(altitude)다.

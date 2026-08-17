@@ -169,38 +169,38 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   [design/execution.md](docs/design/execution.md#llm-engine)
 - **Run bracket** — the one thing every top-level run passes through: model policy, cost guard,
   tier cap, concurrency slot, metric, correlation id, artifact recorder →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#the-run-bracket)
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#런-브래킷)
 - **Images** — three paths that draw meet at one `ImageChannel` port (an MCP tool's picture is a
   fourth producer and never touches it); source bytes decide edit vs generate →
   [design/execution.md](docs/design/execution.md#images)
 - **Artifacts** — what a run left behind, captured at the bracket, one row per stored object →
   [design/execution.md](docs/design/execution.md#artifacts)
 - **Reading a URL** — the `FetchUrl` builtin, off unless a version opts in; the one adapter that
-  requests an address the *model* chose → [SECURITY.md](docs/SECURITY.md#urls-the-model-chose)
+  requests an address the *model* chose → [SECURITY.md](docs/SECURITY.md#모델이-고른-url)
 - **Single-table DynamoDB** — one table, `PK`/`SK` + `GSI1`/`GSI2` →
-  [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-single-table-design)
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#dynamodb-단일-테이블-설계)
 - **Auth & authorization** — `withAuth`/`withMemberAuth`/`withAdminAuth` for routes,
   `src/proxy.ts` for pages;
   **`isAdminEmail` and `isConfiguredAdmin` are not interchangeable** →
-  [SECURITY.md](docs/SECURITY.md#authorization-model)
+  [SECURITY.md](docs/SECURITY.md#인가-모델)
 - **Secrets** — AES-256-GCM at rest (`enc:v1:`), masked on read, four revealable via POST →
-  [SECURITY.md](docs/SECURITY.md#secrets-at-rest)
+  [SECURITY.md](docs/SECURITY.md#저장된-시크릿)
 - **Runtime settings** — DB override → env fallback; never read those env vars at dispatch, go
   through `src/lib/runtime-settings.ts` →
-  [CONFIGURATION.md](docs/CONFIGURATION.md#resolution-order)
+  [CONFIGURATION.md](docs/CONFIGURATION.md#해석-순서)
 - **MCP** — one session owner over `@modelcontextprotocol/client`, probing each server's
   protocol era; discovery cached per `url + headers`; managed servers on loopback by provenance;
   per-project OAuth → [design/mcp.md](docs/design/mcp.md)
 - **Capability catalog** — one global index rebuilt by a CronJob tick, never on a registry
   write; a version opting in has its lists widened, never displaced →
-  [design/capabilities.md](docs/design/capabilities.md#capability-catalog)
+  [design/capabilities.md](docs/design/capabilities.md#케이퍼빌리티-카탈로그)
 - **Memory** — lives behind MCP (mcp-memory), not in this app; `memoryRecall` asks `recall`
-  before the first token → [design/capabilities.md](docs/design/capabilities.md#memory)
+  before the first token → [design/capabilities.md](docs/design/capabilities.md#메모리)
 - **PII filtering** — opt-in per version; bounds what the LLM sees, **not** what an MCP server or
   the catalog's embedding provider receives →
-  [SECURITY.md](docs/SECURITY.md#pii-filtering-and-where-it-stops)
+  [SECURITY.md](docs/SECURITY.md#pii-필터링-그리고-그것이-멈추는-곳)
 - **SSRF guard** — operator URLs checked at registration *and* dispatch, through
-  `fetchPublicUrl` → [SECURITY.md](docs/SECURITY.md#outbound-requests-ssrf)
+  `fetchPublicUrl` → [SECURITY.md](docs/SECURITY.md#아웃바운드-요청-ssrf)
 - **Messaging surfaces** — what every chat bot shares: `handleTurn` runs a normalised turn and
   delivers the reply through the `ReplyChannel` port; an adapter decides which events are for
   the bot, how history is read, who is asking, and how a reply is rendered →
@@ -217,12 +217,12 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   conditional claims; a CronJob ticks the scan → [design/triggers.md](docs/design/triggers.md)
 - **Attribution** — `RunActor { kind, id }` names who caused a run; `RunOrigin` carries it down
   every transfer hop →
-  [design/observability.md](docs/design/observability.md#usage-and-cost-attribution)
+  [design/observability.md](docs/design/observability.md#사용량과-비용-귀속)
 - **Errors** — `AppError` subclasses before a stream starts, `{error}` chunks after the first one
-  → [ARCHITECTURE.md](docs/ARCHITECTURE.md#error-handling)
+  → [ARCHITECTURE.md](docs/ARCHITECTURE.md#에러-처리)
 - **Logging** — `src/shared/logger.ts` is the only writer (`domain`'s one bare `[cost]` warn
   excepted, since it imports nothing); lines carry the run's correlation id, deliberately *not*
-  the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#logging)
+  the sampled trace id → [OPERATIONS.md](docs/OPERATIONS.md#로깅)
 
 ## Conventions that bite
 
@@ -284,7 +284,7 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   changing `run.ts` or `messageMapping.ts`; the mechanics are in
   [design/chat.md](docs/design/chat.md).
 - **A chat run outlives the connection that started it** — the browser hanging up means "the
-  reader left", not "stop" ([design/chat.md](docs/design/chat.md#a-run-outlives-its-connection)
+  reader left", not "stop" ([design/chat.md](docs/design/chat.md#런은-자기-연결보다-오래-산다)
   says why). Three edits look like tidying up and each one puts the old behaviour back. **A
   chat route must not pass an `AbortController` to `sseResponse`.** **The wrapper that
   detaches must be the outermost thing the response consumes**, because a plain
@@ -292,7 +292,7 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   (`mergeGenerators.ts` says why). And **the client must not abort its `fetch` on unmount**,
   which is the same mistake from the other end.
 - **Nothing in the chat view scrolls the viewport on its own** — `use-stick-to-bottom` owns
-  it, and the reasoning is in [design/chat.md](docs/design/chat.md#a-run-outlives-its-connection).
+  it, and the reasoning is in [design/chat.md](docs/design/chat.md#런은-자기-연결보다-오래-산다).
   What that costs a change here: **nothing inside the thread may be a scroll container on both
   axes** or it swallows the wheel events the library follows (see `.markdown pre` in
   `parts.module.css`), and the **store notifies on a collection window rather than per frame**
@@ -301,7 +301,7 @@ One line each; the link is the authority. What is worth knowing *before* an edit
 - **The chat run log is a buffer, not a record.** Its ordering is the contract a resume rests
   on — **persist → terminal entry → release the lease** — which is why the lease release lives
   in `runLog.ts` rather than in `runAndPersist`. What it cannot do, and why it is written only
-  after the reader leaves, is in [design/chat.md](docs/design/chat.md#a-run-outlives-its-connection).
+  after the reader leaves, is in [design/chat.md](docs/design/chat.md#런은-자기-연결보다-오래-산다).
 - **Never restate an image cap locally.** Caps live in `src/domain/llm/imageLimits.ts` (client
   composers, API bodies and the messaging pipeline all read them) and the `data:` encoding in
   `imageDataUrl`/`parseImageDataUrl`. Copies of either had already drifted apart once.
@@ -362,10 +362,10 @@ One line each; the link is the authority. What is worth knowing *before* an edit
   `LATEST_PROTOCOL_VERSION` names, what `mode: "auto"` falls back to, that `listMaxPages`
   throws rather than truncating, and the `SdkErrorCode` values `unusableServerReason` reads.
   Check all four on any bump — a lockfile refresh included
-  ([design/mcp.md](docs/design/mcp.md#transport-and-sessions) says why each matters).
+  ([design/mcp.md](docs/design/mcp.md#transport-와-세션) says why each matters).
 - **The plugins sync applies the repository; a person owns deletion.** The contract is
   [design/capabilities.md](docs/design/capabilities.md#skills) and, endpoint-side,
-  [API.md](docs/API.md#registry-and-integration-operations). Four things constrain a change to
+  [API.md](docs/API.md#레지스트리연동-오퍼레이션). Four things constrain a change to
   `syncPluginsFromSnapshot` (`src/application/plugin/syncPlugins.ts`). **A deletion the sync
   performs goes through the use case and names the person who asked for it** — hence the
   required `actorEmail`, since `remove` is the single owner of the `registry.delete` row and a
