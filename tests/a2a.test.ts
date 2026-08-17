@@ -25,6 +25,7 @@ import type { Project, Version } from "@/domain/project/types";
 import type { ExecutionDeps } from "@/application/execution/runProject";
 import type { LlmChannel } from "@/domain/llm/channel";
 import { contentChunk, FakeChannel, toolCallChunk, usageChunk } from "./fakeChannel";
+import type { Trace } from "@/domain/trace/types";
 import { fakeSkillRepository } from "./fakeSkills";
 
 // --- fixtures ---------------------------------------------------------------
@@ -721,6 +722,34 @@ describe("ProjectA2aExecutor", () => {
     const message = last && "status" in last ? last.status.message : undefined;
     const text = message?.parts.map((part) => (part.kind === "text" ? part.text : "")).join("");
     expect(text).toContain("turn limit");
+  });
+});
+
+describe("ProjectA2aExecutor conversation", () => {
+  it("runs under the caller's contextId as its conversation, qualified by the caller", async () => {
+    // Read back off the trace the run persisted: the executor's `contextId` is
+    // the run's conversation, and the actor — a named client key here — is
+    // what keeps it apart from another client's same-spelled context.
+    const traces: Trace[] = [];
+    const deps = executionDepsFixture(new FakeChannel([[contentChunk("hi"), usageChunk(1, 1)]]));
+    deps.traces = {
+      put: async (trace: Trace) => {
+        traces.push(trace);
+      },
+      get: async () => null,
+      listByProject: async () => traces,
+    } as unknown as ExecutionDeps["traces"];
+    const executor = new ProjectA2aExecutor(
+      deps,
+      projectFixture({ projectType: "agent" }),
+      versionFixture(),
+      fakeStore(),
+      { kind: "a2a", id: "billing-bot" },
+    );
+    const bus = new CollectingBus();
+    await executor.execute(new RequestContext(userMessage("hi"), "t1", "ctx-77"), bus);
+
+    expect(traces[0]?.conversation).toBe("a2a:billing-bot:ctx-77");
   });
 });
 

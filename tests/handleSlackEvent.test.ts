@@ -373,6 +373,34 @@ describe("handleSlackEvent", () => {
     expect(userMessage).toBe("project:other hello");
   });
 
+  it("names the thread as the run's conversation, root message and DM alike", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const seen: string[] = [];
+    const capture = (): SlackEventDeps => {
+      const { slack } = makeSlackFake();
+      const deps = deps0(slack);
+      deps.runAgent = async function* (input) {
+        seen.push(input.conversation ? `${input.conversation.surface}:${input.conversation.id}` : "none");
+        yield { done: true };
+      };
+      return deps;
+    };
+
+    // A reply inside a thread: the thread's root, not the reply's own ts.
+    await handleSlackEvent(
+      capture(),
+      { ...EVENT, event: { ...EVENT.event, ts: "5.0", thread_ts: "1.0" } },
+      BINDING,
+    );
+    // A top-level mention opens its own thread, so its ts is the address.
+    await handleSlackEvent(capture(), EVENT, BINDING);
+    // A DM is a thread of its own too.
+    await handleSlackEvent(capture(), DM_EVENT, BINDING);
+
+    expect(seen).toEqual(["slack:C1:1.0", "slack:C1:1.0", "slack:D1:1.0"]);
+  });
+
   it("delivers the top-level answer only", async () => {
     vi.spyOn(Date, "now").mockReturnValue(NOW);
     vi.spyOn(console, "log").mockImplementation(() => {});

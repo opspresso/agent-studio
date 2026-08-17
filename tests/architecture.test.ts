@@ -1052,7 +1052,12 @@ const SINGLE_OWNERS: SingleOwner[] = [
     what: "the header that names the run's conversation to an MCP server",
     pattern: /"X-Conversation-Id"/,
     owner: "src/application/execution/mcpTools.ts",
-    alsoAllowedUnder: ["src/app/api/projects/_lib/conversation.ts"],
+    // The API Reference tab *shows* the inbound spelling to a caller; it is a
+    // client module and cannot import the route helper that owns it.
+    alsoAllowedUnder: [
+      "src/app/api/projects/_lib/conversation.ts",
+      "src/app/projects/[name]/api-reference/endpoints.ts",
+    ],
   },
   {
     // How a run primes its memory: which tool is asked, with what, and what the
