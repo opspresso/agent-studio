@@ -57,19 +57,23 @@ describe("slackEventRepository.claim", () => {
   /**
    * The point of the lease: an instance that died mid-processing leaves a
    * `claimed` row behind, and a redelivery must be able to take it over rather
-   * than be refused as a duplicate of work that never happened. Equally, a row
-   * that is no longer `claimed` — settled, or written before claims carried
-   * state — must never be reclaimed, or a handled event would be replayed.
+   * than be refused as a duplicate of work that never happened. A `failed`
+   * attempt is reclaimable outright — that is what settling as failed is *for*,
+   * and the condition used to say only `claimed`, so a failed event was
+   * refused as a duplicate forever (the integration check is what caught it).
+   * Equally, a row that is `done`, or written before claims carried state, must
+   * never be reclaimed, or a handled event would be replayed.
    */
-  it("admits a claim whose lease expired, and only while it is still claimed", async () => {
+  it("admits a claim whose lease expired or whose attempt failed, and never a settled one", async () => {
     await slackEventRepository.claim("evt-1", NOW, LEASE_UNTIL);
     const put = sent.at(-1);
     expect(put?.name).toBe("PutCommand");
     expect(put?.input.ConditionExpression).toBe(
-      "attribute_not_exists(PK) OR (#state = :claimed AND leaseExpiresAt < :now)",
+      "attribute_not_exists(PK) OR #state = :failed OR (#state = :claimed AND leaseExpiresAt < :now)",
     );
     expect(put?.input.ExpressionAttributeValues).toMatchObject({
       ":claimed": "claimed",
+      ":failed": "failed",
       ":now": NOW,
     });
   });
