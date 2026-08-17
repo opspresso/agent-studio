@@ -38,7 +38,8 @@ SKILL.md that conforms to the Agent Skills spec — frontmatter `name` matching 
 `mcp.json` is domain-owned (`src/domain/plugin/types.ts`); the GitHub client only fetches.
 Supported text attachments are collected under each skill root
 (`src/domain/skill/files.ts`: `ALLOWED_SKILL_FILE_EXTENSIONS`), bounded by per-file,
-per-skill and file-count caps and excluding symlinks. `file_path` is normalised and confined
+per-skill and file-count caps (64KB / 200KB / 20 — the values are in
+[CONFIGURATION.md](../CONFIGURATION.md#limits-fixed-in-code)) and excluding symlinks. `file_path` is normalised and confined
 to the skill root: no absolute paths, no `..`, no cross-skill access. An overwrite replaces
 the whole skill item, so stale attachments drop with it; skipped files are reported with
 reasons.

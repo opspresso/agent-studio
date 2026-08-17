@@ -86,6 +86,14 @@ the SSRF guard (injected as the transport's `fetch`, so an operator-supplied MCP
 cannot name the metadata service), a ceiling on what one response may pull into memory, the
 lazy connect below, and the expired-session retry — which the SDK does not implement.
 
+**The SDK follows a caret range (`^2.0.0`) like every other dependency, but four of its
+behaviours are load-bearing here and none is covered by semver**: which revision
+`LATEST_PROTOCOL_VERSION` names (a bump into the 2026 era makes the handshake fallback
+useless), what `mode: "auto"` falls back to, that `listMaxPages` throws rather than
+truncating, and the `SdkErrorCode` values `unusableServerReason` reads. An SDK bump — a
+lockfile refresh included — is therefore a protocol change to check against those four, not a
+dependency update to wave through.
+
 - Tool-name collisions get `_1`/`_2` suffix aliases with a reverse mapping, and the same
   aliasing carries a name a **provider** would refuse: MCP allows 128 characters and a dot
   (`admin.tools.list` is the spec's own example) where a function name is
