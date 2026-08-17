@@ -32,9 +32,11 @@ are sent on card resolution and RPC calls. A transfer asks for **`message/stream
 the events back into the task a blocking send would have returned, so both paths are read by
 the same two extractors rather than by two copies of the artifacts-over-status rule. A card
 without `capabilities.streaming` falls back to one blocking `message/send` — the SDK refuses
-before any request goes out, which is what makes the fallback safe. **The bound is on silence,
-not on the whole exchange**: a remote investigation may run far longer than any gap between its
-updates, and the total is capped by the run's own deadline. Past the first event a broken
+before any request goes out, which is what makes the fallback safe. **On a streaming card the
+bound is on silence, not on the whole exchange**: a remote investigation may run far longer than
+any gap between its updates, and the total is capped by the run's own deadline. The blocking
+fallback has no events to reset that timer, so there the same 120 seconds is the whole-request
+bound it always was. Past the first event a broken
 stream is reported rather than retried, since the remote is already working and a second send
 would run the delegation twice.
 

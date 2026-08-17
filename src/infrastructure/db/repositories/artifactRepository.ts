@@ -122,9 +122,9 @@ export class DynamoArtifactRepository implements ArtifactRepository {
           entityType: ARTIFACT_ENTITY,
           GSI1PK: keys.artifactProjectPartition(artifact.projectName),
           GSI1SK: sortKey(artifact),
-          // Sparse on purpose: an actor with no email writes no GSI2 attributes,
-          // so a Slack or trigger artifact simply is not in the owner index
-          // rather than sitting there under a placeholder nobody can query.
+          // Sparse on purpose: a row that names no mailbox writes no GSI2
+          // attributes, so an A2A or trigger artifact simply is not in the owner
+          // index rather than sitting there under a placeholder nobody can query.
           ...(ownerEmail
             ? {
                 GSI2PK: keys.artifactOwnerPartition(ownerEmail),
